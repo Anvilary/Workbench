@@ -145,6 +145,7 @@
   "agency.ui.unableToRestore": "Unable to restore",
   "agency.ui.unableToSend": "Unable to send",
   "agency.ui.unavailableSuffix": " (недоступно)",
+  "agency.ui.unverifiedHistory": "Структурированная история недоступна. Используйте исходный терминал для вывода и разрешений.",
   "agency.ui.useTheExistingWorkspaceDirectoryWithNativeShell": "Use the existing workspace directory with native shell input and output.",
   "agency.ui.useThisDirectory": "Use this directory",
   "agency.ui.workspace": "Workspace ",
