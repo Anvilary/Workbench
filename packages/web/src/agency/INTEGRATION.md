@@ -7,12 +7,12 @@ Status: **isolated frontend implementation only**. Built on `a784b0b3e176f06911a
 `packages/web/src/agency/AgencyApp.tsx` exports:
 
 ```tsx
-<AgencyApp connection={workbenchConnection} agencyTransport={agencyTransport} />
+<AgencyApp connection={workbenchConnection} />
 ```
 
 `workbenchConnection` must be the existing singleton `AgentConnection` from `packages/web/src/connection.ts`, not a second WebSocket. Its `onMessage`, `onStatus`, `onReopen` and `send` continue owning upstream terminal and conversation behavior.
 
-`agencyTransport` is the small typed boundary in `model.ts`:
+`AgencyApp` constructs a fail-closed transport adapter with `createAgencyTransport(workbenchConnection)` from `model.ts`. The adapter refuses to mount if the existing connection lacks the exact non-queueing `sendImmediate` patch. The transport interface is:
 
 ```ts
 interface AgencyTransport {
@@ -21,7 +21,7 @@ interface AgencyTransport {
 }
 ```
 
-The **final integration owner** implements it by using the existing authenticated `/ws` and the same `AgentConnection` after merging Agency into both halves of the existing `protocol.ts` runtime encoder/parser and server dispatch. The UI must not be mounted against a parser that silently drops `agency.*` messages. Do not use a second socket or HTTP endpoint and do not bypass `parseServerMessage` validation.
+The **final integration owner** implements `sendImmediate` on the existing authenticated `/ws` and the same `AgentConnection` after merging Agency into both halves of the existing `protocol.ts` runtime encoder/parser and server dispatch. The UI must not be mounted against a parser that silently drops `agency.*` messages. Do not use a second socket or HTTP endpoint and do not bypass `parseServerMessage` validation.
 
 The integration owner MUST add the following narrow method to the reserved `packages/web/src/connection.ts` (do not modify its existing `send` semantics or create a second socket):
 
@@ -61,7 +61,7 @@ Extend the existing protocol encoder/parser for Agency messages as part of integ
 
 ## Focused tests and acceptance checklist
 
-Logic tests: `node --experimental-strip-types --test packages/web/src/agency/model.test.mjs` (Node 22+ for TS stripping). These check active vs Done filtering, all four layouts, independent agent/shell slot selection, unknown model/effort suppression, per-workspace drafts and verified state transition notifications. They do **not** test a WebSocket or server persistence.
+Logic tests: `node --experimental-strip-types --test packages/web/src/agency/model.test.mjs` (Node 22+ for TS stripping). Nine cases cover active vs Done filtering, four layouts, independent slots, capability suppression, drafts, notifications, offline non-replay and argv boundaries. These passed in a locally reconstructed, exact-source copy on Node 22.16.0 (9/9). They do **not** test the actual authenticated WebSocket or server persistence.
 
 Run after integration:
 
@@ -88,3 +88,11 @@ Manual browser checks, against **real** local server data:
 ## Outstanding gaps
 
 This lane cannot claim real server E2E or screenshots. Other lanes are responsible for persistence, profile discovery, session ownership, protocol/parser dispatch, process concurrency, and authenticated CLI runs. The shared protocol is intentionally **not modified** in this branch. If the integrated server cannot provide reliable conversation events for AGY/Codex/Claude, keep the native terminal usable instead of fabricating chat content.
+
+## Frontend review follow-up
+
+- Original Windows i18n finding: all Agency JSX copy now uses Workbench `t()`, and `agency.*` keys were added and sorted in all nine existing catalogs, without relaxing `check-i18n.mjs`. Lifecycle indicators are localized.
+- The `AgencyApp` root uses only the existing `AgentConnection`. It **cannot mount** unless that connection has a true non-queueing `sendImmediate`; integration owner must apply the narrow patch above. The existing `send()` is never used for Agency mutations, `agent.submit`, `agent.interrupt` or explicit `terminal.close`. A refused offline mutation is not queued or retried after reconnect; a timeout is an unknown outcome requiring readback.
+- Minimal profile dialog next to the composer supports named CLI selection, user-provided executable and literal JSON argv. Only `agency.profile.configured` closes the dialog. Environment overrides are intentionally omitted rather than exposing arbitrary credential overrides.
+- Composer starts a native agent without sending the draft. The prompt remains intact until a separately acknowledged submission. When native structured history is missing, the UI opens the existing PTY and shows a small explicit fallback notice.
+- Tests executed on a local exact-source mirror: 9 passed, 0 failed, Node 22.16.0. Full `corepack pnpm typecheck`, `build`, and `check` could not run locally: Corepack could not reach `registry.npmjs.org` (`EAI_AGAIN`), and a full private repository checkout was unavailable. GitHub Actions validation is required; browser screenshots and real PTY acceptance remain unverified.
