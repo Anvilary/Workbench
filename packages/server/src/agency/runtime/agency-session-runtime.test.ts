@@ -24,7 +24,7 @@ import {
 
 class FakeTerminals extends EventEmitter {
   private readonly descriptors = new Map<TerminalId, TerminalDescriptor>();
-  readonly opens: Array<{ cwd: string; kind: string; agent?: string; agencyLaunch?: { file: string; args: readonly string[]; env: Record<string, string> } }> = [];
+  readonly opens: Array<{ cwd: string; kind?: string; agent?: string; agencyLaunch?: { file: string; args: readonly string[]; env: Record<string, string> } }> = [];
   readonly writes: string[] = [];
   readonly sizes: Array<[number, number]> = [];
   closeCount = 0;
