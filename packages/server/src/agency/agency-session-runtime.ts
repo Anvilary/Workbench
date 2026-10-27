@@ -14,6 +14,7 @@ import type {
 } from '@agent-workbench/shared';
 import type { AgentId, TerminalActivity, TerminalId } from '@agent-workbench/shared';
 import type { OpenTerminalOptions, TerminalRegistry } from '../terminal-registry.js';
+import type { LaunchSession } from '../agents/adapter.js';
 import { AgencySessionStore } from './agency-session-store.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -41,8 +42,14 @@ export interface ValidatedNativeLaunch {
   args: readonly string[];
   /** A fresh isolated environment approved by Lane B, never persisted here. */
   env: Record<string, string>;
-  /** Only the native CLI may provide an actual conversation ID. */
-  nativeSessionId?: string | null;
+  /** Lane B's original adapter.launch result, never synthesized by Lane C. */
+  session: LaunchSession;
+  /** Echo of the single preparation token, checked before spawning a PTY. */
+  launchToken: string;
+  /** Server-proposed UUID used only when the native adapter explicitly accepts it. */
+  proposedSessionId: string;
+  /** Lane B must return the same canonical cwd without relocation. */
+  cwd: string;
   /** Values actually applied to the native invocation. Unconfirmed values stay null. */
   appliedModel?: string | null;
   appliedEffort?: string | null;
@@ -53,8 +60,10 @@ export interface AgencyProfileLaunchProvider {
     profileId: CliProfileId;
     cwd: string;
     resumeNativeSessionId: string | null;
-    model: string | null;
-    effort: string | null;
+    proposedSessionId: string;
+    launchToken: string;
+    model?: string;
+    effort?: string;
   }): Promise<ValidatedNativeLaunch>;
   /** Optional future native control. Must reject if a setting cannot actually be applied. */
   applySelection?(input: {
@@ -67,8 +76,18 @@ export interface AgencyProfileLaunchProvider {
 }
 
 export interface AgencyWorkspaceSource {
-  /** Lane A's persisted canonical workspace only, never a client-supplied cwd. */
-  getWorkspace(id: WorkspaceId): Promise<AgencyWorkspace | null> | AgencyWorkspace | null;
+  /**
+   * Required integration-owner gate, shared with Lane A's guarded deletion.
+   * Under the same per-workspace lock: load the canonical row, validate it,
+   * reserve the Agency slot and durably save 'starting'. Only then release.
+   * The deletion path MUST take the identical lock, and MUST reject every
+   * historical/active Agency session reference while holding it.
+   * A missing lock is unsafe; there is deliberately no unlocked fallback.
+   */
+  withSessionReservation<T>(
+    workspaceId: WorkspaceId,
+    action: (workspace: AgencyWorkspace | null) => Promise<T>,
+  ): Promise<T>;
 }
 
 export type AgencyTerminalRegistry = Pick<
@@ -128,6 +147,10 @@ function validateLaunch(plan: ValidatedNativeLaunch): void {
       plan.file.includes('\0') || !Array.isArray(plan.args) ||
       !plan.args.every((arg) => typeof arg === 'string' && !arg.includes('\0')) ||
       typeof plan.env !== 'object' || plan.env === null || Array.isArray(plan.env) ||
+      typeof plan.cwd !== 'string' || typeof plan.launchToken !== 'string' ||
+      typeof plan.proposedSessionId !== 'string' ||
+      (plan.session?.kind !== 'discover' && (plan.session?.kind !== 'known' ||
+        typeof plan.session.sessionId !== 'string' || plan.session.sessionId.length === 0)) ||
       !Object.entries(plan.env).every(([key, value]) =>
         typeof value === 'string' && !key.includes('\0') && !value.includes('\0'))) {
     throw new AgencyRuntimeError('profile-unavailable', 'Invalid validated CLI launch specification');
@@ -213,64 +236,70 @@ export class AgencySessionRuntime extends EventEmitter {
     if (input.kind === 'agent' && (typeof input.profileId !== 'string' || input.profileId.trim() === '')) {
       throw new AgencyRuntimeError('invalid-request', 'A named CLI profile is required');
     }
-    const workspace = await this.workspaces.getWorkspace(input.workspaceId);
-    if (workspace === null || workspace.id !== input.workspaceId) {
-      throw new AgencyRuntimeError('not-found', 'Workspace does not exist');
-    }
-    if (workspace.status !== 'active') throw new AgencyRuntimeError('conflict', 'Workspace is Done');
-    if (!path.isAbsolute(workspace.cwd) || await realpath(workspace.cwd).catch(() => null) !== workspace.cwd) {
-      throw new AgencyRuntimeError('invalid-directory', 'Workspace canonical directory is unavailable');
-    }
-    if ([...this.sessions.values()].some((s) =>
-      s.workspaceId === input.workspaceId && s.kind === input.kind && ACTIVE.has(s.lifecycle))) {
-      throw new AgencyRuntimeError('conflict', 'Workspace already has an active session of this kind');
-    }
-
     const id = randomUUID() as RuntimeSessionId;
-    const now = NOW();
-    const base = {
-      id,
-      workspaceId: input.workspaceId,
-      terminalId: null,
-      lifecycle: 'starting' as const,
-      activity: 'unknown' as const,
-      createdAt: now,
-      updatedAt: now,
-      startedAt: null,
-      stoppedAt: null,
-      exitCode: null,
-    };
-    const session: AgencyRuntimeSession = input.kind === 'agent'
-      ? {
-          ...base,
-          kind: 'agent',
-          profileId: input.profileId,
-          nativeSessionId: null,
-          selectedModel: null,
-          selectedEffort: null,
-        }
-      : {
-          ...base,
-          kind: 'terminal',
-          profileId: null,
-          nativeSessionId: null,
-          selectedModel: null,
-          selectedEffort: null,
-        };
-    this.sessions.set(id, session);
-    try {
-      if (input.kind === 'agent' && input.resumeNativeSessionId !== undefined) {
-        if (input.resumeNativeSessionId.length === 0 || input.resumeNativeSessionId.length > 512) {
-          throw new AgencyRuntimeError('invalid-request', 'Invalid native resume session ID');
-        }
-        this.claimNative('profile:' + input.profileId + ':' + input.resumeNativeSessionId, id);
+    // Distinct IDs: Agency session, proposed native session, and launch correlation.
+    const proposedSessionId = randomUUID();
+    const launchToken = randomUUID();
+    const workspace = await this.workspaces.withSessionReservation(input.workspaceId, async (row) => {
+      if (row === null || row.id !== input.workspaceId) {
+        throw new AgencyRuntimeError('not-found', 'Workspace does not exist');
       }
-      await this.publish(session);
-    } catch (error) {
-      this.sessions.delete(id);
-      this.releaseNative(id);
-      throw error;
-    }
+      if (row.status !== 'active') throw new AgencyRuntimeError('conflict', 'Workspace is Done');
+      if (!path.isAbsolute(row.cwd) || await realpath(row.cwd).catch(() => null) !== row.cwd) {
+        throw new AgencyRuntimeError('invalid-directory', 'Workspace canonical directory is unavailable');
+      }
+      if ([...this.sessions.values()].some((s) =>
+        s.workspaceId === input.workspaceId && s.kind === input.kind && ACTIVE.has(s.lifecycle))) {
+        throw new AgencyRuntimeError('conflict', 'Workspace already has an active session of this kind');
+      }
+      if (input.kind === 'agent' && input.resumeNativeSessionId !== undefined &&
+          (input.resumeNativeSessionId.length === 0 || input.resumeNativeSessionId.length > 512)) {
+        throw new AgencyRuntimeError('invalid-request', 'Invalid native resume session ID');
+      }
+      const now = NOW();
+      const base = {
+        id,
+        workspaceId: input.workspaceId,
+        terminalId: null,
+        lifecycle: 'starting' as const,
+        activity: 'unknown' as const,
+        createdAt: now,
+        updatedAt: now,
+        startedAt: null,
+        stoppedAt: null,
+        exitCode: null,
+      };
+      const session: AgencyRuntimeSession = input.kind === 'agent'
+        ? {
+            ...base,
+            kind: 'agent',
+            profileId: input.profileId,
+            nativeSessionId: input.resumeNativeSessionId ?? null,
+            selectedModel: null,
+            selectedEffort: null,
+          }
+        : {
+            ...base,
+            kind: 'terminal',
+            profileId: null,
+            nativeSessionId: null,
+            selectedModel: null,
+            selectedEffort: null,
+          };
+      this.sessions.set(id, session);
+      try {
+        if (input.kind === 'agent' && input.resumeNativeSessionId !== undefined) {
+          this.claimNative('profile:' + input.profileId + ':' + input.resumeNativeSessionId, id);
+        }
+        await this.publish(session);
+      } catch (error) {
+        this.sessions.delete(id);
+        this.releaseNative(id);
+        throw error;
+      }
+      return row;
+    });
+    let observedNativeId: string | null = null;
 
     try {
       const options: OpenTerminalOptions = {
@@ -286,29 +315,66 @@ export class AgencySessionRuntime extends EventEmitter {
           profileId: input.profileId,
           cwd: workspace.cwd,
           resumeNativeSessionId: input.resumeNativeSessionId ?? null,
-          model: input.model ?? null,
-          effort: input.effort ?? null,
+          proposedSessionId,
+          launchToken,
+          ...(input.model !== undefined ? { model: input.model } : {}),
+          ...(input.effort !== undefined ? { effort: input.effort } : {}),
         });
         validateLaunch(native);
-        if (native.profileId !== input.profileId) {
-          throw new AgencyRuntimeError('profile-unavailable', 'CLI profile resolution changed account');
+        if (native.profileId !== input.profileId || native.cwd !== workspace.cwd ||
+            native.launchToken !== launchToken || native.proposedSessionId !== proposedSessionId) {
+          throw new AgencyRuntimeError('profile-unavailable', 'Profile launch changed the validated identity or token');
         }
         if ((input.model ?? null) !== (native.appliedModel ?? null) ||
             (input.effort ?? null) !== (native.appliedEffort ?? null)) {
           throw new AgencyRuntimeError('unsupported-capability', 'Native CLI did not confirm requested selection');
         }
-        const nativeId = native.nativeSessionId ?? input.resumeNativeSessionId ?? null;
-        const resolvedProvider = native.provider;
-        if (nativeId !== null) {
+        if (input.resumeNativeSessionId !== undefined &&
+            (native.session.kind !== 'known' || native.session.sessionId !== input.resumeNativeSessionId)) {
+          throw new AgencyRuntimeError('session-unavailable', 'Native resume identity was not preserved');
+        }
+        const initialNative = native.session.kind === 'known' ? native.session.sessionId : null;
+        const provider = native.provider;
+        if (initialNative !== null) {
           if (this.registry.list().some((terminal) =>
-            terminal.alive && terminal.kind === 'agent' && terminal.agent === resolvedProvider &&
-            terminal.sessionId === nativeId)) {
+            terminal.alive && terminal.kind === 'agent' && terminal.agent === provider &&
+            terminal.sessionId === initialNative)) {
             throw new AgencyRuntimeError('conflict', 'Native conversation already has a terminal controller');
           }
-          this.claimNative('provider:' + resolvedProvider + ':' + nativeId, id);
+          this.claimNative('provider:' + provider + ':' + initialNative, id);
         }
-        options.agent = providerAgent(native.provider);
-        options.agencyLaunch = { file: native.file, args: native.args, env: native.env };
+        options.agent = providerAgent(provider);
+        if (input.resumeNativeSessionId !== undefined) options.resumeSessionId = input.resumeNativeSessionId;
+        options.agencyLaunch = {
+          file: native.file,
+          args: native.args,
+          env: native.env,
+          session: native.session,
+          launchToken,
+          proposedSessionId,
+          acceptNativeSessionId: (terminalId, discovered) => {
+            const current = this.sessions.get(id);
+            if (current === undefined || !ACTIVE.has(current.lifecycle) ||
+                discovered.length === 0 || discovered.length > 512) return false;
+            if (this.registry.list().some((terminal) =>
+              terminal.terminalId !== terminalId && terminal.kind === 'agent' &&
+              terminal.agent === provider && terminal.sessionId === discovered &&
+              terminal.alive)) return false;
+            try {
+              this.claimNative('provider:' + provider + ':' + discovered, id);
+            } catch {
+              return false;
+            }
+            observedNativeId = discovered;
+            if (current.kind === 'agent') {
+              const updated = { ...current, nativeSessionId: discovered, updatedAt: NOW() };
+              this.sessions.set(id, updated);
+              void this.publish(updated).catch((error: unknown) =>
+                console.warn('[agency] failed persisting native discovery: ' + String(error)));
+            }
+            return true;
+          },
+        };
       }
       // Stop during async profile resolution must prevent spawning.
       if (this.sessions.get(id)?.lifecycle === 'stopping') {
@@ -319,6 +385,9 @@ export class AgencySessionRuntime extends EventEmitter {
       // An extremely short-lived process may exit before its open promise
       // resolves, before byTerminal exists to correlate the exit event.
       const observed = this.registry.get(terminal.terminalId) ?? terminal;
+      const persistedNative = observedNativeId ??
+        (observed.kind === 'agent' && observed.sessionId.length > 0 ? observed.sessionId : null) ??
+        (native?.session.kind === 'known' ? native.session.sessionId : null);
       const current = this.sessions.get(id);
       if (current === undefined) throw new Error('Reserved session disappeared');
       const stopping = current.lifecycle === 'stopping';
@@ -326,7 +395,7 @@ export class AgencySessionRuntime extends EventEmitter {
       const next: AgencyRuntimeSession = {
         ...current,
         terminalId: terminal.terminalId,
-        nativeSessionId: current.kind === 'agent' ? (native?.nativeSessionId ?? null) : null,
+        nativeSessionId: current.kind === 'agent' ? persistedNative : null,
         selectedModel: current.kind === 'agent' ? (native?.appliedModel ?? null) : null,
         selectedEffort: current.kind === 'agent' ? (native?.appliedEffort ?? null) : null,
         startedAt: new Date(terminal.launchedAt ?? Date.now()).toISOString(),
@@ -337,6 +406,7 @@ export class AgencySessionRuntime extends EventEmitter {
         updatedAt: NOW(),
       } as AgencyRuntimeSession;
       this.sessions.set(id, next);
+      if (!alive && !stopping) this.releaseNative(id);
       if (stopping) this.registry.close(terminal.terminalId);
       await this.publish(next);
       return this.sessions.get(id) ?? next;
