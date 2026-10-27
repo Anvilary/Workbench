@@ -394,8 +394,19 @@ export class TerminalRegistry extends EventEmitter {
 
     await this.assertDirectory(options.cwd);
     const worktree = await this.worktreeFor(kind, options.cwd);
+    const requestedNative = options.agencyLaunch?.session.kind === 'known'
+      ? options.agencyLaunch.session.sessionId : options.resumeSessionId;
+    // Registry-local synchronous gate after the final await before registration.
+    // Also covers ordinary Workbench terminals that resume the same ID.
+    if (kind === 'agent' && agent !== null && requestedNative !== undefined &&
+        [...this.terminals.values()].some((other) =>
+          other.descriptor.kind === 'agent' && other.descriptor.agent === agent &&
+          other.descriptor.sessionId === requestedNative &&
+          (other.descriptor.alive || other.launching))) {
+      throw new TerminalOpenError('spawn-failed', serverText('terminalOpenFailed'), 'Native conversation already controlled');
+    }
 
-    const resumed = kind === 'agent' && (options.resumeSessionId !== undefined || options.agencyLaunch?.session.kind === 'known' && options.resumeSessionId !== undefined);
+    const resumed = kind === 'agent' && options.resumeSessionId !== undefined;
     const terminalId = randomUUID();
     const descriptor: TerminalDescriptor = {
       terminalId,
@@ -746,6 +757,10 @@ export class TerminalRegistry extends EventEmitter {
         },
         reportSessionId: (discovered) => this.reportSessionId(terminalId, discovered),
       });
+      if (this.terminals.get(terminalId) !== entry) {
+        hook?.cancel();
+        return false;
+      }
       entry.launchHook.set(finished ? null : hook);
     }
 
