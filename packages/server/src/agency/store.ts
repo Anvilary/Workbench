@@ -6,11 +6,11 @@
  * A corrupt primary is never silently treated as an empty state.
  */
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename } from 'node:fs/promises';
+import { mkdir, readFile, realpath, rename, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type {
   AgencyErrorCode, AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId,
-} from '@agent-workbench/shared/agency-protocol';
+} from '@agent-workbench/shared';
 import { appConfigDir } from '../paths.js';
 import { writeAtomically } from '../atomic-write.js';
 
@@ -145,7 +145,7 @@ export class AgencyWorkspaceStore {
     } else {
       try {
         this.state = parseAgencySnapshot(JSON.parse(primary) as unknown);
-      } catch (cause) {
+      } catch {
         let recovered: Snapshot;
         let backup: string;
         try {
@@ -159,7 +159,6 @@ export class AgencyWorkspaceStore {
         await rename(this.filePath, quarantine);
         await writeAtomically(this.filePath, Buffer.from(JSON.stringify(recovered, null, 2) + '\n'), { mode: 0o600 });
         this.state = recovered;
-        void cause;
       }
     }
     this.initialized = true;
@@ -239,9 +238,19 @@ export class AgencyWorkspaceStore {
   async createWorkspace(projectId: ProjectId, name: string, canonicalCwd: string): Promise<AgencyWorkspace> {
     const clean = checkedName(name);
     if (!validCwd(canonicalCwd)) throw new AgencyStoreError('invalid-directory', 'Directory is not canonical and absolute');
-    return this.transact((state) => {
+    return this.transact(async (state) => {
       if (!state.projects.some((p) => p.id === projectId)) {
         throw new AgencyStoreError('not-found', 'Project not found');
+      }
+      // Guard even direct server callers against nonexistent paths and symlinks.
+      // Protected-home enforcement remains the socket picker's responsibility.
+      try {
+        if (await realpath(canonicalCwd) !== canonicalCwd ||
+            !(await stat(canonicalCwd)).isDirectory()) {
+          throw new Error('Not an existing canonical directory');
+        }
+      } catch {
+        throw new AgencyStoreError('invalid-directory', 'Directory no longer exists or is not canonical');
       }
       const now = new Date().toISOString();
       const workspace: AgencyWorkspace = {
