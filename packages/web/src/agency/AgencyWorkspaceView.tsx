@@ -9,6 +9,7 @@ import { AgencyComposer } from './AgencyComposer.js';
 import { AgencyTranscript } from './AgencyTranscript.js';
 import { activityLabel, agentSession, canLaunchAgent, currentSession, isAttention, latestSession, workspaceLayout } from './model.js';
 import type { useAgencyStore } from './useAgencyStore.js';
+import type { AgencyTransport } from './model.js';
 
 interface Props {
   workspace: AgencyWorkspace;
@@ -16,6 +17,7 @@ interface Props {
   sessions: readonly AgencyRuntimeSession[];
   connection: AgentConnection;
   request: ReturnType<typeof useAgencyStore>['request'];
+  sendImmediate: AgencyTransport['sendImmediate'];
   online: boolean;
   draft: string;
   onDraft: (value: string) => void;
@@ -29,7 +31,7 @@ function AgentTerminal({ terminalId, connection }: { terminalId: TerminalId; con
 }
 
 export function AgencyWorkspaceView({
-  workspace, profiles, sessions, connection, request, online, draft, onDraft, onDelivered, onDone,
+  workspace, profiles, sessions, connection, request, sendImmediate, online, draft, onDraft, onDelivered, onDone,
 }: Props): JSX.Element {
   const activeAgent = agentSession(currentSession(sessions, workspace.id, 'agent'));
   const activeShell = currentSession(sessions, workspace.id, 'terminal');
@@ -127,7 +129,7 @@ export function AgencyWorkspaceView({
       const timer = window.setTimeout(() =>
         finish(new Error('Delivery not confirmed. Check the CLI before resending.')), 15000);
       try {
-        const sent = connection.send({ type: 'agent.submit', terminalId, text, images: [], requestId });
+        const sent = sendImmediate({ type: 'agent.submit', terminalId, text, images: [], requestId });
         if (!sent) finish(new Error('Transport did not send immediately. Check the CLI before resending.'));
       } catch (reason) { finish(reason instanceof Error ? reason : new Error('Unable to send')); }
     });
@@ -137,7 +139,9 @@ export function AgencyWorkspaceView({
   function stop(terminalId: string | null) {
     if (!terminalId || !online) return;
     // Explicit user action only. Done, navigation and socket disconnect never call this.
-    connection.send({ type: 'terminal.close', terminalId });
+    if (!sendImmediate({ type: 'terminal.close', terminalId })) {
+      setSessionError('Stop was not sent. Reconnect and verify the process before trying again.');
+    }
   }
 
   return (
@@ -178,7 +182,7 @@ export function AgencyWorkspaceView({
               onProfile={(id) => { setProfileId(id); setChoice({ model: null, effort: null }); }} agent={agent} selectedModel={model} selectedEffort={effort}
               onSelection={selectModel} onLaunch={launchAgent} onSubmit={submitPrompt}
               onInterrupt={() => {
-                if (agentTerminalId && online) connection.send({ type: 'agent.interrupt', terminalId: agentTerminalId });
+                if (agent?.terminalId && online) sendImmediate({ type: 'agent.interrupt', terminalId: agent.terminalId });
               }} online={online} />
           </main>
         )}
