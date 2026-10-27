@@ -145,6 +145,7 @@
   "agency.ui.unableToRestore": "Unable to restore",
   "agency.ui.unableToSend": "Unable to send",
   "agency.ui.unavailableSuffix": " (indisponível)",
+  "agency.ui.unverifiedHistory": "O histórico estruturado está indisponível. Use o terminal nativo para acompanhar a saída e as permissões.",
   "agency.ui.useTheExistingWorkspaceDirectoryWithNativeShell": "Use the existing workspace directory with native shell input and output.",
   "agency.ui.useThisDirectory": "Use this directory",
   "agency.ui.workspace": "Espaço de trabalho",
