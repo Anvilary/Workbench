@@ -1,4 +1,4 @@
-NOT_STARTED
+IN_PROGRESS
 
 # Test Coverage
 
@@ -19,3 +19,5 @@ Last completed step: verified clean integration worktree, branch/remote/PR head,
 ## E2E rerun and audit (partial)
 
 25/25 numbered checks reported passed under Node 24.22.0 using frozen offline dependencies and a temporary pnpm shim, real localhost server, a headless Chrome empty-state browser and disposable homes. Check #13 uses a WebSocket test client, not an actual browser reconnect; #21 tests a mocked AgentConnection socket, not an end-to-end browser disconnect. Four empty-state document widths had no document overflow. Actual assertion quality is narrower than labels: see TEST-001. The numbered count is not a count of independent user acceptance scenarios.
+
+Screenshot script rerun passed eight distinct fixture screenshots and scripted checks, with no reported page or console errors. Script asserts page errors are empty but only logs console errors; it uses explicit waits and a one-second sleep. Coverage is partial as detailed in 04, especially real provider behavior, heavy lists/output and accessibility.
