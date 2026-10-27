@@ -101,3 +101,15 @@ loadSocket.close();
 assert.ok(bytes>10000,'fixture did not generate enough output during timed switches');
 console.log('AUDIT_OUTPUT_LOAD',JSON.stringify({duration_ms:Math.round(duration),observed_ws_output_bytes:bytes,approx_bytes_per_second:Math.round(bytes*1000/duration),switching:results.switch_sustained_output_ms}));
 ```
+
+## Preliminary idle process-group resources
+
+After five sequential process starts and 20 page navigations with one connected Chrome page and no fixture PTYs, sampled the server launcher's Linux process group six times at approximately one-second intervals. Sum of per-process RSS: 320,188 KiB (312.68 MiB) at all six observations; 3 processes, total open fd counts 73, 73, 72, 72, 72, 72. CPU ticks changed by zero across each of five nominal one-second intervals (rounded tick resolution, approximately 0% of one logical CPU); this does not imply exact zero. The group includes the Corepack/pnpm/tsx launcher chain, excludes Chrome, may omit descendants in other process groups and sums shared RSS multiple times; it is not a standalone server heap, PSS, peak or sustained memory measurement. No PTYs and only six seconds; growth, load CPU, leaks and listener counts remain unmeasured. Another run's startup/browser results varied, reinforcing single-run noise.
+
+Reproduction: copy the startup fixture in this report, add `import {execFileSync} from 'node:child_process'; import {readFileSync,readdirSync} from 'node:fs';` and insert this immediately before its `finally`. The generated disposable `/tmp/agency-audit-idle.mjs` also contains the full code while it exists.
+
+```javascript
+const sample=()=>{const lines=execFileSync('ps',['-eo','pid=,pgid='],{encoding:'utf8'}).trim().split('\n');let rss=0,ticks=0,fds=0,pids=[];for(const line of lines){const [pid,pgid]=line.trim().split(/\s+/).map(Number);if(pgid!==child.pid)continue;try{const stat=readFileSync('/proc/'+pid+'/stat','utf8').split(') ')[1].split(' ');ticks+=Number(stat[11])+Number(stat[12]);const st=readFileSync('/proc/'+pid+'/status','utf8').match(/^VmRSS:\s+(\d+)/m);rss+=st?Number(st[1]):0;fds+=readdirSync('/proc/'+pid+'/fd').length;pids.push(pid)}catch{}}return {rss_kib:rss,ticks,fds,processes:pids.length}};
+const snapshots=[sample()];for(let i=0;i<5;i++){await new Promise(r=>setTimeout(r,1000));snapshots.push(sample())};const hz=Number(execFileSync('getconf',['CLK_TCK'],{encoding:'utf8'}).trim());const cpu=snapshots.slice(1).map((x,i)=>Math.round((x.ticks-snapshots[i].ticks)*10000/hz)/100);console.log('AUDIT_IDLE_GROUP',JSON.stringify({rss_kib:snapshots.map(x=>x.rss_kib),fds:snapshots.map(x=>x.fds),processes:snapshots.map(x=>x.processes),cpu_percent_approx:cpu,interval_ms:1000}));
+
+```

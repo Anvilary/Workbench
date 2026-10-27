@@ -43,3 +43,7 @@ Fake-runtime test reproduced inactive native session ID acceptance under another
 ## Checkpoint 00g continuation
 
 Output-load trial: 20 switches, approximately 64 kB/s, p50/p95/max 56.97/66.26/68.75 ms; 1.17 s only. No optimization conclusion. Idle server process resource sampling is running at checkpoint time, record output or rerun the `/tmp/agency-audit-idle.mjs` disposable fixture if it no longer exists. Then prioritize longer multi-PTY stress and full security/architecture/coverage review. See 05 for reproducing output trial and startup; don't retest the same short scenario without extending it.
+
+## Checkpoint 00h continuation
+
+Idle server launcher process group (not browser) summed RSS 312.68 MiB, 3 processes, 72–73 fds, no CPU tick movement over five one-second intervals, no PTYs; caveats and reproducible sampler in 05. Initial Host/Origin/token and picker review in 03; security is incomplete. Next inspect remote permission policy, then perform multi-PTY resource/load and larger populated-state tests, and continue the complete architecture/security/functional/test audit. All phase boxes remain open. Latest pushed checkpoint SHA: obtain with `git rev-parse HEAD` and compare to origin.

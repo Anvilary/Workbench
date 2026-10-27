@@ -62,3 +62,7 @@ test('inactive native ID may be resumed under another profile', async () => {
  } finally {f.runtime.dispose();await rm(cwd,{recursive:true,force:true});}
 });
 ```
+
+## Authentication boundary, preliminary
+
+`security.ts:189-198,209-222,239-248` checks loopback Host, loopback Origin when present and credential on HTTP/WS authorization; absent Origin is allowed and depends on token. E2E observed HTTP bad-token 401 and foreign Origin 403. WS assertions accept generic errors (TEST-001), so independently verify actual upgrade statuses. `terminal-socket.ts:1054-1065,1073-1077` parses socket messages and invokes `remoteRefusal` before dispatch. Workspaces require socket-bound picker selection (`domain-handler.ts:130-135`) and shared reservation/deletion lock (`domain-handler.ts:152-161`). These are source observations, not a complete threat review. Existing remote-access capability, message size, rendering, file races and executable/credential boundaries need further audit.

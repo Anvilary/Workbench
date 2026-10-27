@@ -74,3 +74,8 @@ Resume: `cd /home/user/Projects/Agency-UI-audit && git status --short --branch &
 
 - 20 switches during ~64 kB/s synthetic PTY output: p50/p95/max 56.97/66.26/68.75 ms, 1.17 s total. Same-run idle comparison 60.59/68.11/74.24 ms. No measured degradation at this small workload; no bottleneck established. Repro and qualifications in 05. Unmount cleanup source examined in 04, leak counts remain untested.
 - Known findings SEC-001 P1, TEST-001 P2; historical profile reassignment remains an unverified risk. Major audit phases incomplete. Next finish idle process resource sampler already running, then sustained multi-PTY memory/fd tests and remaining security/architecture/test review. Latest SHA `git rev-parse HEAD`; no known blockers.
+
+## Checkpoint 00h — idle process-group sample and auth trace
+
+- Idle sample, connected page/no PTYs: 3 launch/server group processes, summed RSS 320,188 KiB for six one-second samples; fds 73 to 72; no CPU ticks over five intervals. This includes launchers, excludes browser, sums shared RSS and is not PSS or a stress test. Full method in 05. Began source tracing Host/Origin/token, socket validation and picker/lock; partial security notes in 03.
+- Findings unchanged: SEC-001 P1, TEST-001 P2; cross-profile resume after exit is a behavior with unverified policy/impact. All phases remain incomplete. Exact next: finish auth/remote permission review, multi-PTY resource/load and scale tests, and architecture/security/reliability coverage. Checkpoint commit `git rev-parse HEAD` after commit. No known blockers.
