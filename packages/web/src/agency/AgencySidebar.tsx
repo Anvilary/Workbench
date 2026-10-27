@@ -1,9 +1,10 @@
 import { t } from '../i18n/index.js';
+import { agencyActivityText } from './agency-labels.js';
 import { useState } from 'react';
 import type {
   AgencyProject, AgencyRuntimeSession, AgencyWorkspace, ProjectId, WorkspaceId,
 } from '@agent-workbench/shared';
-import { activeByProject, activityLabel, currentSession, isAttention, latestSession } from './model.js';
+import { activeByProject, currentSession, isAttention, latestSession } from './model.js';
 
 export interface AgencySidebarProps {
   projects: readonly AgencyProject[];
@@ -21,7 +22,7 @@ export interface AgencySidebarProps {
 
 function WorkspaceIndicator({ session }: { session: AgencyRuntimeSession | undefined }) {
   if (!session) return <span className="agency-status-dot muted" title={t('agency.ui.noSession')} />;
-  const label = activityLabel(session.activity, session.lifecycle);
+  const label = agencyActivityText(session.activity, session.lifecycle);
   const tone = isAttention(session.activity) ? 'attention' :
     session.lifecycle === 'running' && session.activity === 'working' ? 'working' :
     session.lifecycle === 'exited' || session.lifecycle === 'failed' ? 'muted' : 'idle';
