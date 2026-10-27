@@ -79,7 +79,7 @@ test('Only server-confirmed state transitions cause attention/completion notices
   const idle = { kind: 'agent', activity: 'idle', lifecycle: 'running' };
   assert.equal(transitionNotice(initial, idle), 'completed');
   const stopped = { kind: 'agent', activity: 'offline', lifecycle: 'exited' };
-  assert.equal(transitionNotice(idle, stopped), 'completed');
+  assert.equal(transitionNotice(idle, stopped), null);
   assert.equal(transitionNotice({ kind: 'terminal', activity: 'working', lifecycle: 'running' },
     { kind: 'terminal', activity: 'idle', lifecycle: 'running' }), null);
 });
