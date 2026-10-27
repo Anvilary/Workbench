@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { realpath } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type {
   AgencyAgentSession,
@@ -14,6 +14,7 @@ import type {
 } from '@agent-workbench/shared';
 import type { AgentId, TerminalActivity, TerminalId } from '@agent-workbench/shared';
 import type { OpenTerminalOptions, TerminalRegistry } from '../terminal-registry.js';
+import { isInsideProtected } from '../directory-picker.js';
 import type { LaunchSession } from '../agents/adapter.js';
 import { AgencySessionStore } from './agency-session-store.js';
 
@@ -76,6 +77,8 @@ export interface AgencyProfileLaunchProvider {
 }
 
 export interface AgencyWorkspaceSource {
+  /** The same adapter-supplied protected CLI homes used by Lane A's picker. */
+  protectedDirectories(): readonly string[];
   /**
    * Required integration-owner gate, shared with Lane A's guarded deletion.
    * Under the same per-workspace lock: load the canonical row, validate it,
@@ -245,9 +248,7 @@ export class AgencySessionRuntime extends EventEmitter {
         throw new AgencyRuntimeError('not-found', 'Workspace does not exist');
       }
       if (row.status !== 'active') throw new AgencyRuntimeError('conflict', 'Workspace is Done');
-      if (!path.isAbsolute(row.cwd) || await realpath(row.cwd).catch(() => null) !== row.cwd) {
-        throw new AgencyRuntimeError('invalid-directory', 'Workspace canonical directory is unavailable');
-      }
+      await this.assertSafeDirectory(row.cwd);
       if ([...this.sessions.values()].some((s) =>
         s.workspaceId === input.workspaceId && s.kind === input.kind && ACTIVE.has(s.lifecycle))) {
         throw new AgencyRuntimeError('conflict', 'Workspace already has an active session of this kind');
@@ -380,6 +381,9 @@ export class AgencySessionRuntime extends EventEmitter {
       if (this.sessions.get(id)?.lifecycle === 'stopping') {
         return await this.finish(id, null, 'exited');
       }
+      // A previously safe path or CLI home may have been swapped while the
+      // asynchronous named-profile launch plan was prepared.
+      await this.assertSafeDirectory(workspace.cwd);
       const terminal = await this.registry.open(options);
       this.byTerminal.set(terminal.terminalId, id);
       // An extremely short-lived process may exit before its open promise
@@ -416,6 +420,24 @@ export class AgencySessionRuntime extends EventEmitter {
         this.registry.close(current.terminalId);
       }
       return await this.fail(id, error);
+    }
+  }
+
+  private async assertSafeDirectory(cwd: string): Promise<void> {
+    const resolved = path.isAbsolute(cwd) ? await realpath(cwd).catch(() => null) : null;
+    const info = resolved === cwd ? await stat(cwd).catch(() => null) : null;
+    if (resolved !== cwd || info?.isDirectory() !== true) {
+      throw new AgencyRuntimeError('invalid-directory', 'Workspace canonical directory is unavailable');
+    }
+    const directories = this.workspaces.protectedDirectories();
+    if (!Array.isArray(directories) ||
+        directories.some((dir) => typeof dir !== 'string' || !path.isAbsolute(dir))) {
+      throw new AgencyRuntimeError('invalid-directory', 'Protected CLI directory guard unavailable');
+    }
+    const protectedCanonical = await Promise.all(directories.map(async (dir) =>
+      realpath(dir).catch(() => path.resolve(dir))));
+    if (isInsideProtected(cwd, directories) || isInsideProtected(cwd, protectedCanonical)) {
+      throw new AgencyRuntimeError('invalid-directory', 'Workspace overlaps a protected CLI directory');
     }
   }
 
