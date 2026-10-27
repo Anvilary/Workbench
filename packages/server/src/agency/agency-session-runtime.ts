@@ -34,6 +34,8 @@ export type AgencySessionCreateInput =
     };
 
 export interface ValidatedNativeLaunch {
+  /** Exact requested named profile. Cross-account fallback is forbidden. */
+  profileId: CliProfileId;
   provider: CliProvider;
   file: string;
   args: readonly string[];
@@ -279,6 +281,9 @@ export class AgencySessionRuntime extends EventEmitter {
           effort: input.effort ?? null,
         });
         validateLaunch(native);
+        if (native.profileId !== input.profileId) {
+          throw new AgencyRuntimeError('profile-unavailable', 'CLI profile resolution changed account');
+        }
         if ((input.model ?? null) !== (native.appliedModel ?? null) ||
             (input.effort ?? null) !== (native.appliedEffort ?? null)) {
           throw new AgencyRuntimeError('unsupported-capability', 'Native CLI did not confirm requested selection');
@@ -292,10 +297,13 @@ export class AgencySessionRuntime extends EventEmitter {
       }
       const terminal = await this.registry.open(options);
       this.byTerminal.set(terminal.terminalId, id);
+      // An extremely short-lived process may exit before its open promise
+      // resolves, before byTerminal exists to correlate the exit event.
+      const observed = this.registry.get(terminal.terminalId) ?? terminal;
       const current = this.sessions.get(id);
       if (current === undefined) throw new Error('Reserved session disappeared');
       const stopping = current.lifecycle === 'stopping';
-      const alive = terminal.alive && !stopping;
+      const alive = observed.alive && !stopping;
       const next: AgencyRuntimeSession = {
         ...current,
         terminalId: terminal.terminalId,
@@ -305,7 +313,7 @@ export class AgencySessionRuntime extends EventEmitter {
         startedAt: new Date(terminal.launchedAt ?? Date.now()).toISOString(),
         lifecycle: stopping ? 'stopping' : alive ? 'running' : 'exited',
         activity: alive ? activityFor(this.registry.activityOf(terminal.terminalId)) : 'offline',
-        exitCode: alive ? null : terminal.exitCode,
+        exitCode: alive ? null : observed.exitCode,
         stoppedAt: alive || stopping ? null : NOW(),
         updatedAt: NOW(),
       } as AgencyRuntimeSession;
