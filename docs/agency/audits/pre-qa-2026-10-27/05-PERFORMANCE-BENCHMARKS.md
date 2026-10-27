@@ -51,3 +51,28 @@ console.log('AUDIT_BENCHMARKS',JSON.stringify(results));
 ```
 
 Still required: cold/warm startup distributions, browser parse/render, load and large transcript, sustained PTY output/reattach/resize, CPU/memory/fd/listener growth and persistence/restart distributions.
+
+## Preliminary startup and browser navigation
+
+Five sequential server processes, same disposable HOME/config, existing production build, no provider inference; wall time from spawning a `pnpm` shim (including Corepack/pnpm/tsx launcher overhead) to URL announcement and successful HTTP 200 body fetch. The first process used an empty disposable config; four later processes reused it. The OS, executable and filesystem caches were not flushed: these are **not** true machine-cold samples. Server startup HTTP times, in order: 1824.62, 1031.38, 1063.00, 1065.97, 1050.05 ms. URL announcement: 1804.31, 1022.62, 1054.41, 1056.76, 1040.81 ms. All five returned HTTP 200. Across all five HTTP samples: p50 1063.00 ms, nearest-rank p95 and max 1824.62 ms, n=5. First empty-config startup is separated above; n=4 repeats are insufficient for tail conclusions.
+
+For the fifth server, one headless Chrome page navigated 20 times to the authenticated URL with the same browser context. Wall clock through DOM content loaded, visible `.agency-app`, and connected indicator: first 188.71 ms; combined n=20 p50 40.00 ms, p95 54.29 ms, max 188.71 ms. First navigation is the max; remaining navigations use the same browser context/cache and are not independent cold navigations. A single final Navigation Timing DOMContentLoaded was 14.3 ms; this is not parse/compile or fully interactive measurement. Different tokens are never printed or stored.
+
+Reproduce by saving this sanitized fixture in `/tmp/agency-audit-startup.mjs`, ensuring the pnpm shim exists as described in 09, then `node /tmp/agency-audit-startup.mjs`. The temporary script disposes its test config and process group; do not run against real HOME or log launch URLs.
+
+```javascript
+import {spawn} from 'node:child_process';
+import {mkdtemp, mkdir, writeFile, rm} from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import {performance} from 'node:perf_hooks';
+import {chromium} from '/home/user/Projects/Agency-UI-audit/node_modules/playwright/index.mjs';
+const repo='/home/user/Projects/Agency-UI-audit';
+const temp=await mkdtemp(path.join(os.tmpdir(),'agency-startup-audit-'));
+const home=path.join(temp,'home'); await mkdir(home); await writeFile(path.join(home,'.zshrc'),'# fixture\n');
+const env={...process.env,HOME:home,USERPROFILE:home,APPDATA:path.join(temp,'appdata'),XDG_CONFIG_HOME:path.join(temp,'config'),XDG_DATA_HOME:path.join(temp,'data'),XDG_CACHE_HOME:path.join(temp,'cache'),XDG_STATE_HOME:path.join(temp,'state'),CODEX_HOME:path.join(temp,'codex'),PI_CODING_AGENT_DIR:path.join(temp,'pi'),PI_CODING_AGENT_SESSION_DIR:path.join(temp,'pi-sessions'),AGENT_WORKBENCH_NO_OPEN:'1',AGENT_WORKBENCH_NO_RESTORE:'1',PATH:'/tmp/agency-audit-bin:'+process.env.PATH};
+let child; const stop=async()=>{if(!child)return; try{process.kill(-child.pid,'SIGTERM')}catch{} await Promise.race([new Promise(r=>child.once('exit',r)),new Promise(r=>setTimeout(r,2500))]);try{process.kill(-child.pid,'SIGKILL')}catch{} child=null};
+const launch=async()=>{const start=performance.now();child=spawn('pnpm',['--dir','packages/server','exec','tsx','src/index.ts','--prod'],{cwd:repo,env,detached:true,stdio:['ignore','pipe','pipe']});const url=await new Promise((resolve,reject)=>{let buf='';let timer=setTimeout(()=>reject(Error('startup timeout')),30000);let onData=b=>{buf+=b;const match=buf.match(/http:\/\/127\.0\.0\.1:\d+\/\?token=[\w-]+/);if(match){clearTimeout(timer);resolve(match[0]);}};child.stdout.on('data',onData);child.stderr.on('data',onData);child.once('exit',()=>reject(Error('early exit')))});const announced=performance.now();const res=await fetch(url);await res.arrayBuffer();return {url,announce:announced-start,http:performance.now()-start,status:res.status};};
+let browser;try {const starts=[];for(let i=0;i<5;i++){const x=await launch();starts.push(x);if(i<4)await stop();}browser=await chromium.launch({channel:'chrome',headless:true});const ctx=await browser.newContext({viewport:{width:1440,height:900}});const page=await ctx.newPage();let navigations=[];for(let i=0;i<20;i++){const t=performance.now();await page.goto(starts[4].url,{waitUntil:'domcontentloaded'});await page.locator('.agency-app').waitFor({state:'visible'});await page.locator('.agency-connection-state.connected').waitFor({state:'visible'});navigations.push(performance.now()-t);}const navTiming=await page.evaluate(()=>{const nav=performance.getEntriesByType('navigation')[0];return {domContentLoaded:nav.domContentLoadedEventEnd,duration:nav.duration};});const sort=[...navigations].sort((a,b)=>a-b),r=x=>Math.round(x*100)/100;console.log(JSON.stringify({server:starts.map(x=>({announce_ms:r(x.announce),http_ms:r(x.http),status:x.status})),browser_first_ms:r(navigations[0]),browser_all:{n:20,p50:r((sort[9]+sort[10])/2),p95:r(sort[18]),max:r(sort[19])},navigation_timing_ms:navTiming}));}finally{if(browser)await browser.close();await stop();await rm(temp,{recursive:true,force:true});}
+
+```

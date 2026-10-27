@@ -41,3 +41,7 @@ try {
 ```
 
 Additional source trace: `conversation-hub.ts:565-577,806-825,840` rebinds the terminal's follower to the registry native ID; that adapter uses the server-home reader. `AgencyWorkspaceView.tsx:55` subscribes by the terminal. This establishes a credible source path from misattribution to wrong-home content, but actual rendered cross-profile disclosure has not been tested. Sanitized wrapper inspection: each of the three named entrypoints includes an `export CODEX_HOME=...` assignment. Their actual values and any real conversations were not examined.
+
+## Resume ownership hypothesis (not yet a finding)
+
+`agency-session-runtime.ts:256-293,315-345,585-597` accepts a client-supplied native resume ID, verifies identity is preserved by the adapter and enforces active-controller exclusivity, but the inspected path does not compare the requested profile to prior persisted session ownership. `runtime/agency-session-runtime.test.ts:545-570` checks simultaneous different-profile controllers only; it does not check a later resume after the first controller exits. This could permit unintended profile reassignment, depending on whether cross-profile native resume is an intended supported behavior and what the original CLI permits. Reproduce safely with fake registry/provider and clarify contract; do not claim actual cross-account access.
