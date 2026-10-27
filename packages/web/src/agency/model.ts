@@ -67,7 +67,6 @@ export function transitionNotice(
   next: Pick<AgencyRuntimeSession, 'kind' | 'lifecycle' | 'activity'>,
 ): AgencyNoticeKind | null {
   if (!previous || next.kind !== 'agent') return null;
-  if (previous.lifecycle !== 'exited' && next.lifecycle === 'exited') return 'completed';
   if (previous.activity !== next.activity &&
       (next.activity === 'awaiting-user' || next.activity === 'awaiting-permission')) return 'attention';
   if (previous.activity === 'working' && next.activity === 'idle') return 'completed';
