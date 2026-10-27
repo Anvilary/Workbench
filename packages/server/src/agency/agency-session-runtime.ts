@@ -73,7 +73,7 @@ export interface AgencyWorkspaceSource {
 
 export type AgencyTerminalRegistry = Pick<
   TerminalRegistry,
-  'open' | 'get' | 'has' | 'close' | 'activityOf' | 'on' | 'off'
+  'open' | 'get' | 'list' | 'has' | 'close' | 'activityOf' | 'on' | 'off'
 >;
 
 export interface AgencyRuntimeOptions {
@@ -145,6 +145,8 @@ export class AgencySessionRuntime extends EventEmitter {
   private readonly workspaces: AgencyWorkspaceSource;
   private readonly profiles: AgencyProfileLaunchProvider;
   private readonly byTerminal = new Map<TerminalId, RuntimeSessionId>();
+  /** No two live Agency PTYs may control one provider-native conversation. */
+  private readonly nativeClaims = new Map<string, RuntimeSessionId>();
   private initialized = false;
 
   constructor(options: AgencyRuntimeOptions) {
@@ -257,9 +259,16 @@ export class AgencySessionRuntime extends EventEmitter {
         };
     this.sessions.set(id, session);
     try {
+      if (input.kind === 'agent' && input.resumeNativeSessionId !== undefined) {
+        if (input.resumeNativeSessionId.length === 0 || input.resumeNativeSessionId.length > 512) {
+          throw new AgencyRuntimeError('invalid-request', 'Invalid native resume session ID');
+        }
+        this.claimNative('profile:' + input.profileId + ':' + input.resumeNativeSessionId, id);
+      }
       await this.publish(session);
     } catch (error) {
       this.sessions.delete(id);
+      this.releaseNative(id);
       throw error;
     }
 
@@ -287,6 +296,15 @@ export class AgencySessionRuntime extends EventEmitter {
         if ((input.model ?? null) !== (native.appliedModel ?? null) ||
             (input.effort ?? null) !== (native.appliedEffort ?? null)) {
           throw new AgencyRuntimeError('unsupported-capability', 'Native CLI did not confirm requested selection');
+        }
+        const nativeId = native.nativeSessionId ?? input.resumeNativeSessionId ?? null;
+        if (nativeId !== null) {
+          if (this.registry.list().some((terminal) =>
+            terminal.alive && terminal.kind === 'agent' && terminal.agent === native.provider &&
+            terminal.sessionId === nativeId)) {
+            throw new AgencyRuntimeError('conflict', 'Native conversation already has a terminal controller');
+          }
+          this.claimNative('provider:' + native.provider + ':' + nativeId, id);
         }
         options.agent = providerAgent(native.provider);
         options.agencyLaunch = { file: native.file, args: native.args, env: native.env };
@@ -430,6 +448,18 @@ export class AgencySessionRuntime extends EventEmitter {
     const id = this.byTerminal.get(terminalId);
     const current = id === undefined ? undefined : this.sessions.get(id);
     if (current?.kind !== 'agent' || nativeSessionId.length === 0) return;
+    const provider = this.registry.get(terminalId)?.agent;
+    if (provider !== null && provider !== undefined) {
+      try {
+        this.claimNative('provider:' + provider + ':' + nativeSessionId, current.id);
+      } catch {
+        // The CLI just reported an ID another active PTY controls. Do not
+        // allow two controllers to continue on that native conversation.
+        this.registry.close(terminalId);
+        void this.finish(current.id, null, 'failed').catch(() => undefined);
+        return;
+      }
+    }
     const next = { ...current, nativeSessionId, updatedAt: NOW() };
     this.sessions.set(current.id, next);
     void this.publish(next).catch((error: unknown) => {
@@ -454,8 +484,24 @@ export class AgencySessionRuntime extends EventEmitter {
       updatedAt: NOW(),
     };
     this.sessions.set(id, next);
+    this.releaseNative(id);
     await this.publish(next);
     return next;
+  }
+
+  private claimNative(key: string, id: RuntimeSessionId): void {
+    const existing = this.nativeClaims.get(key);
+    if (existing !== undefined && existing !== id &&
+        ACTIVE.has(this.sessions.get(existing)?.lifecycle ?? 'exited')) {
+      throw new AgencyRuntimeError('conflict', 'Native conversation already has an active controller');
+    }
+    this.nativeClaims.set(key, id);
+  }
+
+  private releaseNative(id: RuntimeSessionId): void {
+    for (const [key, owner] of this.nativeClaims) {
+      if (owner === id) this.nativeClaims.delete(key);
+    }
   }
 
   private async fail(id: RuntimeSessionId, reason: unknown): Promise<never> {
