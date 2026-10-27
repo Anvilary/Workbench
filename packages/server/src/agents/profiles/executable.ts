@@ -43,7 +43,10 @@ export async function resolveConfiguredExecutable(
       const info = await stat(resolved);
       if (!info.isFile()) continue;
       await access(resolved, constants.X_OK);
-      return { status: 'available', file: resolved };
+      // Validate the resolved target, but execute the selected entry point.
+      // Symlink basename/$0 may be how an original CLI wrapper selects its
+      // native account. Replacing this path with realpath would change it.
+      return { status: 'available', file: candidate };
     } catch {
       // The explicitly configured executable is absent or not accessible.
     }
