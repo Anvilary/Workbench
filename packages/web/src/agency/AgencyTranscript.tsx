@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import { useEffect, useMemo, useRef } from 'react';
 import type { ConversationEvent, ConversationToolResultPart } from '@agent-workbench/shared';
 import { Markdown } from '../Markdown.js';
@@ -26,19 +27,19 @@ export function AgencyTranscript({ events, onOpenCli }: {
   ));
 
   return (
-    <div className="agency-transcript" role="log" aria-label="Agent conversation" aria-live="off">
+    <div className="agency-transcript" role="log" aria-label={t('agency.ui.agentConversation')} aria-live="off">
       <div className="agency-transcript-inner">
         {visibleEvents.length === 0 && (
           <div className="agency-thread-empty">
             <div className="agency-thread-symbol">◇</div>
-            <h2>Ready when you are.</h2>
-            <p>Start a native CLI profile and use the composer. The terminal remains available for approvals and interactive prompts.</p>
+            <h2>{t('agency.ui.readyWhenYouAre')}</h2>
+            <p>{t('agency.ui.startANativeCLIProfileAndUseThe')}</p>
           </div>
         )}
         {visibleEvents.map((event) => (
           <article key={event.eventId} className={'agency-turn agency-turn-' + event.role}>
-            <div className="agency-turn-meta">{event.role === 'user' ? 'You' :
-              event.role === 'assistant' ? 'Assistant' : 'CLI'} <time>{shortTime(event.at)}</time></div>
+            <div className="agency-turn-meta">{event.role === 'user' ? t('agency.ui.you') :
+              event.role === 'assistant' ? t('agency.ui.assistant') : 'CLI'} <time>{shortTime(event.at)}</time></div>
             {event.parts.map((part, index) => {
               if (part.kind === 'tool-result' || part.kind === 'thinking') return null;
               if (part.kind === 'text') {
@@ -50,7 +51,7 @@ export function AgencyTranscript({ events, onOpenCli }: {
                 const result = results.get(part.toolUseId);
                 return <details key={index} className="agency-command-output">
                   <summary><span aria-hidden="true">⌘</span> {part.name}
-                    <span className="agency-command-summary">{result ? result.isError ? 'Error' : 'Output' : 'Running / unknown'}</span>
+                    <span className="agency-command-summary">{result ? result.isError ? t('agency.ui.error') : t('agency.ui.output') : t('agency.ui.runningUnknown')}</span>
                   </summary>
                   <pre>{part.input}</pre>
                   {result && <pre className={result.isError ? 'agency-command-error' : ''}>{result.text}
@@ -58,12 +59,12 @@ export function AgencyTranscript({ events, onOpenCli }: {
                 </details>;
               }
               if (part.kind === 'question') return <div key={index} className="agency-question">
-                <strong>Action needed in the native CLI</strong>
+                <strong>{t('agency.ui.actionNeededInTheNativeCLI')}</strong>
                 {part.questions.map((question, i) => <p key={i}>{question.question}</p>)}
-                <button type="button" className="agency-text-button" onClick={onOpenCli}>Open interactive CLI</button>
+                <button type="button" className="agency-text-button" onClick={onOpenCli}>{t('agency.ui.openInteractiveCLI')}</button>
               </div>;
-              if (part.kind === 'image') return <p key={index} className="agency-muted">Image attachment (view in native CLI)</p>;
-              if (part.kind === 'notice') return <p key={index} className="agency-muted">CLI notice (open terminal for details)</p>;
+              if (part.kind === 'image') return <p key={index} className="agency-muted">{t('agency.ui.imageAttachmentViewInNativeCLI')}</p>;
+              if (part.kind === 'notice') return <p key={index} className="agency-muted">{t('agency.ui.cLINoticeOpenTerminalForDetails')}</p>;
               return null;
             })}
           </article>
