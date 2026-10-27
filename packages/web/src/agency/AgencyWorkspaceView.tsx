@@ -174,7 +174,7 @@ export function AgencyWorkspaceView({
                 </button>
               )}
               {!hasShell && <button type="button" className="agency-text-button" disabled={!online || shellStarting}
-                onClick={() => void launchShell()}>{shellStarting ? t('agency.ui.startingShell') : '+ Shell'}</button>}
+                onClick={() => void launchShell()}>{shellStarting ? t('agency.ui.startingShell') : t('agency.ui.addShell')}</button>}
               {agent?.terminalId && <button className="agency-text-button agency-text-danger" type="button"
                 onClick={() => stop(agent.terminalId)}>{t('agency.ui.stopAgent')}</button>}
             </div>
@@ -209,7 +209,7 @@ export function AgencyWorkspaceView({
                 <p>{t('agency.ui.independentTerminal')}</p>
                 <span>{t('agency.ui.useTheExistingWorkspaceDirectoryWithNativeShell')}</span>
                 <button type="button" className="agency-secondary-button" disabled={!online || shellStarting}
-                  onClick={() => void launchShell()}>{shellStarting ? 'Starting…' : 'Open shell'}</button>
+                  onClick={() => void launchShell()}>{shellStarting ? t('agency.ui.startingInProgress') : t('agency.ui.openShell')}</button>
               </div>
             )}
           </aside>
