@@ -54,7 +54,7 @@ export function AgencyApp({ connection, agencyTransport }: {
 
   useEffect(() => {
     if (!loaded || showingDone) return;
-    const active = data.workspaces.filter((ws) => ws.status === t('agency.ui.active'));
+    const active = data.workspaces.filter((ws) => ws.status === 'active');
     if (selectedId && active.some((ws) => ws.id === selectedId)) return;
     setSelectedId(active[0]?.id ?? null);
   }, [loaded, showingDone, data.workspaces, selectedId]);
@@ -125,7 +125,7 @@ export function AgencyApp({ connection, agencyTransport }: {
       <div className="agency-main">
         <div className="agency-topbar">
           <button className="agency-icon-button" onClick={() => setSidebarOpen(!sidebarOpen)}
-            type="button" aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'} aria-expanded={sidebarOpen}>☰</button>
+            type="button" aria-label={sidebarOpen ? t('agency.ui.collapseSidebar') : t('agency.ui.expandSidebar')} aria-expanded={sidebarOpen}>☰</button>
           <span className="agency-topbar-title">{t('agency.ui.agencyUI')}</span>
           <span className="agency-muted agency-topbar-count">{t('agency.ui.activeCount', { count: activeCount })}</span>
           <span className="agency-flex-spacer" />
