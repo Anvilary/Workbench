@@ -5,7 +5,7 @@ import { AgencySidebar, AgencyDoneView } from './AgencySidebar.js';
 import { AgencyWorkspaceCreator, AgencyProjectCreator } from './AgencyWorkspaceCreator.js';
 import { AgencyWorkspaceView } from './AgencyWorkspaceView.js';
 import { useAgencyStore } from './useAgencyStore.js';
-import type { AgencyTransport } from './model.js';
+import { acknowledgeWorkspaceDraft, putWorkspaceDraft, type AgencyTransport } from './model.js';
 import './agency.css';
 
 const DRAFT_KEY = 'agency-ui.workspace-drafts.v1';
@@ -73,11 +73,11 @@ export function AgencyApp({ connection, agencyTransport }: {
   const activeCount = data.workspaces.filter((ws) => ws.status === 'active').length;
 
   function updateDraft(workspaceId: string, value: string) {
-    setDrafts((prev) => ({ ...prev, [workspaceId]: value }));
+    setDrafts((prev) => putWorkspaceDraft(prev, workspaceId as WorkspaceId, value));
   }
 
   function clearDelivered(workspaceId: string, original: string) {
-    setDrafts((prev) => prev[workspaceId] === original ? { ...prev, [workspaceId]: '' } : prev);
+    setDrafts((prev) => acknowledgeWorkspaceDraft(prev, workspaceId as WorkspaceId, original));
   }
 
   function openCreator(project?: ProjectId) {
