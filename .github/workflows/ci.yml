@@ -34,6 +34,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - name: Agency Lane C focused runtime tests
+        if: runner.os == 'Linux'
+        working-directory: packages/server
+        run: corepack pnpm exec tsx --test src/agency/runtime/agency-session-runtime.test.ts
       # The checks were written on Windows, the primary platform: several
       # fixtures force `win32` while using real temp folders, so on Linux they
       # fail for reasons that aren't bugs in the app. Porting them is welcome.
