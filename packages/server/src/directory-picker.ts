@@ -268,12 +268,15 @@ export class DirectoryPickers {
     }
 
     const parent = await this.selectedDirectory(pickerId);
-    const target = path.join(parent, clean);
+    // Preserve the original picker spelling for existing consumers, especially
+    // VaultService which compares against the configured CLI home paths.
+    const target = lexicalTarget;
+    const canonicalTarget = path.join(parent, clean);
     const protectedReal = await Promise.all(
       this.protectedDirs.map(async (dir) => realpath(dir).catch(() => path.resolve(dir))),
     );
     if (isInsideProtected(target, this.protectedDirs) ||
-        isInsideProtected(target, protectedReal)) {
+        isInsideProtected(canonicalTarget, protectedReal)) {
       throw new DirectoryPickerError(serverText('pickerNoProjectsHere'));
     }
 
@@ -296,7 +299,9 @@ export class DirectoryPickers {
     const previous = picker.current;
     picker.current = target;
     try {
-      picker.current = await this.selectedDirectory(picker.id);
+      // Validate the physical directory without rewriting the picker path.
+      // Vault and other existing consumers rely on its original spelling.
+      await this.selectedDirectory(picker.id);
       return await this.listing(picker);
     } catch (error) {
       picker.current = previous;
