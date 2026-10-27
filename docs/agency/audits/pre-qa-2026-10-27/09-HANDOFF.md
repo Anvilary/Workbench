@@ -5,8 +5,8 @@ IN_PROGRESS
 Audited source: `90a74a4fb12364e888e78cd72927f24898ca0950`  
 Audit branch: `audit/agency-ui-pre-qa-20261027`  
 Date: 2026-10-27 (UTC); environment: Ubuntu/Linux x86_64, kernel 7.0.0-38-generic; Node v24.22.0; npm 11.8.0; git 2.53.0; gh 2.46.0.  
-Limitations: audit initialized; no implementation, tests, browser behavior, or security properties have yet been verified.  
-Last completed step: verified clean integration worktree, branch/remote/PR head, created separate audit worktree.
+Limitations: major audit phases remain incomplete; conclusions are limited to the evidence documented below and in 00-STATUS.md.  
+Last completed step: initialized and pushed audit checkpoints; most recent completed investigation is FUNC-001 browser reproduction (checkpoint 00j).
 
 Mission: independently audit Agency-UI before user QA, without changing implementation, using disposable fixtures and no paid inference or credentials. Repo: `https://github.com/user/My-Amazing-Workspace`; PR #5 remains open and must not be modified. Audit branch/worktree: `audit/agency-ui-pre-qa-20261027`, `/home/user/Projects/Agency-UI-audit`. Source SHA is above. All ten report files were initialized; deeper phases are not started. Tests, metrics, findings and recommendations: none yet. No blockers identified yet.
 
@@ -80,3 +80,7 @@ New confirmed P2 FUNC-001: a controlled 500 ms listing delay and 8 browser picke
 **Ready-to-paste resume prompt (complete):**
 
 > Resume the independent Agency-UI pre-QA audit of PR #5 from branch `audit/agency-ui-pre-qa-20261027`. Fetch that branch; use a separate worktree; verify pinned source ancestor `90a74a4fb12364e888e78cd72927f24898ca0950`; read all reports in `docs/agency/audits/pre-qa-2026-10-27/`, especially the self-contained packet in 09 and checklist in 00. The audit is incomplete. Preserve SEC-001, FUNC-001 and TEST-001, existing evidence, uncertainty and metrics; start with the first incomplete tasks in 09 and do not repeat completed proofs without extending them. Use real browser and safe temporary fixtures, no provider inference, private histories or credentials. Only change report files; never modify app code, integration/main/dev/source branches, or PR #5. Update status/findings/handoff and commit/push after each substantial step. Deliver evidence-based recommendations and explicit readiness only when supported.
+
+## Checkpoint 00l continuation
+
+Report metadata and findings categories reconciled. SEC-001 synthetic demonstration registers a pending terminal and does not launch a wrapper; it is component-level. First next action remains synthetic end-to-end account isolation, followed by the rest of the self-contained packet. All deeper phases remain incomplete. Find current checkpoint with `git rev-parse HEAD` and compare to origin.

@@ -5,8 +5,8 @@ IN_PROGRESS
 Audited source: `90a74a4fb12364e888e78cd72927f24898ca0950`  
 Audit branch: `audit/agency-ui-pre-qa-20261027`  
 Date: 2026-10-27 (UTC); environment: Ubuntu/Linux x86_64, kernel 7.0.0-38-generic; Node v24.22.0; npm 11.8.0; git 2.53.0; gh 2.46.0.  
-Limitations: audit initialized; no implementation, tests, browser behavior, or security properties have yet been verified.  
-Last completed step: verified clean integration worktree, branch/remote/PR head, created separate audit worktree.
+Limitations: major audit phases remain incomplete; conclusions are limited to the evidence documented below and in 00-STATUS.md.  
+Last completed step: initialized and pushed audit checkpoints; most recent completed investigation is FUNC-001 browser reproduction (checkpoint 00j).
 
 ## Checkpoint 00 — initialization
 
@@ -20,7 +20,7 @@ Last completed step: verified clean integration worktree, branch/remote/PR head,
 
 ## Checklist
 
-- [x] Phase 0: inspect state and initialize isolated reports (push to verify)
+- [x] Phase 0: inspect state and initialize isolated reports; checkpoint push verified
 - [ ] Phase 1: architecture and lifecycle
 - [ ] Phase 2: functional and reliability
 - [ ] Phase 3: security and account isolation
@@ -95,3 +95,7 @@ Resume: `cd /home/user/Projects/Agency-UI-audit && git status --short --branch &
 
 - Updated 08 with provisional A/B/C recommendations, 06 with focused coverage gaps and 09 with self-contained mission, evidence, metrics and a ready-to-paste resume prompt. Phase 0 complete and all major phases 1–8 remain incomplete. SEC-001 P1, FUNC-001 P2, TEST-001 P2 established. No P0 established. No performance bottleneck yet proven.
 - Parent checkpoint before this commit: `6f67abb2c4ccf9fca59b6aa830e833e19af27d3e`; resolve current checkpoint with `git rev-parse HEAD` because a commit cannot encode its own hash. Next: follow exact next actions in 09, starting synthetic end-to-end account isolation and remaining architecture/security. Check origin equality. No blockers known.
+
+## Checkpoint 00l — report consistency
+
+- Corrected stale initialization metadata in all reports and grouped established findings under their proper categories. Clarified SEC-001 synthetic reproduction did not launch a wrapper. No new evidence or phase completions. Source SHA unchanged. Resume at 09 self-contained packet, beginning with end-to-end synthetic account-isolation and architecture/security review. Parent checkpoint `cba799d`; latest SHA is `git rev-parse HEAD` after commit. Push and verify.
