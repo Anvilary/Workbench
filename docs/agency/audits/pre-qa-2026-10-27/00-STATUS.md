@@ -69,3 +69,8 @@ Resume: `cd /home/user/Projects/Agency-UI-audit && git status --short --branch &
 - Reproduced using a fake registry/provider: after a `codex-0` controller exits, the same native ID is accepted under `codex-3`; previous runtime tests cover only simultaneous exclusivity. No actual CLI/history access. Expected historical profile ownership is not explicit in foundation contract, so this remains an unverified risk, not a confirmed defect. Fixture and reproduction in 03.
 - Known confirmed SEC-001 P1 and TEST-001 P2 unchanged. Startup and warm UI measurements are in 05; sustained output/resource benchmarks, populated scale, source security/architecture review and phase completions remain outstanding.
 - Exact next: benchmark UI switching during sustained disposable PTY output and process resources; then complete review of security boundaries and lifecycle. See 00 checklist and 09. Latest SHA `git rev-parse HEAD` after commit; no known blockers.
+
+## Checkpoint 00g — short output-load browser trial
+
+- 20 switches during ~64 kB/s synthetic PTY output: p50/p95/max 56.97/66.26/68.75 ms, 1.17 s total. Same-run idle comparison 60.59/68.11/74.24 ms. No measured degradation at this small workload; no bottleneck established. Repro and qualifications in 05. Unmount cleanup source examined in 04, leak counts remain untested.
+- Known findings SEC-001 P1, TEST-001 P2; historical profile reassignment remains an unverified risk. Major audit phases incomplete. Next finish idle process resource sampler already running, then sustained multi-PTY memory/fd tests and remaining security/architecture/test review. Latest SHA `git rev-parse HEAD`; no known blockers.

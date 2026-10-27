@@ -76,3 +76,28 @@ const launch=async()=>{const start=performance.now();child=spawn('pnpm',['--dir'
 let browser;try {const starts=[];for(let i=0;i<5;i++){const x=await launch();starts.push(x);if(i<4)await stop();}browser=await chromium.launch({channel:'chrome',headless:true});const ctx=await browser.newContext({viewport:{width:1440,height:900}});const page=await ctx.newPage();let navigations=[];for(let i=0;i<20;i++){const t=performance.now();await page.goto(starts[4].url,{waitUntil:'domcontentloaded'});await page.locator('.agency-app').waitFor({state:'visible'});await page.locator('.agency-connection-state.connected').waitFor({state:'visible'});navigations.push(performance.now()-t);}const navTiming=await page.evaluate(()=>{const nav=performance.getEntriesByType('navigation')[0];return {domContentLoaded:nav.domContentLoadedEventEnd,duration:nav.duration};});const sort=[...navigations].sort((a,b)=>a-b),r=x=>Math.round(x*100)/100;console.log(JSON.stringify({server:starts.map(x=>({announce_ms:r(x.announce),http_ms:r(x.http),status:x.status})),browser_first_ms:r(navigations[0]),browser_all:{n:20,p50:r((sort[9]+sort[10])/2),p95:r(sort[18]),max:r(sort[19])},navigation_timing_ms:navTiming}));}finally{if(browser)await browser.close();await stop();await rm(temp,{recursive:true,force:true});}
 
 ```
+
+## Browser switches during synthetic PTY output
+
+Same Chrome/fixture machine and 1440px viewport as warm interaction tests. A disposable shell in the combined workspace generated 260-character lines at a programmed 4 ms interval. A separate attached WebSocket observed 74,932 output bytes during the 1,169 ms timed switching period (~64,121 bytes/s); the browser alternated between the combined workspace and agent-only workspace. Twenty Playwright switch operations: p50 56.97 ms, p95 66.26 ms, max 68.75 ms. The same run's idle-PTY p50/p95/max was 60.59/68.11/74.24 ms. This short, single workload suggests no demonstrated slowdown at this rate; it does not establish sustained behavior, paint latency, CPU, throughput ceilings, large transcripts or leaks. The extra socket receives the output even while the browser view is detached. Test ends the synthetic generator with Ctrl+C and tears down the server process group.
+
+Reproduction: apply this insertion before `await browser.close()` in the disposable benchmark copy described above. The complete copy currently exists at `/tmp/agency-audit-output-bench.mjs`; it may be ephemeral.
+
+```javascript
+const loadSocket = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${token}`, {headers:{Origin:`http://127.0.0.1:${port}`}});
+await new Promise((resolve,reject)=>{loadSocket.once('open',resolve);loadSocket.once('error',reject)});
+let received=0;
+loadSocket.on('message',raw=>{const msg=JSON.parse(raw.toString());if(msg.type==='terminal.output' && msg.terminalId===combinedShell.session.terminalId)received+=Buffer.byteLength(msg.data);});
+loadSocket.send(JSON.stringify({type:'terminal.attach',terminalId:combinedShell.session.terminalId,cols:80,rows:24}));
+await selectWorkspace('Combined Workspace');
+const command = `python3 -u -c 'import sys,time; [(sys.stdout.write("LOAD"+"x"*256+"\\n"),sys.stdout.flush(),time.sleep(0.004)) for _ in range(2500)]'\n`;
+loadSocket.send(JSON.stringify({type:'input',terminalId:combinedShell.session.terminalId,data:command}));
+await new Promise(r=>setTimeout(r,500));
+const beginBytes=received, loadStart=performance.now();
+await bench('switch_sustained_output_ms',20,async i=>selectWorkspace(i%2?'Combined Workspace':'Agent Only'));
+const duration=performance.now()-loadStart, bytes=received-beginBytes;
+loadSocket.send(JSON.stringify({type:'input',terminalId:combinedShell.session.terminalId,data:'\x03'}));
+loadSocket.close();
+assert.ok(bytes>10000,'fixture did not generate enough output during timed switches');
+console.log('AUDIT_OUTPUT_LOAD',JSON.stringify({duration_ms:Math.round(duration),observed_ws_output_bytes:bytes,approx_bytes_per_second:Math.round(bytes*1000/duration),switching:results.switch_sustained_output_ms}));
+```

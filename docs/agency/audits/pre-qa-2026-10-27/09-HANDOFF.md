@@ -39,3 +39,7 @@ Preliminary process startup and navigation results in 05: first empty-config HTT
 ## Checkpoint 00f continuation
 
 Fake-runtime test reproduced inactive native session ID acceptance under another profile. This is a verified behavior but an unverified defect/security impact until historical ownership policy and real CLI behavior are established; see 03. Do not repeat the fake test without extending it. Next measure sustained output and server resources, then finish architecture, security and remaining browser scale scenarios. SEC-001 and TEST-001 remain the two established findings. All phase checkboxes remain open.
+
+## Checkpoint 00g continuation
+
+Output-load trial: 20 switches, approximately 64 kB/s, p50/p95/max 56.97/66.26/68.75 ms; 1.17 s only. No optimization conclusion. Idle server process resource sampling is running at checkpoint time, record output or rerun the `/tmp/agency-audit-idle.mjs` disposable fixture if it no longer exists. Then prioritize longer multi-PTY stress and full security/architecture/coverage review. See 05 for reproducing output trial and startup; don't retest the same short scenario without extending it.
