@@ -298,13 +298,14 @@ export class AgencySessionRuntime extends EventEmitter {
           throw new AgencyRuntimeError('unsupported-capability', 'Native CLI did not confirm requested selection');
         }
         const nativeId = native.nativeSessionId ?? input.resumeNativeSessionId ?? null;
+        const resolvedProvider = native.provider;
         if (nativeId !== null) {
           if (this.registry.list().some((terminal) =>
-            terminal.alive && terminal.kind === 'agent' && terminal.agent === native.provider &&
+            terminal.alive && terminal.kind === 'agent' && terminal.agent === resolvedProvider &&
             terminal.sessionId === nativeId)) {
             throw new AgencyRuntimeError('conflict', 'Native conversation already has a terminal controller');
           }
-          this.claimNative('provider:' + native.provider + ':' + nativeId, id);
+          this.claimNative('provider:' + resolvedProvider + ':' + nativeId, id);
         }
         options.agent = providerAgent(native.provider);
         options.agencyLaunch = { file: native.file, args: native.args, env: native.env };
