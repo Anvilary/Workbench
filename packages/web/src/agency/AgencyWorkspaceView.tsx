@@ -1,4 +1,5 @@
 import { t } from '../i18n/index.js';
+import { agencyActivityText } from './agency-labels.js';
 import { useMemo, useState } from 'react';
 import type {
   AgencyCliProfile, AgencyRuntimeSession, AgencyWorkspace, CliProfileId, TerminalId,
@@ -8,7 +9,7 @@ import { TerminalView } from '../TerminalView.js';
 import { useConversation } from '../useConversation.js';
 import { AgencyComposer } from './AgencyComposer.js';
 import { AgencyTranscript } from './AgencyTranscript.js';
-import { activityLabel, agentSession, canLaunchAgent, currentSession, isAttention, latestSession, workspaceLayout } from './model.js';
+import { agentSession, canLaunchAgent, currentSession, isAttention, latestSession, workspaceLayout } from './model.js';
 import type { useAgencyStore } from './useAgencyStore.js';
 import type { AgencyTransport } from './model.js';
 
@@ -61,8 +62,8 @@ export function AgencyWorkspaceView({
   const nativeView = !!agentTerminalId && (showNative || nativeFallback);
 
   const workspaceStatus = useMemo(() => {
-    if (agent) return activityLabel(agent.activity, agent.lifecycle);
-    if (activeShell) return activityLabel(activeShell.activity, activeShell.lifecycle);
+    if (agent) return agencyActivityText(agent.activity, agent.lifecycle);
+    if (activeShell) return agencyActivityText(activeShell.activity, activeShell.lifecycle);
     return t('agency.ui.ready');
   }, [agent, activeShell]);
 
@@ -164,8 +165,8 @@ export function AgencyWorkspaceView({
         {(hasAgent || !hasShell || addingAgent) && (
           <main className="agency-agent-pane">
             <div className="agency-pane-bar">
-              <span className="agency-pane-label">{profile?.label ?? 'Agent'}</span>
-              {agent && <span className="agency-muted agency-pane-status">{activityLabel(agent.activity, agent.lifecycle)}</span>}
+              <span className="agency-pane-label">{profile?.label ?? t('agency.ui.agentLabel')}</span>
+              {agent && <span className="agency-muted agency-pane-status">{agencyActivityText(agent.activity, agent.lifecycle)}</span>}
               <span className="agency-flex-spacer" />
               {agentTerminalId && (
                 <button type="button" className={'agency-text-button' + (showNative ? ' selected' : '')}
