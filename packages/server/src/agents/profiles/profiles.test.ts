@@ -235,3 +235,45 @@ test('disabled, invalid native ID and unavailable profiles cannot launch', async
     }));
   } finally { await f.cleanup(); }
 });
+
+test('Antigravity native resume retains --conversation and literal profile arguments', async () => {
+  const f = await fixture();
+  try {
+    await f.store.configure(asId('agy-5'), {
+      executable: f.binary, args: ['--flag', 'two literal words'],
+    });
+    const launch = await buildAgencyProfileLaunch(f.store, nativeRegistry(), {
+      profileId: asId('agy-5'), cwd: f.root, proposedSessionId: UUID1,
+      launchToken: UUID2, resumeNativeSessionId: UUID3,
+    });
+    assert.deepEqual(launch.args.slice(0, 2), ['--flag', 'two literal words']);
+    assert.deepEqual(launch.args.slice(-2), ['--conversation', UUID3]);
+    assert.deepEqual(launch.session, { kind: 'known', sessionId: UUID3 });
+  } finally { await f.cleanup(); }
+});
+
+test('independent profile environments never cross-contaminate each other or global state', async () => {
+  const f = await fixture();
+  try {
+    await f.store.configure(asId('codex-0'), {
+      executable: f.binary, environmentOverrides: { LANG: 'pt_PT.UTF-8' },
+    });
+    await f.store.configure(asId('codex-3'), {
+      executable: f.binary, environmentOverrides: { LANG: 'fr_FR.UTF-8' },
+    });
+    const globalBefore = process.env['LANG'];
+    const base = { LANG: 'en_US.UTF-8', PATH: '/bin' };
+    const inputs = { cwd: f.root, proposedSessionId: UUID1, launchToken: UUID2, environment: base };
+    const registry = nativeRegistry();
+    const [a, b] = await Promise.all([
+      buildAgencyProfileLaunch(f.store, registry, { ...inputs, profileId: asId('codex-0') }),
+      buildAgencyProfileLaunch(f.store, registry, { ...inputs, profileId: asId('codex-3') }),
+    ]);
+    assert.equal(a.env['LANG'], 'pt_PT.UTF-8');
+    assert.equal(b.env['LANG'], 'fr_FR.UTF-8');
+    a.env['LANG'] = 'changed-only-in-a';
+    assert.equal(b.env['LANG'], 'fr_FR.UTF-8');
+    assert.equal(base.LANG, 'en_US.UTF-8');
+    assert.equal(process.env['LANG'], globalBefore);
+  } finally { await f.cleanup(); }
+});
