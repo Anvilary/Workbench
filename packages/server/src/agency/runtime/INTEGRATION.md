@@ -44,7 +44,13 @@ model/effort options. The runtime omits them unless requested.
 
 ## Lane A delete-vs-launch serialization
 
-`AgencyWorkspaceSource.withSessionReservation(id, callback)` is **required**, not optional.
+`AgencyWorkspaceSource.withSessionReservation(id, callback)` and
+`AgencyWorkspaceSource.protectedDirectories()` are **required**, not optional.
+The latter returns the original native registry's `agents.protectedDirs()` (not a
+hard-coded guessed list). Before reservation and again immediately before PTY open,
+Lane C verifies the server-canonical directory is still real, a directory, and
+outside the lexical and canonical protected homes. A new symlink/junction or
+unavailable protected-directory guard must refuse launch.
 Its implementation and Lane A's guarded deletion must use the **same per-workspace mutex**:
 
 1. Acquire the workspace key lock.
@@ -61,6 +67,44 @@ Its implementation and Lane A's guarded deletion must use the **same per-workspa
 After a launch reservation is durably persisted, asynchronous profile validation and PTY creation
 do not require the workspace lock. Deletion is blocked by the persisted session reference.
 A Done operation updates navigation only and never closes a live process.
+
+### Exact bridge to Lane A's current exported handler
+
+Lane A PR #3 exports `AgencyDomainContext.withSessionReservationLock(workspaceId,
+action: () => Promise<void>): Promise<void>`, and its `agency.workspace.delete`
+calls that lock around the whole `store.deleteWorkspace()` transaction.
+Lane C instead needs a generic callback that *returns* the acquired workspace.
+Use **one** shared per-workspace mutex primitive; do not nest the two gates.
+
+```ts
+// lockFor(id) returns the same mutex instance for every operation on this ID.
+// initialize workspaceStore and AgencySessionRuntime before accepting requests.
+const runUnderWorkspaceLock = <T>(
+  id: WorkspaceId, work: () => Promise<T>,
+): Promise<T> => lockFor(id).runExclusive(work);
+
+const workspaces: AgencyWorkspaceSource = {
+  protectedDirectories: () => agents.protectedDirs(),
+  withSessionReservation: (id, action) =>
+    runUnderWorkspaceLock(id, () => action(workspaceStore.getWorkspace(id))),
+};
+
+const domainContext: AgencyDomainContext = {
+  store: workspaceStore,
+  pickers: socketScopedPickers,
+  withSessionReservationLock: (id, operation) =>
+    runUnderWorkspaceLock(id, operation),
+  hasBlockingSessions: async (id) => runtime.hasWorkspaceReferences(id),
+};
+```
+
+The lock must span callback completion and Lane C's **durably saved**
+`starting` snapshot; on delete, it spans Lane A's guarded persisted deletion.
+A true/false session guard is insufficient if runtime initialization,
+persistence, or the terminal registry is uncertain: fail closed and reject.
+The actual WS server must use the same `agents` and `runtime` instances,
+not new controllers, and must prevent multiple server instances editing the
+same metadata without inter-process locking.
 
 The final integration owner must supply this gate alongside Lane A's metadata store. No Lane A
 changes were made on Lane C's branch. A mutex solely inside Lane C is insufficient.
