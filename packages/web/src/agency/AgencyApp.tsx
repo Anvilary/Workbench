@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AgencyWorkspace, ProjectId, WorkspaceId } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import { AgencySidebar, AgencyDoneView } from './AgencySidebar.js';
 import { AgencyWorkspaceCreator, AgencyProjectCreator } from './AgencyWorkspaceCreator.js';
 import { AgencyWorkspaceView } from './AgencyWorkspaceView.js';
 import { useAgencyStore } from './useAgencyStore.js';
-import { acknowledgeWorkspaceDraft, putWorkspaceDraft, type AgencyTransport } from './model.js';
+import { acknowledgeWorkspaceDraft, createAgencyTransport, putWorkspaceDraft } from './model.js';
 import { t } from '../i18n/index.js';
 import { useLocale } from '../i18n/useLocale.js';
 import './agency.css';
@@ -24,15 +24,13 @@ function readDrafts(): Record<string, string> {
 
 /**
  * Integration root for the final integration lane.
- * Caller supplies Workbench's ONE AgentConnection and an AgencyTransport adapter
- * through its existing versioned, authenticated /ws pipeline.
+ * Caller supplies Workbench's ONE AgentConnection, with the documented
+ * non-queueing sendImmediate patch, on its existing authenticated /ws pipeline.
  * No separate socket, backend, process owner, or client-selected cwd is created here.
  */
-export function AgencyApp({ connection, agencyTransport }: {
-  connection: AgentConnection;
-  agencyTransport: AgencyTransport;
-}): JSX.Element {
+export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.Element {
   useLocale();
+  const agencyTransport = useMemo(() => createAgencyTransport(connection), [connection]);
   const store = useAgencyStore(agencyTransport, connection);
   const { data, loaded, online, notice } = store;
   const [selectedId, setSelectedId] = useState<WorkspaceId | null>(null);
