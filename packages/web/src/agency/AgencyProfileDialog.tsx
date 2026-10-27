@@ -1,16 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { AgencyCliProfile } from '@agent-workbench/shared';
 import { t } from '../i18n/index.js';
-
-export function parseArgv(value: string): string[] {
-  let parsed: unknown;
-  try { parsed = JSON.parse(value); }
-  catch { throw new Error(t('agency.profile.invalidArgs')); }
-  if (!Array.isArray(parsed) || parsed.some((argument) => typeof argument !== 'string')) {
-    throw new Error(t('agency.profile.invalidArgs'));
-  }
-  return parsed as string[];
-}
+import { parseProfileArgv } from './model.js';
 
 export function AgencyProfileDialog({ profile, onSave, onClose }: {
   profile: AgencyCliProfile;
@@ -35,9 +26,8 @@ export function AgencyProfileDialog({ profile, onSave, onClose }: {
     if (saving) return;
     const path = executable.trim();
     if (!path) { setError(t('agency.profile.missingExecutable')); return; }
-    let argv: string[];
-    try { argv = parseArgv(args); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.profile.invalidArgs')); return; }
+    const argv = parseProfileArgv(args);
+    if (argv === null) { setError(t('agency.profile.invalidArgs')); return; }
     setError(null);
     setSaving(true);
     try { await onSave(path, argv); onClose(); }
