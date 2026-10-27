@@ -7,7 +7,7 @@ import { TerminalView } from '../TerminalView.js';
 import { useConversation } from '../useConversation.js';
 import { AgencyComposer } from './AgencyComposer.js';
 import { AgencyTranscript } from './AgencyTranscript.js';
-import { activityLabel, agentSession, canLaunchAgent, currentSession, latestSession } from './model.js';
+import { activityLabel, agentSession, canLaunchAgent, currentSession, isAttention, latestSession, workspaceLayout } from './model.js';
 import type { useAgencyStore } from './useAgencyStore.js';
 
 interface Props {
@@ -51,7 +51,8 @@ export function AgencyWorkspaceView({
   const shellTerminalId = activeShell?.terminalId ?? null;
   const hasAgent = !!(agent ?? pastAgent);
   const hasShell = !!activeShell;
-  const hasBoth = (hasAgent || addingAgent) && hasShell;
+  const layout = workspaceLayout(hasAgent || addingAgent, hasShell);
+  const hasBoth = layout === 'combined';
 
   const workspaceStatus = useMemo(() => {
     if (agent) return activityLabel(agent.activity, agent.lifecycle);
@@ -147,7 +148,7 @@ export function AgencyWorkspaceView({
           <div className="agency-path" title={workspace.cwd}>{workspace.cwd}</div>
         </div>
         <span className="agency-live-status" aria-label={'Status: ' + workspaceStatus}>
-          <span className="agency-status-dot idle" />{workspaceStatus}
+          <span className={'agency-status-dot ' + (agent && isAttention(agent.activity) ? 'attention' : agent?.activity === 'working' ? 'working' : 'idle')} />{workspaceStatus}
         </span>
         <button type="button" className="agency-secondary-button" onClick={onDone}>Mark Done</button>
       </header>
