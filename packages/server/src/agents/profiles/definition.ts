@@ -78,7 +78,7 @@ function validateArgs(value: unknown): string[] {
       throw new Error('Invalid profile argument.');
     }
     // Never persist credential material as command-line configuration.
-    if (/(?:^|[-_])(?:api[-_]?key|auth[-_]?token|access[-_]?token|oauth|secret|password|credential)(?:$|[-_=])/i.test(arg)) {
+    if (/(?:^|[-_])(?:api[-_]?key|auth[-_]?token|access[-_]?token|token|oauth|secret|password|credential)(?:$|[-_=])/i.test(arg)) {
       throw new Error('Credential-bearing arguments are not accepted.');
     }
     result.push(arg);
