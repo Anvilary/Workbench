@@ -182,7 +182,7 @@ export function AgencyWorkspaceView({
               }} online={online} />
           </main>
         )}
-        {(hasShell || (!hasAgent && !hasShell)) && (
+        {hasShell && (
           <aside className={'agency-shell-pane' + (!hasAgent ? ' agency-shell-primary' : '')}>
             <div className="agency-pane-bar">
               <span className="agency-pane-label">Shell</span>
