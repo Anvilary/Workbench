@@ -31,3 +31,10 @@ Last completed step: verified clean integration worktree, branch/remote/PR head,
 - [ ] Phase 8: final handoff
 
 Resume: `cd /home/user/Projects/Agency-UI-audit && git status --short --branch && git log -1 --oneline` then read all files in this directory. Preserve the source SHA and findings identifiers. Modify only this report directory.
+
+## Checkpoint 00a — preliminary architecture and Codex boundary
+
+- Audited SHA unchanged. Completed: read checkpoint/initial PR #5 evidence, traced core server/store/runtime/registry hook and client state, reviewed source-level Codex home boundary. Phase 1 remains incomplete. Installed frozen dependencies offline in isolated audit worktree (pnpm 11.24.0); no tracked source changes. `jev` tools unavailable in session; no model calls or paid inference made.
+- Verified: SEC-001 source-level home mismatch. Measurements: none. Unverified hypotheses: wrong-account attribution, exposure, and resume impact need synthetic reproduction; validate actual wrappers without reading secrets.
+- Remaining: all phase checklists above; read foundation contract, complete PR/review inventory, lifecycle and authentication trace; construct disposable dual-home discovery reproduction.
+- Exact next action: reproduce SEC-001 with synthetic rollout files, then examine wrappers safely and remaining architecture. Commands: `cd /home/user/Projects/Agency-UI-audit; corepack pnpm --dir packages/server exec tsx --test src/agency/runtime/agency-session-runtime.test.ts`; see findings for synthetic fixture design. Reports in this directory. Blockers: none. Latest checkpoint SHA: `git rev-parse HEAD` after this commit (self-hash cannot be embedded).
