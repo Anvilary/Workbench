@@ -118,8 +118,8 @@ export function defaultAppSettings(): AppSettings {
  */
 export function isAbsoluteDir(dir: string, platform: string): boolean {
   if (dir.length === 0 || dir.includes('\0')) return false;
-  if (platform === 'win32') return /^[A-Za-z]:[\\/]/.test(dir) || /^\\\\[^\\/]+[\\/][^\\/]+/.test(dir);
-  return path.posix.isAbsolute(dir);
+  if (platform === 'win32') return /^[A-Za-z]:[\\/]/.test(dir) || /^\\\\[^\\/]+[\\/][^\\/]+/.test(dir) || path.posix.isAbsolute(dir);
+  return path.posix.isAbsolute(dir) || /^[A-Za-z]:[\\/]/.test(dir);
 }
 
 /** El tope acotado, o el de por defecto si no es un numero. */
