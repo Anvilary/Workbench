@@ -604,6 +604,9 @@ test('corrupt primary recovers verified backup and quarantines original bytes', 
     const corrupt = files.find((name) => name.startsWith('sessions.json.corrupt-'));
     assert.ok(corrupt);
     assert.equal(await readFile(path.join(dir, corrupt), 'utf8'), '{broken-json');
+    // A structurally corrupt JSON object is recoverable, unlike an explicit future version.
+    await writeFile(file, JSON.stringify({ sessions: [saved] }));
+    assert.deepEqual(await store.load(), [saved]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
