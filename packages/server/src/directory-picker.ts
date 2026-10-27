@@ -31,7 +31,7 @@
 import { ServerTextError, serverText } from '@agent-workbench/shared';
 import { randomUUID } from 'node:crypto';
 import type { Dirent, Stats } from 'node:fs';
-import { lstat, mkdir, readdir, stat } from 'node:fs/promises';
+import { lstat, mkdir, readdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import type { DirectoryPickerListing } from '@agent-workbench/shared';
@@ -162,6 +162,37 @@ export class DirectoryPickers {
   /** La ruta absoluta donde esta parado un selector, para abrir la pestana. */
   currentPath(pickerId: string): string | null {
     return this.pickers.get(pickerId)?.current ?? null;
+  }
+
+  /**
+   * Resolve a workspace selection from this socket's live picker, never from
+   * a client-supplied cwd. Resolve *again* at selection time: the directory
+   * may have been replaced by a symlink since the last picker listing.
+   *
+   * Protected CLI homes are checked in both lexical and canonical form,
+   * including when a protected home itself is a symlink.
+   */
+  async selectedDirectory(pickerId: string): Promise<string> {
+    const picker = this.require(pickerId);
+    const chosen = picker.current;
+    if (isInsideProtected(chosen, this.protectedDirs)) {
+      throw new DirectoryPickerError(serverText('pickerCliFolder'));
+    }
+    let canonical: string;
+    try {
+      canonical = await realpath(chosen);
+      if (!(await stat(canonical)).isDirectory()) throw new Error('Not a directory');
+    } catch {
+      throw new DirectoryPickerError(serverText('pickerListFailed'));
+    }
+    const protectedReal = await Promise.all(
+      this.protectedDirs.map(async (dir) => realpath(dir).catch(() => path.resolve(dir))),
+    );
+    if (isInsideProtected(canonical, protectedReal) ||
+        isInsideProtected(canonical, this.protectedDirs)) {
+      throw new DirectoryPickerError(serverText('pickerCliFolder'));
+    }
+    return canonical;
   }
 
   /**
