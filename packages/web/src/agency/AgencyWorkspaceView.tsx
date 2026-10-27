@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import { useMemo, useState } from 'react';
 import type {
   AgencyCliProfile, AgencyRuntimeSession, AgencyWorkspace, CliProfileId, TerminalId,
@@ -55,23 +56,26 @@ export function AgencyWorkspaceView({
   const hasShell = !!activeShell;
   const layout = workspaceLayout(hasAgent || addingAgent, hasShell);
   const hasBoth = layout === 'combined';
+  // Native PTY first until a provider produces real structured events.
+  const nativeFallback = !!agent?.terminalId && feed.events.length === 0;
+  const nativeView = !!agentTerminalId && (showNative || nativeFallback);
 
   const workspaceStatus = useMemo(() => {
     if (agent) return activityLabel(agent.activity, agent.lifecycle);
     if (activeShell) return activityLabel(activeShell.activity, activeShell.lifecycle);
-    return 'Ready';
+    return t('agency.ui.ready');
   }, [agent, activeShell]);
 
   async function launchAgent() {
-    if (!profile || !canLaunchAgent(profile) || agent || !online) throw new Error('Agent profile is unavailable');
+    if (!profile || !canLaunchAgent(profile) || agent || !online) throw new Error(t('agency.ui.agentProfileIsUnavailable'));
     const selected = choice.model;
     const modelOption = profile.capabilities.models.find((item) => item.id === selected);
     if (selected && (!profile.capabilities.canSelectModel || !modelOption)) {
-      throw new Error('The selected model is not verified for this CLI');
+      throw new Error(t('agency.ui.theSelectedModelIsNotVerifiedForThis'));
     }
     if (choice.effort && (!profile.capabilities.canSelectEffort ||
       !modelOption?.effortOptions.includes(choice.effort))) {
-      throw new Error('The selected reasoning effort is unsupported');
+      throw new Error(t('agency.ui.theSelectedReasoningEffortIsUnsupported'));
     }
     const answer = await request({
       type: 'agency.session.create', workspaceId: workspace.id,
@@ -79,8 +83,8 @@ export function AgencyWorkspaceView({
       ...(selected ? { model: selected } : {}),
       ...(choice.effort ? { effort: choice.effort } : {}),
     });
-    if (answer.type !== 'agency.session.created') throw new Error('No agent session acknowledgement');
-    setShowNative(false);
+    if (answer.type !== 'agency.session.created') throw new Error(t('agency.ui.noAgentSessionAcknowledgement'));
+    setShowNative(true);
   }
 
   async function launchShell() {
@@ -90,9 +94,9 @@ export function AgencyWorkspaceView({
     try {
       const answer = await request({ type: 'agency.session.create', workspaceId: workspace.id,
         kind: 'terminal', cols: 100, rows: 30 });
-      if (answer.type !== 'agency.session.created') throw new Error('No shell session acknowledgement');
+      if (answer.type !== 'agency.session.created') throw new Error(t('agency.ui.noShellSessionAcknowledgement'));
     } catch (reason) {
-      setSessionError(reason instanceof Error ? reason.message : 'Shell launch failed');
+      setSessionError(reason instanceof Error ? reason.message : t('agency.ui.shellLaunchFailed'));
     } finally {
       setShellStarting(false);
     }
@@ -103,13 +107,13 @@ export function AgencyWorkspaceView({
     const answer = await request({
       type: 'agency.session.selection.set', sessionId: agent.id, model: nextModel, effort: nextEffort,
     });
-    if (answer.type !== 'agency.session.selection') throw new Error('Selection not confirmed by original CLI');
+    if (answer.type !== 'agency.session.selection') throw new Error(t('agency.ui.selectionNotConfirmedByOriginalCLI'));
   }
 
   async function submitPrompt(text: string) {
     const terminalId = agent?.terminalId ?? null;
     if (!terminalId || !online || agent?.lifecycle !== 'running') {
-      throw new Error('Start the agent and reconnect before sending.');
+      throw new Error(t('agency.ui.startTheAgentAndReconnectBeforeSending'));
     }
     const requestId = crypto.randomUUID();
     await new Promise<void>((resolve, reject) => {
@@ -124,14 +128,14 @@ export function AgencyWorkspaceView({
       const off = connection.onMessage((message) => {
         if (message.type !== 'agent.submitted' || message.requestId !== requestId ||
             message.terminalId !== terminalId) return;
-        finish(message.delivered ? undefined : new Error('CLI did not confirm delivery. Your draft is preserved.'));
+        finish(message.delivered ? undefined : new Error(t('agency.ui.cLIDidNotConfirmDeliveryYourDraftIs')));
       });
       const timer = window.setTimeout(() =>
-        finish(new Error('Delivery not confirmed. Check the CLI before resending.')), 15000);
+        finish(new Error(t('agency.ui.deliveryNotConfirmedCheckTheCLIBeforeResending'))), 15000);
       try {
         const sent = sendImmediate({ type: 'agent.submit', terminalId, text, images: [], requestId });
-        if (!sent) finish(new Error('Transport did not send immediately. Check the CLI before resending.'));
-      } catch (reason) { finish(reason instanceof Error ? reason : new Error('Unable to send')); }
+        if (!sent) finish(new Error(t('agency.ui.transportDidNotSendImmediatelyCheckTheCLI')));
+      } catch (reason) { finish(reason instanceof Error ? reason : new Error(t('agency.ui.unableToSend'))); }
     });
     onDelivered(text);
   }
@@ -140,21 +144,21 @@ export function AgencyWorkspaceView({
     if (!terminalId || !online) return;
     // Explicit user action only. Done, navigation and socket disconnect never call this.
     if (!sendImmediate({ type: 'terminal.close', terminalId })) {
-      setSessionError('Stop was not sent. Reconnect and verify the process before trying again.');
+      setSessionError(t('agency.ui.stopWasNotSentReconnectAndVerifyThe'));
     }
   }
 
   return (
-    <section className="agency-workspace-view" aria-label={'Workspace ' + workspace.name}>
+    <section className="agency-workspace-view" aria-label={t('agency.ui.workspaceNamed', { name: workspace.name })}>
       <header className="agency-workspace-header">
         <div className="agency-workspace-heading">
-          <div className="agency-crumbs">Workspace <span>/</span> <strong>{workspace.name}</strong></div>
+          <div className="agency-crumbs">{t('agency.ui.workspace')}<span>/</span> <strong>{workspace.name}</strong></div>
           <div className="agency-path" title={workspace.cwd}>{workspace.cwd}</div>
         </div>
-        <span className="agency-live-status" aria-label={'Status: ' + workspaceStatus}>
+        <span className="agency-live-status" aria-label={t('agency.ui.statusNamed', { status: workspaceStatus })}>
           <span className={'agency-status-dot ' + (agent && isAttention(agent.activity) ? 'attention' : agent?.activity === 'working' ? 'working' : 'idle')} />{workspaceStatus}
         </span>
-        <button type="button" className="agency-secondary-button" onClick={onDone}>Mark Done</button>
+        <button type="button" className="agency-secondary-button" onClick={onDone}>{t('agency.ui.markDone')}</button>
       </header>
       <div className={'agency-workspace-content' + (hasBoth ? ' agency-content-split' : '')}>
         {(hasAgent || !hasShell || addingAgent) && (
@@ -165,17 +169,17 @@ export function AgencyWorkspaceView({
               <span className="agency-flex-spacer" />
               {agentTerminalId && (
                 <button type="button" className={'agency-text-button' + (showNative ? ' selected' : '')}
-                  onClick={() => setShowNative(!showNative)} aria-pressed={showNative}>
-                  {showNative ? '← Conversation' : 'Native CLI ↗'}
+                  onClick={() => setShowNative(!nativeView)} aria-pressed={nativeView} disabled={nativeFallback}>
+                  {nativeView && !nativeFallback ? t('agency.ui.conversation') : t('agency.ui.nativeCLI')}
                 </button>
               )}
               {!hasShell && <button type="button" className="agency-text-button" disabled={!online || shellStarting}
-                onClick={() => void launchShell()}>{shellStarting ? 'Starting shell…' : '+ Shell'}</button>}
+                onClick={() => void launchShell()}>{shellStarting ? t('agency.ui.startingShell') : '+ Shell'}</button>}
               {agent?.terminalId && <button className="agency-text-button agency-text-danger" type="button"
-                onClick={() => stop(agent.terminalId)}>Stop agent</button>}
+                onClick={() => stop(agent.terminalId)}>{t('agency.ui.stopAgent')}</button>}
             </div>
             <div className="agency-agent-body">
-              {showNative && agentTerminalId ? <AgentTerminal terminalId={agentTerminalId} connection={connection} /> :
+              {nativeView && agentTerminalId ? <AgentTerminal terminalId={agentTerminalId} connection={connection} /> :
                 <AgencyTranscript events={feed.events} onOpenCli={() => setShowNative(true)} />}
             </div>
             <AgencyComposer draft={draft} onDraft={onDraft} profiles={profiles} profileId={profileId}
@@ -183,7 +187,7 @@ export function AgencyWorkspaceView({
               onSelection={selectModel} onLaunch={launchAgent} onSubmit={submitPrompt}
               onConfigureProfile={async (selectedProfile, executable, args) => {
                 const result = await request({ type: 'agency.profile.configure', profileId: selectedProfile.id, executable, args });
-                if (result.type !== 'agency.profile.configured') throw new Error('Profile settings were not confirmed');
+                if (result.type !== 'agency.profile.configured') throw new Error(t('agency.ui.profileSettingsWereNotConfirmed'));
               }}
               onInterrupt={() => {
                 if (agent?.terminalId && online) sendImmediate({ type: 'agent.interrupt', terminalId: agent.terminalId });
@@ -193,17 +197,17 @@ export function AgencyWorkspaceView({
         {hasShell && (
           <aside className={'agency-shell-pane' + (!hasAgent ? ' agency-shell-primary' : '')}>
             <div className="agency-pane-bar">
-              <span className="agency-pane-label">Shell</span>
+              <span className="agency-pane-label">{t('agency.ui.shell')}</span>
               <span className="agency-flex-spacer" />
               {!hasAgent && !addingAgent && <button type="button" className="agency-text-button"
-                onClick={() => setAddingAgent(true)}>+ Agent</button>}
+                onClick={() => setAddingAgent(true)}>{t('agency.ui.agent')}</button>}
               {shellTerminalId && <button type="button" className="agency-text-button agency-text-danger"
-                onClick={() => stop(shellTerminalId)}>Stop shell</button>}
+                onClick={() => stop(shellTerminalId)}>{t('agency.ui.stopShell')}</button>}
             </div>
             {shellTerminalId ? <AgentTerminal terminalId={shellTerminalId} connection={connection} /> : (
               <div className="agency-shell-placeholder">
-                <p>Independent terminal</p>
-                <span>Use the existing workspace directory with native shell input and output.</span>
+                <p>{t('agency.ui.independentTerminal')}</p>
+                <span>{t('agency.ui.useTheExistingWorkspaceDirectoryWithNativeShell')}</span>
                 <button type="button" className="agency-secondary-button" disabled={!online || shellStarting}
                   onClick={() => void launchShell()}>{shellStarting ? 'Starting…' : 'Open shell'}</button>
               </div>
@@ -213,7 +217,9 @@ export function AgencyWorkspaceView({
       </div>
       {sessionError && <div role="alert" className="agency-error-bar">{sessionError}</div>}
       {pastAgent && !agent && <p className="agency-session-ended">
-        Previous agent exited{pastAgent.exitCode === null ? '' : ' (code ' + pastAgent.exitCode + ')'}. History remains on the server.
+        {pastAgent.exitCode === null
+          ? t('agency.ui.previousAgentExited') + '. ' + t('agency.ui.historyRemainsOnTheServer')
+          : t('agency.ui.previousAgentExitedCode', { code: pastAgent.exitCode })}
       </p>}
     </section>
   );
