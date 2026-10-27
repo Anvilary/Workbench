@@ -1,4 +1,4 @@
-NOT_STARTED
+IN_PROGRESS
 
 # Functional Reliability
 
@@ -8,3 +8,35 @@ Date: 2026-10-27 (UTC); environment: Ubuntu/Linux x86_64, kernel 7.0.0-38-generi
 Limitations: audit initialized; no implementation, tests, browser behavior, or security properties have yet been verified.  
 Last completed step: verified clean integration worktree, branch/remote/PR head, created separate audit worktree.
 
+
+## FUNC-001 — rapid close leaks server picker; next picker remains in loading state
+
+Independent browser reproduction: with a real production server and headless Chrome, delay only incoming `picker.listing` delivery 500 ms. Open the New workspace folder picker and close it before its listing arrives, wait for the delayed reply to be discarded, repeat eight times. The ninth open receives a real `picker-failed` server response; the UI remains on "Reading the disk...". Browser instrumentation counted eight actual listing responses and one `picker-failed` response. This demonstrates a timing race with artificial delay; frequency in normal operation has not been measured. The server owns a maximum of eight pickers per socket (`directory-picker.ts:43,145-151`); `FolderPicker.tsx:62-85` removes its listener and closes only an already-known ID, so a listing arriving after unmount cannot be closed. Error rendering at `FolderPicker.tsx:145-147,187` is nested under the non-null-listing branch, so an initial error is hidden. Reconnecting creates a fresh socket and is a possible workaround, not yet verified. Suggested fix: cancel or correlate open requests so late-created IDs are closed, including rapid reopen/multiple requests; display errors independently of a successful listing. Regression: delayed-response browser test repeating eight cycles, ninth open succeeds or shows a visible error, and no leaked server picker IDs.
+
+Reproduction: extend the temporary screenshot browser fixture described in 05. Before `page.goto(url)` insert the WebSocket `onmessage` delay instrumentation below; before `await browser.close()` insert the browser actions. This simulates network/dispatch delay without modifying implementation. The full runnable copy is `/tmp/agency-audit-picker-race.mjs` while it exists.
+
+```javascript
+await page.addInitScript(() => {
+ const d=Object.getOwnPropertyDescriptor(WebSocket.prototype,'onmessage');
+ Object.defineProperty(WebSocket.prototype,'onmessage',{...d,set(handler){
+  d.set.call(this, function(event){let msg;try{msg=JSON.parse(event.data)}catch{};if(window.__delayPicker && msg?.type==='error' && msg.code==='picker-failed')window.__pickerErrors=(window.__pickerErrors||0)+1;if(window.__delayPicker && msg?.type==='picker.listing'){window.__pickerListings=(window.__pickerListings||0)+1;setTimeout(()=>handler.call(this,event),500)}else handler.call(this,event)});
+ }});
+});
+
+
+await page.evaluate(()=>{window.__delayPicker=true});
+await page.getByRole('button',{name:'New workspace',exact:true}).click();
+await page.getByLabel('Workspace name').fill('Picker race fixture');
+for(let i=0;i<8;i++){
+ await page.getByRole('button',{name:'Select existing folder'}).click();
+ await page.locator('.picker-modal').waitFor({state:'visible'});
+ await page.locator('.picker-modal button[title="Close"]').click();
+ await page.waitForTimeout(600);
+}
+await page.getByRole('button',{name:'Select existing folder'}).click();
+await page.waitForTimeout(700);
+const text=await page.locator('.picker-modal').innerText();
+const counts=await page.evaluate(()=>({errors:window.__pickerErrors||0,listings:window.__pickerListings||0}));assert.equal(counts.listings,8);assert.ok(counts.errors>=1);assert.ok(/Reading the disk/.test(text));console.log('AUDIT_PICKER_RACE',JSON.stringify({...counts,uiStuckLoading:true}));
+
+
+```

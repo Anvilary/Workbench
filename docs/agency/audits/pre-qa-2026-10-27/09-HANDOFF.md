@@ -51,3 +51,7 @@ Idle server launcher process group (not browser) summed RSS 312.68 MiB, 3 proces
 ## Checkpoint 00i continuation
 
 10 projects / 50 workspaces and four idle fixture PTYs: eight screenshot states and four-width combined/dialog assertions passed; 20 switches no-PTY p50/p95/max 41.85/49.35/49.74 ms, active-PTY 59.00/72.37/73.66 ms. Repro and limits in 04/05. Setup initially exhausted 8 pickers due to a disposable harness bug, then passed after explicit picker close; this is not a product finding. An independent rapid close before initial picker reply may leak a picker (unverified hypothesis, 04); test deterministically. Next complete source review and multi-PTY load/resources. No phase is complete; SEC-001 and TEST-001 remain only established findings.
+
+## Checkpoint 00j continuation
+
+New confirmed P2 FUNC-001: a controlled 500 ms listing delay and 8 browser picker open/close cycles leak picker allocations; ninth request receives server `picker-failed` while UI shows loading. Exact reproduction and code in 02, full register entry 07. Other established findings SEC-001 P1 and TEST-001 P2; profile resume policy risk unverified. Next complete architecture/security and multi-PTY resource audit, confirm reconnect resets picker state, then prioritize. No major phase complete. Keep implementation unchanged.

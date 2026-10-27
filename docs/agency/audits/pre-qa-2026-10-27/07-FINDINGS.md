@@ -50,3 +50,10 @@ None established.
 ### Unverified risk — historical profile ownership on resume
 
 Synthetic runtime fixture confirms an inactive native ID previously recorded under `codex-0` is accepted under `codex-3` after exit. Actual account exposure is unproven, and the foundation contract does not explicitly settle whether transferring a native ID across named profiles is permitted. Check the intended identity policy and real adapter capability; see 03 for exact reproduction. No severity assigned until the requirement and impact are established.
+
+### FUNC-001 — closing folder picker before first response leaks its server allocation
+- Category: confirmed functional defect; severity P2; confidence high in deterministic delayed browser reproduction. Affected: `packages/web/src/FolderPicker.tsx:62-85,145-147,187`, `packages/server/src/directory-picker.ts:43,145-151`, `packages/server/src/terminal-socket.ts:2621-2644`.
+- Observed: close picker before first response eight times on the same socket; ninth open is rejected and remains on a loading message without displaying the error. Expected: abandoned open requests release the server picker and initial errors are visible.
+- Reproduction: actual browser and server, intercept and delay only `picker.listing` by 500 ms, open and close before it arrives, wait for late delivery, repeat eight times and reopen. Instrumentation recorded 8 listings, 1 `picker-failed`, and stuck loading. Full sanitized fixture in 02.
+- Root cause: cleanup can send close only after a picker ID has arrived; late replies have no subscriber. `problem` is rendered only after a non-null listing.
+- Impact: workspace folder selection can become unusable for the socket until reconnect; affects slow disk/connection and rapid cancellation. No evidence of data loss. Fix: correlate/cancel open and clean up late allocations, render first-load failures. Scope: small to medium across picker protocol/UI. Regression: delayed replies, rapid close/reopen, repeat beyond limit, prove no server picker leak and visible failures.
