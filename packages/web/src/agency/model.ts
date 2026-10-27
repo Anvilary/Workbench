@@ -1,12 +1,19 @@
 import type {
   AgencyCliProfile, AgencyProject, AgencyRuntimeSession, AgencyServerMessage,
   AgencyClientMessage, AgencyWorkspace, AgencyAgentSession, AgencyProfileCapabilities,
+  ClientMessage,
   SessionActivity, SessionLifecycle, WorkspaceId, CliProfileId,
 } from '@agent-workbench/shared';
 
 export interface AgencyTransport {
   /** Implemented by the integration owner on the existing authenticated /ws. */
-  send(message: AgencyClientMessage): boolean;
+  /**
+   * MUST bypass AgentConnection.send(), whose offline queue replays mutations.
+   * Integration owner implements this with the existing socket's direct
+   * readyState === WebSocket.OPEN check and encodeClientMessage.
+   * Never enqueue on failure, including races between status check and send.
+   */
+  sendImmediate(message: AgencyClientMessage | ClientMessage): boolean;
   onMessage(handler: (message: AgencyServerMessage) => void): () => void;
 }
 
