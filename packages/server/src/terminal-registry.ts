@@ -26,7 +26,7 @@ import {
   type TerminalOfflineReason,
   type TabWorktree,
 } from '@agent-workbench/shared';
-import type { AgentAdapter, CliLocation, LaunchHook, LaunchPlan } from './agents/adapter.js';
+import type { AgentAdapter, CliLocation, LaunchHook, LaunchPlan, LaunchSession } from './agents/adapter.js';
 import {
   resolveAgentForOpen,
   type AgentRegistry,
@@ -75,6 +75,19 @@ export type SessionAgentLookup = (sessionId: string) => AgentId | null;
  * git (hito 48). Lo contesta `WorktreeLinks.tabWorktree`, leyendo `.git`.
  */
 export type TabWorktreeLookup = (cwd: string) => Promise<TabWorktree | null>;
+
+export interface AgencyPreparedTerminalLaunch {
+  file: string;
+  args: readonly string[];
+  env: Record<string, string>;
+  /** The ONE adapter.launch result prepared by Lane B. Never launch a second time. */
+  session: LaunchSession;
+  /** The same token passed to adapter.launch and adapter.onSpawned (AGY log correlation). */
+  launchToken: string;
+  proposedSessionId: string;
+  /** Reject conflicting native discoveries before the registry exposes an ID. */
+  acceptNativeSessionId?: (terminalId: TerminalId, nativeSessionId: string) => boolean;
+}
 
 interface TerminalEntry {
   descriptor: TerminalDescriptor;
@@ -133,6 +146,10 @@ interface TerminalEntry {
    * la entrada lanzando devuelve el descriptor sin lanzar nada.
    */
   launching: boolean;
+  /** Internal Agency ownership, never restored as an upstream native tab. */
+  agencyManaged: boolean;
+  /** Explicit validated profile launch, retained only in memory. */
+  agencyLaunch: AgencyPreparedTerminalLaunch | null;
 }
 
 export interface OpenTerminalOptions {
@@ -153,6 +170,10 @@ export interface OpenTerminalOptions {
    * si lo tiene, y despierta igual. Solo para `agent`.
    */
   review?: boolean;
+  /** Internal caller flag. Agency metadata, not the upstream tab store, owns this process. */
+  agencyManaged?: boolean;
+  /** Lane B validated original CLI executable, argv and isolated environment. */
+  agencyLaunch?: AgencyPreparedTerminalLaunch;
 }
 
 // Vive en su propio modulo para que se pueda reconocer sin cargar node-pty.
@@ -354,7 +375,15 @@ export class TerminalRegistry extends EventEmitter {
         : null;
     // Se resuelve que se va a lanzar antes que nada: asi el error que ve el
     // usuario es "falta la CLI" o "falta la consola" y no uno de mas adelante.
-    this.launcherFor(kind, agent);
+    if (options.agencyLaunch === undefined) this.launcherFor(kind, agent);
+    if (options.agencyLaunch !== undefined && (
+      kind !== 'agent' || options.agencyManaged !== true || agent === null ||
+      this.agents.get(agent) === null ||
+      !/^[0-9a-f-]{36}$/i.test(options.agencyLaunch.launchToken) ||
+      !/^[0-9a-f-]{36}$/i.test(options.agencyLaunch.proposedSessionId)
+    )) {
+      throw new Error('Invalid prepared Agency native launch');
+    }
 
     if (this.terminals.size >= MAX_TERMINALS) {
       throw new TerminalOpenError(
@@ -365,6 +394,17 @@ export class TerminalRegistry extends EventEmitter {
 
     await this.assertDirectory(options.cwd);
     const worktree = await this.worktreeFor(kind, options.cwd);
+    const requestedNative = options.agencyLaunch?.session.kind === 'known'
+      ? options.agencyLaunch.session.sessionId : options.resumeSessionId;
+    // Registry-local synchronous gate after the final await before registration.
+    // Also covers ordinary Workbench terminals that resume the same ID.
+    if (kind === 'agent' && agent !== null && requestedNative !== undefined &&
+        [...this.terminals.values()].some((other) =>
+          other.descriptor.kind === 'agent' && other.descriptor.agent === agent &&
+          other.descriptor.sessionId === requestedNative &&
+          (other.descriptor.alive || other.launching))) {
+      throw new TerminalOpenError('spawn-failed', serverText('terminalOpenFailed'), 'Native conversation already controlled');
+    }
 
     const resumed = kind === 'agent' && options.resumeSessionId !== undefined;
     const terminalId = randomUUID();
@@ -374,7 +414,7 @@ export class TerminalRegistry extends EventEmitter {
       agent,
       cwd: options.cwd,
       // Provisional: `spawn` lo confirma con lo que diga el adaptador.
-      sessionId: kind === 'agent' ? (options.resumeSessionId ?? randomUUID()) : '',
+      sessionId: kind === 'agent' ? (options.resumeSessionId ?? options.agencyLaunch?.proposedSessionId ?? randomUUID()) : '',
       // Una consola lleva el nombre de la suya: desde el Hito 41 pueden convivir
       // PowerShell y Git Bash, y el nombre de la consola nueva ya no es el de todas.
       label: options.label ?? (kind === 'shell' ? (this.shell?.name ?? '') : ''),
@@ -400,6 +440,16 @@ export class TerminalRegistry extends EventEmitter {
       launchedAt: null,
       stopWatchingActivity: null,
       launching: true,
+      agencyManaged: options.agencyManaged === true,
+      agencyLaunch: options.agencyLaunch === undefined ? null : {
+        file: options.agencyLaunch.file,
+        args: [...options.agencyLaunch.args],
+        env: { ...options.agencyLaunch.env },
+        session: options.agencyLaunch.session,
+        launchToken: options.agencyLaunch.launchToken,
+        proposedSessionId: options.agencyLaunch.proposedSessionId,
+        acceptNativeSessionId: options.agencyLaunch.acceptNativeSessionId,
+      },
     };
     this.terminals.set(terminalId, entry);
 
@@ -411,11 +461,16 @@ export class TerminalRegistry extends EventEmitter {
         para quien abre es un fallo: no hay pestana.
       */
       const spawned = await this.spawn(entry, { resume: resumed });
-      if (!spawned) {
+      if (!spawned || this.terminals.get(terminalId) !== entry) {
         throw new TerminalOpenError('spawn-failed', serverText('tabClosedWhileOpening'));
       }
     } catch (error) {
-      if (this.terminals.get(terminalId) === entry) this.terminals.delete(terminalId);
+      if (this.terminals.get(terminalId) === entry) {
+        entry.launchHook.cancel();
+        entry.stopWatchingActivity?.();
+        entry.session?.dispose();
+        this.terminals.delete(terminalId);
+      }
       throw error;
     } finally {
       entry.launching = false;
@@ -439,6 +494,8 @@ export class TerminalRegistry extends EventEmitter {
   async wake(terminalId: TerminalId): Promise<TerminalDescriptor | null> {
     const entry = this.terminals.get(terminalId);
     if (entry === undefined) return null;
+    // An Agency session must never be independently relaunched by upstream terminal.wake.
+    if (entry.agencyManaged) return null;
     /*
       Ya se esta lanzando (hito 29, D23): un segundo pedido no lanza otro
       proceso. Con la CLI corriendo no hay nada que despertar, salvo que su
@@ -541,7 +598,7 @@ export class TerminalRegistry extends EventEmitter {
    */
   private async spawn(entry: TerminalEntry, options: { resume: boolean }): Promise<boolean> {
     const { terminalId, kind, cwd, sessionId, agent, review } = entry.descriptor;
-    const launcher = this.launcherFor(kind, agent);
+    const launcher = entry.agencyLaunch === null ? this.launcherFor(kind, agent) : null;
     const { buffer } = entry;
 
     /*
@@ -556,8 +613,16 @@ export class TerminalRegistry extends EventEmitter {
     let adapter: AgentAdapter | null = null;
     let launchedSessionId = sessionId;
     // Uno por proceso: con el, el adaptador casa lo que preparo al lanzar con su gancho.
-    const launchToken = randomUUID();
-    if (launcher.kind === 'agent') {
+    const launchToken = entry.agencyLaunch?.launchToken ?? randomUUID();
+    if (entry.agencyLaunch !== null) {
+      // Lane B has already invoked adapter.launch with this exact launchToken.
+      // Reuse its plan and original native onSpawned hook, never call launch twice.
+      adapter = agent === null ? null : this.agents.get(agent)?.adapter ?? null;
+      if (adapter === null) throw new Error('Missing Agency native adapter');
+      launch = { file: entry.agencyLaunch.file, args: [...entry.agencyLaunch.args] };
+      launchedSessionId = entry.agencyLaunch.session.kind === 'known'
+        ? entry.agencyLaunch.session.sessionId : '';
+    } else if (launcher?.kind === 'agent') {
       adapter = launcher.agent.adapter;
       const { location } = launcher.agent;
       const launching = adapter;
@@ -580,9 +645,14 @@ export class TerminalRegistry extends EventEmitter {
       // id es siempre el que ya tenia la pestana.
       launchedSessionId = plan.session.kind === 'known' ? plan.session.sessionId : '';
     } else {
+      if (launcher === null || launcher.kind !== 'shell') {
+        throw new Error('Missing shell launcher');
+      }
       launch = { file: launcher.shell.file, args: [...launcher.shell.args] };
     }
-    const env = this.agents.composedEnvironment(process.env);
+    const env = entry.agencyLaunch === null
+      ? this.agents.composedEnvironment(process.env)
+      : { ...entry.agencyLaunch.env };
 
     const launchedAt = Date.now();
     let session: PtySession;
@@ -692,6 +762,10 @@ export class TerminalRegistry extends EventEmitter {
         },
         reportSessionId: (discovered) => this.reportSessionId(terminalId, discovered),
       });
+      if (this.terminals.get(terminalId) !== entry) {
+        hook?.cancel();
+        return false;
+      }
       entry.launchHook.set(finished ? null : hook);
     }
 
@@ -701,7 +775,12 @@ export class TerminalRegistry extends EventEmitter {
       tiene que soltar el seguidor viejo. Con Claude Code el id no cambia nunca
       y no se avisa nada.
     */
-    if (launchedSessionId !== sessionId) this.emit('session', terminalId, launchedSessionId);
+    // onSpawned may report a native ID synchronously before open() resolves.
+    // Never overwrite that discovery with the provisional empty ID.
+    if (entry.descriptor.sessionId === launchedSessionId &&
+        launchedSessionId !== sessionId) {
+      this.emit('session', terminalId, launchedSessionId);
+    }
     return true;
   }
 
@@ -718,7 +797,19 @@ export class TerminalRegistry extends EventEmitter {
     const entry = this.terminals.get(terminalId);
     if (entry === undefined || entry.descriptor.kind !== 'agent') return;
     if (sessionId.length === 0 || entry.descriptor.sessionId === sessionId) return;
-
+    // Native discovery is authoritative, but duplicate live controllers are not.
+    // The Agency callback claims the provider-native ID synchronously even when
+    // the adapter reports it before open() has returned to AgencySessionRuntime.
+    const allowed = entry.agencyLaunch?.acceptNativeSessionId?.(terminalId, sessionId) ?? true;
+    const collision = [...this.terminals.values()].some((other) =>
+      other !== entry && other.descriptor.kind === 'agent' &&
+      other.descriptor.agent === entry.descriptor.agent &&
+      other.descriptor.sessionId === sessionId &&
+      (other.descriptor.alive || other.launching));
+    if (!allowed || collision) {
+      this.close(terminalId);
+      return;
+    }
     entry.descriptor = { ...entry.descriptor, sessionId };
     this.persist();
     this.emit('changed');
@@ -897,6 +988,8 @@ export class TerminalRegistry extends EventEmitter {
         launchedAt: null,
         stopWatchingActivity: null,
         launching: false,
+        agencyManaged: false,
+        agencyLaunch: null,
       });
       this.insertInOrder(terminalId, descriptor);
     }
@@ -1071,7 +1164,12 @@ export class TerminalRegistry extends EventEmitter {
    */
   private persist(): void {
     this.store.save(
-      mergePersistedTabs(persistableTabs(this.list()), this.unavailableTabs, this.foreignTabs),
+      mergePersistedTabs(
+        persistableTabs(this.list().filter((descriptor) =>
+          !this.terminals.get(descriptor.terminalId)?.agencyManaged)),
+        this.unavailableTabs,
+        this.foreignTabs,
+      ),
     );
   }
 }
