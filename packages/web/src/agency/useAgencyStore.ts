@@ -45,7 +45,8 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
       pending.current.set(requestId, { resolve, reject, timeout });
       try {
         // The integration adapter must preserve this opaque ID on the existing /ws.
-        transport.send({ ...payload, requestId } as AgencyClientMessage);
+        const immediate = transport.send({ ...payload, requestId } as AgencyClientMessage);
+        if (!immediate) throw new Error('Socket did not send immediately. Verify state after reconnect.');
       } catch (error) {
         window.clearTimeout(timeout);
         pending.current.delete(requestId);
