@@ -14,6 +14,10 @@ import type {
   WorkspaceId,
 } from '@agent-workbench/shared';
 import { OutputBuffer } from '../../output-buffer.js';
+import { TerminalRegistry } from '../../terminal-registry.js';
+import { AgentRegistry } from '../../agents/registry.js';
+import { WorkspaceStore, type WorkspaceState } from '../../workspace-store.js';
+import type { AgentAdapter, SpawnedContext } from '../../agents/adapter.js';
 import { AgencySessionStore, UnsupportedAgencySessionSchemaError } from '../agency-session-store.js';
 import {
   AgencyRuntimeError,
@@ -621,5 +625,119 @@ test('future schema and dual corrupt stores fail closed without destructive reco
     assert.equal(await readFile(file + '.bak', 'utf8'), '{also bad');
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+class DisposableWorkspaceStore extends WorkspaceStore {
+  override save(_state: WorkspaceState): void {}
+}
+
+async function until(predicate: () => boolean, maxMs = 8000): Promise<void> {
+  const start = Date.now();
+  while (!predicate()) {
+    if (Date.now() - start > maxMs) throw new Error('Timed out waiting for PTY output');
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+test('real disposable node-pty shell: cwd, input, resize, replay, detach, Ctrl+C and exit', {
+  skip: process.platform !== 'linux',
+  timeout: 20_000,
+}, async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'agency-live-pty-'));
+  const registry = new TerminalRegistry(new AgentRegistry([]),
+    { file: '/bin/sh', args: ['-i'], name: 'sh' }, new DisposableWorkspaceStore());
+  try {
+    const shell = await registry.open({ cwd, kind: 'shell', cols: 80, rows: 24, agencyManaged: true });
+    const id = shell.terminalId;
+    assert.equal(shell.cwd, cwd);
+    let output = '';
+    const listener = (_id: TerminalId, chunk: string): void => { output += chunk; };
+    const first = registry.attach(id, listener);
+    assert.notEqual(first, null);
+    registry.write(id, 'pwd\r');
+    await until(() => output.includes(cwd));
+    assert.equal(registry.resize(id, 101, 37), true);
+    registry.write(id, 'stty size\r');
+    await until(() => /37 101/.test(output));
+    registry.write(id, 'sleep 10\r');
+    await new Promise<void>((resolve) => setTimeout(resolve, 150));
+    registry.write(id, '\x03');
+    registry.write(id, "printf 'AFTER_INTERRUPTION\\n'\r");
+    await until(() => output.includes('AFTER_INTERRUPTION'));
+    registry.detach(id, listener);
+    assert.equal(registry.has(id), true);
+    const replay = registry.attach(id, listener);
+    assert.notEqual(replay, null);
+    assert.ok(replay!.replay.includes(cwd));
+    assert.equal(registry.get(id)?.terminalId, id);
+    const exited = new Promise<{ code: number; signal: number | null }>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Timed out waiting for PTY exit')), 7000);
+      registry.on('exit', (terminalId, code, signal) => {
+        if (terminalId !== id) return;
+        clearTimeout(timer);
+        resolve({ code, signal });
+      });
+    });
+    assert.equal(registry.close(id), true);
+    const result = await exited;
+    assert.ok(Number.isInteger(result.code));
+    assert.equal(registry.has(id), false);
+  } finally {
+    registry.disposeAll();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('native adapter onSpawned is invoked exactly once by real registry PTY', {
+  skip: process.platform !== 'linux',
+  timeout: 12_000,
+}, async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'agency-native-hook-'));
+  const nativeId = randomUUID();
+  const token = randomUUID();
+  let launchedByAdapter = 0;
+  let spawned = 0;
+  let canceled = 0;
+  let seen: SpawnedContext | null = null;
+  const fakeAdapter = {
+    id: 'codex',
+    launch: () => {
+      launchedByAdapter += 1;
+      throw new Error('Original adapter launch must NOT run twice');
+    },
+    onSpawned: (ctx: SpawnedContext) => {
+      spawned++;
+      seen = ctx;
+      ctx.reportSessionId(nativeId);
+      return { cancel: () => { canceled++; } };
+    },
+    environment: (base: NodeJS.ProcessEnv) => ({
+      env: Object.fromEntries(Object.entries(base).filter((entry): entry is [string, string] =>
+        entry[1] !== undefined)),
+      notice: null,
+    }),
+  } as unknown as AgentAdapter;
+  const registry = new TerminalRegistry(new AgentRegistry([fakeAdapter]), null,
+    new DisposableWorkspaceStore());
+  try {
+    const created = await registry.open({
+      cwd, kind: 'agent', agent: 'codex', cols: 80, rows: 24, agencyManaged: true,
+      agencyLaunch: {
+        file: '/bin/sh', args: ['-i'], env: { PATH: '/usr/bin:/bin', TERM: 'xterm-256color' },
+        session: { kind: 'discover' }, launchToken: token, proposedSessionId: randomUUID(),
+      },
+    });
+    assert.equal(launchedByAdapter, 0);
+    assert.equal(spawned, 1);
+    assert.equal(created.sessionId, nativeId);
+    assert.equal(registry.get(created.terminalId)?.sessionId, nativeId);
+    assert.equal((seen as SpawnedContext | null)?.launchToken, token);
+    assert.equal((seen as SpawnedContext | null)?.resumed, false);
+    assert.equal(registry.close(created.terminalId), true);
+    assert.equal(canceled, 1);
+  } finally {
+    registry.disposeAll();
+    await rm(cwd, { recursive: true, force: true });
   }
 });
