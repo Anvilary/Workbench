@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import { useState } from 'react';
 import type {
   AgencyProject, AgencyRuntimeSession, AgencyWorkspace, ProjectId, WorkspaceId,
@@ -19,7 +20,7 @@ export interface AgencySidebarProps {
 }
 
 function WorkspaceIndicator({ session }: { session: AgencyRuntimeSession | undefined }) {
-  if (!session) return <span className="agency-status-dot muted" title="No session" />;
+  if (!session) return <span className="agency-status-dot muted" title={t('agency.ui.noSession')} />;
   const label = activityLabel(session.activity, session.lifecycle);
   const tone = isAttention(session.activity) ? 'attention' :
     session.lifecycle === 'running' && session.activity === 'working' ? 'working' :
@@ -46,19 +47,19 @@ export function AgencySidebar({
   }
 
   return (
-    <nav className="agency-sidebar-nav" aria-label="Projects and workspaces">
+    <nav className="agency-sidebar-nav" aria-label={t('agency.ui.projectsAndWorkspaces')}>
       <header className="agency-nav-head">
         <span className="agency-brand-mark" aria-hidden="true">◇</span>
-        <strong>Agency</strong>
-        <span className="agency-brand-caption">Workspace</span>
-        <button className="agency-icon-button" type="button" onClick={onCreateProject} title="New project" aria-label="New project">+</button>
+        <strong>{t('agency.ui.agency')}</strong>
+        <span className="agency-brand-caption">{t('agency.ui.workspace')}</span>
+        <button className="agency-icon-button" type="button" onClick={onCreateProject} title={t('agency.ui.newProject')} aria-label={t('agency.ui.newProject')}>+</button>
       </header>
       <div className="agency-side-section">
         <div className="agency-side-heading">
-          <span>Projects</span>
-          <button className="agency-icon-button" type="button" onClick={() => onCreate()} title="New workspace" aria-label="New workspace">+</button>
+          <span>{t('agency.ui.projects')}</span>
+          <button className="agency-icon-button" type="button" onClick={() => onCreate()} title={t('agency.ui.newWorkspace')} aria-label={t('agency.ui.newWorkspace')}>+</button>
         </div>
-        {groups.length === 0 && <p className="agency-muted agency-empty-nav">Create a project to begin.</p>}
+        {groups.length === 0 && <p className="agency-muted agency-empty-nav">{t('agency.ui.createAProjectToBegin')}</p>}
         {groups.map(({ project, items }) => (
           <section key={project.id} className="agency-project">
             <div className="agency-project-row">
@@ -68,8 +69,8 @@ export function AgencySidebar({
                 <span className="agency-project-name">{project.name}</span>
                 <span className="agency-count">{items.length}</span>
               </button>
-              <button type="button" className="agency-icon-button agency-project-add" title={'New workspace in ' + project.name}
-                aria-label={'New workspace in ' + project.name} onClick={() => onCreate(project.id)}>+</button>
+              <button type="button" className="agency-icon-button agency-project-add" title={t('agency.ui.newWorkspaceIn', { name: project.name })}
+                aria-label={t('agency.ui.newWorkspaceIn', { name: project.name })} onClick={() => onCreate(project.id)}>+</button>
             </div>
             {!collapsed.has(project.id) && (
               <div className="agency-project-children">
@@ -87,12 +88,12 @@ export function AgencySidebar({
                         <WorkspaceIndicator session={session} />
                         <span className="agency-truncate">{workspace.name}</span>
                       </button>
-                      <button type="button" className="agency-row-action" title={'Mark ' + workspace.name + ' done'}
-                        aria-label={'Mark ' + workspace.name + ' done'} onClick={() => onDone(workspace)}>✓</button>
+                      <button type="button" className="agency-row-action" title={t('agency.ui.markNamedDone', { name: workspace.name })}
+                        aria-label={t('agency.ui.markNamedDone', { name: workspace.name })} onClick={() => onDone(workspace)}>✓</button>
                     </div>
                   );
                 })}
-                {items.length === 0 && <span className="agency-project-empty">No active workspaces</span>}
+                {items.length === 0 && <span className="agency-project-empty">{t('agency.ui.noActiveWorkspaces')}</span>}
               </div>
             )}
           </section>
@@ -101,19 +102,19 @@ export function AgencySidebar({
       <div className="agency-nav-bottom">
         <button className={'agency-history-toggle' + (showingDone ? ' selected' : '')} type="button"
           onClick={() => { setHistoryOpen(!historyOpen); onDoneView(); }} aria-expanded={historyOpen}>
-          <span aria-hidden="true">▤</span> Done <span className="agency-count">{done.length}</span>
+          <span aria-hidden="true">▤</span>{t('agency.ui.done')}<span className="agency-count">{done.length}</span>
         </button>
         {historyOpen && (
           <div className="agency-history-mini">
-            {done.length === 0 && <p className="agency-muted">Nothing completed yet.</p>}
+            {done.length === 0 && <p className="agency-muted">{t('agency.ui.nothingCompletedYet')}</p>}
             {done.slice(0, 8).map((ws) => (
               <div className="agency-workspace-nav-row" key={ws.id}>
                 <button type="button" className="agency-workspace-nav-button" onClick={onDoneView}>
                   <span className="agency-status-dot muted" />
                   <span className="agency-truncate">{ws.name}</span>
                 </button>
-                <button type="button" className="agency-row-action" aria-label={'Restore ' + ws.name}
-                  title={'Restore ' + ws.name} onClick={() => onRestore(ws)}>↺</button>
+                <button type="button" className="agency-row-action" aria-label={t('agency.ui.restoreNamed', { name: ws.name })}
+                  title={t('agency.ui.restoreNamed', { name: ws.name })} onClick={() => onRestore(ws)}>↺</button>
               </div>
             ))}
           </div>
@@ -132,16 +133,16 @@ export function AgencyDoneView({ workspaces, projects, onRestore }: {
     .sort((a, b) => (b.doneAt ?? '').localeCompare(a.doneAt ?? ''));
   return (
     <section className="agency-done-view" aria-labelledby="agency-done-title">
-      <h1 id="agency-done-title">Done workspaces</h1>
-      <p className="agency-muted">Archived from active navigation. Sessions, files and history remain unchanged.</p>
-      {done.length === 0 && <div className="agency-empty-state">No completed workspaces yet.</div>}
+      <h1 id="agency-done-title">{t('agency.ui.doneWorkspaces')}</h1>
+      <p className="agency-muted">{t('agency.ui.archivedFromActiveNavigationSessionsFilesAndHistory')}</p>
+      {done.length === 0 && <div className="agency-empty-state">{t('agency.ui.noCompletedWorkspacesYet')}</div>}
       {done.map((ws) => (
         <article key={ws.id} className="agency-done-row">
           <div>
             <strong>{ws.name}</strong>
-            <p>{projects.find((p) => p.id === ws.projectId)?.name ?? 'Project'} · {ws.cwd}</p>
+            <p>{projects.find((p) => p.id === ws.projectId)?.name ?? t('agency.ui.project')} · {ws.cwd}</p>
           </div>
-          <button type="button" className="agency-secondary-button" onClick={() => onRestore(ws)}>Restore</button>
+          <button type="button" className="agency-secondary-button" onClick={() => onRestore(ws)}>{t('agency.ui.restore')}</button>
         </article>
       ))}
     </section>
