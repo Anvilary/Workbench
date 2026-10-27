@@ -180,6 +180,7 @@ export function AgencyWorkspaceView({
                 onClick={() => stop(agent.terminalId)}>{t('agency.ui.stopAgent')}</button>}
             </div>
             <div className="agency-agent-body">
+              {nativeFallback && <p className="agency-native-fallback" role="status">{t('agency.ui.unverifiedHistory')}</p>}
               {nativeView && agentTerminalId ? <AgentTerminal terminalId={agentTerminalId} connection={connection} /> :
                 <AgencyTranscript events={feed.events} onOpenCli={() => setShowNative(true)} />}
             </div>
