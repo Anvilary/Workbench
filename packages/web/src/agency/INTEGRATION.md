@@ -16,14 +16,28 @@ Status: **isolated frontend implementation only**. Built on `a784b0b3e176f06911a
 
 ```ts
 interface AgencyTransport {
-  send(message: AgencyClientMessage): boolean;
+  sendImmediate(message: AgencyClientMessage | ClientMessage): boolean;
   onMessage(handler: (message: AgencyServerMessage) => void): () => void;
 }
 ```
 
 The **final integration owner** implements it by using the existing authenticated `/ws` and the same `AgentConnection` after merging Agency into both halves of the existing `protocol.ts` runtime encoder/parser and server dispatch. The UI must not be mounted against a parser that silently drops `agency.*` messages. Do not use a second socket or HTTP endpoint and do not bypass `parseServerMessage` validation.
 
-The adapter must never **queue a destructive/mutating Agency request for silent replay while disconnected**. The UI disables writes offline and treats a failure to send immediately as unknown outcome, asking the user to verify via Refresh. The existing connection may queue non-PTY upstream messages: the integration owner should explicitly handle this case.
+The integration owner MUST add the following narrow method to the reserved `packages/web/src/connection.ts` (do not modify its existing `send` semantics or create a second socket):
+
+```ts
+/** This never uses the connection outbox, even when socket status changes mid-send. */
+sendImmediate(message: ClientMessage): boolean {
+  const socket = this.socket;
+  if (socket === null || socket.readyState !== WebSocket.OPEN) return false;
+  try {
+    socket.send(encodeClientMessage(message));
+    return true;
+  } catch { return false; }
+}
+```
+
+Extend the existing protocol encoder/parser for Agency messages as part of integration. Implement `AgencyTransport.sendImmediate` by calling only this new `AgentConnection.sendImmediate`, never the original queued `send`. This boundary is used for all Agency create/configure/Done/Restore/session mutations AND upstream `terminal.close`, `agent.submit`, and `agent.interrupt` initiated here. The UI does not retry uncertain requests. A false return must leave the outbox unchanged, including after reconnect. The existing connection may queue other Workbench messages such as attach and picker navigation, which the integration owner must assess separately.
 
 ## What is wired
 
