@@ -5,6 +5,7 @@ import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { DirectoryPickers } from '../directory-picker.js';
+import { checkVaultTarget } from '../vault/move.js';
 import { handleAgencyDomainRequest, parseAgencyDomainRequest } from './domain-handler.js';
 import { AgencyWorkspaceStore, parseAgencySnapshot } from './store.js';
 
@@ -116,7 +117,7 @@ test('Done and Restore never terminate processes or remove files', async (t) => 
   const file = path.join(cwd, 'source.txt');
   await writeFile(file, 'keep');
   const project = await store.createProject('P');
-  const workspace = await store.createWorkspace(project.id, 'W', cwd);
+  const workspace = await store.createWorkspace(project.id, 'W', await realpath(cwd));
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
   t.after(() => { child.kill(); });
   assert.ok(child.pid);
@@ -204,4 +205,94 @@ test('missing state is empty; corrupt state recovers from backup, else fails clo
   await assert.rejects(failed.load(), { code: 'internal-error' });
   assert.equal(await readFile(statePath, 'utf8'), '{bad');
   await assert.rejects(failed.createProject('Never overwrite'), { code: 'internal-error' });
+});
+
+test('existing picker consumers retain their lexical path; Agency gets canonical realpath', async (t) => {
+  const { dir } = await fixture(t);
+  const protectedDir = path.join(dir, 'cli-home');
+  const child = path.join(protectedDir, 'nested');
+  await mkdir(child, { recursive: true });
+  // A permissive picker is intentional: VaultService provides its own
+  // protection list and reads currentPath(), not selectedDirectory().
+  const picker = new DirectoryPickers([]);
+  const id = await pick(picker, protectedDir);
+  const before = picker.currentPath(id);
+  assert.ok(before);
+  const next = await picker.enter(id, 'nested');
+  assert.equal(picker.currentPath(id), path.join(before, 'nested'));
+  assert.equal(next.path, path.join(before, 'nested'));
+  assert.equal(await picker.selectedDirectory(id), await realpath(child));
+  assert.equal(checkVaultTarget(path.join(dir, 'vault'), picker.currentPath(id)!, {
+    protectedDirs: [protectedDir], platform: process.platform,
+  }).kind, 'refused', 'Vault must still refuse a protected CLI home');
+  const other = new DirectoryPickers([protectedDir]);
+  const idOther = await pick(other, dir);
+  await assert.rejects(other.enter(idOther, 'cli-home'), 'Agency picker must block protected CLI homes');
+  await other.create(idOther, 'new-project');
+  assert.equal(other.currentPath(idOther), path.join(dir, 'new-project'));
+  assert.equal(await other.selectedDirectory(idOther), await realpath(path.join(dir, 'new-project')));
+});
+
+test('directory alias is preserved for picker clients but canonicalized for Agency', async (t) => {
+  if (process.platform === 'win32') {
+    t.skip('Windows alias behavior is covered by check-vault section 13d on the Windows runner');
+    return;
+  }
+  const { dir } = await fixture(t);
+  const realHome = path.join(dir, 'actual-home');
+  const alias = path.join(dir, 'home-alias');
+  await mkdir(path.join(realHome, 'project'), { recursive: true });
+  await symlink(realHome, alias, 'dir');
+  const oldHome = process.env['HOME'];
+  process.env['HOME'] = alias;
+  t.after(() => {
+    if (oldHome === undefined) delete process.env['HOME'];
+    else process.env['HOME'] = oldHome;
+  });
+  const picker = new DirectoryPickers([]);
+  const listing = await picker.open();
+  assert.equal(listing.path, alias);
+  const entered = await picker.enter(listing.pickerId, 'project');
+  assert.equal(entered.path, path.join(alias, 'project'));
+  assert.equal(picker.currentPath(listing.pickerId), path.join(alias, 'project'));
+  assert.equal(await picker.selectedDirectory(listing.pickerId), await realpath(path.join(realHome, 'project')));
+});
+
+test('workspace delete is fail-closed without the shared session reservation lock', async (t) => {
+  const { dir, store } = await fixture(t);
+  await mkdir(path.join(dir, 'repo'));
+  const project = await store.createProject('P');
+  const workspace = await store.createWorkspace(project.id, 'W', await realpath(path.join(dir, 'repo')));
+  const request = { type: 'agency.workspace.delete', requestId: 'delete-1', workspaceId: workspace.id };
+  const pickers = new DirectoryPickers([]);
+  const unguarded = await handleAgencyDomainRequest(request, {
+    store, pickers, hasBlockingSessions: () => false,
+  });
+  assert.equal(unguarded?.type, 'agency.error');
+  if (unguarded?.type === 'agency.error') assert.equal(unguarded.code, 'session-unavailable');
+  assert.ok(store.getWorkspace(workspace.id));
+  // Simulate the same per-workspace serialized gate used by Lane C.
+  let release: (() => void) | undefined;
+  const gate = async (_id: typeof workspace.id, action: () => Promise<void>) => {
+    await new Promise<void>((resolve) => { release = resolve; });
+    await action();
+  };
+  let reserved = true;
+  const pending = handleAgencyDomainRequest(request, {
+    store, pickers, hasBlockingSessions: () => reserved, withSessionReservationLock: gate,
+  });
+  await Promise.resolve();
+  assert.ok(store.getWorkspace(workspace.id));
+  assert.ok(release);
+  release!();
+  const refused = await pending;
+  assert.equal(refused?.type, 'agency.error');
+  assert.ok(store.getWorkspace(workspace.id));
+  reserved = false;
+  const success = await handleAgencyDomainRequest(request, {
+    store, pickers, hasBlockingSessions: () => reserved,
+    withSessionReservationLock: async (_id, action) => action(),
+  });
+  assert.equal(success?.type, 'agency.workspace.deleted');
+  assert.equal(store.getWorkspace(workspace.id), null);
 });
