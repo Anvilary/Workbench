@@ -51,6 +51,7 @@ export class UnsupportedAgencySessionSchemaError extends Error {
 function parse(contents: string): AgencyRuntimeSession[] {
   const value: unknown = JSON.parse(contents);
   if (!record(value)) throw new Error('Invalid Agency session store');
+  if (!Number.isInteger(value.version)) throw new Error('Missing or invalid Agency session store version');
   if (value.version !== VERSION) throw new UnsupportedAgencySessionSchemaError(value.version);
   if (!Array.isArray(value.sessions)) throw new Error('Invalid Agency session store shape');
   if (!value.sessions.every(validSession)) throw new Error('Invalid Agency session record');
