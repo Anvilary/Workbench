@@ -1,4 +1,5 @@
 import { copyFile, mkdir, readFile, rename } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { AgencyRuntimeSession } from '@agent-workbench/shared';
 import { writeAtomically } from '../atomic-write.js';
@@ -40,11 +41,18 @@ function validSession(value: unknown): value is AgencyRuntimeSession {
     (value.selectedEffort === null || typeof value.selectedEffort === 'string');
 }
 
+export class UnsupportedAgencySessionSchemaError extends Error {
+  constructor(version: unknown) {
+    super('Unsupported Agency session store schema: ' + String(version));
+    this.name = 'UnsupportedAgencySessionSchemaError';
+  }
+}
+
 function parse(contents: string): AgencyRuntimeSession[] {
   const value: unknown = JSON.parse(contents);
-  if (!record(value) || value.version !== VERSION || !Array.isArray(value.sessions)) {
-    throw new Error('Unsupported Agency session store version or shape');
-  }
+  if (!record(value)) throw new Error('Invalid Agency session store');
+  if (value.version !== VERSION) throw new UnsupportedAgencySessionSchemaError(value.version);
+  if (!Array.isArray(value.sessions)) throw new Error('Invalid Agency session store shape');
   if (!value.sessions.every(validSession)) throw new Error('Invalid Agency session record');
   const sessions = value.sessions as AgencyRuntimeSession[];
   if (new Set(sessions.map((session) => session.id)).size !== sessions.length) {
@@ -63,19 +71,36 @@ export class AgencySessionStore {
   constructor(readonly file: string = path.join(appConfigDir(), 'agency-sessions.json')) {}
 
   async load(): Promise<AgencyRuntimeSession[]> {
+    let primaryMissing = false;
+    let primaryFailure: unknown = null;
     try {
       return parse(await readFile(this.file, 'utf8'));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-      const quarantine = this.file + '.corrupt-' + Date.now();
-      await rename(this.file, quarantine).catch(() => undefined);
-      console.warn('[agency] invalid session metadata quarantined at ' + quarantine);
-      try {
-        return parse(await readFile(this.file + '.bak', 'utf8'));
-      } catch {
-        return [];
-      }
+      if (error instanceof UnsupportedAgencySessionSchemaError) throw error;
+      primaryMissing = (error as NodeJS.ErrnoException).code === 'ENOENT';
+      primaryFailure = error;
     }
+
+    let backup: AgencyRuntimeSession[];
+    try {
+      backup = parse(await readFile(this.file + '.bak', 'utf8'));
+    } catch (error) {
+      if (error instanceof UnsupportedAgencySessionSchemaError) throw error;
+      const backupMissing = (error as NodeJS.ErrnoException).code === 'ENOENT';
+      if (primaryMissing && backupMissing) return [];
+      // Never treat a damaged or unreadable store as a fresh empty workspace.
+      throw new AggregateError([primaryFailure, error], 'Agency session metadata could not be recovered');
+    }
+
+    if (!primaryMissing) {
+      // Only quarantine AFTER backup has been validated. Preserve the raw
+      // damaged bytes, and refuse recovery if quarantine itself fails.
+      const quarantine = this.file + '.corrupt-' + randomUUID();
+      await rename(this.file, quarantine);
+      console.warn('[agency] corrupt session metadata preserved at ' + quarantine);
+    }
+    // Keep a valid backup untouched until the next successfully committed save.
+    return backup;
   }
 
   /**
