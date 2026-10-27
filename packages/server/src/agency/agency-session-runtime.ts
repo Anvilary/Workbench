@@ -5,7 +5,6 @@ import path from 'node:path';
 import type {
   AgencyAgentSession,
   AgencyRuntimeSession,
-  AgencyTerminalSession,
   AgencyWorkspace,
   CliProfileId,
   CliProvider,
