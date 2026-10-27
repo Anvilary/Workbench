@@ -143,8 +143,19 @@ export class AgencyWorkspaceStore {
         this.state = empty();
       }
     } else {
+      let decoded: unknown;
       try {
-        this.state = parseAgencySnapshot(JSON.parse(primary) as unknown);
+        decoded = JSON.parse(primary) as unknown;
+      } catch {
+        decoded = null;
+      }
+      // Do not downgrade a file written by a newer implementation. A v1
+      // backup must never replace an otherwise valid future schema.
+      if (record(decoded) && decoded['version'] !== VERSION) {
+        throw new AgencyStoreError('internal-error', 'Unsupported Agency state version; migration is required');
+      }
+      try {
+        this.state = parseAgencySnapshot(decoded);
       } catch {
         let recovered: Snapshot;
         let backup: string;
