@@ -211,3 +211,6 @@
 @media (prefers-reduced-motion: reduce) {
   .agency-app *, .agency-app *::before, .agency-app *::after { transition: none !important; animation: none !important; }
 }
+
+/* Workbench's FolderPicker must appear above the Agency creation dialog. */
+.agency-app .modal-backdrop { z-index: 140; }
