@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, chmod, rm, readFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, writeFile, chmod, rm, readFile, mkdir, symlink, readdir } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 import type { CliProfileId } from '@agent-workbench/shared';
@@ -275,5 +276,91 @@ test('independent profile environments never cross-contaminate each other or glo
     assert.equal(b.env['LANG'], 'fr_FR.UTF-8');
     assert.equal(base.LANG, 'en_US.UTF-8');
     assert.equal(process.env['LANG'], globalBefore);
+  } finally { await f.cleanup(); }
+});
+
+test('named symlinked entrypoints preserve distinct CLI wrapper invocation identity', { skip: process.platform === 'win32' }, async () => {
+  const f = await fixture();
+  try {
+    const bin = path.join(f.root, 'bin');
+    await mkdir(bin);
+    const shared = path.join(bin, 'native-dispatcher');
+    await writeFile(shared, '#!/bin/sh\\nprintf "%s\\\\n" "${0##*/}"\\n', { mode: 0o700 });
+    await chmod(shared, 0o700);
+    const first = path.join(bin, 'codex-0');
+    const second = path.join(bin, 'codex-1');
+    await symlink(shared, first);
+    await symlink(shared, second);
+    await f.store.configure(asId('codex-0'), { executable: 'codex-0' });
+    await f.store.configure(asId('codex-1'), { executable: 'codex-1' });
+    const env = { PATH: bin };
+    const a = await buildAgencyProfileLaunch(f.store, nativeRegistry(), {
+      profileId: asId('codex-0'), cwd: f.root, proposedSessionId: UUID1,
+      launchToken: UUID2, environment: env,
+    });
+    const b = await buildAgencyProfileLaunch(f.store, nativeRegistry(), {
+      profileId: asId('codex-1'), cwd: f.root, proposedSessionId: UUID1,
+      launchToken: UUID2, environment: env,
+    });
+    assert.equal(a.file, first);
+    assert.equal(b.file, second);
+    assert.notEqual(a.file, b.file);
+    assert.equal(execFileSync(a.file, [...a.args], { encoding: 'utf8' }).trim(), 'codex-0');
+    assert.equal(execFileSync(b.file, [...b.args], { encoding: 'utf8' }).trim(), 'codex-1');
+    // Absolute symlink paths preserve identity without PATH lookup as well.
+    assert.deepEqual(await resolveConfiguredExecutable(first, {}), { status: 'available', file: first });
+  } finally { await f.cleanup(); }
+});
+
+test('missing primary recovers from valid backup instead of defaulting all profiles', async () => {
+  const f = await fixture();
+  try {
+    await f.store.configure(asId('codex-0'), { executable: f.binary });
+    await f.store.configure(asId('agy-2'), { executable: f.binary });
+    const before = await readFile(f.file + '.bak', 'utf8');
+    await rm(f.file);
+    const restored = await f.store.listDefinitions();
+    assert.equal(restored.find((x) => x.id === 'codex-0')?.executable, f.binary);
+    assert.equal(restored.find((x) => x.id === 'agy-2')?.executable, '');
+    assert.deepEqual(await f.store.listDefinitions(), restored);
+    assert.equal(await readFile(f.file + '.bak', 'utf8'), before);
+    assert.equal(JSON.parse(await readFile(f.file, 'utf8')).schemaVersion, 1);
+  } finally { await f.cleanup(); }
+});
+
+test('future schema fails closed even with older valid backup, without overwriting data', async () => {
+  const f = await fixture();
+  try {
+    await f.store.configure(asId('codex-0'), { executable: f.binary });
+    await f.store.configure(asId('codex-1'), { executable: f.binary });
+    const backupBefore = await readFile(f.file + '.bak', 'utf8');
+    const future = JSON.stringify({ schemaVersion: 2, profiles: [{ future: 'keep me' }] }) + '\\n';
+    await writeFile(f.file, future);
+    await assert.rejects(f.store.listDefinitions(), /Unsupported Agency profile store schema version: 2/);
+    await assert.rejects(f.store.configure(asId('codex-0'), { label: 'MUST_NOT_CHANGE' }), /Unsupported Agency profile store schema version: 2/);
+    assert.equal(await readFile(f.file, 'utf8'), future);
+    assert.equal(await readFile(f.file + '.bak', 'utf8'), backupBefore);
+    assert.equal((await readdir(f.root)).some((name) => name.startsWith('profiles.json.corrupt-')), false);
+  } finally { await f.cleanup(); }
+});
+
+test('missing primary with unsupported backup fails closed without resetting configuration', async () => {
+  const f = await fixture();
+  try {
+    const future = JSON.stringify({ schemaVersion: 2, profiles: [] });
+    await writeFile(f.file + '.bak', future);
+    await assert.rejects(f.store.listDefinitions(), /Unsupported Agency profile store schema version: 2/);
+    await assert.rejects(readFile(f.file, 'utf8'), { code: 'ENOENT' });
+    assert.equal(await readFile(f.file + '.bak', 'utf8'), future);
+  } finally { await f.cleanup(); }
+});
+
+test('corruption without valid backup refuses to silently replace existing state', async () => {
+  const f = await fixture();
+  try {
+    await writeFile(f.file, '{ malformed');
+    await assert.rejects(f.store.listDefinitions(), /no valid backup exists/);
+    assert.equal(await readFile(f.file, 'utf8'), '{ malformed');
+    assert.equal((await readdir(f.root)).some((name) => name.startsWith('profiles.json.corrupt-')), false);
   } finally { await f.cleanup(); }
 });
