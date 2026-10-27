@@ -55,7 +55,7 @@ export function AgencyTranscript({ events, onOpenCli }: {
                   </summary>
                   <pre>{part.input}</pre>
                   {result && <pre className={result.isError ? 'agency-command-error' : ''}>{result.text}
-                    {result.truncated ? '\n[Output truncated]' : ''}</pre>}
+                    {result.truncated ? '\n' + t('agency.ui.outputTruncated') : ''}</pre>}
                 </details>;
               }
               if (part.kind === 'question') return <div key={index} className="agency-question">
