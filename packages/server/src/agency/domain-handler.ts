@@ -6,7 +6,7 @@
  * protocol validator. A client-supplied cwd is always an invalid request.
  */
 import type {
-  AgencyClientMessage, AgencyServerMessage, AgencyErrorCode,
+  AgencyClientMessage, AgencyServerMessage, AgencyErrorCode, WorkspaceId,
 } from '@agent-workbench/shared';
 import { DirectoryPickers, DirectoryPickerError } from '../directory-picker.js';
 import { AgencyWorkspaceStore, AgencyStoreError, type HasBlockingWorkspaceSessions } from './store.js';
@@ -72,6 +72,16 @@ export interface AgencyDomainContext {
    * live/in-flight PTYs, coordinated with Lane C's session reservation lock.
    */
   hasBlockingSessions?: HasBlockingWorkspaceSessions;
+  /**
+   * The SAME per-workspace critical section used by Lane C to reserve new
+   * sessions. It must hold the lock until the metadata deletion commits.
+   *
+   * Session creation must acquire this lock before checking the workspace,
+   * and keep it through reserving/persisting the session. The session guard
+   * must include starting, running, stopping and unresolved persisted
+   * references, not only currently alive PTYs. Unknown state refuses delete.
+   */
+  withSessionReservationLock?: (workspaceId: WorkspaceId, action: () => Promise<void>) => Promise<void>;
   /** Broadcast after a committed write, never to implement the write itself. */
   publish?: (message: DomainBroadcast) => void;
 }
@@ -140,10 +150,15 @@ export async function handleAgencyDomainRequest(
         return { type: 'agency.workspace.restored', requestId, workspace };
       }
       case 'agency.workspace.delete': {
-        if (typeof context.hasBlockingSessions !== 'function') {
-          throw new AgencyStoreError('session-unavailable', 'Session deletion guard is not configured');
+        if (typeof context.hasBlockingSessions !== 'function' ||
+            typeof context.withSessionReservationLock !== 'function') {
+          throw new AgencyStoreError('session-unavailable', 'Session guard and shared reservation lock are required');
         }
-        await context.store.deleteWorkspace(request.workspaceId, context.hasBlockingSessions);
+        // Use the same critical section as Lane C's reservation path.
+        // The guard and committed metadata deletion must not be interleaved
+        // with a session launch, including an in-flight launch.
+        await context.withSessionReservationLock(request.workspaceId, () =>
+          context.store.deleteWorkspace(request.workspaceId, context.hasBlockingSessions!));
         publishSafely(context, { type: 'agency.workspace.changed', change: 'deleted', workspaceId: request.workspaceId });
         return { type: 'agency.workspace.deleted', requestId, workspaceId: request.workspaceId };
       }
