@@ -141,6 +141,18 @@ export class AgentConnection {
     return false;
   }
 
+  /** This never uses the connection outbox, even when socket status changes mid-send. */
+  sendImmediate(message: ClientMessage): boolean {
+    const socket = this.socket;
+    if (socket === null || socket.readyState !== WebSocket.OPEN) return false;
+    try {
+      socket.send(encodeClientMessage(message));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   close(): void {
     this.closedByUs = true;
     window.clearTimeout(this.reconnectTimer);

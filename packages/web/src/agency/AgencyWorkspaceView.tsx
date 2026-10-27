@@ -1,6 +1,6 @@
 import { t } from '../i18n/index.js';
 import { agencyActivityText } from './agency-labels.js';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   AgencyCliProfile, AgencyRuntimeSession, AgencyWorkspace, CliProfileId, TerminalId,
 } from '@agent-workbench/shared';
@@ -40,14 +40,20 @@ export function AgencyWorkspaceView({
   const pastAgent = agentSession(latestSession(sessions, workspace.id, 'agent'));
   const agent = activeAgent;
   const [profileId, setProfileId] = useState<CliProfileId | ''>(() =>
-    pastAgent?.profileId ?? profiles.find(canLaunchAgent)?.id ?? '');
+    pastAgent?.profileId ?? profiles.find(canLaunchAgent)?.id ?? profiles[0]?.id ?? '');
+  const effectiveProfileId = profileId || pastAgent?.profileId || profiles.find(canLaunchAgent)?.id || profiles[0]?.id || '';
+  useEffect(() => {
+    if (!profileId && effectiveProfileId) {
+      setProfileId(effectiveProfileId);
+    }
+  }, [profileId, effectiveProfileId]);
   const [choice, setChoice] = useState<{ model: string | null; effort: string | null }>({ model: null, effort: null });
   const [showNative, setShowNative] = useState(false);
   const [addingAgent, setAddingAgent] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [shellStarting, setShellStarting] = useState(false);
   const feed = useConversation(connection, (agent ?? pastAgent)?.terminalId ?? null);
-  const profile = profiles.find((item) => item.id === (agent?.profileId ?? profileId));
+  const profile = profiles.find((item) => item.id === (agent?.profileId ?? effectiveProfileId));
   const model = agent?.selectedModel ?? choice.model;
   const effort = agent?.selectedEffort ?? choice.effort;
 

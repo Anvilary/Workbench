@@ -1,3 +1,10 @@
+import {
+  parseAgencyClientMessage,
+  parseAgencyServerMessage,
+  type AgencyClientMessage,
+  type AgencyServerMessage,
+} from './agency-protocol.js';
+export * from './agency-protocol.js';
 /**
  * Protocolo WebSocket entre el navegador y el servidor local.
  *
@@ -1428,7 +1435,8 @@ export type ClientMessage =
   | ClientWorktreePlanIntegrateMessage
   | ClientWorktreeIntegrateMessage
   | ClientWorktreePlanDeleteBranchMessage
-  | ClientWorktreeDeleteBranchMessage;
+  | ClientWorktreeDeleteBranchMessage
+  | AgencyClientMessage;
 
 export type ClientMessageType = ClientMessage['type'];
 
@@ -2490,7 +2498,8 @@ export type ServerMessage =
   | ServerWorktreeIntegratedMessage
   | ServerWorktreeDeleteBranchPlanMessage
   | ServerWorktreeBranchDeletedMessage
-  | ServerErrorMessage;
+  | ServerErrorMessage
+  | AgencyServerMessage;
 
 export type ServerMessageType = ServerMessage['type'];
 
@@ -2567,6 +2576,10 @@ function parseSelection(value: unknown): AnswerSelection | null {
 export function parseClientMessage(raw: string): ClientMessage | null {
   const record = asRecord(parseJson(raw));
   if (record === null) return null;
+
+  if (typeof record['type'] === 'string' && record['type'].startsWith('agency.')) {
+    return parseAgencyClientMessage(record);
+  }
 
   switch (record['type']) {
     case 'input': {
@@ -3222,6 +3235,10 @@ function parseLiveQuestion(value: unknown): ConversationQuestionPart | null {
 export function parseServerMessage(raw: string): ServerMessage | null {
   const record = asRecord(parseJson(raw));
   if (record === null) return null;
+
+  if (typeof record['type'] === 'string' && record['type'].startsWith('agency.')) {
+    return parseAgencyServerMessage(record);
+  }
 
   switch (record['type']) {
     case 'hello': {
