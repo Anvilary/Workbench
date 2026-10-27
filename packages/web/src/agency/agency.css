@@ -214,3 +214,6 @@
 
 /* Workbench's FolderPicker must appear above the Agency creation dialog. */
 .agency-app .modal-backdrop { z-index: 140; }
+
+.agency-agent-body { flex-direction: column; }
+.agency-native-fallback { margin: 0; padding: 8px 15px; font-size: 11px; color: var(--agency-dim); border-bottom: 1px solid var(--agency-line); }
