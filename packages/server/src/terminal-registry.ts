@@ -465,7 +465,12 @@ export class TerminalRegistry extends EventEmitter {
         throw new TerminalOpenError('spawn-failed', serverText('tabClosedWhileOpening'));
       }
     } catch (error) {
-      if (this.terminals.get(terminalId) === entry) this.terminals.delete(terminalId);
+      if (this.terminals.get(terminalId) === entry) {
+        entry.launchHook.cancel();
+        entry.stopWatchingActivity?.();
+        entry.session?.dispose();
+        this.terminals.delete(terminalId);
+      }
       throw error;
     } finally {
       entry.launching = false;
@@ -770,7 +775,12 @@ export class TerminalRegistry extends EventEmitter {
       tiene que soltar el seguidor viejo. Con Claude Code el id no cambia nunca
       y no se avisa nada.
     */
-    if (launchedSessionId !== sessionId) this.emit('session', terminalId, launchedSessionId);
+    // onSpawned may report a native ID synchronously before open() resolves.
+    // Never overwrite that discovery with the provisional empty ID.
+    if (entry.descriptor.sessionId === launchedSessionId &&
+        launchedSessionId !== sessionId) {
+      this.emit('session', terminalId, launchedSessionId);
+    }
     return true;
   }
 
