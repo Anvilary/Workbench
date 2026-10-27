@@ -13,6 +13,14 @@ import {
 
 const SCHEMA_VERSION = 1;
 
+class InvalidProfileStoreError extends Error {}
+
+class UnsupportedProfileSchemaError extends Error {
+  constructor(version: unknown) {
+    super('Unsupported Agency profile store schema version: ' + String(version));
+  }
+}
+
 export class AgencyProfileStore {
   private pending: Promise<void> = Promise.resolve();
 
@@ -21,34 +29,50 @@ export class AgencyProfileStore {
   }
 
   private decode(text: string): ProfileDefinition[] {
-    const raw: unknown = JSON.parse(text);
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch (error) {
+      throw new InvalidProfileStoreError('Invalid Agency profile store JSON.', { cause: error });
+    }
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-      throw new Error('Invalid Agency profile store.');
+      throw new InvalidProfileStoreError('Invalid Agency profile store.');
     }
     const data = raw as Record<string, unknown>;
-    if (data['schemaVersion'] !== SCHEMA_VERSION || !Array.isArray(data['profiles'])) {
-      throw new Error('Unsupported Agency profile store version.');
+    // A future version is not corruption. In particular, never replace it
+    // with a v1 backup, which would silently discard newer configuration.
+    if (data['schemaVersion'] !== SCHEMA_VERSION) {
+      throw new UnsupportedProfileSchemaError(data['schemaVersion']);
+    }
+    if (!Array.isArray(data['profiles'])) {
+      throw new InvalidProfileStoreError('Invalid Agency profile list.');
     }
     const defaults = defaultDefinitions();
     const seen = new Set<string>();
     const defined: ProfileDefinition[] = [];
     for (const item of data['profiles']) {
       if (typeof item !== 'object' || item === null || Array.isArray(item)) {
-        throw new Error('Invalid profile in store.');
+        throw new InvalidProfileStoreError('Invalid profile in store.');
       }
       const id = (item as Record<string, unknown>)['id'];
-      if (typeof id !== 'string' || seen.has(id)) throw new Error('Duplicate or invalid profile ID.');
+      if (typeof id !== 'string' || seen.has(id)) {
+        throw new InvalidProfileStoreError('Duplicate or invalid profile ID.');
+      }
       seen.add(id);
-      defined.push(validateDefinition(id, item));
+      try {
+        defined.push(validateDefinition(id, item));
+      } catch (error) {
+        throw new InvalidProfileStoreError('Invalid profile definition.', { cause: error });
+      }
     }
     // Safe additive migration for profiles added to the fixed registry later.
     return defaults.map((item) => defined.find((saved) => saved.id === item.id) ?? item);
   }
 
-  private async readPrimary(): Promise<ProfileDefinition[] | null> {
+  private async readFileOrNull(filename: string): Promise<ProfileDefinition[] | null> {
     let content: string;
     try {
-      content = await readFile(this.filename, 'utf8');
+      content = await readFile(filename, 'utf8');
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw error;
@@ -57,23 +81,34 @@ export class AgencyProfileStore {
   }
 
   private async read(): Promise<ProfileDefinition[]> {
+    let primary: ProfileDefinition[] | null;
     try {
-      return (await this.readPrimary()) ?? defaultDefinitions();
+      primary = await this.readFileOrNull(this.filename);
     } catch (error) {
-      // Only recover malformed content from a prior valid checkpoint. Keep the
-      // corrupt file for inspection rather than silently resetting accounts.
-      if (!(error instanceof SyntaxError || error instanceof Error &&
-            /profile|store|version/i.test(error.message))) throw error;
-      let backup: ProfileDefinition[];
+      // Only malformed v1 content is recoverable. Unsupported future schemas
+      // and filesystem errors are not, even when an older backup exists.
+      if (!(error instanceof InvalidProfileStoreError)) throw error;
+      let backup: ProfileDefinition[] | null;
       try {
-        backup = this.decode(await readFile(this.filename + '.bak', 'utf8'));
+        backup = await this.readFileOrNull(this.filename + '.bak');
       } catch {
+        throw new Error('Agency profile store is invalid and no valid backup exists.', { cause: error });
+      }
+      if (backup === null) {
         throw new Error('Agency profile store is invalid and no valid backup exists.', { cause: error });
       }
       await rename(this.filename, this.filename + '.corrupt-' + Date.now());
       await this.write(backup, false);
       return backup;
     }
+
+    if (primary !== null) return primary;
+    // A prior atomic update may leave only the backup. Do not reset profiles.
+    // An invalid or unsupported backup fails closed instead of using defaults.
+    const backup = await this.readFileOrNull(this.filename + '.bak');
+    if (backup === null) return defaultDefinitions();
+    await this.write(backup, false);
+    return backup;
   }
 
   private async write(definitions: readonly ProfileDefinition[], backup: boolean): Promise<void> {
