@@ -145,6 +145,7 @@
   "agency.ui.unableToRestore": "Unable to restore",
   "agency.ui.unableToSend": "Unable to send",
   "agency.ui.unavailableSuffix": " (利用不可)",
+  "agency.ui.unverifiedHistory": "構造化された履歴を利用できません。出力と承認にはネイティブターミナルを使用してください。",
   "agency.ui.useTheExistingWorkspaceDirectoryWithNativeShell": "Use the existing workspace directory with native shell input and output.",
   "agency.ui.useThisDirectory": "Use this directory",
   "agency.ui.workspace": "Workspace ",
