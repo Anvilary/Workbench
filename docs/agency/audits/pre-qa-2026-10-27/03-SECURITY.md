@@ -45,3 +45,20 @@ Additional source trace: `conversation-hub.ts:565-577,806-825,840` rebinds the t
 ## Resume ownership hypothesis (not yet a finding)
 
 `agency-session-runtime.ts:256-293,315-345,585-597` accepts a client-supplied native resume ID, verifies identity is preserved by the adapter and enforces active-controller exclusivity, but the inspected path does not compare the requested profile to prior persisted session ownership. `runtime/agency-session-runtime.test.ts:545-570` checks simultaneous different-profile controllers only; it does not check a later resume after the first controller exits. This could permit unintended profile reassignment, depending on whether cross-profile native resume is an intended supported behavior and what the original CLI permits. Reproduce safely with fake registry/provider and clarify contract; do not claim actual cross-account access.
+
+### Resume ownership synthetic test
+
+Executed a disposable copy of the existing runtime-test fixture, replacing its imports with absolute source paths and adding one test: create native UUID under `codex-0`, emit fake PTY exit, then resume the same UUID under `codex-3` in a second workspace. Result: accepted, both launches recorded, new row identifies `codex-3`. The test uses a fake registry and fake provider and does not show that a real CLI opens a different account's history. Active concurrent controllers are rejected by existing test. Whether historical cross-profile resume should be forbidden is not explicitly resolved by the foundation contract; classify as **unverified risk**, not confirmed vulnerability. If ownership is a required boundary, persist/enforce verified owner (or fail closed) before launch. Reproduction: copy the fixture header/classes through `MemoryStore` from `packages/server/src/agency/runtime/agency-session-runtime.test.ts` to a temporary test, resolve its relative JS imports to the source TS files, append the following, and run `corepack pnpm --dir packages/server exec tsx --test /tmp/agency-audit-resume.test.ts`:
+
+```typescript
+test('inactive native ID may be resumed under another profile', async () => {
+ const cwd=await mkdtemp(path.join(tmpdir(),'agency-profile-resume-')); const f=fixture(cwd);
+ try {await f.runtime.initialize();const id=randomUUID();
+ const first=await f.runtime.create({workspaceId:f.one.id,kind:'agent',profileId:'codex-0' as CliProfileId,cols:80,rows:24,resumeNativeSessionId:id});
+ f.terminals.exit(first.terminalId!,0);await new Promise<void>(done=>setImmediate(done));
+ assert.equal(f.runtime.get(first.id)?.lifecycle,'exited');
+ const next=await f.runtime.create({workspaceId:f.two.id,kind:'agent',profileId:'codex-3' as CliProfileId,cols:80,rows:24,resumeNativeSessionId:id});
+ assert.equal(next.profileId,'codex-3');assert.equal(next.nativeSessionId,id);assert.equal(f.terminals.opens.length,2);
+ } finally {f.runtime.dispose();await rm(cwd,{recursive:true,force:true});}
+});
+```

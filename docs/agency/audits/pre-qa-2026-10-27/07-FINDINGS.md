@@ -46,3 +46,7 @@ None established.
 - Expected: assert an actual exit code and/or an explicitly supported signal; distinguish command echo from output using a generated marker not appearing literally in the input; check actual escape sequences and shell execution; require expected HTTP upgrade refusal status.
 - Reproduction: inspect check #18 with `{ lifecycle: 'exited', exitCode: null }`: the predicate evaluates true because the absent signal is undefined; the real passing run displays undefined. Inspect marker commands and predicates; potential false positives are source-demonstrable, not proof that the implementation's Ctrl+C actually fails.
 - Impact: passing acceptance counts overstate verification, risking missed defects before release. Regression: add negative self-tests with absent exit code, echo-only output, and unrelated socket errors and prove each fails.
+
+### Unverified risk — historical profile ownership on resume
+
+Synthetic runtime fixture confirms an inactive native ID previously recorded under `codex-0` is accepted under `codex-3` after exit. Actual account exposure is unproven, and the foundation contract does not explicitly settle whether transferring a native ID across named profiles is permitted. Check the intended identity policy and real adapter capability; see 03 for exact reproduction. No severity assigned until the requirement and impact are established.

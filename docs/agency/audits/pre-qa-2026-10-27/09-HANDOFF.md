@@ -35,3 +35,7 @@ Screenshots passed eight fixture states, four widths, no logged page/console err
 ## Checkpoint 00e continuation
 
 Preliminary process startup and navigation results in 05: first empty-config HTTP-ready 1824.62 ms; four subsequent launches 1031.38–1065.97 ms (OS cache not cold); 20 same-context browser navigations p50 40.00, p95 54.29, max/first 188.71 ms. Full reproducible temporary script is embedded in 05. A potential cross-profile resume issue after previous controller exits is an unverified hypothesis, see 03. Exact next action: reproduce with fake provider/registry and determine expected ownership contract, then investigate output-load/resource growth and remaining auth/architecture/coverage. Do not interpret startup or low-load metrics as full phase 5 completion.
+
+## Checkpoint 00f continuation
+
+Fake-runtime test reproduced inactive native session ID acceptance under another profile. This is a verified behavior but an unverified defect/security impact until historical ownership policy and real CLI behavior are established; see 03. Do not repeat the fake test without extending it. Next measure sustained output and server resources, then finish architecture, security and remaining browser scale scenarios. SEC-001 and TEST-001 remain the two established findings. All phase checkboxes remain open.
