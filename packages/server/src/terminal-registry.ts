@@ -26,7 +26,7 @@ import {
   type TerminalOfflineReason,
   type TabWorktree,
 } from '@agent-workbench/shared';
-import type { AgentAdapter, CliLocation, LaunchHook, LaunchPlan } from './agents/adapter.js';
+import type { AgentAdapter, CliLocation, LaunchHook, LaunchPlan, LaunchSession } from './agents/adapter.js';
 import {
   resolveAgentForOpen,
   type AgentRegistry,
@@ -75,6 +75,19 @@ export type SessionAgentLookup = (sessionId: string) => AgentId | null;
  * git (hito 48). Lo contesta `WorktreeLinks.tabWorktree`, leyendo `.git`.
  */
 export type TabWorktreeLookup = (cwd: string) => Promise<TabWorktree | null>;
+
+export interface AgencyPreparedTerminalLaunch {
+  file: string;
+  args: readonly string[];
+  env: Record<string, string>;
+  /** The ONE adapter.launch result prepared by Lane B. Never launch a second time. */
+  session: LaunchSession;
+  /** The same token passed to adapter.launch and adapter.onSpawned (AGY log correlation). */
+  launchToken: string;
+  proposedSessionId: string;
+  /** Reject conflicting native discoveries before the registry exposes an ID. */
+  acceptNativeSessionId?: (terminalId: TerminalId, nativeSessionId: string) => boolean;
+}
 
 interface TerminalEntry {
   descriptor: TerminalDescriptor;
@@ -136,7 +149,7 @@ interface TerminalEntry {
   /** Internal Agency ownership, never restored as an upstream native tab. */
   agencyManaged: boolean;
   /** Explicit validated profile launch, retained only in memory. */
-  agencyLaunch: { file: string; args: readonly string[]; env: Record<string, string> } | null;
+  agencyLaunch: AgencyPreparedTerminalLaunch | null;
 }
 
 export interface OpenTerminalOptions {
@@ -160,7 +173,7 @@ export interface OpenTerminalOptions {
   /** Internal caller flag. Agency metadata, not the upstream tab store, owns this process. */
   agencyManaged?: boolean;
   /** Lane B validated original CLI executable, argv and isolated environment. */
-  agencyLaunch?: { file: string; args: readonly string[]; env: Record<string, string> };
+  agencyLaunch?: AgencyPreparedTerminalLaunch;
 }
 
 // Vive en su propio modulo para que se pueda reconocer sin cargar node-pty.
@@ -363,8 +376,13 @@ export class TerminalRegistry extends EventEmitter {
     // Se resuelve que se va a lanzar antes que nada: asi el error que ve el
     // usuario es "falta la CLI" o "falta la consola" y no uno de mas adelante.
     if (options.agencyLaunch === undefined) this.launcherFor(kind, agent);
-    if (options.agencyLaunch !== undefined && (kind !== 'agent' || options.agencyManaged !== true)) {
-      throw new Error('Agency profile launches require an Agency-managed agent terminal');
+    if (options.agencyLaunch !== undefined && (
+      kind !== 'agent' || options.agencyManaged !== true || agent === null ||
+      this.agents.get(agent) === null ||
+      !/^[0-9a-f-]{36}$/i.test(options.agencyLaunch.launchToken) ||
+      !/^[0-9a-f-]{36}$/i.test(options.agencyLaunch.proposedSessionId)
+    )) {
+      throw new Error('Invalid prepared Agency native launch');
     }
 
     if (this.terminals.size >= MAX_TERMINALS) {
@@ -377,7 +395,7 @@ export class TerminalRegistry extends EventEmitter {
     await this.assertDirectory(options.cwd);
     const worktree = await this.worktreeFor(kind, options.cwd);
 
-    const resumed = kind === 'agent' && options.resumeSessionId !== undefined;
+    const resumed = kind === 'agent' && (options.resumeSessionId !== undefined || options.agencyLaunch?.session.kind === 'known' && options.resumeSessionId !== undefined);
     const terminalId = randomUUID();
     const descriptor: TerminalDescriptor = {
       terminalId,
@@ -385,7 +403,7 @@ export class TerminalRegistry extends EventEmitter {
       agent,
       cwd: options.cwd,
       // Provisional: `spawn` lo confirma con lo que diga el adaptador.
-      sessionId: kind === 'agent' ? (options.resumeSessionId ?? randomUUID()) : '',
+      sessionId: kind === 'agent' ? (options.resumeSessionId ?? options.agencyLaunch?.proposedSessionId ?? randomUUID()) : '',
       // Una consola lleva el nombre de la suya: desde el Hito 41 pueden convivir
       // PowerShell y Git Bash, y el nombre de la consola nueva ya no es el de todas.
       label: options.label ?? (kind === 'shell' ? (this.shell?.name ?? '') : ''),
@@ -416,6 +434,10 @@ export class TerminalRegistry extends EventEmitter {
         file: options.agencyLaunch.file,
         args: [...options.agencyLaunch.args],
         env: { ...options.agencyLaunch.env },
+        session: options.agencyLaunch.session,
+        launchToken: options.agencyLaunch.launchToken,
+        proposedSessionId: options.agencyLaunch.proposedSessionId,
+        acceptNativeSessionId: options.agencyLaunch.acceptNativeSessionId,
       },
     };
     this.terminals.set(terminalId, entry);
@@ -428,7 +450,7 @@ export class TerminalRegistry extends EventEmitter {
         para quien abre es un fallo: no hay pestana.
       */
       const spawned = await this.spawn(entry, { resume: resumed });
-      if (!spawned) {
+      if (!spawned || this.terminals.get(terminalId) !== entry) {
         throw new TerminalOpenError('spawn-failed', serverText('tabClosedWhileOpening'));
       }
     } catch (error) {
@@ -575,12 +597,15 @@ export class TerminalRegistry extends EventEmitter {
     let adapter: AgentAdapter | null = null;
     let launchedSessionId = sessionId;
     // Uno por proceso: con el, el adaptador casa lo que preparo al lanzar con su gancho.
-    const launchToken = randomUUID();
+    const launchToken = entry.agencyLaunch?.launchToken ?? randomUUID();
     if (entry.agencyLaunch !== null) {
+      // Lane B has already invoked adapter.launch with this exact launchToken.
+      // Reuse its plan and original native onSpawned hook, never call launch twice.
+      adapter = agent === null ? null : this.agents.get(agent)?.adapter ?? null;
+      if (adapter === null) throw new Error('Missing Agency native adapter');
       launch = { file: entry.agencyLaunch.file, args: [...entry.agencyLaunch.args] };
-      // A native provider conversation is not the Workbench terminal or Agency session.
-      // Discovery belongs to the installed CLI integration, never a guessed UUID.
-      launchedSessionId = '';
+      launchedSessionId = entry.agencyLaunch.session.kind === 'known'
+        ? entry.agencyLaunch.session.sessionId : '';
     } else if (launcher?.kind === 'agent') {
       adapter = launcher.agent.adapter;
       const { location } = launcher.agent;
@@ -747,7 +772,19 @@ export class TerminalRegistry extends EventEmitter {
     const entry = this.terminals.get(terminalId);
     if (entry === undefined || entry.descriptor.kind !== 'agent') return;
     if (sessionId.length === 0 || entry.descriptor.sessionId === sessionId) return;
-
+    // Native discovery is authoritative, but duplicate live controllers are not.
+    // The Agency callback claims the provider-native ID synchronously even when
+    // the adapter reports it before open() has returned to AgencySessionRuntime.
+    const allowed = entry.agencyLaunch?.acceptNativeSessionId?.(terminalId, sessionId) ?? true;
+    const collision = [...this.terminals.values()].some((other) =>
+      other !== entry && other.descriptor.kind === 'agent' &&
+      other.descriptor.agent === entry.descriptor.agent &&
+      other.descriptor.sessionId === sessionId &&
+      (other.descriptor.alive || other.launching));
+    if (!allowed || collision) {
+      this.close(terminalId);
+      return;
+    }
     entry.descriptor = { ...entry.descriptor, sessionId };
     this.persist();
     this.emit('changed');
