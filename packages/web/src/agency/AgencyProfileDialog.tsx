@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { AgencyCliProfile } from '@agent-workbench/shared';
 import { t } from '../i18n/index.js';
 import { parseProfileArgv } from './model.js';
@@ -12,6 +12,24 @@ export function AgencyProfileDialog({ profile, onSave, onClose }: {
   const [args, setArgs] = useState(JSON.stringify(profile.args));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLFormElement>(null);
+  const previousFocus = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+
+  useEffect(() => {
+    return () => { previousFocus.current?.focus(); };
+  }, []);
+
+  function keepFocus(event: ReactKeyboardEvent<HTMLFormElement>) {
+    if (event.key !== 'Tab') return;
+    const elements = [...(dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    ) ?? [])];
+    if (!elements.length) { event.preventDefault(); return; }
+    const first = elements[0]!;
+    const last = elements[elements.length - 1]!;
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
 
   useEffect(() => {
     const esc = (event: KeyboardEvent) => {
@@ -38,7 +56,7 @@ export function AgencyProfileDialog({ profile, onSave, onClose }: {
   return <div className="agency-modal-backdrop" onMouseDown={(event) => {
     if (event.target === event.currentTarget && !saving) onClose();
   }}>
-    <form role="dialog" aria-modal="true" aria-labelledby="agency-profile-title" className="agency-dialog"
+    <form ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="agency-profile-title" className="agency-dialog" onKeyDown={keepFocus}
       onSubmit={(event) => void submit(event)}>
       <div className="agency-dialog-head">
         <h2 id="agency-profile-title">{t('agency.profile.configure')}</h2>

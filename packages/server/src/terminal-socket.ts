@@ -3222,8 +3222,13 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         }
 
         case 'agency.profiles.list': {
-          const profiles = await listAgencyProfiles(agencyProfileStore, agents);
-          send(socket, { type: 'agency.profiles.snapshot', requestId: message.requestId, profiles });
+          try {
+            const profiles = await listAgencyProfiles(agencyProfileStore, agents);
+            send(socket, { type: 'agency.profiles.snapshot', requestId: message.requestId, profiles });
+          } catch {
+            send(socket, { type: 'agency.error', requestId: message.requestId,
+              code: 'internal-error', message: 'Unable to load Agency profiles.' });
+          }
           break;
         }
 

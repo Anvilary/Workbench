@@ -14,7 +14,9 @@
  */
 
 import { spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,13 +25,8 @@ import WebSocket from 'ws';
 
 const serverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const rootDir = path.resolve(serverDir, '../..');
-const outDir = path.join(rootDir, 'docs', 'agency', 'screenshots');
+const outDir = process.env.AGENCY_SCREENSHOT_DIR || path.join(rootDir, 'docs', 'agency', 'screenshots');
 mkdirSync(outDir, { recursive: true });
-
-const artifactDir = '/home/user/.local/share/agy-3-profile/home/.gemini/antigravity-cli/brain/1a3be513-bf84-4ca1-ad88-4143d44cf965';
-if (existsSync(artifactDir)) {
-  mkdirSync(path.join(artifactDir, 'screenshots'), { recursive: true });
-}
 
 const temp = mkdtempSync(path.join(tmpdir(), 'aw-agency-shots-'));
 const testHome = path.join(temp, 'home');
@@ -43,6 +40,8 @@ mkdirSync(testWorkspaces, { recursive: true });
 
 writeFileSync(path.join(testHome, '.zshrc'), '# shots\n');
 writeFileSync(path.join(testHome, '.bashrc'), '# shots\n');
+const fixture = path.join(temp, 'agency-test-cli');
+writeFileSync(fixture, '#!/bin/sh\nprintf "AGENCY TEST FIXTURE (no provider or inference)\\n"\nwhile IFS= read -r line; do printf "fixture input received\\n"; done\n', { mode: 0o755 });
 
 const wsDirEmpty = path.join(testWorkspaces, 'empty-ws');
 const wsDirShell = path.join(testWorkspaces, 'shell-ws');
@@ -66,14 +65,21 @@ const commonEnv = {
   XDG_DATA_HOME: path.join(testHome, '.local', 'share'),
   XDG_CACHE_HOME: path.join(testHome, '.cache'),
   XDG_STATE_HOME: path.join(testHome, '.local', 'state'),
+  CODEX_HOME: path.join(testHome, '.codex'),
+  PI_CODING_AGENT_DIR: path.join(testHome, '.pi', 'agent'),
+  PI_CODING_AGENT_SESSION_DIR: path.join(testHome, '.pi', 'sessions'),
 };
 
 console.log('Starting production server for screenshot capture...');
 const server = spawn(
   'pnpm',
   ['--dir', 'packages/server', 'exec', 'tsx', 'src/index.ts', '--prod'],
-  { cwd: rootDir, env: commonEnv, stdio: ['ignore', 'pipe', 'pipe'] },
+  { cwd: rootDir, env: commonEnv, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' },
 );
+process.on('exit', () => {
+  try { process.platform === 'win32' ? server.kill() : process.kill(-server.pid, 'SIGTERM'); } catch {}
+  rmSync(temp, { recursive: true, force: true });
+});
 
 let log = '';
 const { port, token, url } = await new Promise((resolve) => {
@@ -105,7 +111,7 @@ const { port, token, url } = await new Promise((resolve) => {
   }, 40_000);
 });
 
-console.log(`Server running at ${url}`);
+console.log(`Server running on loopback port ${port}`);
 
 // Setup initial data via WebSocket
 const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${token}`, {
@@ -116,18 +122,21 @@ await new Promise((resolve) => ws.on('open', resolve));
 
 const reqMap = new Map();
 ws.on('message', (raw) => {
-  try {
-    const msg = JSON.parse(raw.toString());
-    if (msg.requestId && reqMap.has(msg.requestId)) {
-      reqMap.get(msg.requestId)(msg);
-      reqMap.delete(msg.requestId);
-    }
-  } catch {}
+  const msg = JSON.parse(raw.toString());
+  if (msg.requestId && reqMap.has(msg.requestId)) {
+    reqMap.get(msg.requestId)(msg);
+    reqMap.delete(msg.requestId);
+  }
 });
 
 function request(msg) {
-  return new Promise((resolve) => {
-    reqMap.set(msg.requestId, resolve);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { reqMap.delete(msg.requestId); reject(new Error(`Timeout: ${msg.type}`)); }, 15000);
+    reqMap.set(msg.requestId, (response) => {
+      clearTimeout(timer);
+      if (response.type === 'agency.error') return reject(new Error(`${msg.type}: ${response.message}`));
+      resolve(response);
+    });
     ws.send(JSON.stringify(msg));
   });
 }
@@ -135,13 +144,11 @@ function request(msg) {
 function pickerListing(req) {
   return new Promise((resolve) => {
     const handler = (raw) => {
-      try {
-        const msg = JSON.parse(raw.toString());
-        if (msg.type === 'picker.listing') {
-          ws.off('message', handler);
-          resolve(msg.listing);
-        }
-      } catch {}
+      const msg = JSON.parse(raw.toString());
+      if (msg.type === 'picker.listing') {
+        ws.off('message', handler);
+        resolve(msg.listing);
+      }
     };
     ws.on('message', handler);
     ws.send(JSON.stringify(req));
@@ -175,10 +182,23 @@ const wsShell = await createWs('Shell Only', 'shell-project');
 const wsAgent = await createWs('Agent Only', 'agent-project');
 const wsCombined = await createWs('Combined Workspace', 'combined-project');
 const wsDone = await createWs('Completed Task', 'done-project');
+const extraProject = await request({ type: 'agency.project.create', requestId: 'p-long',
+  name: 'A second project with a deliberately long name for responsive navigation' });
+const extraPicker = await pickerListing({ type: 'picker.open' });
+await pickerListing({ type: 'picker.create', pickerId: extraPicker.pickerId, name: 'long-project' });
+await request({ type: 'agency.workspace.create', requestId: 'ws-long', projectId: extraProject.project.id,
+  name: 'A workspace with a deliberately long name for responsive navigation', pickerId: extraPicker.pickerId });
+
+// These disposable processes deliberately do not run or authenticate any real CLI.
+for (const profileId of ['codex-0', 'claude-code']) {
+  const configured = await request({ type: 'agency.profile.configure', requestId: `fixture-${profileId}`,
+    profileId, executable: fixture, args: [] });
+  assert.equal(configured.profile.configurationStatus, 'available');
+}
 
 // Launch sessions
 // Shell workspace session
-await request({
+const shellSession = await request({
   type: 'agency.session.create',
   requestId: 's-shell',
   workspaceId: wsShell.id,
@@ -188,7 +208,7 @@ await request({
 });
 
 // Agent workspace session
-await request({
+const agentSession = await request({
   type: 'agency.session.create',
   requestId: 's-agent',
   workspaceId: wsAgent.id,
@@ -199,7 +219,7 @@ await request({
 });
 
 // Combined workspace sessions (terminal + agent)
-await request({
+const combinedShell = await request({
   type: 'agency.session.create',
   requestId: 's-comb-term',
   workspaceId: wsCombined.id,
@@ -208,7 +228,7 @@ await request({
   rows: 24,
 });
 
-await request({
+const combinedAgent = await request({
   type: 'agency.session.create',
   requestId: 's-comb-agent',
   workspaceId: wsCombined.id,
@@ -218,14 +238,11 @@ await request({
   rows: 24,
 });
 
-// Configure codex-0 profile so it has an available binary and can be configured in UI
-await request({
-  type: 'agency.profile.configure',
-  requestId: 'prof-cfg-codex',
-  profileId: 'codex-0',
-  executable: '/bin/bash',
-  args: ['-l'],
-});
+for (const result of [shellSession, agentSession, combinedShell, combinedAgent]) {
+  assert.equal(result.type, 'agency.session.created');
+  assert.equal(result.session.lifecycle, 'running');
+  assert.ok(result.session.terminalId);
+}
 
 // Mark wsDone as done
 await request({
@@ -259,93 +276,121 @@ await page.goto(url);
 await page.waitForLoadState('networkidle');
 await page.waitForTimeout(1000);
 
-// Helper for saving shot to both outDir and artifactDir
+// Save only after the requested state has been reached.
 async function saveShot(filename) {
   const p1 = path.join(outDir, filename);
   await page.screenshot({ path: p1 });
   console.log(`Saved screenshot: ${p1}`);
-  if (existsSync(artifactDir)) {
-    const p2 = path.join(artifactDir, 'screenshots', filename);
-    copyFileSync(p1, p2);
-  }
 }
 
-// Check 1: 01-empty-workspace.png
-console.log('Capturing Empty Workspace...');
-await page.locator('.agency-workspace-nav-button:has-text("Empty Workspace")').first().click({ force: true }).catch(() => {});
-await page.waitForTimeout(600);
+async function selectWorkspace(name) {
+  const button = page.locator('.agency-workspace-nav-button').filter({ hasText: name }).first();
+  await button.click();
+  await page.locator('.agency-workspace-view').filter({ hasText: name }).waitFor({ state: 'visible' });
+  assert.equal(await button.getAttribute('aria-current'), 'page');
+}
+async function expectVisible(selector) {
+  await page.locator(selector).first().waitFor({ state: 'visible' });
+}
+async function expectAbsent(selector) {
+  assert.equal(await page.locator(selector).count(), 0, `${selector} should be absent`);
+}
+await selectWorkspace('Empty Workspace');
+await expectVisible('.agency-agent-pane');
+await expectAbsent('.agency-shell-pane');
+await expectAbsent('.terminal-surface');
+const profileOptions = await page.getByRole('combobox', { name: 'CLI profile' }).locator('option').evaluateAll(
+  (options) => options.map((option) => option.value).filter(Boolean));
+assert.deepEqual(profileOptions, ['codex-0', 'codex-1', 'codex-3', 'agy-0', 'agy-1', 'agy-2', 'agy-3', 'agy-4', 'agy-5', 'claude-code']);
 await saveShot('01-empty-workspace.png');
 
-// Check 7: 07-profile-configuration-dialog.png (Captured while in Empty Workspace before sessions)
-console.log('Capturing Profile Configuration Dialog...');
-const configBtn = page.locator('button:has-text("Configure profile"), button[title*="Configure profile" i]').first();
-if (await configBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-  await configBtn.click({ force: true });
-  await page.waitForTimeout(600);
-  await saveShot('07-profile-configuration-dialog.png');
-  const closeBtn = page.locator('button:has-text("Cancel"), button[aria-label="Close"]').first();
-  if (await closeBtn.isVisible().catch(() => false)) {
-    await closeBtn.click({ force: true });
-  } else {
-    await page.keyboard.press('Escape');
-  }
-  await page.waitForTimeout(300);
+await page.getByRole('button', { name: 'Configure profile' }).click();
+await expectVisible('[role="dialog"]');
+await saveShot('07-profile-configuration-dialog.png');
+for (let i = 0; i < 8; i++) {
+  await page.keyboard.press('Tab');
+  assert.ok(await page.locator('[role="dialog"]').evaluate((dialog) => dialog.contains(document.activeElement)),
+    'Keyboard focus escaped the profile dialog');
 }
+await page.keyboard.press('Escape');
+await page.locator('[role="dialog"]').waitFor({ state: 'hidden' });
+assert.equal(await page.getByRole('button', { name: 'Configure profile' }).evaluate((button) => document.activeElement === button), true);
 
-// Check 2: 02-shell-only-workspace.png
-console.log('Capturing Shell-only Workspace...');
-await page.locator('.agency-workspace-nav-button:has-text("Shell Only")').first().click({ force: true }).catch(() => {});
-await page.waitForTimeout(800);
+await selectWorkspace('Shell Only');
+await expectVisible('.agency-shell-pane .terminal-surface');
+await expectVisible('.agency-shell-pane .xterm-screen');
+await expectAbsent('.agency-agent-pane');
 await saveShot('02-shell-only-workspace.png');
 
-// Check 3: 03-agent-only-workspace.png
-console.log('Capturing Agent-only Workspace...');
-await page.locator('.agency-workspace-nav-button:has-text("Agent Only")').first().click({ force: true }).catch(() => {});
-await page.waitForTimeout(800);
+await selectWorkspace('Agent Only');
+await expectVisible('.agency-agent-pane .terminal-surface');
+await expectAbsent('.agency-shell-pane');
+await page.getByText('AGENCY TEST FIXTURE', { exact: false }).first().waitFor({ state: 'visible' });
 await saveShot('03-agent-only-workspace.png');
 
-// Check 4: 04-combined-workspace.png
-console.log('Capturing Combined Workspace...');
-await page.locator('.agency-workspace-nav-button:has-text("Combined Workspace")').first().click({ force: true }).catch(() => {});
-await page.waitForTimeout(800);
+await selectWorkspace('Combined Workspace');
+await expectVisible('.agency-agent-pane .terminal-surface');
+await expectVisible('.agency-shell-pane .terminal-surface');
 await saveShot('04-combined-workspace.png');
-
-// Check 5: 05a-sidebar-expanded.png & 05b-sidebar-collapsed.png
-console.log('Capturing Sidebar Expanded / Collapsed...');
+await expectVisible('.agency-sidebar-nav');
 await saveShot('05a-sidebar-expanded.png');
+const sidebarToggle = page.locator('.agency-topbar button[aria-expanded]');
+await sidebarToggle.click();
+await page.locator('.agency-sidebar-nav').waitFor({ state: 'hidden' });
+await saveShot('05b-sidebar-collapsed.png');
+await sidebarToggle.click();
+await expectVisible('.agency-sidebar-nav');
 
-const collapseBtn = page.locator('button[aria-label*="sidebar" i], button[title*="sidebar" i], button:has-text("Toggle sidebar")').first();
-if (await collapseBtn.isVisible().catch(() => false)) {
-  await collapseBtn.click({ force: true });
-  await page.waitForTimeout(400);
-  await saveShot('05b-sidebar-collapsed.png');
-  await collapseBtn.click({ force: true });
-  await page.waitForTimeout(400);
-} else {
-  await saveShot('05b-sidebar-collapsed.png');
-}
-
-// Check 6: 06-done-restore-view.png
-console.log('Capturing Done / Restore Workspace...');
-const doneSection = page.locator('button.agency-history-toggle, button:has-text("done"), button:has-text("Done")').first();
-if (await doneSection.isVisible().catch(() => false)) {
-  await doneSection.click({ force: true });
-  await page.waitForTimeout(500);
-  await page.locator('.agency-workspace-nav-button:has-text("Completed Task")').first().click({ force: true }).catch(() => {});
-  await page.waitForTimeout(500);
-}
+await page.locator('.agency-history-toggle').click();
+await expectVisible('.agency-done-view:has-text("Completed Task")');
+await expectVisible('.agency-done-view button');
 await saveShot('06-done-restore-view.png');
 
-// Quality checks:
-console.log('--- Quality Verification ---');
-console.log(`Page Errors: ${pageErrors.length}`);
-if (pageErrors.length > 0) {
-  console.error('Page errors detected:', pageErrors);
+// Exercise populated combined state and the dialog at each requested width.
+for (const width of [390, 768, 1024, 1440]) {
+  await page.setViewportSize({ width, height: 900 });
+  await selectWorkspace('Combined Workspace');
+  if (width <= 680) await sidebarToggle.click();
+  await expectVisible('.agency-agent-pane .terminal-surface');
+  await expectVisible('.agency-shell-pane .terminal-surface');
+  const metrics = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth,
+    scroll: document.documentElement.scrollWidth,
+    terminals: [...document.querySelectorAll('.terminal-surface')].map(el => {
+      const r = el.getBoundingClientRect(); return { width: r.width, height: r.height };
+    }) }));
+  assert.ok(metrics.scroll <= metrics.viewport, `Overflow at ${width}: ${JSON.stringify(metrics)}`);
+  assert.ok(metrics.terminals.every(r => r.width > 100 && r.height > 50), `Terminal too small at ${width}: ${JSON.stringify(metrics)}`);
+  console.log('Combined layout:', width, JSON.stringify(metrics));
+  if (width <= 680) await sidebarToggle.click();
+  await selectWorkspace('Empty Workspace');
+  if (width <= 680) await sidebarToggle.click();
+  await page.getByRole('button', { name: 'Configure profile' }).click();
+  const box = await page.locator('[role="dialog"]').boundingBox();
+  assert.ok(box && box.x >= 0 && box.x + box.width <= width && box.y >= 0 && box.y + box.height <= 900,
+    `Dialog out of viewport at ${width}: ${JSON.stringify(box)}`);
+  await page.keyboard.press('Escape');
+  await page.locator('[role="dialog"]').waitFor({ state: 'hidden' });
+  if (width <= 680) await sidebarToggle.click();
 }
-console.log(`Console Errors: ${consoleErrors.length}`);
-if (consoleErrors.length > 0) {
-  console.log('Console error log:', consoleErrors);
-}
+// Drafts remain intact across two actual workspace switches.
+await selectWorkspace('Empty Workspace');
+const draft = 'A long unsent draft '.repeat(80);
+await page.locator('.agency-composer textarea').fill(draft);
+const switchStart = performance.now();
+await selectWorkspace('Combined Workspace');
+await selectWorkspace('Empty Workspace');
+console.log('Two workspace switches with terminal attachment (ms):', Math.round(performance.now() - switchStart));
+assert.equal(await page.locator('.agency-composer textarea').inputValue(), draft);
+await page.locator('.agency-history-toggle').click();
+await page.locator('.agency-done-row').filter({ hasText: 'Completed Task' }).getByRole('button', { name: 'Restore' }).click();
+await page.locator('.agency-workspace-view').filter({ hasText: 'Completed Task' }).waitFor({ state: 'visible' });
+assert.deepEqual(pageErrors, [], 'Unexpected browser page errors');
+const hashes = ['01-empty-workspace.png', '02-shell-only-workspace.png', '03-agent-only-workspace.png',
+  '04-combined-workspace.png', '05a-sidebar-expanded.png', '05b-sidebar-collapsed.png',
+  '06-done-restore-view.png', '07-profile-configuration-dialog.png']
+  .map((name) => createHash('sha256').update(readFileSync(path.join(outDir, name))).digest('hex'));
+assert.equal(new Set(hashes).size, hashes.length, 'Distinct UI states produced duplicate screenshots');
+console.log('Browser page errors:', pageErrors.length, 'console errors:', consoleErrors.length);
 
 await browser.close();
 try {
