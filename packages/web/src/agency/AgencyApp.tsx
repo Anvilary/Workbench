@@ -6,6 +6,8 @@ import { AgencyWorkspaceCreator, AgencyProjectCreator } from './AgencyWorkspaceC
 import { AgencyWorkspaceView } from './AgencyWorkspaceView.js';
 import { useAgencyStore } from './useAgencyStore.js';
 import { acknowledgeWorkspaceDraft, putWorkspaceDraft, type AgencyTransport } from './model.js';
+import { t } from '../i18n/index.js';
+import { useLocale } from '../i18n/useLocale.js';
 import './agency.css';
 
 const DRAFT_KEY = 'agency-ui.workspace-drafts.v1';
@@ -30,6 +32,7 @@ export function AgencyApp({ connection, agencyTransport }: {
   connection: AgentConnection;
   agencyTransport: AgencyTransport;
 }): JSX.Element {
+  useLocale();
   const store = useAgencyStore(agencyTransport, connection);
   const { data, loaded, online, notice } = store;
   const [selectedId, setSelectedId] = useState<WorkspaceId | null>(null);
@@ -51,7 +54,7 @@ export function AgencyApp({ connection, agencyTransport }: {
 
   useEffect(() => {
     if (!loaded || showingDone) return;
-    const active = data.workspaces.filter((ws) => ws.status === 'active');
+    const active = data.workspaces.filter((ws) => ws.status === t('agency.ui.active'));
     if (selectedId && active.some((ws) => ws.id === selectedId)) return;
     setSelectedId(active[0]?.id ?? null);
   }, [loaded, showingDone, data.workspaces, selectedId]);
@@ -60,17 +63,17 @@ export function AgencyApp({ connection, agencyTransport }: {
     if (!notice || seenNotice.current.has(notice.serial)) return;
     seenNotice.current.add(notice.serial);
     const ws = data.workspaces.find((item) => item.id === notice.workspaceId);
-    const label = ws?.name ?? 'Workspace';
-    const message = notice.kind === 'attention' ? label + ' needs your attention' : label + ' completed a turn';
+    const label = ws?.name ?? t('agency.ui.workspace');
+    const message = notice.kind === 'attention' ? t('agency.ui.needsAttentionNamed', { name: label }) : t('agency.ui.completedTurnNamed', { name: label });
     setStatusToast(message);
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) {
       // Only confirmed server transitions, never snapshots or local send clicks.
-      new Notification('Agency', { body: message, tag: 'agency-' + notice.sessionId + '-' + notice.kind });
+      new Notification(t('agency.ui.agency'), { body: message, tag: 'agency-' + notice.sessionId + '-' + notice.kind });
     }
   }, [notice, data.workspaces]);
 
-  const selected = !showingDone ? data.workspaces.find((ws) => ws.id === selectedId && ws.status === 'active') : undefined;
-  const activeCount = data.workspaces.filter((ws) => ws.status === 'active').length;
+  const selected = !showingDone ? data.workspaces.find((ws) => ws.id === selectedId && ws.status === t('agency.ui.active')) : undefined;
+  const activeCount = data.workspaces.filter((ws) => ws.status === t('agency.ui.active')).length;
 
   function updateDraft(workspaceId: string, value: string) {
     setDrafts((prev) => putWorkspaceDraft(prev, workspaceId as WorkspaceId, value));
@@ -90,20 +93,20 @@ export function AgencyApp({ connection, agencyTransport }: {
     setError(null);
     try {
       const answer = await store.markDone(workspace.id);
-      if (answer.type !== 'agency.workspace.done') throw new Error('Done was not confirmed');
+      if (answer.type !== 'agency.workspace.done') throw new Error(t('agency.ui.doneWasNotConfirmed'));
       if (selectedId === workspace.id) setSelectedId(null);
       // No terminal.close, signal or filesystem operation here.
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to mark Done'); }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.ui.unableToMarkDone')); }
   }
 
   async function restore(workspace: AgencyWorkspace) {
     setError(null);
     try {
       const answer = await store.restore(workspace.id);
-      if (answer.type !== 'agency.workspace.restored') throw new Error('Restore was not confirmed');
+      if (answer.type !== 'agency.workspace.restored') throw new Error(t('agency.ui.restoreWasNotConfirmed'));
       setShowingDone(false);
       setSelectedId(workspace.id);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to restore'); }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.ui.unableToRestore')); }
   }
 
   return (
@@ -123,27 +126,27 @@ export function AgencyApp({ connection, agencyTransport }: {
         <div className="agency-topbar">
           <button className="agency-icon-button" onClick={() => setSidebarOpen(!sidebarOpen)}
             type="button" aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'} aria-expanded={sidebarOpen}>☰</button>
-          <span className="agency-topbar-title">Agency UI</span>
-          <span className="agency-muted agency-topbar-count">{activeCount} active</span>
+          <span className="agency-topbar-title">{t('agency.ui.agencyUI')}</span>
+          <span className="agency-muted agency-topbar-count">{t('agency.ui.activeCount', { count: activeCount })}</span>
           <span className="agency-flex-spacer" />
           <span className={'agency-connection-state' + (online ? ' connected' : '')}>
-            <span className="agency-status-dot" />{online ? 'Connected' : 'Disconnected'}
+            <span className="agency-status-dot" />{online ? t('app.status.open') : t('agency.ui.disconnected')}
           </span>
           {notificationPermission === 'default' && (
             <button type="button" className="agency-secondary-button" onClick={() => {
               void Notification.requestPermission().then(setNotificationPermission);
-            }}>Enable notifications</button>
+            }}>{t('agency.ui.enableNotifications')}</button>
           )}
           <button type="button" className="agency-secondary-button" disabled={!online}
-            onClick={() => store.refresh()}>Refresh</button>
+            onClick={() => store.refresh()}>{t('agency.ui.refresh')}</button>
         </div>
         {error && <div role="alert" className="agency-error-bar">{error}
-          <button type="button" onClick={() => setError(null)} aria-label="Dismiss error">×</button></div>}
+          <button type="button" onClick={() => setError(null)} aria-label={t('agency.ui.dismissError')}>×</button></div>}
         {statusToast && <div className="agency-notice-bar" role="status">{statusToast}
-          <button type="button" aria-label="Dismiss notification" onClick={() => setStatusToast(null)}>×</button>
+          <button type="button" aria-label={t('agency.ui.dismissNotification')} onClick={() => setStatusToast(null)}>×</button>
         </div>}
         {!loaded ? (
-          <div className="agency-welcome"><h1>Agency</h1><p>Loading server workspace data…</p></div>
+          <div className="agency-welcome"><h1>{t('agency.ui.agency')}</h1><p>{t('agency.ui.loadingServerWorkspaceData')}</p></div>
         ) : showingDone ? (
           <AgencyDoneView workspaces={data.workspaces} projects={data.projects}
             onRestore={(ws) => { void restore(ws); }} />
@@ -155,10 +158,10 @@ export function AgencyApp({ connection, agencyTransport }: {
         ) : (
           <div className="agency-welcome">
             <div className="agency-welcome-icon" aria-hidden="true">◇</div>
-            <h1>One place for every development lane.</h1>
-            <p>Create a project and a workspace. Attach an original CLI, a shell, both, or neither.</p>
+            <h1>{t('agency.ui.onePlaceForEveryDevelopmentLane')}</h1>
+            <p>{t('agency.ui.createAProjectAndAWorkspaceAttachAn')}</p>
             <button type="button" className="agency-primary-button" onClick={() => openCreator()} disabled={!online}>
-              {data.projects.length === 0 ? 'Create first project' : 'New workspace'}
+              {data.projects.length === 0 ? t('agency.ui.createFirstProject') : t('agency.ui.newWorkspace')}
             </button>
           </div>
         )}
@@ -167,7 +170,7 @@ export function AgencyApp({ connection, agencyTransport }: {
         onClose={() => setCreatingProject(false)}
         onCreate={async (name) => {
           const answer = await store.createProject(name);
-          if (answer.type !== 'agency.project.created') throw new Error('Project creation not confirmed');
+          if (answer.type !== 'agency.project.created') throw new Error(t('agency.ui.projectCreationNotConfirmed'));
         }} />}
       {creatingWorkspace && <AgencyWorkspaceCreator
         connection={connection} projects={data.projects} initialProject={creatorProject}
