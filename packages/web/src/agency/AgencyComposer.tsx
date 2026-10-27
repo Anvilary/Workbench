@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { AgencyAgentSession, AgencyCliProfile, CliProfileId } from '@agent-workbench/shared';
 import { canLaunchAgent, selectableEfforts, selectableModels } from './model.js';
+import { AgencyProfileDialog } from './AgencyProfileDialog.js';
+import { t } from '../i18n/index.js';
 
 export interface AgencyComposerProps {
   draft: string;
@@ -15,17 +17,19 @@ export interface AgencyComposerProps {
   onLaunch: () => Promise<void>;
   onSubmit: (text: string) => Promise<void>;
   onInterrupt: () => void;
+  onConfigureProfile: (profile: AgencyCliProfile, executable: string, args: string[]) => Promise<void>;
   online: boolean;
 }
 
 export function AgencyComposer({
   draft, onDraft, profileId, profiles, onProfile, agent,
-  selectedModel, selectedEffort, onSelection, onLaunch, onSubmit, onInterrupt, online,
+  selectedModel, selectedEffort, onSelection, onLaunch, onSubmit, onInterrupt, onConfigureProfile, online,
 }: AgencyComposerProps): JSX.Element {
   const [sending, setSending] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [configuring, setConfiguring] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showConfigure, setShowConfigure] = useState(false);
   const profile = profiles.find((item) => item.id === (agent?.profileId ?? profileId));
   const models = selectableModels(profile?.capabilities);
   const efforts = selectableEfforts(profile?.capabilities, selectedModel);
@@ -75,11 +79,15 @@ export function AgencyComposer({
             <select aria-label="CLI profile" value={agent?.profileId ?? profileId} disabled={!!agent || waiting}
               onChange={(event) => onProfile(event.target.value as CliProfileId)}>
               <option value="">Choose CLI</option>
-              {profiles.map((item) => <option key={item.id} value={item.id} disabled={!canLaunchAgent(item)}>
+              {profiles.map((item) => <option key={item.id} value={item.id} >
                 {item.label}{canLaunchAgent(item) ? '' : ' (unavailable)'}
               </option>)}
             </select>
           </label>
+          {profile && !agent && <button type="button" className="agency-text-button" disabled={!online || waiting}
+            aria-label={t('agency.profile.configure')} onClick={() => setShowConfigure(true)}>
+            {t('agency.profile.configure')}
+          </button>}
           <label className="agency-compact-control" title={!models.length ? 'Model discovery unavailable. Native CLI default remains in effect.' : 'Model'}>
             <span className="agency-sr-only">Model</span>
             <select aria-label="Model" value={selectedModel ?? ''} disabled={waiting || !models.length}
@@ -124,6 +132,9 @@ export function AgencyComposer({
           !models.length ? 'Model and effort use native CLI defaults when not discoverable.' :
             'Native CLI authentication and permissions remain in control.'}
       </div>
+      {showConfigure && profile && <AgencyProfileDialog key={profile.id} profile={profile}
+        onClose={() => setShowConfigure(false)}
+        onSave={(executable, args) => onConfigureProfile(profile, executable, args)} />}
     </div>
   );
 }
