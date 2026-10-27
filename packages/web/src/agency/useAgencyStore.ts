@@ -108,8 +108,6 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
             ? old.workspaces.filter((w) => w.id !== message.workspaceId)
             : message.workspace ? replaceById(old.workspaces, message.workspace) : old.workspaces,
         }));
-      } else if (message.type === 'agency.profiles.snapshot') {
-        setData((old) => ({ ...old, profiles: message.profiles }));
       } else if (message.type === 'agency.profile.configured' || message.type === 'agency.profile.changed') {
         setData((old) => ({ ...old, profiles: replaceById(old.profiles, message.profile) }));
       } else if (message.type === 'agency.profile.capabilities') {
