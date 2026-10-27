@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   activeByProject, acknowledgeWorkspaceDraft, canLaunchAgent, currentSession,
   putWorkspaceDraft, selectableEfforts, selectableModels, transitionNotice, workspaceLayout,
+  createAgencyTransport, parseProfileArgv,
 } from './model.ts';
 
 const emptyCapabilities = {
@@ -82,4 +83,44 @@ test('Only server-confirmed state transitions cause attention/completion notices
   assert.equal(transitionNotice(idle, stopped), null);
   assert.equal(transitionNotice({ kind: 'terminal', activity: 'working', lifecycle: 'running' },
     { kind: 'terminal', activity: 'idle', lifecycle: 'running' }), null);
+});
+
+test('Offline mutation and explicit Stop never enter legacy replay outbox', () => {
+  const outbox = [];
+  const wire = [];
+  let open = false;
+  const connection = {
+    send(message) { if (!open) outbox.push(message); return false; },
+    sendImmediate(message) { if (!open) return false; wire.push(message); return true; },
+    onMessage() { return () => {}; },
+  };
+  const adapter = createAgencyTransport(connection);
+  const create = { type: 'agency.workspace.create', requestId: 'a', projectId: 'p', name: 'lane', pickerId: 'picker' };
+  const done = { type: 'agency.workspace.done', requestId: 'b', workspaceId: 'lane' };
+  const restore = { type: 'agency.workspace.restore', requestId: 'c', workspaceId: 'lane' };
+  const configure = { type: 'agency.profile.configure', requestId: 'd', profileId: 'profile', executable: 'codex00' };
+  const launch = { type: 'agency.session.create', requestId: 'e', workspaceId: 'lane', kind: 'terminal', cols: 80, rows: 24 };
+  const stop = { type: 'terminal.close', terminalId: 'terminal-id' };
+  for (const message of [create, done, restore, configure, launch, stop]) {
+    assert.equal(adapter.sendImmediate(message), false);
+  }
+  assert.deepEqual(outbox, []);
+  open = true;
+  assert.deepEqual(wire, [], 'Reconnect must not replay rejected operations');
+  assert.equal(adapter.sendImmediate(stop), true);
+  assert.deepEqual(wire, [stop]);
+});
+
+test('Missing immediate transport fails closed, never falls back to queued send', () => {
+  const connection = { send: () => { throw new Error('queued send should not run'); },
+    onMessage: () => () => {} };
+  assert.throws(() => createAgencyTransport(connection), /non-queueing/);
+});
+
+test('Profile argv JSON preserves spaces and rejects shell-like parsing', () => {
+  assert.deepEqual(parseProfileArgv('["--model", "two words", "--flag=x y"]'), ['--model', 'two words', '--flag=x y']);
+  assert.deepEqual(parseProfileArgv('[]'), []);
+  assert.equal(parseProfileArgv('--model two words'), null);
+  assert.equal(parseProfileArgv('["okay", 123]'), null);
+  assert.equal(parseProfileArgv('{"args": ["test"]}'), null);
 });
