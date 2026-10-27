@@ -90,3 +90,8 @@ Resume: `cd /home/user/Projects/Agency-UI-audit && git status --short --branch &
 
 - Verified FUNC-001 P2: real browser/server with controlled 500ms delay, eight picker open/close cycles before replies, then ninth gets `picker-failed` while UI displays loading; 8 listings/1 error independently instrumented. No application files changed. Reproduction, root cause and targeted correction in 02/07.
 - Other findings SEC-001 P1, TEST-001 P2. Historical cross-profile resume behavior remains unverified as defect. Completed phases: none; all major reviews are incomplete. Exact next: complete architecture/security review, confirm fresh reconnect recovers picker, stress server resources/multiple PTYs, then finish prioritization. Latest commit `git rev-parse HEAD` after commit; no known blockers.
+
+## Checkpoint 00k — provisional priorities and standalone handoff
+
+- Updated 08 with provisional A/B/C recommendations, 06 with focused coverage gaps and 09 with self-contained mission, evidence, metrics and a ready-to-paste resume prompt. Phase 0 complete and all major phases 1–8 remain incomplete. SEC-001 P1, FUNC-001 P2, TEST-001 P2 established. No P0 established. No performance bottleneck yet proven.
+- Parent checkpoint before this commit: `6f67abb2c4ccf9fca59b6aa830e833e19af27d3e`; resolve current checkpoint with `git rev-parse HEAD` because a commit cannot encode its own hash. Next: follow exact next actions in 09, starting synthetic end-to-end account isolation and remaining architecture/security. Check origin equality. No blockers known.

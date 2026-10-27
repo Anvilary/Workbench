@@ -21,3 +21,11 @@ Last completed step: verified clean integration worktree, branch/remote/PR head,
 25/25 numbered checks reported passed under Node 24.22.0 using frozen offline dependencies and a temporary pnpm shim, real localhost server, a headless Chrome empty-state browser and disposable homes. Check #13 uses a WebSocket test client, not an actual browser reconnect; #21 tests a mocked AgentConnection socket, not an end-to-end browser disconnect. Four empty-state document widths had no document overflow. Actual assertion quality is narrower than labels: see TEST-001. The numbered count is not a count of independent user acceptance scenarios.
 
 Screenshot script rerun passed eight distinct fixture screenshots and scripted checks, with no reported page or console errors. Script asserts page errors are empty but only logs console errors; it uses explicit waits and a one-second sleep. Coverage is partial as detailed in 04, especially real provider behavior, heavy lists/output and accessibility.
+
+## Priority gaps established so far
+
+1. Dual-home Codex discovery, wrong-account history isolation and native resume using synthetic rollouts and a real integrated socket/UI path (SEC-001).
+2. Folder picker open/cancel before first reply, eight or more repetitions, reopen, socket reconnect, and visible initial failure (FUNC-001).
+3. Negative controls for missing exit code, echo-only output, ANSI and unrelated WebSocket connection errors (TEST-001).
+4. Historical session resume across profiles after exit; define ownership policy and test it explicitly.
+5. Browser active-output/reconnect, large transcript, 5/20 and long-running 10/50 workloads, focus/accessibility, listeners and resource growth. These remain unverified, not claimed failing.
