@@ -39,3 +39,10 @@ No independent full coverage review yet.
 ## Cosmetic issues
 
 None established.
+
+### TEST-001 — E2E assertions can pass without proving labeled terminal/security behaviors
+- Category: test coverage gap; severity P2; confidence high; scope small. `packages/server/scripts/check-agency-e2e.mjs:148-180,490-512,514-551,680-701,728-737`; session schema `packages/shared/src/agency-protocol.ts:82-94`.
+- Observed: check #18 accepts `exitSignal !== null`, but AgencySessionBase defines no `exitSignal`, so `undefined !== null` is true even when exitCode is null. The observed passing run printed `Signal: undefined`. Checks #11/#12/#16 accept literal marker text present in the input command, so terminal line echo can satisfy the check without ANSI rendering, interrupt completion or successful command execution. WebSocket rejection checks accept any error, including transport failures, as rejection.
+- Expected: assert an actual exit code and/or an explicitly supported signal; distinguish command echo from output using a generated marker not appearing literally in the input; check actual escape sequences and shell execution; require expected HTTP upgrade refusal status.
+- Reproduction: inspect check #18 with `{ lifecycle: 'exited', exitCode: null }`: the predicate evaluates true because the absent signal is undefined; the real passing run displays undefined. Inspect marker commands and predicates; potential false positives are source-demonstrable, not proof that the implementation's Ctrl+C actually fails.
+- Impact: passing acceptance counts overstate verification, risking missed defects before release. Regression: add negative self-tests with absent exit code, echo-only output, and unrelated socket errors and prove each fails.

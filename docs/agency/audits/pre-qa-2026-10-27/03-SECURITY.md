@@ -39,3 +39,5 @@ try {
 } finally {await rm(root,{recursive:true,force:true});}
 
 ```
+
+Additional source trace: `conversation-hub.ts:565-577,806-825,840` rebinds the terminal's follower to the registry native ID; that adapter uses the server-home reader. `AgencyWorkspaceView.tsx:55` subscribes by the terminal. This establishes a credible source path from misattribution to wrong-home content, but actual rendered cross-profile disclosure has not been tested. Sanitized wrapper inspection: each of the three named entrypoints includes an `export CODEX_HOME=...` assignment. Their actual values and any real conversations were not examined.
