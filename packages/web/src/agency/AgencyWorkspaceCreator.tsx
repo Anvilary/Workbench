@@ -29,10 +29,13 @@ export function AgencyWorkspaceCreator({
 
   function choose(pickerId: string): void {
     if (!projectId || !name.trim() || creating) return;
-    setPicking(false);
     setCreating(true);
-    // Submit before FolderPicker unmounts and closes its socket-scoped picker ID.
-    void onCreate(projectId, name.trim(), pickerId).then(onClose).catch((reason: unknown) => {
+    // Keep the server-owned picker alive until creation is acknowledged, even if handlers are async.
+    void onCreate(projectId, name.trim(), pickerId).then(() => {
+      setPicking(false);
+      onClose();
+    }).catch((reason: unknown) => {
+      setPicking(false);
       setError(reason instanceof Error ? reason.message : 'Workspace creation failed');
       setCreating(false);
     });
@@ -79,7 +82,7 @@ export function AgencyWorkspaceCreator({
         confirmLabel="Use this directory"
         confirmTitle={(path) => 'Create workspace in ' + path}
         onChoose={choose}
-        onClose={() => setPicking(false)}
+        onClose={() => { if (!creating) setPicking(false); }}
       />}
     </>
   );
