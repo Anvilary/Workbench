@@ -115,3 +115,26 @@ export function activeByProject(
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
   }));
 }
+
+/** Keep drafts keyed to stable workspace IDs instead of component mount identity. */
+export function putWorkspaceDraft(
+  drafts: Readonly<Record<string, string>>, workspaceId: WorkspaceId, text: string,
+): Record<string, string> {
+  return { ...drafts, [workspaceId]: text };
+}
+
+/** A late server acknowledgement cannot erase text edited after submission. */
+export function acknowledgeWorkspaceDraft(
+  drafts: Readonly<Record<string, string>>, workspaceId: WorkspaceId, deliveredText: string,
+): Record<string, string> {
+  return drafts[workspaceId] === deliveredText ? { ...drafts, [workspaceId]: '' } : { ...drafts };
+}
+
+export type AgencyLayout = 'empty' | 'agent-only' | 'terminal-only' | 'combined';
+
+export function workspaceLayout(hasAgent: boolean, hasShell: boolean): AgencyLayout {
+  if (hasAgent && hasShell) return 'combined';
+  if (hasAgent) return 'agent-only';
+  if (hasShell) return 'terminal-only';
+  return 'empty';
+}
