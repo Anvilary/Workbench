@@ -1,3 +1,4 @@
+import { t } from '../i18n/index.js';
 import { useEffect, useState, type FormEvent } from 'react';
 import type { AgencyProject, ProjectId } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
@@ -36,7 +37,7 @@ export function AgencyWorkspaceCreator({
       onClose();
     }).catch((reason: unknown) => {
       setPicking(false);
-      setError(reason instanceof Error ? reason.message : 'Workspace creation failed');
+      setError(reason instanceof Error ? reason.message : t('agency.ui.workspaceCreationFailed'));
       setCreating(false);
     });
   }
@@ -48,19 +49,19 @@ export function AgencyWorkspaceCreator({
       }}>
         <section className="agency-dialog" role="dialog" aria-modal="true" aria-labelledby="agency-create-title">
           <div className="agency-dialog-head">
-            <h2 id="agency-create-title">New workspace</h2>
+            <h2 id="agency-create-title">{t('agency.ui.newWorkspace')}</h2>
             <button type="button" className="agency-icon-button" onClick={onClose} disabled={creating}
-              aria-label="Close workspace creator">×</button>
+              aria-label={t('agency.ui.closeWorkspaceCreator')}>×</button>
           </div>
-          <p className="agency-muted">Choose an existing folder. Each workspace has an independent directory and may start without an agent.</p>
+          <p className="agency-muted">{t('agency.ui.chooseAnExistingFolderEachWorkspaceHasAn')}</p>
           <label className="agency-field">
-            <span>Workspace name</span>
+            <span>{t('agency.ui.workspaceName')}</span>
             <input autoFocus value={name} maxLength={120} onChange={(event) => setName(event.target.value)}
               onKeyDown={(event) => { if (event.key === 'Enter' && name.trim() && projectId) setPicking(true); }}
-              placeholder="e.g. Fix terminal reconnect" disabled={creating} />
+              placeholder={t('agency.ui.eGFixTerminalReconnect')} disabled={creating} />
           </label>
           <label className="agency-field">
-            <span>Project</span>
+            <span>{t('agency.ui.project')}</span>
             <select value={projectId} disabled={creating}
               onChange={(event) => setProjectId(event.target.value as ProjectId)}>
               {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
@@ -68,19 +69,19 @@ export function AgencyWorkspaceCreator({
           </label>
           {error && <p role="alert" className="agency-error">{error}</p>}
           <div className="agency-dialog-actions">
-            <button type="button" className="agency-secondary-button" onClick={onClose} disabled={creating}>Cancel</button>
+            <button type="button" className="agency-secondary-button" onClick={onClose} disabled={creating}>{t('common.cancel')}</button>
             <button type="button" className="agency-primary-button" disabled={!projectId || !name.trim() || creating}
               onClick={() => { setError(null); setPicking(true); }}>
-              {creating ? 'Creating…' : 'Select existing folder'}
+              {creating ? t('agency.ui.creating') : t('agency.ui.selectExistingFolder')}
             </button>
           </div>
         </section>
       </div>
       {picking && <FolderPicker
         connection={connection}
-        title="Choose workspace directory"
-        confirmLabel="Use this directory"
-        confirmTitle={(path) => 'Create workspace in ' + path}
+        title={t('agency.ui.chooseWorkspaceDirectory')}
+        confirmLabel={t('agency.ui.useThisDirectory')}
+        confirmTitle={(path) => t('agency.ui.createWorkspaceInPath', { path })}
         onChoose={choose}
         onClose={() => { if (!creating) setPicking(false); }}
       />}
@@ -107,7 +108,7 @@ export function AgencyProjectCreator({ onCreate, onClose }: {
     if (!name.trim() || saving) return;
     setSaving(true);
     void onCreate(name.trim()).then(onClose).catch((reason: unknown) => {
-      setError(reason instanceof Error ? reason.message : 'Project creation failed');
+      setError(reason instanceof Error ? reason.message : t('agency.ui.projectCreationFailed'));
       setSaving(false);
     });
   }
@@ -117,16 +118,16 @@ export function AgencyProjectCreator({ onCreate, onClose }: {
     }}>
       <form className="agency-dialog" role="dialog" aria-modal="true" aria-labelledby="agency-new-project" onSubmit={submit}>
         <div className="agency-dialog-head">
-          <h2 id="agency-new-project">New project</h2>
-          <button type="button" className="agency-icon-button" aria-label="Close" onClick={onClose}>×</button>
+          <h2 id="agency-new-project">{t('agency.ui.newProject')}</h2>
+          <button type="button" className="agency-icon-button" aria-label={t('common.close')} onClick={onClose}>×</button>
         </div>
-        <p className="agency-muted">Projects group task workspaces. They do not define a filesystem root.</p>
-        <label className="agency-field"><span>Name</span><input autoFocus maxLength={120}
-          value={name} onChange={(event) => setName(event.target.value)} placeholder="Project name" /></label>
+        <p className="agency-muted">{t('agency.ui.projectsGroupTaskWorkspacesTheyDoNotDefine')}</p>
+        <label className="agency-field"><span>{t('agency.ui.name')}</span><input autoFocus maxLength={120}
+          value={name} onChange={(event) => setName(event.target.value)} placeholder={t('agency.ui.projectName')} /></label>
         {error && <p className="agency-error" role="alert">{error}</p>}
         <div className="agency-dialog-actions">
-          <button type="button" className="agency-secondary-button" onClick={onClose}>Cancel</button>
-          <button type="submit" className="agency-primary-button" disabled={!name.trim() || saving}>{saving ? 'Creating…' : 'Create project'}</button>
+          <button type="button" className="agency-secondary-button" onClick={onClose}>{t('common.cancel')}</button>
+          <button type="submit" className="agency-primary-button" disabled={!name.trim() || saving}>{saving ? t('agency.ui.creating') : t('agency.ui.createProject')}</button>
         </div>
       </form>
     </div>
