@@ -66,6 +66,10 @@ class FakeTerminals extends EventEmitter {
     return this.descriptors.has(id);
   }
 
+  list(): TerminalDescriptor[] {
+    return [...this.descriptors.values()];
+  }
+
   activityOf(_id: TerminalId): 'unknown' {
     return 'unknown';
   }
@@ -317,6 +321,64 @@ test('invalid IDs and stale workspace directories cannot launch', async () => {
     await assert.rejects(f.runtime.create({
       kind: 'terminal', workspaceId: f.one.id, cols: 80, rows: 24,
     }), /canonical directory/);
+    assert.equal(f.terminals.opens.length, 0);
+  } finally {
+    f.runtime.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('native conversation controller is exclusive across workspaces', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'agency-c-'));
+  const f = fixture(cwd, {
+    resolveLaunch: async ({ profileId, resumeNativeSessionId }) => ({
+      profileId,
+      provider: 'codex',
+      file: '/bin/echo',
+      args: ['literal argv'],
+      env: { PATH: '/usr/bin' },
+      nativeSessionId: resumeNativeSessionId,
+    }),
+  });
+  try {
+    await f.runtime.initialize();
+    const nativeId = randomUUID();
+    const first = await f.runtime.create({
+      kind: 'agent', workspaceId: f.one.id, profileId: agentProfile, cols: 80, rows: 24,
+      resumeNativeSessionId: nativeId,
+    });
+    assert.equal(first.lifecycle, 'running');
+    await assert.rejects(f.runtime.create({
+      kind: 'agent', workspaceId: f.two.id, profileId: agentProfile, cols: 80, rows: 24,
+      resumeNativeSessionId: nativeId,
+    }), (error: unknown) => error instanceof AgencyRuntimeError && error.code === 'conflict');
+    assert.equal(f.terminals.opens.length, 1);
+    await f.runtime.stop(first.id);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const second = await f.runtime.create({
+      kind: 'agent', workspaceId: f.two.id, profileId: agentProfile, cols: 80, rows: 24,
+      resumeNativeSessionId: nativeId,
+    });
+    assert.equal(second.lifecycle, 'running');
+  } finally {
+    f.runtime.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('mismatched named profile identity is never accepted as fallback', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'agency-c-'));
+  const f = fixture(cwd, {
+    resolveLaunch: async () => ({
+      profileId: 'codex-1' as CliProfileId,
+      provider: 'codex', file: '/bin/echo', args: [], env: { PATH: '/usr/bin' },
+    }),
+  });
+  try {
+    await f.runtime.initialize();
+    await assert.rejects(f.runtime.create({
+      kind: 'agent', workspaceId: f.one.id, profileId: agentProfile, cols: 80, rows: 24,
+    }), (error: unknown) => error instanceof AgencyRuntimeError && error.code === 'profile-unavailable');
     assert.equal(f.terminals.opens.length, 0);
   } finally {
     f.runtime.dispose();
