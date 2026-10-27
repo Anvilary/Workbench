@@ -302,7 +302,7 @@ test('corrupt metadata quarantines, bounded output marks truncation', async () =
     oversized.push('start:' + '😀'.repeat(10) + 'finish');
     assert.equal(oversized.isTruncated(), true);
     assert.ok(Buffer.byteLength(oversized.read(), 'utf8') <= 8);
-    assert.equal(oversized.read(), '😀finish');
+    assert.equal(oversized.read(), 'finish');
     const invalid = await import('node:fs/promises');
     await invalid.writeFile(file, '{bad json', 'utf8');
     assert.deepEqual(await store.load(), []);
