@@ -41,7 +41,7 @@ export function AgencyComposer({
     setConfiguring(true);
     setError(null);
     try { await onSelection(model, effort); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Setting was not applied'); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.ui.settingWasNotApplied')); }
     finally { setConfiguring(false); }
   }
 
@@ -50,7 +50,7 @@ export function AgencyComposer({
     setSending(true);
     setError(null);
     try { await onSubmit(draft); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Message was not confirmed'); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.ui.messageWasNotConfirmed')); }
     finally { setSending(false); }
   }
 
@@ -58,14 +58,14 @@ export function AgencyComposer({
     setLaunching(true);
     setError(null);
     try { await onLaunch(); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Agent did not start'); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.ui.agentDidNotStart')); }
     finally { setLaunching(false); }
   }
 
   return (
     <div className="agency-composer-wrap">
-      <section className="agency-composer" aria-label="Agent composer">
-        <textarea aria-label="Message to agent" placeholder={live ? 'Message the agent…' : 'Write a prompt, then start an agent to send it'}
+      <section className="agency-composer" aria-label={t('agency.ui.agentComposer')}>
+        <textarea aria-label={t('agency.ui.messageToAgent')} placeholder={live ? t('agency.ui.messageTheAgent') : t('agency.ui.startTheAgentThenSendYourPrompt')}
           value={draft} onChange={(event) => onDraft(event.target.value)} rows={3} spellCheck
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -74,11 +74,11 @@ export function AgencyComposer({
             }
           }} />
         <div className="agency-composer-controls">
-          <label className="agency-compact-control" title={agent ? 'Current running agent profile' : 'Choose installed CLI profile'}>
-            <span className="agency-sr-only">CLI profile</span>
-            <select aria-label="CLI profile" value={agent?.profileId ?? profileId} disabled={!!agent || waiting}
+          <label className="agency-compact-control" title={agent ? t('agency.ui.currentRunningAgentProfile') : t('agency.ui.chooseInstalledCLIProfile')}>
+            <span className="agency-sr-only">{t('agency.ui.cLIProfile')}</span>
+            <select aria-label={t('agency.ui.cLIProfile')} value={agent?.profileId ?? profileId} disabled={!!agent || waiting}
               onChange={(event) => onProfile(event.target.value as CliProfileId)}>
-              <option value="">Choose CLI</option>
+              <option value="">{t('agency.ui.chooseCLI')}</option>
               {profiles.map((item) => <option key={item.id} value={item.id} >
                 {item.label}{canLaunchAgent(item) ? '' : ' (unavailable)'}
               </option>)}
@@ -88,19 +88,19 @@ export function AgencyComposer({
             aria-label={t('agency.profile.configure')} onClick={() => setShowConfigure(true)}>
             {t('agency.profile.configure')}
           </button>}
-          <label className="agency-compact-control" title={!models.length ? 'Model discovery unavailable. Native CLI default remains in effect.' : 'Model'}>
-            <span className="agency-sr-only">Model</span>
-            <select aria-label="Model" value={selectedModel ?? ''} disabled={waiting || !models.length}
+          <label className="agency-compact-control" title={!models.length ? t('agency.ui.modelDiscoveryUnavailableNativeCLIDefaultRemainsIn') : t('agency.ui.model')}>
+            <span className="agency-sr-only">{t('agency.ui.model')}</span>
+            <select aria-label={t('agency.ui.model')} value={selectedModel ?? ''} disabled={waiting || !models.length}
               onChange={(event) => void configure(event.target.value || null, null)}>
-              <option value="">CLI default</option>
+              <option value="">{t('agency.ui.cLIDefault')}</option>
               {models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
             </select>
           </label>
-          <label className="agency-compact-control" title={!efforts.length ? 'No verified effort controls for this model' : 'Reasoning effort'}>
-            <span className="agency-sr-only">Reasoning effort</span>
-            <select aria-label="Reasoning effort" value={selectedEffort ?? ''} disabled={waiting || !efforts.length}
+          <label className="agency-compact-control" title={!efforts.length ? t('agency.ui.noVerifiedEffortControlsForThisModel') : t('agency.ui.reasoningEffort')}>
+            <span className="agency-sr-only">{t('agency.ui.reasoningEffort')}</span>
+            <select aria-label={t('agency.ui.reasoningEffort')} value={selectedEffort ?? ''} disabled={waiting || !efforts.length}
               onChange={(event) => void configure(selectedModel, event.target.value || null)}>
-              <option value="">Default effort</option>
+              <option value="">{t('agency.ui.defaultEffort')}</option>
               {efforts.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
           </label>
@@ -108,29 +108,29 @@ export function AgencyComposer({
             {live && (agent?.activity === 'working' || agent?.activity === 'awaiting-user' ||
               agent?.activity === 'awaiting-permission' || agent?.activity === 'unknown') && (
               <button type="button" className="agency-secondary-button" onClick={onInterrupt} disabled={!online}
-                title="Ask the original CLI to interrupt">Interrupt</button>
+                title={t('agency.ui.askTheOriginalCLIToInterrupt')}>{t('agency.ui.interrupt')}</button>
             )}
             {live ? (
               <button type="button" className="agency-send-button" onClick={() => void send()}
-                disabled={!online || !draft.trim() || waiting} aria-label="Send prompt">
-                {sending ? 'Sending…' : 'Send ↑'}
+                disabled={!online || !draft.trim() || waiting} aria-label={t('agency.ui.sendPrompt')}>
+                {sending ? t('agency.ui.sending') : t('agency.ui.send')}
               </button>
             ) : (
               <button type="button" className="agency-send-button" disabled={!canStart || waiting}
-                onClick={() => void launch()}>{launching ? 'Starting…' : 'Start agent ↗'}</button>
+                onClick={() => void launch()}>{launching ? t('agency.ui.startingInProgress') : t('agency.ui.startAgent')}</button>
             )}
           </div>
         </div>
       </section>
       {error && <p className="agency-composer-error" role="alert">{error}</p>}
       <div className="agency-composer-footnote">
-        {!online ? 'Disconnected. Sending and launching are disabled.' :
+        {!online ? t('agency.ui.disconnectedSendingAndLaunchingAreDisabled') :
           agent?.lifecycle === 'exited' || agent?.lifecycle === 'failed'
-            ? 'Previous session ended. Select a new agent session to continue.' :
+            ? t('agency.ui.previousSessionEndedSelectANewAgentSession') :
           profile && !canLaunchAgent(profile)
-            ? (profile.configurationMessage ?? 'This CLI profile is unavailable.') :
-          !models.length ? 'Model and effort use native CLI defaults when not discoverable.' :
-            'Native CLI authentication and permissions remain in control.'}
+            ? (profile.configurationMessage ?? t('agency.ui.thisCLIProfileIsUnavailable')) :
+          !models.length ? t('agency.ui.modelAndEffortUseNativeCLIDefaultsWhen') :
+            t('agency.ui.nativeCLIAuthenticationAndPermissionsRemainInControl')}
       </div>
       {showConfigure && profile && <AgencyProfileDialog key={profile.id} profile={profile}
         onClose={() => setShowConfigure(false)}
