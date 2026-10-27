@@ -285,7 +285,7 @@ test('named symlinked entrypoints preserve distinct CLI wrapper invocation ident
     const bin = path.join(f.root, 'bin');
     await mkdir(bin);
     const shared = path.join(bin, 'native-dispatcher');
-    await writeFile(shared, '#!/bin/sh\\nprintf "%s\\\\n" "${0##*/}"\\n', { mode: 0o700 });
+    await writeFile(shared, '#!/bin/sh\nprintf "%s\\n" "${0##*/}"\n', { mode: 0o700 });
     await chmod(shared, 0o700);
     const first = path.join(bin, 'codex-0');
     const second = path.join(bin, 'codex-1');
@@ -334,7 +334,7 @@ test('future schema fails closed even with older valid backup, without overwriti
     await f.store.configure(asId('codex-0'), { executable: f.binary });
     await f.store.configure(asId('codex-1'), { executable: f.binary });
     const backupBefore = await readFile(f.file + '.bak', 'utf8');
-    const future = JSON.stringify({ schemaVersion: 2, profiles: [{ future: 'keep me' }] }) + '\\n';
+    const future = JSON.stringify({ schemaVersion: 2, profiles: [{ future: 'keep me' }] }) + '\n';
     await writeFile(f.file, future);
     await assert.rejects(f.store.listDefinitions(), /Unsupported Agency profile store schema version: 2/);
     await assert.rejects(f.store.configure(asId('codex-0'), { label: 'MUST_NOT_CHANGE' }), /Unsupported Agency profile store schema version: 2/);
