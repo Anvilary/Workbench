@@ -1,3 +1,4 @@
+import type { AgentConnection } from '../connection.js';
 import type {
   AgencyCliProfile, AgencyProject, AgencyRuntimeSession, AgencyServerMessage,
   AgencyClientMessage, AgencyWorkspace, AgencyAgentSession, AgencyProfileCapabilities,
@@ -143,4 +144,36 @@ export function workspaceLayout(hasAgent: boolean, hasShell: boolean): AgencyLay
   if (hasAgent) return 'agent-only';
   if (hasShell) return 'terminal-only';
   return 'empty';
+}
+
+/**
+ * Integration bridge on the ONE existing authenticated WebSocket.
+ * Fail closed if Lane D's required non-queueing patch is not installed.
+ * Never fall back to AgentConnection.send(), which queues offline mutations.
+ */
+export function createAgencyTransport(connection: AgentConnection): AgencyTransport {
+  const candidate = connection as AgentConnection & {
+    sendImmediate?: AgencyTransport['sendImmediate'];
+  };
+  if (typeof candidate.sendImmediate !== 'function') {
+    throw new Error('Agency requires the non-queueing AgentConnection.sendImmediate integration patch');
+  }
+  return {
+    sendImmediate: (message) => candidate.sendImmediate!.call(connection, message),
+    onMessage: (handler) => connection.onMessage((message) => {
+      // The integration owner must add Agency types to the existing validated parser.
+      if (message.type.startsWith('agency.')) handler(message as unknown as AgencyServerMessage);
+    }),
+  };
+}
+
+/** Exact argv boundaries, no shell tokenization or whitespace splitting. */
+export function parseProfileArgv(value: string): string[] | null {
+  try {
+    const result: unknown = JSON.parse(value);
+    return Array.isArray(result) && result.every((entry) => typeof entry === 'string')
+      ? result as string[] : null;
+  } catch {
+    return null;
+  }
 }
