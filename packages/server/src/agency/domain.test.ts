@@ -41,8 +41,8 @@ test('projects and workspaces: CRUD, independent directories, zero sessions, dur
   const b = await store.createWorkspace(project.id, 'Task B', await realpath(cwd2));
   assert.notEqual(a.id, b.id);
   assert.notEqual(a.id, project.id);
-  assert.equal(a.cwd, cwd1);
-  assert.equal(b.cwd, cwd2);
+  assert.equal(a.cwd, await realpath(cwd1));
+  assert.equal(b.cwd, await realpath(cwd2));
   assert.equal(a.status, 'active');
   assert.equal(a.doneAt, null);
   assert.match(a.createdAt, /Z$/);
@@ -51,7 +51,7 @@ test('projects and workspaces: CRUD, independent directories, zero sessions, dur
 
   const renamed = await store.renameProject(project.id, 'Renamed');
   assert.equal(renamed.id, project.id);
-  assert.equal((await store.renameWorkspace(a.id, 'Research')).cwd, cwd1);
+  assert.equal((await store.renameWorkspace(a.id, 'Research')).cwd, await realpath(cwd1));
   await assert.rejects(store.deleteProject(project.id), { code: 'conflict' });
 
   const done = await store.markDone(a.id);
@@ -65,7 +65,7 @@ test('projects and workspaces: CRUD, independent directories, zero sessions, dur
   await reopened.load();
   assert.deepEqual(reopened.listProjects().find((p) => p.id === project.id), renamed);
   assert.equal(reopened.getWorkspace(a.id)?.status, 'done');
-  assert.equal(reopened.getWorkspace(b.id)?.cwd, cwd2);
+  assert.equal(reopened.getWorkspace(b.id)?.cwd, await realpath(cwd2));
   assert.equal((await reopened.restore(a.id)).doneAt, null);
   assert.equal((await reopened.restore(a.id)).status, 'active');
 
@@ -82,8 +82,9 @@ test('concurrent metadata writes are serialized and never reuse IDs', async (t) 
   await mkdir(cwd);
   const projects = await Promise.all(Array.from({ length: 24 }, (_, i) => store.createProject('P ' + i)));
   assert.equal(new Set(projects.map((p) => p.id)).size, projects.length);
+  const canonicalCwd = await realpath(cwd);
   const workspaces = await Promise.all(Array.from({ length: 24 }, (_, i) =>
-    store.createWorkspace(projects[0]!.id, 'W ' + i, cwd)));
+    store.createWorkspace(projects[0]!.id, 'W ' + i, canonicalCwd)));
   assert.equal(new Set(workspaces.map((w) => w.id)).size, workspaces.length);
   const raw = JSON.parse(await readFile(path.join(dir, 'state.json'), 'utf8')) as unknown;
   assert.equal(parseAgencySnapshot(raw).workspaces.length, 24);
@@ -98,7 +99,7 @@ test('workspace deletions refuse live, unresolved and unverified sessions', asyn
   const cwd = path.join(dir, 'repo');
   await mkdir(cwd);
   const project = await store.createProject('P');
-  const workspace = await store.createWorkspace(project.id, 'W', cwd);
+  const workspace = await store.createWorkspace(project.id, 'W', await realpath(cwd));
   await assert.rejects(store.deleteWorkspace(workspace.id, () => true), { code: 'conflict' });
   await assert.rejects(store.deleteWorkspace(workspace.id, () => { throw new Error('registry offline'); }), {
     code: 'session-unavailable',
