@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, readFile, rm, writeFile, rename, readdir } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -424,5 +424,202 @@ test('mismatched named profile identity is never accepted as fallback', async ()
   } finally {
     f.runtime.dispose();
     await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Codex and AGY native discovery before open settles is retained without inventing IDs', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'agency-c-'));
+  const f = fixture(cwd, {
+    resolveLaunch: async ({ profileId, cwd, proposedSessionId, launchToken }) => ({
+      profileId, cwd, proposedSessionId, launchToken,
+      provider: profileId === ('agy00' as CliProfileId) ? 'antigravity' : 'codex',
+      file: '/bin/echo', args: ['native CLI', 'literal space'], env: { PATH: '/usr/bin' },
+      session: { kind: 'discover' },
+    }),
+  });
+  try {
+    await f.runtime.initialize();
+    const firstId = randomUUID();
+    f.terminals.onOpen = (options, descriptor) => {
+      assert.equal(options.agencyLaunch?.acceptNativeSessionId?.(descriptor.terminalId, firstId), true);
+      // Simulate native adapter discovery during registry.open, before Promise resolves.
+      (descriptor as { sessionId: string }).sessionId = firstId;
+    };
+    const codex = await f.runtime.create({
+      kind: 'agent', profileId: agentProfile, workspaceId: f.one.id, cols: 80, rows: 24,
+    });
+    assert.equal(codex.nativeSessionId, firstId);
+    assert.equal(f.terminals.get(codex.terminalId!)?.sessionId, firstId);
+    const secondId = randomUUID();
+    f.terminals.onOpen = (options, descriptor) => {
+      assert.equal(options.agencyLaunch?.acceptNativeSessionId?.(descriptor.terminalId, secondId), true);
+      (descriptor as { sessionId: string }).sessionId = secondId;
+    };
+    const agy = await f.runtime.create({
+      kind: 'agent', profileId: 'agy00' as CliProfileId, workspaceId: f.two.id, cols: 80, rows: 24,
+    });
+    assert.equal(agy.nativeSessionId, secondId);
+    assert.equal(f.terminals.get(agy.terminalId!)?.sessionId, secondId);
+    assert.notEqual(codex.id, agy.id);
+    assert.notEqual(codex.terminalId, agy.terminalId);
+    assert.equal(f.terminals.opens.length, 2);
+    const launch = f.terminals.opens[1]!.agencyLaunch!;
+    assert.ok(launch.args.includes('literal space'));
+    assert.ok(launch.env['PATH'] === '/usr/bin');
+  } finally {
+    f.runtime.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('Claude known session and native resume identity reach terminal descriptor and metadata', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'agency-c-'));
+  const f = fixture(cwd, {
+    resolveLaunch: async ({ profileId, cwd, proposedSessionId, launchToken, resumeNativeSessionId }) => ({
+      profileId, cwd, proposedSessionId, launchToken,
+      provider: 'claude-code', file: '/bin/echo', args: ['--session-id', proposedSessionId],
+      env: { PATH: '/usr/bin' },
+      session: { kind: 'known', sessionId: resumeNativeSessionId ?? proposedSessionId },
+    }),
+  });
+  try {
+    await f.runtime.initialize();
+    const newlyCreated = await f.runtime.create({
+      kind: 'agent', profileId: 'claude-code' as CliProfileId,
+      workspaceId: f.one.id, cols: 80, rows: 24,
+    });
+    assert.equal(newlyCreated.nativeSessionId, f.terminals.get(newlyCreated.terminalId!)?.sessionId);
+    assert.ok(newlyCreated.nativeSessionId);
+    const resume = randomUUID();
+    const resumed = await f.runtime.create({
+      kind: 'agent', profileId: 'claude-code' as CliProfileId,
+      workspaceId: f.two.id, cols: 80, rows: 24, resumeNativeSessionId: resume,
+    });
+    assert.equal(resumed.nativeSessionId, resume);
+    assert.equal(f.terminals.get(resumed.terminalId!)?.sessionId, resume);
+  } finally {
+    f.runtime.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('different profiles of the same provider cannot resume one native conversation', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'agency-c-'));
+  const f = fixture(cwd, {
+    resolveLaunch: async ({ profileId, cwd, proposedSessionId, launchToken, resumeNativeSessionId }) => ({
+      profileId, cwd, proposedSessionId, launchToken,
+      provider: 'codex', file: '/bin/echo', args: ['resume', resumeNativeSessionId ?? ''],
+      env: { PATH: '/usr/bin' },
+      session: resumeNativeSessionId === null ? { kind: 'discover' } :
+        { kind: 'known', sessionId: resumeNativeSessionId },
+    }),
+  });
+  try {
+    await f.runtime.initialize();
+    const id = randomUUID();
+    await f.runtime.create({
+      workspaceId: f.one.id, kind: 'agent', profileId: 'codex00' as CliProfileId,
+      cols: 80, rows: 24, resumeNativeSessionId: id,
+    });
+    await assert.rejects(f.runtime.create({
+      workspaceId: f.two.id, kind: 'agent', profileId: 'codex03' as CliProfileId,
+      cols: 80, rows: 24, resumeNativeSessionId: id,
+    }), (error: unknown) => error instanceof AgencyRuntimeError && error.code === 'conflict');
+    assert.equal(f.terminals.opens.length, 1);
+  } finally {
+    f.runtime.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('discovery and process exit release native ownership for subsequent sessions', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'agency-c-'));
+  const f = fixture(cwd);
+  try {
+    await f.runtime.initialize();
+    const first = await f.runtime.create({
+      workspaceId: f.one.id, kind: 'agent', profileId: agentProfile, cols: 80, rows: 24,
+    });
+    const nativeId = randomUUID();
+    const callback = f.terminals.opens[0]!.agencyLaunch?.acceptNativeSessionId;
+    assert.equal(callback?.(first.terminalId!, nativeId), true);
+    const second = await f.runtime.create({
+      workspaceId: f.two.id, kind: 'agent', profileId: agentProfile,
+      cols: 80, rows: 24,
+    });
+    assert.equal(f.terminals.opens[1]!.agencyLaunch?.acceptNativeSessionId?.(second.terminalId!, nativeId), false);
+    f.terminals.exit(first.terminalId!, 7);
+    await new Promise<void>((done) => setImmediate(done));
+    assert.equal(f.runtime.get(first.id)?.exitCode, 7);
+    assert.equal(f.runtime.get(first.id)?.lifecycle, 'exited');
+    assert.equal(f.terminals.opens[1]!.agencyLaunch?.acceptNativeSessionId?.(second.terminalId!, nativeId), true);
+  } finally {
+    f.runtime.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+function sampleSession(): AgencyRuntimeSession {
+  const now = new Date().toISOString();
+  return {
+    kind: 'terminal', id: randomUUID() as AgencyRuntimeSession['id'],
+    workspaceId: randomUUID() as WorkspaceId, terminalId: randomUUID(),
+    profileId: null, nativeSessionId: null, selectedModel: null, selectedEffort: null,
+    lifecycle: 'exited', activity: 'offline', createdAt: now, updatedAt: now,
+    startedAt: now, stoppedAt: now, exitCode: 0,
+  };
+}
+
+test('missing primary recovers a validated backup, without discarding history', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'agency-recovery-'));
+  const file = path.join(dir, 'sessions.json');
+  try {
+    const store = new AgencySessionStore(file);
+    const saved = sampleSession();
+    await store.save([saved]);
+    await store.save([saved]);
+    await rm(file);
+    assert.deepEqual(await store.load(), [saved]);
+    assert.deepEqual(JSON.parse(await readFile(file + '.bak', 'utf8')).sessions, [saved]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('corrupt primary recovers verified backup and quarantines original bytes', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'agency-recovery-'));
+  const file = path.join(dir, 'sessions.json');
+  try {
+    const store = new AgencySessionStore(file);
+    const saved = sampleSession();
+    await store.save([saved]);
+    await store.save([saved]);
+    await writeFile(file, '{broken-json', 'utf8');
+    assert.deepEqual(await store.load(), [saved]);
+    const files = await readdir(dir);
+    const corrupt = files.find((name) => name.startsWith('sessions.json.corrupt-'));
+    assert.ok(corrupt);
+    assert.equal(await readFile(path.join(dir, corrupt), 'utf8'), '{broken-json');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('future schema and dual corrupt stores fail closed without destructive recovery', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'agency-recovery-'));
+  const file = path.join(dir, 'sessions.json');
+  try {
+    const store = new AgencySessionStore(file);
+    await writeFile(file, JSON.stringify({ version: 2, sessions: [sampleSession()] }));
+    await assert.rejects(store.load(), (error: unknown) =>
+      error instanceof UnsupportedAgencySessionSchemaError);
+    assert.ok((await readFile(file, 'utf8')).includes('"version":2'));
+    await writeFile(file, '{bad');
+    await writeFile(file + '.bak', '{also bad');
+    await assert.rejects(store.load(), AggregateError);
+    assert.equal(await readFile(file, 'utf8'), '{bad');
+    assert.equal(await readFile(file + '.bak', 'utf8'), '{also bad');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });
