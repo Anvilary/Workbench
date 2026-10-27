@@ -63,6 +63,7 @@ export async function inspectAgencyProfile(
       configurationMessage = located.reason;
     } else {
       configurationStatus = 'available';
+      configurationMessage = 'Executable available; native CLI authentication has not been checked.';
       // This means the executable is found, NOT that the account is authenticated.
       // Only the native CLI can determine authentication when launched.
       const native = registered.adapter.capabilities;
