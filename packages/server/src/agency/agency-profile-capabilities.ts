@@ -162,7 +162,7 @@ export async function buildAgencyProfileLaunch(
   if (executable.status !== 'available') throw new Error(executable.reason);
 
   const location = { resolvedPath: executable.file, file: executable.file, prefixArgs: [], version: null };
-  const native = entry.adapter.launch({
+  const native = await entry.adapter.launch({
     location,
     cwd: request.cwd,
     resumeSessionId: request.resumeNativeSessionId ?? null,
