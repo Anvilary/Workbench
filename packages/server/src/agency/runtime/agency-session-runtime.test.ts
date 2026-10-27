@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, readFile, rm, writeFile, readdir } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile, readdir, mkdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -148,7 +148,11 @@ function workspace(cwd: string, status: 'active' | 'done' = 'active'): AgencyWor
 }
 function fixture(
   cwd: string,
-  options: { store?: AgencySessionStore; resolveLaunch?: AgencyProfileLaunchProvider['resolveLaunch'] } = {},
+  options: {
+    store?: AgencySessionStore;
+    resolveLaunch?: AgencyProfileLaunchProvider['resolveLaunch'];
+    protectedDirectories?: () => readonly string[];
+  } = {},
 ) {
   const terminals = new FakeTerminals();
   const workspaces = new Map<WorkspaceId, AgencyWorkspace>();
@@ -169,6 +173,7 @@ function fixture(
     registry: terminals as unknown as AgencyTerminalRegistry,
     workspaces: {
       withSessionReservation: async (id, action) => action(workspaces.get(id) ?? null),
+      protectedDirectories: options.protectedDirectories ?? (() => []),
     },
     profiles,
     store: options.store ?? new MemoryStore(),
@@ -342,7 +347,8 @@ test('corrupt metadata quarantines, bounded output marks truncation', async () =
     assert.equal(oversized.read(), 'finish');
     const invalid = await import('node:fs/promises');
     await invalid.writeFile(file, '{bad json', 'utf8');
-    assert.deepEqual(await store.load(), []);
+    // A single prior save has no valid backup: corruption must fail closed.
+    await assert.rejects(store.load(), AggregateError);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -367,6 +373,35 @@ test('invalid IDs and stale workspace directories cannot launch', async () => {
   } finally {
     f.runtime.dispose();
     await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('protected CLI homes and symlink replacement are rejected before PTY creation', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'agency-protected-'));
+  const protectedHome = path.join(root, 'cli-home');
+  const workspaceDir = path.join(root, 'workspace');
+  await mkdir(protectedHome);
+  await mkdir(workspaceDir);
+  const protect = () => [protectedHome];
+  const f = fixture(workspaceDir, { protectedDirectories: protect });
+  try {
+    await f.runtime.initialize();
+    f.workspaces.set(f.one.id, { ...f.one, cwd: protectedHome });
+    await assert.rejects(f.runtime.create({
+      kind: 'terminal', workspaceId: f.one.id, cols: 80, rows: 24,
+    }), /protected CLI directory/);
+    assert.equal(f.terminals.opens.length, 0);
+    f.workspaces.set(f.one.id, f.one);
+    // Replace the former canonical cwd with a symlink to a protected home.
+    await rm(workspaceDir, { recursive: true, force: true });
+    await symlink(protectedHome, workspaceDir, 'dir');
+    await assert.rejects(f.runtime.create({
+      kind: 'terminal', workspaceId: f.one.id, cols: 80, rows: 24,
+    }), /canonical directory/);
+    assert.equal(f.terminals.opens.length, 0);
+  } finally {
+    f.runtime.dispose();
+    await rm(root, { recursive: true, force: true });
   }
 });
 
