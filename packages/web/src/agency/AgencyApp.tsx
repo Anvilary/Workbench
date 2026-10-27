@@ -72,8 +72,8 @@ export function AgencyApp({ connection, agencyTransport }: {
     }
   }, [notice, data.workspaces]);
 
-  const selected = !showingDone ? data.workspaces.find((ws) => ws.id === selectedId && ws.status === t('agency.ui.active')) : undefined;
-  const activeCount = data.workspaces.filter((ws) => ws.status === t('agency.ui.active')).length;
+  const selected = !showingDone ? data.workspaces.find((ws) => ws.id === selectedId && ws.status === 'active') : undefined;
+  const activeCount = data.workspaces.filter((ws) => ws.status === 'active').length;
 
   function updateDraft(workspaceId: string, value: string) {
     setDrafts((prev) => putWorkspaceDraft(prev, workspaceId as WorkspaceId, value));
