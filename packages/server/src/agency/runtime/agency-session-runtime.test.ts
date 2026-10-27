@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile, rename, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -14,7 +14,7 @@ import type {
   WorkspaceId,
 } from '@agent-workbench/shared';
 import { OutputBuffer } from '../../output-buffer.js';
-import { AgencySessionStore } from '../agency-session-store.js';
+import { AgencySessionStore, UnsupportedAgencySessionSchemaError } from '../agency-session-store.js';
 import {
   AgencyRuntimeError,
   AgencySessionRuntime,
@@ -29,12 +29,22 @@ class FakeTerminals extends EventEmitter {
   readonly sizes: Array<[number, number]> = [];
   closeCount = 0;
   pendingOpen: Promise<void> | null = null;
+  onOpen: ((options: { agencyLaunch?: { acceptNativeSessionId?: (id: TerminalId, nativeId: string) => boolean } },
+    descriptor: TerminalDescriptor) => void) | null = null;
 
   async open(options: {
     cwd: string;
     kind?: string;
     agent?: string;
-    agencyLaunch?: { file: string; args: readonly string[]; env: Record<string, string> };
+    agencyLaunch?: {
+      file: string;
+      args: readonly string[];
+      env: Record<string, string>;
+      session: { kind: 'known'; sessionId: string } | { kind: 'discover' };
+      launchToken: string;
+      proposedSessionId: string;
+      acceptNativeSessionId?: (id: TerminalId, nativeId: string) => boolean;
+    };
   }): Promise<TerminalDescriptor> {
     this.opens.push(options);
     if (this.pendingOpen !== null) await this.pendingOpen;
@@ -43,7 +53,8 @@ class FakeTerminals extends EventEmitter {
       kind: options.kind === 'shell' ? 'shell' : 'agent',
       agent: options.kind === 'shell' ? null : 'codex',
       cwd: options.cwd,
-      sessionId: '',
+      sessionId: options.agencyLaunch?.session.kind === 'known'
+        ? options.agencyLaunch.session.sessionId : '',
       label: '',
       resumed: false,
       createdAt: Date.now(),
@@ -55,6 +66,7 @@ class FakeTerminals extends EventEmitter {
       review: false,
     };
     this.descriptors.set(descriptor.terminalId, descriptor);
+    this.onOpen?.(options, descriptor);
     return descriptor;
   }
 
@@ -99,6 +111,21 @@ class FakeTerminals extends EventEmitter {
     this.descriptors.delete(id);
     this.emit('exit', id, code, null);
   }
+
+  discover(id: TerminalId, nativeId: string): boolean {
+    const entry = this.descriptors.get(id);
+    if (entry === undefined) return false;
+    const plan = this.opens.find((_options, index) =>
+      [...this.descriptors.keys()][index] === id)?.agencyLaunch;
+    const accepted = plan?.acceptNativeSessionId?.(id, nativeId) ?? true;
+    if (!accepted) {
+      this.close(id);
+      return false;
+    }
+    this.descriptors.set(id, { ...entry, sessionId: nativeId });
+    this.emit('session', id, nativeId);
+    return true;
+  }
 }
 
 const agentProfile = 'codex-0' as CliProfileId;
@@ -126,13 +153,19 @@ function fixture(
   workspaces.set(one.id, one);
   workspaces.set(two.id, two);
   const profiles: AgencyProfileLaunchProvider = {
-    resolveLaunch: options.resolveLaunch ?? (async () => ({
-      profileId: agentProfile, provider: 'codex', file: '/bin/echo', args: ['literal space'], env: { PATH: '/usr/bin', AGENCY_FIXTURE: '1' },
+    resolveLaunch: options.resolveLaunch ?? (async ({profileId, cwd, resumeNativeSessionId, proposedSessionId, launchToken}) => ({
+      profileId, provider: 'codex', file: '/bin/echo', args: ['literal space'],
+      env: { PATH: '/usr/bin', AGENCY_FIXTURE: '1' }, cwd, proposedSessionId, launchToken,
+      session: resumeNativeSessionId === null
+        ? { kind: 'discover' as const }
+        : { kind: 'known' as const, sessionId: resumeNativeSessionId },
     })),
   };
   const runtime = new AgencySessionRuntime({
     registry: terminals as unknown as AgencyTerminalRegistry,
-    workspaces: { getWorkspace: (id) => workspaces.get(id) ?? null },
+    workspaces: {
+      withSessionReservation: async (id, action) => action(workspaces.get(id) ?? null),
+    },
     profiles,
     store: options.store ?? new MemoryStore(),
   });
@@ -336,13 +369,15 @@ test('invalid IDs and stale workspace directories cannot launch', async () => {
 test('native conversation controller is exclusive across workspaces', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'agency-c-'));
   const f = fixture(cwd, {
-    resolveLaunch: async ({ profileId, resumeNativeSessionId }) => ({
+    resolveLaunch: async ({ profileId, resumeNativeSessionId, proposedSessionId, launchToken, cwd }) => ({
       profileId,
       provider: 'codex',
       file: '/bin/echo',
       args: ['literal argv'],
       env: { PATH: '/usr/bin' },
-      nativeSessionId: resumeNativeSessionId,
+      cwd, proposedSessionId, launchToken,
+      session: resumeNativeSessionId === null ? { kind: 'discover' } :
+        { kind: 'known', sessionId: resumeNativeSessionId },
     }),
   });
   try {
@@ -374,9 +409,10 @@ test('native conversation controller is exclusive across workspaces', async () =
 test('mismatched named profile identity is never accepted as fallback', async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'agency-c-'));
   const f = fixture(cwd, {
-    resolveLaunch: async () => ({
+    resolveLaunch: async ({ cwd, proposedSessionId, launchToken }) => ({
       profileId: 'codex-1' as CliProfileId,
       provider: 'codex', file: '/bin/echo', args: [], env: { PATH: '/usr/bin' },
+      cwd, proposedSessionId, launchToken, session: { kind: 'discover' },
     }),
   });
   try {
