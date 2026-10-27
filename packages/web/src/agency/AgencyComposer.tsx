@@ -70,6 +70,7 @@ export function AgencyComposer({
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
+              if (!live) { setError(t('agency.ui.startTheAgentThenSendYourPrompt')); return; }
               void send();
             }
           }} />
@@ -80,7 +81,7 @@ export function AgencyComposer({
               onChange={(event) => onProfile(event.target.value as CliProfileId)}>
               <option value="">{t('agency.ui.chooseCLI')}</option>
               {profiles.map((item) => <option key={item.id} value={item.id} >
-                {item.label}{canLaunchAgent(item) ? '' : ' (unavailable)'}
+                {item.label}{canLaunchAgent(item) ? '' : t('agency.ui.unavailableSuffix')}
               </option>)}
             </select>
           </label>
