@@ -123,7 +123,7 @@ function fixture(
   workspaces.set(two.id, two);
   const profiles: AgencyProfileLaunchProvider = {
     resolveLaunch: options.resolveLaunch ?? (async () => ({
-      provider: 'codex', file: '/bin/echo', args: ['literal space'], env: { PATH: '/usr/bin', AGENCY_FIXTURE: '1' },
+      profileId: agentProfile, provider: 'codex', file: '/bin/echo', args: ['literal space'], env: { PATH: '/usr/bin', AGENCY_FIXTURE: '1' },
     })),
   };
   const runtime = new AgencySessionRuntime({
