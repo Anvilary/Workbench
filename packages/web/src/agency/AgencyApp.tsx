@@ -148,7 +148,7 @@ export function AgencyApp({ connection, agencyTransport }: {
           <AgencyDoneView workspaces={data.workspaces} projects={data.projects}
             onRestore={(ws) => { void restore(ws); }} />
         ) : selected ? (
-          <AgencyWorkspaceView key={selected.id} workspace={selected} connection={connection} request={store.request}
+          <AgencyWorkspaceView key={selected.id} workspace={selected} connection={connection} request={store.request} sendImmediate={agencyTransport.sendImmediate}
             online={online} profiles={data.profiles} sessions={data.sessions}
             draft={drafts[selected.id] ?? ''} onDraft={(value) => updateDraft(selected.id, value)}
             onDelivered={(value) => clearDelivered(selected.id, value)} onDone={() => { void markDone(selected); }} />
