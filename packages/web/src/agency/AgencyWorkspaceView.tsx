@@ -181,6 +181,10 @@ export function AgencyWorkspaceView({
             <AgencyComposer draft={draft} onDraft={onDraft} profiles={profiles} profileId={profileId}
               onProfile={(id) => { setProfileId(id); setChoice({ model: null, effort: null }); }} agent={agent} selectedModel={model} selectedEffort={effort}
               onSelection={selectModel} onLaunch={launchAgent} onSubmit={submitPrompt}
+              onConfigureProfile={async (selectedProfile, executable, args) => {
+                const result = await request({ type: 'agency.profile.configure', profileId: selectedProfile.id, executable, args });
+                if (result.type !== 'agency.profile.configured') throw new Error('Profile settings were not confirmed');
+              }}
               onInterrupt={() => {
                 if (agent?.terminalId && online) sendImmediate({ type: 'agent.interrupt', terminalId: agent.terminalId });
               }} online={online} />
