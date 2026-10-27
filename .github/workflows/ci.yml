@@ -41,6 +41,12 @@ jobs:
         if: runner.os == 'Linux'
         working-directory: packages/server
         run: corepack pnpm exec tsx --test src/agents/profiles/profiles.test.ts
+      - name: Agency Lane C focused runtime tests
+        if: runner.os == 'Linux'
+        working-directory: packages/server
+        run: corepack pnpm exec tsx --test src/agency/runtime/agency-session-runtime.test.ts
+      - name: Agency Lane D focused frontend model tests
+        run: node --experimental-strip-types --test packages/web/src/agency/model.test.mjs
       # The checks were written on Windows, the primary platform: several
       # fixtures force `win32` while using real temp folders, so on Linux they
       # fail for reasons that aren't bugs in the app. Porting them is welcome.
