@@ -37,9 +37,27 @@ use the stored provider. Never substitute `registry.defaultAgent()` after a
 profile lookup fails. The selected profile is authoritative.
 
 An executable can be an explicitly configured absolute path or a literal
-command name resolvable from the **supplied environment's** PATH. The initial
+command name resolvable from the **supplied environment's** PATH.
+The resolver validates the canonical target is an executable file but passes
+the selected symlink/alias entry point as the actual PTY `file`. This matters
+for native wrappers that select configuration by invocation name (such as
+`$0`). A profile whose configured executable is missing fails without trying
+another profile or resolving to a provider default. The initial
 profiles deliberately have empty executable paths. Do not automatically assign
 all Codex or AGY profiles to a shared default binary, account or CLI home.
+**Separate profile IDs do not prove distinct authenticated accounts.**
+Even if two profiles select different names, their symlinks may resolve to the
+same binary, and they may use the same provider-managed login. The same
+binary invoked twice is *not* evidence of account isolation. Distinct native
+auth contexts must be verified per original CLI on Ubuntu using user-reviewed
+wrapper/configuration behavior. The app neither selects nor rewrites provider
+home directories, and the argument filter is heuristic, not a complete
+credential-secret detector.
+
+Profile persistence restores the last valid checkpoint from `.bak` when the
+primary is missing or malformed. A newer/unsupported schema version is never
+treated as corrupt, quarantined or downgraded. Without a valid backup, malformed
+primary data must fail closed instead of resetting profile configuration.
 
 The existing Workbench history implementations read their provider-native
 paths and may use the server's process environment. They have not been
@@ -69,11 +87,55 @@ never allows model selection without acknowledgement.
 Codex App Server is not enabled by this lane. Native Codex TUI launch remains
 the fallback. Unverified CLI protocol handling must not be advertised.
 
+## Model/effort capability integration seam (future work)
+
+**Unimplemented on all providers in Lane B**: no editable model or effort
+controls may be advertised. Current profile snapshots return
+`canSelectModel=false` / `canSelectEffort=false` even if a native catalog is
+supplied. A command written to the PTY is not an acknowledgement that the
+provider changed a setting. The smallest safe incremental integration is:
+
+1. Add a bounded, read-only, provider-native capability discovery method behind
+   the existing adapter, explicitly scoped to the selected executable/profile.
+   Verify options actually accepted by the installed CLI without triggering
+   chat turns, model requests or login. Keep unknown catalogs empty. Do not
+   reuse static provider-wide model lists as account-specific evidence.
+2. Only where the **installed Codex binary** demonstrably supports App Server,
+   negotiate its protocol using the existing profile invocation and account
+   context. Correlate request IDs, native acknowledgements and failures; keep
+   TUI fallback unchanged. Do not infer support from a CLI name or version
+   alone, and do not silently switch transports/accounts.
+3. For Claude/Antigravity, preserve interactive permission prompts. A future
+   provider-specific setting path must be verified against the original native
+   CLI and must observe explicit native confirmation (or authoritative
+   post-change session state), scoped to that profile and live native session.
+   A slash command, key press, static model option or speculative status line
+   is insufficient proof. No custom Gemini harness or direct API calls.
+4. Wire `agency.session.selection.set` only when the same native session
+   confirms the applied model/effort. Return an explicit unsupported/error
+   result otherwise, without changing stored selection or implying success.
+   Keep the capability disabled independently for unsupported providers.
+
+Native resume IDs currently have format validation only. Lane C/integration
+must authorize their ownership using server-side Agency profile/session
+mapping before passing one to the original adapter. Provider history readers
+are not profile-separated merely because profile IDs exist.
+
 ## Validation
 
-Focused tests: `pnpm exec tsx --test packages/server/src/agents/profiles/profiles.test.ts`
-from repository root (requires `pnpm install --frozen-lockfile`).
-Also run `pnpm typecheck` and `pnpm build`.
+Focused tests, executed from repository root after `corepack pnpm install --frozen-lockfile`:
+
+```sh
+corepack pnpm --filter @agent-workbench/server exec tsx --test src/agents/profiles/profiles.test.ts
+corepack pnpm typecheck
+corepack pnpm build
+corepack pnpm check
+```
+
+The default root CI currently **does not run** the profile test file;
+successful CI compilation, packaging or smoke testing alone is not evidence
+the new suite passed. Run it explicitly in an Ubuntu checkout, or add a
+separately reviewed focused workflow through the integration owner.
 
 Outstanding Ubuntu integration checks: real configured wrapper paths,
 account-specific login behavior, AGY actual `models` output,
