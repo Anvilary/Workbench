@@ -65,7 +65,7 @@ export function AgencyProfileDialog({ profile, onSave, onClose }: {
       <label className="agency-field">
         <span>{t('agency.profile.args')}</span>
         <textarea value={args} onChange={(event) => setArgs(event.target.value)} spellCheck={false}
-          rows={3} disabled={saving} placeholder={'["--flag", "a value with spaces"]'} />
+          rows={3} disabled={saving} placeholder={t('agency.ui.flagAValueWithSpaces')} />
       </label>
       <p className="agency-muted">{t('agency.profile.argsHelp')}</p>
       <p className="agency-muted">{t('agency.profile.authHelp')}</p>
