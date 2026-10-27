@@ -1,7 +1,7 @@
 /**
  * Automated End-to-End Acceptance Test for Agency-UI (Phase 7)
  *
- * Verifies all 24 acceptance criteria against a real running server process:
+ * Checks acceptance paths against a real running server process:
  *  1. Server starts on localhost with existing authentication
  *  2. Unknown token and foreign Origin are rejected
  *  3. Browser loads the integrated Agency interface
@@ -15,7 +15,7 @@
  * 11. Verify ANSI and interactive input
  * 12. Verify Ctrl+C interrupts a running shell command
  * 13. Verify browser disconnect/reconnect attaches to the SAME PTY and does not spawn another process
- * 14. Verify bounded output replay
+ * 14. Verify output replay is present
  * 15. Mark Done while a disposable process is running; verify it stays alive
  * 16. Restore workspace and reattach to the same process
  * 17. Explicit Stop ends only the intended process
@@ -26,6 +26,7 @@
  * 22. Verify profile configuration preserves exact executable and literal argv
  * 23. Verify protected directories cannot be selected
  * 24. Verify launch/delete races are prevented
+ * 25. Verify profile storage failure does not terminate the server
  */
 
 import assert from 'node:assert/strict';
@@ -91,6 +92,9 @@ const commonEnv = {
   XDG_DATA_HOME: path.join(testHome, '.local', 'share'),
   XDG_CACHE_HOME: path.join(testHome, '.cache'),
   XDG_STATE_HOME: path.join(testHome, '.local', 'state'),
+  CODEX_HOME: path.join(testHome, '.codex'),
+  PI_CODING_AGENT_DIR: path.join(testHome, '.pi', 'agent'),
+  PI_CODING_AGENT_SESSION_DIR: path.join(testHome, '.pi', 'sessions'),
 };
 
 function startServer() {
@@ -915,6 +919,17 @@ check(
   `Launch: ${raceRes1.type}, Delete: ${raceRes2.type}`,
 );
 
+// A store that becomes unreadable after startup must not crash the socket server.
+const profileFile = path.join(testXdg, 'agent-workbench', 'agency-profiles.json');
+await writeFile(profileFile, '{invalid');
+await writeFile(profileFile + '.bak', '{invalid');
+client3.send({ type: 'agency.profiles.list', requestId: 'corrupt-profile-list' });
+const corruptResponse = await client3.waitFor((m) => m.requestId === 'corrupt-profile-list');
+client3.send({ type: 'agency.projects.list', requestId: 'still-alive' });
+const aliveResponse = await client3.waitFor((m) => m.requestId === 'still-alive');
+check(25, 'Profile read failure returns an error without terminating the server',
+  corruptResponse.type === 'agency.error' && aliveResponse.type === 'agency.projects.snapshot');
+
 // Cleanup
 client3.close();
 serverProc2.kill();
@@ -923,5 +938,5 @@ await new Promise((r) => serverProc2.once('exit', r));
 await rm(root, { recursive: true, force: true }).catch(() => {});
 
 console.log('-----------------------------------------');
-console.log(failures === 0 ? 'All 24 Acceptance Tests Passed!' : `${failures} test(s) failed.`);
+console.log(failures === 0 ? 'All 25 Acceptance Tests Passed!' : `${failures} test(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);
