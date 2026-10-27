@@ -260,9 +260,20 @@ export class DirectoryPickers {
       }
     }
 
+    // Check the original spelling before realpath: Windows 8.3 aliases can
+    // normalize differently from a configured protected CLI home path.
+    const lexicalTarget = path.join(picker.current, clean);
+    if (isInsideProtected(lexicalTarget, this.protectedDirs)) {
+      throw new DirectoryPickerError(serverText('pickerNoProjectsHere'));
+    }
+
     const parent = await this.selectedDirectory(pickerId);
     const target = path.join(parent, clean);
-    if (isInsideProtected(target, this.protectedDirs)) {
+    const protectedReal = await Promise.all(
+      this.protectedDirs.map(async (dir) => realpath(dir).catch(() => path.resolve(dir))),
+    );
+    if (isInsideProtected(target, this.protectedDirs) ||
+        isInsideProtected(target, protectedReal)) {
       throw new DirectoryPickerError(serverText('pickerNoProjectsHere'));
     }
 
