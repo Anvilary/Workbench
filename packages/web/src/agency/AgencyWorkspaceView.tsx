@@ -43,7 +43,7 @@ export function AgencyWorkspaceView({
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [shellStarting, setShellStarting] = useState(false);
   const feed = useConversation(connection, (agent ?? pastAgent)?.terminalId ?? null);
-  const profile = profiles.find((item) => item.id === (agent?.profileId ?? pastAgent?.profileId ?? profileId));
+  const profile = profiles.find((item) => item.id === (agent?.profileId ?? profileId));
   const model = agent?.selectedModel ?? choice.model;
   const effort = agent?.selectedEffort ?? choice.effort;
 
@@ -175,7 +175,7 @@ export function AgencyWorkspaceView({
                 <AgencyTranscript events={feed.events} onOpenCli={() => setShowNative(true)} />}
             </div>
             <AgencyComposer draft={draft} onDraft={onDraft} profiles={profiles} profileId={profileId}
-              onProfile={setProfileId} agent={agent} selectedModel={model} selectedEffort={effort}
+              onProfile={(id) => { setProfileId(id); setChoice({ model: null, effort: null }); }} agent={agent} selectedModel={model} selectedEffort={effort}
               onSelection={selectModel} onLaunch={launchAgent} onSubmit={submitPrompt}
               onInterrupt={() => {
                 if (agentTerminalId && online) connection.send({ type: 'agent.interrupt', terminalId: agentTerminalId });
