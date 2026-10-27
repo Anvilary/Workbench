@@ -6,7 +6,7 @@
  * protocol validator. A client-supplied cwd is always an invalid request.
  */
 import type {
-  AgencyClientMessage, AgencyServerMessage, AgencyErrorCode, ProjectId, WorkspaceId,
+  AgencyClientMessage, AgencyServerMessage, AgencyErrorCode,
 } from '@agent-workbench/shared';
 import { DirectoryPickers, DirectoryPickerError } from '../directory-picker.js';
 import { AgencyWorkspaceStore, AgencyStoreError, type HasBlockingWorkspaceSessions } from './store.js';
