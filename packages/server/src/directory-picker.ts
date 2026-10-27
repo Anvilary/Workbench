@@ -229,8 +229,7 @@ export class DirectoryPickers {
     const roots = await this.knownRoots();
     const target = roots[index];
     if (target === undefined) throw new DirectoryPickerError(serverText('pickerRootMissing'));
-    picker.current = target;
-    return this.listing(picker);
+    return this.moveTo(picker, target);
   }
 
   /**
@@ -261,7 +260,8 @@ export class DirectoryPickers {
       }
     }
 
-    const target = path.join(picker.current, clean);
+    const parent = await this.selectedDirectory(pickerId);
+    const target = path.join(parent, clean);
     if (isInsideProtected(target, this.protectedDirs)) {
       throw new DirectoryPickerError(serverText('pickerNoProjectsHere'));
     }
@@ -277,8 +277,7 @@ export class DirectoryPickers {
       );
     }
 
-    picker.current = target;
-    return this.listing(picker);
+    return this.moveTo(picker, target);
   }
 
   /** Validate before listing, so a swapped symlink cannot enumerate CLI homes. */
