@@ -79,3 +79,9 @@ Resume: `cd /home/user/Projects/Agency-UI-audit && git status --short --branch &
 
 - Idle sample, connected page/no PTYs: 3 launch/server group processes, summed RSS 320,188 KiB for six one-second samples; fds 73 to 72; no CPU ticks over five intervals. This includes launchers, excludes browser, sums shared RSS and is not PSS or a stress test. Full method in 05. Began source tracing Host/Origin/token, socket validation and picker/lock; partial security notes in 03.
 - Findings unchanged: SEC-001 P1, TEST-001 P2; cross-profile resume after exit is a behavior with unverified policy/impact. All phases remain incomplete. Exact next: finish auth/remote permission review, multi-PTY resource/load and scale tests, and architecture/security/reliability coverage. Checkpoint commit `git rev-parse HEAD` after commit. No known blockers.
+
+## Checkpoint 00i — 10 projects / 50 workspaces browser fixture
+
+- Expanded disposable fixture to 10 projects, 50 workspaces and 4 active idle synthetic PTYs. Screenshot assertions and four-width combined/dialog checks passed; console/page error counts 0. n=20 no-PTY switch p50/p95/max 41.85/49.35/49.74 ms; active-PTY 59.00/72.37/73.66 ms; other measurements/reproduction in 05. Single warm run; long sessions, output and larger transcript remain unverified.
+- First setup hung because the temporary harness did not close pickers and reached the per-socket limit; cleaned up owned server/process and corrected harness. UI sends picker.close on unmount. Hypothesis only: rapid close before picker listing could leak a picker; reproduce before assigning a finding.
+- Verified findings unchanged SEC-001 P1, TEST-001 P2; phase completion remains open. Exact next: reproduce rapid picker open/close timing with controllable reply delay; complete architecture/security/functional review and multi-PTY resource tests. `git rev-parse HEAD` for latest checkpoint.

@@ -47,3 +47,7 @@ Output-load trial: 20 switches, approximately 64 kB/s, p50/p95/max 56.97/66.26/6
 ## Checkpoint 00h continuation
 
 Idle server launcher process group (not browser) summed RSS 312.68 MiB, 3 processes, 72–73 fds, no CPU tick movement over five one-second intervals, no PTYs; caveats and reproducible sampler in 05. Initial Host/Origin/token and picker review in 03; security is incomplete. Next inspect remote permission policy, then perform multi-PTY resource/load and larger populated-state tests, and continue the complete architecture/security/functional/test audit. All phase boxes remain open. Latest pushed checkpoint SHA: obtain with `git rev-parse HEAD` and compare to origin.
+
+## Checkpoint 00i continuation
+
+10 projects / 50 workspaces and four idle fixture PTYs: eight screenshot states and four-width combined/dialog assertions passed; 20 switches no-PTY p50/p95/max 41.85/49.35/49.74 ms, active-PTY 59.00/72.37/73.66 ms. Repro and limits in 04/05. Setup initially exhausted 8 pickers due to a disposable harness bug, then passed after explicit picker close; this is not a product finding. An independent rapid close before initial picker reply may leak a picker (unverified hypothesis, 04); test deterministically. Next complete source review and multi-PTY load/resources. No phase is complete; SEC-001 and TEST-001 remain only established findings.

@@ -113,3 +113,30 @@ const sample=()=>{const lines=execFileSync('ps',['-eo','pid=,pgid='],{encoding:'
 const snapshots=[sample()];for(let i=0;i<5;i++){await new Promise(r=>setTimeout(r,1000));snapshots.push(sample())};const hz=Number(execFileSync('getconf',['CLK_TCK'],{encoding:'utf8'}).trim());const cpu=snapshots.slice(1).map((x,i)=>Math.round((x.ticks-snapshots[i].ticks)*10000/hz)/100);console.log('AUDIT_IDLE_GROUP',JSON.stringify({rss_kib:snapshots.map(x=>x.rss_kib),fds:snapshots.map(x=>x.fds),processes:snapshots.map(x=>x.processes),cpu_percent_approx:cpu,interval_ms:1000}));
 
 ```
+
+## Ten projects / fifty workspaces: warm fixture
+
+Using the same method as above at 1440px, headless Chrome with 4 active idle fixture processes, 10 projects / 50 workspaces, 20 repetitions per action:
+
+| Action | p50 ms | p95 ms | max ms | n |
+|---|---:|---:|---:|---:|
+| Switch between workspaces without active PTYs | 41.85 | 49.35 | 49.74 | 20 |
+| Switch between workspaces with idle active PTYs | 59.00 | 72.37 | 73.66 | 20 |
+| Profile dialog open and close | 49.28 | 65.12 | 67.15 | 20 |
+| Sidebar collapse and expand | 66.93 | 81.34 | 107.01 | 20 |
+| Composer fill | 5.43 | 11.87 | 20.04 | 20 |
+
+Single runs, different fixture setups and Playwright overhead; not a controlled causal comparison or proof of an optimization target. No user-provider inference. The fixture generation below is inserted before the setup socket's `ws.close()` in the temporary browser benchmark; additionally send `picker.close` after each original `createWs` and after the extra initial picker, to stay below the eight-open-picker limit. Full generated file `/tmp/agency-audit-scale.mjs` may be ephemeral.
+
+```javascript
+for(let p=0;p<8;p++) {
+ const pr=await request({type:'agency.project.create',requestId:`scale-p-${p}`,name:`Scale Project ${p}`});
+ const count=p<4?6:5;
+ for(let w=0;w<count;w++) {
+  const picker=await pickerListing({type:'picker.open'});
+  await pickerListing({type:'picker.create',pickerId:picker.pickerId,name:`scale-${p}-${w}`});
+  await request({type:'agency.workspace.create',requestId:`scale-w-${p}-${w}`,projectId:pr.project.id,name:`Scale Workspace ${p}-${w}`,pickerId:picker.pickerId});
+  ws.send(JSON.stringify({type:'picker.close',pickerId:picker.pickerId}));
+ }
+}
+```
