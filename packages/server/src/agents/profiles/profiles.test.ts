@@ -79,6 +79,7 @@ test('invalid fields, credentials and secret environment keys cannot persist', a
       { environmentOverrides: { ANTHROPIC_API_KEY: 'secret' } },
       { args: ['--api-key=secret'] },
       { args: ['--auth-token', 'secret'] },
+      { args: ['--token', 'secret'] },
       { args: 'split by accident' },
       { provider: 'antigravity' },
       { executable: 'bad\nvalue' },
