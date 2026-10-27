@@ -30,11 +30,12 @@
 
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, rm, realpath, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, realpath, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
+import { chromium } from 'playwright';
 
 // Polyfill window for imports from web package
 if (typeof globalThis.window === 'undefined') {
@@ -182,14 +183,24 @@ check(
 );
 
 // 3. Browser loads the integrated Agency interface
-const resPage = await fetch(s1.url);
-const pageHtml = await resPage.text();
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage();
+const resPage = await page.goto(s1.url);
+await page.locator('.agency-app').waitFor({ state: 'visible' });
+await page.locator('.agency-sidebar-nav').waitFor({ state: 'visible' });
+for (const width of [390, 768, 1024, 1440]) {
+  await page.setViewportSize({ width, height: 900 });
+  const dimensions = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }));
+  assert.ok(dimensions.scrollWidth <= dimensions.width, `Page overflows at ${width}px: ${JSON.stringify(dimensions)}`);
+  console.log(`Browser empty-state viewport ${width}px: document ${dimensions.scrollWidth}/${dimensions.width}px`);
+}
 check(
   3,
   'Browser loads the integrated Agency interface',
-  resPage.status === 200 && pageHtml.includes('id="root"') && pageHtml.includes('/assets/index-'),
-  `HTTP ${resPage.status}, HTML length ${pageHtml.length}`,
+  resPage.status() === 200 && await page.locator('.agency-app').isVisible(),
+  `HTTP ${resPage.status()}, React Agency interface visible`,
 );
+await browser.close();
 
 // Helper for WebSocket Client
 class AgencyClient {
@@ -311,7 +322,7 @@ client1.send({
 const projCreated = await client1.waitFor((m) => m.type === 'agency.project.created' && m.requestId === 'req-proj-4');
 const projectId = projCreated.project.id;
 
-check(4, 'Create a project and empty workspace', !!projectId && projCreated.project.name === 'Acceptance Project', `ProjectId: ${projectId}`);
+check(4, 'Create a project', !!projectId && projCreated.project.name === 'Acceptance Project', `ProjectId: ${projectId}`);
 
 // 5. Select a real filesystem directory via the picker
 client1.send({ type: 'picker.open' });
@@ -604,7 +615,7 @@ check(
 const replay2 = await client2.waitFor((m) => m.type === 'terminal.replay' && m.terminalId === session1.terminalId);
 check(
   14,
-  'Verify bounded output replay',
+  'Verify output replay is present',
   replay2 && typeof replay2.data === 'string' && replay2.data.length > 0 && typeof replay2.truncated === 'boolean',
   `Replay bytes: ${replay2.data.length}, truncated: ${replay2.truncated}`,
 );
@@ -767,8 +778,8 @@ const capMsg = await client3.waitFor((m) => m.type === 'agency.profile.capabilit
 check(
   20,
   'Verify unsupported native model/effort controls remain disabled',
-  capMsg.capabilities.selectionSupported === false || capMsg.capabilities.models.length === 0,
-  `SelectionSupported: ${capMsg.capabilities.selectionSupported}, Models: ${capMsg.capabilities.models.length}`,
+  capMsg.capabilities.canSelectModel === false && capMsg.capabilities.canSelectEffort === false && capMsg.capabilities.models.length === 0,
+  `Model: ${capMsg.capabilities.canSelectModel}, Effort: ${capMsg.capabilities.canSelectEffort}, Models: ${capMsg.capabilities.models.length}`,
 );
 
 // 21. Verify offline mutations are not replayed
@@ -781,13 +792,31 @@ const mockListener = {
   onClose: () => {},
 };
 const conn = new AgentConnection(mockListener);
-// In disconnected state, sendImmediate returns false and leaves outbox untouched
+const oldWebSocket = globalThis.WebSocket;
+const sentAfterConnect = [];
+globalThis.WebSocket = class {
+  static OPEN = 1;
+  readyState = 1;
+  send(message) { sentAfterConnect.push(JSON.parse(message)); }
+  close() {}
+};
+window.location.href = s1.url;
+window.location.protocol = 'http:';
+window.setTimeout = setTimeout;
+window.clearTimeout = clearTimeout;
+conn.connect();
+conn.socket.onopen();
+conn.socket.onclose({ code: 1006 });
 const sendResult = conn.sendImmediate({ type: 'agency.project.create', requestId: 'offline-req', name: 'Offline' });
+conn.connect();
+conn.socket.onopen();
+conn.close();
+globalThis.WebSocket = oldWebSocket;
 check(
   21,
   'Verify offline mutations are not replayed',
-  sendResult === false,
-  `sendImmediate returned: ${sendResult}`,
+  sendResult === false && !sentAfterConnect.some((msg) => msg.requestId === 'offline-req'),
+  `sendImmediate returned: ${sendResult}, replayed messages: ${sentAfterConnect.length}`,
 );
 
 // 22. Verify profile configuration preserves exact executable and literal argv
@@ -819,16 +848,19 @@ client3.send({ type: 'picker.open' });
 const pickerProtected = await client3.waitFor((m) => m.type === 'picker.listing');
 const pickerProtId = pickerProtected.listing.pickerId;
 
-// Attempt to create workspace with protected directory
-// DirectoryPickers throws pickerCliFolder when selectedDirectory is inside protected
-import { isInsideProtected } from '../src/directory-picker.js';
-const protectedCheck = isInsideProtected(protectedCliDir, [protectedCliDir]);
+// Replace a selected directory after navigation, then request actual workspace creation.
+client3.send({ type: 'picker.create', pickerId: pickerProtId, name: 'protected-swap' });
+const swapListing = await client3.waitFor((m) => m.type === 'picker.listing' && m.listing.pickerId === pickerProtId);
+await rm(swapListing.listing.path, { recursive: true });
+await symlink(protectedCliDir, swapListing.listing.path, 'dir');
+client3.send({ type: 'agency.workspace.create', requestId: 'protected-selection', projectId, name: 'Forbidden', pickerId: pickerProtId });
+const protectedResult = await client3.waitFor((m) => m.requestId === 'protected-selection');
 
 check(
   23,
   'Verify protected directories cannot be selected',
-  protectedCheck === true,
-  `isInsideProtected for ${protectedCliDir}: ${protectedCheck}`,
+  protectedResult.type === 'agency.error',
+  `Server response: ${protectedResult.type}`,
 );
 
 // 24. Verify launch/delete races are prevented
