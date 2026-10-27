@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type {
   AgencyProject, AgencyRuntimeSession, AgencyWorkspace, ProjectId, WorkspaceId,
 } from '@agent-workbench/shared';
-import { activeByProject, activityLabel, isAttention, latestSession } from './model.js';
+import { activeByProject, activityLabel, currentSession, isAttention, latestSession } from './model.js';
 
 export interface AgencySidebarProps {
   projects: readonly AgencyProject[];
@@ -74,7 +74,9 @@ export function AgencySidebar({
             {!collapsed.has(project.id) && (
               <div className="agency-project-children">
                 {items.map((workspace) => {
-                  const session = latestSession(sessions, workspace.id, 'agent') ??
+                  const session = currentSession(sessions, workspace.id, 'agent') ??
+                    currentSession(sessions, workspace.id, 'terminal') ??
+                    latestSession(sessions, workspace.id, 'agent') ??
                     latestSession(sessions, workspace.id, 'terminal');
                   return (
                     <div className={'agency-workspace-nav-row' + (selected === workspace.id && !showingDone ? ' selected' : '')}
