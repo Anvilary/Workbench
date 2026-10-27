@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import type {
-  AgencyAgentSession, AgencyCliProfile, AgencyRuntimeSession, AgencyWorkspace, CliProfileId,
-  WorkspaceId, TerminalId,
+  AgencyCliProfile, AgencyRuntimeSession, AgencyWorkspace, CliProfileId, TerminalId,
 } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import { TerminalView } from '../TerminalView.js';
@@ -40,18 +39,19 @@ export function AgencyWorkspaceView({
     pastAgent?.profileId ?? profiles.find(canLaunchAgent)?.id ?? '');
   const [choice, setChoice] = useState<{ model: string | null; effort: string | null }>({ model: null, effort: null });
   const [showNative, setShowNative] = useState(false);
+  const [addingAgent, setAddingAgent] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [shellStarting, setShellStarting] = useState(false);
-  const feed = useConversation(connection, agent?.terminalId ?? null);
-  const profile = profiles.find((item) => item.id === (agent?.profileId ?? profileId));
+  const feed = useConversation(connection, (agent ?? pastAgent)?.terminalId ?? null);
+  const profile = profiles.find((item) => item.id === (agent?.profileId ?? pastAgent?.profileId ?? profileId));
   const model = agent?.selectedModel ?? choice.model;
   const effort = agent?.selectedEffort ?? choice.effort;
 
-  const agentTerminalId = agent?.terminalId ?? null;
+  const agentTerminalId = (agent ?? pastAgent)?.terminalId ?? null;
   const shellTerminalId = activeShell?.terminalId ?? null;
-  const hasAgent = !!agent;
+  const hasAgent = !!(agent ?? pastAgent);
   const hasShell = !!activeShell;
-  const hasBoth = hasAgent && hasShell;
+  const hasBoth = (hasAgent || addingAgent) && hasShell;
 
   const workspaceStatus = useMemo(() => {
     if (agent) return activityLabel(agent.activity, agent.lifecycle);
@@ -104,7 +104,7 @@ export function AgencyWorkspaceView({
   }
 
   async function submitPrompt(text: string) {
-    const terminalId = agentTerminalId;
+    const terminalId = agent?.terminalId ?? null;
     if (!terminalId || !online || agent?.lifecycle !== 'running') {
       throw new Error('Start the agent and reconnect before sending.');
     }
@@ -152,7 +152,7 @@ export function AgencyWorkspaceView({
         <button type="button" className="agency-secondary-button" onClick={onDone}>Mark Done</button>
       </header>
       <div className={'agency-workspace-content' + (hasBoth ? ' agency-content-split' : '')}>
-        {(hasAgent || !hasShell) && (
+        {(hasAgent || !hasShell || addingAgent) && (
           <main className="agency-agent-pane">
             <div className="agency-pane-bar">
               <span className="agency-pane-label">{profile?.label ?? 'Agent'}</span>
@@ -166,8 +166,8 @@ export function AgencyWorkspaceView({
               )}
               {!hasShell && <button type="button" className="agency-text-button" disabled={!online || shellStarting}
                 onClick={() => void launchShell()}>{shellStarting ? 'Starting shell…' : '+ Shell'}</button>}
-              {agentTerminalId && <button className="agency-text-button agency-text-danger" type="button"
-                onClick={() => stop(agentTerminalId)}>Stop agent</button>}
+              {agent?.terminalId && <button className="agency-text-button agency-text-danger" type="button"
+                onClick={() => stop(agent.terminalId)}>Stop agent</button>}
             </div>
             <div className="agency-agent-body">
               {showNative && agentTerminalId ? <AgentTerminal terminalId={agentTerminalId} connection={connection} /> :
@@ -186,6 +186,8 @@ export function AgencyWorkspaceView({
             <div className="agency-pane-bar">
               <span className="agency-pane-label">Shell</span>
               <span className="agency-flex-spacer" />
+              {!hasAgent && !addingAgent && <button type="button" className="agency-text-button"
+                onClick={() => setAddingAgent(true)}>+ Agent</button>}
               {shellTerminalId && <button type="button" className="agency-text-button agency-text-danger"
                 onClick={() => stop(shellTerminalId)}>Stop shell</button>}
             </div>
