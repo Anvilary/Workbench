@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { AgencyProject, ProjectId } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import { FolderPicker } from '../FolderPicker.js';
@@ -19,6 +19,13 @@ export function AgencyWorkspaceCreator({
   const [picking, setPicking] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !picking && !creating) onClose();
+    };
+    window.addEventListener('keydown', onEscape);
+    return () => window.removeEventListener('keydown', onEscape);
+  }, [picking, creating, onClose]);
 
   function choose(pickerId: string): void {
     if (!projectId || !name.trim() || creating) return;
@@ -85,7 +92,14 @@ export function AgencyProjectCreator({ onCreate, onClose }: {
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  function submit(event: React.FormEvent) {
+  useEffect(() => {
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !saving) onClose();
+    };
+    window.addEventListener('keydown', onEscape);
+    return () => window.removeEventListener('keydown', onEscape);
+  }, [saving, onClose]);
+  function submit(event: FormEvent) {
     event.preventDefault();
     if (!name.trim() || saving) return;
     setSaving(true);
