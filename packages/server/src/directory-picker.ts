@@ -209,8 +209,7 @@ export class DirectoryPickers {
     if (name === '..') {
       const parent = path.dirname(picker.current);
       // En una raiz, `dirname` devuelve la misma ruta: no hay a donde subir.
-      if (parent !== picker.current) picker.current = parent;
-      return this.listing(picker);
+      return this.moveTo(picker, parent);
     }
 
     if (!picker.entries.has(name)) {
@@ -221,8 +220,7 @@ export class DirectoryPickers {
     if (isInsideProtected(target, this.protectedDirs)) {
       throw new DirectoryPickerError(serverText('pickerCliFolder'));
     }
-    picker.current = target;
-    return this.listing(picker);
+    return this.moveTo(picker, target);
   }
 
   /** Salta a una de las raices, por posicion en la lista que se mando. */
@@ -281,6 +279,19 @@ export class DirectoryPickers {
 
     picker.current = target;
     return this.listing(picker);
+  }
+
+  /** Validate before listing, so a swapped symlink cannot enumerate CLI homes. */
+  private async moveTo(picker: Picker, target: string): Promise<DirectoryPickerListing> {
+    const previous = picker.current;
+    picker.current = target;
+    try {
+      picker.current = await this.selectedDirectory(picker.id);
+      return await this.listing(picker);
+    } catch (error) {
+      picker.current = previous;
+      throw error;
+    }
   }
 
   private require(pickerId: string): Picker {
