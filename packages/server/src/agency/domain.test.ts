@@ -223,13 +223,13 @@ test('existing picker consumers retain their lexical path; Agency gets canonical
   assert.equal(next.path, path.join(before, 'nested'));
   assert.equal(await picker.selectedDirectory(id), await realpath(child));
   assert.equal(checkVaultTarget(path.join(dir, 'vault'), picker.currentPath(id)!, {
-    protectedDirs: [protectedDir], platform: process.platform,
+    protectedDirs: [before], platform: process.platform,
   }).kind, 'refused', 'Vault must still refuse a protected CLI home');
   const other = new DirectoryPickers([protectedDir]);
   const idOther = await pick(other, dir);
   await assert.rejects(other.enter(idOther, 'cli-home'), 'Agency picker must block protected CLI homes');
   await other.create(idOther, 'new-project');
-  assert.equal(other.currentPath(idOther), path.join(dir, 'new-project'));
+  assert.equal(other.currentPath(idOther), path.join(await realpath(dir), 'new-project'));
   assert.equal(await other.selectedDirectory(idOther), await realpath(path.join(dir, 'new-project')));
 });
 
