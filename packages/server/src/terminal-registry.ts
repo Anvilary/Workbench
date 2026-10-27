@@ -133,6 +133,10 @@ interface TerminalEntry {
    * la entrada lanzando devuelve el descriptor sin lanzar nada.
    */
   launching: boolean;
+  /** Internal Agency ownership, never restored as an upstream native tab. */
+  agencyManaged: boolean;
+  /** Explicit validated profile launch, retained only in memory. */
+  agencyLaunch: { file: string; args: readonly string[]; env: Record<string, string> } | null;
 }
 
 export interface OpenTerminalOptions {
@@ -153,6 +157,10 @@ export interface OpenTerminalOptions {
    * si lo tiene, y despierta igual. Solo para `agent`.
    */
   review?: boolean;
+  /** Internal caller flag. Agency metadata, not the upstream tab store, owns this process. */
+  agencyManaged?: boolean;
+  /** Lane B validated original CLI executable, argv and isolated environment. */
+  agencyLaunch?: { file: string; args: readonly string[]; env: Record<string, string> };
 }
 
 // Vive en su propio modulo para que se pueda reconocer sin cargar node-pty.
@@ -354,7 +362,10 @@ export class TerminalRegistry extends EventEmitter {
         : null;
     // Se resuelve que se va a lanzar antes que nada: asi el error que ve el
     // usuario es "falta la CLI" o "falta la consola" y no uno de mas adelante.
-    this.launcherFor(kind, agent);
+    if (options.agencyLaunch === undefined) this.launcherFor(kind, agent);
+    if (options.agencyLaunch !== undefined && (kind !== 'agent' || options.agencyManaged !== true)) {
+      throw new Error('Agency profile launches require an Agency-managed agent terminal');
+    }
 
     if (this.terminals.size >= MAX_TERMINALS) {
       throw new TerminalOpenError(
@@ -400,6 +411,12 @@ export class TerminalRegistry extends EventEmitter {
       launchedAt: null,
       stopWatchingActivity: null,
       launching: true,
+      agencyManaged: options.agencyManaged === true,
+      agencyLaunch: options.agencyLaunch === undefined ? null : {
+        file: options.agencyLaunch.file,
+        args: [...options.agencyLaunch.args],
+        env: { ...options.agencyLaunch.env },
+      },
     };
     this.terminals.set(terminalId, entry);
 
@@ -439,6 +456,8 @@ export class TerminalRegistry extends EventEmitter {
   async wake(terminalId: TerminalId): Promise<TerminalDescriptor | null> {
     const entry = this.terminals.get(terminalId);
     if (entry === undefined) return null;
+    // An Agency session must never be independently relaunched by upstream terminal.wake.
+    if (entry.agencyManaged) return null;
     /*
       Ya se esta lanzando (hito 29, D23): un segundo pedido no lanza otro
       proceso. Con la CLI corriendo no hay nada que despertar, salvo que su
@@ -541,7 +560,7 @@ export class TerminalRegistry extends EventEmitter {
    */
   private async spawn(entry: TerminalEntry, options: { resume: boolean }): Promise<boolean> {
     const { terminalId, kind, cwd, sessionId, agent, review } = entry.descriptor;
-    const launcher = this.launcherFor(kind, agent);
+    const launcher = entry.agencyLaunch === null ? this.launcherFor(kind, agent) : null;
     const { buffer } = entry;
 
     /*
@@ -557,7 +576,12 @@ export class TerminalRegistry extends EventEmitter {
     let launchedSessionId = sessionId;
     // Uno por proceso: con el, el adaptador casa lo que preparo al lanzar con su gancho.
     const launchToken = randomUUID();
-    if (launcher.kind === 'agent') {
+    if (entry.agencyLaunch !== null) {
+      launch = { file: entry.agencyLaunch.file, args: [...entry.agencyLaunch.args] };
+      // A native provider conversation is not the Workbench terminal or Agency session.
+      // Discovery belongs to the installed CLI integration, never a guessed UUID.
+      launchedSessionId = '';
+    } else if (launcher?.kind === 'agent') {
       adapter = launcher.agent.adapter;
       const { location } = launcher.agent;
       const launching = adapter;
@@ -580,9 +604,14 @@ export class TerminalRegistry extends EventEmitter {
       // id es siempre el que ya tenia la pestana.
       launchedSessionId = plan.session.kind === 'known' ? plan.session.sessionId : '';
     } else {
+      if (launcher === null || launcher.kind !== 'shell') {
+        throw new Error('Missing shell launcher');
+      }
       launch = { file: launcher.shell.file, args: [...launcher.shell.args] };
     }
-    const env = this.agents.composedEnvironment(process.env);
+    const env = entry.agencyLaunch === null
+      ? this.agents.composedEnvironment(process.env)
+      : { ...entry.agencyLaunch.env };
 
     const launchedAt = Date.now();
     let session: PtySession;
@@ -897,6 +926,8 @@ export class TerminalRegistry extends EventEmitter {
         launchedAt: null,
         stopWatchingActivity: null,
         launching: false,
+        agencyManaged: false,
+        agencyLaunch: null,
       });
       this.insertInOrder(terminalId, descriptor);
     }
@@ -1071,7 +1102,12 @@ export class TerminalRegistry extends EventEmitter {
    */
   private persist(): void {
     this.store.save(
-      mergePersistedTabs(persistableTabs(this.list()), this.unavailableTabs, this.foreignTabs),
+      mergePersistedTabs(
+        persistableTabs(this.list().filter((descriptor) =>
+          !this.terminals.get(descriptor.terminalId)?.agencyManaged)),
+        this.unavailableTabs,
+        this.foreignTabs,
+      ),
     );
   }
 }
