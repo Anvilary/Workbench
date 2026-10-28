@@ -5,6 +5,10 @@ import { AgencySidebar, AgencyDoneView } from './AgencySidebar.js';
 import { AgencyWorkspaceCreator, AgencyProjectCreator } from './AgencyWorkspaceCreator.js';
 import { AgencyWorkspaceView } from './AgencyWorkspaceView.js';
 import { useAgencyStore } from './useAgencyStore.js';
+import { useNotificationStore } from './useNotificationStore.js';
+import { NotificationBell } from './NotificationBell.js';
+import { NotificationInbox } from './NotificationInbox.js';
+import { NotificationToastContainer } from './NotificationToast.js';
 import { acknowledgeWorkspaceDraft, createAgencyTransport, putWorkspaceDraft } from './model.js';
 import { t } from '../i18n/index.js';
 import { useLocale } from '../i18n/useLocale.js';
@@ -36,6 +40,8 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   const agencyTransport = useMemo(() => createAgencyTransport(connection), [connection]);
   const store = useAgencyStore(agencyTransport, connection);
   const { data, loaded, online, notice } = store;
+  const notificationStore = useNotificationStore(agencyTransport, store.request);
+  const [inboxOpen, setInboxOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<WorkspaceId | null>(() => { try { return localStorage.getItem('agency-ui.selected-workspace.v1') as WorkspaceId | null; } catch { return null; } });
   const [showingDone, setShowingDone] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => { try { return localStorage.getItem('agency-ui.sidebar-open.v1') !== 'false'; } catch { return true; } });
@@ -91,6 +97,24 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   useEffect(() => { try { if (selectedId) localStorage.setItem('agency-ui.selected-workspace.v1', selectedId); } catch {} }, [selectedId]);
   const selectedProject = data.projects.find((project) => project.id === selected?.projectId);
   useEffect(() => { try { localStorage.setItem('agency-ui.sidebar-open.v1', String(sidebarOpen)); } catch {} }, [sidebarOpen]);
+
+  function handleNotificationNavigate(item: { workspaceId: WorkspaceId; tabId?: string; id?: string }) {
+    setSelectedId(item.workspaceId);
+    setShowingDone(false);
+    if (item.tabId) {
+      void store.request({
+        type: 'agency.tab.action',
+        workspaceId: item.workspaceId,
+        tabId: item.tabId,
+        action: 'select',
+      }).catch(() => undefined);
+      void notificationStore.acknowledgeTab(item.workspaceId, item.tabId);
+    }
+    if (item.id) {
+      void notificationStore.markRead(item.id);
+    }
+    setInboxOpen(false);
+  }
 
   function updateDraft(workspaceId: string, value: string) {
     setDrafts((prev) => putWorkspaceDraft(prev, workspaceId as WorkspaceId, value));
@@ -255,7 +279,22 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
           )}
           <button type="button" className="agency-secondary-button" disabled={!online}
             onClick={() => store.refresh()}>{t('agency.ui.refresh')}</button>
+          <NotificationBell
+            unreadCount={notificationStore.unreadCount}
+            open={inboxOpen}
+            onToggle={() => setInboxOpen(!inboxOpen)}
+          />
         </div>
+        {inboxOpen && (
+          <NotificationInbox
+            notifications={notificationStore.notifications}
+            unreadCount={notificationStore.unreadCount}
+            onClose={() => setInboxOpen(false)}
+            onSelect={handleNotificationNavigate}
+            onMarkRead={notificationStore.markRead}
+            onMarkAllRead={notificationStore.markAllRead}
+          />
+        )}
         {error && <div role="alert" className="agency-error-bar">{error}
           <button type="button" onClick={() => setError(null)} aria-label={t('agency.ui.dismissError')}>×</button></div>}
         {statusToast && <div className="agency-notice-bar" role="status">{statusToast}
@@ -286,6 +325,8 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
             onDelivered={(value) => clearDelivered(selected.id, value)}
             onDone={() => { void markDone(selected); }}
             launchError={launchErrors[selected.id]}
+            getTabActivity={notificationStore.getTabActivity}
+            onAcknowledgeTab={notificationStore.acknowledgeTab}
             onClearLaunchError={() => {
               setLaunchErrors((prev) => {
                 const next = { ...prev };
@@ -335,6 +376,11 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
           if (options.mode === 'terminal' || options.mode === 'combined') await launch('terminal');
           if (failures.length) setLaunchErrors(prev => ({ ...prev, [newWorkspace.id]: failures.join(' · ') }));
         }} />}
+      <NotificationToastContainer
+        toasts={notificationStore.toasts}
+        onDismiss={notificationStore.dismissToast}
+        onNavigate={handleNotificationNavigate}
+      />
     </div>
   );
 }

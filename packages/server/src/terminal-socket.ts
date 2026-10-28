@@ -59,6 +59,9 @@ import { asRecord, parseJson } from '@agent-workbench/shared';
 import { AgencyWorkspaceStore } from './agency/store.js';
 import { AgencyProfileStore } from './agency/agency-profile-store.js';
 import { AgencySessionRuntime, AgencyRuntimeError } from './agency/agency-session-runtime.js';
+import { AgencyNotificationStore } from './agency/agency-notification-store.js';
+import { TabActivityManager } from './agency/tab-activity-manager.js';
+import { ChatGPTActivityProvider } from './agency/browser-activity-provider.js';
 import { WorkspaceMutex } from './agency/workspace-lock.js';
 import { handleAgencyDomainRequest, type AgencyDomainContext } from './agency/domain-handler.js';
 import type { NativeIdentities } from './agency/native-identity.js';
@@ -206,6 +209,8 @@ export interface TerminalSocketOptions {
   agencyIdentities?: NativeIdentities;
   agencyRuntime: AgencySessionRuntime;
   workspaceLock: WorkspaceMutex;
+  agencyNotificationStore?: AgencyNotificationStore;
+  agencyActivityManager?: TabActivityManager;
 }
 
 export function attachTerminalSocket(options: TerminalSocketOptions): () => void {
@@ -232,6 +237,14 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     agencyRuntime,
     workspaceLock,
   } = options;
+
+  const agencyNotificationStore = options.agencyNotificationStore ?? new AgencyNotificationStore();
+  const agencyActivityManager = options.agencyActivityManager ?? new TabActivityManager({ notificationStore: agencyNotificationStore });
+  const chatgptProvider = new ChatGPTActivityProvider();
+  agencyActivityManager.registerBrowserProvider(chatgptProvider);
+  void agencyNotificationStore.initialize().catch((err: unknown) => {
+    console.warn('[agency] failed to initialize notification store: ' + String(err));
+  });
 
   const pasteStore = options.pasteStore ?? new PasteStore();
 
@@ -819,14 +832,71 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
   // Ajustes (Hito 41) avisa a todas las ventanas: el nombre de la consola nueva lo usan todas.
   const onAppSettingsStatus = (settings: AppSettingsStatus): void => broadcast({ type: 'settings.status', settings });
   appSettings.on('status', onAppSettingsStatus);
+  const attachedShellTerminals = new Set<string>();
+  const shellOutputListener: OutputListener = (terminalId, chunk) => {
+    const session = agencyRuntime.list().find((s) => s.terminalId === terminalId);
+    if (session && session.tab) {
+      agencyActivityManager.feedShellOutput(session.tab.id, chunk);
+    }
+  };
+
+  const syncShellTerminal = (session: any) => {
+    if (session.kind === 'terminal' && session.terminalId && session.tab && ['starting', 'running'].includes(session.lifecycle)) {
+      if (!attachedShellTerminals.has(session.terminalId)) {
+        attachedShellTerminals.add(session.terminalId);
+        agencyActivityManager.getOrCreateShellParser(session.workspaceId, session.tab.id, {
+          tabName: session.tab.name,
+          sessionId: session.id,
+        });
+        registry.attach(session.terminalId, shellOutputListener);
+      }
+    } else if (session.terminalId && attachedShellTerminals.has(session.terminalId)) {
+      attachedShellTerminals.delete(session.terminalId);
+      registry.detach(session.terminalId, shellOutputListener);
+    }
+  };
+
+  for (const s of agencyRuntime.list()) {
+    syncShellTerminal(s);
+  }
+
   const onAgencySessionChanged = (session: any): void => {
     broadcast({ type: 'agency.session.changed', sessionId: session.id, session });
+    syncShellTerminal(session);
   };
   const onAgencySessionActivity = (activity: any): void => {
     broadcast({ type: 'agency.session.activity', ...activity });
+    const session = agencyRuntime.get(activity.sessionId);
+    if (session && session.tab && session.kind === 'agent') {
+      const ws = agencyWorkspaceStore.getWorkspace(session.workspaceId);
+      void agencyActivityManager.handleCliActivity({
+        workspaceId: session.workspaceId,
+        projectId: ws?.projectId,
+        tabId: session.tab.id,
+        sessionId: session.id,
+        tabName: session.tab.name,
+        nextActivity: activity.activity,
+        lifecycle: activity.lifecycle,
+        exitCode: session.exitCode,
+      });
+    }
   };
   agencyRuntime.on('changed', onAgencySessionChanged);
   agencyRuntime.on('activity', onAgencySessionActivity);
+
+  const onNotificationCreated = (notification: any): void => {
+    broadcast({ type: 'agency.notification.created', notification });
+  };
+  const onNotificationChanged = (notification: any): void => {
+    broadcast({ type: 'agency.notification.changed', notification });
+  };
+  const onTabActivity = (record: any): void => {
+    broadcast({ type: 'agency.tab.activity', activity: record });
+  };
+
+  agencyNotificationStore.on('created', onNotificationCreated);
+  agencyNotificationStore.on('changed', onNotificationChanged);
+  agencyActivityManager.on('tabActivity', onTabActivity);
   /*
     Un equipo revocado, o el acceso apagado (null): sus ventanas se cierran ya.
     Con su codigo, para que la pagina deje de reconectar y lo diga. La
@@ -1047,6 +1117,12 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
       type: 'agency.sessions.snapshot',
       requestId: '',
       sessions: agencyRuntime.list(),
+    });
+    send(socket, {
+      type: 'agency.notifications.snapshot',
+      requestId: '',
+      notifications: agencyNotificationStore.list(),
+      activityStates: agencyActivityManager.snapshot(),
     });
     // Lo que ya se sabe del plan de cada CLI; lo que llegue despues va por `onChange`.
     planLimits.retain();
@@ -3314,8 +3390,14 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         case 'agency.tab.action':
         case 'agency.tabs.order': {
           try {
-            if (message.type === 'agency.tab.action') await agencyRuntime.tabAction(message.workspaceId, message.tabId, message.action);
-            else await agencyRuntime.orderTabs(message.workspaceId, message.tabIds);
+            if (message.type === 'agency.tab.action') {
+              await agencyRuntime.tabAction(message.workspaceId, message.tabId, message.action);
+              if (message.action === 'select') {
+                await agencyActivityManager.acknowledgeTab(message.workspaceId, message.tabId);
+              }
+            } else {
+              await agencyRuntime.orderTabs(message.workspaceId, message.tabIds);
+            }
             send(socket, { type: 'agency.sessions.snapshot', requestId: message.requestId, sessions: agencyRuntime.list() });
           } catch (error) {
             send(socket, { type: 'agency.error', requestId: message.requestId, code: error instanceof AgencyRuntimeError ? error.code : 'internal-error', message: error instanceof Error ? error.message : String(error) });
@@ -3337,6 +3419,50 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
               msg = error.message;
             }
             send(socket, { type: 'agency.error', requestId: message.requestId, code, message: msg });
+          }
+          break;
+        }
+
+        case 'agency.notifications.list': {
+          send(socket, {
+            type: 'agency.notifications.snapshot',
+            requestId: message.requestId,
+            notifications: agencyNotificationStore.list(),
+            activityStates: agencyActivityManager.snapshot(),
+          });
+          break;
+        }
+
+        case 'agency.notification.markRead': {
+          const item = await agencyNotificationStore.markRead(message.notificationId);
+          if (item) {
+            send(socket, { type: 'agency.notification.changed', notification: item });
+          }
+          break;
+        }
+
+        case 'agency.notification.markAllRead': {
+          await agencyNotificationStore.markAllRead();
+          send(socket, {
+            type: 'agency.notifications.snapshot',
+            requestId: message.requestId,
+            notifications: agencyNotificationStore.list(),
+          });
+          break;
+        }
+
+        case 'agency.notification.dismiss': {
+          const item = await agencyNotificationStore.dismiss(message.notificationId);
+          if (item) {
+            send(socket, { type: 'agency.notification.changed', notification: item });
+          }
+          break;
+        }
+
+        case 'agency.tab.acknowledge': {
+          const record = await agencyActivityManager.acknowledgeTab(message.workspaceId, message.tabId);
+          if (record) {
+            broadcast({ type: 'agency.tab.activity', activity: record });
           }
           break;
         }
@@ -3405,6 +3531,9 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     stopRemoteRevoked();
     agencyRuntime.off('changed', onAgencySessionChanged);
     agencyRuntime.off('activity', onAgencySessionActivity);
+    agencyNotificationStore.off('created', onNotificationCreated);
+    agencyNotificationStore.off('changed', onNotificationChanged);
+    agencyActivityManager.off('tabActivity', onTabActivity);
     for (const client of wss.clients) client.terminate();
     wss.close();
   };
