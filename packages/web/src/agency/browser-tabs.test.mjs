@@ -30,6 +30,7 @@ const now=new Date().toISOString();
 const project={id:p,name:'Project',status:'active',createdAt:now,updatedAt:now};
 const workspace={id:ws,projectId:p,name:'Workspace',status:'active',cwd:'/fixture',createdAt:now,updatedAt:now};
 let sessions=[{id:'session',workspaceId:ws,kind:'terminal',terminalId:'term',lifecycle:'running',activity:'idle',exitCode:null,tab:{id:native,order:0,selected:true,current:true,closedAt:null,name:'Native shell',terminalNumber:1}}];
+sessions.push({...sessions[0],id:'cli-session',kind:'agent',profileId:'codex00',terminalId:null,lifecycle:'exited',tab:{...sessions[0].tab,id:'66666666-6666-4666-8666-666666666666',order:2,selected:false,name:'Native CLI'}});
 let tabs=[{id:web,workspaceId:ws,kind:'web',title:'Research',url:'https://chatgpt.com/',order:1,selected:false,closedAt:null,createdAt:now,updatedAt:now,targetRef:'target',runtimeState:'ready'}];
 let activities=[{workspaceId:ws,tabId:web,state:'finished',updatedAt:now,reliableSignal:true,source:'browser'}];
 let notifications=[{id:'55555555-5555-4555-8555-555555555555',workspaceId:ws,tabId:web,title:'Research',body:'Browser finished',state:'finished',read:false,createdAt:now,metadata:{kind:'browser',tabName:'Research'}}];
@@ -52,11 +53,11 @@ case 'agency.notifications.list':reply('agency.notifications.snapshot',{notifica
 case 'terminal.attach':emit({type:'terminal.replay',terminalId:'term',data:'native prompt\\r\\n',truncated:false});break;
 case 'agency.webTab.select':case 'agency.tab.action':
  if(api.failSelect || (m.type==='agency.webTab.select' && api.failActivationOnce && tabs.find(t=>t.id===m.tabId)?.selected)){api.failActivationOnce=false;reply('agency.error',{message:'Selection failed',code:'session-unavailable'});break;}
- sessions=sessions.map(s=>({...s,tab:{...s.tab,selected:m.tabId===native}}));tabs=tabs.map(t=>({...t,selected:t.id===m.tabId}));snapshots();
+ sessions=sessions.map(s=>({...s,tab:{...s.tab,selected:s.tab.id===m.tabId}}));tabs=tabs.map(t=>({...t,selected:t.id===m.tabId}));snapshots();
  if(m.type==='agency.webTab.select')reply('agency.webTab.updated',{tab:tabs.find(t=>t.id===m.tabId)});else reply('agency.session.changed',{session:sessions[0]});break;
 case 'agency.notification.markRead':notifications=notifications.map(n=>n.id===m.notificationId?{...n,read:true,readAt:new Date().toISOString()}:n);reply('agency.notification.changed',{notification:notifications[0]});break;
 case 'agency.tab.acknowledge':activities=activities.map(a=>({...a,state:'idle'}));reply('agency.tab.activity',{activity:activities[0]});break;
-case 'agency.webTab.close':tabs=tabs.map(t=>t.id===m.tabId?{...t,closedAt:now,selected:false}:t);sessions=sessions.map(s=>({...s,tab:{...s.tab,selected:true}}));snapshots();reply('agency.webTab.closed',{tab:tabs.find(t=>t.id===m.tabId)});break;
+case 'agency.webTab.close':tabs=tabs.map(t=>t.id===m.tabId?{...t,closedAt:now,selected:false}:t);sessions=sessions.map(s=>({...s,tab:{...s.tab,selected:s.tab.id===native}}));snapshots();reply('agency.webTab.closed',{tab:tabs.find(t=>t.id===m.tabId)});break;
 case 'agency.tabs.order':sessions=sessions.map(s=>({...s,tab:{...s.tab,order:m.tabIds.indexOf(s.tab.id)}}));tabs=tabs.map(t=>({...t,order:m.tabIds.indexOf(t.id)}));snapshots();reply('agency.sessions.snapshot',{sessions:structuredClone(sessions)});break;
 case 'agency.tab.rename':
  if(api.failRename){reply('agency.error',{message:'Rename failed',code:'internal-error'});break;}
@@ -166,5 +167,12 @@ test('Actual Agency UI preserves native input and delays web inspection until se
   await page.evaluate(()=>window.agencyTest.failRename=false); await input.press('Enter');
   await page.getByRole('tab',{name:'Shell renamed'}).waitFor();
   assert.equal(await page.evaluate(()=>window.agencyTest.requests.filter(m=>m.type==='agency.tab.rename').every(m=>m.tabId==='33333333-3333-4333-8333-333333333333')),true);
+  await page.getByRole('tab',{name:'Native CLI'}).press('F2');
+  await input.fill('CLI renamed'); await input.press('Enter');
+  await page.getByRole('tab',{name:'CLI renamed'}).waitFor();
+  assert.equal(await page.evaluate(()=>window.agencyTest.requests.filter(m=>m.type==='agency.tab.rename').at(-1).tabId),'66666666-6666-4666-8666-666666666666');
+  await page.getByRole('button',{name:'Add tab',exact:true}).click();
+  await page.getByRole('menuitem',{name:'Rename tab',exact:true}).click();
+  await input.waitFor(); await input.press('Escape');
   assert.deepEqual(errors,[]);
 });
