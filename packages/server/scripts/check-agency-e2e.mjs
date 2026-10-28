@@ -495,6 +495,8 @@ client1.send({
 await client1.waitFor((m) => m.type === 'terminal.output' &&
   m.terminalId === session1.terminalId && m.data.includes('SLEEP_STARTED'));
 
+await new Promise((r) => setTimeout(r, 200));
+
 // Send Ctrl+C
 client1.send({
   type: 'input',

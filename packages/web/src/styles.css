@@ -6007,6 +6007,56 @@ kbd {
   text-align: left;
 }
 
+.picker-search-bar {
+  display: flex;
+  align-items: center;
+  position: relative;
+  width: 100%;
+}
+
+.picker-search-input {
+  width: 100%;
+  padding: 5px 28px 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.picker-search-input:focus {
+  border-color: var(--accent);
+}
+
+.picker-search-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.picker-search-clear:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.picker-search-status {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
 .picker-list {
   height: 260px;
   overflow-y: auto;

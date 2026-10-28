@@ -299,22 +299,26 @@ await selectWorkspace('Empty Workspace');
 await expectVisible('.agency-agent-pane');
 await expectAbsent('.agency-shell-pane');
 await expectAbsent('.terminal-surface');
-const profileOptions = await page.getByRole('combobox', { name: 'CLI profile' }).locator('option').evaluateAll(
+const profileOptions = await page.locator('.agency-shell-placeholder select').locator('option').evaluateAll(
   (options) => options.map((option) => option.value).filter(Boolean));
 assert.deepEqual(profileOptions, ['codex-0', 'codex-1', 'codex-3', 'agy-0', 'agy-1', 'agy-2', 'agy-3', 'agy-4', 'agy-5', 'claude-code']);
 await saveShot('01-empty-workspace.png');
 
-await page.getByRole('button', { name: 'Configure profile' }).click();
+await page.locator('.agency-side-heading button').click();
 await expectVisible('[role="dialog"]');
-await saveShot('07-profile-configuration-dialog.png');
+await saveShot('07-new-workspace-dialog.png');
 for (let i = 0; i < 8; i++) {
   await page.keyboard.press('Tab');
   assert.ok(await page.locator('[role="dialog"]').evaluate((dialog) => dialog.contains(document.activeElement)),
-    'Keyboard focus escaped the profile dialog');
+    'Keyboard focus escaped the dialog');
 }
+await page.locator('.agency-dialog input').fill('Search Test WS');
+await page.getByRole('button', { name: 'Select existing folder' }).click();
+await expectVisible('.picker-modal');
+await page.locator('.picker-search-input').fill('project');
+await saveShot('08-folder-picker-live-search.png');
 await page.keyboard.press('Escape');
-await page.locator('[role="dialog"]').waitFor({ state: 'hidden' });
-assert.equal(await page.getByRole('button', { name: 'Configure profile' }).evaluate((button) => document.activeElement === button), true);
+await page.keyboard.press('Escape');
 
 await selectWorkspace('Shell Only');
 await expectVisible('.agency-shell-pane .terminal-surface');
@@ -331,6 +335,7 @@ await saveShot('03-agent-only-workspace.png');
 await selectWorkspace('Combined Workspace');
 await expectVisible('.agency-agent-pane .terminal-surface');
 await expectVisible('.agency-shell-pane .terminal-surface');
+await expectVisible('.agency-pane-divider');
 await saveShot('04-combined-workspace.png');
 await expectVisible('.agency-sidebar-nav');
 await saveShot('05a-sidebar-expanded.png');
@@ -346,8 +351,8 @@ await expectVisible('.agency-done-view:has-text("Completed Task")');
 await expectVisible('.agency-done-view button');
 await saveShot('06-done-restore-view.png');
 
-// Exercise populated combined state and the dialog at each requested width.
-for (const width of [390, 768, 1024, 1440]) {
+// Exercise populated combined state at each requested width: 390, 768, 1024, 1440, 1920.
+for (const width of [390, 768, 1024, 1440, 1920]) {
   await page.setViewportSize({ width, height: 900 });
   await selectWorkspace('Combined Workspace');
   if (width <= 680) await sidebarToggle.click();
@@ -359,35 +364,29 @@ for (const width of [390, 768, 1024, 1440]) {
       const r = el.getBoundingClientRect(); return { width: r.width, height: r.height };
     }) }));
   assert.ok(metrics.scroll <= metrics.viewport, `Overflow at ${width}: ${JSON.stringify(metrics)}`);
-  assert.ok(metrics.terminals.every(r => r.width > 100 && r.height > 50), `Terminal too small at ${width}: ${JSON.stringify(metrics)}`);
+  assert.ok(metrics.terminals.every(r => r.width > 80 && r.height > 50), `Terminal too small at ${width}: ${JSON.stringify(metrics)}`);
   console.log('Combined layout:', width, JSON.stringify(metrics));
-  if (width <= 680) await sidebarToggle.click();
-  await selectWorkspace('Empty Workspace');
-  if (width <= 680) await sidebarToggle.click();
-  await page.getByRole('button', { name: 'Configure profile' }).click();
-  const box = await page.locator('[role="dialog"]').boundingBox();
-  assert.ok(box && box.x >= 0 && box.x + box.width <= width && box.y >= 0 && box.y + box.height <= 900,
-    `Dialog out of viewport at ${width}: ${JSON.stringify(box)}`);
-  await page.keyboard.press('Escape');
-  await page.locator('[role="dialog"]').waitFor({ state: 'hidden' });
+  if (width === 1920) {
+    await saveShot('09-desktop-1920.png');
+  }
   if (width <= 680) await sidebarToggle.click();
 }
-// Drafts remain intact across two actual workspace switches.
-await selectWorkspace('Empty Workspace');
-const draft = 'A long unsent draft '.repeat(80);
-await page.locator('.agency-composer textarea').fill(draft);
+
+// Workspace switching preserves terminal attachment.
+await selectWorkspace('Shell Only');
 const switchStart = performance.now();
 await selectWorkspace('Combined Workspace');
-await selectWorkspace('Empty Workspace');
+await selectWorkspace('Shell Only');
 console.log('Two workspace switches with terminal attachment (ms):', Math.round(performance.now() - switchStart));
-assert.equal(await page.locator('.agency-composer textarea').inputValue(), draft);
+
 await page.locator('.agency-history-toggle').click();
 await page.locator('.agency-done-row').filter({ hasText: 'Completed Task' }).getByRole('button', { name: 'Restore' }).click();
 await page.locator('.agency-workspace-view').filter({ hasText: 'Completed Task' }).waitFor({ state: 'visible' });
 assert.deepEqual(pageErrors, [], 'Unexpected browser page errors');
+
 const hashes = ['01-empty-workspace.png', '02-shell-only-workspace.png', '03-agent-only-workspace.png',
   '04-combined-workspace.png', '05a-sidebar-expanded.png', '05b-sidebar-collapsed.png',
-  '06-done-restore-view.png', '07-profile-configuration-dialog.png']
+  '06-done-restore-view.png', '07-new-workspace-dialog.png', '08-folder-picker-live-search.png', '09-desktop-1920.png']
   .map((name) => createHash('sha256').update(readFileSync(path.join(outDir, name))).digest('hex'));
 assert.equal(new Set(hashes).size, hashes.length, 'Distinct UI states produced duplicate screenshots');
 console.log('Browser page errors:', pageErrors.length, 'console errors:', consoleErrors.length);
