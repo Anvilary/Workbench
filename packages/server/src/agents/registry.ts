@@ -209,9 +209,15 @@ export class AgentRegistry {
     return env;
   }
 
+  private additionalProtectedDirs: readonly string[] = [];
+
+  protectNativeHomes(dirs: readonly string[]): void {
+    this.additionalProtectedDirs = Object.freeze([...new Set([...this.additionalProtectedDirs, ...dirs])]);
+  }
+
   /** Union de las carpetas protegidas de todos, instalados o no. */
   protectedDirs(): readonly string[] {
-    const dirs = new Set<string>();
+    const dirs = new Set<string>(this.additionalProtectedDirs);
     for (const { adapter } of this.agents.values()) {
       for (const dir of adapter.protectedDirs()) dirs.add(dir);
     }

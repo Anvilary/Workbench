@@ -104,6 +104,7 @@ import { RewindDialog } from './RewindDialog.js';
 import { changedFilesAfter, rewindPreview } from './rewind-ui.js';
 import { useRewind } from './useRewind.js';
 import type { ConnectionStatus } from './connection.js';
+import { AgencyApp } from './agency/AgencyApp.js';
 import { blindToApprovals, normalizeCwdKey, type AgentId, type GlobalSearchHit, type TerminalId } from '@agent-workbench/shared';
 
 const STATUS_LABEL_KEYS: Record<ConnectionStatus, MessageKey> = {
@@ -239,6 +240,13 @@ export function App(): JSX.Element {
   const sound = useNotificationSound(activity, notifyTabs);
   const threadFont = useThreadFont();
   const activeTerminal = terminals.find((t) => t.terminalId === activeTerminalId) ?? null;
+
+  const isClassic = typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('view') === 'workbench';
+
+  if (!isClassic) {
+    return <AgencyApp connection={connection} />;
+  }
 
   /*
     Elegir otra pestana a mano cierra el cartel de error: lo que decia era de lo

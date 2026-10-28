@@ -31,7 +31,7 @@
 import { ServerTextError, serverText } from '@agent-workbench/shared';
 import { randomUUID } from 'node:crypto';
 import type { Dirent, Stats } from 'node:fs';
-import { lstat, mkdir, readdir, stat } from 'node:fs/promises';
+import { lstat, mkdir, readdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import type { DirectoryPickerListing } from '@agent-workbench/shared';
@@ -142,13 +142,14 @@ export class DirectoryPickers {
   constructor(private readonly protectedDirs: readonly string[]) {}
 
   /** Abre un selector en el directorio del usuario. */
-  async open(): Promise<DirectoryPickerListing> {
-    if (this.pickers.size >= MAX_PICKERS) {
+  async open(id: string = randomUUID()): Promise<DirectoryPickerListing> {
+    if (this.pickers.has(id) || this.pickers.size >= MAX_PICKERS) {
       throw new DirectoryPickerError(serverText('pickerTooMany'));
     }
-    const picker: Picker = { id: randomUUID(), current: homedir(), entries: new Set() };
+    const picker: Picker = { id, current: homedir(), entries: new Set() };
     this.pickers.set(picker.id, picker);
-    return this.listing(picker);
+    try { return await this.listing(picker); }
+    catch (error) { this.pickers.delete(picker.id); throw error; }
   }
 
   close(pickerId: string): void {
@@ -165,6 +166,37 @@ export class DirectoryPickers {
   }
 
   /**
+   * Resolve a workspace selection from this socket's live picker, never from
+   * a client-supplied cwd. Resolve *again* at selection time: the directory
+   * may have been replaced by a symlink since the last picker listing.
+   *
+   * Protected CLI homes are checked in both lexical and canonical form,
+   * including when a protected home itself is a symlink.
+   */
+  async selectedDirectory(pickerId: string): Promise<string> {
+    const picker = this.require(pickerId);
+    const chosen = picker.current;
+    if (isInsideProtected(chosen, this.protectedDirs)) {
+      throw new DirectoryPickerError(serverText('pickerCliFolder'));
+    }
+    let canonical: string;
+    try {
+      canonical = await realpath(chosen);
+      if (!(await stat(canonical)).isDirectory()) throw new Error('Not a directory');
+    } catch {
+      throw new DirectoryPickerError(serverText('pickerListFailed'));
+    }
+    const protectedReal = await Promise.all(
+      this.protectedDirs.map(async (dir) => realpath(dir).catch(() => path.resolve(dir))),
+    );
+    if (isInsideProtected(canonical, protectedReal) ||
+        isInsideProtected(canonical, this.protectedDirs)) {
+      throw new DirectoryPickerError(serverText('pickerCliFolder'));
+    }
+    return canonical;
+  }
+
+  /**
    * Entra en un subdirectorio, o sube con `..`.
    *
    * `name` tiene que ser **uno de los nombres que se acaban de listar**. No es
@@ -178,8 +210,7 @@ export class DirectoryPickers {
     if (name === '..') {
       const parent = path.dirname(picker.current);
       // En una raiz, `dirname` devuelve la misma ruta: no hay a donde subir.
-      if (parent !== picker.current) picker.current = parent;
-      return this.listing(picker);
+      return this.moveTo(picker, parent);
     }
 
     if (!picker.entries.has(name)) {
@@ -190,8 +221,7 @@ export class DirectoryPickers {
     if (isInsideProtected(target, this.protectedDirs)) {
       throw new DirectoryPickerError(serverText('pickerCliFolder'));
     }
-    picker.current = target;
-    return this.listing(picker);
+    return this.moveTo(picker, target);
   }
 
   /** Salta a una de las raices, por posicion en la lista que se mando. */
@@ -200,8 +230,7 @@ export class DirectoryPickers {
     const roots = await this.knownRoots();
     const target = roots[index];
     if (target === undefined) throw new DirectoryPickerError(serverText('pickerRootMissing'));
-    picker.current = target;
-    return this.listing(picker);
+    return this.moveTo(picker, target);
   }
 
   /**
@@ -232,8 +261,23 @@ export class DirectoryPickers {
       }
     }
 
-    const target = path.join(picker.current, clean);
-    if (isInsideProtected(target, this.protectedDirs)) {
+    // Check the original spelling before realpath: Windows 8.3 aliases can
+    // normalize differently from a configured protected CLI home path.
+    const lexicalTarget = path.join(picker.current, clean);
+    if (isInsideProtected(lexicalTarget, this.protectedDirs)) {
+      throw new DirectoryPickerError(serverText('pickerNoProjectsHere'));
+    }
+
+    const parent = await this.selectedDirectory(pickerId);
+    // Preserve the original picker spelling for existing consumers, especially
+    // VaultService which compares against the configured CLI home paths.
+    const target = lexicalTarget;
+    const canonicalTarget = path.join(parent, clean);
+    const protectedReal = await Promise.all(
+      this.protectedDirs.map(async (dir) => realpath(dir).catch(() => path.resolve(dir))),
+    );
+    if (isInsideProtected(target, this.protectedDirs) ||
+        isInsideProtected(canonicalTarget, protectedReal)) {
       throw new DirectoryPickerError(serverText('pickerNoProjectsHere'));
     }
 
@@ -248,8 +292,22 @@ export class DirectoryPickers {
       );
     }
 
+    return this.moveTo(picker, target);
+  }
+
+  /** Validate before listing, so a swapped symlink cannot enumerate CLI homes. */
+  private async moveTo(picker: Picker, target: string): Promise<DirectoryPickerListing> {
+    const previous = picker.current;
     picker.current = target;
-    return this.listing(picker);
+    try {
+      // Validate the physical directory without rewriting the picker path.
+      // Vault and other existing consumers rely on its original spelling.
+      await this.selectedDirectory(picker.id);
+      return await this.listing(picker);
+    } catch (error) {
+      picker.current = previous;
+      throw error;
+    }
   }
 
   private require(pickerId: string): Picker {
