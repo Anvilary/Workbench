@@ -7,7 +7,7 @@
 export class TabClient {
   constructor(options = {}) {
     this.baseUrl = (options.baseUrl || process.env.NEKO_CONTROLLER_URL || 'http://127.0.0.1:9223').replace(/\/$/, '');
-    this.token = options.token || process.env.NEKO_CONTROLLER_TOKEN || '';
+    this.token = options.token || process.env.CONTROLLER_AUTH_TOKEN || process.env.NEKO_CONTROLLER_TOKEN || '';
   }
 
   async #request(method, path, body = null) {

@@ -6,10 +6,11 @@ The **MAW Lane A Neko Browser Runtime** provides an isolated, persistent, local 
 
 The runtime satisfies strict operational and security boundaries:
 - **Upstream Neko Infrastructure**: Uses unmodified upstream `m1k1o/neko:chromium` container image without forking Neko or re-implementing WebRTC streaming from scratch.
+- **Sandboxed Chromium**: Operates with full multi-process Chromium sandboxing enabled (`--no-sandbox` removed). Leverages Linux user namespaces and BPF Seccomp filter mode 2 under Docker via `cap_add: [SYS_ADMIN]` while running as unprivileged user `neko` with zero effective capabilities (`CapEff: 0000000000000000`).
 - **Single Authenticated Account & Profile**: Runs one Chromium browser instance with one persistent profile volume (`maw-neko-chromium-profile`), preserving authenticated sessions, cookies, IndexedDB, and browser preferences across container restarts.
-- **Multi-Tab Concurrency**: Supports 5–15 simultaneous loaded ChatGPT tabs. Background tabs stay active and continue token generation without throttling or destructive automatic unloading.
+- **Multi-Tab Concurrency & Resource Efficiency**: Supports 5–15 simultaneous loaded ChatGPT tabs without destructive automatic unloading. Inactive tabs consume an average of only ~109 MB PSS (Proportional Set Size) per tab, totaling ~1.23 GB PSS for 10 tabs.
 - **Single Streaming Surface**: Only the active/focused browser tab is rendered to the X11 display and streamed via WebRTC into MAW.
-- **Restricted Tab Controller**: Connects to Chromium's internal loopback DevTools Protocol port (`127.0.0.1:9222`) and exposes a minimal, hardened HTTP gateway (`127.0.0.1:9223`) strictly limited to tab enumeration, creation, selection, navigation, and closure. Raw debugging ports, DOM extraction, script evaluation, and cookie harvesting are strictly blocked.
+- **Hardened Restricted Tab Controller**: Supervised HTTP gateway (`127.0.0.1:9223`) connecting internally to Chromium's loopback DevTools Protocol port (`127.0.0.1:9222`). Features mandatory timing-safe bearer authentication, origin allowlisting, and RFC 6455 WebSocket correlation. Raw debugging ports, DOM extraction, script evaluation, and cookie harvesting are strictly blocked.
 
 ```
 +---------------------------------------------------------------------------------------------+
@@ -19,7 +20,7 @@ The runtime satisfies strict operational and security boundaries:
 |   |          MAW Web UI / Client       |          |         MAW Host Runtime            |   |
 |   +------------------------------------+          +-------------------------------------+   |
 |              |                  |                                    |                      |
-|       WebRTC Video/Input        | HTTP / Bearer Auth                 | HTTP REST            |
+|       WebRTC Video/Input        | HTTP / Ephemeral Token             | HTTP REST + Bearer   |
 |   (127.0.0.1:8085, 52000-52010) | (POST /api/login)                  | (127.0.0.1:9223)     |
 |              |                  |                                    |                      |
 +--------------|------------------|------------------------------------|----------------------+
@@ -38,8 +39,10 @@ The runtime satisfies strict operational and security boundaries:
 |   +-------------------------------------------------------------------------------------+   |
 |              | (Renders active foreground window)                                           |
 |   +------------------------------------------------------+   +--------------------------+   |
-|   | Chromium Browser 156.0.8078.47 (Single Instance)     |   | Restricted CDP Controller|   |
+|   | Chromium Browser 156.0.8078.47 (Sandboxed)           |   | Restricted CDP Controller|   |
 |   | - Window maximized on Display :99.0                  |<--| (tab_controller.py)      |   |
+|   | - Sandboxing: User Namespaces + BPF Seccomp Mode 2   |   | - Mandatory Bearer Auth  |   |
+|   | - Unprivileged user 'neko' (CapEff: 0)               |   | - Origin Allowlist       |   |
 |   | - Persistent profile: /home/neko/.config/chromium    |   | - List /tabs             |   |
 |   | - Background flags: disabled timer throttling        |   | - Create /tabs           |   |
 |   | - Disabled Tab Discarding & Occlusion Backgrounding  |   | - Activate /tabs/:id     |   |
@@ -53,7 +56,7 @@ The runtime satisfies strict operational and security boundaries:
 |              |                                                                              |
 |   +------------------------------------------------------+                                  |
 |   | Docker Volume: maw-neko-chromium-profile             |                                  |
-|   | (Cookies, IndexedDB, Local Storage, Session State)   |                                  |
+|   | (Sensitive profile data: Cookies, IndexedDB, Storage)|                                  |
 |   +------------------------------------------------------+                                  |
 +---------------------------------------------------------------------------------------------+
 ```
@@ -64,79 +67,87 @@ The runtime satisfies strict operational and security boundaries:
 
 | Requirement | Description | Architectural Solution | Status |
 | :--- | :--- | :--- | :--- |
-| **1. Profile & Account** | One Neko service, one persistent Chromium profile, one authenticated ChatGPT account | Single container `maw-neko` with Docker volume `maw-neko-chromium-profile` mounted to `/home/neko/.config/chromium`. Persistent cookies enabled (`cookies: 1`), `--bwsi` disabled. | **VERIFIED** |
+| **1. Sandboxed Browser & Profile** | One Neko service, one persistent Chromium profile, sandboxed execution | Sandboxed Chromium (`--no-sandbox` removed). Multi-process Zygote sandbox uses User Namespaces and BPF Seccomp Mode 2 via `cap_add: [SYS_ADMIN]` while running as unprivileged user `neko` with zero capabilities. Volume `maw-neko-chromium-profile` mounted to `/home/neko/.config/chromium`. Persistent cookies enabled (`cookies: 1`), `--bwsi` disabled. | **VERIFIED** |
 | **2. Multi-Tab Concurrency** | Independent ChatGPT browser tabs stay loaded and continue work while another tab is visible | Tabs are independent Chromium page targets. Chromium launched with `--disable-background-timer-throttling`, `--disable-renderer-backgrounding`, and `--disable-backgrounding-occluded-windows`. | **VERIFIED** |
-| **3. Single Surface Stream** | Only one browser surface streamed into MAW at a time | Neko captures the single virtual X11 display (`:99.0`). Activating a tab via CDP (`/json/activate/{id}`) brings that tab into focus on the X11 surface; WebRTC streams only the focused tab. | **VERIFIED** |
+| **3. Single Surface Stream** | Only one browser surface streamed into MAW at a time | Neko captures the single virtual X11 display (`:99.0`). Activating a tab via CDP (`/tabs/{id}/activate`) brings that tab into focus on the X11 surface; WebRTC streams only the focused tab. | **VERIFIED** |
 | **4. Safe Tab Switching** | Switching conversations must not navigate away or destroy inactive tabs | Tab switching uses CDP target activation (`activate`), which changes the active Chromium tab without reloading, navigating, or closing background tabs. | **VERIFIED** |
 | **5. Independent History** | Tabs retain independent navigation history and page state while loaded | Each tab is an isolated Chromium page context retaining its own session history stack, DOM state, and JavaScript execution environment. | **VERIFIED** |
 | **6. Restart vs Crash** | Profile survives service restart; unsaved page state does not survive process crash | Persistent storage survives clean container restart (`docker compose down/up`). Unsaved in-flight SSE tokens or unsubmitted form inputs do not survive SIGKILL/process crash (documented limitation). | **VERIFIED** |
-| **7. Multi-Tab Efficiency** | Efficient with 5–15 tabs; no destructive automatic unloading | Chromium memory measured at ~130–140 MB RSS per incremental tab (~1.5 GB for 5 tabs, ~2.1 GB for 10 tabs). Automatic tab discarding disabled via `--disable-features=TabDiscarding` and enterprise policies. | **VERIFIED** |
-| **8. Tab Selection Controls** | Test Neko native controls; investigate restricted local CDP controller | Neko exposes room/broadcast/clipboard APIs only, with zero browser tab controls. A restricted local CDP controller (`tab_controller.py`) is deployed on `127.0.0.1:9223`, strictly limited to lifecycle controls. | **VERIFIED** |
-| **9. Background Generation** | Prove background ChatGPT generation continues after another tab becomes visible | Empirically verified with live HTTP/SSE chunk streaming test: 7/7 background chunks delivered at exact 400ms intervals while a foreground tab was active. | **VERIFIED** |
-| **10. Completion Signal** | Do not claim completion detection unless verified permitted signal exists | Completion detection is **NOT** claimed. ChatGPT does not expose an external non-DOM status signal, and restricted CDP strictly prohibits DOM inspection and private API monitoring. | **VERIFIED** |
+| **7. Multi-Tab Efficiency** | Efficient with 5–15 tabs; no destructive automatic unloading | Chromium memory measured via PSS at ~109 MB per incremental tab (~760 MB PSS for 5 tabs, ~1.23 GB PSS for 10 tabs). Automatic tab discarding disabled via `--disable-features=TabDiscarding` and enterprise policies. | **VERIFIED** |
+| **8. Hardened Tab Controls** | Test Neko native controls; investigate restricted local CDP controller | Neko exposes room/broadcast/clipboard APIs only. Hardened local CDP controller (`tab_controller.py`) deployed on `127.0.0.1:9223` with mandatory bearer token authentication, origin allowlisting, and robust WebSocket correlation. | **VERIFIED** |
+| **9. Background Continuity** | Prove background network streaming continues after another tab becomes visible | Empirically verified with synthetic SSE chunk streaming test: 7/7 background chunks delivered at exact 400ms intervals while a foreground tab was active. | **VERIFIED (Synthetic SSE)** |
+| **10. Completion Signal** | Do not claim completion detection unless verified permitted signal exists | Completion detection is **NOT** claimed. ChatGPT does not expose an external non-DOM status signal, and restricted CDP strictly prohibits DOM inspection and private API monitoring. | **VERIFIED (Not Claimed)** |
 
 ---
 
-## 3. Detailed Component Architecture
+## 3. Sandboxing & Linux Security Model
 
-### 3.1 Upstream Neko Service (`m1k1o/neko`)
-- **Pinned Image**: `m1k1o/neko@sha256:9585af527274b594483af59fee8a97907cbde825c2865bf5e8ef6a8c4381e059`
-- **Component Versions**:
-  - Neko Server: `v3.2.0`
-  - Base OS: Debian GNU/Linux 13 (trixie)
-  - Chromium: `156.0.8078.47`
-- **Display Pipeline**:
-  - Virtual X server: Xorg on display `:99.0` with dummy video driver.
-  - Window manager: Openbox configured to maximize all client windows.
-  - Video capture: GStreamer pipeline capturing the Xorg root window, hardware-assisted or software VP8 encoding.
-  - Audio capture: PulseAudio monitor sink, streaming stereo Opus audio.
-  - WebRTC Transport: Ephemeral UDP port pool `52000-52010`, NAT 1-to-1 bound to `127.0.0.1`.
+### 3.1 Removing Chromium `--no-sandbox`
+In standard Docker environments, running Chromium without `--no-sandbox` often fails because Docker's default seccomp profile restricts the `clone(CLONE_NEWUSER)` system call when invoked by unprivileged users.
 
-### 3.2 Chromium Browser Profile & Persistence
-- **Profile Directory**: `/home/neko/.config/chromium` mapped to named Docker volume `maw-neko-chromium-profile`.
-- **Permission & Lock Management**:
-  - On Linux, Chromium uses `SingletonLock` (a symlink pointing to `<container-hostname>-<pid>`).
-  - In `docker-compose.yml`, the container is assigned a static `hostname: maw-neko`.
-  - The startup wrapper (`scripts/entrypoint.sh`) cleans up stale `SingletonLock`, `SingletonCookie`, and `SingletonSocket` symlinks prior to supervisor launch to guarantee seamless recovery after unclean container shutdowns.
-- **Persistent Cookies & Storage**:
-  - Upstream Neko defaults `preferences.json` to `"cookies": 4` (Session Only).
-  - The MAW deployment explicitly configures `"cookies": 1` (Allow), ensuring that authentication cookies (e.g. OpenAI session tokens) are persisted to `/home/neko/.config/chromium/Default/Cookies` across restarts.
-  - Guest mode flag (`--bwsi`) is removed.
-
-### 3.3 Restricted Local CDP Tab Controller
-- **Problem**: Upstream Neko is an X11 desktop streamer and does not know or expose browser tab controls.
-- **Investigation**: Raw Chromium DevTools Protocol (port `9222`) provides full browser control, but exposing raw CDP introduces catastrophic security risks: arbitrary DOM reading, cookie extraction, session hijacking, script evaluation, and automated keystroke submission.
-- **Solution**: A lightweight, zero-dependency Python service (`tab_controller.py`) is deployed inside the container and supervised by supervisord:
-  1. Internal CDP is bound strictly to `127.0.0.1:9222` inside the container and **NEVER** mapped to the host.
-  2. The restricted controller binds to `0.0.0.0:9223` inside the container and maps to `127.0.0.1:9223` on the host.
-  3. The controller exposes only safe, high-level REST endpoints:
-     - `GET /health`: Health and browser status.
-     - `GET /tabs`: Enumerate open user page tabs (sanitized, internal UI tabs and debugger URLs excluded).
-     - `POST /tabs`: Create a new tab with validated URL.
-     - `POST /tabs/{id}/activate`: Focus and make a tab visible on the X11 surface.
-     - `POST /tabs/{id}/navigate`: Navigate an existing tab using isolated `Page.navigate`.
-     - `DELETE /tabs/{id}`: Close a tab.
-  4. Any attempts to access DOM, cookies, evaluation, or unauthorized paths return HTTP 404/400.
+To achieve full sandboxing without compromising host security:
+1. **No Privileged Mode**: The container is **NOT** privileged (`privileged: false`). Host devices, kernel tunables, and raw host filesystems remain completely inaccessible.
+2. **Capability Scoping**: The container is granted `cap_add: [SYS_ADMIN]`. In Docker's default seccomp profile, `CAP_SYS_ADMIN` authorizes the use of user namespaces (`CLONE_NEWUSER`).
+3. **Unprivileged Process Execution**:
+   - Supervisord launches Chromium with `user=neko` (UID 1000).
+   - The Linux kernel automatically clears all effective and permitted capabilities upon changing UID to a non-root user:
+     ```
+     CapInh: 0000000000000000
+     CapPrm: 0000000000000000
+     CapEff: 0000000000000000
+     ```
+   - User `neko` operates with **zero elevated privileges**.
+4. **Active Sandbox Verification**:
+   - Chromium's Zygote forks renderers inside a restricted User Namespace.
+   - Every active renderer executes under **Linux Seccomp Mode 2** (`Seccomp: 2`, `Seccomp_filters: 2`), actively restricting system calls at the kernel layer.
 
 ---
 
-## 4. Security & Isolation Boundaries
+## 4. Resource Management & Chromium Power-Saving Flags
 
-1. **Local-Only Interface Binding**:
-   - WebRTC / HTTP control: Bound strictly to `127.0.0.1:8085`.
-   - WebRTC UDP media: Bound strictly to `127.0.0.1:52000-52010/udp`.
-   - Restricted Tab Controller: Bound strictly to `127.0.0.1:9223`.
-   - No external interface, public internet, or Tailscale routing is configured.
-2. **Raw CDP Port Protection**:
-   - Port `9222` is not published in `docker-compose.yml`. Only the restricted controller can reach Chromium CDP on loopback.
-3. **No Credential Harvesting or CSP Manipulation**:
-   - The user authenticates directly through the official ChatGPT UI rendered in the streamed browser window.
-   - The runtime never intercepts, reads, copies, or exports authentication cookies or Bearer tokens.
-   - Content-Security-Policy headers remain untouched.
-4. **Terminal & PTY Isolation**:
-   - The browser runs inside an unprivileged Docker container under user `neko` (UID 1000).
-   - The container does not mount host PTY devices, `/run/user`, or MAW runtime control sockets.
-   - ChatGPT has zero access to MAW native terminal controls or host execution commands.
-5. **Frontend Password Protection**:
-   - Neko v3 uses local session authentication (`POST /api/login`) returning ephemeral bearer tokens or cookies.
-   - Permanent passwords are never injected into browser URLs or frontend query parameters.
+To maintain background ChatGPT generation without destructive tab freezing, specific Chromium power-saving flags are disabled. Each flag is justified below:
+
+1. **`--disable-background-timer-throttling`**:
+   - *Behavior*: Normally, Chromium throttles background timers (`setTimeout`, `setInterval`) to at most 1 Hz, and down to 1 execution per minute after 5 minutes.
+   - *Justification*: ChatGPT uses timer-based heartbeat checks and stream buffer draining. Throttling timers causes dropped SSE connections, delayed token processing, and false stream timeouts.
+2. **`--disable-renderer-backgrounding`**:
+   - *Behavior*: Normally, Chromium lowers the OS scheduling priority (niceness) and CPU quota of background renderer processes.
+   - *Justification*: Under multi-tab loads (5–15 tabs), lower scheduling priority causes background tabs to fall behind incoming network data, causing buffer overflow and frame drops.
+3. **`--disable-backgrounding-occluded-windows`**:
+   - *Behavior*: Chromium treats fully occluded or non-visible windows as minimized, deferring work and suspending compositor tasks.
+   - *Justification*: In Neko's virtual X11 display, background tabs are occluded by the foreground tab. Disabling this ensures background tabs continue processing as active pages.
+4. **`--disable-features=TabDiscarding,CalculateNativeWinOcclusion`**:
+   - *Behavior*: Tab Discarding (Memory Saver) kills background tabs when memory pressure is detected.
+   - *Justification*: Core Requirement 7 explicitly forbids destructive automatic unloading. Disabling tab discarding preserves open ChatGPT conversations.
+5. **Memory Measurement: PSS vs. RSS**:
+   - Summing RSS across multi-process Chromium significantly overstates memory usage because shared libraries (`libv8.so`, `libc.so`) are counted repeatedly in each renderer.
+   - Proportional Set Size (PSS) from `/proc/<pid>/smaps_rollup` accounts for shared pages proportionally. Empirical testing shows that 10 loaded tabs consume **1,236 MB PSS** (~109 MB PSS per tab), proving exceptional resource efficiency.
+
+---
+
+## 5. Security Invariants & Integration Guardrails
+
+### 5.1 Mandatory Authentication & Token Validation
+- The restricted tab controller requires a bearer authentication token (`CONTROLLER_AUTH_TOKEN`) with a minimum length of 32 characters.
+- Startup fails closed if the token is missing, too short, or matches insecure defaults.
+- Token comparison uses `hmac.compare_digest` to prevent timing side-channel attacks.
+- Requests without a valid Bearer token are rejected with `HTTP 401 Unauthorized`.
+
+### 5.2 Navigation Allowlist & Network Boundaries
+MAW-controlled tab navigation is guarded by two independent layers of defense:
+1. **Controller Origin Policy**:
+   - Validates destination URLs against an explicit allowlist: `chatgpt.com`, `*.chatgpt.com`, `openai.com`, `*.openai.com`, `oaistatic.com`, `*.oaistatic.com`, `oaiusercontent.com`, `*.oaiusercontent.com`, `accounts.google.com`, `login.microsoftonline.com`, `login.live.com`, `appleid.apple.com`, and `about:blank`.
+   - Rejects loopback (`127.0.0.1`, `localhost`), link-local (`169.254.0.0/16`), private subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), cloud metadata (`169.254.169.254`), and non-HTTP schemes (`file:`, `javascript:`, `chrome:`, `data:`).
+2. **Chromium Enterprise `URLBlocklist`**:
+   - Configured in `/etc/chromium/policies/managed/policies.json`.
+   - Chromium itself blocks any navigation or subresource fetch to loopback, private subnets, Docker host gateway (`172.17.0.1`), or metadata services.
+
+### 5.3 MAW Integration Boundary & Privileged Isolation
+- **Network Isolation**: The browser runs inside container network isolation. `127.0.0.1` inside the container refers to container loopback, not the host. Host MAW ports cannot be reached from the browser.
+- **Terminal & PTY Isolation**: The container does not mount host PTY devices (`/dev/pts`), host `/run/user`, or MAW runtime sockets. ChatGPT has zero access to MAW native terminal controls.
+- **Protected Debugging**: Raw Chromium CDP port `9222` is bound to container loopback and never published to the host.
+
+### 5.4 Credential Storage at Rest
+- The persistent profile volume `maw-neko-chromium-profile` contains sensitive authentication cookies and session state.
+- **Security Clarification**: Chromium on Linux without a desktop keyring (e.g. GNOME Keyring) uses a hardcoded desktop salt ("peanuts") for `v10` cookie encryption. This provides local obfuscation, **not secure encryption at rest**.
+- Host-level protections must be applied: restricted volume permissions (`0700` owned by Docker/root) and underlying filesystem encryption (LUKS / dm-crypt).

@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """
-Verification Script: Background Generation Persistence.
+Synthetic Background Network & Streaming Continuity Benchmark.
 
-Proves that:
-1. When Tab 1 is streaming tokens/chunks, switching the active visible browser
-   tab to Tab 2 does NOT interrupt or throttle Tab 1.
-2. Background chunks continue to arrive with consistent timing.
-3. No data loss, stalled connections, or timer degradation occur while Tab 1 is hidden.
+IMPORTANT CLASSIFICATION:
+This test proves synthetic background-network continuity: that Chromium keeps
+HTTP Server-Sent Event (SSE) and fetch streams active and processes chunks
+without timer throttling, renderer freezing, or socket closure while a tab
+is occluded in the background.
+
+It does NOT represent or claim genuine ChatGPT completion detection (as ChatGPT
+does not expose an external non-DOM status signal). Real-browser user acceptance
+requires live interactive testing with authenticated chatgpt.com.
 """
 
 import http.server
@@ -18,8 +22,19 @@ import time
 import urllib.request
 
 CONTROLLER_URL = os.environ.get("NEKO_CONTROLLER_URL", "http://127.0.0.1:9223")
+AUTH_TOKEN = os.environ.get("CONTROLLER_AUTH_TOKEN", "").strip()
 GATEWAY_IP = os.environ.get("GATEWAY_IP", "172.17.0.1")
 TEST_PORT = 9876
+
+# If token not in env, check .env
+if not AUTH_TOKEN:
+    env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    if os.path.exists(env_path):
+        with open(env_path) as f:
+            for line in f:
+                if line.startswith("CONTROLLER_AUTH_TOKEN="):
+                    AUTH_TOKEN = line.split("=", 1)[1].strip()
+                    break
 
 received_events = []
 
@@ -107,16 +122,23 @@ class TestHandler(http.server.BaseHTTPRequestHandler):
 
 
 def run_test():
-    print("=== Testing Background Generation Persistence Across Tab Switching ===")
+    print("=== Synthetic Background Network & Streaming Continuity Benchmark ===")
+    print("Notice: Proves synthetic background SSE stream persistence across tab switching.")
+    print("Does NOT claim genuine ChatGPT completion detection.\n")
+
     server = http.server.ThreadingHTTPServer(("0.0.0.0", TEST_PORT), TestHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     time.sleep(0.5)
+
+    headers = {"Content-Type": "application/json"}
+    if AUTH_TOKEN:
+        headers["Authorization"] = f"Bearer {AUTH_TOKEN}"
 
     # 1. Create Tab 1
     req = urllib.request.Request(
         f"{CONTROLLER_URL}/tabs",
         data=json.dumps({"url": f"http://{GATEWAY_IP}:{TEST_PORT}/chat"}).encode(),
-        headers={"Content-Type": "application/json"}
+        headers=headers
     )
     with urllib.request.urlopen(req) as resp:
         tab1 = json.loads(resp.read().decode())
@@ -125,36 +147,36 @@ def run_test():
     # Wait for initial chunks
     time.sleep(1.0)
     events_before = len(received_events)
-    print(f"[Step 2] Events received before switch: {events_before}")
+    print(f"[Step 2] Chunks received before switch: {events_before}")
 
     # 2. Create and activate Tab 2
     req = urllib.request.Request(
         f"{CONTROLLER_URL}/tabs",
         data=json.dumps({"url": f"http://{GATEWAY_IP}:{TEST_PORT}/other"}).encode(),
-        headers={"Content-Type": "application/json"}
+        headers=headers
     )
     with urllib.request.urlopen(req) as resp:
         tab2 = json.loads(resp.read().decode())
     print(f"[Step 3] Created Tab 2: {tab2['id']}")
 
-    req_act = urllib.request.Request(f"{CONTROLLER_URL}/tabs/{tab2['id']}/activate", method="POST")
+    req_act = urllib.request.Request(f"{CONTROLLER_URL}/tabs/{tab2['id']}/activate", method="POST", headers=headers)
     with urllib.request.urlopen(req_act) as resp:
-        print("[Step 4] Activated Tab 2 (Tab 1 is now running strictly in the background)")
+        print("[Step 4] Activated Tab 2 (Tab 1 is now occluded in the background)")
 
     # Wait 4 seconds for remainder of stream to complete in background
     time.sleep(4.0)
 
     events_after = len(received_events)
     bg_chunks = events_after - events_before
-    print(f"[Step 5] Chunks received while Tab 1 was hidden in background: {bg_chunks}")
+    print(f"[Step 5] Chunks delivered while Tab 1 was in background: {bg_chunks}")
     print(f"[Step 6] Total chunks delivered: {events_after}/10")
 
     # Clean up tabs
-    urllib.request.urlopen(urllib.request.Request(f"{CONTROLLER_URL}/tabs/{tab1['id']}", method="DELETE"))
-    urllib.request.urlopen(urllib.request.Request(f"{CONTROLLER_URL}/tabs/{tab2['id']}", method="DELETE"))
+    urllib.request.urlopen(urllib.request.Request(f"{CONTROLLER_URL}/tabs/{tab1['id']}", method="DELETE", headers=headers))
+    urllib.request.urlopen(urllib.request.Request(f"{CONTROLLER_URL}/tabs/{tab2['id']}", method="DELETE", headers=headers))
 
     if bg_chunks >= 6 and events_after >= 10:
-        print("\n[RESULT: PASS] Background stream generation completed without interruption while another tab was visible.")
+        print("\n[RESULT: PASS] Synthetic background network streaming continued without interruption across tab switching.")
         return 0
     else:
         print("\n[RESULT: FAIL] Background stream stalled or lost events.")
