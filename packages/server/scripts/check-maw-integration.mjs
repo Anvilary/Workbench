@@ -225,6 +225,14 @@ try {
     }
     for (const [width, height] of [[390, 844], [768, 1024], [1280, 720], [1366, 768], [1920, 1080], [2560, 1440]]) {
       await page.setViewportSize({ width, height });
+      try {
+        await eventually(()=>page.frameLocator('.maw-neko-frame').locator('video').evaluate(v=>v.readyState>=2 && !v.paused && v.videoWidth>0),'viewport live media',8000);
+        results.push({label:`live viewer ${width}x${height}`,status:'PASS'});
+      } catch { results.push({label:`live viewer ${width}x${height}`,status:'UNVERIFIED',reason:'media not ready within 8 seconds after switching'}); }
+      if (await page.getByRole('button',{name:'Expand sidebar',exact:true}).count()) await page.getByRole('button',{name:'Expand sidebar',exact:true}).click();
+      await page.getByRole('separator').press('ArrowRight'); await page.getByRole('separator').press('Home');
+      await page.screenshot({path:path.join(out,`sidebar-${width}x${height}.png`),fullPage:true});
+      if (await page.getByRole('button',{name:'Collapse sidebar',exact:true}).count()) await page.getByRole('button',{name:'Collapse sidebar',exact:true}).click();
       if (width === 390 && await page.getByRole('button',{name:'Collapse sidebar',exact:true}).count()) await page.getByRole('button',{name:'Collapse sidebar',exact:true}).click();
       await page.getByRole('tab',{name:'ChatGPT A'}).press('F2');
       await page.getByLabel('Tab title',{exact:true}).fill('Research '+width);

@@ -57,13 +57,13 @@ native identity checks and browser ownership/restart tests.
 | --- | --- | --- |
 | Baseline | PASS | Completed |
 | 0 unified rename | PASS | Separate feature commit |
-| 1 security | Pending | Reproduce suspected defects before classification |
-| 2 lifecycle | Pending | State transitions and disposable isolation |
-| 3 notifications | Pending | Provider evidence, replay/restart and inspection |
-| 4 responsive UI | Pending | Six viewport browser captures and interaction checks |
-| 5 performance | Pending | Reproducible baseline fixture |
-| 6 optimization | Pending | Measured change and comparable rerun |
-| 7 release gates | Pending | Regression logs, CI, draft PR |
+| 1 security | Bounded audit complete | A01 P1 fixed; remaining limits documented |
+| 2 lifecycle | Tested | Real PTY/Neko restart + fault suites |
+| 3 notifications | Tested with limits | Codex evidence loss fixed; AGY/ChatGPT unverified |
+| 4 responsive UI | Six viewport run PASS; partial feature matrix | Screenshots; mobile streamed desktop limitation |
+| 5 performance | Bounded measurements complete | Missing metrics explicitly UNVERIFIED |
+| 6 optimization | PASS | O01 write/event reduction verified |
+| 7 release gates | Local PASS; CI infrastructure blocked | Draft delivery; not release approval |
 
 Safety: no live MAW/provider processes, credentials, dotfiles, projects, systemd
 or production Neko changes. Fixtures use temporary directories and loopback ports.
@@ -174,3 +174,42 @@ requires explicit lifecycle/OSC evidence; replay dedups, failed shell retains
 failure, read and acknowledgement are independent, lost Codex evidence→Unknown.
 Sources: runtime, coordinator, browser production/controller, activity/outbox
 regressions and actual integration results. Not exhaustive model checking.
+
+## Checkpoints 4–7 — final local evidence
+
+Final real Neko run `/tmp/maw-audit-ui-matrix/results.json`: all six viewports
+PASS live video readiness, F2 rename, sidebar open/collapse/keyboard resize,
+notifications/inbox/Escape, no document horizontal overflow. Actual PTY/background
+completion/failure, mouse+keyboard Neko input, cross-workspace/sibling isolation,
+MAW restart reattachment and rename persistence PASS; no page errors. Captures
+copied to screenshots/, raw results to evidence/integration.json. Connecting-state
+captures from earlier runs are not used as steady-state acceptance. All six
+rename captures and representative media/sidebar captures visually inspected.
+
+Final local gates:
+- `pnpm --filter @agent-workbench/server exec sh -c 'pnpm exec tsx --test src/security.test.ts src/maw-host.test.ts src/agents/profiles/profiles.test.ts src/agency/*.test.ts src/agency/browser-tabs/*.test.ts src/agency/runtime/*.test.ts'`: **173 PASS**, zero skips.
+- Frontend model/notifications/browser suite: **19 PASS** before final CLI/menu
+  coverage addition; final rerun is `/tmp/maw-audit-delivery-web.log`.
+- Python controller/ownership suite: **19 PASS**.
+- `pnpm --filter @agent-workbench/server exec tsx scripts/check-agency-e2e.mjs`:
+  **25 PASS**; remediation script **6/6 PASS** (actual disposable native wrappers).
+- `pnpm check`: PASS; check-docs explicit SKIP. Includes nine-locale i18n.
+- `pnpm typecheck`: PASS; `pnpm build`: PASS, unchanged large-chunk warning.
+- Real `verify_managed_runtime.mts <generated config> <audit container>`: PASS.
+- No Windows packaging execution on this Linux host; remote CI cannot start due
+  billing/spending limit. Added Linux CI gates for security/activity/browser and
+  Python tests, plus installed Playwright browser to prevent silent UI skips.
+
+Performance: O01 reproducible before/after; final startup/render/request timing
+and real Neko 1/5/10/15 tab CPU/PSS/RSS recorded. See PERFORMANCE-BASELINE.md for
+scope, missing metrics, shared-host conditions and rejected invalid memory sample.
+No sustained uptime/AI-generation performance claim.
+
+Fixture cleanup: only this audit's two uniquely labelled containers are eligible
+for removal. Archive their fresh Chromium profile/controller state first into
+private `/tmp/maw-neko-integration-audit-*/fixture-backup.tar.gz`. Existing
+production/other integration containers, stores and processes remain untouched.
+
+Next: commit evidence and CI gates, push branch, create draft PR, inspect its CI
+annotations, then record final delivery SHA/URL. Release acceptance remains
+manual and requires the limitations/next commands in FINAL-REPORT.md.
