@@ -15,7 +15,7 @@ import {
 } from '../agents/profiles/definition.js';
 import { resolveConfiguredExecutable } from '../agents/profiles/executable.js';
 import type { NativeIdentities, NativeIdentity } from './native-identity.js';
-import { findReadableRollout } from '../agents/codex/find-rollout.js';
+import { ownsNativeSession } from './native-ownership.js';
 import type { AgencyProfileStore } from './agency-profile-store.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -75,9 +75,9 @@ export async function inspectAgencyProfile(
         evidence.provider === definition.provider;
       capabilities = {
         canLaunch: true,
-        canResumeNativeSession: native.resume && context.identities?.forProfile(definition) != null,
+        canResumeNativeSession: native.resume && (await context.identities?.verifiedForProfile(definition, base)) != null,
         canInterrupt: registered.adapter.input.interruptPresses > 0,
-        canReportActivity: native.statusSource,
+        canReportActivity: definition.provider === 'codex' && native.statusSource,
         // Existing TUI model/effort shortcuts have no reliable synchronous
         // acknowledgement. Selection via agency.session.selection.set is off.
         canSelectModel: false,
@@ -167,15 +167,12 @@ export async function buildAgencyProfileLaunch(
   const executable = await resolveConfiguredExecutable(definition.executable, base);
   if (executable.status !== 'available') throw new Error(executable.reason);
 
-  const nativeIdentity = context.identities?.forProfile(definition) ?? null;
+  const nativeIdentity = await context.identities?.verifiedForProfile(definition, base) ?? null;
   if (nativeIdentity !== null && (await realpath(nativeIdentity.home) !== nativeIdentity.home ||
       !(await stat(nativeIdentity.home)).isDirectory())) throw new Error('Verified native home changed.');
   if (request.resumeNativeSessionId != null) {
     if (nativeIdentity === null) throw new Error('Native resume unavailable: profile home is unverified.');
-    if (await findReadableRollout(request.resumeNativeSessionId, {
-      sessionsRoot: path.join(nativeIdentity.home, 'sessions'),
-      archivedRoot: path.join(nativeIdentity.home, 'archived_sessions'),
-    }) === null) throw new Error('Native session is unavailable in the verified profile home.');
+    if (!await ownsNativeSession(nativeIdentity, request.resumeNativeSessionId, request.cwd)) throw new Error('Native session is unavailable in the verified profile home.');
   }
 
   const location = { resolvedPath: executable.file, file: executable.file, prefixArgs: [], version: null };

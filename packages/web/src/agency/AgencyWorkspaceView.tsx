@@ -1,18 +1,13 @@
-import { t } from '../i18n/index.js';
-import { agencyActivityText } from './agency-labels.js';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type {
-  AgencyCliProfile, AgencyRuntimeSession, AgencyWorkspace, CliProfileId,
-} from '@agent-workbench/shared';
+import { useEffect, useRef, useState } from 'react';
+import type { AgencyCliProfile, AgencyRuntimeSession, AgencyWorkspace, CliProfileId } from '@agent-workbench/shared';
+import type { Terminal } from '@xterm/xterm';
 import type { AgentConnection } from '../connection.js';
 import { TerminalView } from '../TerminalView.js';
-import { useConversation } from '../useConversation.js';
-import { Terminal } from '@xterm/xterm';
-import {
-  agentSession, canLaunchAgent, currentSession, isAttention, latestSession, workspaceLayout,
-} from './model.js';
-import type { useAgencyStore } from './useAgencyStore.js';
+import { t } from '../i18n/index.js';
+import { agencySessionText } from './agency-labels.js';
+import { canLaunchAgent, workspaceTabs } from './model.js';
 import type { AgencyTransport } from './model.js';
+import type { useAgencyStore } from './useAgencyStore.js';
 
 interface Props {
   workspace: AgencyWorkspace;
@@ -30,608 +25,183 @@ interface Props {
   onClearLaunchError?: () => void;
 }
 
-const SPLIT_STORAGE_KEY = 'agency-ui.split-ratio.v1';
+function SessionPane({ session, active, focusTerminal, connection, online, request, sendImmediate, report }: {
+  session: AgencyRuntimeSession; active: boolean; focusTerminal: boolean; connection: AgentConnection; online: boolean;
+  request: Props['request']; sendImmediate: Props['sendImmediate']; report: (error: string) => void;
+}) {
+  const terminal = useRef<Terminal | null>(null);
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [resuming, setResuming] = useState(false);
+  const live = ['starting', 'running', 'stopping'].includes(session.lifecycle);
+  useEffect(() => { if (!active) setCopyOpen(false); }, [active]);
+  async function copy(kind: 'selection' | 'all' | 'last') {
+    setCopyOpen(false);
+    const term = terminal.current;
+    if (!term) return;
+    let text = term.getSelection();
+    if (kind !== 'selection') {
+      const buffer = term.buffer.active;
+      const lines = Array.from({ length: buffer.length }, (_, index) => buffer.getLine(index)?.translateToString(true) ?? '');
+      while (lines.length && !lines.at(-1)?.trim()) lines.pop();
+      text = (kind === 'last' ? lines.slice(-60) : lines).join('\n');
+    }
+    try { if (text) await navigator.clipboard.writeText(text); } catch (reason) { report(String(reason)); }
+  }
+  async function resume() {
+    if (resuming || !session.tab) return;
+    setResuming(true);
+    try { await request({ type: 'agency.tab.action', workspaceId: session.workspaceId, tabId: session.tab.id, action: 'resume' }); }
+    catch (reason) { report(String(reason)); }
+    finally { setResuming(false); }
+  }
+  return <div className="maw-session-pane" hidden={!active} role="tabpanel" id={'pane-' + session.tab?.id} aria-labelledby={'tab-' + session.tab?.id}>
+    <div className="agency-pane-bar">
+      <span className="agency-muted" role="status">{session.kind === 'terminal' && session.recovery?.status === 'resumed' && live ? t('agency.tabs.shellRestarted') : agencySessionText(session)}</span>
+      <span className="agency-flex-spacer" />
+      {live && session.terminalId && <>
+        <div className="agency-dropdown" onClick={event => event.stopPropagation()}>
+          <button type="button" className="agency-text-button" aria-haspopup="menu" aria-expanded={copyOpen} onClick={() => setCopyOpen(!copyOpen)}>{t('agency.ui.copy')} ▾</button>
+          {copyOpen && <div className="agency-dropdown-menu" role="menu">
+            <button type="button" role="menuitem" onClick={() => void copy('selection')}>{t('agency.ui.copySelection')}</button>
+            <button type="button" role="menuitem" onClick={() => void copy('all')}>{t('agency.ui.copyAll')}</button>
+            <button type="button" role="menuitem" onClick={() => void copy('last')}>{t('agency.ui.copyLastOutput')}</button>
+          </div>}
+        </div>
+        <button type="button" className="agency-text-button" disabled={!online} onClick={() => sendImmediate({ type: 'input', terminalId: session.terminalId!, data: '\x03' })}>{t('agency.ui.interrupt')}</button>
+      </>}
+    </div>
+    <div className="agency-agent-body">
+      {live && session.terminalId ? <div className="agency-xterm-host"><TerminalView key={session.terminalId} terminalId={session.terminalId} connection={connection} theme="dark" active={active} autoFocus={focusTerminal} enableAgencyShortcuts onTerminalInstance={instance => { terminal.current = instance; }} onClipboardError={error => report(error.message)} /></div> : <div className="agency-shell-placeholder">
+        <p>{session.lifecycle === 'starting' ? t('agency.ui.starting') : session.exitCode === null ? t('agency.ui.previousAgentExited') : t('agency.ui.previousAgentExitedCode', { code: session.exitCode })}</p>
+        {session.recovery?.message && <p role="status">{session.recovery.message}</p>}
+        <p>{t('agency.tabs.historyKept')}</p>
+        {(session.kind === 'terminal' || session.nativeSessionId) && <button type="button" className="agency-secondary-button" disabled={!online || resuming || live} onClick={() => void resume()}>{session.kind === 'terminal' ? t('agency.tabs.restartShell') : t('agency.ui.resumeNative')}</button>}
+      </div>}
+    </div>
+  </div>;
+}
 
-export function AgencyWorkspaceView({
-  workspace, profiles, sessions, connection, request, sendImmediate, online,
-  onDone, launchError, onClearLaunchError,
-}: Props): JSX.Element {
-  const activeAgent = agentSession(currentSession(sessions, workspace.id, 'agent'));
-  const activeShell = currentSession(sessions, workspace.id, 'terminal');
-  const pastAgent = agentSession(latestSession(sessions, workspace.id, 'agent'));
-  const agent = activeAgent;
-
-  const [profileId, setProfileId] = useState<CliProfileId | ''>(() =>
-    pastAgent?.profileId ?? profiles.find(canLaunchAgent)?.id ?? profiles[0]?.id ?? '');
-  const effectiveProfileId = profileId || pastAgent?.profileId || profiles.find(canLaunchAgent)?.id || profiles[0]?.id || '';
-
+export function AgencyWorkspaceView({ workspace, profiles, sessions, connection, request, sendImmediate, online, onDone, launchError, onClearLaunchError }: Props): JSX.Element {
+  const tabs = workspaceTabs(sessions, workspace.id);
+  const selected = tabs.find(session => session.tab?.selected) ?? tabs[0];
+  const [keyboardTabs, setKeyboardTabs] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const [picker, setPicker] = useState(false);
+  const [profileId, setProfileId] = useState<CliProfileId | ''>(profiles[0]?.id ?? '');
+  const [error, setError] = useState<string | null>(null);
+  const [closing, setClosing] = useState<AgencyRuntimeSession | null>(null);
+  const [busy, setBusy] = useState(false);
+  const flight = useRef(false);
+  const strip = useRef<HTMLDivElement | null>(null);
+  const drag = useRef<{ id: number; x: number; scroll: number; moved: boolean } | null>(null);
+  const dragged = useRef(false);
+  const dialog = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { if (!profileId && profiles.length) setProfileId(profiles[0]!.id); }, [profileId, profiles]);
   useEffect(() => {
-    if (!profileId && effectiveProfileId) {
-      setProfileId(effectiveProfileId);
-    }
-  }, [profileId, effectiveProfileId]);
-
-  const [sessionError, setSessionError] = useState<string | null>(null);
-  const [shellStarting, setShellStarting] = useState(false);
-  const [agentStarting, setAgentStarting] = useState(false);
-  const [addingAgent, setAddingAgent] = useState(false);
-
-  // Copy dropdown menus state
-  const [copyMenuAgent, setCopyMenuAgent] = useState(false);
-  const [copyMenuShell, setCopyMenuShell] = useState(false);
-
-  // Terminal instances
-  const agentTerminalRef = useRef<Terminal | null>(null);
-  const shellTerminalRef = useRef<Terminal | null>(null);
-
-  // Split resize state
-  const [splitRatio, setSplitRatio] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem(SPLIT_STORAGE_KEY);
-      if (saved) {
-        const parsed = parseFloat(saved);
-        if (!isNaN(parsed) && parsed >= 0.2 && parsed <= 0.8) return parsed;
-      }
-    } catch { /* storage optional */ }
-    return 0.6;
-  });
-  const [draggingSplit, setDraggingSplit] = useState(false);
-  const contentRef = useRef<HTMLDivElement | null>(null);
-
-  const profile = profiles.find((item) => item.id === (agent?.profileId ?? effectiveProfileId));
-  const agentTerminalId = (agent ?? pastAgent)?.terminalId ?? null;
-  const shellTerminalId = activeShell?.terminalId ?? null;
-  const feed = useConversation(connection, agentTerminalId);
-  const hasAgent = !!(agent ?? pastAgent);
-  const hasShell = !!activeShell;
-  const layout = workspaceLayout(hasAgent || addingAgent, hasShell);
-  const hasBoth = layout === 'combined';
-
-  // Close menus on outside click
+    strip.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.parentElement?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  }, [selected?.tab?.id, tabs.length]);
   useEffect(() => {
-    if (!copyMenuAgent && !copyMenuShell) return;
-    const onPointerDown = () => {
-      setCopyMenuAgent(false);
-      setCopyMenuShell(false);
+    const element = strip.current;
+    if (!element) return;
+    const wheel = (event: WheelEvent) => {
+      if (element.scrollWidth <= element.clientWidth || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+      event.preventDefault(); element.scrollLeft += event.deltaY;
     };
-    window.addEventListener('pointerdown', onPointerDown);
-    return () => window.removeEventListener('pointerdown', onPointerDown);
-  }, [copyMenuAgent, copyMenuShell]);
-
-  const workspaceStatus = useMemo(() => {
-    if (agent) return agencyActivityText(agent.activity, agent.lifecycle);
-    if (activeShell) return agencyActivityText(activeShell.activity, activeShell.lifecycle);
-    return t('agency.ui.ready');
-  }, [agent, activeShell]);
-
-  async function launchAgent() {
-    if (!profile || !canLaunchAgent(profile) || agent || !online) {
-      setSessionError(t('agency.ui.agentProfileIsUnavailable'));
-      return;
-    }
-    setAgentStarting(true);
-    setSessionError(null);
-    onClearLaunchError?.();
-    try {
-      const answer = await request({
-        type: 'agency.session.create',
-        workspaceId: workspace.id,
-        kind: 'agent',
-        profileId: profile.id,
-        cols: 100,
-        rows: 30,
-      });
-      if (answer.type !== 'agency.session.created') {
-        throw new Error(t('agency.ui.noAgentSessionAcknowledgement'));
-      }
-      setAddingAgent(false);
-    } catch (reason) {
-      setSessionError(reason instanceof Error ? reason.message : t('agency.ui.workspaceCreationFailed'));
-    } finally {
-      setAgentStarting(false);
-    }
-  }
-
-  async function launchShell() {
-    if (hasShell || shellStarting || !online) return;
-    setSessionError(null);
-    setShellStarting(true);
-    try {
-      const answer = await request({
-        type: 'agency.session.create',
-        workspaceId: workspace.id,
-        kind: 'terminal',
-        cols: 100,
-        rows: 30,
-      });
-      if (answer.type !== 'agency.session.created') {
-        throw new Error(t('agency.ui.noShellSessionAcknowledgement'));
-      }
-    } catch (reason) {
-      setSessionError(reason instanceof Error ? reason.message : t('agency.ui.shellLaunchFailed'));
-    } finally {
-      setShellStarting(false);
-    }
-  }
-
-  function interruptAgent() {
-    if (agent?.terminalId && online) {
-      sendImmediate({ type: 'agent.interrupt', terminalId: agent.terminalId });
-    }
-  }
-
-  function interruptShell() {
-    if (activeShell?.terminalId && online) {
-      connection.send({ type: 'input', terminalId: activeShell.terminalId, data: '\x03' });
-    }
-  }
-
-  function stop(terminalId: string | null) {
-    if (!terminalId || !online) return;
-    if (!sendImmediate({ type: 'terminal.close', terminalId })) {
-      setSessionError(t('agency.ui.stopWasNotSentReconnectAndVerifyThe'));
-    }
-  }
-
-  async function copySelection(term: Terminal | null) {
-    if (!term) return;
-    const text = term.getSelection();
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch (err) {
-      setSessionError(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  async function copyAll(term: Terminal | null) {
-    if (!term) return;
-    const buffer = term.buffer.active;
-    const lines: string[] = [];
-    for (let i = 0; i < buffer.length; i++) {
-      const line = buffer.getLine(i);
-      if (line) lines.push(line.translateToString(true));
-    }
-    while (lines.length > 0 && (lines[lines.length - 1] ?? '').trim() === '') {
-      lines.pop();
-    }
-    const text = lines.join('\n');
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch (err) {
-      setSessionError(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  async function copyLastAssistantMessage() {
-    const assistantTurns = feed.events.filter((e) => e.role === 'assistant');
-    const lastTurn = assistantTurns[assistantTurns.length - 1];
-    if (lastTurn) {
-      const text = lastTurn.parts
-        .filter((p) => p.kind === 'text')
-        .map((p) => (p as { text: string }).text)
-        .join('\n');
-      if (text) {
-        try {
-          await navigator.clipboard.writeText(text);
-        } catch (err) {
-          setSessionError(err instanceof Error ? err.message : String(err));
-        }
-      }
-    }
-  }
-
-  async function copyLastOutput(term: Terminal | null) {
-    if (!term) return;
-    const buffer = term.buffer.active;
-    const lines: string[] = [];
-    for (let i = 0; i < buffer.length; i++) {
-      const line = buffer.getLine(i);
-      if (line) lines.push(line.translateToString(true));
-    }
-    while (lines.length > 0 && (lines[lines.length - 1] ?? '').trim() === '') {
-      lines.pop();
-    }
-    const text = lines.slice(-60).join('\n');
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch (err) {
-      setSessionError(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  const startSplitDrag = useCallback((event: React.PointerEvent) => {
-    event.preventDefault();
-    setDraggingSplit(true);
-    const container = contentRef.current;
-    if (!container) return;
-
-    const onPointerMove = (e: PointerEvent) => {
-      const rect = container.getBoundingClientRect();
-      if (rect.width <= 0) return;
-      const ratio = (e.clientX - rect.left) / rect.width;
-      const clamped = Math.max(0.2, Math.min(0.8, ratio));
-      setSplitRatio(clamped);
-    };
-
-    const onPointerUp = (e: PointerEvent) => {
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-      setDraggingSplit(false);
-      const rect = container.getBoundingClientRect();
-      if (rect.width > 0) {
-        const ratio = (e.clientX - rect.left) / rect.width;
-        const clamped = Math.max(0.2, Math.min(0.8, ratio));
-        setSplitRatio(clamped);
-        try {
-          localStorage.setItem(SPLIT_STORAGE_KEY, clamped.toString());
-        } catch { /* storage optional */ }
-      }
-    };
-
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
+    const resize = new ResizeObserver(() => element.querySelector<HTMLElement>('[aria-selected="true"]')?.parentElement?.scrollIntoView({ inline: 'nearest', block: 'nearest' }));
+    resize.observe(element);
+    element.addEventListener('wheel', wheel, { passive: false });
+    return () => { resize.disconnect(); element.removeEventListener('wheel', wheel); };
   }, []);
-
-  function handleSplitKeyDown(event: React.KeyboardEvent) {
-    if (event.key === 'ArrowLeft') {
-      event.preventDefault();
-      setSplitRatio((prev) => {
-        const next = Math.max(0.2, prev - 0.02);
-        try { localStorage.setItem(SPLIT_STORAGE_KEY, next.toString()); } catch {}
-        return next;
-      });
-    } else if (event.key === 'ArrowRight') {
-      event.preventDefault();
-      setSplitRatio((prev) => {
-        const next = Math.min(0.8, prev + 0.02);
-        try { localStorage.setItem(SPLIT_STORAGE_KEY, next.toString()); } catch {}
-        return next;
-      });
-    } else if (event.key === 'Home') {
-      event.preventDefault();
-      setSplitRatio(0.5);
-      try { localStorage.setItem(SPLIT_STORAGE_KEY, '0.5'); } catch {}
+  useEffect(() => {
+    if (!picker && !closing) return;
+    const key = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !flight.current) { setPicker(false); setClosing(null); }
+      if (event.key === 'Tab' && dialog.current) {
+        const elements = [...dialog.current.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled)')];
+        const first = elements[0], last = elements.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    };
+    window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
+  }, [picker, closing]);
+  async function add(kind: 'agent' | 'terminal') {
+    if (flight.current || !online || (kind === 'agent' && !profileId)) return;
+    setKeyboardTabs(false);
+    flight.current = true; setBusy(true); setError(null); setMenu(false);
+    try {
+      await request({ type: 'agency.session.create', workspaceId: workspace.id, kind, launchId: crypto.randomUUID(), cols: 100, rows: 30, ...(kind === 'agent' ? { profileId: profileId as CliProfileId } : {}) } as Parameters<Props['request']>[0]);
+      setPicker(false);
+    } catch (reason) { setError(String(reason)); }
+    finally { flight.current = false; setBusy(false); }
+  }
+  async function action(session: AgencyRuntimeSession, action: 'select' | 'close') {
+    if (!session.tab || !online) return;
+    try { await request({ type: 'agency.tab.action', workspaceId: workspace.id, tabId: session.tab.id, action }); }
+    catch (reason) { setError(String(reason)); throw reason; }
+  }
+  async function close(session: AgencyRuntimeSession) {
+    setKeyboardTabs(false);
+    if (flight.current) return;
+    flight.current = true; setBusy(true);
+    try { await action(session, 'close'); setClosing(null); }
+    catch { /* Keep confirmation and error visible until server termination is confirmed. */ }
+    finally {
+      flight.current = false; setBusy(false);
+      requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.maw-session-pane:not([hidden]) .xterm-helper-textarea')?.focus());
     }
   }
-
-  const activeLaunchError = launchError || sessionError;
-
-  return (
-    <section className="agency-workspace-view" aria-label={t('agency.ui.workspaceNamed', { name: workspace.name })}>
-      <header className="agency-workspace-header">
-        <div className="agency-workspace-heading">
-          <div className="agency-crumbs">{t('agency.ui.workspace')}<span>/</span> <strong>{workspace.name}</strong></div>
-          <div className="agency-path" title={workspace.cwd}>{workspace.cwd}</div>
-        </div>
-        <span className="agency-live-status" aria-label={t('agency.ui.statusNamed', { status: workspaceStatus })}>
-          <span className={'agency-status-dot ' + (agent && isAttention(agent.activity) ? 'attention' : agent?.activity === 'working' ? 'working' : 'idle')} />{workspaceStatus}
-        </span>
-        <button type="button" className="agency-secondary-button" onClick={onDone}>{t('agency.ui.markDone')}</button>
-      </header>
-
-      {activeLaunchError && (
-        <div role="alert" className="agency-error-bar">
-          <span>{t('agency.ui.launchFailed', { error: activeLaunchError })}</span>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <button type="button" className="agency-secondary-button" onClick={() => void launchAgent()}>
-              {t('agency.ui.retryLaunch')}
-            </button>
-            <button type="button" onClick={() => { setSessionError(null); onClearLaunchError?.(); }} aria-label={t('agency.ui.dismissError')}>×</button>
-          </div>
-        </div>
-      )}
-
-      <div
-        ref={contentRef}
-        className={'agency-workspace-content' + (hasBoth ? ' agency-content-split' : '') + (draggingSplit ? ' agency-dragging-split' : '')}
-      >
-        {(hasAgent || !hasShell || addingAgent) && (
-          <main
-            className="agency-agent-pane"
-            style={hasBoth ? { flex: `0 0 ${splitRatio * 100}%` } : undefined}
-          >
-            <div className="agency-pane-bar">
-              <span className="agency-pane-label">{profile?.label ?? t('agency.ui.agentLabel')}</span>
-              {agent && <span className="agency-muted agency-pane-status">{agencyActivityText(agent.activity, agent.lifecycle)}</span>}
-              <span className="agency-flex-spacer" />
-
-              {/* Copy dropdown */}
-              {agentTerminalId && (
-                <div className="agency-dropdown" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    type="button"
-                    className="agency-text-button"
-                    aria-haspopup="true"
-                    aria-expanded={copyMenuAgent}
-                    onClick={() => setCopyMenuAgent(!copyMenuAgent)}
-                  >
-                    {t('agency.ui.copy')} ▾
-                  </button>
-                  {copyMenuAgent && (
-                    <div className="agency-dropdown-menu" role="menu">
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="agency-dropdown-item"
-                        onClick={() => {
-                          setCopyMenuAgent(false);
-                          void copySelection(agentTerminalRef.current);
-                        }}
-                      >
-                        {t('agency.ui.copySelection')}
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="agency-dropdown-item"
-                        onClick={() => {
-                          setCopyMenuAgent(false);
-                          void copyAll(agentTerminalRef.current);
-                        }}
-                      >
-                        {t('agency.ui.copyAll')}
-                      </button>
-                      {feed.events.some((e) => e.role === 'assistant') ? (
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="agency-dropdown-item"
-                          onClick={() => {
-                            setCopyMenuAgent(false);
-                            void copyLastAssistantMessage();
-                          }}
-                        >
-                          {t('agency.ui.copyLastMessage')}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="agency-dropdown-item"
-                          onClick={() => {
-                            setCopyMenuAgent(false);
-                            void copyLastOutput(agentTerminalRef.current);
-                          }}
-                        >
-                          {t('agency.ui.copyLastOutput')}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Explicit Interrupt Action */}
-              {agentTerminalId && (
-                <button
-                  type="button"
-                  className="agency-text-button"
-                  title={t('agency.ui.interrupt')}
-                  onClick={interruptAgent}
-                  disabled={!online}
-                >
-                  {t('agency.ui.interrupt')}
-                </button>
-              )}
-
-              {!hasShell && (
-                <button
-                  type="button"
-                  className="agency-text-button"
-                  disabled={!online || shellStarting}
-                  onClick={() => void launchShell()}
-                >
-                  {shellStarting ? t('agency.ui.startingShell') : t('agency.ui.addShell')}
-                </button>
-              )}
-
-              {agent?.terminalId && (
-                <button
-                  className="agency-text-button agency-text-danger"
-                  type="button"
-                  onClick={() => stop(agent.terminalId)}
-                >
-                  {t('agency.ui.stopAgent')}
-                </button>
-              )}
-            </div>
-
-            <div className="agency-agent-body">
-              {agentTerminalId ? (
-                <div className="agency-xterm-host">
-                  <TerminalView
-                    key={agentTerminalId}
-                    terminalId={agentTerminalId}
-                    connection={connection}
-                    theme="dark"
-                    active
-                    autoFocus
-                    enableAgencyShortcuts
-                    onTerminalInstance={(inst) => { agentTerminalRef.current = inst; }}
-                    onClipboardError={(err) => setSessionError(err.message)}
-                  />
-                </div>
-              ) : (
-                <div className="agency-shell-placeholder">
-                  <p>{t('agency.ui.noSession')}</p>
-                  <span>{t('agency.ui.readyWhenYouAre')}</span>
-                  {profiles.length > 0 && (
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <select
-                        value={profileId}
-                        onChange={(e) => setProfileId(e.target.value as CliProfileId)}
-                        disabled={agentStarting}
-                        style={{ padding: '6px 10px', background: 'var(--agency-raised)', border: '1px solid var(--agency-line)', borderRadius: '6px' }}
-                      >
-                        {profiles.map((p) => (
-                          <option key={p.id} value={p.id}>{p.label}</option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        className="agency-primary-button"
-                        disabled={!online || agentStarting}
-                        onClick={() => void launchAgent()}
-                      >
-                        {agentStarting ? t('agency.ui.startingInProgress') : t('agency.ui.running')}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </main>
-        )}
-
-        {/* Resizable vertical divider between agent and shell */}
-        {hasBoth && (
-          <div
-            className={'agency-pane-divider' + (draggingSplit ? ' active' : '')}
-            role="separator"
-            tabIndex={0}
-            aria-orientation="vertical"
-            aria-label={t('agency.ui.splitResizer')}
-            onPointerDown={startSplitDrag}
-            onKeyDown={handleSplitKeyDown}
-          />
-        )}
-
-        {hasShell && (
-          <aside
-            className={'agency-shell-pane' + (!hasAgent ? ' agency-shell-primary' : '')}
-            style={hasBoth ? { flex: '1 1 0%' } : undefined}
-          >
-            <div className="agency-pane-bar">
-              <span className="agency-pane-label">{t('agency.ui.shell')}</span>
-              {activeShell && <span className="agency-muted agency-pane-status">{agencyActivityText(activeShell.activity, activeShell.lifecycle)}</span>}
-              <span className="agency-flex-spacer" />
-
-              {/* Copy dropdown */}
-              {shellTerminalId && (
-                <div className="agency-dropdown" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    type="button"
-                    className="agency-text-button"
-                    aria-haspopup="true"
-                    aria-expanded={copyMenuShell}
-                    onClick={() => setCopyMenuShell(!copyMenuShell)}
-                  >
-                    {t('agency.ui.copy')} ▾
-                  </button>
-                  {copyMenuShell && (
-                    <div className="agency-dropdown-menu" role="menu">
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="agency-dropdown-item"
-                        onClick={() => {
-                          setCopyMenuShell(false);
-                          void copySelection(shellTerminalRef.current);
-                        }}
-                      >
-                        {t('agency.ui.copySelection')}
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="agency-dropdown-item"
-                        onClick={() => {
-                          setCopyMenuShell(false);
-                          void copyAll(shellTerminalRef.current);
-                        }}
-                      >
-                        {t('agency.ui.copyAll')}
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="agency-dropdown-item"
-                        onClick={() => {
-                          setCopyMenuShell(false);
-                          void copyLastOutput(shellTerminalRef.current);
-                        }}
-                      >
-                        {t('agency.ui.copyLastOutput')}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Explicit Interrupt Action */}
-              {shellTerminalId && (
-                <button
-                  type="button"
-                  className="agency-text-button"
-                  title={t('agency.ui.interrupt')}
-                  onClick={interruptShell}
-                  disabled={!online}
-                >
-                  {t('agency.ui.interrupt')}
-                </button>
-              )}
-
-              {!hasAgent && !addingAgent && (
-                <button type="button" className="agency-text-button" onClick={() => setAddingAgent(true)}>
-                  {t('agency.ui.agent')}
-                </button>
-              )}
-
-              {shellTerminalId && (
-                <button
-                  type="button"
-                  className="agency-text-button agency-text-danger"
-                  onClick={() => stop(shellTerminalId)}
-                >
-                  {t('agency.ui.stopShell')}
-                </button>
-              )}
-            </div>
-
-            <div className="agency-agent-body">
-              {shellTerminalId ? (
-                <div className="agency-xterm-host">
-                  <TerminalView
-                    key={shellTerminalId}
-                    terminalId={shellTerminalId}
-                    connection={connection}
-                    theme="dark"
-                    active
-                    autoFocus
-                    enableAgencyShortcuts
-                    onTerminalInstance={(inst) => { shellTerminalRef.current = inst; }}
-                    onClipboardError={(err) => setSessionError(err.message)}
-                  />
-                </div>
-              ) : (
-                <div className="agency-shell-placeholder">
-                  <p>{t('agency.ui.independentTerminal')}</p>
-                  <span>{t('agency.ui.useTheExistingWorkspaceDirectoryWithNativeShell')}</span>
-                  <button
-                    type="button"
-                    className="agency-secondary-button"
-                    disabled={!online || shellStarting}
-                    onClick={() => void launchShell()}
-                  >
-                    {shellStarting ? t('agency.ui.startingInProgress') : t('agency.ui.openShell')}
-                  </button>
-                </div>
-              )}
-            </div>
-          </aside>
-        )}
+  async function navigate(event: React.KeyboardEvent) {
+    if (!selected || !['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+    event.preventDefault();
+    setKeyboardTabs(true);
+    const focusedId = (event.target as Element).closest('[data-tab-id]')?.getAttribute('data-tab-id');
+    const current = Math.max(0, tabs.findIndex(session => session.tab!.id === (focusedId ?? selected.tab!.id)));
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length;
+    if (event.altKey && event.key.startsWith('Arrow')) {
+      const ids = tabs.map(session => session.tab!.id); [ids[current],ids[next]] = [ids[next]!,ids[current]!];
+      try { await request({ type: 'agency.tabs.order', workspaceId: workspace.id, tabIds: ids }); } catch (reason) { setError(String(reason)); }
+    } else {
+      void action(tabs[next]!, 'select').catch(() => undefined);
+      document.getElementById('tab-' + tabs[next]!.tab!.id)?.focus();
+    }
+  }
+  function name(session: AgencyRuntimeSession) { return session.tab?.name ?? (session.kind === 'terminal' ? t('agency.tabs.terminalNamed', { number: session.tab?.terminalNumber ?? 1 }) : profiles.find(profile => profile.id === session.profileId)?.label ?? t('agency.ui.agentLabel')); }
+  return <section className="agency-workspace-view" aria-label={t('agency.ui.workspaceNamed', { name: workspace.name })}>
+    <header className="maw-tabs-header">
+      <div className="maw-tabs-strip" ref={strip} role="tablist" aria-label={t('agency.tabs.tabList')} onKeyDown={event => void navigate(event)}
+        onPointerDown={event => { if (event.button !== 0 || (event.target as Element).closest('[data-close]')) return; drag.current = { id: event.pointerId, x: event.clientX, scroll: event.currentTarget.scrollLeft, moved: false }; }}
+        onPointerMove={event => { const start = drag.current; if (!start) return; if (Math.abs(event.clientX - start.x) > 6) { start.moved = true; event.currentTarget.setPointerCapture(event.pointerId); } if (start.moved) { event.preventDefault(); event.currentTarget.scrollLeft = start.scroll - (event.clientX - start.x); } }}
+        onPointerUp={event => { dragged.current = !!drag.current?.moved; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); drag.current = null; setTimeout(() => { dragged.current = false; }, 0); }}
+        onPointerCancel={() => { drag.current = null; dragged.current = false; }}
+        onClickCapture={event => { if (dragged.current) { event.preventDefault(); event.stopPropagation(); } }}>
+        {tabs.map(session => <div className={'maw-session-tab' + (selected?.id === session.id ? ' active' : '')} key={session.tab!.id} data-tab-id={session.tab!.id}>
+          <button type="button" role="tab" id={'tab-' + session.tab!.id} aria-selected={selected?.id === session.id} aria-controls={'pane-' + session.tab!.id} tabIndex={selected?.id === session.id ? 0 : -1} title={name(session) + ' · ' + agencySessionText(session)} onClick={() => { setKeyboardTabs(false); void action(session, 'select').catch(() => undefined); }}>
+            <span aria-hidden="true">{session.kind === 'agent' ? '◇' : '>_'}</span><span className="agency-truncate">{name(session)}</span><span className={'agency-status-dot ' + (session.lifecycle === 'failed' || session.recovery?.status === 'manual' ? 'attention' : session.lifecycle === 'exited' ? 'muted' : ['awaiting-user','awaiting-permission'].includes(session.activity) ? 'attention' : session.activity === 'working' ? 'working' : 'idle')} aria-label={agencySessionText(session)} />
+          </button>
+          <button type="button" data-close aria-label={t('agency.tabs.closeNamed', { name: name(session) })} disabled={!online || busy} onClick={() => { if (['starting','running','stopping'].includes(session.lifecycle)) setClosing(session); else void close(session); }}>×</button>
+        </div>)}
       </div>
-
-      {pastAgent && !agent && (
-        <p className="agency-session-ended">
-          {pastAgent.exitCode === null
-            ? t('agency.ui.previousAgentExited') + '. ' + t('agency.ui.historyRemainsOnTheServer')
-            : t('agency.ui.previousAgentExitedCode', { code: pastAgent.exitCode })}
-        </p>
-      )}
-    </section>
-  );
+      <div className="agency-dropdown maw-add-tab" onClick={event => event.stopPropagation()}>
+        <button type="button" className="agency-icon-button" aria-label={t('agency.tabs.add')} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)} disabled={!online || busy}>+</button>
+        {menu && <div className="agency-dropdown-menu" role="menu">
+          <button type="button" role="menuitem" onClick={() => { setMenu(false); setPicker(true); }}>{t('agency.tabs.newCLI')}</button>
+          <button type="button" role="menuitem" onClick={() => void add('terminal')}>{t('agency.tabs.newTerminal')}</button>
+        </div>}
+      </div>
+      <button type="button" className="agency-text-button" onClick={onDone}>{t('agency.ui.markDone')}</button>
+    </header>
+    {(error || launchError) && <div className="agency-error-bar" role="alert"><span>{error || launchError}</span><button type="button" aria-label={t('agency.ui.dismissError')} onClick={() => { setError(null); onClearLaunchError?.(); }}>×</button></div>}
+    <div className="maw-session-content">
+      {tabs.map(session => <SessionPane focusTerminal={!keyboardTabs} key={session.tab!.id} session={session} active={selected?.id === session.id} connection={connection} online={online} request={request} sendImmediate={sendImmediate} report={setError} />)}
+      {!tabs.length && <div className="agency-shell-placeholder"><p>{t('agency.tabs.empty')}</p><button type="button" className="agency-secondary-button" disabled={!online} onClick={() => setPicker(true)}>{t('agency.tabs.newCLI')}</button><button type="button" className="agency-secondary-button" disabled={!online || busy} onClick={() => void add('terminal')}>{t('agency.tabs.newTerminal')}</button></div>}
+    </div>
+    {(picker || closing) && <div className="agency-modal-backdrop"><div ref={dialog} className="agency-dialog" role="dialog" aria-modal="true" aria-labelledby="maw-session-dialog">
+      <h2 id="maw-session-dialog">{closing ? t('agency.tabs.confirmClose', { name: name(closing) }) : t('agency.tabs.newCLI')}</h2>
+      {!closing && !canLaunchAgent(profiles.find(profile => profile.id === profileId)) && <p role="status">{profiles.find(profile => profile.id === profileId)?.configurationMessage}</p>}
+      {closing ? <p>{t('agency.tabs.closeExplanation')}</p> : <label className="agency-field"><span>{t('agency.ui.cliProfile')}</span><select autoFocus value={profileId} onChange={event => setProfileId(event.target.value as CliProfileId)}>{profiles.map(profile => <option value={profile.id} key={profile.id}>{profile.label}</option>)}</select></label>}
+      {error && <p role="alert" className="agency-error">{error}</p>}
+      <div className="agency-dialog-actions"><button type="button" autoFocus={!!closing} disabled={busy} onClick={() => { setPicker(false); setClosing(null); }}>{t('common.cancel')}</button><button type="button" className="agency-primary-button" disabled={busy || !online || (!closing && !canLaunchAgent(profiles.find(profile => profile.id === profileId)))} onClick={() => closing ? void close(closing) : void add('agent')}>{closing ? t('agency.tabs.closeSession') : t('agency.ui.startCLI')}</button></div>
+    </div></div>}
+  </section>;
 }

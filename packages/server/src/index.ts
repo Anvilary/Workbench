@@ -7,6 +7,8 @@
  * de sacar.
  */
 
+import { nativeRecoveryCapacity } from './agency/recovery-capacity.js';
+import { acquireStoreOwnership, publishReadiness } from './maw-host.js';
 import { existsSync } from 'node:fs';
 import { createServer, type Server as HttpServer } from 'node:http';
 import path from 'node:path';
@@ -319,6 +321,7 @@ function describeStartup(
 }
 
 async function main(): Promise<void> {
+  const ownership = await acquireStoreOwnership(appConfigDir());
   const token = createSessionToken();
   const defaultCwd = resolveDefaultCwd();
   // Antes de que nadie lea la configuracion: si quedo en el directorio del
@@ -487,7 +490,7 @@ async function main(): Promise<void> {
   const agencyWorkspaceStore = new AgencyWorkspaceStore(path.join(appConfigDir(), 'agency-state.json'));
   await agencyWorkspaceStore.load();
 
-  const agencyIdentities = await NativeIdentities.load(path.join(appConfigDir(), 'agency-native-identities.json'));
+  const agencyIdentities = await NativeIdentities.loadForInteractive(path.join(appConfigDir(), 'agency-native-identities.json'));
   agents.protectNativeHomes(agencyIdentities.protectedDirs());
   const agencyProfileStore = new AgencyProfileStore(path.join(appConfigDir(), 'agency-profiles.json'));
   await agencyProfileStore.listDefinitions();
@@ -508,7 +511,11 @@ async function main(): Promise<void> {
   const agencyWorkspaceSource: AgencyWorkspaceSource = {
     protectedDirectories: () => agents.protectedDirs(),
     withSessionReservation: (id, action) =>
-      workspaceLock.runExclusive(id, () => action(agencyWorkspaceStore.getWorkspace(id))),
+      workspaceLock.runExclusive(id, () => {
+        const workspace = agencyWorkspaceStore.getWorkspace(id);
+        const archived = workspace && agencyWorkspaceStore.listProjects().some(project => project.id === workspace.projectId && project.status === 'archived');
+        return action(archived ? null : workspace);
+      }),
   };
 
   const agencySessionStore = new AgencySessionStore(path.join(appConfigDir(), 'agency-sessions.json'));
@@ -586,14 +593,16 @@ async function main(): Promise<void> {
   }
 
   const url = `http://${LOOPBACK_HOST}:${port}/?${TOKEN_QUERY_PARAM}=${token}`;
+  void agencyRuntime.recoverActive(workspace => agencyWorkspaceStore.listProjects().some(project => project.id === workspace.projectId && project.status !== 'archived'), nativeRecoveryCapacity).catch(error => console.error('[maw] recovery stopped:', String(error)));
   const remoteStatus = remote.status();
   describeStartup(
-    url,
+    process.env['MAW_RUNTIME_DIR'] ? `http://${LOOPBACK_HOST}:${port}/ (use maw open)` : url,
     defaultCwd,
     agents,
     shell,
     remoteAccessStartupLine(remoteStatus.state, remoteStatus.port, remote.pairedDevices),
   );
+  const clearReadiness = process.env['MAW_RUNTIME_DIR'] ? await publishReadiness(process.env['MAW_RUNTIME_DIR'], url) : async () => {};
   // Escape para desarrollo y pruebas automatizadas: arrancar sin abrir nada.
   if (process.env['AGENT_WORKBENCH_NO_OPEN'] !== '1') openBrowser(url);
 
@@ -623,6 +632,10 @@ async function main(): Promise<void> {
 
     void Promise.all([
       store.flush(),
+      agencySessionStore.flush(),
+      agencyWorkspaceStore.flush(),
+      agencyProfileStore.flush(),
+      clearReadiness(),
       archived.flush(),
       notes.flush(),
       drafts.flush(),
@@ -634,6 +647,7 @@ async function main(): Promise<void> {
       .then(() => closeUi())
       .catch(() => undefined)
       .finally(() => {
+        ownership?.close();
         httpServer.close(() => process.exit(0));
         // Si alguna conexion no cierra, no nos quedamos colgados.
         setTimeout(() => process.exit(0), 2_000).unref();

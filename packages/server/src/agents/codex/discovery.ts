@@ -141,6 +141,8 @@ export function pickPendingTab(
 }
 
 export interface DiscoveryOptions {
+  /** Managed multi-tab contexts must never assign ambiguous CWD/time matches. */
+  strictAttribution?: boolean;
   pollMs?: number;
   now?: () => number;
   sessionsRoot?: () => string | null;
@@ -155,6 +157,8 @@ type HeadReading =
   | { kind: 'candidate'; candidate: RolloutCandidate };
 
 export class CodexSessionDiscovery {
+  private readonly strictAttribution: boolean;
+  private readonly ambiguousCwds = new Set<string>();
   private readonly pollMs: number;
   private readonly now: () => number;
   private readonly sessionsRoot: () => string | null;
@@ -173,6 +177,7 @@ export class CodexSessionDiscovery {
   private disposed = false;
 
   constructor(options: DiscoveryOptions = {}) {
+    this.strictAttribution = options.strictAttribution ?? false;
     this.pollMs = options.pollMs ?? DEFAULT_POLL_MS;
     this.now = options.now ?? Date.now;
     this.sessionsRoot = options.sessionsRoot ?? codexSessionsRoot;
@@ -204,6 +209,7 @@ export class CodexSessionDiscovery {
       submitted: [],
       reportSessionId: input.reportSessionId,
     };
+    if (this.strictAttribution && [...this.pending.values(), ...this.married.values()].some(other => other.terminalId !== terminalId && other.cwdKey === tab.cwdKey)) this.ambiguousCwds.add(tab.cwdKey);
     this.pending.set(terminalId, tab);
     this.married.delete(terminalId);
     this.startTimer();
@@ -259,6 +265,8 @@ export class CodexSessionDiscovery {
    * sobrevive a lo que se escribe.
    */
   watchLive(input: { terminalId: string; cwd: string }): LaunchHook {
+    const cwdKey = normalizeCwdKey(input.cwd, this.platform);
+    if (this.strictAttribution && [...this.pending.values()].some(other => other.terminalId !== input.terminalId && other.cwdKey === cwdKey)) this.ambiguousCwds.add(cwdKey);
     const { terminalId } = input;
     const tab: LiveTab = { terminalId, cwdKey: normalizeCwdKey(input.cwd, this.platform) };
     this.married.set(terminalId, tab);
@@ -350,6 +358,10 @@ export class CodexSessionDiscovery {
       const picked = pickPendingTab(candidate, [...this.pending.values()], [...this.married.values()]);
       if (picked === null) {
         if (now - candidate.createdAt > REJECT_AFTER_MS) this.seen.set(candidate.path, 'rejected');
+        continue;
+      }
+      if (this.strictAttribution && (picked.uncertain || this.ambiguousCwds.has(candidate.cwdKey))) {
+        this.seen.set(candidate.path, 'rejected');
         continue;
       }
       const tab = this.pending.get(picked.terminalId);

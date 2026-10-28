@@ -2027,13 +2027,17 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         }
 
         case 'terminal.close':
-          if (!dropTab(message.terminalId)) {
-            sendError(socket, 'unknown-terminal', serverText('terminalGone'));
-          } else {
-            subscriptions.delete(message.terminalId);
-            gitSubscriptions.delete(message.terminalId);
-            memorySubscriptions.delete(message.terminalId);
-          }
+          void (async () => {
+            const session = agencyRuntime.list().find(item => item.terminalId === message.terminalId);
+            if (session) await agencyRuntime.stop(session.id);
+            if (!dropTab(message.terminalId) && !session) {
+              sendError(socket, 'unknown-terminal', serverText('terminalGone'));
+            } else {
+              subscriptions.delete(message.terminalId);
+              gitSubscriptions.delete(message.terminalId);
+              memorySubscriptions.delete(message.terminalId);
+            }
+          })().catch(error => sendError(socket, 'unknown-terminal', serverText('terminalGone'), String(error)));
           break;
 
         case 'terminal.attach': {
@@ -3303,6 +3307,18 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
               msg = error.message;
             }
             send(socket, { type: 'agency.error', requestId: message.requestId, code, message: msg });
+          }
+          break;
+        }
+
+        case 'agency.tab.action':
+        case 'agency.tabs.order': {
+          try {
+            if (message.type === 'agency.tab.action') await agencyRuntime.tabAction(message.workspaceId, message.tabId, message.action);
+            else await agencyRuntime.orderTabs(message.workspaceId, message.tabIds);
+            send(socket, { type: 'agency.sessions.snapshot', requestId: message.requestId, sessions: agencyRuntime.list() });
+          } catch (error) {
+            send(socket, { type: 'agency.error', requestId: message.requestId, code: error instanceof AgencyRuntimeError ? error.code : 'internal-error', message: error instanceof Error ? error.message : String(error) });
           }
           break;
         }

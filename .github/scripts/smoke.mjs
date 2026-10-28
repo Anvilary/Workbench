@@ -101,7 +101,7 @@ if (!url.startsWith('http')) {
   const get = (target, headers = {}) => fetch(target, { headers, redirect: 'manual' }).then(async (r) => ({ status: r.status, body: await r.text() }));
   try {
     const withToken = await get(url);
-    check('with the token: the interface', withToken.status === 200 && withToken.body.includes('Agent Workbench'), `HTTP ${withToken.status}`);
+    check('with the token: the interface', withToken.status === 200 && withToken.body.includes('My Amazing Workspace'), `HTTP ${withToken.status}`);
     const withoutToken = await get(`${base.origin}/`);
     check('without the token: refused', withoutToken.status === 401, `HTTP ${withoutToken.status}`);
     const foreign = await get(url, { Origin: 'http://evil.example' });

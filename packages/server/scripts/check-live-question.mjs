@@ -451,6 +451,7 @@ function hubWith(cli, screen) {
       return screen;
     },
   };
+  registry.nativeIdentityOf ??= () => undefined; // Legacy Workbench fixture.
   const hub = new ConversationHub(registry, new AgentRegistry([cli.adapter]));
   const emitted = [];
   hub.on('liveQuestion', (terminalId, question) => emitted.push({ terminalId, question }));

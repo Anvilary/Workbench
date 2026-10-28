@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+unit=maw.service
+usage() { printf '%s\n' 'Usage: maw {start|stop|restart|status|logs [--follow]|open|help}'; }
+command_name=${1:-help}
+case "$command_name" in
+  start) [ "$#" -eq 1 ] || { usage >&2; exit 2; }; exec systemctl --user start "$unit" ;;
+  stop|restart)
+    [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+    printf '%s\n' 'Server-owned live PTYs will terminate. Metadata and native history remain.' >&2
+    if [ "$command_name" = restart ]; then
+      printf '%s\n' 'Eligible verified native conversations use replacement PTYs during recovery.' >&2
+    fi
+    exec systemctl --user "$command_name" "$unit" ;;
+  status)
+    systemctl --user show "$unit" --property=ActiveState,SubState,MainPID,ExecMainStatus
+    exec /home/user/.nvm/versions/node/v24.22.0/bin/node /home/user/.local/lib/maw/control.mjs status ;;
+  logs)
+    case "${2:-}" in
+      '') exec journalctl --user -u "$unit" -n 80 --no-pager ;;
+      --follow|-f) exec journalctl --user -u "$unit" -n 80 --follow ;;
+      *) usage >&2; exit 2 ;;
+    esac ;;
+  open) exec /home/user/.nvm/versions/node/v24.22.0/bin/node /home/user/.local/lib/maw/control.mjs open ;;
+  help|--help|-h) usage ;;
+  *) usage >&2; exit 2 ;;
+esac
