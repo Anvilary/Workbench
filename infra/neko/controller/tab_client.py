@@ -67,7 +67,7 @@ class TabClient:
 
 def main():
     parser = argparse.ArgumentParser(description="Restricted CDP Tab Controller CLI")
-    parser.add_argument("--url", default=DEFAULT_CONTROLLER_URL, help="Base URL of controller")
+    parser.add_argument("--url", dest="controller_url", default=DEFAULT_CONTROLLER_URL, help="Base URL of controller")
     parser.add_argument("--token", default=AUTH_TOKEN, help="Auth token if enabled")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -96,7 +96,7 @@ def main():
     close_parser.add_argument("tab_id", help="Tab ID")
 
     args = parser.parse_args()
-    client = TabClient(args.url, args.token)
+    client = TabClient(args.controller_url, args.token)
 
     try:
         if args.command == "health":

@@ -21,9 +21,24 @@ import threading
 import time
 import urllib.request
 
+def get_docker_gateway() -> str:
+    if "GATEWAY_IP" in os.environ:
+        return os.environ["GATEWAY_IP"]
+    try:
+        import subprocess
+        out = subprocess.check_output(
+            ["docker", "inspect", "maw-neko", "--format", "{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}"],
+            text=True, stderr=subprocess.DEVNULL
+        ).strip()
+        if out:
+            return out
+    except Exception:
+        pass
+    return "172.17.0.1"
+
 CONTROLLER_URL = os.environ.get("NEKO_CONTROLLER_URL", "http://127.0.0.1:9223")
 AUTH_TOKEN = os.environ.get("CONTROLLER_AUTH_TOKEN", "").strip()
-GATEWAY_IP = os.environ.get("GATEWAY_IP", "172.17.0.1")
+GATEWAY_IP = get_docker_gateway()
 TEST_PORT = 9876
 
 # If token not in env, check .env

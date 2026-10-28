@@ -6,7 +6,8 @@ The **MAW Lane A Neko Browser Runtime** provides an isolated, persistent, local 
 
 The runtime satisfies strict operational and security boundaries:
 - **Upstream Neko Infrastructure**: Uses unmodified upstream `m1k1o/neko:chromium` container image without forking Neko or re-implementing WebRTC streaming from scratch.
-- **Sandboxed Chromium**: Operates with full multi-process Chromium sandboxing enabled (`--no-sandbox` removed). Leverages Linux user namespaces and BPF Seccomp filter mode 2 under Docker via `cap_add: [SYS_ADMIN]` while running as unprivileged user `neko` with zero effective capabilities (`CapEff: 0000000000000000`).
+- **Sandboxed Chromium without Broad Capabilities**: Operates with full multi-process Chromium sandboxing enabled (`--no-sandbox` removed) without granting `CAP_SYS_ADMIN` or running privileged containers. Leverages a tailored seccomp profile (`infra/neko/config/seccomp.json`) allowing unprivileged Linux user namespaces (`CLONE_NEWUSER`) and BPF Seccomp filter mode 2, while running as unprivileged user `neko` with zero effective capabilities (`CapEff: 0000000000000000`) and standard container bounding sets (`CapAdd: null`).
+- **Default-Deny Navigation Restrictions**: Chromium enterprise policy enforces default-deny (`URLBlocklist: ["*"]`) with narrowly scoped allowlists for ChatGPT and official SSO authentication origins. Test-server exceptions (`172.17.0.1:9876`) are removed from production and isolated in a test-only compose override (`docker-compose.test.yml`).
 - **Single Authenticated Account & Profile**: Runs one Chromium browser instance with one persistent profile volume (`maw-neko-chromium-profile`), preserving authenticated sessions, cookies, IndexedDB, and browser preferences across container restarts.
 - **Multi-Tab Concurrency & Resource Efficiency**: Supports 5–15 simultaneous loaded ChatGPT tabs without destructive automatic unloading. Inactive tabs consume an average of only ~109 MB PSS (Proportional Set Size) per tab, totaling ~1.23 GB PSS for 10 tabs.
 - **Single Streaming Surface**: Only the active/focused browser tab is rendered to the X11 display and streamed via WebRTC into MAW.
@@ -67,7 +68,7 @@ The runtime satisfies strict operational and security boundaries:
 
 | Requirement | Description | Architectural Solution | Status |
 | :--- | :--- | :--- | :--- |
-| **1. Sandboxed Browser & Profile** | One Neko service, one persistent Chromium profile, sandboxed execution | Sandboxed Chromium (`--no-sandbox` removed). Multi-process Zygote sandbox uses User Namespaces and BPF Seccomp Mode 2 via `cap_add: [SYS_ADMIN]` while running as unprivileged user `neko` with zero capabilities. Volume `maw-neko-chromium-profile` mounted to `/home/neko/.config/chromium`. Persistent cookies enabled (`cookies: 1`), `--bwsi` disabled. | **VERIFIED** |
+| **1. Sandboxed Browser & Profile** | One Neko service, one persistent Chromium profile, sandboxed execution | Sandboxed Chromium (`--no-sandbox` removed). Multi-process Zygote sandbox uses User Namespaces and BPF Seccomp Mode 2 via custom seccomp profile (`infra/neko/config/seccomp.json`) with zero extra capabilities (`CapAdd: null`), completely avoiding `CAP_SYS_ADMIN`. Process `neko` operates with `CapEff: 0000000000000000`. Volume `maw-neko-chromium-profile` mounted to `/home/neko/.config/chromium`. Persistent cookies enabled (`cookies: 1`), `--bwsi` disabled. | **VERIFIED** |
 | **2. Multi-Tab Concurrency** | Independent ChatGPT browser tabs stay loaded and continue work while another tab is visible | Tabs are independent Chromium page targets. Chromium launched with `--disable-background-timer-throttling`, `--disable-renderer-backgrounding`, and `--disable-backgrounding-occluded-windows`. | **VERIFIED** |
 | **3. Single Surface Stream** | Only one browser surface streamed into MAW at a time | Neko captures the single virtual X11 display (`:99.0`). Activating a tab via CDP (`/tabs/{id}/activate`) brings that tab into focus on the X11 surface; WebRTC streams only the focused tab. | **VERIFIED** |
 | **4. Safe Tab Switching** | Switching conversations must not navigate away or destroy inactive tabs | Tab switching uses CDP target activation (`activate`), which changes the active Chromium tab without reloading, navigating, or closing background tabs. | **VERIFIED** |
@@ -82,15 +83,15 @@ The runtime satisfies strict operational and security boundaries:
 
 ## 3. Sandboxing & Linux Security Model
 
-### 3.1 Removing Chromium `--no-sandbox`
-In standard Docker environments, running Chromium without `--no-sandbox` often fails because Docker's default seccomp profile restricts the `clone(CLONE_NEWUSER)` system call when invoked by unprivileged users.
+### 3.1 Removing Chromium `--no-sandbox` & Eliminating `CAP_SYS_ADMIN`
+In standard Docker environments, running Chromium without `--no-sandbox` fails because Docker's default seccomp profile restricts the `unshare(CLONE_NEWUSER)` and `clone(CLONE_NEWUSER)` system calls with a condition requiring `CAP_SYS_ADMIN`.
 
-To achieve full sandboxing without compromising host security:
-1. **No Privileged Mode**: The container is **NOT** privileged (`privileged: false`). Host devices, kernel tunables, and raw host filesystems remain completely inaccessible.
-2. **Capability Scoping**: The container is granted `cap_add: [SYS_ADMIN]`. In Docker's default seccomp profile, `CAP_SYS_ADMIN` authorizes the use of user namespaces (`CLONE_NEWUSER`).
+Rather than granting the broad `CAP_SYS_ADMIN` capability (which presents elevated kernel attack surface), the MAW Neko runtime provides a tailored seccomp profile (`infra/neko/config/seccomp.json`):
+1. **No Privileged Mode & No Broad Capabilities**: The container runs unprivileged (`privileged: false`) with standard default capabilities (`CapAdd: null`). `CAP_SYS_ADMIN` is **completely eliminated**.
+2. **Tailored Seccomp Profile**: Derived from Moby's standard seccomp profile, adding `unshare` and `clone` rules that allow unprivileged user namespace creation (`CLONE_NEWUSER`) without requiring `CAP_SYS_ADMIN`.
 3. **Unprivileged Process Execution**:
    - Supervisord launches Chromium with `user=neko` (UID 1000).
-   - The Linux kernel automatically clears all effective and permitted capabilities upon changing UID to a non-root user:
+   - The Linux kernel clears all effective and permitted capabilities:
      ```
      CapInh: 0000000000000000
      CapPrm: 0000000000000000
@@ -98,8 +99,8 @@ To achieve full sandboxing without compromising host security:
      ```
    - User `neko` operates with **zero elevated privileges**.
 4. **Active Sandbox Verification**:
-   - Chromium's Zygote forks renderers inside a restricted User Namespace.
-   - Every active renderer executes under **Linux Seccomp Mode 2** (`Seccomp: 2`, `Seccomp_filters: 2`), actively restricting system calls at the kernel layer.
+   - Chromium's Zygote forks renderers inside a restricted Linux User Namespace.
+   - Every active renderer executes under **Linux Seccomp Mode 2** (`Seccomp: 2`, `Seccomp_filters: 2`), restricting system calls at the kernel layer.
 
 ---
 

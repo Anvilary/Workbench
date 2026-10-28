@@ -123,6 +123,36 @@ def test_navigation_restrictions():
         print(f"FAIL: Approved destination 'https://chatgpt.com' failed: {e}")
         all_blocked = False
 
+    # Test browser-engine enterprise policy restrictions (address-bar / raw CDP navigation)
+    cmd_policy_check = (
+        "python3 -c \""
+        "import sys, json, urllib.request; sys.path.insert(0, '/etc/neko'); "
+        "from tab_controller import RobustCDPWebSocketClient; "
+        "tabs = json.loads(urllib.request.urlopen('http://127.0.0.1:9222/json/list').read().decode()); "
+        "page_tabs = [t for t in tabs if t.get('type') == 'page']; "
+        "ws_url = page_tabs[0]['webSocketDebuggerUrl']; "
+        "c = RobustCDPWebSocketClient(ws_url); c.connect(); "
+        "resp_untrusted = c.send_command('Page.navigate', {'url': 'https://google.com'}); "
+        "resp_loopback = c.send_command('Page.navigate', {'url': 'http://127.0.0.1:8085'}); "
+        "resp_allowed = c.send_command('Page.navigate', {'url': 'https://chatgpt.com'}); "
+        "c.close(); "
+        "ok1 = resp_untrusted.get('errorText') == 'net::ERR_BLOCKED_BY_ADMINISTRATOR'; "
+        "ok2 = resp_loopback.get('errorText') == 'net::ERR_BLOCKED_BY_ADMINISTRATOR'; "
+        "ok3 = 'errorText' not in resp_allowed; "
+        "print('POLICY_OK' if (ok1 and ok2 and ok3) else f'POLICY_FAIL: {resp_untrusted} / {resp_loopback} / {resp_allowed}')\""
+    )
+    res_policy = subprocess.run(
+        ["docker", "exec", CONTAINER_NAME, "sh", "-c", cmd_policy_check],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    if "POLICY_OK" in res_policy.stdout:
+        print("PASS: Chromium enterprise policy URLBlocklist [\"*\"] enforces default-deny at browser engine level (net::ERR_BLOCKED_BY_ADMINISTRATOR)")
+    else:
+        print(f"FAIL: Chromium enterprise policy check failed: {res_policy.stdout} {res_policy.stderr}")
+        all_blocked = False
+
     return all_blocked
 
 
@@ -146,6 +176,20 @@ def test_chromium_sandboxing():
     else:
         print(f"FAIL: Renderer seccomp status invalid: {lines}")
         return False
+
+    # Verify no broad CAP_SYS_ADMIN in Docker container configuration
+    res_capadd = subprocess.run(
+        ["docker", "inspect", CONTAINER_NAME, "--format", "{{json .HostConfig.CapAdd}}"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    capadd_json = res_capadd.stdout.strip()
+    if "SYS_ADMIN" in capadd_json or "CAP_SYS_ADMIN" in capadd_json:
+        print(f"FAIL: Container has broad CAP_SYS_ADMIN capability: {capadd_json}")
+        return False
+    else:
+        print(f"PASS: Broad CAP_SYS_ADMIN eliminated from container configuration (CapAdd: {capadd_json})")
 
     # Verify zero effective capabilities for user neko
     cmd_cap = "su - neko -c 'grep -s CapEff /proc/self/status'"
