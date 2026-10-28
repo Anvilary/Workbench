@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AgencyCliProfile, AgencyRuntimeSession, AgencyWorkspace, CliProfileId } from '@agent-workbench/shared';
+import type { AgencyCliProfile, AgencyRuntimeSession, AgencyWorkspace, CliProfileId, MawActivityState, WorkspaceId } from '@agent-workbench/shared';
 import type { Terminal } from '@xterm/xterm';
 import type { AgentConnection } from '../connection.js';
 import { TerminalView } from '../TerminalView.js';
@@ -23,6 +23,8 @@ interface Props {
   onDone: () => void;
   launchError?: string | null;
   onClearLaunchError?: () => void;
+  getTabActivity?: (workspaceId: WorkspaceId, tabId: string) => MawActivityState;
+  onAcknowledgeTab?: (workspaceId: WorkspaceId, tabId: string) => Promise<any> | void;
 }
 
 function SessionPane({ session, active, focusTerminal, connection, online, request, sendImmediate, report }: {
@@ -81,7 +83,7 @@ function SessionPane({ session, active, focusTerminal, connection, online, reque
   </div>;
 }
 
-export function AgencyWorkspaceView({ workspace, profiles, sessions, connection, request, sendImmediate, online, onDone, launchError, onClearLaunchError }: Props): JSX.Element {
+export function AgencyWorkspaceView({ workspace, profiles, sessions, connection, request, sendImmediate, online, onDone, launchError, onClearLaunchError, getTabActivity, onAcknowledgeTab }: Props): JSX.Element {
   const tabs = workspaceTabs(sessions, workspace.id);
   const selected = tabs.find(session => session.tab?.selected) ?? tabs[0];
   const [keyboardTabs, setKeyboardTabs] = useState(false);
@@ -100,6 +102,11 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, connection,
   useEffect(() => {
     strip.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.parentElement?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
   }, [selected?.tab?.id, tabs.length]);
+  useEffect(() => {
+    if (selected?.tab && getTabActivity?.(workspace.id, selected.tab.id) === 'finished') {
+      onAcknowledgeTab?.(workspace.id, selected.tab.id);
+    }
+  }, [selected?.tab?.id, workspace.id, getTabActivity, onAcknowledgeTab]);
   useEffect(() => {
     const element = strip.current;
     if (!element) return;
@@ -175,12 +182,24 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, connection,
         onPointerUp={event => { dragged.current = !!drag.current?.moved; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); drag.current = null; setTimeout(() => { dragged.current = false; }, 0); }}
         onPointerCancel={() => { drag.current = null; dragged.current = false; }}
         onClickCapture={event => { if (dragged.current) { event.preventDefault(); event.stopPropagation(); } }}>
-        {tabs.map(session => <div className={'maw-session-tab' + (selected?.id === session.id ? ' active' : '')} key={session.tab!.id} data-tab-id={session.tab!.id}>
-          <button type="button" role="tab" id={'tab-' + session.tab!.id} aria-selected={selected?.id === session.id} aria-controls={'pane-' + session.tab!.id} tabIndex={selected?.id === session.id ? 0 : -1} title={name(session) + ' · ' + agencySessionText(session)} onClick={() => { setKeyboardTabs(false); void action(session, 'select').catch(() => undefined); }}>
-            <span aria-hidden="true">{session.kind === 'agent' ? '◇' : '>_'}</span><span className="agency-truncate">{name(session)}</span><span className={'agency-status-dot ' + (session.lifecycle === 'failed' || session.recovery?.status === 'manual' ? 'attention' : session.lifecycle === 'exited' ? 'muted' : ['awaiting-user','awaiting-permission'].includes(session.activity) ? 'attention' : session.activity === 'working' ? 'working' : 'idle')} aria-label={agencySessionText(session)} />
-          </button>
-          <button type="button" data-close aria-label={t('agency.tabs.closeNamed', { name: name(session) })} disabled={!online || busy} onClick={() => { if (['starting','running','stopping'].includes(session.lifecycle)) setClosing(session); else void close(session); }}>×</button>
-        </div>)}
+        {tabs.map(session => {
+          const tabState = getTabActivity && session.tab ? getTabActivity(workspace.id, session.tab.id) : undefined;
+          const dotClass =
+            tabState === 'finished' ? 'finished' :
+            tabState === 'failed' || session.lifecycle === 'failed' || session.recovery?.status === 'manual' ? 'failed' :
+            session.lifecycle === 'exited' ? 'muted' :
+            ['awaiting-user','awaiting-permission'].includes(session.activity) ? 'attention' :
+            session.activity === 'working' || tabState === 'working' ? 'working' :
+            tabState === 'unknown' ? 'unknown' : 'idle';
+          return (
+            <div className={'maw-session-tab' + (selected?.id === session.id ? ' active' : '')} key={session.tab!.id} data-tab-id={session.tab!.id}>
+              <button type="button" role="tab" id={'tab-' + session.tab!.id} aria-selected={selected?.id === session.id} aria-controls={'pane-' + session.tab!.id} tabIndex={selected?.id === session.id ? 0 : -1} title={name(session) + ' · ' + agencySessionText(session)} onClick={() => { setKeyboardTabs(false); void action(session, 'select').catch(() => undefined); if (session.tab) onAcknowledgeTab?.(workspace.id, session.tab.id); }}>
+                <span aria-hidden="true">{session.kind === 'agent' ? '◇' : '>_'}</span><span className="agency-truncate">{name(session)}</span><span className={'agency-status-dot ' + dotClass} aria-label={agencySessionText(session)} />
+              </button>
+              <button type="button" data-close aria-label={t('agency.tabs.closeNamed', { name: name(session) })} disabled={!online || busy} onClick={() => { if (['starting','running','stopping'].includes(session.lifecycle)) setClosing(session); else void close(session); }}>×</button>
+            </div>
+          );
+        })}
       </div>
       <div className="agency-dropdown maw-add-tab" onClick={event => event.stopPropagation()}>
         <button type="button" className="agency-icon-button" aria-label={t('agency.tabs.add')} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)} disabled={!online || busy}>+</button>

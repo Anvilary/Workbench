@@ -165,3 +165,27 @@ Key deliverables:
 Draft delivery: [PR #10](https://github.com/alteixeira20/My-Amazing-Workspace/pull/10) (draft against `main`).
 Verified implementation commit: `b7be13a`; subsequent delivery checkpoint records this PR link. All changes pushed without force; live service untouched.
 
+
+## Activity State and Notification System (Lane C) — 2026-10-28
+
+The activity-state and notification subsystem implements unified, durable notification and 5-state lifecycle management (`idle`, `working`, `finished`, `unknown`, `failed`) across CLI, shell terminal, and browser/web tabs. Continue in `/home/alteixeira20/Projects/My-Amazing-Workspace-notifications` on branch `feat/maw-notifications`, based on starting commit `07942a15e5992d7b61e103fffce072969783878e` (`main`). See [NOTIFICATIONS-STATUS.md](NOTIFICATIONS-STATUS.md) for full architecture, wire protocol specifications, evidence requirements, and validation commands.
+
+Core guarantees implemented:
+- 5-state activity model with strict completion gates (OSC 133 semantic sequences for shells, native turn completion events for CLI, companion extension hooks for browser).
+- Persistent `finished` status until tab inspection/acknowledgement.
+- Strict decoupling of inbox read operations and tab completion acknowledgement.
+- Durable persistence in `agency-notifications.json` with `.bak` recovery and atomic writes.
+- Deduplication of repeated completion events within a time window.
+- Header bell with unread badge, persistent popover inbox, and auto-dismissing floating toasts.
+- Full keyboard accessibility and 9-locale i18n support.
+
+Verification: Shared, server, and web typecheck (0 errors); 9-locale i18n check (100% pass); 4/4 server notification and activity tests pass; 7/7 web notification tests pass; 62/62 server agency tests pass; 9/9 web model tests pass; web production build exits 0.
+
+Lane C Amendment & Final Corrections updates:
+- Distinct per-turn identities: Controlled per-tab turn sequence advances on `working` transitions (`turn-1`, `turn-2`), producing distinct completion alerts for consecutive turns; replayed turn events deduplicate permanently; restart recovery restores highest turn sequence to prevent reuse; workspace tabs remain strictly isolated; unverified providers (Codex, Antigravity) remain Idle or Unknown without fabricated completion events.
+- Functional Bash integration: Command start hooked via `PS0="\[\033]133;C\007\]"` before command execution; command exit hooked via `PROMPT_COMMAND` with `$?` and `133;D;%d\007\033]133;A\007`; command prompt input line via `PS1`. Verified with a real disposable interactive Bash PTY process emitting exit codes 0 and 33. Precise shell terminal integration hook documented for spawning PTYs without touching user dotfiles or modifying shared native session runtime. Zsh integration cleanly hooks `precmd` and `preexec`.
+- Browser bridge credentials & target binding: Default predictable credentials eliminated; registration requires explicit, strong 256-bit cryptographically secure tokens (min 16 chars) bound to explicit `allowedTabIds` (unrelated tabs rejected); default ChatGPT state truthfully reported as `unknown`; limitations formally documented (token proves authorization/binding, not third-party web content accuracy).
+- Durable persistence failure recovery: `TabActivityManager` uses `writeAtomically` with private `0o600` permissions and `.bak` backup copy; write queue failure continuity ensures an individual I/O failure fails visibly to the immediate caller while subsequent writes succeed cleanly; verified with simulated write failure under read-only permissions followed by recovery.
+- Verification findings: Working UI (PASS), Native CLI completion signals (PASS), Shell completion signals (PASS), ChatGPT completion support (UNVERIFIED / LIMITATION DOCUMENTED), Remaining blockers (NONE).
+
+Draft delivery branch: `feat/maw-notifications` pushed to `origin/feat/maw-notifications`. Target: `main`. No live services activated or merged.
