@@ -81,3 +81,7 @@ Raw ephemeral logs are /tmp/maw-delivery-{checks,native-integration,distribution
 3. Add remaining crash timing and provider concurrency tests. Establish whether a trustworthy cross-launcher coordinator can enforce four AGY processes; existing external processes are outside MAW control.
 4. Review the draft PR against main. Do not merge or activate automatically. Follow OPERATIONS.md deployment, enable/start, real-account and reboot checks only after accepting/resolving the documented blockers.
 5. Rollback commands and data preservation are in OPERATIONS.md. Preserve old native references and provider homes throughout.
+
+Draft PR: https://github.com/alteixeira20/My-Amazing-Workspace/pull/8 (targets main; not merged).
+Implementation commit: d2c51e8df089668e087803d41debe3245c51e450. Subsequent documentation-only delivery checkpoint records this link.
+Final safety inventory: original main clean at af7df497ede5495aaad8696cd5cdac3a05a82355; feature worktree clean after checkpoint; no maw.service installed/enabled; no isolated maw test units remain. Feature branch pushed without force.
