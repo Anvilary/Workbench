@@ -70,7 +70,17 @@ BASE_PERMITTED_DOMAINS = [
 ]
 
 # Allow optional environment-configured additional permitted origins (e.g. for testing)
-EXTRA_PERMITTED = [d.strip().lower() for d in os.environ.get("PERMITTED_ORIGINS", "").split(",") if d.strip()]
+def _parse_permitted_entry(entry: str) -> str:
+    entry = entry.strip().lower()
+    if "://" in entry:
+        try:
+            h = urllib.parse.urlparse(entry).hostname
+            return h if h else entry
+        except Exception:
+            return entry
+    return entry.split(":")[0]
+
+EXTRA_PERMITTED = [_parse_permitted_entry(d) for d in os.environ.get("PERMITTED_ORIGINS", "").split(",") if d.strip()]
 PERMITTED_DOMAINS = BASE_PERMITTED_DOMAINS + EXTRA_PERMITTED
 
 

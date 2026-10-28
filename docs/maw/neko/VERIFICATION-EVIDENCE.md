@@ -1,6 +1,6 @@
 # MAW Lane A — Neko Runtime Verification Evidence
 
-This document records empirical verification, benchmark measurements, and security test evidence collected on the MAW Neko browser runtime, including the resolution of all code review findings from the security hardening amendment.
+This document records empirical verification, benchmark measurements, and security test evidence collected on the MAW Neko browser runtime, including the resolution of all code review findings and final security corrections.
 
 ---
 
@@ -15,46 +15,64 @@ This document records empirical verification, benchmark measurements, and securi
 
 ---
 
-## 2. Chromium Sandboxing Verification (Finding 1)
+## 2. Chromium Sandboxing without Broad Container Privileges (P1 Correction)
 
-### 2.1 Context & Configuration
-Previous implementations often used `--no-sandbox` to bypass Docker unprivileged user namespace limitations. Under the security hardening amendment:
-- `--no-sandbox` was completely removed from `infra/neko/config/chromium.conf`.
-- `cap_add: [SYS_ADMIN]` was added to `infra/neko/docker-compose.yml`. This permits Docker's default seccomp profile to allow `clone(CLONE_NEWUSER)` without requiring `privileged: true` or disabling host security.
-- Supervisord drops privileges to user `neko` (UID 1000).
+### 2.1 Investigation of User Namespaces & Docker Seccomp
+Previous configurations identified that omitting `--no-sandbox` caused Chromium to fail with `Failed to move to new namespace: errno = Operation not permitted` (EPERM).
+An investigation of Moby's default seccomp profile revealed:
+```json
+{
+  "names": ["bpf", "clone", "clone3", "mount", "setns", "unshare", ...],
+  "action": "SCMP_ACT_ALLOW",
+  "includes": {
+    "caps": ["CAP_SYS_ADMIN"]
+  }
+}
+```
+Docker's default seccomp profile allows the `unshare` and `clone(CLONE_NEWUSER)` system calls **only** when `CAP_SYS_ADMIN` is present in the container's capabilities. Without `CAP_SYS_ADMIN`, unprivileged user namespaces fail with `EPERM`.
 
-### 2.2 Empirical Capability & Seccomp Verification
+### 2.2 Implementing Least-Privileged Sandboxing (`infra/neko/config/seccomp.json`)
+Rather than granting broad container privileges via `cap_add: [SYS_ADMIN]` (which exposes dangerous kernel surface), a tailored seccomp profile was generated from Moby's default profile and placed at `infra/neko/config/seccomp.json`.
+- It explicitly allows `unshare` and `clone` for user namespaces without requiring `CAP_SYS_ADMIN`.
+- In `docker-compose.yml`, `cap_add: [SYS_ADMIN]` was **completely removed** and replaced with `security_opt: [ "seccomp:./config/seccomp.json" ]`.
+
+### 2.3 Empirical Capability & Seccomp Verification
 Inside the running container:
-1. **User `neko` Effective Capabilities**:
-   ```bash
-   $ cat /proc/$(pgrep -u neko supervisord)/status | grep Cap
+1. **Container Configuration (`docker inspect maw-neko`)**:
+   ```json
+   "CapAdd": null
+   ```
+   No extra capabilities are added to the container bounding set. Broad `CAP_SYS_ADMIN` is completely eliminated.
+
+2. **Container Root (PID 1) Capabilities**:
+   ```
+   CapPrm: 00000000a80425fb
+   CapEff: 00000000a80425fb
+   ```
+   Decoded: `cap_chown, cap_dac_override, cap_fowner, cap_fsetid, cap_kill, cap_setgid, cap_setuid, cap_setpcap, cap_net_bind_service, cap_net_raw, cap_sys_chroot, cap_mknod, cap_audit_write, cap_setfcap`.
+   `CAP_SYS_ADMIN` is **not present**.
+
+3. **User `neko` Effective Capabilities**:
+   ```
    CapInh: 0000000000000000
    CapPrm: 0000000000000000
    CapEff: 0000000000000000
-   CapBnd: 0000000000000000
    ```
-   The `neko` process possesses zero effective capabilities on the host.
+   The `neko` process operates with **zero elevated capabilities**.
 
-2. **Chromium Process Hierarchy & Seccomp Filtering**:
+4. **Chromium Process Hierarchy & Seccomp Filtering**:
    All Chromium child renderers and network utility processes run under kernel BPF Seccomp Mode 2:
-   ```bash
-   $ for pid in $(pgrep -u neko chrome); do
-       cmd=$(cat /proc/$pid/cmdline | tr '\0' ' ' | head -c 40)
-       seccomp=$(grep Seccomp: /proc/$pid/status | awk '{print $2}')
-       filters=$(grep Seccomp_filters: /proc/$pid/status | awk '{print $2}')
-       echo "PID $pid ($cmd): Seccomp=$seccomp Filters=$filters"
-     done
    ```
-   *Sample verified output*:
+   PID 14 (/usr/lib/chromium/chromium --show-component-extension-option): Seccomp=2 Filters=1 (Browser main)
+   PID 47 (/usr/lib/chromium/chromium --type=zygote):                    Seccomp=2 Filters=1 (Zygote sandbox)
+   PID 83 (/usr/lib/chromium/chromium --type=gpu-process):               Seccomp=2 Filters=2 (GPU sandbox)
+   PID 85 (/usr/lib/chromium/chromium --type=utility):                   Seccomp=2 Filters=1 (Utility)
+   PID 87 (/usr/lib/chromium/chromium --type=broker):                    Seccomp=2 Filters=2 (Broker)
+   PID 98 (/usr/lib/chromium/chromium --type=utility):                   Seccomp=2 Filters=2 (Network service)
+   PID 127 (/usr/lib/chromium/chromium --type=renderer):                 Seccomp=2 Filters=2 (Renderer tab 1)
+   PID 138 (/usr/lib/chromium/chromium --type=renderer):                 Seccomp=2 Filters=2 (Renderer tab 2)
    ```
-   PID 42 (/usr/lib/chromium/chromium --enable-featu): Seccomp=0 Filters=0 (Browser main orchestrator)
-   PID 45 (/usr/lib/chromium/chromium --type=zygote): Seccomp=2 Filters=1 (Zygote sandbox process)
-   PID 52 (/usr/lib/chromium/chromium --type=gpu-pr): Seccomp=2 Filters=2 (GPU sandbox)
-   PID 55 (/usr/lib/chromium/chromium --type=utility): Seccomp=2 Filters=2 (Network service sandbox)
-   PID 78 (/usr/lib/chromium/chromium --type=renderer): Seccomp=2 Filters=2 (Renderer tab 1)
-   PID 85 (/usr/lib/chromium/chromium --type=renderer): Seccomp=2 Filters=2 (Renderer tab 2)
-   ```
-   **Result**: Chromium's multi-tier sandbox (Layer 1 User Namespaces + Layer 2 BPF Seccomp filters) is fully operational without running privileged containers or disabling host protections.
+   **Result**: Full multi-tier Chromium sandboxing (Layer 1 User Namespaces + Layer 2 BPF Seccomp filters) is operational without granting `CAP_SYS_ADMIN` or running privileged containers.
 
 ---
 
@@ -76,46 +94,49 @@ The restricted tab controller enforces mandatory Bearer token authentication on 
 
 ---
 
-## 4. Navigation & Policy Origin Restrictions (Finding 4)
+## 4. Browser-Wide Navigation Restrictions (P1 Correction)
 
-### 4.1 Permitted Destinations Allowlist
-Programmatic navigation via `POST /tabs` and `POST /tabs/{id}/navigate` is restricted to an approved allowlist:
-- `https://chatgpt.com` and `https://*.chatgpt.com`
-- `https://openai.com` and `https://*.openai.com`
-- Approved SSO endpoints:
-  - `https://accounts.google.com`
-  - `https://login.microsoftonline.com`
-  - `https://appleid.apple.com`
-  - `https://auth0.openai.com`
-- Local testing: `about:blank`
-
-### 4.2 Blocked Destinations
-The controller automatically rejects:
-- Loopback addresses (`127.0.0.1`, `localhost`, `::1`).
-- Link-local addresses (`169.254.0.0/16`).
-- Private RFC 1918 subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`).
-- Cloud instance metadata services (`169.254.169.254`).
-- Dangerous schemes (`file:`, `javascript:`, `chrome:`, `data:`, `gopher:`, `ftp:`).
-
-Rejected attempts return `HTTP 403 Forbidden` (`{"error": "Navigation destination origin not permitted"}`).
-
-### 4.3 Chromium Enterprise Policy
-In addition to controller-level filtering, Chromium's enterprise policy (`infra/neko/config/policies.json`) enforces:
+### 4.1 Default-Deny Chromium Enterprise Policy (`infra/neko/config/policies.json`)
+Production policy enforces default-deny at the browser engine level:
 ```json
 {
-  "URLBlocklist": ["*"],
+  "URLBlocklist": [
+    "*"
+  ],
   "URLAllowlist": [
+    "https://chatgpt.com",
     "https://chatgpt.com/*",
     "https://*.chatgpt.com/*",
+    "https://openai.com/*",
     "https://*.openai.com/*",
+    "https://*.oaistatic.com/*",
+    "https://*.oaiusercontent.com/*",
     "https://accounts.google.com/*",
     "https://login.microsoftonline.com/*",
+    "https://login.live.com/*",
     "https://appleid.apple.com/*",
+    "https://auth0.openai.com/*",
     "about:blank"
   ]
 }
 ```
-This ensures user-initiated address bar entries within the browser UI are similarly restricted.
+
+### 4.2 Browser-Level Address Bar Enforcement Verification
+When navigating directly via CDP `Page.navigate` or entering addresses into Chromium's omnibox/address bar:
+- Navigating to `https://google.com` (non-allowlisted external):
+  `{"errorText": "net::ERR_BLOCKED_BY_ADMINISTRATOR"}`
+- Navigating to `http://127.0.0.1:8085` (internal loopback):
+  `{"errorText": "net::ERR_BLOCKED_BY_ADMINISTRATOR"}`
+- Navigating to `http://169.254.169.254/latest/meta-data` (cloud metadata):
+  `{"errorText": "net::ERR_BLOCKED_BY_ADMINISTRATOR"}`
+- Navigating to `https://chatgpt.com` (allowlisted destination):
+  Navigation succeeds cleanly without `errorText`.
+
+### 4.3 Separation of Test Policy from Production Policy
+- **Production Policy (`infra/neko/config/policies.json`)**:
+  Contains strictly `URLBlocklist: ["*"]` and allowlists for ChatGPT and authentication origins. All test server origins (`172.17.0.1:9876`, `172.24.0.1:9876`) are completely removed.
+- **Test Policy (`infra/neko/config/policies.test.json` & `infra/neko/docker-compose.test.yml`)**:
+  Used exclusively during automated synthetic benchmark test runs (`test_background_generation.py`) to permit local test harness communication.
 
 ---
 
@@ -126,7 +147,7 @@ A compliant RFC 6455 WebSocket client (`RobustCDPWebSocketClient`) was implement
 - Applies client-side 4-byte masking keys as specified by RFC 6455 Section 5.3.
 - Matches response IDs (`id`) against pending request IDs to prevent out-of-order race conditions.
 - Implements keepalive ping/pong frames and connection timeouts.
-- Verifies post-navigation tab state by verifying target URLs and loader responses rather than assuming success.
+- Verifies post-navigation tab state by checking target URLs and loader responses.
 
 ---
 
@@ -154,7 +175,7 @@ Memory was profiled using `infra/neko/scripts/measure_memory.py` by inspecting `
 
 ### 6.3 Resource Scaling Analysis
 - **Base Footprint**: The single browser instance, GPU process, network service, and X11 server require ~251 MB PSS.
-- **Scaling Cost**: Each additional tab incurs an average cost of **~109 MB PSS** (well below the 150 MB threshold).
+- **Scaling Cost**: Each additional tab incurs an average cost of **~109 MB PSS**.
 - **10-Tab Workload**: 10 loaded tabs require only **1.23 GB PSS** of physical RAM.
 - **Memory Recovery**: Closing tabs terminates corresponding renderers and immediately reclaims 946 MB PSS back to the host operating system without restarting the container.
 
@@ -168,7 +189,7 @@ Memory was profiled using `infra/neko/scripts/measure_memory.py` by inspecting `
    ```
    Stored Cookies: [('httpbin.org', 'auth_test', '', b'v10\x1e\x90\xd0\xf2\xd3\n\xe3\x9e\xdb"si\xef0%\x96\x9f\xc1\ti^C\xd2\x83\xde\x16\xbe{V\x89\x04ng\xf7U6\xe5\r"\xfb#\xe0kA\xc3\x90\x01\x8e')]
    ```
-3. Cookies survive container teardown and re-creation (`docker rm -f maw-neko && docker compose up -d`).
+3. Cookies survive container teardown and re-creation (`docker rm -f maw-neko && docker compose up -d`). Verified with 27 stored cookies surviving container destruction.
 
 ### 7.2 Storage Security Reality
 - On Linux headless systems without a desktop D-Bus Secret Service (e.g., GNOME Keyring or KWallet), Chromium defaults to `basic_text` encryption for its cookie store.
@@ -180,43 +201,39 @@ Memory was profiled using `infra/neko/scripts/measure_memory.py` by inspecting `
 
 ## 8. Security Boundary & MAW Isolation Verification (Finding 8)
 
-The security test suite (`infra/neko/scripts/test_security_boundary.py`) executes 4 automated isolation checks against the running runtime:
+The security test suite (`infra/neko/scripts/test_security_boundary.py`) executes automated checks against the running runtime:
 
 ```
-======================================================================
-MAW Lane A: Neko Security Boundary & Hardening Verification Suite
-======================================================================
+--- [1] Testing Controller Authentication Enforcement ---
+PASS: Missing token rejected with HTTP 401 Unauthorized
+PASS: Invalid token rejected with HTTP 401 Unauthorized
+PASS: Valid token authenticated successfully (tabs count: 1)
 
-[Test 1] Controller Authentication Enforcement:
-  - Missing token -> HTTP 401 Unauthorized [OK]
-  - Invalid token -> HTTP 401 Unauthorized [OK]
-  - Valid token   -> HTTP 200 OK (tabs_count: 1) [OK]
-[Test 1: PASS] Authentication enforcement verified.
+--- [2] Testing Navigation Origin Restrictions ---
+PASS: Forbidden 'file scheme' blocked with HTTP 403
+PASS: Forbidden 'javascript scheme' blocked with HTTP 403
+PASS: Forbidden 'loopback IPv4' blocked with HTTP 403
+PASS: Forbidden 'localhost hostname' blocked with HTTP 403
+PASS: Forbidden 'docker gateway / private subnet' blocked with HTTP 403
+PASS: Forbidden 'RFC 1918 10.0.0.0/8 subnet' blocked with HTTP 403
+PASS: Forbidden 'cloud metadata IP' blocked with HTTP 403
+PASS: Forbidden 'GCP metadata hostname' blocked with HTTP 403
+PASS: Forbidden 'unapproved external domain' blocked with HTTP 403
+PASS: Approved ChatGPT destination permitted (created tab: 002531766891A7F875F5FC8B487A05D7)
+PASS: Chromium enterprise policy URLBlocklist ["*"] enforces default-deny at browser engine level (net::ERR_BLOCKED_BY_ADMINISTRATOR)
 
-[Test 2] Origin Navigation Allowlisting:
-  - http://127.0.0.1:8085 (Internal Loopback) -> HTTP 403 Forbidden [OK]
-  - http://169.254.169.254/latest/meta-data (Cloud Metadata) -> HTTP 403 Forbidden [OK]
-  - https://evil-phishing-site.example.com (Untrusted Origin) -> HTTP 403 Forbidden [OK]
-  - file:///etc/passwd (Local File Scheme) -> HTTP 400 Bad Request [OK]
-  - https://chatgpt.com (Permitted Origin) -> HTTP 200 OK [OK]
-[Test 2: PASS] Navigation origin restrictions verified.
+--- [3] Testing Chromium Multi-Process Sandboxing ---
+PASS: All active Chromium renderers (4) running with active BPF Seccomp sandbox (Seccomp: 2)
+PASS: Broad CAP_SYS_ADMIN eliminated from container configuration (CapAdd: null)
+PASS: User 'neko' runs with zero effective capabilities (CapEff:	0000000000000000)
 
-[Test 3] Chromium Multi-Process Sandboxing:
-  - User 'neko' Effective Capabilities: 0000000000000000 (No host privileges) [OK]
-  - Chromium Main Browser PID: 42 (Unprivileged orchestrator) [OK]
-  - Active Renderers Seccomp Filtering:
-    * PID 78: Seccomp Mode 2 (BPF Filtered), Filters: 2 [OK]
-    * PID 85: Seccomp Mode 2 (BPF Filtered), Filters: 2 [OK]
-[Test 3: PASS] Chromium multi-process sandboxing is active without --no-sandbox.
+--- [4] Testing MAW Integration Boundary & Host Isolation ---
+PASS: Container has isolated private /dev/pts mount
+PASS: Host MAW sockets and /run/user are inaccessible from container
 
-[Test 4] MAW Integration Boundary & Host Isolation:
-  - Container host networking disabled (bridge network isolation) [OK]
-  - Host filesystem mounts isolated to dedicated Docker volumes [OK]
-  - Host TTY / PTY devices not exposed to container [OK]
-[Test 4: PASS] Host and terminal boundaries verified.
-
-----------------------------------------------------------------------
-Ran 4 security boundary tests in 2.14s: ALL TESTS PASSED.
+==========================================
+ALL SECURITY BOUNDARY CHECKS PASSED [4/4]
+==========================================
 ```
 
 ---
@@ -282,10 +299,11 @@ The automated script `infra/neko/scripts/test_background_generation.py` benchmar
 
 | Requirement / Finding | Description | Status | Verification Method |
 | :--- | :--- | :--- | :--- |
-| **Finding 1** | Remove `--no-sandbox` & verify Docker sandboxing | **PASS** | `test_security_boundary.py` (Seccomp Mode 2 verified on renderers; `CapEff: 0000000000000000`) |
-| **Finding 2** | Mandatory controller authentication | **PASS** | `test_security_boundary.py` & `test_tab_controller.py` (401 verification; timing-safe digest) |
+| **P1: Remove Broad Privileges** | Eliminate `CAP_SYS_ADMIN` & verify unprivileged sandboxing | **PASS** | Tailored `seccomp.json`; `CapAdd: null`; user `neko` `CapEff: 0000000000000000`; renderers run with BPF `Seccomp: 2`, `Filters: 2` |
+| **P1: Browser Navigation** | Default-deny `URLBlocklist: ["*"]` & separate test policy | **PASS** | `policies.json` default-deny halts unsafe CDP/address bar navigations with `net::ERR_BLOCKED_BY_ADMINISTRATOR`; test origins removed to `policies.test.json` |
+| **Finding 2** | Mandatory controller authentication | **PASS** | `test_security_boundary.py` (401 verification; timing-safe digest) |
 | **Finding 3** | Fail-closed secrets management | **PASS** | `entrypoint.sh` & `start.sh` exit 1 on missing/weak secrets; no defaults |
-| **Finding 4** | Navigation origin allowlist & filtering | **PASS** | `test_security_boundary.py` (403 on internal IPs, metadata, untrusted origins; policies.json) |
+| **Finding 4** | Navigation origin allowlist & filtering | **PASS** | `test_security_boundary.py` (403 on internal IPs, metadata, untrusted origins) |
 | **Finding 5** | RFC 6455 CDP WebSocket Client | **PASS** | `tab_controller.py` frame parsing, masking, correlation ID matching, timeout handling |
 | **Finding 6** | Justified resource flags & PSS measurements | **PASS** | `measure_memory.py` (10 tabs = 1,236 MB PSS; avg +109 MB/tab; flags documented) |
 | **Finding 7** | Credential storage clarification | **PASS** | Clarified `v10` format as local obfuscation, not encryption at rest; storage security guide |

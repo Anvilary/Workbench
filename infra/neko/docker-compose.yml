@@ -5,9 +5,10 @@ services:
     hostname: maw-neko
     restart: unless-stopped
     shm_size: "2gb"
-    cap_add:
-      # Enables Chromium multi-process user namespace sandboxing without privileged mode
-      - SYS_ADMIN
+    security_opt:
+      # Use custom seccomp profile allowing unprivileged user namespaces (CLONE_NEWUSER)
+      # without granting CAP_SYS_ADMIN or disabling host security
+      - seccomp:./config/seccomp.json
     entrypoint: ["/entrypoint-maw.sh"]
     command: ["/usr/bin/supervisord", "-c", "/etc/neko/supervisord.conf"]
     ports:

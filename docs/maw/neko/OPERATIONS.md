@@ -161,9 +161,17 @@ python3 scripts/measure_memory.py
 ```
 
 ### 5.4 Synthetic Streaming Continuity Test
-Measures background network stream continuity across visual tab switches:
+Measures background network stream continuity across visual tab switches. The test uses `docker-compose.test.yml` and `policies.test.json` so that production policy (`policies.json`) remains strictly default-deny with zero test server exceptions:
 ```bash
+# Apply test policy override
+docker compose -f docker-compose.yml -f docker-compose.test.yml up -d
+sleep 2
+
+# Run synthetic stream benchmark
 python3 scripts/test_background_generation.py
+
+# Restore production policy
+docker compose -f docker-compose.yml up -d
 ```
 
 ---
@@ -176,8 +184,8 @@ python3 scripts/test_background_generation.py
    The persistent volume `maw-neko-chromium-profile` stores session cookies and local cache. Ensure the host backing path (typically `/var/lib/docker/volumes/maw-neko-chromium-profile/_data`) resides on an encrypted filesystem (LUKS/dm-crypt) with standard `0700` directory permissions.
 3. **Network Isolation**:
    Container ports `8085` and `9223` are bound exclusively to host loopback `127.0.0.1`. Never bind `0.0.0.0` or route traffic via Tailscale/VPNs without an intervening authenticated reverse proxy.
-4. **Sandboxing Invariant**:
-   Chromium runs with unprivileged user namespaces and BPF Seccomp Mode 2 enabled via `cap_add: [SYS_ADMIN]` in `docker-compose.yml`. Process `neko` drops all capabilities (`CapEff: 0000000000000000`). Never add `--no-sandbox` to `chromium.conf` or specify `privileged: true` in `docker-compose.yml`.
+4. **Sandboxing Invariant & Capability Minimization**:
+   Chromium runs with unprivileged user namespaces and BPF Seccomp Mode 2 enabled via `security_opt: [ "seccomp:./config/seccomp.json" ]` in `docker-compose.yml`. Broad container privileges (`CAP_SYS_ADMIN`) are completely eliminated (`CapAdd: null`). Process `neko` drops all capabilities (`CapEff: 0000000000000000`). Never add `--no-sandbox` to `chromium.conf` or specify `privileged: true` or `cap_add: [SYS_ADMIN]` in `docker-compose.yml`.
 
 ---
 
