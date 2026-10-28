@@ -613,16 +613,27 @@ export class AgencySessionRuntime extends EventEmitter {
       const rows = this.list(workspaceId);
       const wasSelected = rows.find(s => s.tab?.id === tabId && s.tab.current)?.tab?.selected;
       const next = rows.filter(s => s.tab?.current && !s.tab.closedAt && s.tab.id !== tabId).sort((a,b) => a.tab!.order - b.tab!.order)[0];
+      const changed: AgencyRuntimeSession[] = [];
       for (const row of rows) {
         if (!row.tab) continue;
         const tab = { ...row.tab };
-        if (action === 'select') tab.selected = tab.id === tabId;
+        if (action === 'select') tab.selected = tab.current && !tab.closedAt && tab.id === tabId;
         else if (tab.id === tabId) { tab.closedAt = NOW(); tab.selected = false; }
-        else if (wasSelected) tab.selected = tab.id === next?.tab?.id;
+        else if (wasSelected) tab.selected = tab.current && tab.id === next?.tab?.id;
+        if (tab.selected === row.tab.selected && tab.closedAt === row.tab.closedAt) continue;
+        changed.push(row);
         this.sessions.set(row.id, { ...row, tab });
       }
-      await this.persist();
-      for (const row of this.list(workspaceId)) this.emit('changed', row);
+      if (!changed.length) return;
+      try { await this.persist(); }
+      catch (error) {
+        for (const row of changed) {
+          const current = this.sessions.get(row.id)!;
+          this.sessions.set(row.id, { ...current, tab: row.tab });
+        }
+        throw error;
+      }
+      for (const row of changed) this.emit('changed', this.sessions.get(row.id));
     });
   }
 
