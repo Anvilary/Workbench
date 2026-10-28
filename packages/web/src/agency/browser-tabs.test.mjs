@@ -134,6 +134,8 @@ test('Actual Agency UI preserves native input and delays web inspection until se
   assert.equal(reads[0].notificationId,'55555555-5555-4555-8555-555555555555');
   await page.getByRole('button',{name:'Rename tab',exact:true}).click();
   await page.getByLabel('Tab title',{exact:true}).fill('Renamed research');
+  await frame.evaluate(()=>{const input=document.createElement('input');document.body.append(input);input.focus();});
+  await page.waitForFunction(()=>document.activeElement?.classList.contains('maw-tab-name-input'));
   await page.getByLabel('Tab title',{exact:true}).press('Enter');
   await page.getByRole('tab',{name:'Renamed research'}).waitFor();
   await page.getByRole('tab',{name:'Renamed research'}).press('Alt+ArrowLeft');

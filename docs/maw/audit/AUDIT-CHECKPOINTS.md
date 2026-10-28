@@ -155,3 +155,22 @@ keyboard navigation but failed its assumption that ChatGPT preserves an arbitrar
 query marker: guest site redirected to /auth/login. Corrected acceptance to match
 confirmed inventory URL including allowed redirects; this is fixture sensitivity,
 not evidence of a MAW persistence defect. Rerun pending.
+
+## Checkpoint 4a — real responsive test found A05
+
+Actual Neko viewport test reproduced iframe autofocus cancelling rename. Added a
+regression to the real Chromium fixture and a focus guard; 2 PASS, build PASS.
+Six-viewport script now exercises inline rename and inbox/Escape at every size,
+with real Neko keyboard input, native shell completion and server restart. Added
+startup/render/switch measurements. Rerun in progress; see /tmp/maw-audit-ui-final.
+
+State transition evidence: native create→starting→running→exited/failed→resume
+preserves logical tab; close stops only its PTY, Done preserves running processes,
+archival/deletion reservations reject active references. Browser unloaded→attach
+→ready or explicit error; receipt ownership survives server/controller restart;
+Chromium restart invalidates receipts. Close intent persists before target
+teardown, unknown ownership retains cleanup tombstones. Activity Working→Finished
+requires explicit lifecycle/OSC evidence; replay dedups, failed shell retains
+failure, read and acknowledgement are independent, lost Codex evidence→Unknown.
+Sources: runtime, coordinator, browser production/controller, activity/outbox
+regressions and actual integration results. Not exhaustive model checking.

@@ -45,3 +45,44 @@ not the requested `infra/neko/` path. No runtime impact.
   no repeated Unknown events each poll. Explicit completion still required.
 - Verification: activity suite and production browser tests 19 PASS; original
   replay, failure, abort, scope and real Bash/Zsh tests remain passing.
+
+## A04 — P2 — failed native selection leaked state; historical attempts selected — FIXED
+
+- Location: `agency-session-runtime.ts:tabAction` (baseline line 578).
+- Evidence: code mutated session tabs before awaiting disk and emitted every
+  session. New failure-injection test verifies previous selection after rejected
+  write; a stable tab's historical attempts no longer become selected.
+- Impact: rejected selection could still appear in coordinator finally snapshots;
+  unnecessary change events amplified frontend work.
+- Correction: commit changed metadata only; restore tab fields on failure without
+  rolling back live process state. Regression and benchmark in O01.
+
+## A05 — P2 — reconnecting viewer autofocus discards inline rename — FIXED
+
+- Location: `TabNameInput.tsx:onBlur` (introduced in checkpoint 0).
+- Real reproduction: at 390px select browser B then A; switch to 768px and rename
+  while viewer reconnects. Screenshot contains typed `Research 768`, followed by
+  old `ChatGPT A` after viewer autofocus, and save cannot find editor.
+- Impact: user loses uncommitted text during background connection establishment.
+- Correction: blur to another MAW control cancels; embedded viewer focus is
+  returned to the editor until save/Escape. The same-origin Neko document only
+  is involved; no ChatGPT DOM or conversation access.
+- Verification: real React/Chromium test explicitly focuses an input inside the
+  viewer while editing and verifies parent input focus returns; 2 PASS. A trial
+  iframe inert attribute did not protect focus across browsing contexts and was
+  discarded. Six-viewport real rerun pending at this checkpoint.
+
+## Boundaries and unverified risks (not confirmed vulnerabilities)
+
+- Shared Neko is one global desktop. Controller ownership isolates mutations,
+  not independent visual desktops for concurrent MAW viewers. Do not advertise
+  multi-user/workspace confidentiality for one shared browser stream.
+- Browser navigation URL policy is not proof of subresource/network egress
+  isolation. No packet-level local-network isolation experiment in this audit.
+- TypeScript atomic rename avoids partial JSON but lacks explicit fsync; sudden
+  power-loss durability is not established by process restart tests. Python
+  ownership registry does fsync. No power-cut test on host performed.
+- Antigravity hook completion and authenticated ChatGPT completion UNVERIFIED.
+- Neko guest reconnect surfaced a transient upstream display-name login overlay
+  in an unsuccessful run. Reconnect reliability needs a longer dedicated soak;
+  do not count media-ready alone as a fully interactive page.

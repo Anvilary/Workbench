@@ -23,7 +23,16 @@ export function TabNameInput({ name, onSave, onClose, report }: {
     aria-invalid={invalid} aria-busy={saving} value={value} readOnly={saving} maxLength={120}
     enterKeyHint="done" onFocus={event => event.currentTarget.select()}
     onChange={event => { setValue(event.target.value); setInvalid(false); }}
-    onBlur={() => { if (!flight.current) onClose(false); }}
+    onBlur={event => {
+      const input = event.currentTarget;
+      // The streamed viewer may autofocus on reconnect. Keep editing until the
+      // user saves/cancels or focuses another MAW control, never drop typed text.
+      setTimeout(() => {
+        if (!input.isConnected || flight.current) return;
+        if (document.activeElement?.tagName === 'IFRAME') input.focus();
+        else onClose(false);
+      }, 0);
+    }}
     onKeyDown={event => {
       event.stopPropagation();
       if (event.nativeEvent.isComposing) return;
