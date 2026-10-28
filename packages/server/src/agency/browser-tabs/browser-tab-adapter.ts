@@ -413,10 +413,11 @@ export class BrowserTabAdapter {
         throw new BrowserTabStoreError('invalid-request', 'Invalid web tab title');
       }
 
+      const previous = { title: tab.title, updatedAt: tab.updatedAt };
       tab.title = title.trim();
       tab.updatedAt = new Date().toISOString();
-
-      await this.persist();
+      try { await this.persist(); }
+      catch (error) { Object.assign(tab, previous); throw error; }
       return { ...tab };
     });
   }

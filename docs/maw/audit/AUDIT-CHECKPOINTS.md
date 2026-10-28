@@ -116,3 +116,26 @@ A01 reproduced in isolated child (exit 1, URIError), patched cookie decoder,
 regression passes, child now exits 0/HTTP 403. Commands and impact in FINDINGS.md.
 No live server was targeted. Next: persistence failure reproduction, lifecycle
 matrix, provider evidence loss, then isolated responsive/performance fixtures.
+
+## Checkpoints 1b/2/3 — failure truthfulness
+
+A02/A03 red tests reproduced before fixes in `/tmp/maw-audit-faults-before.log`;
+focused after suite passes. Runtime/controller suites cover concurrent creates,
+close sibling isolation, ownership spoofing, response loss, restart, pending
+cleanup, corrupt backup and notification outbox recovery. Real fixture PTYs remain
+part of the suite. No speculative security issue promoted to a confirmed finding.
+
+Provider research (official sources, 2026-10-28):
+- https://github.com/openai/codex/blob/main/codex-rs/core/src/session/rollout_reconstruction_tests.rs
+  confirms explicit TurnStarted/TurnComplete lifecycle events. Existing scoped
+  Codex watcher uses these; tests cover independent multiple turns and replay.
+- https://www.antigravity.google/docs/hooks documents Stop and invocation hooks.
+  PostInvocation is not whole-task completion. Docs alone do not validate installed
+  CLI delivery/identity/error semantics. Do not modify user hooks or claim support
+  without a disposable authenticated CLI experiment. Antigravity completion stays
+  UNVERIFIED; ChatGPT stays Unknown/UNVERIFIED. No private API/content access.
+
+Next: run actual isolated Neko ownership/restart acceptance and six-viewport UI;
+measure fixture startup/switch/event counts and Neko resource usage. New fixture
+creation script uses a unique container, no production volumes, generated secrets
+in private temporary files, loopback-only published ports. Never print env JSON.

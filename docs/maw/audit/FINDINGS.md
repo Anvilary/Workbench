@@ -23,3 +23,25 @@ not the requested `infra/neko/` path. No runtime impact.
   paired-device cookies. No exception escapes the synchronous listener.
 - Verification: 1 focused test covers four invalid encodings, device verifier
   exclusion, valid auth and foreign Origin rejection; child probe returns 403.
+
+## A02 — P2 — failed browser rename leaked uncommitted state — FIXED
+
+- Location: `browser-tab-adapter.ts:renameTab` (baseline line 403).
+- Repro: new production regression replaces fixture store.save with disk-full
+  failure. rename rejects but getTabState returns `Unsaved` instead of `Original`.
+  Coordinator's finally snapshot exposes that uncommitted title to clients.
+- Impact: false persisted name; next restart silently loses it.
+- Fix: restore title/timestamp on persistence failure under existing workspace lock.
+- Verification: before test fails (`Unsaved != Original`); after passes, retry and
+  fresh adapter/store reload retain new title, stable tab ID and target reference.
+
+## A03 — P2 — Codex stays Working after evidence disappears — FIXED
+
+- Location: `agents/codex/turn-watcher.ts:poll/read` (baseline lines 45–62).
+- Repro: fixture session_meta + task_started, poll, move rollout to backup, poll
+  twice. Before emits only Working; after emits Working then Unknown exactly once.
+- Impact: misleading indefinite Working after missing/inaccessible/rotated evidence.
+- Fix: emit Unknown for active turns on evidence loss; no fabricated completion,
+  no repeated Unknown events each poll. Explicit completion still required.
+- Verification: activity suite and production browser tests 19 PASS; original
+  replay, failure, abort, scope and real Bash/Zsh tests remain passing.
