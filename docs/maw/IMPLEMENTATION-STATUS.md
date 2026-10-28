@@ -140,3 +140,21 @@ The multi-session implementation supersedes the historical single-agent/shell an
 Multi-session delivery checks: typecheck, full check/i18n (internal guide absent and explicitly skipped), production build, npm distribution and installed-package smoke exit 0; server suites 80/80, frontend model 9/9, native systemd 5/5, remediation 6/6, Agency E2E 25/25 and browser 19 captures/5 widths exit 0. Browser shell fixture was made deterministic after a host-shell exit stall; final focused browser run passed. Completed managed PTYs release capacity without removing logical exited history (26-tab real-PTY regression). No live service is installed/enabled/active and no disposable MAW units remain. Deployment, real authentication/keyring and reboot acceptance remain manual.
 
 Draft delivery: [PR #9](https://github.com/user/My-Amazing-Workspace/pull/9) targets the unmerged dependency branch. Verified implementation: `687c22676506cc0ff0e9b31df16ee24acd224ef3`; subsequent documentation-only commit records the delivery URL. Feature branch is pushed without force; nothing merged or activated.
+
+
+## Activity State and Notification System (Lane C) — 2026-10-28
+
+The activity-state and notification subsystem implements unified, durable notification and 5-state lifecycle management (`idle`, `working`, `finished`, `unknown`, `failed`) across CLI, shell terminal, and browser/web tabs. Continue in `/home/user/Projects/My-Amazing-Workspace-notifications` on branch `feat/maw-notifications`, based on starting commit `07942a15e5992d7b61e103fffce072969783878e` (`main`). See [NOTIFICATIONS-STATUS.md](NOTIFICATIONS-STATUS.md) for full architecture, wire protocol specifications, evidence requirements, and validation commands.
+
+Core guarantees implemented:
+- 5-state activity model with strict completion gates (OSC 133 semantic sequences for shells, native turn completion events for CLI, companion extension hooks for browser).
+- Persistent `finished` status until tab inspection/acknowledgement.
+- Strict decoupling of inbox read operations and tab completion acknowledgement.
+- Durable persistence in `agency-notifications.json` with `.bak` recovery and atomic writes.
+- Deduplication of repeated completion events within a time window.
+- Header bell with unread badge, persistent popover inbox, and auto-dismissing floating toasts.
+- Full keyboard accessibility and 9-locale i18n support.
+
+Verification: Shared, server, and web typecheck (0 errors); 9-locale i18n check (100% pass); 4/4 server notification and activity tests pass; 6/6 web notification tests pass; 62/62 server agency tests pass; 9/9 web model tests pass; web production build exits 0.
+
+Draft delivery branch: `feat/maw-notifications` pushed to `origin/feat/maw-notifications`. Target: `main`. Verified implementation commit: `dc6d3b86dbb5fa4d6d05cbc1e371954fdb3ab967`. No live services activated or merged.

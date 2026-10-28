@@ -2,7 +2,10 @@
 
 **Repository:** `user/My-Amazing-Workspace`  
 **Branch:** `feat/maw-notifications`  
-**Starting baseline:** `07942a15e5992d7b61e103fffce072969783878e` (main / PR #8 / PR #9 merge)
+**Target:** `main`  
+**Starting baseline:** `07942a15e5992d7b61e103fffce072969783878e` (main / PR #8 / PR #9 merge)  
+**Verified implementation commit:** `dc6d3b86dbb5fa4d6d05cbc1e371954fdb3ab967`  
+**Draft Delivery URL:** [Draft PR](https://github.com/user/My-Amazing-Workspace/pull/new/feat/maw-notifications)
 
 ---
 
