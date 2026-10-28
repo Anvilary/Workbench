@@ -39,6 +39,10 @@
         {
           "path": "/usr/bin/bash",
           "sha256": "3efccc187bafa75ff1e37d246270ab3e7aa559f242c7a52bf3ec2a1b5450bdbd"
+        },
+        {
+          "path": "/home/user/.nvm/versions/node/v24.22.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex",
+          "sha256": "c06a67fd8ac76508dc78bd99ce20c9f317b8d568beda59485f3f4134df9962d5"
         }
       ],
       "requiredEnvironment": []
@@ -81,6 +85,10 @@
         {
           "path": "/usr/bin/bash",
           "sha256": "3efccc187bafa75ff1e37d246270ab3e7aa559f242c7a52bf3ec2a1b5450bdbd"
+        },
+        {
+          "path": "/home/user/.nvm/versions/node/v24.22.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex",
+          "sha256": "c06a67fd8ac76508dc78bd99ce20c9f317b8d568beda59485f3f4134df9962d5"
         }
       ],
       "requiredEnvironment": []
@@ -123,6 +131,10 @@
         {
           "path": "/usr/bin/bash",
           "sha256": "3efccc187bafa75ff1e37d246270ab3e7aa559f242c7a52bf3ec2a1b5450bdbd"
+        },
+        {
+          "path": "/home/user/.nvm/versions/node/v24.22.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex",
+          "sha256": "c06a67fd8ac76508dc78bd99ce20c9f317b8d568beda59485f3f4134df9962d5"
         }
       ],
       "requiredEnvironment": []
@@ -153,7 +165,8 @@
       ],
       "requiredEnvironment": [
         "DBUS_SESSION_BUS_ADDRESS"
-      ]
+      ],
+      "authenticationMode": "account"
     },
     {
       "profileId": "agy-1",
@@ -175,7 +188,15 @@
       "commands": {
         "bash": "/usr/bin/bash",
         "dbus-daemon": "/usr/bin/dbus-daemon",
-        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon"
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon",
+        "cat": "/usr/bin/cat",
+        "sed": "/usr/bin/sed",
+        "rm": "/usr/bin/rm",
+        "mkdir": "/usr/bin/mkdir",
+        "chmod": "/usr/bin/chmod",
+        "mktemp": "/usr/bin/mktemp",
+        "sleep": "/usr/bin/sleep",
+        "env": "/usr/bin/env"
       },
       "artifacts": [
         {
@@ -201,9 +222,42 @@
         {
           "path": "/usr/bin/gnome-keyring-daemon",
           "sha256": "7a1845384af79d64e35d30a624c6348fea0c966a83ef0db1ae5e89ffe94bded5"
+        },
+        {
+          "path": "/usr/bin/cat",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/sed",
+          "sha256": "e42dd92d4848435b6357af4c4a22691062e8f74869ca6c9f3900b4760d604a2f"
+        },
+        {
+          "path": "/usr/bin/rm",
+          "sha256": "0362781f855d9de6396b71af947662758970ed09946c4a0a78ff740b20f5e6a6"
+        },
+        {
+          "path": "/usr/bin/mkdir",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/chmod",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/mktemp",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/sleep",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/env",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
         }
       ],
-      "requiredEnvironment": []
+      "requiredEnvironment": [],
+      "authenticationMode": "account"
     },
     {
       "profileId": "agy-2",
@@ -225,7 +279,15 @@
       "commands": {
         "bash": "/usr/bin/bash",
         "dbus-daemon": "/usr/bin/dbus-daemon",
-        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon"
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon",
+        "cat": "/usr/bin/cat",
+        "sed": "/usr/bin/sed",
+        "rm": "/usr/bin/rm",
+        "mkdir": "/usr/bin/mkdir",
+        "chmod": "/usr/bin/chmod",
+        "mktemp": "/usr/bin/mktemp",
+        "sleep": "/usr/bin/sleep",
+        "env": "/usr/bin/env"
       },
       "artifacts": [
         {
@@ -251,9 +313,42 @@
         {
           "path": "/usr/bin/gnome-keyring-daemon",
           "sha256": "7a1845384af79d64e35d30a624c6348fea0c966a83ef0db1ae5e89ffe94bded5"
+        },
+        {
+          "path": "/usr/bin/cat",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/sed",
+          "sha256": "e42dd92d4848435b6357af4c4a22691062e8f74869ca6c9f3900b4760d604a2f"
+        },
+        {
+          "path": "/usr/bin/rm",
+          "sha256": "0362781f855d9de6396b71af947662758970ed09946c4a0a78ff740b20f5e6a6"
+        },
+        {
+          "path": "/usr/bin/mkdir",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/chmod",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/mktemp",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/sleep",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/env",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
         }
       ],
-      "requiredEnvironment": []
+      "requiredEnvironment": [],
+      "authenticationMode": "account"
     },
     {
       "profileId": "agy-3",
@@ -275,7 +370,15 @@
       "commands": {
         "bash": "/usr/bin/bash",
         "dbus-daemon": "/usr/bin/dbus-daemon",
-        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon"
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon",
+        "cat": "/usr/bin/cat",
+        "sed": "/usr/bin/sed",
+        "rm": "/usr/bin/rm",
+        "mkdir": "/usr/bin/mkdir",
+        "chmod": "/usr/bin/chmod",
+        "mktemp": "/usr/bin/mktemp",
+        "sleep": "/usr/bin/sleep",
+        "env": "/usr/bin/env"
       },
       "artifacts": [
         {
@@ -301,9 +404,42 @@
         {
           "path": "/usr/bin/gnome-keyring-daemon",
           "sha256": "7a1845384af79d64e35d30a624c6348fea0c966a83ef0db1ae5e89ffe94bded5"
+        },
+        {
+          "path": "/usr/bin/cat",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/sed",
+          "sha256": "e42dd92d4848435b6357af4c4a22691062e8f74869ca6c9f3900b4760d604a2f"
+        },
+        {
+          "path": "/usr/bin/rm",
+          "sha256": "0362781f855d9de6396b71af947662758970ed09946c4a0a78ff740b20f5e6a6"
+        },
+        {
+          "path": "/usr/bin/mkdir",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/chmod",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/mktemp",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/sleep",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/env",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
         }
       ],
-      "requiredEnvironment": []
+      "requiredEnvironment": [],
+      "authenticationMode": "account"
     },
     {
       "profileId": "agy-4",
@@ -325,7 +461,15 @@
       "commands": {
         "bash": "/usr/bin/bash",
         "dbus-daemon": "/usr/bin/dbus-daemon",
-        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon"
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon",
+        "cat": "/usr/bin/cat",
+        "sed": "/usr/bin/sed",
+        "rm": "/usr/bin/rm",
+        "mkdir": "/usr/bin/mkdir",
+        "chmod": "/usr/bin/chmod",
+        "mktemp": "/usr/bin/mktemp",
+        "sleep": "/usr/bin/sleep",
+        "env": "/usr/bin/env"
       },
       "artifacts": [
         {
@@ -351,9 +495,42 @@
         {
           "path": "/usr/bin/gnome-keyring-daemon",
           "sha256": "7a1845384af79d64e35d30a624c6348fea0c966a83ef0db1ae5e89ffe94bded5"
+        },
+        {
+          "path": "/usr/bin/cat",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/sed",
+          "sha256": "e42dd92d4848435b6357af4c4a22691062e8f74869ca6c9f3900b4760d604a2f"
+        },
+        {
+          "path": "/usr/bin/rm",
+          "sha256": "0362781f855d9de6396b71af947662758970ed09946c4a0a78ff740b20f5e6a6"
+        },
+        {
+          "path": "/usr/bin/mkdir",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/chmod",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/mktemp",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/sleep",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/env",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
         }
       ],
-      "requiredEnvironment": []
+      "requiredEnvironment": [],
+      "authenticationMode": "account"
     },
     {
       "profileId": "agy-5",
@@ -375,7 +552,15 @@
       "commands": {
         "bash": "/usr/bin/bash",
         "dbus-daemon": "/usr/bin/dbus-daemon",
-        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon"
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon",
+        "cat": "/usr/bin/cat",
+        "sed": "/usr/bin/sed",
+        "rm": "/usr/bin/rm",
+        "mkdir": "/usr/bin/mkdir",
+        "chmod": "/usr/bin/chmod",
+        "mktemp": "/usr/bin/mktemp",
+        "sleep": "/usr/bin/sleep",
+        "env": "/usr/bin/env"
       },
       "artifacts": [
         {
@@ -401,9 +586,42 @@
         {
           "path": "/usr/bin/gnome-keyring-daemon",
           "sha256": "7a1845384af79d64e35d30a624c6348fea0c966a83ef0db1ae5e89ffe94bded5"
+        },
+        {
+          "path": "/usr/bin/cat",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/sed",
+          "sha256": "e42dd92d4848435b6357af4c4a22691062e8f74869ca6c9f3900b4760d604a2f"
+        },
+        {
+          "path": "/usr/bin/rm",
+          "sha256": "0362781f855d9de6396b71af947662758970ed09946c4a0a78ff740b20f5e6a6"
+        },
+        {
+          "path": "/usr/bin/mkdir",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/chmod",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/mktemp",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/sleep",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
+        },
+        {
+          "path": "/usr/bin/env",
+          "sha256": "f84e76ea4da1e0c4e92254bd0d7dccdabe2c8b3098e734f27997dae3ee5d8e02"
         }
       ],
-      "requiredEnvironment": []
+      "requiredEnvironment": [],
+      "authenticationMode": "account"
     },
     {
       "profileId": "claude-code",

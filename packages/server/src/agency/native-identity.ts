@@ -18,6 +18,7 @@ interface Binding {
   readonly args: readonly string[];
   readonly environmentOverrides: Readonly<Record<string, string>>;
   readonly identity: NativeIdentity;
+  readonly authenticationMode?: 'account';
   readonly artifacts?: readonly { path: string; sha256: string }[];
   readonly launchContext?: Readonly<Record<string, string | null>>;
   readonly commands?: Readonly<Record<string, string>>;
@@ -39,6 +40,17 @@ export async function artifactDigest(file: string): Promise<string> {
 /** Explicit host attestations, not account guesses from realpath or wrapper names. */
 export class NativeIdentities {
   private constructor(private readonly bindings: readonly Binding[]) {}
+
+  static empty(): NativeIdentities { return new NativeIdentities([]); }
+
+  /** Optional recovery attestations must not take down interactive native launch. */
+  static async loadForInteractive(file: string): Promise<NativeIdentities> {
+    try { return await NativeIdentities.load(file); }
+    catch {
+      console.warn('[maw] Native identity attestation unavailable; interactive CLI launch remains available, recovery is disabled.');
+      return NativeIdentities.empty();
+    }
+  }
 
   static async load(file: string): Promise<NativeIdentities> {
     let raw: unknown;
@@ -65,9 +77,9 @@ export class NativeIdentities {
           bindings.some((b) => b.profileId === row.profileId)) {
         throw new Error('Invalid or duplicate host native identity binding');
       }
-      let verification: Pick<Binding, 'artifacts' | 'launchContext' | 'commands' | 'requiredEnvironment'> = {};
+      let verification: Pick<Binding, 'artifacts' | 'launchContext' | 'commands' | 'requiredEnvironment' | 'authenticationMode'> = {};
       if (raw.version === 2) {
-        if (!Array.isArray(row.artifacts) || row.artifacts.length === 0 || !row.artifacts.every(item => record(item) && typeof item.path === 'string' && path.isAbsolute(item.path) && typeof item.sha256 === 'string' && /^[a-f0-9]{64}$/.test(item.sha256)) ||
+        if ((row.provider === 'antigravity' && row.authenticationMode !== 'account') || !Array.isArray(row.artifacts) || row.artifacts.length === 0 || !row.artifacts.every(item => record(item) && typeof item.path === 'string' && path.isAbsolute(item.path) && typeof item.sha256 === 'string' && /^[a-f0-9]{64}$/.test(item.sha256)) ||
             !row.artifacts.some(item => record(item) && item.path === row.executable) || !path.isAbsolute(row.executable) ||
             !record(row.launchContext) || typeof row.launchContext.HOME !== 'string' ||
             !Object.entries(row.launchContext).every(([key, value]) => CONTEXT_KEYS.has(key) && (typeof value === 'string' || value === null)) ||
@@ -76,6 +88,7 @@ export class NativeIdentities {
           throw new Error('Invalid native execution-context attestation');
         }
         verification = {
+          ...(row.provider === 'antigravity' ? { authenticationMode: 'account' as const } : {}),
           artifacts: Object.freeze(row.artifacts.map(item => Object.freeze({ ...item }))) as Binding['artifacts'],
           launchContext: Object.freeze({ ...row.launchContext }) as Binding['launchContext'],
           commands: Object.freeze({ ...row.commands }) as Binding['commands'],
@@ -109,6 +122,19 @@ export class NativeIdentities {
     const binding = this.bindings.find(row => row.profileId === profile.id)!;
     try {
       if (await realpath(identity.home) !== identity.home || !(await stat(identity.home)).isDirectory()) return null;
+      if (binding.authenticationMode === 'account') {
+        let mode: unknown = '';
+        try {
+          const settingsFile = await realpath(path.join(identity.home, 'settings.json'));
+          const relative = path.relative(identity.home, settingsFile);
+          if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
+          const settings: unknown = JSON.parse(await readFile(settingsFile, 'utf8'));
+          if (!record(settings)) return null;
+          mode = settings.modelProvider ?? '';
+        } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return null; }
+        // API-key mode has no established named-account ownership. Never import its secret.
+        if (mode !== '') return null;
+      }
       for (const [key, value] of Object.entries(binding.launchContext ?? {})) if ((environment[key] ?? null) !== value) return null;
       for (const key of binding.requiredEnvironment ?? []) if (!environment[key]) return null;
       for (const [command, selected] of Object.entries(binding.commands ?? {})) {
@@ -120,5 +146,13 @@ export class NativeIdentities {
     } catch { return null; }
   }
 
-  protectedDirs(): readonly string[] { return this.bindings.map((b) => b.identity.home); }
+  protectedDirs(): readonly string[] {
+    return [...new Set(this.bindings.flatMap(binding => {
+      const root = binding.identity.home;
+      if (binding.identity.provider !== 'antigravity' || path.basename(root) !== 'antigravity-cli' || path.basename(path.dirname(root)) !== '.gemini') return [root];
+      const accountHome = path.dirname(path.dirname(root));
+      // Native keyrings/XDG configuration are outside AGY's conversation namespace.
+      return [root, path.dirname(root), path.join(accountHome, '.config'), path.join(accountHome, '.local/share/keyrings')];
+    }))];
+  }
 }
