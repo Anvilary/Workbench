@@ -154,33 +154,49 @@ export function useNotificationStore(
   }, [transport, pushToast]);
 
   const markRead = useCallback(async (notificationId: string) => {
-    // Optimistic local update
-    setNotifications((prev) =>
-      prev.map((item) =>
+    let previousList: MawNotificationItem[] = [];
+    setNotifications((prev) => {
+      previousList = prev;
+      return prev.map((item) =>
         item.id === notificationId
           ? { ...item, read: true, readAt: new Date().toISOString() }
           : item,
-      ),
-    );
+      );
+    });
     try {
-      await request({ type: 'agency.notification.markRead', notificationId });
-    } catch {}
+      const res = await request({ type: 'agency.notification.markRead', notificationId });
+      if (res && res.type === 'agency.error') {
+        throw new Error(res.message);
+      }
+    } catch (err) {
+      setNotifications(previousList);
+      throw err;
+    }
   }, [request]);
 
   const markAllRead = useCallback(async () => {
+    let previousList: MawNotificationItem[] = [];
     const now = new Date().toISOString();
-    setNotifications((prev) =>
-      prev.map((item) => (!item.read ? { ...item, read: true, readAt: now } : item)),
-    );
+    setNotifications((prev) => {
+      previousList = prev;
+      return prev.map((item) => (!item.read ? { ...item, read: true, readAt: now } : item));
+    });
     try {
-      await request({ type: 'agency.notification.markAllRead' });
-    } catch {}
+      const res = await request({ type: 'agency.notification.markAllRead' });
+      if (res && res.type === 'agency.error') {
+        throw new Error(res.message);
+      }
+    } catch (err) {
+      setNotifications(previousList);
+      throw err;
+    }
   }, [request]);
 
   const acknowledgeTab = useCallback(async (workspaceId: WorkspaceId, tabId: string) => {
-    // Optimistic local update: clear 'finished' to 'idle'
     const key = `${workspaceId}::${tabId}`;
+    let previousStates: Map<string, TabActivityRecord> = new Map();
     setActivityStates((prev) => {
+      previousStates = prev;
       const current = prev.get(key);
       if (current && current.state === 'finished') {
         const next = new Map(prev);
@@ -191,8 +207,14 @@ export function useNotificationStore(
     });
 
     try {
-      await request({ type: 'agency.tab.acknowledge', workspaceId, tabId });
-    } catch {}
+      const res = await request({ type: 'agency.tab.acknowledge', workspaceId, tabId });
+      if (res && res.type === 'agency.error') {
+        throw new Error(res.message);
+      }
+    } catch (err) {
+      setActivityStates(previousStates);
+      throw err;
+    }
   }, [request]);
 
   const getTabActivity = useCallback((workspaceId: WorkspaceId, tabId: string): MawActivityState => {

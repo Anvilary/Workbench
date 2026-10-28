@@ -691,15 +691,27 @@ export function parseAgencyServerMessage(raw: unknown): AgencyServerMessage | nu
     }
     case 'agency.notification.created': {
       if (!isMawNotificationItem(raw['notification'])) return null;
-      return { type: 'agency.notification.created', notification: raw['notification'] };
+      return {
+        type: 'agency.notification.created',
+        notification: raw['notification'],
+        ...(isValidRequestId(raw['requestId']) ? { requestId: raw['requestId'] } : {}),
+      };
     }
     case 'agency.notification.changed': {
       if (!isMawNotificationItem(raw['notification'])) return null;
-      return { type: 'agency.notification.changed', notification: raw['notification'] };
+      return {
+        type: 'agency.notification.changed',
+        notification: raw['notification'],
+        ...(isValidRequestId(raw['requestId']) ? { requestId: raw['requestId'] } : {}),
+      };
     }
     case 'agency.tab.activity': {
       if (!isTabActivityRecord(raw['activity'])) return null;
-      return { type: 'agency.tab.activity', activity: raw['activity'] };
+      return {
+        type: 'agency.tab.activity',
+        activity: raw['activity'],
+        ...(isValidRequestId(raw['requestId']) ? { requestId: raw['requestId'] } : {}),
+      };
     }
     default:
       return null;

@@ -123,19 +123,15 @@ export class AgencyNotificationStore extends EventEmitter {
   }
 
   /**
-   * Creates a notification with automatic deduplication.
-   * If a notification with the same deduplicationKey exists within deduplicationWindowMs,
-   * returns null and avoids creating duplicate inbox entries.
+   * Creates a notification with automatic deduplication by stable event/task ID.
+   * If a notification with the same deduplicationKey already exists, returns null.
    */
-  async create(input: CreateNotificationInput, deduplicationWindowMs: number = 300_000): Promise<MawNotificationItem | null> {
+  async create(input: CreateNotificationInput): Promise<MawNotificationItem | null> {
     if (input.deduplicationKey) {
       const existing = this.deduplicationIndex.get(input.deduplicationKey);
       if (existing) {
-        const age = Date.now() - existing.createdAt;
-        if (age < deduplicationWindowMs) {
-          // Deduplicate: avoid creating duplicate notification
-          return null;
-        }
+        // Stable task or event ID already alerted: deduplicate
+        return null;
       }
     }
 
