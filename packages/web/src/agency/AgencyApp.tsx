@@ -5,6 +5,10 @@ import { AgencySidebar, AgencyDoneView } from './AgencySidebar.js';
 import { AgencyWorkspaceCreator, AgencyProjectCreator } from './AgencyWorkspaceCreator.js';
 import { AgencyWorkspaceView } from './AgencyWorkspaceView.js';
 import { useAgencyStore } from './useAgencyStore.js';
+import { useNotificationStore } from './useNotificationStore.js';
+import { NotificationBell } from './NotificationBell.js';
+import { NotificationInbox } from './NotificationInbox.js';
+import { NotificationToastContainer } from './NotificationToast.js';
 import { acknowledgeWorkspaceDraft, createAgencyTransport, putWorkspaceDraft } from './model.js';
 import { t } from '../i18n/index.js';
 import { useLocale } from '../i18n/useLocale.js';
@@ -36,6 +40,8 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   const agencyTransport = useMemo(() => createAgencyTransport(connection), [connection]);
   const store = useAgencyStore(agencyTransport, connection);
   const { data, loaded, online, notice } = store;
+  const notificationStore = useNotificationStore(agencyTransport, store.request);
+  const [inboxOpen, setInboxOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<WorkspaceId | null>(() => { try { return localStorage.getItem('agency-ui.selected-workspace.v1') as WorkspaceId | null; } catch { return null; } });
   const [showingDone, setShowingDone] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => { try { return localStorage.getItem('agency-ui.sidebar-open.v1') !== 'false'; } catch { return true; } });
@@ -91,6 +97,56 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   useEffect(() => { try { if (selectedId) localStorage.setItem('agency-ui.selected-workspace.v1', selectedId); } catch {} }, [selectedId]);
   const selectedProject = data.projects.find((project) => project.id === selected?.projectId);
   useEffect(() => { try { localStorage.setItem('agency-ui.sidebar-open.v1', String(sidebarOpen)); } catch {} }, [sidebarOpen]);
+
+  async function handleNotificationNavigate(item: { workspaceId: WorkspaceId; tabId?: string; id?: string }) {
+    // 1. Verify that requested workspace exists and is active
+    const targetWorkspace = data.workspaces.find((ws) => ws.id === item.workspaceId && ws.status === 'active');
+    if (!targetWorkspace) {
+      setError('Workspace is unavailable or closed');
+      return;
+    }
+
+    // 2. If tabId provided, verify that the tab exists and is open
+    if (item.tabId) {
+      const tabSession = data.sessions.find(
+        (s) => s.workspaceId === item.workspaceId && s.tab?.id === item.tabId && !s.tab?.closedAt,
+      );
+      if (!tabSession) {
+        setError('Tab is unavailable or closed');
+        return;
+      }
+
+      // 3. Request tab selection on server; only proceed if selection actually succeeds
+      try {
+        const answer = await store.request({
+          type: 'agency.tab.action',
+          workspaceId: item.workspaceId,
+          tabId: item.tabId,
+          action: 'select',
+        });
+        if (answer.type === 'agency.error') {
+          throw new Error(answer.message);
+        }
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : 'Unable to select tab');
+        return;
+      }
+    }
+
+    // 4. Navigation and selection succeeded: update view and mark notification read
+    setSelectedId(item.workspaceId);
+    setShowingDone(false);
+    setInboxOpen(false);
+
+    if (item.id) {
+      void notificationStore.markRead(item.id).catch(() => undefined);
+    }
+
+    // 5. Only acknowledge finished result once navigation and selection actually succeed
+    if (item.tabId) {
+      void notificationStore.acknowledgeTab(item.workspaceId, item.tabId).catch(() => undefined);
+    }
+  }
 
   function updateDraft(workspaceId: string, value: string) {
     setDrafts((prev) => putWorkspaceDraft(prev, workspaceId as WorkspaceId, value));
@@ -255,7 +311,22 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
           )}
           <button type="button" className="agency-secondary-button" disabled={!online}
             onClick={() => store.refresh()}>{t('agency.ui.refresh')}</button>
+          <NotificationBell
+            unreadCount={notificationStore.unreadCount}
+            open={inboxOpen}
+            onToggle={() => setInboxOpen(!inboxOpen)}
+          />
         </div>
+        {inboxOpen && (
+          <NotificationInbox
+            notifications={notificationStore.notifications}
+            unreadCount={notificationStore.unreadCount}
+            onClose={() => setInboxOpen(false)}
+            onSelect={handleNotificationNavigate}
+            onMarkRead={notificationStore.markRead}
+            onMarkAllRead={notificationStore.markAllRead}
+          />
+        )}
         {error && <div role="alert" className="agency-error-bar">{error}
           <button type="button" onClick={() => setError(null)} aria-label={t('agency.ui.dismissError')}>×</button></div>}
         {statusToast && <div className="agency-notice-bar" role="status">{statusToast}
@@ -286,6 +357,8 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
             onDelivered={(value) => clearDelivered(selected.id, value)}
             onDone={() => { void markDone(selected); }}
             launchError={launchErrors[selected.id]}
+            getTabActivity={notificationStore.getTabActivity}
+            onAcknowledgeTab={notificationStore.acknowledgeTab}
             onClearLaunchError={() => {
               setLaunchErrors((prev) => {
                 const next = { ...prev };
@@ -335,6 +408,11 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
           if (options.mode === 'terminal' || options.mode === 'combined') await launch('terminal');
           if (failures.length) setLaunchErrors(prev => ({ ...prev, [newWorkspace.id]: failures.join(' · ') }));
         }} />}
+      <NotificationToastContainer
+        toasts={notificationStore.toasts}
+        onDismiss={notificationStore.dismissToast}
+        onNavigate={handleNotificationNavigate}
+      />
     </div>
   );
 }

@@ -140,7 +140,7 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
           return { ...old, sessions: replaceById(old.sessions, next) };
         });
       }
-      if (!('requestId' in message)) return;
+      if (!('requestId' in message) || !message.requestId) return;
       const waiting = pending.current.get(message.requestId);
       if (!waiting) return;
       window.clearTimeout(waiting.timeout);
