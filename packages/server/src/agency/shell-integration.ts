@@ -199,35 +199,38 @@ export const ShellSequences = {
 
 /**
  * Generates safe Bash shell integration script.
- * Safely appends to PROMPT_COMMAND; never overwrites existing functions or configuration.
+ * Safely hooks command-start via PS0 and prompt lifecycle via PROMPT_COMMAND/PS1;
+ * never overwrites existing functions or user dotfiles.
  */
 export function generateBashIntegrationScript(): string {
   return `#!/usr/bin/env bash
 # MAW Safe Bash Shell Integration (OSC 133)
-# Safely chains with existing PROMPT_COMMAND; does not overwrite user configuration.
-
-__maw_osc133_prompt_start() {
-  printf "\\033]133;A\\007"
-}
-
-__maw_osc133_prompt_end() {
-  printf "\\033]133;B\\007"
-}
-
-__maw_osc133_command_start() {
-  printf "\\033]133;C\\007"
-}
+# Safely hooks command start and exit without overwriting user configuration.
 
 __maw_osc133_precmd() {
   local last_status="$?"
-  printf "\\033]133;D;%d\\007" "$last_status"
-  printf "\\033]133;A\\007"
+  printf "\\033]133;D;%d\\007\\033]133;A\\007" "$last_status"
 }
 
+# 1. Command exit and prompt start via PROMPT_COMMAND
 if [[ -z "\${PROMPT_COMMAND:-}" ]]; then
   PROMPT_COMMAND="__maw_osc133_precmd"
 elif [[ "$PROMPT_COMMAND" != *"__maw_osc133_precmd"* ]]; then
   PROMPT_COMMAND="__maw_osc133_precmd; $PROMPT_COMMAND"
+fi
+
+# 2. Command start: PS0 is printed after command is entered, before execution starts
+if [[ -z "\${PS0:-}" ]]; then
+  PS0="\\[\\033]133;C\\007\\]"
+elif [[ "$PS0" != *"133;C"* ]]; then
+  PS0="\\[\\033]133;C\\007\\]$PS0"
+fi
+
+# 3. Prompt end: PS1 indicates command input line ready
+if [[ -z "\${PS1:-}" ]]; then
+  PS1="\\[\\033]133;B\\007\\]\\$ "
+elif [[ "$PS1" != *"133;B"* ]]; then
+  PS1="$PS1\\[\\033]133;B\\007\\]"
 fi
 `;
 }

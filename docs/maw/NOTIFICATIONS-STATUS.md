@@ -47,6 +47,12 @@ The subsystem enforces a strict 5-state lifecycle:
 - **Generic Idle vs. Turn Completion**:
   - Generic `idle` status (such as initial startup, reconnect, or idle without a preceding verified `working` turn) is **strictly rejected** as completion.
   - Providers without verified turn completion mechanisms (`codex`, unverified `antigravity`, or generic followers) transition to `idle` (`reliableSignal: false`) without ever entering `finished` or generating completion notifications.
+- **Distinct Per-Turn Task Identities**:
+  - Consecutive completed turns in the same CLI session advance an explicit per-tab turn sequence (`turn-1`, `turn-2`, ...) upon entering `working`.
+  - Consecutive turns produce distinct, independently identifiable completion events and notifications (`cli-turn:<ws>:<tab>:turn-1`, `cli-turn:<ws>:<tab>:turn-2`).
+  - Replayed events for the same turn share the existing stable turn ID and are permanently deduplicated by the notification store.
+  - Restart recovery restores the highest recorded `turnSequence` per tab, preventing turn identity collisions after server restarts.
+  - Events from different workspace tabs remain strictly isolated.
 
 ### 3.2. Shell Terminal Activity (OSC 133 & Safe Script Installation)
 - **Streaming Parser** (`ShellIntegrationParser`):
@@ -60,23 +66,40 @@ The subsystem enforces a strict 5-state lifecycle:
 - **Safe Shell Integration Setup**:
   - `installShellIntegrationSafely(targetDir)` writes standalone scripts `maw-bash-integration.sh` and `maw-zsh-integration.zsh`.
   - **Non-destructive**: Does **not** modify or overwrite the user's existing shell configuration (`~/.bashrc`, `~/.zshrc`).
-  - Bash: Safely chains with existing `PROMPT_COMMAND` without replacing existing functions.
-  - Zsh: Safely appends hooks to `precmd_functions+=` and `preexec_functions+=` without resetting existing user hooks.
+  - **Bash Hook Mechanics**:
+    - Command Start: Hooks `PS0="\[\033]133;C\007\]"` which expands immediately after a command is entered and before execution begins.
+    - Command Exit & Prompt: Hooks `PROMPT_COMMAND` to capture `$?` in `__maw_osc133_precmd`, emitting `\033]133;D;%d\007\033]133;A\007`.
+    - Command Line: Sets `PS1` to include `\033]133;B\007`.
+    - Verified against a real disposable interactive Bash process (`bash --noprofile --rcfile <script> -i`) emitting `133;D;0` and `133;D;33`.
+  - **Zsh Hook Mechanics**:
+    - Safely appends hooks to `precmd_functions+=` and `preexec_functions+=` without resetting existing user hooks.
+- **Precise Shell Terminal Integration Hook**:
+  - To avoid conflicting cross-lane changes in `AgencySessionRuntime`, the standalone script path can be injected when spawning interactive shell PTYs:
+    - Option A: Pass `--rcfile <targetDir>/maw-bash-integration.sh` for Bash shells.
+    - Option B: Export `PROMPT_COMMAND` and `PS0` directly into the PTY spawn environment map without touching filesystem dotfiles.
 
 ### 3.3. ChatGPT & Browser Web Activity
 - **Architecture**: Pluggable `BrowserActivityProvider` interface (`packages/server/src/agency/browser-activity-provider.ts`).
 - **Background Execution**: Background ChatGPT tabs remain mounted and active in the DOM when navigating between workspace tabs.
-- **Authentication & Authorization**:
-  - Submitting verified activity events requires registered bridge credentials (`bridgeId` and `authToken`).
-  - An arbitrary unauthenticated caller cannot label an event `verified: true` and cannot transition a ChatGPT tab to `finished`.
+- **Authentication & Target-Binding Authorization**:
+  - Default predictable credentials eliminated.
+  - Bridge registration requires explicit, strong secret tokens (`generateStrongBridgeToken()` - 256-bit cryptographically secure hex string, min 16 characters).
+  - Bridges are strictly bound to explicit `allowedTabIds`; attempts to submit activity events for unrelated tabs are rejected.
+  - An arbitrary unauthenticated or unbound caller cannot label an event `verified: true` and cannot transition a ChatGPT tab to `finished`.
 - **Evidence Restrictions**:
   - **No Private APIs**: Internal reverse-engineered OpenAI endpoints are strictly forbidden.
   - **No Content Scraping**: Reading assistant message bubbles, extracting text deltas, or inspecting transcript tokens is prohibited.
   - **No False Completion Heuristics**: Network-idle and page-load events do not constitute reliable completion signals.
 - **Formal Limitation Report**:
-  Due to Same-Origin Policy (SOP) boundaries and absence of public completion webhooks, ChatGPT web tabs remain truthfully reported as `unknown` unless an authorized WebExtension companion bridge or user-granted notification hook is active.
+  - Token authentication proves caller authorization and tab binding, but does not independently verify the factual accuracy of third-party webpage state without permitted browser-platform signals.
+  - Due to Same-Origin Policy (SOP) boundaries and absence of public completion webhooks, ChatGPT web tabs remain truthfully reported as `unknown` unless an authorized WebExtension companion bridge or user-granted notification hook is active.
 
----
+### 3.4. Durable Persistence & Failure Recovery
+- State files are persisted atomically via `writeAtomically` with private permissions (`0o600`).
+- Directory permissions are created with `0o700`.
+- Backup files (`.bak`) are preserved prior to writing new snapshots.
+- Write Queue Continuity: The promise queue chains `.catch(() => undefined)` so that an individual I/O failure throws visibly to the immediate caller while allowing subsequent writes to execute cleanly without stalling the queue.
+- Tested under simulated write failure (read-only directory) followed by successful state recovery upon permission restoration.
 
 ## 4. UI Components, Inspection & Acknowledgement
 
@@ -134,7 +157,7 @@ All tests pass cleanly:
 
 | Test Suite | Command | Result |
 | :--- | :--- | :--- |
-| **Server Notifications & Activity** | `pnpm --filter @agent-workbench/server exec tsx --test src/agency/notifications.test.ts` | **4/4 pass** (CLI provider audit & turn completion, OSC 133 strict parsing & safe shell hook setup, Browser bridge token authentication, Durable task states across restart) |
+| **Server Notifications & Activity** | `pnpm --filter @agent-workbench/server exec tsx --test src/agency/notifications.test.ts` | **4/4 pass** (CLI consecutive turns & deduplication, Real interactive Bash with OSC 133, Strong token & tab binding bridge, Atomic persistence recovery & 0o600 permissions) |
 | **Server Full Agency Unit Tests** | `pnpm --filter @agent-workbench/server exec tsx --test src/agency/domain.test.ts src/agency/native-identity.test.ts src/agency/native-context.test.ts src/agency/multi-session-protocol.test.ts src/agency/runtime/agency-session-runtime.test.ts src/agency/notifications.test.ts` | **62/62 pass** |
 | **Web Notifications UI** | `node --test packages/web/src/agency/notifications.test.mjs` | **7/7 pass** (Unread counts, mark read, toast dismissal history preservation, tab acknowledgement vs read separation, navigation safety, optimistic rollback on error, tab dot mapping) |
 | **Web Agency Model Tests** | `node --test packages/web/src/agency/model.test.mjs` | **9/9 pass** |
@@ -144,7 +167,19 @@ All tests pass cleanly:
 
 ---
 
-## 7. Operational & Safety Boundaries
+## 7. Status Findings Summary
+
+| Area | Status | Evidence & Details |
+| :--- | :--- | :--- |
+| **Working UI** | **PASS** | Topbar bell with unread badge, popover inbox, mark individual / mark all read, top-right floating toasts, toast dismissal without history deletion, keyboard accessibility (`Escape`), optimistic mutation rollback on server failure, tab indicator dots, and full 9-locale support. |
+| **Native CLI Completion Signals** | **PASS** | Verified turn completion signals verified for `claude-code` (PID status file watcher) and `opencode` (SSE stream). Generic idle transitions rejected as completion. Consecutive turns assigned distinct sequence identities (`turn-1`, `turn-2`), replayed events permanently deduplicated, restart recovery prevents turn ID reuse, and tab isolation maintained. Providers lacking turn completion (`codex`, unverified `antigravity`) remain `idle` / `unknown` without fabricated completion alerts. |
+| **Shell Completion Signals** | **PASS** | OSC 133 parser strictly rejects missing or non-numeric exit codes, preserving `unknown` status. Functional Bash integration tested against a real interactive Bash PTY process, verifying command-start (`PS0` -> `133;C`) and exit code reporting (`PROMPT_COMMAND` -> `133;D;0`, `133;D;33`). Zsh integration cleanly hooks `precmd` and `preexec`. Safe installation script writes standalone files without modifying user dotfiles. |
+| **ChatGPT Completion Support** | **UNVERIFIED (Limitation Documented)** | Pluggable `BrowserActivityProvider` interface implemented with background execution preserved across workspace navigation. Authorization requires cryptographically strong 256-bit tokens and strict target-tab binding. Default state is truthfully reported as `unknown` because no permitted third-party signal exists under browser Same-Origin Policy without a companion WebExtension or user-granted notification hook. Content scraping and private APIs are strictly forbidden. |
+| **Remaining Blockers** | **NONE** | All requirements of Lane C implemented, verified, and passing. No blockers for draft PR review. |
+
+---
+
+## 8. Operational & Safety Boundaries
 
 - **No live systemd units**: Live services (`maw.service`) remain unmerged and unactivated.
 - **No real credentials**: No credentials or private APIs are touched.

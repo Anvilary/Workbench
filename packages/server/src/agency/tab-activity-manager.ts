@@ -16,13 +16,14 @@
  *   - Does not guess completion from arbitrary PTY output or pause.
  *   - When shell integration is missing, status is explicitly 'unknown'.
  *   - Audits native CLI providers: generic idle is not turn completion.
- *   - Persists durable state: in-flight becomes 'unknown' on restart, uninspected
- *     'finished' states persist, closed tabs do not alert, and stable deduplication keys
- *     prevent duplicate notifications.
+ *   - Controlled per-tab turn sequence: consecutive CLI turns produce distinct identities,
+ *     replayed turn events deduplicate, and restart recovery never reuses old turn sequences.
+ *   - Persists durable state using atomic-write conventions, 0o600 private permissions,
+ *     and queue recovery on write failure.
  */
 
 import { EventEmitter } from 'node:events';
-import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   isTabActivityRecord,
@@ -33,6 +34,7 @@ import {
   type WorkspaceId,
 } from '@agent-workbench/shared';
 import { appConfigDir } from '../paths.js';
+import { writeAtomically } from '../atomic-write.js';
 import type { AgencyNotificationStore } from './agency-notification-store.js';
 import { ShellIntegrationParser } from './shell-integration.js';
 import type { BrowserActivityProvider } from './browser-activity-provider.js';
@@ -50,6 +52,7 @@ export interface TabActivityKey {
 export class TabActivityManager extends EventEmitter {
   private queue: Promise<void> = Promise.resolve();
   private readonly states = new Map<string, TabActivityRecord>();
+  private readonly tabTurnSequences = new Map<string, number>();
   private readonly shellParsers = new Map<string, ShellIntegrationParser>();
   private readonly shellCommandCounters = new Map<string, number>();
   private readonly browserProviders = new Map<string, BrowserActivityProvider>();
@@ -79,6 +82,12 @@ export class TabActivityManager extends EventEmitter {
       let state = record.state;
       let reliableSignal = record.reliableSignal;
       let detail = record.detail;
+
+      // Restore highest known turn sequence so restart recovery cannot reuse old turn IDs
+      if (record.turnSequence !== undefined) {
+        const prev = this.tabTurnSequences.get(key) ?? 0;
+        this.tabTurnSequences.set(key, Math.max(prev, record.turnSequence));
+      }
 
       if (record.closed) {
         // Closed tabs remain closed and do not generate alerts
@@ -140,21 +149,27 @@ export class TabActivityManager extends EventEmitter {
   }
 
   private async persist(): Promise<void> {
-    this.queue = this.queue.then(async () => {
-      await mkdir(path.dirname(this.file), { recursive: true });
-      const temp = path.join(path.dirname(this.file), `.agency-tab-activity-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.tmp`);
-      const payload = JSON.stringify({
-        version: 1,
-        records: [...this.states.values()],
-      }, null, 2);
-      await writeFile(temp, payload, 'utf8');
-      try {
-        await copyFile(this.file, this.file + '.bak');
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-      }
-      await rename(temp, this.file);
-    });
+    const records = [...this.states.values()];
+    const serialized = Buffer.from(
+      JSON.stringify({ version: 1, records }, null, 2) + '\n',
+      'utf8',
+    );
+
+    const perform = async (): Promise<void> => {
+      await mkdir(path.dirname(this.file), { recursive: true, mode: 0o700 });
+      await copyFile(this.file, this.file + '.bak').catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error;
+      });
+      await writeAtomically(this.file, serialized, { mode: 0o600 });
+    };
+
+    // Recover write queue after individual failure while failing visibly to caller
+    const next = this.queue.then(perform);
+    this.queue = next.catch(() => undefined);
+    return next;
+  }
+
+  flush(): Promise<void> {
     return this.queue;
   }
 
@@ -240,6 +255,7 @@ export class TabActivityManager extends EventEmitter {
   /**
    * Handles native CLI session activity updates from AgencySessionRuntime.
    * Audits turn-completion evidence: generic idle is NOT completion!
+   * Enforces distinct per-turn identities so consecutive turns produce separate alerts.
    */
   async handleCliActivity(input: {
     workspaceId: WorkspaceId;
@@ -263,7 +279,15 @@ export class TabActivityManager extends EventEmitter {
     let nextState: MawActivityState = 'unknown';
     let reliable = false;
     let detail = '';
-    const currentTaskId = input.taskId || existing?.taskId || input.sessionId;
+
+    // Manage per-tab turn sequence:
+    // When transitioning into 'working', a new turn begins. Advance sequence.
+    let currentSeq = this.tabTurnSequences.get(key) ?? existing?.turnSequence ?? 0;
+    if (input.nextActivity === 'working' && existing?.state !== 'working') {
+      currentSeq += 1;
+      this.tabTurnSequences.set(key, currentSeq);
+    }
+    const currentTaskId = input.taskId ?? `turn-${currentSeq > 0 ? currentSeq : 1}`;
 
     if (input.lifecycle === 'failed' || (input.lifecycle === 'exited' && input.exitCode !== null && input.exitCode !== 0)) {
       nextState = 'failed';
@@ -314,6 +338,7 @@ export class TabActivityManager extends EventEmitter {
       tabId: input.tabId,
       sessionId: input.sessionId,
       taskId: currentTaskId,
+      turnSequence: currentSeq > 0 ? currentSeq : undefined,
       state: nextState,
       updatedAt: NOW(),
       reliableSignal: reliable,
@@ -325,7 +350,7 @@ export class TabActivityManager extends EventEmitter {
     await this.persist();
     this.emit('tabActivity', record);
 
-    // Create notification upon entering finished or failed with STABLE task ID deduplication
+    // Create notification upon entering finished or failed with STABLE distinct turn ID deduplication
     if (nextState === 'finished' && reliable) {
       const tabLabel = input.tabName || 'CLI Agent';
       const deduplicationKey = `cli-turn:${input.workspaceId}:${input.tabId}:${currentTaskId}`;
@@ -473,6 +498,7 @@ export class TabActivityManager extends EventEmitter {
     this.shellParsers.clear();
     this.shellCommandCounters.clear();
     this.states.clear();
+    this.tabTurnSequences.clear();
     this.browserProviders.clear();
     this.removeAllListeners();
   }

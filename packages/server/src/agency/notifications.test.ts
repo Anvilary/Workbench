@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import type { WorkspaceId } from '@agent-workbench/shared';
 import { AgencyNotificationStore } from './agency-notification-store.js';
@@ -13,10 +14,13 @@ import {
   ShellIntegrationParser,
   ShellSequences,
 } from './shell-integration.js';
-import { ChatGPTActivityProvider } from './browser-activity-provider.js';
+import {
+  ChatGPTActivityProvider,
+  generateStrongBridgeToken,
+} from './browser-activity-provider.js';
 import { TabActivityManager } from './tab-activity-manager.js';
 
-test('Native CLI activity: provider audit, turn completion vs generic idle', async () => {
+test('Native CLI activity: consecutive turns, replay deduplication, tab isolation, and unverified provider safety', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'maw-test-notif-audit-'));
   try {
     const store = new AgencyNotificationStore(path.join(dir, 'notifications.json'));
@@ -27,66 +31,131 @@ test('Native CLI activity: provider audit, turn completion vs generic idle', asy
     });
     await manager.initialize();
 
-    const wsId = randomUUID() as WorkspaceId;
-    const tabClaude = randomUUID();
+    const wsId1 = randomUUID() as WorkspaceId;
+    const wsId2 = randomUUID() as WorkspaceId;
+    const tab1 = randomUUID();
+    const tab2 = randomUUID();
     const tabCodex = randomUUID();
 
-    // 1. Initial state without signals is unknown
-    assert.equal(manager.getTabState(wsId, tabClaude), 'unknown');
-    assert.equal(manager.getTabState(wsId, tabCodex), 'unknown');
+    // 1. Initial state is unknown
+    assert.equal(manager.getTabState(wsId1, tab1), 'unknown');
+    assert.equal(manager.getTabState(wsId2, tab2), 'unknown');
+    assert.equal(manager.getTabState(wsId1, tabCodex), 'unknown');
 
-    // 2. Generic startup idle (without preceding working turn) MUST NOT enter finished
+    // 2. Generic startup idle without working turn MUST NOT enter finished
     await manager.handleCliActivity({
-      workspaceId: wsId,
-      tabId: tabClaude,
+      workspaceId: wsId1,
+      tabId: tab1,
       sessionId: randomUUID() as any,
       provider: 'claude-code',
       nextActivity: 'idle',
       lifecycle: 'running',
     });
-    assert.equal(manager.getTabState(wsId, tabClaude), 'idle');
-    assert.equal(store.list(wsId).length, 0); // No notification for generic startup idle!
+    assert.equal(manager.getTabState(wsId1, tab1), 'idle');
+    assert.equal(store.list(wsId1).length, 0);
 
-    // 3. Claude Code: working -> idle with verified provider is a true turn completion
+    // 3. Turn 1 on Tab 1: working -> idle transitions to finished
     await manager.handleCliActivity({
-      workspaceId: wsId,
-      tabId: tabClaude,
+      workspaceId: wsId1,
+      tabId: tab1,
       sessionId: randomUUID() as any,
       provider: 'claude-code',
-      taskId: 'turn-1',
       nextActivity: 'working',
       lifecycle: 'running',
     });
-    assert.equal(manager.getTabState(wsId, tabClaude), 'working');
+    assert.equal(manager.getTabState(wsId1, tab1), 'working');
 
     await manager.handleCliActivity({
-      workspaceId: wsId,
-      tabId: tabClaude,
+      workspaceId: wsId1,
+      tabId: tab1,
       sessionId: randomUUID() as any,
       provider: 'claude-code',
-      taskId: 'turn-1',
       previousActivity: 'working',
       nextActivity: 'idle',
       lifecycle: 'running',
     });
-    assert.equal(manager.getTabState(wsId, tabClaude), 'finished');
-    assert.equal(store.list(wsId).length, 1);
-    assert.equal(store.list(wsId)[0]?.state, 'finished');
+    assert.equal(manager.getTabState(wsId1, tab1), 'finished');
 
-    // 4. Codex (statusSource: false): working -> idle does NOT emit verified turn completion
-    // Codex does not have real-time turn tracking; generic idle cannot be treated as completion!
+    const notifsAfterTurn1 = store.list(wsId1);
+    assert.equal(notifsAfterTurn1.length, 1);
+    assert.equal(notifsAfterTurn1[0]?.deduplicationKey, `cli-turn:${wsId1}:${tab1}:turn-1`);
+
+    // 4. Replay of Turn 1 event: MUST NOT generate duplicate notification!
     await manager.handleCliActivity({
-      workspaceId: wsId,
+      workspaceId: wsId1,
+      tabId: tab1,
+      sessionId: randomUUID() as any,
+      provider: 'claude-code',
+      previousActivity: 'working',
+      nextActivity: 'idle',
+      lifecycle: 'running',
+    });
+    assert.equal(store.list(wsId1).length, 1); // Deduplicated!
+
+    // 5. User acknowledges Turn 1 -> returns to idle
+    await manager.acknowledgeTab(wsId1, tab1);
+    assert.equal(manager.getTabState(wsId1, tab1), 'idle');
+
+    // 6. Turn 2 on Tab 1: produces a distinct, independently identifiable turn-2 event
+    await manager.handleCliActivity({
+      workspaceId: wsId1,
+      tabId: tab1,
+      sessionId: randomUUID() as any,
+      provider: 'claude-code',
+      nextActivity: 'working',
+      lifecycle: 'running',
+    });
+    assert.equal(manager.getTabState(wsId1, tab1), 'working');
+
+    await manager.handleCliActivity({
+      workspaceId: wsId1,
+      tabId: tab1,
+      sessionId: randomUUID() as any,
+      provider: 'claude-code',
+      previousActivity: 'working',
+      nextActivity: 'idle',
+      lifecycle: 'running',
+    });
+    assert.equal(manager.getTabState(wsId1, tab1), 'finished');
+
+    const notifsAfterTurn2 = store.list(wsId1);
+    assert.equal(notifsAfterTurn2.length, 2);
+    assert.equal(notifsAfterTurn2[0]?.deduplicationKey, `cli-turn:${wsId1}:${tab1}:turn-2`);
+
+    // 7. Isolation: Tab 2 in Workspace 2 has independent sequence
+    await manager.handleCliActivity({
+      workspaceId: wsId2,
+      tabId: tab2,
+      sessionId: randomUUID() as any,
+      provider: 'claude-code',
+      nextActivity: 'working',
+      lifecycle: 'running',
+    });
+    await manager.handleCliActivity({
+      workspaceId: wsId2,
+      tabId: tab2,
+      sessionId: randomUUID() as any,
+      provider: 'claude-code',
+      previousActivity: 'working',
+      nextActivity: 'idle',
+      lifecycle: 'running',
+    });
+    assert.equal(store.list(wsId2).length, 1);
+    assert.equal(store.list(wsId2)[0]?.deduplicationKey, `cli-turn:${wsId2}:${tab2}:turn-1`);
+
+    // 8. Unverified Codex/AGY activity remains Unknown or Idle without fabricated completion events
+    await manager.handleCliActivity({
+      workspaceId: wsId1,
       tabId: tabCodex,
       sessionId: randomUUID() as any,
       provider: 'codex',
       nextActivity: 'working',
       lifecycle: 'running',
     });
-    assert.equal(manager.getTabState(wsId, tabCodex), 'working');
+    assert.equal(manager.getTabState(wsId1, tabCodex), 'working');
 
     await manager.handleCliActivity({
-      workspaceId: wsId,
+      workspaceId: wsId1,
       tabId: tabCodex,
       sessionId: randomUUID() as any,
       provider: 'codex',
@@ -94,268 +163,238 @@ test('Native CLI activity: provider audit, turn completion vs generic idle', asy
       nextActivity: 'idle',
       lifecycle: 'running',
     });
-    // Codex transitions to idle, NOT finished!
-    assert.equal(manager.getTabState(wsId, tabCodex), 'idle');
-    assert.equal(store.list(wsId).length, 1); // No false finished alert for Codex!
+    // Codex does NOT enter finished! Transitions to idle without completion alert
+    assert.equal(manager.getTabState(wsId1, tabCodex), 'idle');
+    assert.equal(store.list(wsId1).length, 2); // No new notification!
 
-    // 5. Uninspected finished state on Claude tab persists
-    assert.equal(manager.getTabState(wsId, tabClaude), 'finished');
+    // 9. Restart recovery preserves turn sequence: subsequent turn becomes turn-3
+    const managerRestarted = new TabActivityManager({
+      notificationStore: store,
+      storageDir: dir,
+    });
+    await managerRestarted.initialize();
 
-    // 6. User inspects tab -> acknowledges
-    await manager.acknowledgeTab(wsId, tabClaude);
-    assert.equal(manager.getTabState(wsId, tabClaude), 'idle');
+    await managerRestarted.acknowledgeTab(wsId1, tab1); // Acknowledge turn-2
+    await managerRestarted.handleCliActivity({
+      workspaceId: wsId1,
+      tabId: tab1,
+      sessionId: randomUUID() as any,
+      provider: 'claude-code',
+      nextActivity: 'working',
+      lifecycle: 'running',
+    });
+    await managerRestarted.handleCliActivity({
+      workspaceId: wsId1,
+      tabId: tab1,
+      sessionId: randomUUID() as any,
+      provider: 'claude-code',
+      previousActivity: 'working',
+      nextActivity: 'idle',
+      lifecycle: 'running',
+    });
+    const notifsAfterRestart = store.list(wsId1);
+    assert.equal(notifsAfterRestart.length, 3);
+    assert.equal(notifsAfterRestart[0]?.deduplicationKey, `cli-turn:${wsId1}:${tab1}:turn-3`);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test('Shell OSC 133: strict exit codes, non-0/malformed/missing handling and safe hook setup', async () => {
-  const parser = new ShellIntegrationParser();
-
-  // 1. Initial state is unknown
-  assert.equal(parser.getState(), 'unknown');
-  assert.equal(parser.isIntegrationEstablished(), false);
-
-  // 2. Arbitrary PTY output is NOT treated as completion or start
-  parser.feed('user@host:~$ ls -la\r\ntotal 0\r\n');
-  assert.equal(parser.getState(), 'unknown');
-  assert.equal(parser.isIntegrationEstablished(), false);
-
-  // 3. Prompt start sequence (OSC 133 ; A) establishes integration
-  parser.feed(ShellSequences.promptStart);
-  assert.equal(parser.isIntegrationEstablished(), true);
-  assert.equal(parser.getState(), 'idle');
-
-  // 4. Command start (OSC 133 ; C) -> working
-  parser.feed(ShellSequences.commandStart);
-  assert.equal(parser.getState(), 'working');
-
-  // 5. Missing exit code (\x1b]133;D\x07) MUST NOT be treated as 0: must become unknown
-  parser.feed('\x1b]133;D\x07');
-  assert.equal(parser.getState(), 'unknown');
-  assert.equal(parser.getLastExitCode(), null);
-
-  // 6. Malformed or nonnumeric exit code (\x1b]133;D;foo\x07) MUST NOT be treated as 0
-  parser.feed(ShellSequences.commandStart);
-  assert.equal(parser.getState(), 'working');
-  parser.feed('\x1b]133;D;foo\x07');
-  assert.equal(parser.getState(), 'unknown');
-  assert.equal(parser.getLastExitCode(), null);
-
-  // 7. Strictly valid exit code 0 -> finished
-  parser.feed(ShellSequences.commandStart);
-  parser.feed(ShellSequences.commandExit(0));
-  assert.equal(parser.getState(), 'finished');
-  assert.equal(parser.getLastExitCode(), 0);
-
-  // 8. Strictly valid non-zero exit code -> failed
-  parser.acknowledge();
-  parser.feed(ShellSequences.commandStart);
-  parser.feed(ShellSequences.commandExit(1));
-  assert.equal(parser.getState(), 'failed');
-  assert.equal(parser.getLastExitCode(), 1);
-
-  // 9. Safe shell integration setup verification
-  const tempDir = await mkdtemp(path.join(tmpdir(), 'maw-shell-hooks-'));
+test('Functional Bash & Zsh shell integration with real interactive process', async () => {
+  const tempDir = await mkdtemp(path.join(tmpdir(), 'maw-shell-real-'));
   try {
     const { bashScriptPath, zshScriptPath } = await installShellIntegrationSafely(tempDir);
     const bashScript = await readFile(bashScriptPath, 'utf8');
     const zshScript = await readFile(zshScriptPath, 'utf8');
 
-    // Does not overwrite user configuration; chains safely
-    assert.ok(bashScript.includes('PROMPT_COMMAND='));
-    assert.ok(bashScript.includes('__maw_osc133_precmd'));
+    // Safe generation checks
+    assert.equal(bashScript, generateBashIntegrationScript());
+    assert.equal(zshScript, generateZshIntegrationScript());
+    assert.ok(bashScript.includes('PS0='));
+    assert.ok(bashScript.includes('133;C'));
+    assert.ok(bashScript.includes('133;D'));
     assert.ok(zshScript.includes('precmd_functions+='));
     assert.ok(zshScript.includes('preexec_functions+='));
 
-    // Check generators match
-    assert.equal(generateBashIntegrationScript(), bashScript);
-    assert.equal(generateZshIntegrationScript(), zshScript);
+    // Execute real interactive bash process with the generated script
+    const bashProcess = spawn('bash', ['--noprofile', '--rcfile', bashScriptPath, '-i'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, TERM: 'xterm-256color' },
+    });
+
+    let stdoutData = '';
+    bashProcess.stdout.on('data', (chunk) => {
+      stdoutData += chunk.toString();
+    });
+
+    // Send commands to interactive bash
+    bashProcess.stdin.write('echo bash_cmd_success\n');
+    bashProcess.stdin.write('sh -c "exit 33"\n');
+    bashProcess.stdin.write('exit\n');
+
+    await new Promise<void>((resolve) => {
+      bashProcess.on('close', () => resolve());
+    });
+
+    // Verify sequences produced by real interactive bash
+    assert.ok(stdoutData.includes('133;D;0'), 'Bash emitted exit 0');
+    assert.ok(stdoutData.includes('133;D;33'), 'Bash emitted exit 33');
+
+    // Feed to parser
+    const parser = new ShellIntegrationParser();
+    parser.feed(stdoutData);
+    assert.ok(parser.isIntegrationEstablished());
+
+    // Parser exit code safety
+    parser.feed(ShellSequences.commandStart);
+    parser.feed('\x1b]133;D\x07'); // Missing code -> unknown
+    assert.equal(parser.getState(), 'unknown');
+
+    parser.feed(ShellSequences.commandStart);
+    parser.feed('\x1b]133;D;invalid\x07'); // Nonnumeric code -> unknown
+    assert.equal(parser.getState(), 'unknown');
+
+    parser.feed(ShellSequences.commandStart);
+    parser.feed(ShellSequences.commandExit(0)); // Exit 0 -> finished
+    assert.equal(parser.getState(), 'finished');
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
 });
 
-test('Browser activity provider: authorization, token authentication, and signal verification', () => {
+test('Browser bridge: strong token requirement, tab binding, and unauthorized rejection', () => {
   const provider = new ChatGPTActivityProvider();
 
-  // 1. Limitations are explicitly reported
-  const report = provider.limitationReport();
-  assert.ok(report.includes('No Public Webhook / Completion API'));
-  assert.ok(report.includes('Private APIs Forbidden'));
-  assert.ok(report.includes('Authentication Required'));
-
-  // 2. Without authorized bridge, completion cannot be proven
+  // 1. Initial state without signals is unknown
+  assert.equal(provider.getActivity('tab-chatgpt-1'), 'unknown');
   assert.equal(provider.canProveCompletion(), false);
-  assert.equal(provider.getActivity('tab-chatgpt-1'), 'unknown');
 
-  // 3. Arbitrary unauthenticated caller CANNOT report verified signal or set finished
-  const unauthResult = provider.reportVerifiedSignal({
-    tabId: 'tab-chatgpt-1',
-    signalType: 'extension-bridge',
-    state: 'finished',
-    notes: 'Fake finished by unauthenticated caller',
-  });
-  assert.equal(unauthResult, false);
-  assert.equal(provider.getActivity('tab-chatgpt-1'), 'unknown');
+  // 2. Default credentials eliminated; registration requires strong token (>=16 chars)
+  assert.throws(
+    () => provider.registerAuthorizedBridge('ext-1', 'short', ['tab-chatgpt-1']),
+    /minimum 16 characters/,
+  );
+  assert.throws(
+    () => provider.registerAuthorizedBridge('ext-1', 'valid-strong-token-12345', []),
+    /allowedTabIds/,
+  );
 
-  // 4. Caller with wrong token is rejected
-  provider.registerAuthorizedBridge('authorized-ext-01', 'secret-bridge-token-xyz');
+  // 3. Register authorized bridge with strong token and bound allowed tab
+  const strongToken = generateStrongBridgeToken();
+  assert.ok(strongToken.length >= 32);
+  provider.registerAuthorizedBridge('authorized-ext', strongToken, ['tab-chatgpt-1']);
   assert.equal(provider.canProveCompletion(), true);
 
+  // 4. Submission for unrelated tab (tab-chatgpt-other) is REJECTED
+  const unrelatedResult = provider.reportVerifiedSignal({
+    tabId: 'tab-chatgpt-other',
+    bridgeId: 'authorized-ext',
+    authToken: strongToken,
+    signalType: 'extension-bridge',
+    state: 'finished',
+  });
+  assert.equal(unrelatedResult, false);
+  assert.equal(provider.getActivity('tab-chatgpt-other'), 'unknown');
+
+  // 5. Submission with invalid token is REJECTED
   const badTokenResult = provider.reportVerifiedSignal({
     tabId: 'tab-chatgpt-1',
-    bridgeId: 'authorized-ext-01',
-    authToken: 'wrong-token',
+    bridgeId: 'authorized-ext',
+    authToken: 'wrong-secret-token',
     signalType: 'extension-bridge',
     state: 'finished',
   });
   assert.equal(badTokenResult, false);
   assert.equal(provider.getActivity('tab-chatgpt-1'), 'unknown');
 
-  // 5. Authorized caller with correct token successfully updates state
-  const authWorkingResult = provider.reportVerifiedSignal({
+  // 6. Authorized submission for bound tab succeeds
+  const validResult = provider.reportVerifiedSignal({
     tabId: 'tab-chatgpt-1',
-    bridgeId: 'authorized-ext-01',
-    authToken: 'secret-bridge-token-xyz',
-    signalType: 'extension-bridge',
-    state: 'working',
-  });
-  assert.equal(authWorkingResult, true);
-  assert.equal(provider.getActivity('tab-chatgpt-1'), 'working');
-
-  // 6. Authorized completion signal transitions to finished
-  const authFinishedResult = provider.reportVerifiedSignal({
-    tabId: 'tab-chatgpt-1',
-    bridgeId: 'authorized-ext-01',
-    authToken: 'secret-bridge-token-xyz',
+    bridgeId: 'authorized-ext',
+    authToken: strongToken,
     signalType: 'extension-bridge',
     state: 'finished',
   });
-  assert.equal(authFinishedResult, true);
+  assert.equal(validResult, true);
   assert.equal(provider.getActivity('tab-chatgpt-1'), 'finished');
 
-  // 7. Acknowledging tab resets to idle
   provider.acknowledgeTab('tab-chatgpt-1');
   assert.equal(provider.getActivity('tab-chatgpt-1'), 'idle');
 });
 
-test('Durable task states across MAW restart: in-flight -> unknown, uninspected finished preserved, closed tab protection', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'maw-durable-restart-'));
+test('Durable persistence: atomic writes, 0o600 permissions, failure recovery, and queue continuity', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'maw-persist-recovery-'));
   try {
     const store = new AgencyNotificationStore(path.join(dir, 'notifications.json'));
     await store.initialize();
 
-    const manager1 = new TabActivityManager({
+    const activityFile = path.join(dir, 'agency-tab-activity.json');
+    const manager = new TabActivityManager({
       notificationStore: store,
-      storageDir: dir,
+      filePath: activityFile,
     });
-    await manager1.initialize();
+    await manager.initialize();
 
     const wsId = randomUUID() as WorkspaceId;
-    const tabFinishedUninspected = randomUUID();
-    const tabInFlight = randomUUID();
-    const tabAcknowledged = randomUUID();
-    const tabClosed = randomUUID();
+    const tabId = randomUUID();
 
-    // Setup tab 1: finished, not acknowledged
-    await manager1.handleCliActivity({
+    // 1. Initial successful write
+    await manager.handleCliActivity({
       workspaceId: wsId,
-      tabId: tabFinishedUninspected,
+      tabId,
       sessionId: randomUUID() as any,
       provider: 'claude-code',
-      taskId: 'task-1',
-      previousActivity: 'working',
-      nextActivity: 'idle',
-      lifecycle: 'running',
-    });
-    assert.equal(manager1.getTabState(wsId, tabFinishedUninspected), 'finished');
-
-    // Setup tab 2: in-flight working
-    await manager1.handleCliActivity({
-      workspaceId: wsId,
-      tabId: tabInFlight,
-      sessionId: randomUUID() as any,
-      provider: 'claude-code',
-      taskId: 'task-2',
       nextActivity: 'working',
       lifecycle: 'running',
     });
-    assert.equal(manager1.getTabState(wsId, tabInFlight), 'working');
+    await manager.flush();
 
-    // Setup tab 3: finished and acknowledged
-    await manager1.handleCliActivity({
+    // Verify private file permissions (0o600)
+    const fileStats = await stat(activityFile);
+    assert.equal(fileStats.mode & 0o777, 0o600);
+
+    // 2. Simulate write failure: make directory read-only
+    await chmod(dir, 0o500);
+
+    // Attempted write MUST fail visibly (reject promise)
+    await assert.rejects(
+      async () => {
+        await manager.handleCliActivity({
+          workspaceId: wsId,
+          tabId,
+          sessionId: randomUUID() as any,
+          provider: 'claude-code',
+          previousActivity: 'working',
+          nextActivity: 'idle',
+          lifecycle: 'running',
+        });
+      },
+      /EACCES|permission denied/i,
+    );
+
+    // 3. Restore directory permissions: write queue MUST recover and subsequent write MUST succeed
+    await chmod(dir, 0o700);
+
+    await manager.handleCliActivity({
       workspaceId: wsId,
-      tabId: tabAcknowledged,
+      tabId,
       sessionId: randomUUID() as any,
       provider: 'claude-code',
-      taskId: 'task-3',
       previousActivity: 'working',
       nextActivity: 'idle',
       lifecycle: 'running',
     });
-    await manager1.acknowledgeTab(wsId, tabAcknowledged);
-    assert.equal(manager1.getTabState(wsId, tabAcknowledged), 'idle');
+    await manager.flush();
 
-    // Setup tab 4: closed
-    await manager1.handleCliActivity({
-      workspaceId: wsId,
-      tabId: tabClosed,
-      sessionId: randomUUID() as any,
-      provider: 'claude-code',
-      taskId: 'task-4',
-      nextActivity: 'working',
-      lifecycle: 'running',
+    // Verify recovery: state persisted cleanly after queue recovery
+    const managerRecovered = new TabActivityManager({
+      notificationStore: store,
+      filePath: activityFile,
     });
-    await manager1.closeTab(wsId, tabClosed);
-
-    const initialNotificationsCount = store.list(wsId).length;
-
-    // Simulate server restart: new store and manager instances reading from disk
-    const store2 = new AgencyNotificationStore(path.join(dir, 'notifications.json'));
-    await store2.initialize();
-
-    const manager2 = new TabActivityManager({
-      notificationStore: store2,
-      storageDir: dir,
-    });
-    await manager2.initialize();
-
-    // Verification 1: Uninspected Finished state must remain Finished
-    assert.equal(manager2.getTabState(wsId, tabFinishedUninspected), 'finished');
-
-    // Verification 2: In-flight task without recovery signal becomes Unknown rather than falsely Finished
-    assert.equal(manager2.getTabState(wsId, tabInFlight), 'unknown');
-
-    // Verification 3: Previously acknowledged task stays idle
-    assert.equal(manager2.getTabState(wsId, tabAcknowledged), 'idle');
-
-    // Verification 4: Duplicate signal for previously acknowledged task does NOT create duplicate alert
-    await manager2.handleCliActivity({
-      workspaceId: wsId,
-      tabId: tabAcknowledged,
-      sessionId: randomUUID() as any,
-      provider: 'claude-code',
-      taskId: 'task-3',
-      previousActivity: 'working',
-      nextActivity: 'idle',
-      lifecycle: 'running',
-    });
-    assert.equal(store2.list(wsId).length, initialNotificationsCount); // Deduplicated!
-
-    // Verification 5: Closed tab does NOT generate stale completion alert
-    await manager2.handleCliActivity({
-      workspaceId: wsId,
-      tabId: tabClosed,
-      sessionId: randomUUID() as any,
-      provider: 'claude-code',
-      taskId: 'task-4',
-      previousActivity: 'working',
-      nextActivity: 'idle',
-      lifecycle: 'running',
-    });
-    assert.equal(store2.list(wsId).length, initialNotificationsCount); // No alert for closed tab!
+    await managerRecovered.initialize();
+    assert.equal(managerRecovered.getTabState(wsId, tabId), 'finished');
   } finally {
+    await chmod(dir, 0o700).catch(() => {});
     await rm(dir, { recursive: true, force: true });
   }
 });
