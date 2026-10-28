@@ -24,3 +24,8 @@ E: full required suites, screenshots, installed package smoke, guarded activatio
 ## Recovery instructions
 
 Continue only in the feature worktree above. Read this file, OPERATIONS.md and RECOVERY.md first; inspect git status and latest commits. Never reset the original main worktree. Do not stop existing providers or activate a service against real stores until isolated checks pass. Commit and push verified phases without force. No merge authorized.
+
+## Navigation checkpoint
+
+IMPLEMENTED AND VERIFIED: product branding in nine locales and browser title; collapse beside brand; single project-create action; contextual breadcrumbs; default CLI/Terminal views with retained mounted PTYs; optional existing split resize; exited PTYs no longer mounted; remembered view, selected workspace and sidebar state; shared dropdown dismissal/toggle/Escape focus behavior.
+Checks: pnpm typecheck exit 0; i18n exit 0 after obsolete-key cleanup; pnpm build exit 0; capture-agency-screenshots.mjs exit 0. Browser: all five widths, zero overflow, console/page errors; actual screenshots under docs/maw/screenshots. Additional exited-session and no-duplicate-spawn assertions pending final validation.

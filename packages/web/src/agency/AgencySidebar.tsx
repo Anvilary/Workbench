@@ -1,6 +1,6 @@
 import { t } from '../i18n/index.js';
 import { agencyActivityText } from './agency-labels.js';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type {
   AgencyProject, AgencyRuntimeSession, AgencyWorkspace, ProjectId, WorkspaceId,
 } from '@agent-workbench/shared';
@@ -16,6 +16,7 @@ export interface AgencySidebarProps {
   onDoneView: () => void;
   onCreate: (project?: ProjectId) => void;
   onCreateProject: () => void;
+  onCollapse: () => void;
   onDone: (workspace: AgencyWorkspace) => void;
   onArchiveWorkspace: (workspace: AgencyWorkspace) => void;
   onDeleteWorkspace: (workspace: AgencyWorkspace) => void;
@@ -37,7 +38,7 @@ function WorkspaceIndicator({ session }: { session: AgencyRuntimeSession | undef
 export function AgencySidebar({
   projects, workspaces, sessions, selected, showingDone,
   onSelect, onDoneView, onCreate, onCreateProject, onDone, onArchiveWorkspace, onDeleteWorkspace,
-  onRenameProject, onArchiveProject, onDeleteProject, onRestore,
+  onRenameProject, onArchiveProject, onDeleteProject, onRestore, onCollapse,
 }: AgencySidebarProps): JSX.Element {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -54,14 +55,6 @@ export function AgencySidebar({
 
   const doneCount = workspaces.filter((ws) => ws.status === 'done' || ws.status === 'archived').length;
   const groups = activeByProject(projects, workspaces);
-
-  // Close dropdown on outside pointerdown
-  useEffect(() => {
-    if (!openMenu) return;
-    const onPointerDown = () => setOpenMenu(null);
-    window.addEventListener('pointerdown', onPointerDown);
-    return () => window.removeEventListener('pointerdown', onPointerDown);
-  }, [openMenu]);
 
   function toggle(id: string) {
     setCollapsed((prev) => {
@@ -84,15 +77,13 @@ export function AgencySidebar({
     <>
       <nav className="agency-sidebar-nav" aria-label={t('agency.ui.projectsAndWorkspaces')}>
         <header className="agency-nav-head">
-          <span className="agency-brand-mark" aria-hidden="true">◇</span>
+          <button className="agency-icon-button" type="button" onClick={onCollapse} aria-label={t('agency.ui.collapseSidebar')} aria-expanded={true}>☰</button>
           <strong>{t('agency.ui.agency')}</strong>
-          <span className="agency-brand-caption">{t('agency.ui.workspace')}</span>
-          <button className="agency-icon-button" type="button" onClick={onCreateProject} title={t('agency.ui.newProject')} aria-label={t('agency.ui.newProject')}>+</button>
         </header>
         <div className="agency-side-section">
           <div className="agency-side-heading">
             <span>{t('agency.ui.projects')}</span>
-            <button className="agency-icon-button" type="button" onClick={() => onCreate()} title={t('agency.ui.newWorkspace')} aria-label={t('agency.ui.newWorkspace')}>+</button>
+            <button className="agency-icon-button" type="button" onClick={onCreateProject} title={t('agency.ui.newProject')} aria-label={t('agency.ui.newProject')}>+</button>
           </div>
           {groups.length === 0 && <p className="agency-muted agency-empty-nav">{t('agency.ui.createAProjectToBegin')}</p>}
           {groups.map(({ project, items }) => {
