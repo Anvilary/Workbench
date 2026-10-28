@@ -327,6 +327,7 @@ const nextEvent = (hub, name, ms = 5_000) =>
   const adapters = { 'claude-code': claudeAdapter, codex: otherAdapter };
   const agents = { get: (id) => (adapters[id] === undefined ? null : { adapter: adapters[id], location: null }) };
   const registry = new EventEmitter();
+  registry.nativeIdentityOf = () => undefined; // Workbench native fixture.
   const descriptors = new Map();
   let launchedAt = LAUNCHED_AT;
   registry.get = (terminalId) => descriptors.get(terminalId) ?? null;
@@ -919,6 +920,7 @@ const humanQueued = (uuid, prompt, seconds) => ({
   const adapters = { 'claude-code': claudeAdapter, pi: appAdapter };
   const agents = { get: (id) => (adapters[id] === undefined ? null : { adapter: adapters[id], location: null }) };
   const registry = new EventEmitter();
+  registry.nativeIdentityOf = () => undefined; // Workbench native fixture.
   const descriptors = new Map();
   let launchedAt = LAUNCHED_AT;
   registry.get = (terminalId) => descriptors.get(terminalId) ?? null;

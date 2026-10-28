@@ -55,6 +55,17 @@ import { WorkspaceStore } from './workspace-store.js';
 import { WorktreeLinks } from './worktrees/links.js';
 import { WorktreeService } from './worktrees/service.js';
 import { WorktreeStore } from './worktrees/store.js';
+import { AgencyWorkspaceStore } from './agency/store.js';
+import { NativeIdentities } from './agency/native-identity.js';
+import { AgencyProfileStore } from './agency/agency-profile-store.js';
+import { AgencySessionStore } from './agency/agency-session-store.js';
+import {
+  AgencySessionRuntime,
+  type AgencyProfileLaunchProvider,
+  type AgencyWorkspaceSource,
+} from './agency/agency-session-runtime.js';
+import { buildAgencyProfileLaunch } from './agency/agency-profile-capabilities.js';
+import { WorkspaceMutex } from './agency/workspace-lock.js';
 
 const serverDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -472,7 +483,49 @@ async function main(): Promise<void> {
   app.use(createAuthMiddleware(port, token, remote));
   const closeUi = isProduction ? mountBuiltUi(app) : await mountDevUi(app, httpServer);
 
+  // Durable Agency stores and session runtime (Phase 2 & Phase 3)
+  const agencyWorkspaceStore = new AgencyWorkspaceStore(path.join(appConfigDir(), 'agency-state.json'));
+  await agencyWorkspaceStore.load();
+
+  const agencyIdentities = await NativeIdentities.load(path.join(appConfigDir(), 'agency-native-identities.json'));
+  agents.protectNativeHomes(agencyIdentities.protectedDirs());
+  const agencyProfileStore = new AgencyProfileStore(path.join(appConfigDir(), 'agency-profiles.json'));
+  await agencyProfileStore.listDefinitions();
+
+  const workspaceLock = new WorkspaceMutex();
+
+  const agencyProfileLaunchProvider: AgencyProfileLaunchProvider = {
+    async resolveLaunch(input) {
+      const plan = await buildAgencyProfileLaunch(agencyProfileStore, agents, input, { identities: agencyIdentities });
+      return {
+        ...plan,
+        launchToken: input.launchToken,
+        proposedSessionId: input.proposedSessionId,
+      };
+    },
+  };
+
+  const agencyWorkspaceSource: AgencyWorkspaceSource = {
+    protectedDirectories: () => agents.protectedDirs(),
+    withSessionReservation: (id, action) =>
+      workspaceLock.runExclusive(id, () => action(agencyWorkspaceStore.getWorkspace(id))),
+  };
+
+  const agencySessionStore = new AgencySessionStore(path.join(appConfigDir(), 'agency-sessions.json'));
+  const agencyRuntime = new AgencySessionRuntime({
+    registry,
+    workspaces: agencyWorkspaceSource,
+    profiles: agencyProfileLaunchProvider,
+    store: agencySessionStore,
+  });
+  await agencyRuntime.initialize();
+
   const detachSocket = attachTerminalSocket({
+    agencyWorkspaceStore,
+    agencyProfileStore,
+    agencyIdentities,
+    agencyRuntime,
+    workspaceLock,
     pasteStore,
     httpServer,
     port,
@@ -564,6 +617,7 @@ async function main(): Promise<void> {
     repos.disposeAll();
     void memory.disposeAll();
     // Los procesos no sobreviven al cierre; las pestanas si, en disco.
+    agencyRuntime.dispose();
     registry.disposeAll();
     remote.dispose();
 

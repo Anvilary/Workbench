@@ -102,6 +102,20 @@ interface TerminalViewProps {
    * del agente la tecla le llega a la CLI tal cual (§5).
    */
   pasteOnCtrlV?: boolean;
+  /**
+   * Atajos de seleccion y copia para la terminal nativa de Agency (Ctrl+A para
+   * seleccionar todo, Ctrl+C para copiar si hay seleccion o interrumpir si no,
+   * Ctrl+Shift+C para copia convencional).
+   */
+  enableAgencyShortcuts?: boolean;
+  /**
+   * Callback invocado cuando la instancia de xterm esta lista o se desmonta.
+   */
+  onTerminalInstance?: (terminal: Terminal | null) => void;
+  /**
+   * Notifica fallos al escribir en el portapapeles del sistema.
+   */
+  onClipboardError?: (error: Error) => void;
 }
 
 export function TerminalView({
@@ -111,10 +125,17 @@ export function TerminalView({
   theme,
   autoFocus = true,
   pasteOnCtrlV = false,
+  enableAgencyShortcuts = false,
+  onTerminalInstance,
+  onClipboardError,
 }: TerminalViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const onTerminalInstanceRef = useRef(onTerminalInstance);
+  onTerminalInstanceRef.current = onTerminalInstance;
+  const onClipboardErrorRef = useRef(onClipboardError);
+  onClipboardErrorRef.current = onClipboardError;
   // El tema entra por un ref para que cambiarlo no vuelva a correr el efecto de
   // montaje: recrear el terminal perderia la pantalla y reabriria el attach.
   const themeRef = useRef(theme);
@@ -142,6 +163,7 @@ export function TerminalView({
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(new WebLinksAddon());
     terminal.open(container);
+    onTerminalInstanceRef.current?.(terminal);
 
     let webglAttempted = false;
     const enableWebglRenderer = (): void => {
@@ -408,7 +430,51 @@ export function TerminalView({
       El texto entra por el `paste` de xterm, con los delimitadores de pegado
       si la consola los pidio.
     */
-    if (pasteOnCtrlV) terminal.attachCustomKeyEventHandler((event) => !isConsolePasteKey(event));
+    if (enableAgencyShortcuts) {
+      terminal.attachCustomKeyEventHandler((event) => {
+        if (event.type !== 'keydown') return true;
+
+        const isCtrl = event.ctrlKey || event.metaKey;
+        const key = event.key.toLowerCase();
+
+        // Ctrl+A: Seleccionar todo el buffer activo de xterm
+        if (isCtrl && !event.shiftKey && !event.altKey && key === 'a') {
+          terminal.selectAll();
+          return false;
+        }
+
+        // Ctrl+Shift+C: Copiar seleccion como atajo convencional de terminal
+        if (isCtrl && event.shiftKey && !event.altKey && key === 'c') {
+          if (terminal.hasSelection()) {
+            const text = terminal.getSelection();
+            if (text) {
+              navigator.clipboard.writeText(text).catch((err) => {
+                onClipboardErrorRef.current?.(err instanceof Error ? err : new Error(String(err)));
+              });
+            }
+          }
+          return false;
+        }
+
+        // Ctrl+C: Copiar si hay seleccion; si no hay seleccion, enviar ^C a la PTY (interrupcion)
+        if (isCtrl && !event.shiftKey && !event.altKey && key === 'c') {
+          if (terminal.hasSelection()) {
+            const text = terminal.getSelection();
+            if (text) {
+              navigator.clipboard.writeText(text).catch((err) => {
+                onClipboardErrorRef.current?.(err instanceof Error ? err : new Error(String(err)));
+              });
+            }
+            return false;
+          }
+          return true;
+        }
+
+        return true;
+      });
+    } else if (pasteOnCtrlV) {
+      terminal.attachCustomKeyEventHandler((event) => !isConsolePasteKey(event));
+    }
 
     // Teclas del usuario -> pty. Sin filtro; la unica excepcion es la de arriba.
     const dataSubscription = terminal.onData((data) => {
@@ -480,9 +546,10 @@ export function TerminalView({
       terminal.dispose();
       terminalRef.current = null;
       fitRef.current = null;
+      onTerminalInstanceRef.current?.(null);
     };
-    // `pasteOnCtrlV` no cambia en la vida de una vista: consola o agente.
-  }, [terminalId, connection, pasteOnCtrlV]);
+    // `pasteOnCtrlV` y `enableAgencyShortcuts` no cambian en la vida de una vista.
+  }, [terminalId, connection, pasteOnCtrlV, enableAgencyShortcuts]);
 
   // Cambiar de tema repinta el terminal en el lugar, sin recrearlo.
   useEffect(() => {

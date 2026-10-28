@@ -36,6 +36,9 @@ const RECONNECT_MAX_MS = 8_000;
 export class AgentConnection {
   private socket: WebSocket | null = null;
   private status: ConnectionStatus = 'connecting';
+  private remoteClient = true;
+
+  isRemoteClient(): boolean { return this.remoteClient; }
   private attempt = 0;
   private closedByUs = false;
   private hasConnectedOnce = false;
@@ -104,6 +107,7 @@ export class AgentConnection {
         console.warn('[conexion] mensaje del servidor no reconocido');
         return;
       }
+      if (message.type === 'hello') this.remoteClient = message.remoteClient;
       for (const handler of this.messageHandlers) handler(message);
     };
 
@@ -139,6 +143,18 @@ export class AgentConnection {
       this.outbox.push(message);
     }
     return false;
+  }
+
+  /** This never uses the connection outbox, even when socket status changes mid-send. */
+  sendImmediate(message: ClientMessage): boolean {
+    const socket = this.socket;
+    if (socket === null || socket.readyState !== WebSocket.OPEN) return false;
+    try {
+      socket.send(encodeClientMessage(message));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   close(): void {

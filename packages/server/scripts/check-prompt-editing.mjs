@@ -692,6 +692,7 @@ const request = (over = {}) => ({ firstLine: 'Crea un archivo nota.txt con el te
   };
   const agents = { get: (id) => (id === 'claude-code' ? { adapter, location: null } : null) };
   const registry = new EventEmitter();
+  registry.nativeIdentityOf = () => undefined; // Workbench native fixture.
   registry.get = (terminalId) =>
     terminalId === 't'
       ? { terminalId: 't', kind: 'agent', agent: 'claude-code', cwd, sessionId, label: '', resumed: false, createdAt: 0, alive: true, exitCode: null, sleeping: false }

@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const outDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'dist-npm');
-const raw = execFileSync('npm', ['pack', '--dry-run', '--json'], { cwd: outDir, encoding: 'utf8', shell: true });
+const raw = execFileSync('npm', ['pack', '--dry-run', '--json'], { cwd: outDir, encoding: 'utf8', shell: process.platform === 'win32' });
 const files = JSON.parse(raw)[0].files.map((f) => f.path);
 
 const allowed = (file) =>
