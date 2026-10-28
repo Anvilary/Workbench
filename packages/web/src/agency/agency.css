@@ -107,8 +107,11 @@
 .agency-status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
   flex: 0 0 7px; background: #707784; }
 .agency-status-dot.working { background: #7fc9a7; box-shadow: 0 0 0 3px #7fc9a718; }
+.agency-status-dot.finished { background: #4ade80; box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.25); }
 .agency-status-dot.attention { background: #efbd76; }
+.agency-status-dot.failed { background: #f87171; box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.2); }
 .agency-status-dot.idle { background: #8fbaad; }
+.agency-status-dot.unknown { background: #64748b; }
 .agency-status-dot.muted { background: #606675; }
 .agency-nav-bottom { padding: 10px 9px 15px; border-top: 1px solid var(--agency-line); }
 .agency-history-toggle { display: flex; align-items: center; gap: 11px; width: 100%; padding: 9px 10px;
@@ -387,3 +390,338 @@
 .maw-session-pane .agency-pane-bar { min-height:28px; padding:2px 10px; }
 .maw-session-pane .agency-dropdown-menu button, .maw-add-tab .agency-dropdown-menu button { display:block; width:100%; padding:8px 12px; text-align:left; background:transparent; border:0; color:inherit; cursor:pointer; }
 .maw-session-pane .agency-dropdown-menu button:hover, .maw-add-tab .agency-dropdown-menu button:hover { background:#ffffff12; }
+
+/* Notification subsystem UX styles */
+.maw-toast-container {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 360px;
+  width: calc(100% - 32px);
+  pointer-events: none;
+}
+
+.maw-toast-item {
+  pointer-events: auto;
+  background: #1e222d;
+  border: 1px solid #333a4c;
+  border-radius: 8px;
+  padding: 12px 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+  user-select: none;
+}
+
+.maw-toast-item:hover {
+  background: #252a37;
+  border-color: #444e66;
+}
+
+.maw-toast-item.state-finished {
+  border-left: 4px solid #4ade80;
+}
+
+.maw-toast-item.state-failed {
+  border-left: 4px solid #f87171;
+}
+
+.maw-toast-item.state-working {
+  border-left: 4px solid #60a5fa;
+}
+
+.maw-toast-item.state-unknown {
+  border-left: 4px solid #94a3b8;
+}
+
+.maw-toast-icon {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  padding-top: 2px;
+}
+
+.maw-toast-item.state-finished .maw-toast-icon { color: #4ade80; }
+.maw-toast-item.state-failed .maw-toast-icon { color: #f87171; }
+.maw-toast-item.state-working .maw-toast-icon { color: #60a5fa; }
+.maw-toast-item.state-unknown .maw-toast-icon { color: #94a3b8; }
+
+.maw-toast-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.maw-toast-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f1f5f9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.maw-toast-body {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 2px;
+  line-height: 1.35;
+}
+
+.maw-toast-dismiss {
+  background: transparent;
+  border: 0;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.maw-toast-dismiss:hover {
+  color: #f1f5f9;
+}
+
+.maw-bell-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.maw-bell-icon {
+  font-size: 14px;
+}
+
+.maw-unread-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  height: 16px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px #161821;
+}
+
+.maw-notification-inbox {
+  position: absolute;
+  top: 48px;
+  right: 16px;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 70px);
+  background: #1a1d26;
+  border: 1px solid #32384a;
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.maw-inbox-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid #2e3444;
+  background: #151821;
+}
+
+.maw-inbox-header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.maw-inbox-header-title h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f1f5f9;
+  margin: 0;
+}
+
+.maw-inbox-count-pill {
+  background: #334155;
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.maw-inbox-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.maw-inbox-list {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 420px;
+  display: flex;
+  flex-direction: column;
+}
+
+.maw-inbox-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 16px;
+  color: #64748b;
+  gap: 8px;
+}
+
+.maw-empty-icon {
+  font-size: 28px;
+}
+
+.maw-inbox-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #252a37;
+  cursor: pointer;
+  background: #1a1d26;
+  transition: background 0.12s ease;
+}
+
+.maw-inbox-item:hover {
+  background: #232734;
+}
+
+.maw-inbox-item.unread {
+  background: #1e2433;
+}
+
+.maw-inbox-item.unread:hover {
+  background: #272d3f;
+}
+
+.maw-inbox-item-indicator {
+  width: 8px;
+  padding-top: 4px;
+}
+
+.maw-unread-dot {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3b82f6;
+  box-shadow: 0 0 4px #3b82f6;
+}
+
+.maw-inbox-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.maw-inbox-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.maw-state-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.maw-state-badge.state-finished {
+  background: rgba(74, 222, 128, 0.15);
+  color: #4ade80;
+}
+
+.maw-state-badge.state-failed {
+  background: rgba(248, 113, 113, 0.15);
+  color: #f87171;
+}
+
+.maw-state-badge.state-working {
+  background: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+}
+
+.maw-state-badge.state-unknown, .maw-state-badge.state-idle {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+}
+
+.maw-inbox-item-time {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.maw-inbox-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin-bottom: 2px;
+}
+
+.maw-inbox-item.unread .maw-inbox-item-title {
+  color: #ffffff;
+}
+
+.maw-inbox-item-desc {
+  font-size: 12px;
+  color: #94a3b8;
+  line-height: 1.35;
+}
+
+.maw-inbox-item-actions {
+  display: flex;
+  align-items: center;
+}
+
+.maw-mark-read-button {
+  background: transparent;
+  border: 1px solid #3b82f6;
+  color: #3b82f6;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.maw-mark-read-button:hover {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.maw-read-check {
+  color: #475569;
+  font-size: 12px;
+}
+
+.maw-browser-viewer { display:flex; flex:1; flex-direction:column; min-width:0; min-height:0; }
+.maw-neko-frame { display:block; flex:1; width:100%; min-height:0; border:0; background:#12141a; }
+.maw-browser-toolbar { display:flex; gap:10px; min-width:0; }
+.maw-browser-toolbar > .agency-truncate { min-width:0; flex:1; }

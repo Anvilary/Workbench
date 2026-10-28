@@ -22,3 +22,5 @@ export * from './settings.js';
 export * from './plan-limits.js';
 export * from './worktrees.js';
 export * from './agency-protocol.js';
+export * from './browser-tabs.js';
+export * from './notification-protocol.js';

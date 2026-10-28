@@ -1,0 +1,146 @@
+// Local-only browser regression. Run: node --test packages/web/src/agency/browser-tabs.test.mjs
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { existsSync, readdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { build } from 'esbuild';
+import { chromium } from 'playwright';
+import { hasLiveVideo, isNekoViewerUrl } from './viewer-model.ts';
+
+const origin = 'http://127.0.0.1:3000';
+test('Only the authenticated Neko entry with exact tab identity can be embedded', () => {
+  assert.equal(isNekoViewerUrl('/api/agency/browser/viewer/', origin), true);
+  assert.equal(isNekoViewerUrl('/api/agency/browser/viewer/?workspaceId=w&tabId=t', origin, 'w', 't'), true);
+  for (const value of ['https://chatgpt.com/', '//other.test/api/agency/browser/viewer/', '/api/agency/browser/viewer/?token=secret', '/api/agency/browser/viewer/?workspaceId=w&tabId=other', '/api/agency/browser/viewer/?workspaceId=w&tabId=t&password=secret']) {
+    assert.equal(isNekoViewerUrl(value, origin, 'w', 't'), false, value);
+  }
+  const video = { readyState: 2, videoWidth: 640, videoHeight: 480, paused: false, ended: false };
+  assert.equal(hasLiveVideo(video), true);
+  for (const change of [{ readyState: 1 }, { paused: true }, { ended: true }, { videoWidth: 0 }, { videoHeight: 0 }]) assert.equal(hasLiveVideo({ ...video, ...change }), false);
+});
+
+const fixture = `
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {AgencyApp} from './src/agency/AgencyApp.tsx';
+const ws='11111111-1111-4111-8111-111111111111', p='22222222-2222-4222-8222-222222222222';
+const native='33333333-3333-4333-8333-333333333333', web='44444444-4444-4444-8444-444444444444';
+const now=new Date().toISOString();
+const project={id:p,name:'Project',status:'active',createdAt:now,updatedAt:now};
+const workspace={id:ws,projectId:p,name:'Workspace',status:'active',cwd:'/fixture',createdAt:now,updatedAt:now};
+let sessions=[{id:'session',workspaceId:ws,kind:'terminal',terminalId:'term',lifecycle:'running',activity:'idle',exitCode:null,tab:{id:native,order:0,selected:true,current:true,closedAt:null,name:'Native shell',terminalNumber:1}}];
+let tabs=[{id:web,workspaceId:ws,kind:'web',title:'Research',url:'https://chatgpt.com/',order:1,selected:false,closedAt:null,createdAt:now,updatedAt:now,targetRef:'target',runtimeState:'ready'}];
+let activities=[{workspaceId:ws,tabId:web,state:'finished',updatedAt:now,reliableSignal:true,source:'browser'}];
+let notifications=[{id:'55555555-5555-4555-8555-555555555555',workspaceId:ws,tabId:web,title:'Research',body:'Browser finished',state:'finished',read:false,createdAt:now,metadata:{kind:'browser',tabName:'Research'}}];
+const listeners=new Set(),statuses=new Set(),reopens=new Set(),requests=[];
+let status='open';
+function emit(m){for(const fn of listeners)fn(m);}
+function snapshots(){emit({type:'agency.sessions.snapshot',requestId:'',sessions:structuredClone(sessions)});emit({type:'agency.webTabs.snapshot',requestId:'',tabs:structuredClone(tabs)});}
+const api={requests,failSelect:false,failActivationOnce:false,setStatus(next){status=next; for(const fn of statuses)fn(next); if(next==='open')for(const fn of reopens)fn();},emit,finish(){activities=activities.map(a=>({...a,state:'finished',updatedAt:new Date().toISOString()}));emit({type:'agency.tab.activity',activity:activities[0]});}};
+const connection={getStatus:()=>status,onStatus:fn=>(statuses.add(fn),()=>statuses.delete(fn)),onReopen:fn=>(reopens.add(fn),()=>reopens.delete(fn)),onMessage:fn=>(listeners.add(fn),()=>listeners.delete(fn)),send(m){return this.sendImmediate(m);},sendImmediate(m){
+if(status!=='open')return false; requests.push(m);
+queueMicrotask(()=>{
+const reply=(type,extra={})=>emit({type,requestId:m.requestId,...extra});
+switch(m.type){
+case 'agency.projects.list':reply('agency.projects.snapshot',{projects:[project]});break;
+case 'agency.workspaces.list':reply('agency.workspaces.snapshot',{workspaces:[workspace]});break;
+case 'agency.profiles.list':reply('agency.profiles.snapshot',{profiles:[]});break;
+case 'agency.sessions.list':reply('agency.sessions.snapshot',{sessions:structuredClone(sessions)});break;
+case 'agency.webTabs.list':reply('agency.webTabs.snapshot',{tabs:structuredClone(tabs)});break;
+case 'agency.notifications.list':reply('agency.notifications.snapshot',{notifications:structuredClone(notifications),activityStates:structuredClone(activities)});break;
+case 'terminal.attach':emit({type:'terminal.replay',terminalId:'term',data:'native prompt\\r\\n',truncated:false});break;
+case 'agency.webTab.select':case 'agency.tab.action':
+ if(api.failSelect || (m.type==='agency.webTab.select' && api.failActivationOnce && tabs.find(t=>t.id===m.tabId)?.selected)){api.failActivationOnce=false;reply('agency.error',{message:'Selection failed',code:'session-unavailable'});break;}
+ sessions=sessions.map(s=>({...s,tab:{...s.tab,selected:m.tabId===native}}));tabs=tabs.map(t=>({...t,selected:t.id===m.tabId}));snapshots();
+ if(m.type==='agency.webTab.select')reply('agency.webTab.updated',{tab:tabs.find(t=>t.id===m.tabId)});else reply('agency.session.changed',{session:sessions[0]});break;
+case 'agency.notification.markRead':notifications=notifications.map(n=>n.id===m.notificationId?{...n,read:true,readAt:new Date().toISOString()}:n);reply('agency.notification.changed',{notification:notifications[0]});break;
+case 'agency.tab.acknowledge':activities=activities.map(a=>({...a,state:'idle'}));reply('agency.tab.activity',{activity:activities[0]});break;
+case 'agency.webTab.close':tabs=tabs.map(t=>t.id===m.tabId?{...t,closedAt:now,selected:false}:t);sessions=sessions.map(s=>({...s,tab:{...s.tab,selected:true}}));snapshots();reply('agency.webTab.closed',{tab:tabs.find(t=>t.id===m.tabId)});break;
+case 'agency.tabs.order':sessions=sessions.map(s=>({...s,tab:{...s.tab,order:m.tabIds.indexOf(s.tab.id)}}));tabs=tabs.map(t=>({...t,order:m.tabIds.indexOf(t.id)}));snapshots();reply('agency.sessions.snapshot',{sessions:structuredClone(sessions)});break;
+case 'agency.webTab.rename':tabs=tabs.map(t=>t.id===m.tabId?{...t,title:m.title}:t);reply('agency.webTab.updated',{tab:tabs.find(t=>t.id===m.tabId)});break;
+case 'agency.webTab.navigate':tabs=tabs.map(t=>t.id===m.tabId?{...t,url:m.url}:t);reply('agency.webTab.updated',{tab:tabs.find(t=>t.id===m.tabId)});break;
+}
+});return true;}};
+window.agencyTest=api;
+localStorage.setItem('agency-ui.selected-workspace.v1',ws);
+createRoot(document.getElementById('root')).render(<AgencyApp connection={connection}/>);
+`;
+
+const mediaPage = `<!doctype html><video autoplay muted playsinline></video><script>
+window.startMedia=async()=>{const canvas=document.createElement('canvas');canvas.width=640;canvas.height=480;const context=canvas.getContext('2d');let i=0;setInterval(()=>{context.fillStyle=i++%2?'blue':'red';context.fillRect(0,0,640,480)},80);const video=document.querySelector('video');video.srcObject=canvas.captureStream(10);await video.play();const params=new URLSearchParams(location.search);parent.postMessage({type:'agency.browser.viewer.ready',workspaceId:params.get('workspaceId'),tabId:params.get('tabId')},location.origin);};
+</script>`;
+
+function browserExecutable() {
+  if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE) return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+  if (existsSync(chromium.executablePath())) return chromium.executablePath();
+  const cache = homedir() + '/.cache/ms-playwright';
+  for (const folder of existsSync(cache) ? readdirSync(cache).filter(name => name.startsWith('chromium_headless_shell-')).sort().reverse() : []) {
+    const path = cache + '/' + folder + '/chrome-headless-shell-linux64/chrome-headless-shell';
+    if (existsSync(path)) return path;
+  }
+  return undefined;
+}
+
+test('Actual Agency UI preserves native input and delays web inspection until selected live media', { timeout: 60000 }, async t => {
+  const executablePath = browserExecutable();
+  if (!executablePath) { t.skip('Chromium is not installed; set PLAYWRIGHT_CHROMIUM_EXECUTABLE'); return; }
+  const bundle = await build({ stdin: { contents: fixture, loader: 'tsx', resolveDir: process.cwd() + '/packages/web' }, bundle: true, write: false, format: 'esm', jsx: 'automatic', loader: { '.css': 'empty' }, logLevel: 'silent' });
+  const server = createServer((req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+    res.setHeader('Cache-Control', 'no-store');
+    if (url.pathname === '/bundle.js') { res.setHeader('Content-Type', 'text/javascript'); res.end(bundle.outputFiles[0].text); }
+    else if (url.pathname === '/api/agency/browser/viewer/status') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ configured:true, ready:true, url:'/api/agency/browser/viewer/' })); }
+    else if (url.pathname === '/api/agency/browser/viewer') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ url:'/api/agency/browser/viewer/' + url.search, workspaceId:url.searchParams.get('workspaceId'), tabId:url.searchParams.get('tabId') })); }
+    else if (url.pathname === '/api/agency/browser/viewer/') { res.setHeader('Content-Type', 'text/html'); res.end(mediaPage); }
+    else { res.setHeader('Content-Type', 'text/html'); res.end('<html lang="en"><style>html,body,#root{height:100%;margin:0}.agency-app{display:flex;height:100%}.agency-main{flex:1;min-width:0}.agency-sidebar{width:240px}.maw-session-content{height:600px}.maw-session-pane{height:100%}.maw-session-pane[hidden]{display:none}.agency-agent-body,.agency-xterm-host,.terminal{height:500px}.maw-neko-frame{height:400px;width:100%}.maw-browser-viewer{height:450px}</style><div id="root"></div><script type="module" src="/bundle.js"></script></html>'); }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const browser = await chromium.launch({ headless:true, executablePath });
+  t.after(async () => { await browser.close(); await new Promise(resolve => server.close(resolve)); });
+  const page = await browser.newPage({ viewport:{width:1280,height:1000} });
+  const errors=[]; page.on('pageerror', error => errors.push(error.message));
+  await page.goto('http://127.0.0.1:' + server.address().port);
+  await page.getByRole('tab', {name:'Native shell'}).waitFor();
+  await page.locator('.xterm-helper-textarea').press('Control+c');
+  await page.waitForFunction(() => window.agencyTest.requests.some(m=>m.type==='input' && m.data==='\x03'));
+  await page.getByRole('button', {name:'Notifications',exact:true}).click();
+  await page.evaluate(() => window.agencyTest.failSelect=true);
+  await page.getByRole('article').filter({hasText:'Research'}).click();
+  await page.getByRole('alert').filter({hasText:'Session is unavailable'}).waitFor();
+  assert.equal(await page.evaluate(() => window.agencyTest.requests.filter(m=>m.type==='agency.tab.acknowledge'||m.type==='agency.notification.markRead').length),0);
+  await page.evaluate(() => {window.agencyTest.failSelect=false;window.agencyTest.failActivationOnce=true;});
+  await page.getByRole('article').filter({hasText:'Research'}).click();
+  await page.getByText('Browser viewer is unavailable. Try reconnecting.',{exact:true}).first().waitFor();
+  assert.equal(await page.locator('iframe').count(),0,'failed target reactivation gates the shared display');
+  await page.getByRole('button',{name:'Reconnect viewer',exact:true}).click();
+  await page.locator('iframe').waitFor();
+  assert.equal(await page.locator('iframe').count(),1);
+  assert.equal(await page.getByRole('tab', {name:'Research'}).getAttribute('aria-selected'),'true');
+  await page.waitForTimeout(650);
+  assert.equal(await page.evaluate(() => window.agencyTest.requests.filter(m=>m.type==='agency.tab.acknowledge'||m.type==='agency.notification.markRead').length),0,'iframe load is not inspection');
+  await page.evaluate(() => window.postMessage({type:'agency.browser.viewer.ready',workspaceId:'11111111-1111-4111-8111-111111111111',tabId:'44444444-4444-4444-8444-444444444444'},location.origin));
+  await page.waitForTimeout(300);
+  assert.equal(await page.evaluate(() => window.agencyTest.requests.filter(m=>m.type==='agency.tab.acknowledge').length),0,'parent message cannot spoof iframe source');
+  const frame = page.frames().find(frame => frame.url().includes('/api/agency/browser/viewer/'));
+  await frame.waitForFunction(() => typeof window.startMedia==='function');
+  await frame.evaluate(() => window.startMedia());
+  await page.waitForFunction(() => window.agencyTest.requests.some(m=>m.type==='agency.tab.acknowledge') && window.agencyTest.requests.some(m=>m.type==='agency.notification.markRead'));
+  const reads=await page.evaluate(()=>window.agencyTest.requests.filter(m=>m.type==='agency.notification.markRead'));
+  assert.equal(reads[0].notificationId,'55555555-5555-4555-8555-555555555555');
+  await page.getByRole('button',{name:'Rename tab',exact:true}).click();
+  await page.getByLabel('Tab title',{exact:true}).fill('Renamed research');
+  await page.getByRole('dialog').getByRole('button',{name:'Rename tab',exact:true}).click();
+  await page.getByRole('tab',{name:'Renamed research'}).waitFor();
+  await page.getByRole('tab',{name:'Renamed research'}).press('Alt+ArrowLeft');
+  await page.waitForFunction(()=>window.agencyTest.requests.some(m=>m.type==='agency.tabs.order' && m.tabIds[0]==='44444444-4444-4444-8444-444444444444'));
+  const before=await page.evaluate(()=>window.agencyTest.requests.filter(m=>m.type==='agency.webTabs.list').length);
+  await page.evaluate(()=>{window.agencyTest.setStatus('closed');window.agencyTest.setStatus('open');});
+  await page.waitForFunction(before=>window.agencyTest.requests.filter(m=>m.type==='agency.webTabs.list').length>before,before);
+  await page.getByRole('button',{name:'Close Renamed research',exact:true}).click();
+  await page.getByRole('tab',{name:'Native shell'}).waitFor();
+  assert.equal(await page.locator('iframe').count(),0);
+  assert.equal(await page.getByRole('tab',{name:'Native shell'}).getAttribute('aria-selected'),'true');
+  assert.equal(await page.evaluate(()=>window.agencyTest.requests.filter(m=>m.type==='terminal.close').length),0);
+  assert.deepEqual(errors,[]);
+});

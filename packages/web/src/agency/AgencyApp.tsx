@@ -1,11 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import { AgencySidebar, AgencyDoneView } from './AgencySidebar.js';
 import { AgencyWorkspaceCreator, AgencyProjectCreator } from './AgencyWorkspaceCreator.js';
 import { AgencyWorkspaceView } from './AgencyWorkspaceView.js';
 import { useAgencyStore } from './useAgencyStore.js';
-import { acknowledgeWorkspaceDraft, createAgencyTransport, putWorkspaceDraft } from './model.js';
+import { useNotificationStore } from './useNotificationStore.js';
+import { NotificationBell } from './NotificationBell.js';
+import { NotificationInbox } from './NotificationInbox.js';
+import { NotificationToastContainer } from './NotificationToast.js';
+import { acknowledgeWorkspaceDraft, createAgencyTransport, putWorkspaceDraft, allWorkspaceTabs } from './model.js';
 import { t } from '../i18n/index.js';
 import { useLocale } from '../i18n/useLocale.js';
 import './agency.css';
@@ -35,7 +39,9 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   useDropdownDismissal();
   const agencyTransport = useMemo(() => createAgencyTransport(connection), [connection]);
   const store = useAgencyStore(agencyTransport, connection);
-  const { data, loaded, online, notice } = store;
+  const { data, loaded, online, synchronized, notice } = store;
+  const notificationStore = useNotificationStore(agencyTransport, store.request);
+  const [inboxOpen, setInboxOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<WorkspaceId | null>(() => { try { return localStorage.getItem('agency-ui.selected-workspace.v1') as WorkspaceId | null; } catch { return null; } });
   const [showingDone, setShowingDone] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => { try { return localStorage.getItem('agency-ui.sidebar-open.v1') !== 'false'; } catch { return true; } });
@@ -59,6 +65,8 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   const [launchErrors, setLaunchErrors] = useState<Record<string, string>>({});
   const [notificationPermission, setNotificationPermission] = useState(() =>
     typeof Notification === 'undefined' ? 'unavailable' : Notification.permission);
+  const navigationSerial = useRef(0);
+  const [pendingNavigation, setPendingNavigation] = useState<{ workspaceId: WorkspaceId; tabId: string; notificationId?: string } | null>(null);
   const seenNotice = useRef(new Set<number>());
 
   useEffect(() => {
@@ -91,6 +99,39 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   useEffect(() => { try { if (selectedId) localStorage.setItem('agency-ui.selected-workspace.v1', selectedId); } catch {} }, [selectedId]);
   const selectedProject = data.projects.find((project) => project.id === selected?.projectId);
   useEffect(() => { try { localStorage.setItem('agency-ui.sidebar-open.v1', String(sidebarOpen)); } catch {} }, [sidebarOpen]);
+
+  const handleTabDisplayed = useCallback((workspaceId: WorkspaceId, tabId: string) => {
+    if (!pendingNavigation || pendingNavigation.workspaceId !== workspaceId || pendingNavigation.tabId !== tabId || selectedId !== workspaceId || showingDone || !online || !synchronized) return;
+    const notificationId = pendingNavigation.notificationId;
+    setPendingNavigation(null);
+    if (notificationId) void notificationStore.markRead(notificationId).catch(reason => setError(String(reason)));
+  }, [pendingNavigation, selectedId, showingDone, online, synchronized, notificationStore.markRead]);
+
+  async function handleNotificationNavigate(item: { workspaceId: WorkspaceId; tabId?: string; id?: string; notificationId?: string }) {
+    const serial = ++navigationSerial.current;
+    setPendingNavigation(null);
+    const targetWorkspace = data.workspaces.find(ws => ws.id === item.workspaceId && ws.status === 'active' && data.projects.some(project => project.id === ws.projectId && project.status !== 'archived'));
+    if (!targetWorkspace) { setError(t('agency.web.workspaceUnavailable')); return; }
+    const notificationId = item.notificationId ?? item.id;
+    if (item.tabId) {
+      const tab = allWorkspaceTabs(data.sessions, data.webTabs, item.workspaceId).find(tab => tab.id === item.tabId);
+      if (!tab) { setError(t('agency.web.tabUnavailable')); return; }
+      try {
+        await store.request(tab.kind === 'web'
+          ? { type: 'agency.webTab.select', workspaceId: item.workspaceId, tabId: tab.id }
+          : { type: 'agency.tab.action', workspaceId: item.workspaceId, tabId: tab.id, action: 'select' });
+      } catch (reason) { if (serial === navigationSerial.current) setError(reason instanceof Error ? reason.message : t('agency.web.selectFailed')); return; }
+      if (serial !== navigationSerial.current) return;
+      setPendingNavigation({ workspaceId: item.workspaceId, tabId: tab.id, notificationId });
+    }
+    setSelectedId(item.workspaceId);
+    setShowingDone(false);
+    setInboxOpen(false);
+    if (!item.tabId && notificationId) {
+      // Workspace-only items have no completion result to inspect.
+      requestAnimationFrame(() => { if (serial === navigationSerial.current) void notificationStore.markRead(notificationId).catch(reason => setError(String(reason))); });
+    }
+  }
 
   function updateDraft(workspaceId: string, value: string) {
     setDrafts((prev) => putWorkspaceDraft(prev, workspaceId as WorkspaceId, value));
@@ -140,42 +181,42 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
     setError(null);
     try {
       const answer = await store.archiveWorkspace(workspace.id);
-      if (answer.type !== 'agency.workspace.archived') throw new Error('Workspace archive was not confirmed');
+      if (answer.type !== 'agency.workspace.archived') throw new Error(t('agency.errors.internalError'));
       if (selectedId === workspace.id) setSelectedId(null);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to archive workspace'); }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.errors.internalError')); }
   }
 
   async function deleteWorkspace(workspace: AgencyWorkspace) {
     setError(null);
     try {
       const answer = await store.deleteWorkspace(workspace.id);
-      if (answer.type !== 'agency.workspace.deleted') throw new Error('Workspace deletion was not confirmed');
+      if (answer.type !== 'agency.workspace.deleted') throw new Error(t('agency.errors.internalError'));
       if (selectedId === workspace.id) setSelectedId(null);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to delete workspace'); }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.errors.internalError')); }
   }
 
   async function renameProject(project: AgencyProject, newName: string) {
     setError(null);
     try {
       const answer = await store.renameProject(project.id, newName);
-      if (answer.type !== 'agency.project.updated') throw new Error('Project rename was not confirmed');
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to rename project'); }
+      if (answer.type !== 'agency.project.updated') throw new Error(t('agency.errors.internalError'));
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.errors.internalError')); }
   }
 
   async function archiveProject(project: AgencyProject) {
     setError(null);
     try {
       const answer = await store.archiveProject(project.id);
-      if (answer.type !== 'agency.project.archived') throw new Error('Project archive was not confirmed');
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to archive project'); }
+      if (answer.type !== 'agency.project.archived') throw new Error(t('agency.errors.internalError'));
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.errors.internalError')); }
   }
 
   async function deleteProject(project: AgencyProject) {
     setError(null);
     try {
       const answer = await store.deleteProject(project.id);
-      if (answer.type !== 'agency.project.deleted') throw new Error('Project deletion was not confirmed');
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to delete project'); }
+      if (answer.type !== 'agency.project.deleted') throw new Error(t('agency.errors.internalError'));
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.errors.internalError')); }
   }
 
   async function restore(workspace: AgencyWorkspace) {
@@ -255,7 +296,22 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
           )}
           <button type="button" className="agency-secondary-button" disabled={!online}
             onClick={() => store.refresh()}>{t('agency.ui.refresh')}</button>
+          <NotificationBell
+            unreadCount={notificationStore.unreadCount}
+            open={inboxOpen}
+            onToggle={() => setInboxOpen(!inboxOpen)}
+          />
         </div>
+        {inboxOpen && (
+          <NotificationInbox
+            notifications={notificationStore.notifications}
+            unreadCount={notificationStore.unreadCount}
+            onClose={() => setInboxOpen(false)}
+            onSelect={handleNotificationNavigate}
+            onMarkRead={id => { void notificationStore.markRead(id).catch(reason => setError(String(reason))); }}
+            onMarkAllRead={() => { void notificationStore.markAllRead().catch(reason => setError(String(reason))); }}
+          />
+        )}
         {error && <div role="alert" className="agency-error-bar">{error}
           <button type="button" onClick={() => setError(null)} aria-label={t('agency.ui.dismissError')}>×</button></div>}
         {statusToast && <div className="agency-notice-bar" role="status">{statusToast}
@@ -278,14 +334,19 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
             connection={connection}
             request={store.request}
             sendImmediate={agencyTransport.sendImmediate}
-            online={online}
+            online={online && synchronized}
             profiles={data.profiles}
             sessions={data.sessions}
+            webTabs={data.webTabs}
+            onTabDisplayed={handleTabDisplayed}
             draft={drafts[selected.id] ?? ''}
             onDraft={(value) => updateDraft(selected.id, value)}
             onDelivered={(value) => clearDelivered(selected.id, value)}
             onDone={() => { void markDone(selected); }}
             launchError={launchErrors[selected.id]}
+            getTabActivity={notificationStore.getTabActivity}
+            getTabActivityVersion={(workspaceId, tabId) => notificationStore.activityStates.get(workspaceId + '::' + tabId)?.updatedAt ?? ''}
+            onAcknowledgeTab={notificationStore.acknowledgeTab}
             onClearLaunchError={() => {
               setLaunchErrors((prev) => {
                 const next = { ...prev };
@@ -319,7 +380,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
         onClose={() => setCreatingWorkspace(false)}
         onCreate={async (projectId, name, pickerId, options) => {
           const answer = await store.createWorkspace(projectId, name, pickerId);
-          if (answer.type !== 'agency.workspace.created') throw new Error('Workspace creation not confirmed');
+          if (answer.type !== 'agency.workspace.created') throw new Error(t('agency.errors.internalError'));
           const newWorkspace = answer.workspace;
           setSelectedId(newWorkspace.id);
           setShowingDone(false);
@@ -335,6 +396,11 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
           if (options.mode === 'terminal' || options.mode === 'combined') await launch('terminal');
           if (failures.length) setLaunchErrors(prev => ({ ...prev, [newWorkspace.id]: failures.join(' · ') }));
         }} />}
+      <NotificationToastContainer
+        toasts={notificationStore.toasts}
+        onDismiss={notificationStore.dismissToast}
+        onNavigate={handleNotificationNavigate}
+      />
     </div>
   );
 }

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   activeByProject, acknowledgeWorkspaceDraft, canLaunchAgent, workspaceTabs,
   putWorkspaceDraft, selectableEfforts, selectableModels, transitionNotice,
-  createAgencyTransport, parseProfileArgv,
+  createAgencyTransport, parseProfileArgv, allWorkspaceTabs, selectedWorkspaceTab,
 } from './model.ts';
 
 const emptyCapabilities = {
@@ -59,7 +59,7 @@ test('Draft preservation is per workspace and late acknowledgement cannot erase 
   assert.equal(delivered['workspace-b'], 'other task');
 });
 
-test('Only server-confirmed state transitions cause attention/completion notices', () => {
+test('Attention transitions remain available; generic working-to-idle cannot infer completion', () => {
   const initial = { kind: 'agent', activity: 'working', lifecycle: 'running' };
   assert.equal(transitionNotice(null, initial), null);
   assert.equal(transitionNotice(initial, initial), null);
@@ -67,7 +67,7 @@ test('Only server-confirmed state transitions cause attention/completion notices
   assert.equal(transitionNotice(initial, attention), 'attention');
   assert.equal(transitionNotice(attention, attention), null);
   const idle = { kind: 'agent', activity: 'idle', lifecycle: 'running' };
-  assert.equal(transitionNotice(initial, idle), 'completed');
+  assert.equal(transitionNotice(initial, idle), null);
   const stopped = { kind: 'agent', activity: 'offline', lifecycle: 'exited' };
   assert.equal(transitionNotice(idle, stopped), null);
   assert.equal(transitionNotice({ kind: 'terminal', activity: 'working', lifecycle: 'running' },
@@ -119,4 +119,16 @@ test('Session notices remain independent for two agents in the same workspace', 
   const two={kind:'agent',lifecycle:'running',activity:'idle'};
   assert.equal(transitionNotice(one,{...one,activity:'awaiting-user'}),'attention');
   assert.equal(transitionNotice(two,two),null);
+});
+
+
+test('Native and browser tabs share stable order and require a unique server selection', () => {
+  const session = { id: 'session', workspaceId: 'ws', tab: { id: 'native', order: 1, current: true, closedAt: null, selected: true } };
+  const web = { id: 'web', workspaceId: 'ws', order: 0, selected: false, closedAt: null };
+  const tabs = allWorkspaceTabs([session], [web, { ...web, id: 'closed', closedAt: 'now' }], 'ws');
+  assert.deepEqual(tabs.map(tab => tab.id), ['web', 'native']);
+  assert.equal(selectedWorkspaceTab(tabs)?.id, 'native');
+  assert.equal(selectedWorkspaceTab(tabs.map(tab => ({ ...tab, selected: true }))), undefined);
+  assert.equal(selectedWorkspaceTab(tabs.map(tab => ({ ...tab, selected: false }))), undefined);
+  assert.deepEqual(allWorkspaceTabs([session], [web], 'other'), []);
 });
