@@ -28,7 +28,7 @@ import { mkdirSync } from 'node:fs';
 import { readdir, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import type { AgentCapabilities, StatusLineSetupInfo, StatusLineState } from '@agent-workbench/shared';
-import { agentStatusDir, cliLogsTempDir, integrationsDir } from '../../paths.js';
+import { appConfigDir, agentStatusDir, cliLogsTempDir, integrationsDir } from '../../paths.js';
 import type { AgentAdapter, AgentInput, LaunchHook, LaunchInput, LaunchPlan, SpawnedContext } from '../adapter.js';
 import { commandNotFoundMessage, locateCommand } from '../locate.js';
 import { PlanLimitsRecordDir } from '../plan-limits.js';
@@ -333,6 +333,7 @@ export function createAntigravityAdapter(options: AntigravityAdapterOptions = {}
       }
 
       const watcher = new LogWatcher({
+        ...(context.nativeIdentity !== undefined ? { logRoot: () => context.nativeIdentity ? path.join(context.nativeIdentity.home, 'log') : path.join(appConfigDir(), 'unverified-native-logs', context.launchToken) } : {}),
         logPath: cliLogPathFor(context.launchToken),
         pid: context.pid,
         launchedAt: context.launchedAt,

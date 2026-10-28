@@ -13,7 +13,7 @@ Status: committed foundation contract on `dev`; full runtime integration and loc
 
 1. `AgencyProject.id`, `AgencyWorkspace.id`, `AgencyCliProfile.id` and `AgencyRuntimeSession.id` name different objects. The native provider session ID and the Workbench terminal registry ID are further distinct. Never use an ID as a surrogate for another.
 2. A project is a logical grouping with no filesystem root. A workspace references exactly one project and a real, existing, canonical server-validated `cwd`. Workspace directories need not share a parent.
-3. A workspace can have zero sessions, at most one active agent session and at most one active terminal session. Running/exiting state is keyed by Agency runtime ID, not browser tab ID. Creation must be atomic under concurrent browser requests.
+3. A workspace can have zero or more independent agent and shell sessions in any combination. Logical tab IDs, runtime attempt IDs and PTY IDs are distinct. Brief atomic reservations protect tab identity and native conversation ownership; no per-kind singleton slot exists. Logical tab count is separate from the global active-process limit (currently 24).
 4. `done` removes a workspace only from the active navigation query; it never removes a directory, deletes sessions, kills a PTY or erases native history. Restore is reversible. Done workspaces remain addressable in historical views. Existing live PTYs remain available through valid terminal IDs.
 5. Workspace deletion is metadata-only and must refuse while any attached/live session exists or while there is an unresolved persisted session reference. Project deletion must refuse while workspaces exist. No recursive filesystem operations.
 6. `createdAt`, `updatedAt`, `doneAt`, `startedAt`, `stoppedAt` are server UTC ISO-8601 timestamps. UUIDs are server generated. Use a durable atomic store for domain records, with migration and corruption recovery.
@@ -43,7 +43,7 @@ Agency request/reply pairings (every request contains an opaque `requestId`; err
 | `agency.profile.configure` | `agency.profile.configured` | Validate argv and allowlisted overrides |
 | `agency.profile.capabilities.get` | `agency.profile.capabilities` | Provider-native available options |
 | `agency.sessions.list` | `agency.sessions.snapshot` | Optional workspace filter; include lifecycle |
-| `agency.session.create` | `agency.session.created` | Atomically reserve one slot, then invoke original registry |
+| `agency.session.create` | `agency.session.created` | Atomically reserve an independent logical tab/runtime attempt, then invoke original registry |
 | `agency.session.selection.set` | `agency.session.selection` | Model/effort validated against native capability |
 
 Broadcast notification types: `agency.project.changed`, `agency.workspace.changed`, `agency.profile.changed`, `agency.session.changed`, `agency.session.activity`. Include stable IDs. Broadcast only after the owning store or registry has committed the change; do not treat request submission as success.
@@ -63,3 +63,7 @@ Directory selection starts with the existing server-owned `picker.open` / `picke
 - Do not read, store or serialize provider auth tokens. Native CLI homes stay where the user installed and authenticated them.
 - Do not auto-create/remove worktrees, install cross-agent instructions, activate any shared-memory bridge or add background orchestration. Existing modules may remain in the imported baseline but cannot become automatic MVP behavior.
 - `terminal.close` and browser detach are different operations. The server explicitly owns child process shutdown on server exit.
+
+## Multi-session continuation
+
+Agency contract version 2 adds validated agency.tab.action (select/close/resume) and agency.tabs.order messages on the existing socket. Session metadata schema 2 migrates legacy rows without discarding native references. Closing is per tab, confirms termination, and records intent; Done/Archive and browser navigation do not close tabs. Eligible shell recovery creates a new process and runtime attempt in the same logical tab. Existing native wrapper identity and SEC-001/SEC-002 isolation rules remain mandatory. Split mode is removed; one logical tab pane is visible at a time.

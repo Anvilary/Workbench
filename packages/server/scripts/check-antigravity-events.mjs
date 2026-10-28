@@ -2312,6 +2312,7 @@ const claudeCycle = { modes: shared.PERMISSION_MODE_CYCLE, launchMode: 'auto', k
   const registry = new EventEmitter();
   registry.get = (terminalId) => (terminalId === 't-ag' ? descriptor : null);
   registry.launchedAtOf = () => 1;
+  registry.nativeIdentityOf ??= () => undefined; // Legacy Workbench fixture.
   const hub = new ConversationHub(registry, { get: (id) => (id === 'antigravity' ? { adapter: fakeAdapter, location: null } : null) });
   const waitingEvents = [];
   hub.on('waiting', (terminalId, waitingFor) => waitingEvents.push([terminalId, waitingFor]));
@@ -2377,6 +2378,7 @@ const claudeCycle = { modes: shared.PERMISSION_MODE_CYCLE, launchMode: 'auto', k
   const registry = new EventEmitter();
   registry.get = (terminalId) => (terminalId === 't-modo' ? descriptor : null);
   registry.launchedAtOf = () => launched;
+  registry.nativeIdentityOf ??= () => undefined; // Legacy Workbench fixture.
   const hub = new ConversationHub(registry, { get: (id) => (id === 'antigravity' ? { adapter: fakeAdapter, location: null } : null) });
   let resets = 0;
   hub.on('reset', () => { resets += 1; });

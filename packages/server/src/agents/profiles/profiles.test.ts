@@ -161,7 +161,7 @@ test('native Workbench Codex resume and literal profile args are preserved', asy
     });
     const home = path.join(f.root, 'native-home');
     await mkdir(path.join(home, 'archived_sessions'), { recursive: true });
-    await writeFile(path.join(home, 'archived_sessions', 'rollout-2026-10-28T00-00-00-' + UUID3 + '.jsonl'), '');
+    await writeFile(path.join(home, 'archived_sessions', 'rollout-2026-10-28T00-00-00-' + UUID3 + '.jsonl'), 'synthetic native state\n');
     const manifest = path.join(f.root, 'identities.json');
     await writeFile(manifest, JSON.stringify({ version: 1, identities: [{ profileId: 'codex03', provider: 'codex',
       executable: f.binary, args: ['--config', 'key="space preserving"'], environmentOverrides: {}, home }] }));

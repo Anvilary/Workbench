@@ -43,9 +43,9 @@ export interface TranscriptPaths {
 }
 
 /** Los dos transcripts de una conversacion, o null si el id no es un uuid. */
-export function transcriptPaths(conversationId: string): TranscriptPaths | null {
+export function transcriptPaths(conversationId: string, nativeRoot?: string): TranscriptPaths | null {
   if (!CONVERSATION_ID_PATTERN.test(conversationId)) return null;
-  const logs = path.join(brainRoot(), conversationId, '.system_generated', 'logs');
+  const logs = path.join(nativeRoot === undefined ? brainRoot() : path.join(nativeRoot, 'brain'), conversationId, '.system_generated', 'logs');
   return {
     full: path.join(logs, 'transcript_full.jsonl'),
     compact: path.join(logs, 'transcript.jsonl'),
@@ -63,9 +63,9 @@ export interface ConversationFiles {
  * Los archivos de estado de una conversacion, o null si el id no es un uuid.
  * De estos **solo se hace `stat`**: el contenido no se abre nunca.
  */
-export function conversationFiles(conversationId: string): ConversationFiles | null {
+export function conversationFiles(conversationId: string, nativeRoot?: string): ConversationFiles | null {
   if (!CONVERSATION_ID_PATTERN.test(conversationId)) return null;
-  const folder = path.join(cliRoot(), 'conversations');
+  const folder = path.join(nativeRoot ?? cliRoot(), 'conversations');
   return {
     pb: path.join(folder, `${conversationId}.pb`),
     db: path.join(folder, `${conversationId}.db`),

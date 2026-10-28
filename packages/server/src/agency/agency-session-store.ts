@@ -1,11 +1,12 @@
 import { copyFile, mkdir, readFile, rename } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { isAgencyTab } from '@agent-workbench/shared';
+import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { AgencyRuntimeSession } from '@agent-workbench/shared';
 import { writeAtomically } from '../atomic-write.js';
 import { appConfigDir } from '../paths.js';
 
-const VERSION = 1;
+const VERSION = 2;
 const ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LIFECYCLES = new Set(['starting', 'running', 'stopping', 'exited', 'failed']);
 const ACTIVITIES = new Set(['idle', 'working', 'awaiting-user', 'awaiting-permission', 'unknown', 'offline']);
@@ -24,6 +25,10 @@ function nullableTimestamp(value: unknown): boolean {
 
 function validSession(value: unknown): value is AgencyRuntimeSession {
   if (!record(value)) return false;
+  if (value.tab !== undefined && !isAgencyTab(value.tab)) return false;
+  if (value.launchId !== undefined && (typeof value.launchId !== 'string' || !ID_PATTERN.test(value.launchId))) return false;
+  if (value.stoppedByUser !== undefined && typeof value.stoppedByUser !== 'boolean') return false;
+  if (value.recovery !== undefined && (!record(value.recovery) || !['pending', 'resuming', 'resumed', 'manual', 'failed', 'superseded'].includes(value.recovery.status as string) || (value.recovery.message !== null && typeof value.recovery.message !== 'string'))) return false;
   if (typeof value.id !== 'string' || !ID_PATTERN.test(value.id)) return false;
   if (typeof value.workspaceId !== 'string' || !ID_PATTERN.test(value.workspaceId)) return false;
   if (value.terminalId !== null && (typeof value.terminalId !== 'string' || !ID_PATTERN.test(value.terminalId))) return false;
@@ -35,8 +40,10 @@ function validSession(value: unknown): value is AgencyRuntimeSession {
     return value.profileId === null && value.nativeSessionId === null &&
       value.selectedModel === null && value.selectedEffort === null;
   }
+  if (value.launchDefinition !== undefined && (!record(value.launchDefinition) || typeof value.launchDefinition.executable !== 'string' || !path.isAbsolute(value.launchDefinition.executable) || !Array.isArray(value.launchDefinition.args) || !value.launchDefinition.args.every(arg => typeof arg === 'string') || (value.launchDefinition.contextRef !== null && typeof value.launchDefinition.contextRef !== 'string'))) return false;
   if (value.nativeIdentity != null && (!record(value.nativeIdentity) ||
       !['codex', 'claude-code', 'antigravity'].includes(value.nativeIdentity.provider as string) ||
+      (value.nativeIdentity.bindingId !== undefined && (typeof value.nativeIdentity.bindingId !== 'string' || !/^[a-f0-9]{64}$/.test(value.nativeIdentity.bindingId))) ||
       typeof value.nativeIdentity.home !== 'string' || !path.isAbsolute(value.nativeIdentity.home))) return false;
   if (value.historyAvailability !== undefined &&
       value.historyAvailability !== 'available' && value.historyAvailability !== 'unavailable') return false;
@@ -57,14 +64,40 @@ function parse(contents: string): AgencyRuntimeSession[] {
   const value: unknown = JSON.parse(contents);
   if (!record(value)) throw new Error('Invalid Agency session store');
   if (!Number.isInteger(value.version)) throw new Error('Missing or invalid Agency session store version');
-  if (value.version !== VERSION) throw new UnsupportedAgencySessionSchemaError(value.version);
+  if (value.version !== VERSION && value.version !== 1) throw new UnsupportedAgencySessionSchemaError(value.version);
   if (!Array.isArray(value.sessions)) throw new Error('Invalid Agency session store shape');
   if (!value.sessions.every(validSession)) throw new Error('Invalid Agency session record');
   const sessions = value.sessions as AgencyRuntimeSession[];
   if (new Set(sessions.map((session) => session.id)).size !== sessions.length) {
     throw new Error('Duplicate Agency runtime IDs');
   }
-  return sessions;
+  const migrated = migrateSessionTabs(sessions);
+  const open = migrated.filter(s => s.tab?.current);
+  if (new Set(open.map(s => s.tab!.id)).size !== open.length) throw new Error('Duplicate current tab IDs');
+  const selected = open.filter(s => s.tab!.selected && !s.tab!.closedAt);
+  if (new Set(selected.map(s => s.workspaceId)).size !== selected.length) throw new Error('Multiple selected tabs in one workspace');
+  return migrated;
+}
+
+/** Deterministic v1 migration retains every runtime/native reference; no process launches. */
+export function migrateSessionTabs(sessions: readonly AgencyRuntimeSession[]): AgencyRuntimeSession[] {
+  const selected = new Set(sessions.filter(s => s.tab?.current && s.tab.selected && !s.tab.closedAt).map(s => s.workspaceId));
+  const defaults = new Map<string, number>();
+  for (const [index, session] of sessions.entries()) {
+    if (session.tab || session.recovery?.status === 'superseded') continue;
+    const previous = defaults.get(session.workspaceId);
+    const active = (row: AgencyRuntimeSession) => ['starting','running','stopping'].includes(row.lifecycle);
+    if (previous === undefined || (!active(sessions[previous]!) && active(session))) defaults.set(session.workspaceId, index);
+  }
+  return sessions.map((session, index) => {
+    if (session.tab) return session;
+    const bytes = createHash('sha256').update('maw-tab:' + session.id).digest().subarray(0, 16);
+    bytes[6] = (bytes[6]! & 15) | 80; bytes[8] = (bytes[8]! & 63) | 128;
+    const hex = bytes.toString('hex');
+    const id = [hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join('-');
+    const choose = !selected.has(session.workspaceId) && defaults.get(session.workspaceId) === index; if (choose) selected.add(session.workspaceId);
+    return { ...session, tab: { id, name: null, ...(session.kind === 'terminal' ? { terminalNumber: sessions.slice(0,index).filter(s => s.workspaceId === session.workspaceId && s.kind === 'terminal').length + 1 } : {}), order: index, selected: choose, closedAt: null, current: session.recovery?.status !== 'superseded' } };
+  });
 }
 
 /**
@@ -114,7 +147,7 @@ export class AgencySessionStore {
    * so a slow fsync/rename cannot replace a newer snapshot with an older one.
    */
   save(sessions: readonly AgencyRuntimeSession[]): Promise<void> {
-    const serialized = Buffer.from(JSON.stringify({ version: VERSION, sessions }, null, 2) + '\n', 'utf8');
+    const serialized = Buffer.from(JSON.stringify({ version: VERSION, sessions: migrateSessionTabs(sessions) }, null, 2) + '\n', 'utf8');
     const perform = async (): Promise<void> => {
       await mkdir(path.dirname(this.file), { recursive: true, mode: 0o700 });
       await copyFile(this.file, this.file + '.bak').catch((error: NodeJS.ErrnoException) => {

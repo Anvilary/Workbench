@@ -1,4 +1,4 @@
-import type { SessionActivity, SessionLifecycle } from '@agent-workbench/shared';
+import type { AgencyRuntimeSession, SessionActivity, SessionLifecycle } from '@agent-workbench/shared';
 import { t } from '../i18n/index.js';
 
 /** Workbench keeps transport lifecycle enums independent of translated UI copy. */
@@ -17,4 +17,12 @@ export function agencyActivityText(activity: SessionActivity, lifecycle: Session
       if (lifecycle === 'running') return t('agency.ui.runningActivityUnavailable');
       return t('agency.ui.activityUnknown');
   }
+}
+
+export function agencySessionText(session: AgencyRuntimeSession): string {
+  if (session.stoppedByUser) return t('agency.ui.stopped');
+  if (session.recovery?.status === 'resuming' || session.recovery?.status === 'pending') return t('agency.ui.resuming');
+  if (session.recovery?.status === 'manual') return t('agency.ui.manualResumeRequired');
+  if (session.recovery?.status === 'resumed' && session.lifecycle === 'running' && session.activity === 'unknown') return t('agency.ui.resumed');
+  return agencyActivityText(session.activity, session.lifecycle);
 }

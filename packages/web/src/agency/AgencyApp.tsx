@@ -9,6 +9,7 @@ import { acknowledgeWorkspaceDraft, createAgencyTransport, putWorkspaceDraft } f
 import { t } from '../i18n/index.js';
 import { useLocale } from '../i18n/useLocale.js';
 import './agency.css';
+import { useDropdownDismissal } from './useDropdownDismissal.js';
 
 const DRAFT_KEY = 'agency-ui.workspace-drafts.v1';
 const SIDEBAR_WIDTH_KEY = 'agency-ui.sidebar-width.v1';
@@ -31,12 +32,13 @@ function readDrafts(): Record<string, string> {
  */
 export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.Element {
   useLocale();
+  useDropdownDismissal();
   const agencyTransport = useMemo(() => createAgencyTransport(connection), [connection]);
   const store = useAgencyStore(agencyTransport, connection);
   const { data, loaded, online, notice } = store;
-  const [selectedId, setSelectedId] = useState<WorkspaceId | null>(null);
+  const [selectedId, setSelectedId] = useState<WorkspaceId | null>(() => { try { return localStorage.getItem('agency-ui.selected-workspace.v1') as WorkspaceId | null; } catch { return null; } });
   const [showingDone, setShowingDone] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => { try { return localStorage.getItem('agency-ui.sidebar-open.v1') !== 'false'; } catch { return true; } });
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
@@ -65,26 +67,30 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
 
   useEffect(() => {
     if (!loaded || showingDone) return;
-    const active = data.workspaces.filter((ws) => ws.status === 'active');
+    const active = data.workspaces.filter((ws) => ws.status === 'active' && data.projects.some(project => project.id === ws.projectId && project.status !== 'archived'));
     if (selectedId && active.some((ws) => ws.id === selectedId)) return;
     setSelectedId(active[0]?.id ?? null);
-  }, [loaded, showingDone, data.workspaces, selectedId]);
+  }, [loaded, showingDone, data.workspaces, data.projects, selectedId]);
 
   useEffect(() => {
     if (!notice || seenNotice.current.has(notice.serial)) return;
     seenNotice.current.add(notice.serial);
     const ws = data.workspaces.find((item) => item.id === notice.workspaceId);
-    const label = ws?.name ?? t('agency.ui.workspace');
+    const noticeSession = data.sessions.find(session => session.id === notice.sessionId);
+    const sessionName = noticeSession?.tab?.name ?? (noticeSession?.kind === 'terminal' ? t('agency.tabs.terminalNamed', { number: noticeSession.tab?.terminalNumber ?? 1 }) : data.profiles.find(profile => profile.id === noticeSession?.profileId)?.label ?? '');
+    const label = (ws?.name ?? t('agency.ui.workspace')) + (sessionName ? ' / ' + sessionName : '');
     const message = notice.kind === 'attention' ? t('agency.ui.needsAttentionNamed', { name: label }) : t('agency.ui.completedTurnNamed', { name: label });
     setStatusToast(message);
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) {
       // Only confirmed server transitions, never snapshots or local send clicks.
       new Notification(t('agency.ui.agency'), { body: message, tag: 'agency-' + notice.sessionId + '-' + notice.kind });
     }
-  }, [notice, data.workspaces]);
+  }, [notice, data.workspaces, data.sessions, data.profiles]);
 
   const selected = !showingDone ? data.workspaces.find((ws) => ws.id === selectedId && ws.status === 'active') : undefined;
-  const activeCount = data.workspaces.filter((ws) => ws.status === 'active').length;
+  useEffect(() => { try { if (selectedId) localStorage.setItem('agency-ui.selected-workspace.v1', selectedId); } catch {} }, [selectedId]);
+  const selectedProject = data.projects.find((project) => project.id === selected?.projectId);
+  useEffect(() => { try { localStorage.setItem('agency-ui.sidebar-open.v1', String(sidebarOpen)); } catch {} }, [sidebarOpen]);
 
   function updateDraft(workspaceId: string, value: string) {
     setDrafts((prev) => putWorkspaceDraft(prev, workspaceId as WorkspaceId, value));
@@ -195,6 +201,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
         {sidebarOpen && (
           <>
             <AgencySidebar
+              onCollapse={() => setSidebarOpen(false)}
               projects={data.projects}
               workspaces={data.workspaces}
               sessions={data.sessions}
@@ -219,16 +226,24 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
               aria-orientation="vertical"
               aria-label={t('agency.ui.sidebarResizer')}
               onPointerDown={startSidebarResize}
+              onKeyDown={(event) => {
+                if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key)) return;
+                event.preventDefault();
+                const width = event.key === 'Home' ? 240 : Math.max(180, Math.min(500, sidebarWidth + (event.key === 'ArrowLeft' ? -10 : 10)));
+                setSidebarWidth(width);
+                try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width)); } catch {}
+              }}
             />
           </>
         )}
       </aside>
       <div className="agency-main">
         <div className="agency-topbar">
-          <button className="agency-icon-button" onClick={() => setSidebarOpen(!sidebarOpen)}
-            type="button" aria-label={sidebarOpen ? t('agency.ui.collapseSidebar') : t('agency.ui.expandSidebar')} aria-expanded={sidebarOpen}>☰</button>
-          <span className="agency-topbar-title">{t('agency.ui.agencyUI')}</span>
-          <span className="agency-muted agency-topbar-count">{t('agency.ui.activeCount', { count: activeCount })}</span>
+          {!sidebarOpen && <button className="agency-icon-button" onClick={() => setSidebarOpen(true)}
+            type="button" aria-label={sidebarOpen ? t('agency.ui.collapseSidebar') : t('agency.ui.expandSidebar')} aria-expanded={sidebarOpen}>☰</button>}
+          <nav className="agency-breadcrumbs" aria-label={t('agency.ui.breadcrumbs')}>
+            {selected ? <><span title={selectedProject?.name}>{selectedProject?.name}</span><span aria-hidden="true">›</span><span title={selected.name}>{selected.name}</span><span aria-hidden="true">›</span><span className="agency-breadcrumb-path" title={selected.cwd}>{selected.cwd}</span></> : <span>{showingDone ? t('agency.ui.done') : t('agency.ui.agencyUI')}</span>}
+          </nav>
           <span className="agency-flex-spacer" />
           <span className={'agency-connection-state' + (online ? ' connected' : '')}>
             <span className="agency-status-dot" />{online ? t('app.status.open') : t('agency.ui.disconnected')}
@@ -309,50 +324,16 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
           setSelectedId(newWorkspace.id);
           setShowingDone(false);
 
-          if (options.mode === 'agent' && options.profileId) {
+          const failures: string[] = [];
+          const launch = async (kind: 'agent' | 'terminal') => {
             try {
-              const launchAnswer = await store.request({
-                type: 'agency.session.create',
-                workspaceId: newWorkspace.id,
-                kind: 'agent',
-                profileId: options.profileId,
-                cols: 100,
-                rows: 30,
-              });
-              if (launchAnswer.type !== 'agency.session.created') {
-                setLaunchErrors((prev) => ({
-                  ...prev,
-                  [newWorkspace.id]: t('agency.ui.noAgentSessionAcknowledgement'),
-                }));
-              }
-            } catch (err) {
-              setLaunchErrors((prev) => ({
-                ...prev,
-                [newWorkspace.id]: err instanceof Error ? err.message : String(err),
-              }));
-            }
-          } else if (options.mode === 'terminal') {
-            try {
-              const launchAnswer = await store.request({
-                type: 'agency.session.create',
-                workspaceId: newWorkspace.id,
-                kind: 'terminal',
-                cols: 100,
-                rows: 30,
-              });
-              if (launchAnswer.type !== 'agency.session.created') {
-                setLaunchErrors((prev) => ({
-                  ...prev,
-                  [newWorkspace.id]: t('agency.ui.noShellSessionAcknowledgement'),
-                }));
-              }
-            } catch (err) {
-              setLaunchErrors((prev) => ({
-                ...prev,
-                [newWorkspace.id]: err instanceof Error ? err.message : String(err),
-              }));
-            }
-          }
+              await store.request({ type: 'agency.session.create', workspaceId: newWorkspace.id, kind, launchId: crypto.randomUUID(), cols: 100, rows: 30,
+                ...(kind === 'agent' ? { profileId: options.profileId! } : {}) } as Parameters<typeof store.request>[0]);
+            } catch (reason) { failures.push((kind === 'agent' ? t('agency.ui.agentLabel') : t('agency.ui.shell')) + ': ' + String(reason)); }
+          };
+          if ((options.mode === 'agent' || options.mode === 'combined') && options.profileId) await launch('agent');
+          if (options.mode === 'terminal' || options.mode === 'combined') await launch('terminal');
+          if (failures.length) setLaunchErrors(prev => ({ ...prev, [newWorkspace.id]: failures.join(' · ') }));
         }} />}
     </div>
   );

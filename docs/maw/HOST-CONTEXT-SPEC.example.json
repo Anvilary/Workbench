@@ -1,0 +1,391 @@
+{
+  "identities": [
+    {
+      "profileId": "codex00",
+      "provider": "codex",
+      "executable": "/home/alteixeira20/.local/bin/codex00",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/alteixeira20/.codex",
+      "launchContext": {
+        "HOME": "/home/alteixeira20",
+        "USER": "alteixeira20",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {
+        "codex": "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/codex",
+        "node": "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/node",
+        "bash": "/usr/bin/bash"
+      },
+      "artifacts": [
+        "/home/alteixeira20/.local/bin/codex00",
+        "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/codex",
+        "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/node",
+        "/usr/bin/bash",
+        "/home/alteixeira20/.nvm/versions/node/v24.22.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex"
+      ],
+      "requiredEnvironment": []
+    },
+    {
+      "profileId": "codex01",
+      "provider": "codex",
+      "executable": "/home/alteixeira20/.local/bin/codex01",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/alteixeira20/.codex-ar",
+      "launchContext": {
+        "HOME": "/home/alteixeira20",
+        "USER": "alteixeira20",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {
+        "codex": "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/codex",
+        "node": "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/node",
+        "bash": "/usr/bin/bash"
+      },
+      "artifacts": [
+        "/home/alteixeira20/.local/bin/codex01",
+        "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/codex",
+        "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/node",
+        "/usr/bin/bash",
+        "/home/alteixeira20/.nvm/versions/node/v24.22.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex"
+      ],
+      "requiredEnvironment": []
+    },
+    {
+      "profileId": "codex03",
+      "provider": "codex",
+      "executable": "/home/alteixeira20/.local/bin/codex03",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/alteixeira20/.codex03",
+      "launchContext": {
+        "HOME": "/home/alteixeira20",
+        "USER": "alteixeira20",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {
+        "codex": "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/codex",
+        "node": "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/node",
+        "bash": "/usr/bin/bash"
+      },
+      "artifacts": [
+        "/home/alteixeira20/.local/bin/codex03",
+        "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/codex",
+        "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/node",
+        "/usr/bin/bash",
+        "/home/alteixeira20/.nvm/versions/node/v24.22.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex"
+      ],
+      "requiredEnvironment": []
+    },
+    {
+      "profileId": "agy00",
+      "provider": "antigravity",
+      "executable": "/home/alteixeira20/.local/bin/agy00",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/alteixeira20/.gemini/antigravity-cli",
+      "launchContext": {
+        "HOME": "/home/alteixeira20",
+        "USER": "alteixeira20",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {},
+      "artifacts": [
+        "/home/alteixeira20/.local/bin/agy00"
+      ],
+      "requiredEnvironment": [
+        "DBUS_SESSION_BUS_ADDRESS"
+      ],
+      "authenticationMode": "account"
+    },
+    {
+      "profileId": "agy01",
+      "provider": "antigravity",
+      "executable": "/home/alteixeira20/.local/bin/agy01",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/alteixeira20/.local/share/agy01-profile/home/.gemini/antigravity-cli",
+      "launchContext": {
+        "HOME": "/home/alteixeira20",
+        "USER": "alteixeira20",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {
+        "bash": "/usr/bin/bash",
+        "dbus-daemon": "/usr/bin/dbus-daemon",
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon",
+        "cat": "/usr/bin/cat",
+        "sed": "/usr/bin/sed",
+        "rm": "/usr/bin/rm",
+        "mkdir": "/usr/bin/mkdir",
+        "chmod": "/usr/bin/chmod",
+        "mktemp": "/usr/bin/mktemp",
+        "sleep": "/usr/bin/sleep",
+        "env": "/usr/bin/env"
+      },
+      "artifacts": [
+        "/home/alteixeira20/.local/bin/agy01",
+        "/home/alteixeira20/.local/bin/agy01-profile-start",
+        "/home/alteixeira20/.local/bin/agy",
+        "/usr/bin/bash",
+        "/usr/bin/dbus-daemon",
+        "/usr/bin/gnome-keyring-daemon",
+        "/usr/bin/cat",
+        "/usr/bin/sed",
+        "/usr/bin/rm",
+        "/usr/bin/mkdir",
+        "/usr/bin/chmod",
+        "/usr/bin/mktemp",
+        "/usr/bin/sleep",
+        "/usr/bin/env"
+      ],
+      "requiredEnvironment": [],
+      "authenticationMode": "account"
+    },
+    {
+      "profileId": "agy02",
+      "provider": "antigravity",
+      "executable": "/home/alteixeira20/.local/bin/agy02",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/alteixeira20/.local/share/agy02-profile/home/.gemini/antigravity-cli",
+      "launchContext": {
+        "HOME": "/home/alteixeira20",
+        "USER": "alteixeira20",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {
+        "bash": "/usr/bin/bash",
+        "dbus-daemon": "/usr/bin/dbus-daemon",
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon",
+        "cat": "/usr/bin/cat",
+        "sed": "/usr/bin/sed",
+        "rm": "/usr/bin/rm",
+        "mkdir": "/usr/bin/mkdir",
+        "chmod": "/usr/bin/chmod",
+        "mktemp": "/usr/bin/mktemp",
+        "sleep": "/usr/bin/sleep",
+        "env": "/usr/bin/env"
+      },
+      "artifacts": [
+        "/home/alteixeira20/.local/bin/agy02",
+        "/home/alteixeira20/.local/bin/agy02-profile-start",
+        "/home/alteixeira20/.local/bin/agy",
+        "/usr/bin/bash",
+        "/usr/bin/dbus-daemon",
+        "/usr/bin/gnome-keyring-daemon",
+        "/usr/bin/cat",
+        "/usr/bin/sed",
+        "/usr/bin/rm",
+        "/usr/bin/mkdir",
+        "/usr/bin/chmod",
+        "/usr/bin/mktemp",
+        "/usr/bin/sleep",
+        "/usr/bin/env"
+      ],
+      "requiredEnvironment": [],
+      "authenticationMode": "account"
+    },
+    {
+      "profileId": "agy03",
+      "provider": "antigravity",
+      "executable": "/home/alteixeira20/.local/bin/agy03",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/alteixeira20/.local/share/agy03-profile/home/.gemini/antigravity-cli",
+      "launchContext": {
+        "HOME": "/home/alteixeira20",
+        "USER": "alteixeira20",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {
+        "bash": "/usr/bin/bash",
+        "dbus-daemon": "/usr/bin/dbus-daemon",
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon",
+        "cat": "/usr/bin/cat",
+        "sed": "/usr/bin/sed",
+        "rm": "/usr/bin/rm",
+        "mkdir": "/usr/bin/mkdir",
+        "chmod": "/usr/bin/chmod",
+        "mktemp": "/usr/bin/mktemp",
+        "sleep": "/usr/bin/sleep",
+        "env": "/usr/bin/env"
+      },
+      "artifacts": [
+        "/home/alteixeira20/.local/bin/agy03",
+        "/home/alteixeira20/.local/bin/agy03-profile-start",
+        "/home/alteixeira20/.local/bin/agy",
+        "/usr/bin/bash",
+        "/usr/bin/dbus-daemon",
+        "/usr/bin/gnome-keyring-daemon",
+        "/usr/bin/cat",
+        "/usr/bin/sed",
+        "/usr/bin/rm",
+        "/usr/bin/mkdir",
+        "/usr/bin/chmod",
+        "/usr/bin/mktemp",
+        "/usr/bin/sleep",
+        "/usr/bin/env"
+      ],
+      "requiredEnvironment": [],
+      "authenticationMode": "account"
+    },
+    {
+      "profileId": "agy04",
+      "provider": "antigravity",
+      "executable": "/home/alteixeira20/.local/bin/agy04",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/alteixeira20/.local/share/agy04-profile/home/.gemini/antigravity-cli",
+      "launchContext": {
+        "HOME": "/home/alteixeira20",
+        "USER": "alteixeira20",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {
+        "bash": "/usr/bin/bash",
+        "dbus-daemon": "/usr/bin/dbus-daemon",
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon",
+        "cat": "/usr/bin/cat",
+        "sed": "/usr/bin/sed",
+        "rm": "/usr/bin/rm",
+        "mkdir": "/usr/bin/mkdir",
+        "chmod": "/usr/bin/chmod",
+        "mktemp": "/usr/bin/mktemp",
+        "sleep": "/usr/bin/sleep",
+        "env": "/usr/bin/env"
+      },
+      "artifacts": [
+        "/home/alteixeira20/.local/bin/agy04",
+        "/home/alteixeira20/.local/bin/agy04-profile-start",
+        "/home/alteixeira20/.local/bin/agy",
+        "/usr/bin/bash",
+        "/usr/bin/dbus-daemon",
+        "/usr/bin/gnome-keyring-daemon",
+        "/usr/bin/cat",
+        "/usr/bin/sed",
+        "/usr/bin/rm",
+        "/usr/bin/mkdir",
+        "/usr/bin/chmod",
+        "/usr/bin/mktemp",
+        "/usr/bin/sleep",
+        "/usr/bin/env"
+      ],
+      "requiredEnvironment": [],
+      "authenticationMode": "account"
+    },
+    {
+      "profileId": "agy05",
+      "provider": "antigravity",
+      "executable": "/home/alteixeira20/.local/bin/agy05",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/alteixeira20/.local/share/agy05-profile/home/.gemini/antigravity-cli",
+      "launchContext": {
+        "HOME": "/home/alteixeira20",
+        "USER": "alteixeira20",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {
+        "bash": "/usr/bin/bash",
+        "dbus-daemon": "/usr/bin/dbus-daemon",
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon",
+        "cat": "/usr/bin/cat",
+        "sed": "/usr/bin/sed",
+        "rm": "/usr/bin/rm",
+        "mkdir": "/usr/bin/mkdir",
+        "chmod": "/usr/bin/chmod",
+        "mktemp": "/usr/bin/mktemp",
+        "sleep": "/usr/bin/sleep",
+        "env": "/usr/bin/env"
+      },
+      "artifacts": [
+        "/home/alteixeira20/.local/bin/agy05",
+        "/home/alteixeira20/.local/bin/agy05-profile-start",
+        "/home/alteixeira20/.local/bin/agy",
+        "/usr/bin/bash",
+        "/usr/bin/dbus-daemon",
+        "/usr/bin/gnome-keyring-daemon",
+        "/usr/bin/cat",
+        "/usr/bin/sed",
+        "/usr/bin/rm",
+        "/usr/bin/mkdir",
+        "/usr/bin/chmod",
+        "/usr/bin/mktemp",
+        "/usr/bin/sleep",
+        "/usr/bin/env"
+      ],
+      "requiredEnvironment": [],
+      "authenticationMode": "account"
+    },
+    {
+      "profileId": "claude-code",
+      "provider": "claude-code",
+      "executable": "/home/alteixeira20/.local/bin/claude",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/alteixeira20/.claude",
+      "launchContext": {
+        "HOME": "/home/alteixeira20",
+        "USER": "alteixeira20",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {},
+      "artifacts": [
+        "/home/alteixeira20/.local/bin/claude"
+      ],
+      "requiredEnvironment": []
+    }
+  ]
+}

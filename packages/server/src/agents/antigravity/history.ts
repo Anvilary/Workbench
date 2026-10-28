@@ -32,6 +32,7 @@
  * de cualquier otra lanzada fuera de un proyecto.
  */
 
+import { unavailableFollower } from '../unavailable-follower.js';
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { SessionTitleSource } from '@agent-workbench/shared';
@@ -391,9 +392,11 @@ export function createAntigravityHistory(deps: AntigravityHistoryDeps = {}): His
      */
     rootExists: () => isDirectory(brainRoot()),
 
-    follow(target: { cwd: string; sessionId: string }, options?: FollowOptions): SessionFollower {
+    follow(target: { cwd: string; sessionId: string; nativeHome?: string | null }, options?: FollowOptions): SessionFollower {
+      if (target.nativeHome === null) return unavailableFollower();
       return new AntigravitySessionFollower(target.sessionId, {
-        statusLine: deps.statusLine ?? null,
+        nativeHome: target.nativeHome,
+        statusLine: target.nativeHome === undefined ? deps.statusLine ?? null : null,
         platform,
         limits: options?.limits,
         maxEvents: options?.maxEvents,

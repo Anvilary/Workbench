@@ -1607,6 +1607,7 @@ const fakeTerminals = (descriptors) => ({
   get: (terminalId) => descriptors.find((d) => d.terminalId === terminalId) ?? null,
   on: () => undefined,
   launchedAtOf: () => null,
+  nativeIdentityOf: () => undefined,
 });
 const descriptorOf = (terminalId, { agent = 'claude-code', cwd, sessionId, kind = 'agent' }) => ({
   terminalId, kind, cwd, agent, sessionId, label: terminalId, resumed: false,

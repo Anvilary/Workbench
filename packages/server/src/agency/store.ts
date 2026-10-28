@@ -197,6 +197,8 @@ export class AgencyWorkspaceStore {
     if (!this.initialized) throw new AgencyStoreError('internal-error', 'Agency store not loaded');
   }
 
+  flush(): Promise<void> { return this.queue; }
+
   listProjects(): AgencyProject[] {
     this.ready();
     return this.state.projects.map((p) => ({ ...p }));

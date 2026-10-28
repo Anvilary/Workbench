@@ -1,10 +1,10 @@
 import { t } from '../i18n/index.js';
-import { agencyActivityText } from './agency-labels.js';
-import { useEffect, useState } from 'react';
+import { agencySessionText } from './agency-labels.js';
+import { useState } from 'react';
 import type {
   AgencyProject, AgencyRuntimeSession, AgencyWorkspace, ProjectId, WorkspaceId,
 } from '@agent-workbench/shared';
-import { activeByProject, currentSession, isAttention, latestSession } from './model.js';
+import { activeByProject, isAttention, workspaceTabs } from './model.js';
 
 export interface AgencySidebarProps {
   projects: readonly AgencyProject[];
@@ -16,6 +16,7 @@ export interface AgencySidebarProps {
   onDoneView: () => void;
   onCreate: (project?: ProjectId) => void;
   onCreateProject: () => void;
+  onCollapse: () => void;
   onDone: (workspace: AgencyWorkspace) => void;
   onArchiveWorkspace: (workspace: AgencyWorkspace) => void;
   onDeleteWorkspace: (workspace: AgencyWorkspace) => void;
@@ -25,19 +26,10 @@ export interface AgencySidebarProps {
   onRestore: (workspace: AgencyWorkspace) => void;
 }
 
-function WorkspaceIndicator({ session }: { session: AgencyRuntimeSession | undefined }) {
-  if (!session) return <span className="agency-status-dot muted" title={t('agency.ui.noSession')} />;
-  const label = agencyActivityText(session.activity, session.lifecycle);
-  const tone = isAttention(session.activity) ? 'attention' :
-    session.lifecycle === 'running' && session.activity === 'working' ? 'working' :
-    session.lifecycle === 'exited' || session.lifecycle === 'failed' ? 'muted' : 'idle';
-  return <span className={'agency-status-dot ' + tone} title={label} aria-label={label} />;
-}
-
 export function AgencySidebar({
   projects, workspaces, sessions, selected, showingDone,
   onSelect, onDoneView, onCreate, onCreateProject, onDone, onArchiveWorkspace, onDeleteWorkspace,
-  onRenameProject, onArchiveProject, onDeleteProject, onRestore,
+  onRenameProject, onArchiveProject, onDeleteProject, onRestore, onCollapse,
 }: AgencySidebarProps): JSX.Element {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -54,14 +46,6 @@ export function AgencySidebar({
 
   const doneCount = workspaces.filter((ws) => ws.status === 'done' || ws.status === 'archived').length;
   const groups = activeByProject(projects, workspaces);
-
-  // Close dropdown on outside pointerdown
-  useEffect(() => {
-    if (!openMenu) return;
-    const onPointerDown = () => setOpenMenu(null);
-    window.addEventListener('pointerdown', onPointerDown);
-    return () => window.removeEventListener('pointerdown', onPointerDown);
-  }, [openMenu]);
 
   function toggle(id: string) {
     setCollapsed((prev) => {
@@ -84,15 +68,13 @@ export function AgencySidebar({
     <>
       <nav className="agency-sidebar-nav" aria-label={t('agency.ui.projectsAndWorkspaces')}>
         <header className="agency-nav-head">
-          <span className="agency-brand-mark" aria-hidden="true">◇</span>
+          <button className="agency-icon-button" type="button" onClick={onCollapse} aria-label={t('agency.ui.collapseSidebar')} aria-expanded={true}>☰</button>
           <strong>{t('agency.ui.agency')}</strong>
-          <span className="agency-brand-caption">{t('agency.ui.workspace')}</span>
-          <button className="agency-icon-button" type="button" onClick={onCreateProject} title={t('agency.ui.newProject')} aria-label={t('agency.ui.newProject')}>+</button>
         </header>
         <div className="agency-side-section">
           <div className="agency-side-heading">
             <span>{t('agency.ui.projects')}</span>
-            <button className="agency-icon-button" type="button" onClick={() => onCreate()} title={t('agency.ui.newWorkspace')} aria-label={t('agency.ui.newWorkspace')}>+</button>
+            <button className="agency-icon-button" type="button" onClick={onCreateProject} title={t('agency.ui.newProject')} aria-label={t('agency.ui.newProject')}>+</button>
           </div>
           {groups.length === 0 && <p className="agency-muted agency-empty-nav">{t('agency.ui.createAProjectToBegin')}</p>}
           {groups.map(({ project, items }) => {
@@ -163,10 +145,9 @@ export function AgencySidebar({
                 {!collapsed.has(project.id) && (
                   <div className="agency-project-children">
                     {items.map((workspace) => {
-                      const session = currentSession(sessions, workspace.id, 'agent') ??
-                        currentSession(sessions, workspace.id, 'terminal') ??
-                        latestSession(sessions, workspace.id, 'agent') ??
-                        latestSession(sessions, workspace.id, 'terminal');
+                      const collection = workspaceTabs(sessions, workspace.id);
+                      const attention = collection.some(item => isAttention(item.activity));
+                      const working = collection.some(item => item.activity === 'working');
                       const isWsMenuOpen = openMenu?.type === 'workspace' && openMenu.id === workspace.id;
                       return (
                         <div className={'agency-workspace-nav-row' + (selected === workspace.id && !showingDone ? ' selected' : '')}
@@ -174,7 +155,7 @@ export function AgencySidebar({
                           <button className="agency-workspace-nav-button" type="button" onClick={() => onSelect(workspace.id)}
                             aria-current={selected === workspace.id && !showingDone ? 'page' : undefined}
                             title={workspace.cwd}>
-                            <WorkspaceIndicator session={session} />
+                            <span className={'agency-status-dot ' + (attention ? 'attention' : working ? 'working' : collection.some(item => item.lifecycle === 'running') ? 'idle' : 'muted')} title={collection.map(item => agencySessionText(item)).join(', ')} aria-label={t('agency.tabs.sessionCount', { count: collection.length })} />
                             <span className="agency-truncate">{workspace.name}</span>
                           </button>
                           <div className="agency-dropdown" onClick={(e) => e.stopPropagation()}>

@@ -1,3 +1,5 @@
+Current multi-session behavior supports multiple CLIs and shells; per-kind singleton assumptions in the historical lane plan are superseded by Agency contract 2 and session store 2.
+
 # Lane C integration contract
 
 Base: `a784b0b3e176f06911a016d093f1a118f2072bca`. Lane C branch: `feat/agency-runtime`.
@@ -56,7 +58,7 @@ Its implementation and Lane A's guarded deletion must use the **same per-workspa
 1. Acquire the workspace key lock.
 2. Read Lane A's persisted workspace row, including status and server-canonical cwd.
 3. Invoke the provided async callback **under the lock**. The callback validates row/status/path,
-   checks active slots, synchronously inserts a new Agency session, and awaits durable persistence
+   checks tab reservations and resource/native ownership limits, synchronously inserts a new Agency runtime attempt, and awaits durable persistence
    of its `starting` state.
 4. Release the lock only after that persistence succeeds or the callback fails.
 5. Deletion also acquires the same lock, checks the row and
