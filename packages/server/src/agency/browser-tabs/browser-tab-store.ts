@@ -37,9 +37,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Normalizes tab state:
- * - Omits ephemeral targetRef and runtimeState from durable storage.
- * - Ensures exactly one tab is selected per workspace among open tabs (if any exist).
+ * Normalizes tab state for durable persistence:
+ * - Persists targetRef for reconciliation against live browser instances across restarts.
+ * - Runtime state is always reconstructed conservatively on restore.
+ * - Preserves cleanupRequired flags and idempotent launch IDs.
+ * - Ensures at most one tab is selected per workspace among open tabs.
  */
 export function sanitizeForDurableStorage(tab: WebTab): WebTab {
   return {
@@ -53,6 +55,9 @@ export function sanitizeForDurableStorage(tab: WebTab): WebTab {
     createdAt: tab.createdAt,
     updatedAt: tab.updatedAt,
     closedAt: tab.closedAt,
+    targetRef: tab.targetRef ?? null,
+    cleanupRequired: tab.cleanupRequired,
+    launchId: tab.launchId,
   };
 }
 
@@ -123,11 +128,13 @@ export function parseBrowserTabSnapshot(contents: string): WebTab[] {
       throw new BrowserTabStoreError('conflict', `Duplicate tab ID in store: ${item.id}`);
     }
     seenIds.add(item.id);
-    // Ephemeral targetRef is cleared on restore for conservative startup
+    // Preserves last known targetRef for reconciliation; starts detached until verified
     tabs.push({
       ...item,
-      targetRef: null,
+      targetRef: item.targetRef ?? null,
       runtimeState: 'detached',
+      cleanupRequired: item.cleanupRequired ?? false,
+      launchId: item.launchId,
     });
   }
 
