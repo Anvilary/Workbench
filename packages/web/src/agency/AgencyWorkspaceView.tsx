@@ -25,8 +25,8 @@ interface Props {
   onClearLaunchError?: () => void;
 }
 
-function SessionPane({ session, active, connection, online, request, sendImmediate, report }: {
-  session: AgencyRuntimeSession; active: boolean; connection: AgentConnection; online: boolean;
+function SessionPane({ session, active, focusTerminal, connection, online, request, sendImmediate, report }: {
+  session: AgencyRuntimeSession; active: boolean; focusTerminal: boolean; connection: AgentConnection; online: boolean;
   request: Props['request']; sendImmediate: Props['sendImmediate']; report: (error: string) => void;
 }) {
   const terminal = useRef<Terminal | null>(null);
@@ -71,7 +71,7 @@ function SessionPane({ session, active, connection, online, request, sendImmedia
       </>}
     </div>
     <div className="agency-agent-body">
-      {live && session.terminalId ? <div className="agency-xterm-host"><TerminalView key={session.terminalId} terminalId={session.terminalId} connection={connection} theme="dark" active={active} autoFocus enableAgencyShortcuts onTerminalInstance={instance => { terminal.current = instance; }} onClipboardError={error => report(error.message)} /></div> : <div className="agency-shell-placeholder">
+      {live && session.terminalId ? <div className="agency-xterm-host"><TerminalView key={session.terminalId} terminalId={session.terminalId} connection={connection} theme="dark" active={active} autoFocus={focusTerminal} enableAgencyShortcuts onTerminalInstance={instance => { terminal.current = instance; }} onClipboardError={error => report(error.message)} /></div> : <div className="agency-shell-placeholder">
         <p>{session.lifecycle === 'starting' ? t('agency.ui.starting') : session.exitCode === null ? t('agency.ui.previousAgentExited') : t('agency.ui.previousAgentExitedCode', { code: session.exitCode })}</p>
         {session.recovery?.message && <p role="status">{session.recovery.message}</p>}
         <p>{t('agency.tabs.historyKept')}</p>
@@ -84,6 +84,7 @@ function SessionPane({ session, active, connection, online, request, sendImmedia
 export function AgencyWorkspaceView({ workspace, profiles, sessions, connection, request, sendImmediate, online, onDone, launchError, onClearLaunchError }: Props): JSX.Element {
   const tabs = workspaceTabs(sessions, workspace.id);
   const selected = tabs.find(session => session.tab?.selected) ?? tabs[0];
+  const [keyboardTabs, setKeyboardTabs] = useState(false);
   const [menu, setMenu] = useState(false);
   const [picker, setPicker] = useState(false);
   const [profileId, setProfileId] = useState<CliProfileId | ''>(profiles[0]?.id ?? '');
@@ -96,7 +97,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, connection,
   const dragged = useRef(false);
   const dialog = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    strip.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    strip.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.parentElement?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
   }, [selected?.tab?.id, tabs.length]);
   useEffect(() => {
     const element = strip.current;
@@ -105,8 +106,10 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, connection,
       if (element.scrollWidth <= element.clientWidth || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
       event.preventDefault(); element.scrollLeft += event.deltaY;
     };
+    const resize = new ResizeObserver(() => element.querySelector<HTMLElement>('[aria-selected="true"]')?.parentElement?.scrollIntoView({ inline: 'nearest', block: 'nearest' }));
+    resize.observe(element);
     element.addEventListener('wheel', wheel, { passive: false });
-    return () => element.removeEventListener('wheel', wheel);
+    return () => { resize.disconnect(); element.removeEventListener('wheel', wheel); };
   }, []);
   useEffect(() => {
     if (!picker && !closing) return;
@@ -123,6 +126,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, connection,
   }, [picker, closing]);
   async function add(kind: 'agent' | 'terminal') {
     if (flight.current || !online || (kind === 'agent' && !profileId)) return;
+    setKeyboardTabs(false);
     flight.current = true; setBusy(true); setError(null); setMenu(false);
     try {
       await request({ type: 'agency.session.create', workspaceId: workspace.id, kind, launchId: crypto.randomUUID(), cols: 100, rows: 30, ...(kind === 'agent' ? { profileId: profileId as CliProfileId } : {}) } as Parameters<Props['request']>[0]);
@@ -136,6 +140,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, connection,
     catch (reason) { setError(String(reason)); throw reason; }
   }
   async function close(session: AgencyRuntimeSession) {
+    setKeyboardTabs(false);
     if (flight.current) return;
     flight.current = true; setBusy(true);
     try { await action(session, 'close'); setClosing(null); }
@@ -145,7 +150,9 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, connection,
   async function navigate(event: React.KeyboardEvent) {
     if (!selected || !['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
     event.preventDefault();
-    const current = tabs.indexOf(selected);
+    setKeyboardTabs(true);
+    const focusedId = (event.target as Element).closest('[data-tab-id]')?.getAttribute('data-tab-id');
+    const current = Math.max(0, tabs.findIndex(session => session.tab!.id === (focusedId ?? selected.tab!.id)));
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length;
     if (event.altKey && event.key.startsWith('Arrow')) {
       const ids = tabs.map(session => session.tab!.id); [ids[current],ids[next]] = [ids[next]!,ids[current]!];
@@ -155,7 +162,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, connection,
       document.getElementById('tab-' + tabs[next]!.tab!.id)?.focus();
     }
   }
-  function name(session: AgencyRuntimeSession) { return session.tab?.name ?? profiles.find(profile => profile.id === session.profileId)?.label ?? t('agency.ui.agentLabel'); }
+  function name(session: AgencyRuntimeSession) { return session.tab?.name ?? (session.kind === 'terminal' ? t('agency.tabs.terminalNamed', { number: session.tab?.terminalNumber ?? 1 }) : profiles.find(profile => profile.id === session.profileId)?.label ?? t('agency.ui.agentLabel')); }
   return <section className="agency-workspace-view" aria-label={t('agency.ui.workspaceNamed', { name: workspace.name })}>
     <header className="maw-tabs-header">
       <div className="maw-tabs-strip" ref={strip} role="tablist" aria-label={t('agency.tabs.tabList')} onKeyDown={event => void navigate(event)}
@@ -165,7 +172,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, connection,
         onPointerCancel={() => { drag.current = null; dragged.current = false; }}
         onClickCapture={event => { if (dragged.current) { event.preventDefault(); event.stopPropagation(); } }}>
         {tabs.map(session => <div className={'maw-session-tab' + (selected?.id === session.id ? ' active' : '')} key={session.tab!.id} data-tab-id={session.tab!.id}>
-          <button type="button" role="tab" id={'tab-' + session.tab!.id} aria-selected={selected?.id === session.id} aria-controls={'pane-' + session.tab!.id} tabIndex={selected?.id === session.id ? 0 : -1} title={name(session) + ' · ' + agencySessionText(session)} onClick={() => void action(session, 'select').catch(() => undefined)}>
+          <button type="button" role="tab" id={'tab-' + session.tab!.id} aria-selected={selected?.id === session.id} aria-controls={'pane-' + session.tab!.id} tabIndex={selected?.id === session.id ? 0 : -1} title={name(session) + ' · ' + agencySessionText(session)} onClick={() => { setKeyboardTabs(false); void action(session, 'select').catch(() => undefined); }}>
             <span aria-hidden="true">{session.kind === 'agent' ? '◇' : '>_'}</span><span className="agency-truncate">{name(session)}</span><span className={'agency-status-dot ' + (['awaiting-user','awaiting-permission'].includes(session.activity) ? 'attention' : session.activity === 'working' ? 'working' : 'idle')} aria-label={agencySessionText(session)} />
           </button>
           <button type="button" data-close aria-label={t('agency.tabs.closeNamed', { name: name(session) })} disabled={!online || busy} onClick={() => { if (['starting','running','stopping'].includes(session.lifecycle)) setClosing(session); else void close(session); }}>×</button>
@@ -182,11 +189,12 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, connection,
     </header>
     {(error || launchError) && <div className="agency-error-bar" role="alert"><span>{error || launchError}</span><button type="button" aria-label={t('agency.ui.dismissError')} onClick={() => { setError(null); onClearLaunchError?.(); }}>×</button></div>}
     <div className="maw-session-content">
-      {tabs.map(session => <SessionPane key={session.tab!.id} session={session} active={selected?.id === session.id} connection={connection} online={online} request={request} sendImmediate={sendImmediate} report={setError} />)}
+      {tabs.map(session => <SessionPane focusTerminal={!keyboardTabs} key={session.tab!.id} session={session} active={selected?.id === session.id} connection={connection} online={online} request={request} sendImmediate={sendImmediate} report={setError} />)}
       {!tabs.length && <div className="agency-shell-placeholder"><p>{t('agency.tabs.empty')}</p><button type="button" className="agency-secondary-button" disabled={!online} onClick={() => setPicker(true)}>{t('agency.tabs.newCLI')}</button><button type="button" className="agency-secondary-button" disabled={!online || busy} onClick={() => void add('terminal')}>{t('agency.tabs.newTerminal')}</button></div>}
     </div>
     {(picker || closing) && <div className="agency-modal-backdrop"><div ref={dialog} className="agency-dialog" role="dialog" aria-modal="true" aria-labelledby="maw-session-dialog">
       <h2 id="maw-session-dialog">{closing ? t('agency.tabs.confirmClose', { name: name(closing) }) : t('agency.tabs.newCLI')}</h2>
+      {!closing && !canLaunchAgent(profiles.find(profile => profile.id === profileId)) && <p role="status">{profiles.find(profile => profile.id === profileId)?.configurationMessage}</p>}
       {closing ? <p>{t('agency.tabs.closeExplanation')}</p> : <label className="agency-field"><span>{t('agency.ui.cliProfile')}</span><select autoFocus value={profileId} onChange={event => setProfileId(event.target.value as CliProfileId)}>{profiles.map(profile => <option value={profile.id} key={profile.id}>{profile.label}</option>)}</select></label>}
       {error && <p role="alert" className="agency-error">{error}</p>}
       <div className="agency-dialog-actions"><button type="button" autoFocus={!!closing} disabled={busy} onClick={() => { setPicker(false); setClosing(null); }}>{t('common.cancel')}</button><button type="button" className="agency-primary-button" disabled={busy || !online || (!closing && !canLaunchAgent(profiles.find(profile => profile.id === profileId)))} onClick={() => closing ? void close(closing) : void add('agent')}>{closing ? t('agency.tabs.closeSession') : t('agency.ui.startCLI')}</button></div>

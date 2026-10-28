@@ -77,7 +77,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
     seenNotice.current.add(notice.serial);
     const ws = data.workspaces.find((item) => item.id === notice.workspaceId);
     const noticeSession = data.sessions.find(session => session.id === notice.sessionId);
-    const sessionName = noticeSession?.tab?.name ?? data.profiles.find(profile => profile.id === noticeSession?.profileId)?.label ?? '';
+    const sessionName = noticeSession?.tab?.name ?? (noticeSession?.kind === 'terminal' ? t('agency.tabs.terminalNamed', { number: noticeSession.tab?.terminalNumber ?? 1 }) : data.profiles.find(profile => profile.id === noticeSession?.profileId)?.label ?? '');
     const label = (ws?.name ?? t('agency.ui.workspace')) + (sessionName ? ' / ' + sessionName : '');
     const message = notice.kind === 'attention' ? t('agency.ui.needsAttentionNamed', { name: label }) : t('agency.ui.completedTurnNamed', { name: label });
     setStatusToast(message);

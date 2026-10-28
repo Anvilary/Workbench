@@ -25,6 +25,7 @@
   "agency.tabs.sessionCount": "{{count}} сеансов",
   "agency.tabs.shellRestarted": "Терминал перезапущен (новый процесс)",
   "agency.tabs.tabList": "Вкладки; стрелки выбирают, Alt+стрелки перемещают",
+  "agency.tabs.terminalNamed": "Терминал {{number}}",
   "agency.ui.actionNeededInTheNativeCLI": "Action needed in the native CLI",
   "agency.ui.activeProcessesWarning": "Предупреждение: в этой рабочей области запущены активные процессы. Они будут остановлены.",
   "agency.ui.activityUnknown": "Активность неизвестна",

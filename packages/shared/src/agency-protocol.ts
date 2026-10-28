@@ -85,6 +85,7 @@ export interface AgencyCliProfile {
 }
 
 export interface AgencyTab {
+  terminalNumber?: number;
   id: string;
   name: string | null;
   order: number;
@@ -96,7 +97,7 @@ export interface AgencyTab {
 export function isAgencyTab(value: unknown): value is AgencyTab {
   if (!value || typeof value !== 'object') return false;
   const tab = value as Record<string, unknown>;
-  return typeof tab.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tab.id) &&
+  return (tab.terminalNumber === undefined || (Number.isSafeInteger(tab.terminalNumber) && (tab.terminalNumber as number) > 0)) && typeof tab.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tab.id) &&
     (tab.name === null || (typeof tab.name === 'string' && tab.name.length <= 120)) &&
     Number.isSafeInteger(tab.order) && (tab.order as number) >= 0 && typeof tab.selected === 'boolean' &&
     typeof tab.current === 'boolean' && (tab.closedAt === null || (typeof tab.closedAt === 'string' && Number.isFinite(Date.parse(tab.closedAt))));

@@ -25,6 +25,7 @@
   "agency.tabs.sessionCount": "{{count}} セッション",
   "agency.tabs.shellRestarted": "ターミナルを再起動しました（新しいプロセス）",
   "agency.tabs.tabList": "セッションタブ。矢印で選択、Alt+矢印で並べ替え",
+  "agency.tabs.terminalNamed": "ターミナル {{number}}",
   "agency.ui.actionNeededInTheNativeCLI": "Action needed in the native CLI",
   "agency.ui.activeProcessesWarning": "警告：このワークスペースではアクティブなプロセスが実行中です。停止されます。",
   "agency.ui.activityUnknown": "アクティビティ不明",

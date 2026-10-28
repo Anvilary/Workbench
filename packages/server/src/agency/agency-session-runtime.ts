@@ -86,7 +86,7 @@ export interface AgencyWorkspaceSource {
   /**
    * Required integration-owner gate, shared with Lane A's guarded deletion.
    * Under the same per-workspace lock: load the canonical row, validate it,
-   * reserve the Agency slot and durably save 'starting'. Only then release.
+   * reserve an independent runtime/tab attempt and durably save 'starting'. Only then release.
    * The deletion path MUST take the identical lock, and MUST reject every
    * historical/active Agency session reference while holding it.
    * A missing lock is unsafe; there is deliberately no unlocked fallback.
@@ -272,12 +272,12 @@ export class AgencySessionRuntime extends EventEmitter {
   hasWorkspaceReferences(workspaceId: WorkspaceId): boolean {
     this.assertReady();
     checkId(workspaceId);
-    return [...this.sessions.values()].some((s) => s.workspaceId === workspaceId);
+    return [...this.sessions.values()].some((s) => s.workspaceId === workspaceId && (ACTIVE.has(s.lifecycle) || (s.tab?.current !== false && !s.tab?.closedAt)));
   }
 
   /**
-   * Reserve the slot synchronously after resolving the workspace. A concurrent
-   * request cannot pass the active-session gate, even across awaited disk/CLI work.
+   * Reserve an independent tab attempt after resolving the canonical workspace.
+   * Concurrent launches share resource/native ownership gates, not per-kind slots.
    */
   create(input: AgencySessionCreateInput): Promise<AgencyRuntimeSession> {
     if (!input.launchId) return this.createAttempt(input);
@@ -317,7 +317,7 @@ export class AgencySessionRuntime extends EventEmitter {
       if (this.list().filter(s => ACTIVE.has(s.lifecycle)).length >= 24) throw new AgencyRuntimeError('conflict', 'Active process limit reached (24)');
       const original = input.tabId ? this.list().find(s => s.workspaceId === input.workspaceId && s.tab?.id === input.tabId && s.tab?.current) : undefined;
       if (input.tabId && (!original || original.tab?.closedAt || ACTIVE.has(original.lifecycle))) throw new AgencyRuntimeError('conflict', 'Tab is closed or already active');
-      const tab = original?.tab ? { ...original.tab } : { id: randomUUID(), name: input.kind === 'terminal' ? 'Terminal ' + (new Set(this.list(input.workspaceId).filter(s => s.kind === 'terminal').map(s => s.tab?.id)).size + 1) : null, order: Math.max(-1, ...this.list(input.workspaceId).map(s => s.tab?.order ?? -1)) + 1, selected: true, closedAt: null, current: true };
+      const tab = original?.tab ? { ...original.tab } : { id: randomUUID(), name: null, ...(input.kind === 'terminal' ? { terminalNumber: new Set(this.list(input.workspaceId).filter(s => s.kind === 'terminal').map(s => s.tab?.id)).size + 1 } : {}), order: Math.max(-1, ...this.list(input.workspaceId).map(s => s.tab?.order ?? -1)) + 1, selected: true, closedAt: null, current: true };
       if (input.kind === 'agent' && input.resumeNativeSessionId !== undefined &&
           (input.resumeNativeSessionId.length === 0 || input.resumeNativeSessionId.length > 512)) {
         throw new AgencyRuntimeError('invalid-request', 'Invalid native resume session ID');
@@ -556,7 +556,7 @@ export class AgencySessionRuntime extends EventEmitter {
     if (!ACTIVE.has(session.lifecycle) || session.lifecycle === 'stopping') return session;
     const stopping = { ...session, stoppedByUser: true, lifecycle: 'stopping' as const, updatedAt: NOW() };
     this.sessions.set(sessionId, stopping);
-    await this.publish(stopping);
+    try { await this.publish(stopping); } catch (error) { this.sessions.set(sessionId, session); throw error; }
     if (stopping.terminalId === null) return stopping; // pending open resolves and stops itself
     if (!this.registry.close(stopping.terminalId)) {
       return this.finish(sessionId, null, 'exited');

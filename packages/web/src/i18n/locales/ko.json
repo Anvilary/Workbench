@@ -25,6 +25,7 @@
   "agency.tabs.sessionCount": "세션 {{count}}개",
   "agency.tabs.shellRestarted": "터미널 재시작됨 (새 프로세스)",
   "agency.tabs.tabList": "세션 탭. 화살표로 선택, Alt+화살표로 이동",
+  "agency.tabs.terminalNamed": "터미널 {{number}}",
   "agency.ui.actionNeededInTheNativeCLI": "Action needed in the native CLI",
   "agency.ui.activeProcessesWarning": "경고: 이 작업 영역에 실행 중인 프로세스가 있습니다. 종료됩니다.",
   "agency.ui.activityUnknown": "활동 상태 알 수 없음",

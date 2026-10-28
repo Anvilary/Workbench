@@ -113,3 +113,10 @@ test('Profile argv JSON preserves spaces and rejects shell-like parsing', () => 
   assert.equal(parseProfileArgv('["okay", 123]'), null);
   assert.equal(parseProfileArgv('{"args": ["test"]}'), null);
 });
+
+test('Session notices remain independent for two agents in the same workspace', () => {
+  const one={kind:'agent',lifecycle:'running',activity:'working'};
+  const two={kind:'agent',lifecycle:'running',activity:'idle'};
+  assert.equal(transitionNotice(one,{...one,activity:'awaiting-user'}),'attention');
+  assert.equal(transitionNotice(two,two),null);
+});
