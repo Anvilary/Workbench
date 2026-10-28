@@ -218,3 +218,20 @@ Final frontend extension: **19 PASS**, zero skips; now explicitly exercises CLI,
 shell and browser names plus the menu alternative. Both audit Neko containers
 were backed up privately and removed. No fixture process/service is left running.
 Final implementation/evidence commit: 11504091b0541e747ed405337892dcdd131e88fe.
+
+## Delivery — draft PR #13
+
+Pushed `audit/maw-adversarial-performance`; draft PR targets main:
+https://github.com/alteixeira20/My-Amazing-Workspace/pull/13
+Published candidate SHA 7cc896472bcb0164fc7c330a8e3c43ced44b2d69.
+`gh pr view ... --json isDraft,headRefOid,statusCheckRollup`: draft confirmed.
+`gh run view 40786237642 --json jobs`: zero executed steps in every job.
+`gh api repos/alteixeira20/My-Amazing-Workspace/check-runs/123160012242/annotations`:
+account payments/spending-limit block, same as baseline. No test failure evidence
+from hosted CI; downstream package smoke skipped. No merge or deployment.
+
+Next precise action: account owner resolves CI billing, then
+`gh run rerun 40786237642` (or latest PR run if this documentation push supersedes
+it), inspect all jobs and complete the explicitly partial release acceptance
+matrix/soak in FINAL-REPORT.md using fresh isolated state. Do not alter production.
+This final checkpoint only updates delivery/CI metadata; no code changes.

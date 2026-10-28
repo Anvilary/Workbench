@@ -2,8 +2,10 @@
 
 Starting SHA: `cde654f6a0302a43c10dfc696b264ec8c3aefd05` (merged PR #12).
 Final implementation/evidence SHA: `11504091b0541e747ed405337892dcdd131e88fe`.
+Published audited candidate SHA: `7cc896472bcb0164fc7c330a8e3c43ced44b2d69`.
 Subsequent delivery commits change audit documentation only; exact delivery HEAD
-is recorded in the draft PR and final handoff. Branch:
+is recorded in the draft PR and final handoff.
+Draft PR: https://github.com/alteixeira20/My-Amazing-Workspace/pull/13. Branch:
 `audit/maw-adversarial-performance`, targeting main. No merge or deployment.
 
 ## Completion matrix
@@ -83,8 +85,9 @@ responsive feature acceptance from these captures.
 - Typecheck, full `pnpm check`, nine-locale i18n and production build: PASS.
   Internal guide check SKIP (guide absent); existing bundle-size warning remains.
 - Baseline GitHub run 40777144624: jobs never started due account payment/spending
-  limit. This is infrastructure failure, not a code failure. Draft PR CI will be
-  inspected separately. Windows/macOS package smoke and Android not run locally.
+  limit. This is infrastructure failure, not a code failure. Draft PR run 40786237642 has the same confirmed billing annotation;
+  all jobs have zero steps. Windows/Ubuntu/package/Android failures are infrastructure,
+  and downstream install smoke is SKIPPED. Windows/macOS package smoke and Android not run locally.
 - Linux CI now includes the missing security/activity/browser/Python regressions
   and explicitly installs Chromium before browser tests.
 
