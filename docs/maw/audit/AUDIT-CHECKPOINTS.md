@@ -213,3 +213,8 @@ production/other integration containers, stores and processes remain untouched.
 Next: commit evidence and CI gates, push branch, create draft PR, inspect its CI
 annotations, then record final delivery SHA/URL. Release acceptance remains
 manual and requires the limitations/next commands in FINAL-REPORT.md.
+
+Final frontend extension: **19 PASS**, zero skips; now explicitly exercises CLI,
+shell and browser names plus the menu alternative. Both audit Neko containers
+were backed up privately and removed. No fixture process/service is left running.
+Final implementation/evidence commit: 11504091b0541e747ed405337892dcdd131e88fe.
