@@ -112,3 +112,6 @@ Smallest safe correction: carry an immutable verified effective native-home cont
 
 ## Continuation 02 checkpoint
 Sustained eight-shell PTY trial and strict authenticated WS/picker reconnect/real command and exit-code checks completed; methodology/results in 02–06. No performance bottleneck established. Browser listener/heap growth is observed, attribution unverified. Next: finish long-transcript readiness sampling, verify paired-device profile configuration boundary, consolidate security review and final A/B/C handoff. App source remains untouched.
+
+## Continuation 03 checkpoint
+Critical source boundaries reviewed; authenticated paired-device test confirms SEC-002 P2 host profile configuration bypass. Default remote-off condition limits exposure; no unauthenticated exploit. Existing remote suite independently passes. Next: finish long-transcript sampling and browser reconnect/Done preservation fixture, then replace provisional status/backlog/handoff with definitive bounded-scope completion. Preserve all earlier metric rows and historical uncertainty; do not present listener increase as a proven leak.
