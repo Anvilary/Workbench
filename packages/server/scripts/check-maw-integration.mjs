@@ -40,6 +40,7 @@ const pending = new Map();
 const traffic = [];
 const errors = [];
 const results = [];
+const measurements = {startupsMs:[],switchMs:[],renderMs:null,selectionEvents:null};
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function eventually(work, label, timeout = 15_000) {
   const deadline = Date.now() + timeout;
@@ -52,6 +53,7 @@ async function eventually(work, label, timeout = 15_000) {
 }
 function check(label, details = {}) { results.push({ label, ...details }); console.log('PASS ' + label); }
 async function start() {
+  const began=performance.now();
   log = '';
   child = spawn(process.execPath, ['--import', path.join(repo, 'packages/server/node_modules/tsx/dist/loader.mjs'),
     path.join(repo, 'packages/server/src/index.ts'), '--prod'], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -72,6 +74,7 @@ async function start() {
   });
   await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
   await request({ type: 'agency.notifications.list' });
+  measurements.startupsMs.push(performance.now()-began);
 }
 function request(message) {
   return new Promise((resolve, reject) => {
@@ -123,8 +126,10 @@ try {
   page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(id => { if (!localStorage.getItem('agency-ui.selected-workspace.v1')) localStorage.setItem('agency-ui.selected-workspace.v1', id); }, beta.id);
+  const renderStart=performance.now();
   await page.goto(address.url);
   await page.locator('.agency-app').waitFor();
+  measurements.renderMs=performance.now()-renderStart;
   await page.locator('.maw-bell-button').click();
   await page.locator('.maw-notification-inbox').waitFor();
   await page.locator('.maw-inbox-item').filter({ hasText: /finished/i }).first().click();
@@ -141,6 +146,10 @@ try {
   assert.equal((await notifications()).notifications.length, beforeDismiss);
   check('real failed shell command, top-right toast and dismissal retains inbox');
 
+  const trafficStart=traffic.length;
+  for(let i=0;i<40;i++){const began=performance.now();await selectNative(i%2?shellA:shellB);measurements.switchMs.push(performance.now()-began);}
+  measurements.selectionEvents=traffic.slice(trafficStart).length;
+  measurements.serverSmaps=await readFile('/proc/'+child.pid+'/smaps_rollup','utf8').then(text=>text.split('\n').filter(line=>/^(Rss|Pss):/.test(line))).catch(()=>[]);
   let webA, webB, webC;
   if (process.env.MAW_INTEGRATION_NEKO_ENV) {
     const createA = { type: 'agency.webTab.create', workspaceId: alpha.id, title: 'ChatGPT A', url: 'https://chatgpt.com/', launchId: randomUUID() };
@@ -184,7 +193,11 @@ try {
       const response = await fetch(neko.NEKO_CONTROLLER_URL + '/tabs', { headers: { Authorization: 'Bearer ' + neko.CONTROLLER_AUTH_TOKEN } });
       return (await response.json()).tabs.some(tab => tab.id === webA.targetRef && tab.url.includes(marker));
     }, 'keyboard input through WebRTC reaches intended Chromium target');
-    await eventually(async () => (await webSnapshot()).tabs.find(tab => tab.id === webA.id)?.url.includes(marker), 'live conversation URL persistence', 20_000);
+    await eventually(async () => {
+      const response=await fetch(neko.NEKO_CONTROLLER_URL+'/tabs',{headers:{Authorization:'Bearer '+neko.CONTROLLER_AUTH_TOKEN}});
+      const live=(await response.json()).tabs.find(tab=>tab.id===webA.targetRef);
+      return live?.url?.startsWith('https://chatgpt.com/') && (await webSnapshot()).tabs.find(tab=>tab.id===webA.id)?.url===live.url;
+    }, 'live URL persistence including guest authentication redirects', 20_000);
     check('real Neko keyboard input controls Chromium and live navigation is persisted');
 
     if (process.env.MAW_TRY_CHATGPT_GUEST === '1') {
@@ -210,12 +223,23 @@ try {
       await page.screenshot({ path: path.join(out, 'chatgpt-after-background.png'), fullPage: true });
       results.push({ label: 'guest ChatGPT response attempted only through streamed UI', status: 'REQUIRES_VISUAL_REVIEW', targetRefPreserved: (await webSnapshot()).tabs.find(tab => tab.id === webA.id)?.targetRef === webA.targetRef });
     }
-    for (const [width, height] of [[1366, 768], [1920, 1080], [2560, 1440], [390, 844]]) {
+    for (const [width, height] of [[390, 844], [768, 1024], [1280, 720], [1366, 768], [1920, 1080], [2560, 1440]]) {
       await page.setViewportSize({ width, height });
+      if (width === 390 && await page.getByRole('button',{name:'Collapse sidebar',exact:true}).count()) await page.getByRole('button',{name:'Collapse sidebar',exact:true}).click();
+      await page.getByRole('tab',{name:'ChatGPT A'}).press('F2');
+      await page.getByLabel('Tab title',{exact:true}).fill('Research '+width);
+      await page.screenshot({path:path.join(out,`rename-${width}x${height}.png`),fullPage:true});
+      await page.getByLabel('Tab title',{exact:true}).press('Enter');
+      await page.getByRole('tab',{name:'Research '+width}).waitFor();
+      await request({type:'agency.webTab.rename',workspaceId:alpha.id,tabId:webA.id,title:'ChatGPT A'});
+      await page.getByRole('tab',{name:'ChatGPT A'}).waitFor();
+      await page.locator('.maw-bell-button').click(); await page.locator('.maw-notification-inbox').waitFor();
+      await page.screenshot({path:path.join(out,`inbox-${width}x${height}.png`),fullPage:true});
+      await page.keyboard.press('Escape');
       await page.screenshot({ path: path.join(out, `neko-${width}x${height}.png`), fullPage: true });
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `overflow at ${width}`);
       if (width === 390) {
-        await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click();
+        if (await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).count()) await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click();
         await page.getByRole('button', { name: 'Add tab' }).click();
         await page.getByRole('menuitem', { name: /ChatGPT/ }).waitFor();
         await page.screenshot({ path: path.join(out, 'neko-narrow-controls.png'), fullPage: true });
@@ -264,7 +288,7 @@ try {
   }
   check(webA ? 'MAW restart retains notification IDs/read state and verified live browser target' : 'MAW restart retains notification IDs and independent read state');
   assert.deepEqual(errors, []);
-  await writeFile(path.join(out, 'results.json'), JSON.stringify({ results, pageErrors: errors,
+  await writeFile(path.join(out, 'results.json'), JSON.stringify({ results, measurements, pageErrors: errors,
     realChatGPTResponse: 'UNVERIFIED: disposable browser has no user authentication; no completion claim',
     evidence: out }, null, 2));
   console.log(`Evidence: ${out}`);
