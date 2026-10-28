@@ -27,6 +27,13 @@ export class BrowserTabStoreError extends Error {
   }
 }
 
+/** Newer metadata is not corruption and must never be downgraded via a backup. */
+export class UnsupportedBrowserTabSchemaError extends BrowserTabStoreError {
+  constructor(version: unknown) {
+    super('internal-error', `Unsupported browser tab store version: ${String(version)}`);
+  }
+}
+
 export interface BrowserTabSnapshot {
   version: number;
   tabs: WebTab[];
@@ -110,7 +117,7 @@ export function parseBrowserTabSnapshot(contents: string): WebTab[] {
 
   const version = parsed.version;
   if (version !== BROWSER_TAB_STORE_VERSION) {
-    throw new BrowserTabStoreError('internal-error', `Unsupported browser tab store version: ${String(version)}`);
+    throw new UnsupportedBrowserTabSchemaError(version);
   }
 
   if (!Array.isArray(parsed.tabs)) {
@@ -168,6 +175,7 @@ export class BrowserTabStore {
       const raw = await readFile(this.filePath, 'utf8');
       loadedTabs = parseBrowserTabSnapshot(raw);
     } catch (error) {
+      if (error instanceof UnsupportedBrowserTabSchemaError) throw error;
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         primaryMissing = true;
       }
@@ -180,6 +188,7 @@ export class BrowserTabStore {
         const rawBackup = await readFile(this.filePath + '.bak', 'utf8');
         loadedTabs = parseBrowserTabSnapshot(rawBackup);
       } catch (backupError) {
+        if (backupError instanceof UnsupportedBrowserTabSchemaError) throw backupError;
         const backupMissing = (backupError as NodeJS.ErrnoException).code === 'ENOENT';
         if (primaryMissing && backupMissing) {
           this.inMemoryTabs.clear();

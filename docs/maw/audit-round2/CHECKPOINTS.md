@@ -48,3 +48,11 @@ leave executable commands in the topic documents. Never signal pre-existing
 processes or reuse a Neko resource. Release verdict remains UNVERIFIED until final
 assessment. Current next action: build bounded isolated soak and coordinator
 baseline, then failure-inject persistence/provider transitions.
+
+## CP3a — persistence failure injection
+
+R2-01 and R2-02 reproduced before fixes and covered by executable regressions.
+`pnpm --filter @agent-workbench/server exec sh -c 'tsx --test src/agency/browser-tabs/*.test.ts src/agency/recovery-round2.test.ts'`: 56 PASS, zero skips.
+Notification/activity suite: 20 PASS. Server typecheck PASS after R2-01; full
+regression scheduled after remaining changes. No schema changes or deployment.
+Next: finish bounded baseline, snapshot optimization, provider evidence tests.
