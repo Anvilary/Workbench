@@ -374,3 +374,15 @@
 
 /* Workbench's FolderPicker must appear above the Agency creation dialog. */
 .agency-app .modal-backdrop { z-index: 140; }
+
+/* Compact navigation and persistent PTY views. Hidden panes remain mounted. */
+.agency-agent-pane[hidden], .agency-shell-pane[hidden] { display: none; }
+.agency-breadcrumbs { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; font-size: 12px; }
+.agency-breadcrumbs > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.agency-breadcrumb-path { flex: 1; }
+.agency-nav-head strong { font-size: 13px; line-height: 1.3; }
+.agency-view-tabs { display: flex; gap: 4px; min-width: 0; margin-right: auto; }
+.agency-view-tabs button { background: transparent; color: var(--text-muted, #aaa); border: 0; padding: 6px 10px; cursor: pointer; white-space: nowrap; }
+.agency-view-tabs button[aria-pressed="true"] { color: #eee; background: #ffffff12; border-radius: 4px; }
+.agency-workspace-header { min-height: 40px; padding: 4px 12px; }
+@media (max-width: 600px) { .agency-live-status { display: none; } .agency-topbar { gap: 4px; } .agency-connection-state { font-size: 10px; } }

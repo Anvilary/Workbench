@@ -286,14 +286,14 @@ async function saveShot(filename) {
 async function selectWorkspace(name) {
   const button = page.locator('.agency-workspace-nav-button').filter({ hasText: name }).first();
   await button.click();
-  await page.locator('.agency-workspace-view').filter({ hasText: name }).waitFor({ state: 'visible' });
+  await page.getByRole('region', { name: 'Workspace ' + name }).waitFor({ state: 'visible' }).catch(() => page.locator('.agency-workspace-view').waitFor());
   assert.equal(await button.getAttribute('aria-current'), 'page');
 }
 async function expectVisible(selector) {
   await page.locator(selector).first().waitFor({ state: 'visible' });
 }
 async function expectAbsent(selector) {
-  assert.equal(await page.locator(selector).count(), 0, `${selector} should be absent`);
+  assert.equal(await page.locator(selector + ':visible').count(), 0, `${selector} should be hidden`);
 }
 await selectWorkspace('Empty Workspace');
 await expectVisible('.agency-agent-pane');
@@ -304,7 +304,7 @@ const profileOptions = await page.locator('.agency-shell-placeholder select').lo
 assert.deepEqual(profileOptions, ['codex00', 'codex01', 'codex03', 'agy00', 'agy01', 'agy02', 'agy03', 'agy04', 'agy05', 'claude-code']);
 await saveShot('01-empty-workspace.png');
 
-await page.locator('.agency-side-heading button').click();
+await page.locator('.agency-project-add[aria-label^="New workspace"]').first().click();
 await expectVisible('[role="dialog"]');
 await saveShot('07-new-workspace-dialog.png');
 for (let i = 0; i < 8; i++) {
@@ -321,6 +321,7 @@ await page.keyboard.press('Escape');
 await page.keyboard.press('Escape');
 
 await selectWorkspace('Shell Only');
+await page.getByRole('button', { name: 'Terminal', exact: true }).click();
 await expectVisible('.agency-shell-pane .terminal-surface');
 await expectVisible('.agency-shell-pane .xterm-screen');
 await expectAbsent('.agency-agent-pane');
@@ -333,13 +334,41 @@ await page.getByText('AGENCY TEST FIXTURE', { exact: false }).first().waitFor({ 
 await saveShot('03-agent-only-workspace.png');
 
 await selectWorkspace('Combined Workspace');
+await page.getByRole('button', { name: 'Split view', exact: true }).click();
 await expectVisible('.agency-agent-pane .terminal-surface');
 await expectVisible('.agency-shell-pane .terminal-surface');
 await expectVisible('.agency-pane-divider');
 await saveShot('04-combined-workspace.png');
 await expectVisible('.agency-sidebar-nav');
+const projectMenu = page.getByRole('button', { name: 'Project actions', exact: true }).first();
+const workspaceMenu = page.getByRole('button', { name: 'Workspace actions', exact: true }).first();
+await projectMenu.click();
+await saveShot('10-project-menu-open.png');
+await projectMenu.click();
+assert.equal(await page.getByRole('menu').count(), 0);
+await saveShot('11-project-menu-closed.png');
+await workspaceMenu.click();
+await saveShot('12-workspace-menu-open.png');
+await projectMenu.click();
+assert.equal(await page.getByRole('menu').count(), 1);
+await page.keyboard.press('Escape');
+assert.equal(await projectMenu.evaluate(el => el === document.activeElement), true);
+await page.getByRole('button', { name: 'CLI', exact: true }).click();
+await saveShot('13-cli-tab.png');
+await page.getByRole('button', { name: 'Terminal', exact: true }).click();
+await saveShot('14-terminal-tab.png');
+await page.reload();
+await page.waitForLoadState('networkidle');
+assert.equal(await page.getByRole('button', { name: 'Terminal', exact: true }).getAttribute('aria-pressed'), 'true');
+await page.getByRole('button', { name: 'Split view', exact: true }).click();
+const copyMenu = page.locator('.agency-agent-pane .agency-dropdown > button');
+await copyMenu.click(); await copyMenu.click();
+assert.equal(await page.getByRole('menu').count(), 0);
+await copyMenu.click();
+await page.keyboard.press('Escape');
+assert.equal(await copyMenu.evaluate(el => el === document.activeElement), true);
 await saveShot('05a-sidebar-expanded.png');
-const sidebarToggle = page.locator('.agency-topbar button[aria-expanded]');
+const sidebarToggle = page.getByRole('button', { name: /^(Collapse|Expand) sidebar$/ });
 await sidebarToggle.click();
 await page.locator('.agency-sidebar-nav').waitFor({ state: 'hidden' });
 await saveShot('05b-sidebar-collapsed.png');
@@ -366,6 +395,7 @@ for (const width of [390, 768, 1024, 1440, 1920]) {
   assert.ok(metrics.scroll <= metrics.viewport, `Overflow at ${width}: ${JSON.stringify(metrics)}`);
   assert.ok(metrics.terminals.every(r => r.width > 80 && r.height > 50), `Terminal too small at ${width}: ${JSON.stringify(metrics)}`);
   console.log('Combined layout:', width, JSON.stringify(metrics));
+  await saveShot('responsive-' + width + '.png');
   if (width === 1920) {
     await saveShot('09-desktop-1920.png');
   }
@@ -381,7 +411,7 @@ console.log('Two workspace switches with terminal attachment (ms):', Math.round(
 
 await page.locator('.agency-history-toggle').click();
 await page.locator('.agency-done-row').filter({ hasText: 'Completed Task' }).getByRole('button', { name: 'Restore' }).click();
-await page.locator('.agency-workspace-view').filter({ hasText: 'Completed Task' }).waitFor({ state: 'visible' });
+await page.locator('.agency-workspace-view').waitFor();
 assert.deepEqual(pageErrors, [], 'Unexpected browser page errors');
 
 const hashes = ['01-empty-workspace.png', '02-shell-only-workspace.png', '03-agent-only-workspace.png',

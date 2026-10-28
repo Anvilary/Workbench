@@ -79,24 +79,25 @@ export function AgencyWorkspaceView({
   const contentRef = useRef<HTMLDivElement | null>(null);
 
   const profile = profiles.find((item) => item.id === (agent?.profileId ?? effectiveProfileId));
-  const agentTerminalId = (agent ?? pastAgent)?.terminalId ?? null;
+  const agentTerminalId = agent?.terminalId ?? null;
+  const pastShell = latestSession(sessions, workspace.id, 'terminal');
   const shellTerminalId = activeShell?.terminalId ?? null;
   const feed = useConversation(connection, agentTerminalId);
   const hasAgent = !!(agent ?? pastAgent);
   const hasShell = !!activeShell;
   const layout = workspaceLayout(hasAgent || addingAgent, hasShell);
-  const hasBoth = layout === 'combined';
-
-  // Close menus on outside click
+  const [view, setView] = useState<'cli' | 'terminal' | 'split'>(() => {
+    try {
+      const saved = localStorage.getItem('agency-ui.view.' + workspace.id);
+      if (saved === 'terminal' || saved === 'split') return saved;
+    } catch {}
+    return 'cli';
+  });
+  const hasBoth = layout === 'combined' && view === 'split';
   useEffect(() => {
-    if (!copyMenuAgent && !copyMenuShell) return;
-    const onPointerDown = () => {
-      setCopyMenuAgent(false);
-      setCopyMenuShell(false);
-    };
-    window.addEventListener('pointerdown', onPointerDown);
-    return () => window.removeEventListener('pointerdown', onPointerDown);
-  }, [copyMenuAgent, copyMenuShell]);
+    try { localStorage.setItem('agency-ui.view.' + workspace.id, view); } catch {}
+    setCopyMenuAgent(false); setCopyMenuShell(false);
+  }, [view, workspace.id]);
 
   const workspaceStatus = useMemo(() => {
     if (agent) return agencyActivityText(agent.activity, agent.lifecycle);
@@ -302,9 +303,10 @@ export function AgencyWorkspaceView({
   return (
     <section className="agency-workspace-view" aria-label={t('agency.ui.workspaceNamed', { name: workspace.name })}>
       <header className="agency-workspace-header">
-        <div className="agency-workspace-heading">
-          <div className="agency-crumbs">{t('agency.ui.workspace')}<span>/</span> <strong>{workspace.name}</strong></div>
-          <div className="agency-path" title={workspace.cwd}>{workspace.cwd}</div>
+        <div className="agency-view-tabs" role="group" aria-label={t('agency.ui.sessionViews')}>
+          <button type="button" aria-pressed={view === 'cli'} onClick={() => setView('cli')}>{t('agency.ui.cliTab')}</button>
+          <button type="button" aria-pressed={view === 'terminal'} onClick={() => setView('terminal')}>{t('agency.ui.terminalTab')}</button>
+          {hasAgent && hasShell && <button type="button" aria-pressed={view === 'split'} onClick={() => setView('split')}>{t('agency.ui.splitView')}</button>}
         </div>
         <span className="agency-live-status" aria-label={t('agency.ui.statusNamed', { status: workspaceStatus })}>
           <span className={'agency-status-dot ' + (agent && isAttention(agent.activity) ? 'attention' : agent?.activity === 'working' ? 'working' : 'idle')} />{workspaceStatus}
@@ -328,9 +330,10 @@ export function AgencyWorkspaceView({
         ref={contentRef}
         className={'agency-workspace-content' + (hasBoth ? ' agency-content-split' : '') + (draggingSplit ? ' agency-dragging-split' : '')}
       >
-        {(hasAgent || !hasShell || addingAgent) && (
+        {true && (
           <main
             className="agency-agent-pane"
+            hidden={view === 'terminal'}
             style={hasBoth ? { flex: `0 0 ${splitRatio * 100}%` } : undefined}
           >
             <div className="agency-pane-bar">
@@ -447,7 +450,7 @@ export function AgencyWorkspaceView({
                     terminalId={agentTerminalId}
                     connection={connection}
                     theme="dark"
-                    active
+                    active={view !== 'terminal'}
                     autoFocus
                     enableAgencyShortcuts
                     onTerminalInstance={(inst) => { agentTerminalRef.current = inst; }}
@@ -456,7 +459,7 @@ export function AgencyWorkspaceView({
                 </div>
               ) : (
                 <div className="agency-shell-placeholder">
-                  <p>{t('agency.ui.noSession')}</p>
+                  <p>{pastAgent ? (pastAgent.exitCode === null ? t('agency.ui.previousAgentExited') : t('agency.ui.previousAgentExitedCode', { code: pastAgent.exitCode })) : t('agency.ui.noSession')}</p>
                   <span>{t('agency.ui.readyWhenYouAre')}</span>
                   {profiles.length > 0 && (
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -476,7 +479,7 @@ export function AgencyWorkspaceView({
                         disabled={!online || agentStarting}
                         onClick={() => void launchAgent()}
                       >
-                        {agentStarting ? t('agency.ui.startingInProgress') : t('agency.ui.running')}
+                        {agentStarting ? t('agency.ui.startingInProgress') : t('agency.ui.startCLI')}
                       </button>
                     </div>
                   )}
@@ -499,9 +502,10 @@ export function AgencyWorkspaceView({
           />
         )}
 
-        {hasShell && (
+        {true && (
           <aside
             className={'agency-shell-pane' + (!hasAgent ? ' agency-shell-primary' : '')}
+            hidden={view === 'cli'}
             style={hasBoth ? { flex: '1 1 0%' } : undefined}
           >
             <div className="agency-pane-bar">
@@ -599,7 +603,7 @@ export function AgencyWorkspaceView({
                     terminalId={shellTerminalId}
                     connection={connection}
                     theme="dark"
-                    active
+                    active={view !== 'cli'}
                     autoFocus
                     enableAgencyShortcuts
                     onTerminalInstance={(inst) => { shellTerminalRef.current = inst; }}
@@ -608,7 +612,7 @@ export function AgencyWorkspaceView({
                 </div>
               ) : (
                 <div className="agency-shell-placeholder">
-                  <p>{t('agency.ui.independentTerminal')}</p>
+                  <p>{pastShell ? (pastShell.exitCode === null ? t('agency.ui.previousAgentExited') : t('agency.ui.previousAgentExitedCode', { code: pastShell.exitCode })) : t('agency.ui.independentTerminal')}</p>
                   <span>{t('agency.ui.useTheExistingWorkspaceDirectoryWithNativeShell')}</span>
                   <button
                     type="button"
@@ -616,7 +620,7 @@ export function AgencyWorkspaceView({
                     disabled={!online || shellStarting}
                     onClick={() => void launchShell()}
                   >
-                    {shellStarting ? t('agency.ui.startingInProgress') : t('agency.ui.openShell')}
+                    {shellStarting ? t('agency.ui.startingInProgress') : t('agency.ui.startTerminal')}
                   </button>
                 </div>
               )}
