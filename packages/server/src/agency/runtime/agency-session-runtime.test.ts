@@ -1087,3 +1087,35 @@ test('the registry process limit remains atomic across concurrent raw and manage
     assert.equal(results.filter(result=>result.status==='rejected').length,1);assert.equal(registry.list().length,24);
   } finally {registry.disposeAll();await rm(cwd,{recursive:true,force:true});}
 });
+
+test('multiple native conversations recover into their own tabs; one unavailable profile cannot interrupt siblings', async () => {
+  const cwd=await mkdtemp(path.join(tmpdir(),'maw-many-resume-'));const store=new MemoryStore();
+  const plan: AgencyProfileLaunchProvider['resolveLaunch']=async input=>({...input,provider:'codex',file:'/bin/echo',args:['resume',input.resumeNativeSessionId??input.proposedSessionId],env:{},nativeIdentity:{provider:'codex',home:path.join(cwd,input.profileId),bindingId:'b'.repeat(64)},session:{kind:'known',sessionId:input.resumeNativeSessionId??input.proposedSessionId}});
+  const first=fixture(cwd,{store,resolveLaunch:plan});let second: ReturnType<typeof fixture>|undefined;
+  try {
+    await first.runtime.initialize();
+    const originals=await Promise.all(['codex00','codex01','codex03','codex00'].map(profileId=>first.runtime.create({kind:'agent',workspaceId:first.one.id,profileId:profileId as CliProfileId,cols:80,rows:24})));
+    first.runtime.dispose();const calls: string[]=[];
+    second=fixture(cwd,{store,resolveLaunch:async input=>{calls.push(input.profileId);if(input.profileId==='codex01')throw new Error('Original profile unavailable');return plan(input);}});
+    second.workspaces.set(first.one.id,first.one);await second.runtime.initialize();await Promise.all([second.runtime.recoverActive(()=>true),second.runtime.recoverActive(()=>true)]);
+    const current=second.runtime.list(first.one.id).filter(row=>row.tab?.current);
+    assert.equal(current.length,4);assert.equal(second.terminals.opens.length,3);assert.equal(calls.length,4);
+    for(const old of originals){const row=current.find(item=>item.tab!.id===old.tab!.id)!;assert.equal(row.nativeSessionId,old.nativeSessionId);assert.notEqual(row.id,old.id);assert.equal(row.lifecycle,old.profileId==='codex01'?'failed':'running');}
+    const failed=current.find(row=>row.profileId==='codex01')!;assert.match(failed.recovery?.message??'',/Original profile unavailable/);
+  } finally {first.runtime.dispose();second?.runtime.dispose();await rm(cwd,{recursive:true,force:true});}
+});
+
+test('more than 24 logical exited tabs can be retained while completed PTYs release registry capacity', {skip:process.platform!=='linux',timeout:15000}, async () => {
+  const cwd=await mkdtemp(path.join(tmpdir(),'maw-logical-history-'));const row=workspace(cwd);
+  const registry=new TerminalRegistry(new AgentRegistry([]),{file:'/bin/sh',args:['-c','exit 0'],name:'sh'},new DisposableWorkspaceStore());
+  const runtime=new AgencySessionRuntime({registry,store:new MemoryStore(),workspaces:{protectedDirectories:()=>[],withSessionReservation:async(_id,action)=>action(row)},profiles:{resolveLaunch:async()=>{throw new Error('No agent in shell fixture');}}});
+  try {
+    await runtime.initialize();
+    for(let index=0;index<26;index++) {
+      const session=await runtime.create({kind:'terminal',workspaceId:row.id,cols:80,rows:24});
+      await until(()=>runtime.get(session.id)?.lifecycle==='exited' && registry.list().length===0);
+    }
+    const tabs=runtime.list(row.id).filter(session=>session.tab?.current && !session.tab.closedAt);
+    assert.equal(tabs.length,26);assert.ok(tabs.every(session=>session.exitCode===0));assert.equal(registry.list().length,0);
+  } finally {runtime.dispose();registry.disposeAll();await rm(cwd,{recursive:true,force:true});}
+});

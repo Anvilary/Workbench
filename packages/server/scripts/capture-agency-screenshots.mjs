@@ -58,6 +58,8 @@ const commonEnv = {
   ...process.env,
   AGENT_WORKBENCH_NO_OPEN: '1',
   AGENT_WORKBENCH_NO_RESTORE: '1',
+  // A deterministic real interactive shell, independent of host zsh setup.
+  SHELL: '/bin/bash',
   HOME: testHome,
   USERPROFILE: testHome,
   APPDATA: testAppdata,
@@ -365,14 +367,15 @@ const failedWorkspace=(await api({type:'agency.workspaces.list'})).workspaces.fi
 const partial=(await snapshot()).filter(row=>row.workspaceId===failedWorkspace.id);
 assert.equal(partial.find(row=>row.kind==='agent').profileId,'codex03');assert.equal(partial.find(row=>row.kind==='agent').lifecycle,'failed');
 assert.equal(partial.find(row=>row.kind==='terminal').lifecycle,'running');
+await until(async()=>await page.locator(`[data-tab-id="${partial.find(row=>row.kind==='agent').tab.id}"] .agency-status-dot`).getAttribute('aria-label')==='Failed');
 await shot('creation-combined-partial-failure');
 await selectWorkspace('Combined Workspace');
 // Deliberately exited PTY shows its real code; closing it never closes another PTY.
 await selectTab(shellRows[2].tab.id);
 ws.send(JSON.stringify({type:'terminal.attach',terminalId:shellRows[2].terminalId,cols:100,rows:30}));
-ws.send(JSON.stringify({type:'input',terminalId:shellRows[2].terminalId,data:'\x03'}));
-await new Promise(resolve=>setTimeout(resolve,100));
-ws.send(JSON.stringify({type:'input',terminalId:shellRows[2].terminalId,data:'\x15exit 7\r'}));
+await page.locator('.maw-session-pane:visible .xterm-helper-textarea').focus();
+await page.keyboard.press('Control+c');
+await page.keyboard.type('exit 7');await page.keyboard.press('Enter');
 await until(async()=>(await snapshot()).find(row=>row.id===shellRows[2].id)?.lifecycle==='exited').catch(async error=>{console.log('Exit fixture diagnostic',JSON.stringify((await snapshot()).find(row=>row.id===shellRows[2].id)),JSON.stringify(captures.get(shellRows[2].terminalId)?.slice(-600)));throw error;});
 await page.locator('.maw-session-pane:visible .agency-shell-placeholder').waitFor();
 assert.equal((await snapshot()).find(row=>row.id===shellRows[2].id).exitCode,7);
