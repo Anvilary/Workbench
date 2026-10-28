@@ -1,4 +1,4 @@
-import type { AgencyRuntimeSession, SessionActivity, SessionLifecycle } from '@agent-workbench/shared';
+import type { AgencyRuntimeSession, MawActivityState, SessionActivity, SessionLifecycle } from '@agent-workbench/shared';
 import { t } from '../i18n/index.js';
 
 /** Workbench keeps transport lifecycle enums independent of translated UI copy. */
@@ -25,4 +25,28 @@ export function agencySessionText(session: AgencyRuntimeSession): string {
   if (session.recovery?.status === 'manual') return t('agency.ui.manualResumeRequired');
   if (session.recovery?.status === 'resumed' && session.lifecycle === 'running' && session.activity === 'unknown') return t('agency.ui.resumed');
   return agencyActivityText(session.activity, session.lifecycle);
+}
+
+export function agencyErrorText(code: import('@agent-workbench/shared').AgencyErrorCode): string {
+  switch (code) {
+    case 'invalid-request': return t('agency.errors.invalidRequest');
+    case 'not-found': return t('agency.errors.notFound');
+    case 'conflict': return t('agency.errors.conflict');
+    case 'invalid-directory': return t('agency.errors.invalidDirectory');
+    case 'profile-unavailable': return t('agency.errors.profileUnavailable');
+    case 'unsupported-capability': return t('agency.errors.unsupportedCapability');
+    case 'session-unavailable': return t('agency.errors.sessionUnavailable');
+    case 'permission-denied': return t('agency.errors.permissionDenied');
+    default: return t('agency.errors.internalError');
+  }
+}
+
+export function agencyTabActivityText(state: MawActivityState): string {
+  switch (state) {
+    case 'finished': return t('agency.notifications.statusFinished');
+    case 'working': return t('agency.notifications.statusWorking');
+    case 'failed': return t('agency.notifications.statusFailed');
+    case 'idle': return t('agency.notifications.statusIdle');
+    default: return t('agency.notifications.statusUnknown');
+  }
 }

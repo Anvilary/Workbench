@@ -18,7 +18,9 @@ import type {
   TabActivityRecord,
   WorkspaceId,
 } from '@agent-workbench/shared';
+import { isMawNotificationItem } from '@agent-workbench/shared';
 import type { AgencyTransport } from './model.js';
+import type { useAgencyStore } from './useAgencyStore.js';
 
 const CACHE_KEY = 'maw.notifications.cache.v1';
 
@@ -31,6 +33,8 @@ export interface ToastItem {
   body: string;
   state: MawActivityState;
   createdAt: string;
+  metadata?: Record<string, unknown>;
+  deduplicationKey?: string;
 }
 
 function loadCachedNotifications(): MawNotificationItem[] {
@@ -39,7 +43,7 @@ function loadCachedNotifications(): MawNotificationItem[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      return parsed;
+      return parsed.filter(isMawNotificationItem);
     }
   } catch {}
   return [];
@@ -53,23 +57,23 @@ function saveCachedNotifications(items: readonly MawNotificationItem[]): void {
 
 export function useNotificationStore(
   transport: AgencyTransport,
-  request: (payload: any) => Promise<any>,
+  request: ReturnType<typeof useAgencyStore>['request'],
 ) {
   const [notifications, setNotifications] = useState<MawNotificationItem[]>(loadCachedNotifications);
   const [activityStates, setActivityStates] = useState<Map<string, TabActivityRecord>>(new Map());
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const seenNotificationIds = useRef(new Set<string>());
+  const seenNotificationIds = useRef(new Set(notifications.map(item => item.id)));
   const toastTimeouts = useRef(new Map<string, number>());
+
+  useEffect(() => () => {
+    for (const timer of toastTimeouts.current.values()) window.clearTimeout(timer);
+    toastTimeouts.current.clear();
+  }, []);
 
   // Sync cache
   useEffect(() => {
     saveCachedNotifications(notifications);
   }, [notifications]);
-
-  // Request notifications snapshot once on mount
-  useEffect(() => {
-    void request({ type: 'agency.notifications.list' }).catch(() => undefined);
-  }, [request]);
 
   const dismissToast = useCallback((toastId: string) => {
     const timer = toastTimeouts.current.get(toastId);
@@ -91,6 +95,8 @@ export function useNotificationStore(
       body: item.body,
       state: item.state,
       createdAt: item.createdAt,
+      metadata: item.metadata,
+      deduplicationKey: item.deduplicationKey,
     };
 
     setToasts((prev) => [...prev, toast]);
@@ -104,9 +110,9 @@ export function useNotificationStore(
 
   // Inbound WebSocket message handling
   useEffect(() => {
-    return transport.onMessage((message: any) => {
+    return transport.onMessage((message) => {
       if (message.type === 'agency.notifications.snapshot') {
-        const incoming: MawNotificationItem[] = message.notifications || [];
+        const incoming = [...message.notifications];
         setNotifications(incoming);
 
         for (const item of incoming) {
@@ -114,13 +120,9 @@ export function useNotificationStore(
         }
 
         if (message.activityStates && Array.isArray(message.activityStates)) {
-          setActivityStates((prev) => {
-            const next = new Map(prev);
-            for (const record of message.activityStates) {
-              next.set(`${record.workspaceId}::${record.tabId}`, record);
-            }
-            return next;
-          });
+          setActivityStates(new Map(message.activityStates.map(record => [
+            `${record.workspaceId}::${record.tabId}`, record,
+          ])));
         }
       } else if (message.type === 'agency.notification.created') {
         const item: MawNotificationItem = message.notification;
@@ -153,68 +155,17 @@ export function useNotificationStore(
     });
   }, [transport, pushToast]);
 
+  // Server events are authoritative. A failed mutation cannot erase a concurrent completion.
   const markRead = useCallback(async (notificationId: string) => {
-    let previousList: MawNotificationItem[] = [];
-    setNotifications((prev) => {
-      previousList = prev;
-      return prev.map((item) =>
-        item.id === notificationId
-          ? { ...item, read: true, readAt: new Date().toISOString() }
-          : item,
-      );
-    });
-    try {
-      const res = await request({ type: 'agency.notification.markRead', notificationId });
-      if (res && res.type === 'agency.error') {
-        throw new Error(res.message);
-      }
-    } catch (err) {
-      setNotifications(previousList);
-      throw err;
-    }
+    await request({ type: 'agency.notification.markRead', notificationId });
   }, [request]);
 
   const markAllRead = useCallback(async () => {
-    let previousList: MawNotificationItem[] = [];
-    const now = new Date().toISOString();
-    setNotifications((prev) => {
-      previousList = prev;
-      return prev.map((item) => (!item.read ? { ...item, read: true, readAt: now } : item));
-    });
-    try {
-      const res = await request({ type: 'agency.notification.markAllRead' });
-      if (res && res.type === 'agency.error') {
-        throw new Error(res.message);
-      }
-    } catch (err) {
-      setNotifications(previousList);
-      throw err;
-    }
+    await request({ type: 'agency.notification.markAllRead' });
   }, [request]);
 
   const acknowledgeTab = useCallback(async (workspaceId: WorkspaceId, tabId: string) => {
-    const key = `${workspaceId}::${tabId}`;
-    let previousStates: Map<string, TabActivityRecord> = new Map();
-    setActivityStates((prev) => {
-      previousStates = prev;
-      const current = prev.get(key);
-      if (current && current.state === 'finished') {
-        const next = new Map(prev);
-        next.set(key, { ...current, state: 'idle', updatedAt: new Date().toISOString() });
-        return next;
-      }
-      return prev;
-    });
-
-    try {
-      const res = await request({ type: 'agency.tab.acknowledge', workspaceId, tabId });
-      if (res && res.type === 'agency.error') {
-        throw new Error(res.message);
-      }
-    } catch (err) {
-      setActivityStates(previousStates);
-      throw err;
-    }
+    await request({ type: 'agency.tab.acknowledge', workspaceId, tabId });
   }, [request]);
 
   const getTabActivity = useCallback((workspaceId: WorkspaceId, tabId: string): MawActivityState => {

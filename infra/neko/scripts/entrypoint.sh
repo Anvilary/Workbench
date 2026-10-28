@@ -56,6 +56,10 @@ fi
 # Chromium Profile & Lock Management
 # ==============================================================================
 CHROMIUM_DIR="/home/neko/.config/chromium"
+CONTROLLER_STATE_DIR="/home/neko/.local/share/maw-controller"
+mkdir -p "$CONTROLLER_STATE_DIR"
+chown neko:neko "$CONTROLLER_STATE_DIR"
+chmod 700 "$CONTROLLER_STATE_DIR"
 mkdir -p "$CHROMIUM_DIR/Default"
 chown -R neko:neko "$CHROMIUM_DIR" 2>/dev/null || true
 

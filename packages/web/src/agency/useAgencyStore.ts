@@ -1,3 +1,5 @@
+import { t } from '../i18n/index.js';
+import { agencyErrorText } from './agency-labels.js';
 import { serverTextMessage } from '../i18n/server-text.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
@@ -16,6 +18,7 @@ type Pending = {
   resolve: (message: AgencyServerMessage) => void;
   reject: (error: Error) => void;
   timeout: number;
+  workspaceId?: string;
 };
 export interface VerifiedNotice {
   sessionId: string;
@@ -28,6 +31,8 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
   const [data, setData] = useState<AgencySnapshot>(EMPTY_AGENCY_SNAPSHOT);
   const [online, setOnline] = useState(connection.getStatus() === 'open');
   const [loaded, setLoaded] = useState(false);
+  const [synchronized, setSynchronized] = useState(false);
+  const snapshots = useRef(new Set<string>());
   const [notice, setNotice] = useState<VerifiedNotice | null>(null);
   const pending = useRef(new Map<string, Pending>());
   const lastSessions = useRef(new Map<string, AgencyRuntimeSession>());
@@ -35,32 +40,34 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
 
   const request = useCallback((payload: Payload): Promise<AgencyServerMessage> => {
     if (connection.getStatus() !== 'open') {
-      return Promise.reject(new Error('Disconnected. Reconnect before changing workspace data.'));
+      return Promise.reject(new Error(t('agency.web.disconnected')));
     }
     const requestId = crypto.randomUUID();
     return new Promise<AgencyServerMessage>((resolve, reject) => {
       const timeout = window.setTimeout(() => {
         pending.current.delete(requestId);
-        reject(new Error('Agency request timed out. Refresh to verify server state.'));
+        reject(new Error(t('agency.web.requestTimeout')));
       }, 15000);
-      pending.current.set(requestId, { resolve, reject, timeout });
+      pending.current.set(requestId, { resolve, reject, timeout, ...('workspaceId' in payload ? { workspaceId: payload.workspaceId } : {}) });
       try {
         // The integration adapter must preserve this opaque ID on the existing /ws.
         const immediate = transport.sendImmediate({ ...payload, requestId } as AgencyClientMessage);
-        if (!immediate) throw new Error('Socket did not send immediately. Verify state after reconnect.');
+        if (!immediate) throw new Error(t('agency.web.sendFailed'));
       } catch (error) {
         window.clearTimeout(timeout);
         pending.current.delete(requestId);
-        reject(error instanceof Error ? error : new Error('Request could not be sent'));
+        reject(error instanceof Error ? error : new Error(t('agency.web.sendFailed')));
       }
     });
   }, [connection, transport]);
 
   const refresh = useCallback((): void => {
     if (connection.getStatus() !== 'open') return;
+    snapshots.current.clear();
+    setSynchronized(false);
     const types = [
       'agency.projects.list', 'agency.workspaces.list',
-      'agency.profiles.list', 'agency.sessions.list',
+      'agency.profiles.list', 'agency.sessions.list', 'agency.webTabs.list', 'agency.notifications.list',
     ] as const;
     types.forEach((type) => { void request({ type }).catch(() => { /* Preserve existing state. */ }); });
   }, [request, connection]);
@@ -84,13 +91,31 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
       task.reject(new Error(serverTextMessage(message.text)));
     });
     const offMessage = transport.onMessage((message) => {
+      const coreSnapshots = ['agency.projects.snapshot', 'agency.workspaces.snapshot', 'agency.profiles.snapshot', 'agency.sessions.snapshot', 'agency.webTabs.snapshot'];
+      if (coreSnapshots.includes(message.type) || (message.type === 'agency.notifications.snapshot' && message.activityStates)) {
+        snapshots.current.add(message.type);
+        if (coreSnapshots.every(type => snapshots.current.has(type))) {
+          setLoaded(true);
+          if (snapshots.current.has('agency.notifications.snapshot')) setSynchronized(true);
+        }
+      }
       if (message.type === 'agency.projects.snapshot') {
         setData((old) => ({ ...old, projects: message.projects }));
-        setLoaded(true);
       } else if (message.type === 'agency.workspaces.snapshot') {
         setData((old) => ({ ...old, workspaces: message.workspaces }));
       } else if (message.type === 'agency.profiles.snapshot') {
         setData((old) => ({ ...old, profiles: message.profiles }));
+      } else if (message.type === 'agency.webTabs.snapshot') {
+        const workspaceId = pending.current.get(message.requestId)?.workspaceId;
+        setData((old) => ({ ...old, webTabs: workspaceId
+          ? [...old.webTabs.filter(tab => tab.workspaceId !== workspaceId), ...message.tabs]
+          : message.tabs }));
+      } else if (message.type === 'agency.webTab.created' || message.type === 'agency.webTab.updated' || message.type === 'agency.webTab.closed') {
+        setData((old) => ({ ...old, webTabs: replaceById(old.webTabs, message.tab) }));
+      } else if (message.type === 'agency.webTab.changed') {
+        setData((old) => ({ ...old, webTabs: message.tabs
+          ? [...old.webTabs.filter(tab => tab.workspaceId !== message.workspaceId), ...message.tabs]
+          : message.tab ? replaceById(old.webTabs, message.tab) : old.webTabs }));
       } else if (message.type === 'agency.sessions.snapshot') {
         message.sessions.forEach((session) => record(session, false));
         setData((old) => ({ ...old, sessions: message.sessions }));
@@ -146,7 +171,7 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
       window.clearTimeout(waiting.timeout);
       pending.current.delete(message.requestId);
       if (message.type === 'agency.error') {
-        waiting.reject(new Error(message.message));
+        waiting.reject(new Error(agencyErrorText(message.code), { cause: message.message }));
       } else {
         waiting.resolve(message);
       }
@@ -155,14 +180,14 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
     const cancelPending = (): void => {
       for (const task of pending.current.values()) {
         window.clearTimeout(task.timeout);
-        task.reject(new Error('Socket disconnected. Refresh to confirm whether the action was applied.'));
+        task.reject(new Error(t('agency.web.disconnected')));
       }
       pending.current.clear();
     };
     const offStatus = connection.onStatus((status) => {
       const isOpen = status === 'open';
       setOnline(isOpen);
-      if (!isOpen) cancelPending();
+      if (!isOpen) { snapshots.current.clear(); setSynchronized(false); cancelPending(); }
       else refresh();
     });
     // Existing authenticated socket may already have opened before this UI mounted.
@@ -191,7 +216,7 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
     request({ type: 'agency.workspace.delete', workspaceId });
 
   return {
-    data, online, loaded, notice, request, refresh,
+    data, online, loaded, synchronized, notice, request, refresh,
     createProject, renameProject, archiveProject, unarchiveProject, deleteProject,
     createWorkspace, archiveWorkspace, markDone, restore, deleteWorkspace,
   };

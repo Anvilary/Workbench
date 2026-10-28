@@ -1,5 +1,6 @@
 import type { ToastItem } from './useNotificationStore.js';
 import { t } from '../i18n/index.js';
+import { notificationText } from './notification-labels.js';
 
 interface Props {
   toasts: readonly ToastItem[];
@@ -35,8 +36,8 @@ export function NotificationToastContainer({ toasts, onDismiss, onNavigate }: Pr
             {toast.state === 'finished' ? '✓' : toast.state === 'failed' ? '✕' : toast.state === 'working' ? '⚙' : '◇'}
           </div>
           <div className="maw-toast-content">
-            <div className="maw-toast-title">{toast.title}</div>
-            <div className="maw-toast-body">{toast.body}</div>
+            <div className="maw-toast-title">{notificationText(toast).title}</div>
+            <div className="maw-toast-body">{notificationText(toast).body}</div>
           </div>
           <button
             type="button"

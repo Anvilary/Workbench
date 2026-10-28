@@ -34,6 +34,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from ownership_registry import OwnershipError, OwnershipRegistry
 
 CDP_HOST = os.environ.get("CDP_HOST", "127.0.0.1")
 CDP_PORT = int(os.environ.get("CDP_PORT", "9222"))
@@ -89,6 +90,8 @@ def is_url_permitted(url_str: str) -> tuple[bool, str]:
     Validates whether a URL is permitted for tab creation or navigation.
     Rejects loopback, private subnets, cloud metadata, and unauthorized domains.
     """
+    if not isinstance(url_str, str) or len(url_str) > 4096 or any(ord(c) < 32 or ord(c) == 127 for c in url_str):
+        return False, "Malformed URL"
     if url_str.strip().lower() == "about:blank":
         return True, ""
 
@@ -106,6 +109,14 @@ def is_url_permitted(url_str: str) -> tuple[bool, str]:
         return False, "URL is missing a valid host"
 
     host_lower = host.lower()
+    try:
+        port = parsed.port
+    except ValueError:
+        return False, "Malformed port"
+    if parsed.username is not None or parsed.password is not None:
+        return False, "URL credentials are prohibited"
+    if host_lower not in EXTRA_PERMITTED and (parsed.scheme.lower() != "https" or port not in (None, 443)):
+        return False, "Only HTTPS on the default port is permitted"
 
     # Block well-known loopback, local, and metadata hostnames
     if host_lower in ("localhost", "metadata.google.internal") or host_lower.endswith(".localhost") or host_lower.endswith(".local"):
@@ -155,6 +166,28 @@ def send_cdp_http(path: str, method: str = "GET", timeout: float = 5.0):
         return None
 
 
+OWNERSHIP_REGISTRY = OwnershipRegistry(
+    os.environ.get("CONTROLLER_REGISTRY_PATH", "/home/neko/.local/share/maw-controller/ownership.json"),
+    lambda *args, **kwargs: send_cdp_http(*args, **kwargs),
+)
+
+
+def navigate_page(tab_id, dest_url):
+    targets = send_cdp_http("/json/list")
+    target = next((t for t in targets if isinstance(t, dict) and t.get("type") == "page" and t.get("id") == tab_id), None)
+    if not target or not target.get("webSocketDebuggerUrl"):
+        raise OwnershipError(404, "Browser page target was not found")
+    client = RobustCDPWebSocketClient(target["webSocketDebuggerUrl"], timeout=10.0)
+    try:
+        client.connect()
+        result = client.send_command("Page.navigate", {"url": dest_url})
+        if result.get("errorText") or not result.get("frameId"):
+            raise OwnershipError(502, "Browser did not accept navigation")
+    finally:
+        client.close()
+    return {"id": tab_id, "navigated": True, "url": dest_url}
+
+
 class RobustCDPWebSocketClient:
     """
     Robust RFC 6455 WebSocket client for internal Chromium CDP communications.
@@ -172,6 +205,7 @@ class RobustCDPWebSocketClient:
         self.path = "/" + parts[1]
         self.sock = None
         self._msg_id = 0
+        self._receive_buffer = b""
 
     def connect(self):
         self.sock = socket.create_connection((self.host, self.port), timeout=self.timeout)
@@ -200,18 +234,21 @@ class RobustCDPWebSocketClient:
                 raise ConnectionError("Connection closed unexpectedly during WebSocket handshake")
             resp += chunk
 
-        first_line = resp.split(b"\r\n")[0]
+        header, self._receive_buffer = resp.split(b"\r\n\r\n", 1)
+        first_line = header.split(b"\r\n")[0]
         if b"101" not in first_line:
             err_line = first_line.decode(errors="ignore")
             raise ConnectionError(f"WebSocket handshake rejected by CDP: {err_line}")
 
         # Verify Sec-WebSocket-Accept
-        headers_lower = resp.decode(errors="ignore").lower()
-        if expected_accept.lower() not in headers_lower:
+        headers = dict(line.decode().split(":", 1) for line in header.split(b"\r\n")[1:] if b":" in line)
+        accept = next((value.strip() for name, value in headers.items() if name.lower() == "sec-websocket-accept"), None)
+        if expected_accept != accept:
             raise ConnectionError("Invalid Sec-WebSocket-Accept response from CDP server")
 
     def _read_exact(self, num_bytes: int) -> bytes:
-        buf = bytearray()
+        buf = bytearray(self._receive_buffer[:num_bytes])
+        self._receive_buffer = self._receive_buffer[num_bytes:]
         while len(buf) < num_bytes:
             chunk = self.sock.recv(num_bytes - len(buf))
             if not chunk:
@@ -230,6 +267,8 @@ class RobustCDPWebSocketClient:
             length = int.from_bytes(self._read_exact(2), "big")
         elif length == 127:
             length = int.from_bytes(self._read_exact(8), "big")
+        if length > 8 * 1024 * 1024:
+            raise ConnectionError("CDP WebSocket frame exceeds maximum size")
 
         mask = self._read_exact(4) if masked else None
         payload = self._read_exact(length)
@@ -257,25 +296,30 @@ class RobustCDPWebSocketClient:
         masked = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
         self.sock.sendall(hdr + mask + masked)
 
-        deadline = time.time() + self.timeout
-        msg_buf = ""
-        while time.time() < deadline:
+        deadline = time.monotonic() + self.timeout
+        msg_buf = bytearray()
+        while time.monotonic() < deadline:
+            self.sock.settimeout(max(0.001, deadline - time.monotonic()))
             fin, opcode, data = self._read_frame()
             if opcode == 0x8:  # Close frame
                 raise ConnectionResetError("CDP server sent close frame")
             elif opcode == 0x9:  # Ping frame
                 # Respond with Pong frame (opcode 0xA)
-                self.sock.sendall(bytes([0x8A, 0x80]) + os.urandom(4))
+                if len(data) > 125:
+                    raise ConnectionError("Invalid CDP ping frame")
+                pong_mask = os.urandom(4)
+                pong = bytes(value ^ pong_mask[index % 4] for index, value in enumerate(data))
+                self.sock.sendall(bytes([0x8A, 0x80 | len(data)]) + pong_mask + pong)
                 continue
             elif opcode in (0x1, 0x0):  # Text or continuation frame
-                msg_buf += data.decode("utf-8", errors="replace")
+                msg_buf.extend(data)
                 if fin:
                     try:
-                        parsed = json.loads(msg_buf)
+                        parsed = json.loads(msg_buf.decode("utf-8"))
                     except json.JSONDecodeError:
-                        msg_buf = ""
+                        msg_buf.clear()
                         continue
-                    msg_buf = ""
+                    msg_buf.clear()
                     # Match correlation ID
                     if parsed.get("id") == req_id:
                         if "error" in parsed:
@@ -317,12 +361,73 @@ class RestrictedTabHandler(http.server.BaseHTTPRequestHandler):
     def _send_error(self, status_code: int, message: str):
         self._send_json(status_code, {"error": message, "code": status_code})
 
+    def _read_body(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            if length < 0 or length > 16384:
+                raise ValueError()
+            body = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+            if not isinstance(body, dict):
+                raise ValueError()
+            return body
+        except (ValueError, UnicodeError):
+            raise OwnershipError(400, "A JSON object of at most 16 KiB is required")
+
+    def _managed_request(self, method, parsed, body=None):
+        path = parsed.path.rstrip("/")
+        if not path.startswith("/managed/"):
+            return False
+        try:
+            if method == "POST" and path == "/managed/tabs":
+                url = body.get("url")
+                permitted, reason = is_url_permitted(url)
+                if not permitted:
+                    raise OwnershipError(403, "Navigation disallowed: " + reason)
+                self._send_json(201, OWNERSHIP_REGISTRY.open(url, body.get("metadata")))
+            elif method == "GET" and path == "/managed/tabs":
+                query = urllib.parse.parse_qs(parsed.query)
+                owner = {key: query.get(key, [None])[0] for key in ("tabId", "workspaceId")}
+                self._send_json(200, OWNERSHIP_REGISTRY.find(owner))
+            else:
+                parts = path.split("/")
+                if len(parts) not in (4, 5) or parts[1:3] != ["managed", "tabs"] or not TAB_ID_PATTERN.fullmatch(parts[3]):
+                    raise OwnershipError(404, "Managed endpoint not found")
+                target = parts[3]
+                if method == "GET" and len(parts) == 4:
+                    query = urllib.parse.parse_qs(parsed.query)
+                    owner = {key: query.get(key, [None])[0] for key in ("tabId", "workspaceId")}
+                    self._send_json(200, OWNERSHIP_REGISTRY.verify(target, owner))
+                elif method == "DELETE" and len(parts) == 4:
+                    self._send_json(200, OWNERSHIP_REGISTRY.close(target, body.get("metadata")))
+                elif method == "POST" and len(parts) == 5 and parts[4] == "activate":
+                    def activate():
+                        send_cdp_http("/json/activate/" + target, method="PUT")
+                        return {"id": target, "activated": True}
+                    self._send_json(200, OWNERSHIP_REGISTRY.execute(target, body.get("metadata"), activate))
+                elif method == "POST" and len(parts) == 5 and parts[4] == "navigate":
+                    url = body.get("url")
+                    permitted, reason = is_url_permitted(url)
+                    if not permitted:
+                        raise OwnershipError(403, "Navigation disallowed: " + reason)
+                    result = OWNERSHIP_REGISTRY.execute(target, body.get("metadata"), lambda: navigate_page(target, url))
+                    self._send_json(200, result)
+                else:
+                    raise OwnershipError(404, "Managed endpoint not found")
+        except OwnershipError as error:
+            self._send_error(error.status, str(error))
+        except Exception:
+            self._send_error(503, "Managed browser operation is unavailable or unconfirmed")
+        return True
+
     def do_GET(self):
         if not self._check_auth():
             return self._send_error(401, "Unauthorized: valid Bearer token is required")
 
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path.rstrip("/")
+
+        if self._managed_request("GET", parsed):
+            return
 
         if path in ("/health", "/status"):
             try:
@@ -334,6 +439,7 @@ class RestrictedTabHandler(http.server.BaseHTTPRequestHandler):
                     "browser": ver.get("Browser", "unknown") if isinstance(ver, dict) else "unknown",
                     "tabs_count": len(page_tabs),
                     "auth_enforced": True,
+                    "managed_ownership": 1,
                 })
             except Exception as e:
                 return self._send_error(503, f"CDP backend unavailable: {str(e)}")
@@ -364,17 +470,16 @@ class RestrictedTabHandler(http.server.BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path.rstrip("/")
 
-        content_len = int(self.headers.get("Content-Length", 0))
-        body = {}
-        if content_len > 0:
-            try:
-                body = json.loads(self.rfile.read(content_len).decode("utf-8"))
-            except Exception:
-                return self._send_error(400, "Invalid JSON payload")
+        try:
+            body = self._read_body()
+        except OwnershipError as error:
+            return self._send_error(error.status, str(error))
+        if self._managed_request("POST", parsed, body):
+            return
 
         if path == "/tabs":
             # Tab creation with strict origin validation
-            target_url = body.get("url", "https://chatgpt.com").strip()
+            target_url = body.get("url", "https://chatgpt.com")
             permitted, reason = is_url_permitted(target_url)
             if not permitted:
                 return self._send_error(403, f"Navigation disallowed: {reason}")
@@ -402,6 +507,13 @@ class RestrictedTabHandler(http.server.BaseHTTPRequestHandler):
             if not TAB_ID_PATTERN.match(tab_id):
                 return self._send_error(400, "Invalid tab ID format")
 
+            try:
+                OWNERSHIP_REGISTRY.reject_unscoped(tab_id)
+            except OwnershipError as error:
+                return self._send_error(error.status, str(error))
+            except Exception:
+                return self._send_error(503, "Browser ownership registry is unavailable")
+
             if action in ("activate", "select"):
                 try:
                     res = send_cdp_http(f"/json/activate/{tab_id}", method="PUT")
@@ -410,29 +522,15 @@ class RestrictedTabHandler(http.server.BaseHTTPRequestHandler):
                     return self._send_error(500, f"Failed to activate tab: {str(e)}")
 
             elif action == "navigate":
-                dest_url = body.get("url", "").strip()
+                dest_url = body.get("url", "")
                 permitted, reason = is_url_permitted(dest_url)
                 if not permitted:
                     return self._send_error(403, f"Navigation disallowed: {reason}")
 
                 try:
-                    targets = send_cdp_http("/json/list")
-                    target = next((t for t in targets if isinstance(t, dict) and t.get("id") == tab_id), None)
-                    if not target or not target.get("webSocketDebuggerUrl"):
-                        return self._send_error(404, f"Tab {tab_id} not found or has no debugger endpoint")
-
-                    ws_url = target["webSocketDebuggerUrl"]
-                    client = RobustCDPWebSocketClient(ws_url, timeout=10.0)
-                    try:
-                        client.connect()
-                        res = client.send_command("Page.navigate", {"url": dest_url})
-                        # State verification: verify that Page.navigate returned a frameId and no loader error
-                        if "errorText" in res:
-                            return self._send_error(502, f"Navigation failed in browser: {res['errorText']}")
-                    finally:
-                        client.close()
-
-                    return self._send_json(200, {"id": tab_id, "navigated": True, "url": dest_url})
+                    return self._send_json(200, navigate_page(tab_id, dest_url))
+                except OwnershipError as error:
+                    return self._send_error(error.status, str(error))
                 except Exception as e:
                     return self._send_error(500, f"Failed to navigate tab: {str(e)}")
 
@@ -451,12 +549,24 @@ class RestrictedTabHandler(http.server.BaseHTTPRequestHandler):
 
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path.rstrip("/")
+        try:
+            body = self._read_body()
+        except OwnershipError as error:
+            return self._send_error(error.status, str(error))
+        if self._managed_request("DELETE", parsed, body):
+            return
         parts = path.split("/")
 
         if len(parts) == 3 and parts[1] == "tabs":
             tab_id = parts[2]
             if not TAB_ID_PATTERN.match(tab_id):
                 return self._send_error(400, "Invalid tab ID format")
+            try:
+                OWNERSHIP_REGISTRY.reject_unscoped(tab_id)
+            except OwnershipError as error:
+                return self._send_error(error.status, str(error))
+            except Exception:
+                return self._send_error(503, "Browser ownership registry is unavailable")
             try:
                 res = send_cdp_http(f"/json/close/{tab_id}", method="PUT")
                 return self._send_json(200, {"id": tab_id, "closed": True, "result": res})

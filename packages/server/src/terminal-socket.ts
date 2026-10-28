@@ -62,6 +62,8 @@ import { AgencySessionRuntime, AgencyRuntimeError } from './agency/agency-sessio
 import { AgencyNotificationStore } from './agency/agency-notification-store.js';
 import { TabActivityManager } from './agency/tab-activity-manager.js';
 import { ChatGPTActivityProvider } from './agency/browser-activity-provider.js';
+import { BrowserTabAdapter, BrowserTabStore, BrowserTabStoreError } from './agency/browser-tabs/index.js';
+import { AgencyTabCoordinator } from './agency/tab-coordinator.js';
 import { WorkspaceMutex } from './agency/workspace-lock.js';
 import { handleAgencyDomainRequest, type AgencyDomainContext } from './agency/domain-handler.js';
 import type { NativeIdentities } from './agency/native-identity.js';
@@ -211,6 +213,7 @@ export interface TerminalSocketOptions {
   workspaceLock: WorkspaceMutex;
   agencyNotificationStore?: AgencyNotificationStore;
   agencyActivityManager?: TabActivityManager;
+  agencyBrowserTabs?: BrowserTabAdapter;
 }
 
 export function attachTerminalSocket(options: TerminalSocketOptions): () => void {
@@ -242,12 +245,12 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
   const agencyActivityManager = options.agencyActivityManager ?? new TabActivityManager({ notificationStore: agencyNotificationStore });
   const chatgptProvider = new ChatGPTActivityProvider();
   agencyActivityManager.registerBrowserProvider(chatgptProvider);
-  void Promise.all([
+  const agencyBrowserTabs = options.agencyBrowserTabs ?? new BrowserTabAdapter({ store: new BrowserTabStore(), workspaceStore: agencyWorkspaceStore });
+  const agencyReady = Promise.all([
     agencyNotificationStore.initialize(),
     agencyActivityManager.initialize(),
-  ]).catch((err: unknown) => {
-    console.warn('[agency] failed to initialize notification or activity store: ' + String(err));
-  });
+    options.agencyBrowserTabs ? Promise.resolve() : agencyBrowserTabs.restore(),
+  ]);
 
   const pasteStore = options.pasteStore ?? new PasteStore();
 
@@ -280,6 +283,47 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
       if (socket.readyState === socket.OPEN) socket.send(payload);
     }
   };
+
+  const tabCoordinator = new AgencyTabCoordinator(agencyRuntime, agencyBrowserTabs, agencyWorkspaceStore, broadcast);
+  const hasOpenActivityTab = (workspaceId: import('@agent-workbench/shared').WorkspaceId, tabId: string): boolean => {
+    if (!agencyWorkspaceStore.getWorkspace(workspaceId)) return false;
+    return agencyRuntime.list(workspaceId).some(session => session.tab?.id === tabId && session.tab.current && !session.tab.closedAt) ||
+      agencyBrowserTabs.listTabs(workspaceId).some(tab => tab.id === tabId);
+  };
+  const tabReady = agencyReady.then(async () => {
+    await tabCoordinator.restoreSelection();
+    for (const session of agencyRuntime.list()) {
+      if (session.tab?.current && !session.tab.closedAt) {
+        await agencyActivityManager.ensureTab({ workspaceId: session.workspaceId, tabId: session.tab.id,
+          sessionId: session.id, source: session.kind === 'agent' ? 'cli' : 'shell' });
+      }
+    }
+    for (const tab of agencyBrowserTabs.listTabs()) {
+      await agencyActivityManager.ensureTab({ workspaceId: tab.workspaceId, tabId: tab.id, source: 'browser' });
+    }
+    await agencyActivityManager.flushPendingNotifications(hasOpenActivityTab);
+  });
+  void tabReady.catch(error => console.error('[agency] state initialization failed:', String(error)));
+  let reconcilingBrowser = false;
+  const browserReconciliation = setInterval(() => {
+    if (reconcilingBrowser) return;
+    reconcilingBrowser = true;
+    void tabReady.then(async () => {
+      await agencyActivityManager.flushPendingNotifications(hasOpenActivityTab);
+      const before = JSON.stringify(agencyBrowserTabs.listTabs());
+      for (const workspace of agencyWorkspaceStore.listWorkspaces()) {
+        await tabCoordinator.mutations.runExclusive(workspace.id, async () => {
+          await agencyBrowserTabs.refreshLiveTabs(workspace.id);
+          await agencyBrowserTabs.reconcileCleanup(workspace.id);
+        });
+      }
+      if (JSON.stringify(agencyBrowserTabs.listTabs()) !== before) tabCoordinator.snapshot();
+    }).catch(() => {
+      // The adapter retains detached/error state and ownership hints on outages.
+      // Recovery is explicit selection; polling never creates browser pages.
+    }).finally(() => { reconcilingBrowser = false; });
+  }, 5000);
+  browserReconciliation.unref();
 
   /**
     Las ventanas que entraron como **equipo remoto** (hito 37), con el id de su
@@ -838,7 +882,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
   const attachedShellTerminals = new Set<string>();
   const shellOutputListener: OutputListener = (terminalId, chunk) => {
     const session = agencyRuntime.list().find((s) => s.terminalId === terminalId);
-    if (session && session.tab) {
+    if (session?.kind === 'terminal' && session.tab?.current && !session.tab.closedAt) {
       agencyActivityManager.feedShellOutput(session.tab.id, chunk);
     }
   };
@@ -850,8 +894,10 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         agencyActivityManager.getOrCreateShellParser(session.workspaceId, session.tab.id, {
           tabName: session.tab.name,
           sessionId: session.id,
+          projectId: agencyWorkspaceStore.getWorkspace(session.workspaceId)?.projectId,
         });
-        registry.attach(session.terminalId, shellOutputListener);
+        const output = registry.attach(session.terminalId, shellOutputListener);
+        if (output?.replay) agencyActivityManager.feedShellOutput(session.tab.id, output.replay);
       }
     } else if (session.terminalId && attachedShellTerminals.has(session.terminalId)) {
       attachedShellTerminals.delete(session.terminalId);
@@ -859,18 +905,27 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     }
   };
 
-  for (const s of agencyRuntime.list()) {
-    syncShellTerminal(s);
-  }
+  void tabReady.then(() => {
+    for (const session of agencyRuntime.list()) syncShellTerminal(session);
+  }).catch(() => undefined);
 
   const onAgencySessionChanged = (session: any): void => {
     broadcast({ type: 'agency.session.changed', sessionId: session.id, session });
-    syncShellTerminal(session);
+    void tabReady.then(async () => {
+      const current = agencyRuntime.get(session.id);
+      if (!current?.tab?.current) return;
+      if (current.tab.closedAt) await agencyActivityManager.closeTab(current.workspaceId, current.tab.id);
+      else {
+        await agencyActivityManager.ensureTab({ workspaceId: current.workspaceId, tabId: current.tab.id,
+          sessionId: current.id, source: current.kind === 'agent' ? 'cli' : 'shell' });
+        syncShellTerminal(current);
+      }
+    }).catch(error => console.error('[agency] activity registration failed:', String(error)));
   };
   const onAgencySessionActivity = (activity: any): void => {
     broadcast({ type: 'agency.session.activity', ...activity });
     const session = agencyRuntime.get(activity.sessionId);
-    if (session && session.tab && session.kind === 'agent') {
+    if (session?.kind === 'agent' && session.tab?.current && !session.tab.closedAt && agencyWorkspaceStore.getWorkspace(session.workspaceId)) {
       const ws = agencyWorkspaceStore.getWorkspace(session.workspaceId);
       void agencyActivityManager.handleCliActivity({
         workspaceId: session.workspaceId,
@@ -879,13 +934,22 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         sessionId: session.id,
         provider: session.nativeIdentity?.provider ?? null,
         tabName: session.tab.name,
-        previousActivity: session.activity,
         nextActivity: activity.activity,
         lifecycle: activity.lifecycle,
         exitCode: session.exitCode,
-      });
+      }).catch(error => console.error('[agency] activity persistence failed:', String(error)));
     }
   };
+  const onNativeTurn = (event: { sessionId: import('@agent-workbench/shared').RuntimeSessionId; workspaceId: import('@agent-workbench/shared').WorkspaceId; provider: string; taskId: string; phase: 'working' | 'finished' | 'failed' | 'unknown' }): void => {
+    const session = agencyRuntime.get(event.sessionId);
+    const workspace = agencyWorkspaceStore.getWorkspace(event.workspaceId);
+    if (!workspace || !session || session.workspaceId !== event.workspaceId || !session.tab?.current || session.tab.closedAt) return;
+    void agencyActivityManager.handleCliActivity({ workspaceId: event.workspaceId, projectId: workspace.projectId,
+      tabId: session.tab.id, sessionId: session.id, provider: event.provider, tabName: session.tab.name,
+      nextActivity: event.phase, lifecycle: session.lifecycle, taskId: event.taskId, completionEvidence: 'native-turn',
+    }).catch(error => console.error('[agency] native activity persistence failed:', String(error)));
+  };
+  agencyRuntime.on('nativeTurn', onNativeTurn);
   agencyRuntime.on('changed', onAgencySessionChanged);
   agencyRuntime.on('activity', onAgencySessionActivity);
 
@@ -1129,6 +1193,10 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
       notifications: agencyNotificationStore.list(),
       activityStates: agencyActivityManager.snapshot(),
     });
+    void tabReady.then(() => {
+      send(socket, { type: 'agency.webTabs.snapshot', requestId: '', tabs: agencyBrowserTabs.listTabs() });
+      send(socket, { type: 'agency.notifications.snapshot', requestId: '', notifications: agencyNotificationStore.list(), activityStates: agencyActivityManager.snapshot() });
+    }).catch(() => undefined);
     // Lo que ya se sabe del plan de cada CLI; lo que llegue despues va por `onChange`.
     planLimits.retain();
     const knownLimits = planLimits.snapshot();
@@ -1160,6 +1228,8 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         return;
       }
 
+      try {
+      if (message.type.startsWith('agency.')) await tabReady;
       switch (message.type) {
         case 'input':
           // Sin filtrar: Ctrl+V, Alt+V, Esc Esc y compania tienen que llegar
@@ -3289,20 +3359,25 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         case 'agency.project.create':
         case 'agency.project.update':
         case 'agency.project.delete':
+        case 'agency.project.archive':
+        case 'agency.project.unarchive':
         case 'agency.workspaces.list':
         case 'agency.workspace.create':
         case 'agency.workspace.update':
         case 'agency.workspace.done':
         case 'agency.workspace.restore':
-        case 'agency.workspace.delete': {
+        case 'agency.workspace.delete':
+        case 'agency.workspace.archive': {
           const domainContext: AgencyDomainContext = {
             store: agencyWorkspaceStore,
             pickers,
             withSessionReservationLock: (id, op) => workspaceLock.runExclusive(id, op),
-            hasBlockingSessions: async (id) => agencyRuntime.hasWorkspaceReferences(id),
+            hasBlockingSessions: async (id) => agencyRuntime.hasWorkspaceReferences(id) || tabCoordinator.hasBrowserReferences(id),
             publish: (broadcastMsg) => broadcast(broadcastMsg),
           };
-          const domainResponse = await handleAgencyDomainRequest(message, domainContext);
+          const domainResponse = 'workspaceId' in message
+            ? await tabCoordinator.mutations.runExclusive(message.workspaceId, () => handleAgencyDomainRequest(message, domainContext))
+            : await handleAgencyDomainRequest(message, domainContext);
           if (domainResponse !== null) {
             send(socket, domainResponse);
           }
@@ -3376,7 +3451,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
 
         case 'agency.session.create': {
           try {
-            const session = await agencyRuntime.create(message);
+            const session = await tabCoordinator.createNative(message);
             send(socket, { type: 'agency.session.created', requestId: message.requestId, session });
           } catch (error) {
             let code: AgencyErrorCode = 'internal-error';
@@ -3395,15 +3470,9 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         case 'agency.tab.action':
         case 'agency.tabs.order': {
           try {
-            if (message.type === 'agency.tab.action') {
-              await agencyRuntime.tabAction(message.workspaceId, message.tabId, message.action);
-              if (message.action === 'select') {
-                await agencyActivityManager.acknowledgeTab(message.workspaceId, message.tabId);
-              } else if (message.action === 'close') {
-                await agencyActivityManager.closeTab(message.workspaceId, message.tabId);
-              }
-            } else {
-              await agencyRuntime.orderTabs(message.workspaceId, message.tabIds);
+            await tabCoordinator.nativeAction(message);
+            if (message.type === 'agency.tab.action' && message.action === 'close') {
+              await agencyActivityManager.closeTab(message.workspaceId, message.tabId);
             }
             send(socket, { type: 'agency.sessions.snapshot', requestId: message.requestId, sessions: agencyRuntime.list() });
           } catch (error) {
@@ -3427,6 +3496,24 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
             }
             send(socket, { type: 'agency.error', requestId: message.requestId, code, message: msg });
           }
+          break;
+        }
+
+        case 'agency.webTab.create':
+        case 'agency.webTab.select':
+        case 'agency.webTab.navigate':
+        case 'agency.webTab.rename':
+        case 'agency.webTab.order':
+        case 'agency.webTab.close':
+        case 'agency.webTabs.list': {
+          const response = await tabCoordinator.webRequest(message);
+          for (const tab of agencyBrowserTabs.listTabs()) {
+            await agencyActivityManager.ensureTab({ workspaceId: tab.workspaceId, tabId: tab.id, source: 'browser' });
+          }
+          if (message.type === 'agency.webTab.close' && response?.type === 'agency.webTab.closed') {
+            await agencyActivityManager.closeTab(message.workspaceId, message.tabId);
+          }
+          if (response) send(socket, response);
           break;
         }
 
@@ -3471,6 +3558,10 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         }
 
         case 'agency.tab.acknowledge': {
+          if (!tabCoordinator.canInspect(message.workspaceId, message.tabId)) {
+            send(socket, { type: 'agency.error', requestId: message.requestId, code: 'session-unavailable', message: 'Tab must be open and selected in an active workspace before inspection' });
+            break;
+          }
           const record = await agencyActivityManager.acknowledgeTab(message.workspaceId, message.tabId);
           if (record) {
             send(socket, { type: 'agency.tab.activity', requestId: message.requestId, activity: record });
@@ -3480,6 +3571,13 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           }
           break;
         }
+      }
+      } catch (error) {
+        if (message.type.startsWith('agency.') && 'requestId' in message) {
+          send(socket, { type: 'agency.error', requestId: message.requestId!,
+            code: error instanceof AgencyRuntimeError || error instanceof BrowserTabStoreError ? error.code : 'internal-error',
+            message: error instanceof Error ? error.message : String(error) });
+        } else console.error('[socket] request failed:', String(error));
       }
     });
 
@@ -3514,6 +3612,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
   });
 
   return () => {
+    clearInterval(browserReconciliation);
     httpServer.off('upgrade', onUpgrade);
     registry.off('changed', onRegistryChanged);
     registry.off('activity', onRegistryActivity);
@@ -3545,6 +3644,8 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     stopRemoteRevoked();
     agencyRuntime.off('changed', onAgencySessionChanged);
     agencyRuntime.off('activity', onAgencySessionActivity);
+    agencyRuntime.off('nativeTurn', onNativeTurn);
+    registry.detachAll(shellOutputListener);
     agencyNotificationStore.off('created', onNotificationCreated);
     agencyNotificationStore.off('changed', onNotificationChanged);
     agencyActivityManager.off('tabActivity', onTabActivity);

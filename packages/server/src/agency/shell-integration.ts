@@ -45,6 +45,7 @@ export class ShellIntegrationParser extends EventEmitter {
   private currentState: MawActivityState = 'unknown';
   private lastExitCode: number | null = null;
   private lastCommandStartedAt: number | null = null;
+  private commandActive = false;
 
   constructor() {
     super();
@@ -95,18 +96,15 @@ export class ShellIntegrationParser extends EventEmitter {
     if (!chunk || chunk.length === 0) return;
 
     this.buffer += chunk;
-    // Bounded buffer length to prevent memory leakage on massive binaries without escape codes
-    if (this.buffer.length > 65536) {
-      this.buffer = this.buffer.slice(-16384);
-    }
-
     this.processBuffer();
+    // Process complete sequences before trimming: a large output chunk can contain commands.
+    if (this.buffer.length > 65536) this.buffer = this.buffer.slice(-16384);
   }
 
   private processBuffer(): void {
     // OSC 133 syntax: ESC ] 133 ; <command> [; <params>] (BEL | ESC \)
     // or 8-bit OSC \x9d 133 ; ...
-    const oscPattern = /(?:\x1b\]|\x9d)133;([A-D])(?:;([^\x07\x1b]+))?(?:\x07|\x1b\\)/g;
+    const oscPattern = /(?:\x1b\]|\x9d)133;([A-D])(?:;([^\x07\x1b]*))?(?:\x07|\x1b\\)/g;
 
     let match: RegExpExecArray | null;
     let lastProcessedIndex = 0;
@@ -123,20 +121,22 @@ export class ShellIntegrationParser extends EventEmitter {
         case 'A': // Prompt start
           // If we were finished, we stay finished until inspected/acknowledged by user
           // If we were unknown or failed, prompt start indicates shell is ready
-          if (this.currentState !== 'finished') {
+          if (!this.commandActive && this.currentState !== 'finished' && this.currentState !== 'failed' && (this.currentState !== 'unknown' || this.lastCommandStartedAt === null)) {
             this.currentState = 'idle';
             this.emit('state', 'idle', 'prompt-start');
           }
           break;
 
         case 'B': // Prompt end / command input ready
-          if (this.currentState !== 'finished') {
+          if (!this.commandActive && this.currentState !== 'finished' && this.currentState !== 'failed' && (this.currentState !== 'unknown' || this.lastCommandStartedAt === null)) {
             this.currentState = 'idle';
             this.emit('state', 'idle', 'prompt-end');
           }
           break;
 
         case 'C': // Command executed / output start
+          if (this.commandActive) break;
+          this.commandActive = true;
           this.currentState = 'working';
           this.lastCommandStartedAt = now;
           this.emit('commandStart', { timestamp: now });
@@ -144,6 +144,9 @@ export class ShellIntegrationParser extends EventEmitter {
           break;
 
         case 'D': { // Command finished / command exited
+          // precmd also runs on startup and prompt redraw. Neither is a completed command.
+          if (!this.commandActive) break;
+          this.commandActive = false;
           // Requirement: never interpret missing, malformed or nonnumeric exit codes as successful exit code 0.
           // Preserve Unknown when completion cannot be established.
           const trimmed = params?.trim();
@@ -156,7 +159,13 @@ export class ShellIntegrationParser extends EventEmitter {
             break;
           }
 
-          const exitCode = parseInt(trimmed, 10);
+          const exitCode = Number(trimmed);
+          if (!Number.isSafeInteger(exitCode)) {
+            this.lastExitCode = null;
+            this.currentState = 'unknown';
+            this.emit('state', 'unknown', 'command-exit-unverified');
+            break;
+          }
           this.lastExitCode = exitCode;
 
           if (exitCode === 0) {
@@ -210,10 +219,15 @@ export function generateBashIntegrationScript(): string {
 __maw_osc133_precmd() {
   local last_status="$?"
   printf "\\033]133;D;%d\\007\\033]133;A\\007" "$last_status"
+  return "$last_status"
 }
 
 # 1. Command exit and prompt start via PROMPT_COMMAND
-if [[ -z "\${PROMPT_COMMAND:-}" ]]; then
+if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
+  if [[ " \${PROMPT_COMMAND[*]} " != *"__maw_osc133_precmd"* ]]; then
+    PROMPT_COMMAND=(__maw_osc133_precmd "\${PROMPT_COMMAND[@]}")
+  fi
+elif [[ -z "\${PROMPT_COMMAND:-}" ]]; then
   PROMPT_COMMAND="__maw_osc133_precmd"
 elif [[ "$PROMPT_COMMAND" != *"__maw_osc133_precmd"* ]]; then
   PROMPT_COMMAND="__maw_osc133_precmd; $PROMPT_COMMAND"
@@ -221,9 +235,9 @@ fi
 
 # 2. Command start: PS0 is printed after command is entered, before execution starts
 if [[ -z "\${PS0:-}" ]]; then
-  PS0="\\[\\033]133;C\\007\\]"
+  PS0="\\033]133;C\\007"
 elif [[ "$PS0" != *"133;C"* ]]; then
-  PS0="\\[\\033]133;C\\007\\]$PS0"
+  PS0="\\033]133;C\\007$PS0"
 fi
 
 # 3. Prompt end: PS1 indicates command input line ready
@@ -283,4 +297,37 @@ export async function installShellIntegrationSafely(targetDir: string): Promise<
   await writeFile(zshScriptPath, generateZshIntegrationScript(), { mode: 0o755 });
 
   return { bashScriptPath, zshScriptPath };
+}
+
+/** Prepare only app-owned startup files; the user's files are sourced, never rewritten. */
+export async function prepareIntegratedShell(
+  launch: { file: string; args: readonly string[] },
+  env: Record<string, string>,
+  targetDir: string,
+): Promise<{ launch: { file: string; args: readonly string[] }; env: Record<string, string> }> {
+  const shell = path.basename(launch.file);
+  if (process.platform === 'win32' || !['bash', 'zsh'].includes(shell) ||
+      launch.args.some(arg => ['-c', '--command', '--norc', '--noprofile', '-f', '-l', '--login'].includes(arg))) {
+    return { launch, env };
+  }
+  const scripts = await installShellIntegrationSafely(targetDir);
+  const quote = (value: string): string => "'" + value.replaceAll("'", "'\\''") + "'";
+  if (shell === 'bash') {
+    const startup = path.join(targetDir, 'bashrc');
+    await writeFile(startup, '[ ! -f "$HOME/.bashrc" ] || source "$HOME/.bashrc"\nsource ' + quote(scripts.bashScriptPath) + '\n', { mode: 0o600 });
+    return { launch: { file: launch.file, args: ['--rcfile', startup, ...launch.args, '-i'] }, env };
+  }
+  const zdotdir = env['ZDOTDIR'] ?? env['HOME'] ?? '';
+  // A private ZDOTDIR forwards startup to the original directory. Restore it before
+  // user commands so nested shells retain their normal configuration.
+  const restoreZdotdir = 'if [[ "$MAW_SHELL_ZDOTDIR_SET" = 1 ]]; then ZDOTDIR="$MAW_SHELL_ZDOTDIR"; else unset ZDOTDIR; fi\n';
+  await writeFile(path.join(targetDir, '.zshenv'), restoreZdotdir +
+    '[ ! -f "$MAW_SHELL_ZDOTDIR/.zshenv" ] || source "$MAW_SHELL_ZDOTDIR/.zshenv"\n' +
+    'MAW_SHELL_ZDOTDIR_SET=${+ZDOTDIR}\nMAW_SHELL_ZDOTDIR="${ZDOTDIR:-$HOME}"\nZDOTDIR="$MAW_SHELL_INTEGRATION_DIR"\n', { mode: 0o600 });
+  await writeFile(path.join(targetDir, '.zshrc'),
+    restoreZdotdir + '[ ! -f "$MAW_SHELL_ZDOTDIR/.zshrc" ] || source "$MAW_SHELL_ZDOTDIR/.zshrc"\nsource ' + quote(scripts.zshScriptPath) + '\n' +
+    'unset MAW_SHELL_ZDOTDIR MAW_SHELL_INTEGRATION_DIR MAW_SHELL_ZDOTDIR_SET\n', { mode: 0o600 });
+  return { launch: { file: launch.file, args: [...launch.args, '-i'] },
+    env: { ...env, ZDOTDIR: targetDir, MAW_SHELL_ZDOTDIR: zdotdir, MAW_SHELL_INTEGRATION_DIR: targetDir,
+      MAW_SHELL_ZDOTDIR_SET: env['ZDOTDIR'] === undefined ? '0' : '1' } };
 }

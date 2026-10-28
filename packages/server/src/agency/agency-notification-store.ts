@@ -42,6 +42,7 @@ export interface CreateNotificationInput {
 
 export class AgencyNotificationStore extends EventEmitter {
   private queue: Promise<void> = Promise.resolve();
+  private mutations: Promise<void> = Promise.resolve();
   private readonly notifications = new Map<string, MawNotificationItem>();
   private readonly deduplicationIndex = new Map<string, { id: string; createdAt: number }>();
   private initialized = false;
@@ -118,6 +119,10 @@ export class AgencyNotificationStore extends EventEmitter {
     return this.notifications.get(id) ?? null;
   }
 
+  hasDeduplicationKey(key: string): boolean {
+    return this.deduplicationIndex.has(key);
+  }
+
   unreadCount(workspaceId?: WorkspaceId): number {
     return this.list(workspaceId).filter((item) => !item.read).length;
   }
@@ -126,7 +131,17 @@ export class AgencyNotificationStore extends EventEmitter {
    * Creates a notification with automatic deduplication by stable event/task ID.
    * If a notification with the same deduplicationKey already exists, returns null.
    */
-  async create(input: CreateNotificationInput): Promise<MawNotificationItem | null> {
+  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.mutations.then(operation);
+    this.mutations = next.then(() => undefined, () => undefined);
+    return next;
+  }
+
+  create(input: CreateNotificationInput): Promise<MawNotificationItem | null> {
+    return this.mutate(() => this.createItem(input));
+  }
+
+  private async createItem(input: CreateNotificationInput): Promise<MawNotificationItem | null> {
     if (input.deduplicationKey) {
       const existing = this.deduplicationIndex.get(input.deduplicationKey);
       if (existing) {
@@ -160,13 +175,22 @@ export class AgencyNotificationStore extends EventEmitter {
       this.deduplicationIndex.set(input.deduplicationKey, { id, createdAt: Date.now() });
     }
 
-    await this.persist();
+    try { await this.persist(); }
+    catch (error) {
+      if (this.notifications.get(id) === item) this.notifications.delete(id);
+      if (input.deduplicationKey) this.deduplicationIndex.delete(input.deduplicationKey);
+      throw error;
+    }
     this.emit('created', item);
     this.emit('changed', item);
     return item;
   }
 
-  async markRead(notificationId: string): Promise<MawNotificationItem | null> {
+  markRead(notificationId: string): Promise<MawNotificationItem | null> {
+    return this.mutate(() => this.markReadItem(notificationId));
+  }
+
+  private async markReadItem(notificationId: string): Promise<MawNotificationItem | null> {
     const existing = this.notifications.get(notificationId);
     if (!existing) return null;
     if (existing.read) return existing;
@@ -178,13 +202,22 @@ export class AgencyNotificationStore extends EventEmitter {
     };
 
     this.notifications.set(notificationId, updated);
-    await this.persist();
+    try { await this.persist(); }
+    catch (error) {
+      if (this.notifications.get(notificationId) === updated) this.notifications.set(notificationId, existing);
+      throw error;
+    }
     this.emit('changed', updated);
     return updated;
   }
 
-  async markAllRead(): Promise<MawNotificationItem[]> {
+  markAllRead(): Promise<MawNotificationItem[]> {
+    return this.mutate(() => this.markAllReadItems());
+  }
+
+  private async markAllReadItems(): Promise<MawNotificationItem[]> {
     const changed: MawNotificationItem[] = [];
+    const previous = new Map(this.notifications);
     const now = NOW();
 
     for (const [id, item] of this.notifications) {
@@ -196,12 +229,16 @@ export class AgencyNotificationStore extends EventEmitter {
         };
         this.notifications.set(id, updated);
         changed.push(updated);
-        this.emit('changed', updated);
       }
     }
 
     if (changed.length > 0) {
-      await this.persist();
+      try { await this.persist(); }
+      catch (error) {
+        for (const item of changed) if (this.notifications.get(item.id) === item) this.notifications.set(item.id, previous.get(item.id)!);
+        throw error;
+      }
+      for (const item of changed) this.emit('changed', item);
     }
     return changed;
   }
@@ -209,7 +246,11 @@ export class AgencyNotificationStore extends EventEmitter {
   /**
    * Dismisses a toast without deleting from inbox history.
    */
-  async dismiss(notificationId: string): Promise<MawNotificationItem | null> {
+  dismiss(notificationId: string): Promise<MawNotificationItem | null> {
+    return this.mutate(() => this.dismissItem(notificationId));
+  }
+
+  private async dismissItem(notificationId: string): Promise<MawNotificationItem | null> {
     const existing = this.notifications.get(notificationId);
     if (!existing) return null;
 
@@ -219,12 +260,20 @@ export class AgencyNotificationStore extends EventEmitter {
     };
 
     this.notifications.set(notificationId, updated);
-    await this.persist();
+    try { await this.persist(); }
+    catch (error) {
+      if (this.notifications.get(notificationId) === updated) this.notifications.set(notificationId, existing);
+      throw error;
+    }
     this.emit('changed', updated);
     return updated;
   }
 
-  async acknowledge(notificationId: string): Promise<MawNotificationItem | null> {
+  acknowledge(notificationId: string): Promise<MawNotificationItem | null> {
+    return this.mutate(() => this.acknowledgeItem(notificationId));
+  }
+
+  private async acknowledgeItem(notificationId: string): Promise<MawNotificationItem | null> {
     const existing = this.notifications.get(notificationId);
     if (!existing) return null;
 
@@ -234,7 +283,11 @@ export class AgencyNotificationStore extends EventEmitter {
     };
 
     this.notifications.set(notificationId, updated);
-    await this.persist();
+    try { await this.persist(); }
+    catch (error) {
+      if (this.notifications.get(notificationId) === updated) this.notifications.set(notificationId, existing);
+      throw error;
+    }
     this.emit('changed', updated);
     return updated;
   }
@@ -260,7 +313,7 @@ export class AgencyNotificationStore extends EventEmitter {
   }
 
   flush(): Promise<void> {
-    return this.queue;
+    return this.mutations.then(() => this.queue);
   }
 
   dispose(): void {

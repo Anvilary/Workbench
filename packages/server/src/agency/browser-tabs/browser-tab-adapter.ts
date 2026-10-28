@@ -31,7 +31,6 @@ import { randomUUID } from 'node:crypto';
 import type {
   CreateWebTabInput,
   WebTab,
-  WebTabRuntimeState,
   WorkspaceId,
 } from '@agent-workbench/shared';
 import {
@@ -191,7 +190,7 @@ export class BrowserTabAdapter {
     for (const tab of loaded) {
       this.liveTabs.set(tab.id, {
         ...tab,
-        runtimeState: 'detached',
+        runtimeState: tab.closedAt && !tab.cleanupRequired ? 'closed' : 'detached',
       });
     }
     // Safely retry any pending cleanup from previous runs
@@ -257,28 +256,6 @@ export class BrowserTabAdapter {
       const now = new Date().toISOString();
       const id = randomUUID();
 
-      let targetRef: string | null = null;
-      let runtimeState: WebTabRuntimeState = input.unloaded ? 'unloaded' : 'detached';
-      let browserError: unknown = null;
-
-      // Open target in browser engine only if not explicitly marked unloaded
-      if (!input.unloaded) {
-        const metadata: TargetMetadata = {
-          tabId: id,
-          workspaceId: input.workspaceId,
-          url: val.normalizedUrl!,
-        };
-        try {
-          const res = await this.driver.openTarget(val.normalizedUrl!, metadata);
-          targetRef = res.targetRef;
-          runtimeState = 'attached';
-        } catch (err) {
-          targetRef = null;
-          runtimeState = 'error';
-          browserError = err;
-        }
-      }
-
       // Update selection for workspace
       if (select) {
         for (const openTab of openTabs) {
@@ -302,35 +279,31 @@ export class BrowserTabAdapter {
         createdAt: now,
         updatedAt: now,
         closedAt: null,
-        targetRef,
-        runtimeState,
+        targetRef: null,
+        runtimeState: input.unloaded ? 'unloaded' : 'attaching',
         cleanupRequired: false,
         launchId: input.launchId,
       };
 
       this.liveTabs.set(id, newTab);
 
-      // If selected and target exists, request activation
-      if (select && targetRef && !browserError) {
+      // The stable tab identity must be durable before asking the browser to
+      // create anything. A lost response can then be retried with the same owner.
+      await this.persist();
+      if (!input.unloaded) {
         try {
-          await this.driver.activateTarget(targetRef);
-          newTab.runtimeState = 'ready';
-        } catch (err) {
+          await this.ensureTarget(newTab);
+          if (select) {
+            await this.driver.activateTarget(newTab.targetRef!);
+            newTab.runtimeState = 'ready';
+          }
+        } catch (error) {
           newTab.runtimeState = 'error';
-          browserError = err;
+          await this.persist();
+          throw this.engineError('Web tab saved, but browser engine is unavailable', error);
         }
       }
-
-      // Persist logical web tab safely even if browser engine failed
       await this.persist();
-
-      // If browser engine operation failed, report explicitly so tasks are not falsely acknowledged as ready
-      if (browserError) {
-        throw new BrowserTabStoreError(
-          'session-unavailable',
-          `Web tab saved, but browser engine is unavailable: ${browserError instanceof Error ? browserError.message : String(browserError)}`,
-        );
-      }
 
       return { ...newTab };
     });
@@ -372,62 +345,15 @@ export class BrowserTabAdapter {
       // Coordinate single selection: unselect native CLI and terminal tabs in this workspace
       await this.selectionCoordinator?.unselectNativeTabs?.(workspaceId);
 
-      // Reconcile and activate Chromium target
-      const expected: TargetMetadata = {
-        tabId: tab.id,
-        workspaceId: tab.workspaceId,
-        url: tab.url,
-      };
-
-      if (tab.targetRef) {
-        // Strict ownership verification: ensure target is alive and belongs to this tab
-        const verified = await this.driver.verifyTargetOwnership(tab.targetRef, expected).catch(() => false);
-        if (verified) {
-          // Reattach to existing live target without reloading or duplicating
-          try {
-            await this.driver.activateTarget(tab.targetRef);
-            tab.runtimeState = 'ready';
-          } catch (err) {
-            tab.runtimeState = 'error';
-            await this.persist();
-            throw new BrowserTabStoreError(
-              'session-unavailable',
-              `Failed to activate browser target: ${err instanceof Error ? err.message : String(err)}`,
-            );
-          }
-        } else {
-          // Stale, dead, or foreign target ID: treat as untrusted reconciliation hint, open fresh target
-          try {
-            const res = await this.driver.openTarget(tab.url, expected);
-            tab.targetRef = res.targetRef;
-            await this.driver.activateTarget(tab.targetRef);
-            tab.runtimeState = 'ready';
-          } catch (err) {
-            tab.targetRef = null;
-            tab.runtimeState = 'error';
-            await this.persist();
-            throw new BrowserTabStoreError(
-              'session-unavailable',
-              `Failed to attach or activate browser target: ${err instanceof Error ? err.message : String(err)}`,
-            );
-          }
-        }
-      } else {
-        // Lazy target creation on first selection
-        try {
-          const res = await this.driver.openTarget(tab.url, expected);
-          tab.targetRef = res.targetRef;
-          await this.driver.activateTarget(tab.targetRef);
-          tab.runtimeState = 'ready';
-        } catch (err) {
-          tab.targetRef = null;
-          tab.runtimeState = 'error';
-          await this.persist();
-          throw new BrowserTabStoreError(
-            'session-unavailable',
-            `Failed to open or activate browser target: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
+      try {
+        await this.ensureTarget(tab);
+        await this.driver.activateTarget(tab.targetRef!);
+        tab.runtimeState = 'ready';
+      } catch (error) {
+        // Keep a successfully created handle when only activation failed.
+        tab.runtimeState = 'error';
+        await this.persist();
+        throw this.engineError('Failed to open or activate browser target', error);
       }
 
       await this.persist();
@@ -449,16 +375,24 @@ export class BrowserTabAdapter {
         throw new BrowserTabStoreError('invalid-request', val.error ?? 'Invalid ChatGPT URL');
       }
 
-      tab.url = val.normalizedUrl!;
-      tab.updatedAt = new Date().toISOString();
-
-      if (tab.targetRef) {
-        try {
-          await this.driver.navigateTarget(tab.targetRef, val.normalizedUrl!);
-          tab.runtimeState = 'ready';
-        } catch {
-          tab.runtimeState = 'error';
+      try {
+        if (tab.targetRef) {
+          const verified = await this.driver.verifyTargetOwnership(tab.targetRef, this.owner(tab));
+          if (verified) {
+            await this.driver.navigateTarget(tab.targetRef, val.normalizedUrl!);
+            tab.runtimeState = 'ready';
+          } else {
+            // Persisted refs are hints, including for navigation and cleanup.
+            tab.targetRef = null;
+            tab.runtimeState = 'detached';
+          }
         }
+        tab.url = val.normalizedUrl!;
+        tab.updatedAt = new Date().toISOString();
+      } catch (error) {
+        tab.runtimeState = 'error';
+        await this.persist();
+        throw this.engineError('Failed to navigate browser target', error);
       }
 
       await this.persist();
@@ -487,7 +421,7 @@ export class BrowserTabAdapter {
     });
   }
 
-  async orderTabs(workspaceId: WorkspaceId, tabIds: readonly string[]): Promise<readonly WebTab[]> {
+  async orderTabs(workspaceId: WorkspaceId, tabIds: readonly string[], positions?: ReadonlyMap<string, number>): Promise<readonly WebTab[]> {
     await this.assertWorkspaceValid(workspaceId);
 
     return this.withWorkspaceLock(workspaceId, async () => {
@@ -506,6 +440,10 @@ export class BrowserTabAdapter {
         if (!openTabIds.has(id)) {
           throw new BrowserTabStoreError('invalid-request', `Tab ID ${id} does not belong to open tabs in workspace`);
         }
+        const position = positions?.get(id);
+        if (positions && (position === undefined || !Number.isSafeInteger(position) || position < 0)) {
+          throw new BrowserTabStoreError('invalid-request', 'Each tab requires a valid global position');
+        }
         seen.add(id);
       }
 
@@ -513,7 +451,7 @@ export class BrowserTabAdapter {
       for (const [index, id] of tabIds.entries()) {
         const tab = this.liveTabs.get(id);
         if (tab) {
-          tab.order = index;
+          tab.order = positions?.get(id) ?? index;
           tab.updatedAt = now;
         }
       }
@@ -539,14 +477,13 @@ export class BrowserTabAdapter {
       tab.selected = false;
       tab.updatedAt = now;
 
-      // Reliable closing: attempt destruction in Chromium
-      if (tab.targetRef) {
-        const ref = tab.targetRef;
+      // Persist closure intent before destruction so a crash cannot resurrect
+      // the logical tab or lose a target requiring cleanup.
+      tab.cleanupRequired = !!tab.targetRef || !!this.driver.findOwnedTarget;
+      await this.persist();
+      if (tab.cleanupRequired) {
         try {
-          await this.driver.closeTarget(ref);
-          tab.targetRef = null;
-          tab.cleanupRequired = false;
-          tab.runtimeState = 'closed';
+          await this.cleanupTarget(tab);
         } catch {
           // Failure to destroy: persist cleanup-required state so it can be reconciled
           tab.cleanupRequired = true;
@@ -565,20 +502,12 @@ export class BrowserTabAdapter {
           if (candidate) {
             candidate.selected = true;
             candidate.updatedAt = now;
-            if (candidate.targetRef) {
-              const verified = await this.driver.verifyTargetOwnership(candidate.targetRef, {
-                tabId: candidate.id,
-                workspaceId: candidate.workspaceId,
-                url: candidate.url,
-              }).catch(() => false);
-              if (verified) {
-                try {
-                  await this.driver.activateTarget(candidate.targetRef);
-                  candidate.runtimeState = 'ready';
-                } catch {
-                  candidate.runtimeState = 'error';
-                }
-              }
+            try {
+              await this.ensureTarget(candidate);
+              await this.driver.activateTarget(candidate.targetRef!);
+              candidate.runtimeState = 'ready';
+            } catch {
+              candidate.runtimeState = 'error';
             }
           }
         }
@@ -594,26 +523,21 @@ export class BrowserTabAdapter {
    * Never touches or closes any other tabs.
    */
   async reconcileCleanup(workspaceId?: WorkspaceId): Promise<void> {
-    const tabs = this.listTabs(workspaceId, { includeClosed: true })
-      .filter((t) => t.cleanupRequired && t.targetRef);
-
-    for (const tab of tabs) {
-      if (!tab.targetRef) {
-        tab.cleanupRequired = false;
-        continue;
-      }
-      try {
-        await this.driver.closeTarget(tab.targetRef);
-        tab.targetRef = null;
-        tab.cleanupRequired = false;
-        tab.runtimeState = 'closed';
-      } catch {
-        // Will retry on subsequent reconcileCleanup
-      }
-    }
-
-    if (tabs.length > 0) {
-      await this.persist();
+    const workspaceIds = new Set(this.listTabs(workspaceId, { includeClosed: true })
+      .filter((tab) => tab.cleanupRequired).map((tab) => tab.workspaceId));
+    for (const id of workspaceIds) {
+      await this.withWorkspaceLock(id, async () => {
+        const tabs = this.listTabs(id, { includeClosed: true }).filter((tab) => tab.cleanupRequired);
+        for (const tab of tabs) {
+          try {
+            await this.cleanupTarget(tab);
+          } catch {
+            // An unavailable registry is not evidence of absent ownership.
+            // Retain the tombstone and receipt for a safe subsequent retry.
+          }
+        }
+        if (tabs.length) await this.persist();
+      });
     }
   }
 
@@ -636,6 +560,87 @@ export class BrowserTabAdapter {
         await this.persist();
       }
     });
+  }
+
+  /** Observe user navigation without creating, selecting or navigating pages. */
+  async refreshLiveTabs(workspaceId?: WorkspaceId): Promise<readonly WebTab[]> {
+    if (!this.driver.getTargetUrl) return this.listTabs(workspaceId).map((tab) => ({ ...tab }));
+    const workspaces = new Set(this.listTabs(workspaceId).map((tab) => tab.workspaceId));
+    for (const id of workspaces) {
+      await this.withWorkspaceLock(id, async () => {
+        let changed = false;
+        for (const tab of this.listTabs(id)) {
+          if (!tab.targetRef) continue;
+          const previousUrl = tab.url;
+          const previousState = tab.runtimeState;
+          const previousRef = tab.targetRef;
+          try {
+            if (!await this.driver.verifyTargetOwnership(tab.targetRef, this.owner(tab))) {
+              tab.targetRef = null;
+              tab.runtimeState = 'detached';
+            } else {
+              const url = await this.driver.getTargetUrl!(tab.targetRef);
+              if (url) {
+                const validated = validateChatGptUrl(url);
+                if (validated.valid) tab.url = validated.normalizedUrl!;
+              }
+              if (tab.runtimeState === 'detached') tab.runtimeState = 'attached';
+            }
+          } catch {
+            tab.runtimeState = 'error';
+          }
+          if (tab.url !== previousUrl || tab.runtimeState !== previousState || tab.targetRef !== previousRef) {
+            tab.updatedAt = new Date().toISOString();
+            changed = true;
+          }
+        }
+        if (changed) await this.persist();
+      });
+    }
+    return this.listTabs(workspaceId).map((tab) => ({ ...tab }));
+  }
+
+  private owner(tab: WebTab): TargetMetadata {
+    return { tabId: tab.id, workspaceId: tab.workspaceId, url: tab.url };
+  }
+
+  private async cleanupTarget(tab: WebTab): Promise<void> {
+    let target = tab.targetRef;
+    if (target && !await this.driver.verifyTargetOwnership(target, this.owner(tab))) target = null;
+    if (!target && this.driver.findOwnedTarget) {
+      target = await this.driver.findOwnedTarget(this.owner(tab));
+      if (target) {
+        tab.targetRef = target;
+        await this.persist();
+        if (!await this.driver.verifyTargetOwnership(target, this.owner(tab))) {
+          throw new BrowserTabStoreError('session-unavailable', 'Ownership receipt changed during cleanup');
+        }
+      }
+    }
+    if (target) await this.driver.closeTarget(target);
+    tab.targetRef = null;
+    tab.cleanupRequired = false;
+    tab.runtimeState = 'closed';
+  }
+
+  private engineError(message: string, error: unknown): BrowserTabStoreError {
+    return new BrowserTabStoreError('session-unavailable', `${message}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  private async ensureTarget(tab: WebTab): Promise<void> {
+    if (tab.targetRef) {
+      // Transport/auth failures propagate. Treating them as false could create
+      // duplicate pages while the original is still running.
+      const verified = await this.driver.verifyTargetOwnership(tab.targetRef, this.owner(tab));
+      if (verified) return;
+      tab.targetRef = null;
+      tab.runtimeState = 'detached';
+      await this.persist();
+    }
+    const result = await this.driver.openTarget(tab.url, this.owner(tab));
+    tab.targetRef = result.targetRef;
+    tab.runtimeState = 'attached';
+    await this.persist();
   }
 
   private async persist(): Promise<void> {

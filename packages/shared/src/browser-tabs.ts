@@ -228,6 +228,17 @@ function isValidRequestId(v: unknown): v is RequestId {
 
 export function parseWebTabClientMessage(raw: unknown): WebTabClientMessage | null {
   if (!isRecord(raw) || typeof raw.type !== 'string') return null;
+  const fields: Record<string, readonly string[]> = {
+    'agency.webTab.create': ['workspaceId', 'url', 'title', 'order', 'select', 'launchId', 'unloaded'],
+    'agency.webTab.select': ['workspaceId', 'tabId'],
+    'agency.webTab.navigate': ['workspaceId', 'tabId', 'url'],
+    'agency.webTab.rename': ['workspaceId', 'tabId', 'title'],
+    'agency.webTab.order': ['workspaceId', 'tabIds'],
+    'agency.webTab.close': ['workspaceId', 'tabId'],
+    'agency.webTabs.list': ['workspaceId'],
+  };
+  const allowed = fields[raw.type];
+  if (!allowed || Object.keys(raw).some(key => !['type', 'requestId', ...allowed].includes(key))) return null;
   const requestId = raw.requestId;
   if (!isValidRequestId(requestId)) return null;
 
@@ -341,4 +352,27 @@ export function parseWebTabClientMessage(raw: unknown): WebTabClientMessage | nu
     default:
       return null;
   }
+}
+
+/** Browser messages travel through the same validated Agency transport as PTYs. */
+export function parseWebTabServerMessage(raw: unknown): WebTabServerMessage | null {
+  if (!isRecord(raw)) return null;
+  if (raw.type === 'agency.webTab.changed') {
+    if (typeof raw.workspaceId !== 'string' || !UUID_RE.test(raw.workspaceId) ||
+        !['created', 'updated', 'closed', 'ordered'].includes(raw.change as string)) return null;
+    if (raw.change === 'ordered') {
+      if (!Array.isArray(raw.tabs) || !raw.tabs.every(isWebTab) || raw.tabs.some(tab => tab.workspaceId !== raw.workspaceId)) return null;
+    } else if (!isWebTab(raw.tab) || raw.tab.workspaceId !== raw.workspaceId) return null;
+    return raw as unknown as WebTabServerMessage;
+  }
+  if (typeof raw.requestId !== 'string' || raw.requestId.length > 128 || /[\u0000-\u001f\u007f]/.test(raw.requestId)) return null;
+  if (raw.type === 'agency.webTabs.snapshot') {
+    if (!Array.isArray(raw.tabs) || !raw.tabs.every(isWebTab) || new Set(raw.tabs.map(tab => tab.id)).size !== raw.tabs.length) return null;
+    return { type: raw.type, requestId: raw.requestId, tabs: raw.tabs };
+  }
+  if (raw.type === 'agency.webTab.created' || raw.type === 'agency.webTab.updated' || raw.type === 'agency.webTab.closed') {
+    if (!isWebTab(raw.tab)) return null;
+    return { type: raw.type, requestId: raw.requestId, tab: raw.tab };
+  }
+  return null;
 }

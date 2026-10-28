@@ -20,6 +20,8 @@ services:
       - "127.0.0.1:52000-52010:52000-52010/udp"
     environment:
       NEKO_SERVER_BIND: "0.0.0.0:8080"
+      NEKO_SERVER_PATH_PREFIX: "${NEKO_SERVER_PATH_PREFIX:-/api/agency/browser/viewer}"
+      NEKO_SESSION_COOKIE_ENABLED: "true"
       NEKO_DESKTOP_SCREEN: "${NEKO_DESKTOP_SCREEN:-1280x720@30}"
       NEKO_WEBRTC_NAT1TO1: "127.0.0.1"
       NEKO_WEBRTC_EPR: "52000-52010"
@@ -28,14 +30,18 @@ services:
       # Explicitly required strong secrets - fail closed if missing or empty
       NEKO_MEMBER_MULTIUSER_USER_PASSWORD: "${NEKO_PASSWORD:?NEKO_PASSWORD is required and must not be empty}"
       NEKO_MEMBER_MULTIUSER_ADMIN_PASSWORD: "${NEKO_ADMIN_PASSWORD:?NEKO_ADMIN_PASSWORD is required and must not be empty}"
+      NEKO_MEMBER_MULTIUSER_USER_PROFILE: '{"is_admin":false,"can_login":true,"can_connect":true,"can_watch":true,"can_host":true,"can_share_media":false,"can_access_clipboard":false,"sends_inactive_cursor":false,"can_see_inactive_cursors":false}'
       CONTROLLER_AUTH_TOKEN: "${CONTROLLER_AUTH_TOKEN:?CONTROLLER_AUTH_TOKEN is required and must not be empty}"
       PERMITTED_ORIGINS: "${PERMITTED_ORIGINS:-}"
       CDP_HOST: "127.0.0.1"
       CDP_PORT: "9222"
       CONTROLLER_PORT: "9223"
+      CONTROLLER_REGISTRY_PATH: "/home/neko/.local/share/maw-controller/ownership.json"
     volumes:
       # Persistent Chromium user profile (cookies, local storage, indexedDB, logins)
       - neko-profile:/home/neko/.config/chromium
+      # Trusted target receipts are separate from cookies/profile data.
+      - controller-state:/home/neko/.local/share/maw-controller
       # Overridden Chromium supervisor definition with background streaming and loopback CDP
       - ./config/chromium.conf:/etc/neko/supervisord/chromium.conf:ro
       # Managed enterprise policies enabling CDP, URL blocks, and disabling destructive tab discarding
@@ -44,9 +50,12 @@ services:
       - ./config/controller.conf:/etc/neko/supervisord/controller.conf:ro
       # Restricted Chromium tab controller script
       - ./controller/tab_controller.py:/etc/neko/tab_controller.py:ro
+      - ./controller/ownership_registry.py:/etc/neko/ownership_registry.py:ro
       # Startup wrapper for singleton lock cleanup, credential validation, and cookie preference initialization
       - ./scripts/entrypoint.sh:/entrypoint-maw.sh:ro
 
 volumes:
   neko-profile:
     name: maw-neko-chromium-profile
+  controller-state:
+    name: maw-neko-controller-state

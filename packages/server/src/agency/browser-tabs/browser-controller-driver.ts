@@ -63,6 +63,12 @@ export interface BrowserControllerDriver {
    */
   verifyTargetOwnership(targetRef: string, expected: TargetMetadata): Promise<boolean>;
 
+  /** Observe the current page address through trusted target inventory only. */
+  getTargetUrl?(targetRef: string): Promise<string | null>;
+
+  /** Resolve a durable controller receipt after a create response was lost. */
+  findOwnedTarget?(expected: TargetMetadata): Promise<string | null>;
+
   /**
    * Inquire active ongoing background operations (e.g. assistant streaming response).
    */
@@ -98,11 +104,11 @@ export class NullBrowserControllerDriver implements BrowserControllerDriver {
   }
 
   async isTargetAlive(_targetRef: string): Promise<boolean> {
-    return false;
+    throw new BrowserEngineUnavailableError();
   }
 
   async verifyTargetOwnership(_targetRef: string, _expected: TargetMetadata): Promise<boolean> {
-    return false;
+    throw new BrowserEngineUnavailableError();
   }
 }
 

@@ -18,6 +18,7 @@ import { isInsideProtected } from '../directory-picker.js';
 import type { LaunchSession } from '../agents/adapter.js';
 import type { NativeIdentity } from './native-identity.js';
 import { AgencySessionStore, migrateSessionTabs } from './agency-session-store.js';
+import { CodexTurnWatcher } from '../agents/codex/turn-watcher.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ACTIVE = new Set(['starting', 'running', 'stopping']);
@@ -182,6 +183,7 @@ export class AgencySessionRuntime extends EventEmitter {
   private disposed = false;
   private readonly launchSignatures = new Map<string, string>();
   private readonly launches = new Map<string, Promise<AgencyRuntimeSession>>();
+  private readonly nativeTurnWatchers = new Map<RuntimeSessionId, CodexTurnWatcher>();
 
   constructor(options: AgencyRuntimeOptions) {
     super();
@@ -504,6 +506,7 @@ export class AgencySessionRuntime extends EventEmitter {
         updatedAt: NOW(),
       } as AgencyRuntimeSession;
       this.sessions.set(id, next);
+      this.watchNativeTurns(next, workspace.cwd);
       if (!alive && !stopping) { this.releaseNative(id); this.registry.close(terminal.terminalId); }
       if (stopping) this.registry.close(terminal.terminalId);
       await this.publish(next);
@@ -602,14 +605,26 @@ export class AgencySessionRuntime extends EventEmitter {
     });
   }
 
-  async orderTabs(workspaceId: WorkspaceId, tabIds: readonly string[]): Promise<void> {
+  async orderTabs(workspaceId: WorkspaceId, tabIds: readonly string[], positions?: ReadonlyMap<string, number>): Promise<void> {
     await this.workspaces.withSessionReservation(workspaceId, async () => {
       const current = this.list(workspaceId).filter(s => s.tab?.current && !s.tab.closedAt);
       if (tabIds.length !== current.length || new Set(tabIds).size !== tabIds.length || current.some(s => !tabIds.includes(s.tab!.id))) throw new AgencyRuntimeError('invalid-request', 'Order must contain every open tab exactly once');
-      for (const row of this.list(workspaceId)) if (row.tab && tabIds.includes(row.tab.id)) this.sessions.set(row.id, { ...row, tab: { ...row.tab, order: tabIds.indexOf(row.tab.id) } });
+      for (const row of this.list(workspaceId)) if (row.tab && tabIds.includes(row.tab.id)) this.sessions.set(row.id, { ...row, tab: { ...row.tab, order: positions?.get(row.tab.id) ?? tabIds.indexOf(row.tab.id) } });
       await this.persist();
       for (const row of this.list(workspaceId)) this.emit('changed', row);
     });
+  }
+
+  /** Cross-domain selection uses the caller's coordinator; no process is stopped. */
+  async clearWorkspaceSelection(workspaceId: WorkspaceId): Promise<void> {
+    this.assertReady();
+    checkId(workspaceId);
+    const previous = this.list(workspaceId).filter(row => row.tab?.selected);
+    if (previous.length === 0) return;
+    for (const row of previous) this.sessions.set(row.id, { ...row, tab: { ...row.tab!, selected: false } });
+    try { await this.persist(); }
+    catch (error) { for (const row of previous) this.sessions.set(row.id, row); throw error; }
+    for (const row of previous) this.emit('changed', this.sessions.get(row.id)!);
   }
 
   /** Only confirmed native setting changes may be reflected in metadata. */
@@ -653,6 +668,8 @@ export class AgencySessionRuntime extends EventEmitter {
   /** Detach listeners at shutdown; TerminalRegistry.disposeAll owns termination. */
   dispose(): void {
     this.disposed = true;
+    for (const watcher of this.nativeTurnWatchers.values()) watcher.dispose();
+    this.nativeTurnWatchers.clear();
     this.registry.off('exit', this.onExit);
     this.registry.off('activity', this.onActivity);
     this.registry.off('session', this.onNativeSession);
@@ -698,6 +715,12 @@ export class AgencySessionRuntime extends EventEmitter {
     }
     const next = { ...current, nativeSessionId, updatedAt: NOW() };
     this.sessions.set(current.id, next);
+    if (current.nativeSessionId !== nativeSessionId) {
+      this.nativeTurnWatchers.get(current.id)?.dispose();
+      this.nativeTurnWatchers.delete(current.id);
+    }
+    const cwd = this.registry.get(terminalId)?.cwd;
+    if (cwd) this.watchNativeTurns(next, cwd);
     void this.publish(next).catch((error: unknown) => {
       console.warn('[agency] failed persisting native session ID: ' + String(error));
     });
@@ -711,6 +734,8 @@ export class AgencySessionRuntime extends EventEmitter {
     const previous = this.sessions.get(id);
     if (previous === undefined) throw new AgencyRuntimeError('not-found', 'Session does not exist');
     if (previous.lifecycle === 'exited' || previous.lifecycle === 'failed') return previous;
+    // Consume an explicitly persisted final event before releasing a short-lived CLI.
+    await this.nativeTurnWatchers.get(id)?.poll();
     const next: AgencyRuntimeSession = {
       ...previous,
       lifecycle,
@@ -720,9 +745,29 @@ export class AgencySessionRuntime extends EventEmitter {
       updatedAt: NOW(),
     };
     this.sessions.set(id, next);
+    this.nativeTurnWatchers.get(id)?.dispose();
+    this.nativeTurnWatchers.delete(id);
     this.releaseNative(id);
     await this.publish(next);
     return next;
+  }
+
+  private watchNativeTurns(session: AgencyRuntimeSession, cwd: string): void {
+    if (this.disposed || this.nativeTurnWatchers.has(session.id) || session.kind !== 'agent' ||
+        session.nativeIdentity?.provider !== 'codex' || !session.nativeSessionId ||
+        !session.startedAt || session.lifecycle !== 'running') return;
+    const watcher = new CodexTurnWatcher({
+      home: session.nativeIdentity.home, cwd, sessionId: session.nativeSessionId,
+      launchedAt: Date.parse(session.startedAt),
+      onTurn: (turn) => {
+        const current = this.sessions.get(session.id);
+        if (!current || current.lifecycle !== 'running' || current.tab?.closedAt) return;
+        this.emit('nativeTurn', { sessionId: session.id, workspaceId: session.workspaceId,
+          provider: 'codex', ...turn });
+      },
+    });
+    this.nativeTurnWatchers.set(session.id, watcher);
+    watcher.start();
   }
 
   private claimNative(key: string, id: RuntimeSessionId): void {
