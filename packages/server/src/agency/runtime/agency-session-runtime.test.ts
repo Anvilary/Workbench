@@ -1176,3 +1176,21 @@ test('CLI and shell names survive store reload without changing process or nativ
   store.save = save;
   await f.runtime.renameTab(f.one.id,shell.tab!.id,'Retry succeeds');
 });
+
+
+test('selection only publishes changed tabs; duplicate selection is write-free and failures restore selection', async t => {
+  const root=await mkdtemp(path.join(tmpdir(),'maw-selection-')); t.after(()=>rm(root,{recursive:true,force:true}));
+  const store=new MemoryStore(), f=fixture(root,{store});t.after(()=>f.runtime.dispose());
+  await f.runtime.initialize();
+  const sessions=[];
+  for(let i=0;i<5;i++)sessions.push(await f.runtime.create({kind:'terminal',workspaceId:f.one.id,cols:80,rows:24}));
+  let writes=0; const save=store.save.bind(store); store.save=async rows=>{writes++;await save(rows);};
+  const events:string[]=[];f.runtime.on('changed',row=>events.push(row.tab.id));
+  await f.runtime.tabAction(f.one.id,sessions[4]!.tab!.id,'select');assert.equal(writes,0);assert.equal(events.length,0);
+  await f.runtime.tabAction(f.one.id,sessions[0]!.tab!.id,'select');assert.equal(writes,1);assert.equal(events.length,2);
+  store.save=async()=>{throw Error('fixture full');};
+  await assert.rejects(f.runtime.tabAction(f.one.id,sessions[1]!.tab!.id,'select'),/fixture full/);
+  assert.equal(f.runtime.get(sessions[0]!.id)?.tab?.selected,true);
+  assert.equal(f.runtime.get(sessions[1]!.id)?.tab?.selected,false);
+  assert.equal(events.length,2);
+});

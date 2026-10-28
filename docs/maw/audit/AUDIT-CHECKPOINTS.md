@@ -139,3 +139,19 @@ Next: run actual isolated Neko ownership/restart acceptance and six-viewport UI;
 measure fixture startup/switch/event counts and Neko resource usage. New fixture
 creation script uses a unique container, no production volumes, generated secrets
 in private temporary files, loopback-only published ports. Never print env JSON.
+
+## Checkpoints 5/6a — measured native selection optimization
+
+Reproducible before/after benchmark committed under evidence. Duplicate select
+writes 300→0; alternating changed events 4500→600. Same-tab latency decreases;
+alternating p95 does not improve, so no real-switch latency claim. 42 regression
+tests PASS. Details and scope in OPTIMIZATIONS.md. Fix also rolls back failed
+selection metadata and excludes historical attempts from selection.
+
+Real Neko driver acceptance PASS (unique audit container): ownership mismatch,
+idempotent creation, server reattachment, controller restart receipts, Chromium
+restart invalidation and owned cleanup. First UI run verified real media and
+keyboard navigation but failed its assumption that ChatGPT preserves an arbitrary
+query marker: guest site redirected to /auth/login. Corrected acceptance to match
+confirmed inventory URL including allowed redirects; this is fixture sensitivity,
+not evidence of a MAW persistence defect. Rerun pending.
