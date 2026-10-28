@@ -386,3 +386,8 @@
 .agency-view-tabs button[aria-pressed="true"] { color: #eee; background: #ffffff12; border-radius: 4px; }
 .agency-workspace-header { min-height: 40px; padding: 4px 12px; }
 @media (max-width: 600px) { .agency-live-status { display: none; } .agency-topbar { gap: 4px; } .agency-connection-state { font-size: 10px; } }
+
+.agency-breadcrumbs { flex: 1; }
+.agency-breadcrumbs > span:not(.agency-breadcrumb-path) { max-width: 25%; }
+.agency-breadcrumb-path { min-width: 60px !important; }
+@media (max-width: 600px) { .agency-topbar > .agency-secondary-button { display: none; } }

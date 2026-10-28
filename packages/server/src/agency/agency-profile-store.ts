@@ -24,6 +24,8 @@ class UnsupportedProfileSchemaError extends Error {
 export class AgencyProfileStore {
   private pending: Promise<void> = Promise.resolve();
 
+  flush(): Promise<void> { return this.pending; }
+
   constructor(private readonly filename: string) {
     if (!path.isAbsolute(filename)) throw new Error('Profile store path must be absolute.');
   }

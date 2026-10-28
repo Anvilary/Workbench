@@ -96,6 +96,8 @@ export interface AgencySessionBase {
   startedAt: IsoTimestamp | null;
   stoppedAt: IsoTimestamp | null;
   exitCode: number | null;
+  stoppedByUser?: boolean;
+  recovery?: { status: 'pending' | 'resuming' | 'resumed' | 'manual' | 'failed' | 'superseded'; message: string | null };
 }
 
 export interface AgencyAgentSession extends AgencySessionBase {
