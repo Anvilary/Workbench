@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AgencyWorkspace, ProjectId, WorkspaceId } from '@agent-workbench/shared';
+import type { AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import { AgencySidebar, AgencyDoneView } from './AgencySidebar.js';
 import { AgencyWorkspaceCreator, AgencyProjectCreator } from './AgencyWorkspaceCreator.js';
@@ -11,6 +11,7 @@ import { useLocale } from '../i18n/useLocale.js';
 import './agency.css';
 
 const DRAFT_KEY = 'agency-ui.workspace-drafts.v1';
+const SIDEBAR_WIDTH_KEY = 'agency-ui.sidebar-width.v1';
 
 function readDrafts(): Record<string, string> {
   try {
@@ -36,12 +37,24 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   const [selectedId, setSelectedId] = useState<WorkspaceId | null>(null);
   const [showingDone, setShowingDone] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed >= 180 && parsed <= 500) return parsed;
+      }
+    } catch {}
+    return 240;
+  });
+  const [resizingSidebar, setResizingSidebar] = useState(false);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [creatorProject, setCreatorProject] = useState<ProjectId | undefined>();
   const [creatingProject, setCreatingProject] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>(readDrafts);
   const [error, setError] = useState<string | null>(null);
   const [statusToast, setStatusToast] = useState<string | null>(null);
+  const [launchErrors, setLaunchErrors] = useState<Record<string, string>>({});
   const [notificationPermission, setNotificationPermission] = useState(() =>
     typeof Notification === 'undefined' ? 'unavailable' : Notification.permission);
   const seenNotice = useRef(new Set<number>());
@@ -87,14 +100,76 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
     setCreatingWorkspace(true);
   }
 
+  function startSidebarResize(event: React.PointerEvent) {
+    event.preventDefault();
+    setResizingSidebar(true);
+    const onPointerMove = (e: PointerEvent) => {
+      const clamped = Math.max(180, Math.min(500, e.clientX));
+      setSidebarWidth(clamped);
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      setResizingSidebar(false);
+      const clamped = Math.max(180, Math.min(500, e.clientX));
+      setSidebarWidth(clamped);
+      try {
+        localStorage.setItem(SIDEBAR_WIDTH_KEY, clamped.toString());
+      } catch {}
+    };
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  }
+
   async function markDone(workspace: AgencyWorkspace) {
     setError(null);
     try {
       const answer = await store.markDone(workspace.id);
       if (answer.type !== 'agency.workspace.done') throw new Error(t('agency.ui.doneWasNotConfirmed'));
       if (selectedId === workspace.id) setSelectedId(null);
-      // No terminal.close, signal or filesystem operation here.
     } catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.ui.unableToMarkDone')); }
+  }
+
+  async function archiveWorkspace(workspace: AgencyWorkspace) {
+    setError(null);
+    try {
+      const answer = await store.archiveWorkspace(workspace.id);
+      if (answer.type !== 'agency.workspace.archived') throw new Error('Workspace archive was not confirmed');
+      if (selectedId === workspace.id) setSelectedId(null);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to archive workspace'); }
+  }
+
+  async function deleteWorkspace(workspace: AgencyWorkspace) {
+    setError(null);
+    try {
+      const answer = await store.deleteWorkspace(workspace.id);
+      if (answer.type !== 'agency.workspace.deleted') throw new Error('Workspace deletion was not confirmed');
+      if (selectedId === workspace.id) setSelectedId(null);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to delete workspace'); }
+  }
+
+  async function renameProject(project: AgencyProject, newName: string) {
+    setError(null);
+    try {
+      const answer = await store.renameProject(project.id, newName);
+      if (answer.type !== 'agency.project.updated') throw new Error('Project rename was not confirmed');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to rename project'); }
+  }
+
+  async function archiveProject(project: AgencyProject) {
+    setError(null);
+    try {
+      const answer = await store.archiveProject(project.id);
+      if (answer.type !== 'agency.project.archived') throw new Error('Project archive was not confirmed');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to archive project'); }
+  }
+
+  async function deleteProject(project: AgencyProject) {
+    setError(null);
+    try {
+      const answer = await store.deleteProject(project.id);
+      if (answer.type !== 'agency.project.deleted') throw new Error('Project deletion was not confirmed');
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to delete project'); }
   }
 
   async function restore(workspace: AgencyWorkspace) {
@@ -109,16 +184,44 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
 
   return (
     <div className="agency-app">
-      <aside className={'agency-sidebar' + (sidebarOpen ? '' : ' agency-sidebar-collapsed')}>
-        {sidebarOpen && <AgencySidebar
-          projects={data.projects} workspaces={data.workspaces} sessions={data.sessions}
-          selected={selectedId} showingDone={showingDone}
-          onSelect={(id) => { setSelectedId(id); setShowingDone(false); }}
-          onDoneView={() => setShowingDone(true)}
-          onCreate={openCreator} onCreateProject={() => setCreatingProject(true)}
-          onDone={(ws) => { void markDone(ws); }}
-          onRestore={(ws) => { void restore(ws); }}
-        />}
+      <aside
+        className={
+          'agency-sidebar' +
+          (sidebarOpen ? '' : ' agency-sidebar-collapsed') +
+          (resizingSidebar ? ' agency-resizing' : '')
+        }
+        style={sidebarOpen ? { width: `${sidebarWidth}px`, flexBasis: `${sidebarWidth}px` } : undefined}
+      >
+        {sidebarOpen && (
+          <>
+            <AgencySidebar
+              projects={data.projects}
+              workspaces={data.workspaces}
+              sessions={data.sessions}
+              selected={selectedId}
+              showingDone={showingDone}
+              onSelect={(id) => { setSelectedId(id); setShowingDone(false); }}
+              onDoneView={() => setShowingDone(true)}
+              onCreate={openCreator}
+              onCreateProject={() => setCreatingProject(true)}
+              onDone={(ws) => { void markDone(ws); }}
+              onArchiveWorkspace={(ws) => { void archiveWorkspace(ws); }}
+              onDeleteWorkspace={(ws) => { void deleteWorkspace(ws); }}
+              onRenameProject={(p, n) => { void renameProject(p, n); }}
+              onArchiveProject={(p) => { void archiveProject(p); }}
+              onDeleteProject={(p) => { void deleteProject(p); }}
+              onRestore={(ws) => { void restore(ws); }}
+            />
+            <div
+              className="agency-sidebar-resizer"
+              role="separator"
+              tabIndex={0}
+              aria-orientation="vertical"
+              aria-label={t('agency.ui.sidebarResizer')}
+              onPointerDown={startSidebarResize}
+            />
+          </>
+        )}
       </aside>
       <div className="agency-main">
         <div className="agency-topbar">
@@ -146,13 +249,36 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
         {!loaded ? (
           <div className="agency-welcome"><h1>{t('agency.ui.agency')}</h1><p>{t('agency.ui.loadingServerWorkspaceData')}</p></div>
         ) : showingDone ? (
-          <AgencyDoneView workspaces={data.workspaces} projects={data.projects}
-            onRestore={(ws) => { void restore(ws); }} />
+          <AgencyDoneView
+            workspaces={data.workspaces}
+            projects={data.projects}
+            onRestore={(ws) => { void restore(ws); }}
+            onArchiveWorkspace={(ws) => { void archiveWorkspace(ws); }}
+            onDeleteWorkspace={(ws) => { void deleteWorkspace(ws); }}
+          />
         ) : selected ? (
-          <AgencyWorkspaceView key={selected.id} workspace={selected} connection={connection} request={store.request} sendImmediate={agencyTransport.sendImmediate}
-            online={online} profiles={data.profiles} sessions={data.sessions}
-            draft={drafts[selected.id] ?? ''} onDraft={(value) => updateDraft(selected.id, value)}
-            onDelivered={(value) => clearDelivered(selected.id, value)} onDone={() => { void markDone(selected); }} />
+          <AgencyWorkspaceView
+            key={selected.id}
+            workspace={selected}
+            connection={connection}
+            request={store.request}
+            sendImmediate={agencyTransport.sendImmediate}
+            online={online}
+            profiles={data.profiles}
+            sessions={data.sessions}
+            draft={drafts[selected.id] ?? ''}
+            onDraft={(value) => updateDraft(selected.id, value)}
+            onDelivered={(value) => clearDelivered(selected.id, value)}
+            onDone={() => { void markDone(selected); }}
+            launchError={launchErrors[selected.id]}
+            onClearLaunchError={() => {
+              setLaunchErrors((prev) => {
+                const next = { ...prev };
+                delete next[selected.id];
+                return next;
+              });
+            }}
+          />
         ) : (
           <div className="agency-welcome">
             <div className="agency-welcome-icon" aria-hidden="true">◇</div>
@@ -171,13 +297,62 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
           if (answer.type !== 'agency.project.created') throw new Error(t('agency.ui.projectCreationNotConfirmed'));
         }} />}
       {creatingWorkspace && <AgencyWorkspaceCreator
-        connection={connection} projects={data.projects} initialProject={creatorProject}
+        connection={connection}
+        projects={data.projects}
+        profiles={data.profiles}
+        initialProject={creatorProject}
         onClose={() => setCreatingWorkspace(false)}
-        onCreate={async (projectId, name, pickerId) => {
+        onCreate={async (projectId, name, pickerId, options) => {
           const answer = await store.createWorkspace(projectId, name, pickerId);
           if (answer.type !== 'agency.workspace.created') throw new Error('Workspace creation not confirmed');
-          setSelectedId(answer.workspace.id);
+          const newWorkspace = answer.workspace;
+          setSelectedId(newWorkspace.id);
           setShowingDone(false);
+
+          if (options.mode === 'agent' && options.profileId) {
+            try {
+              const launchAnswer = await store.request({
+                type: 'agency.session.create',
+                workspaceId: newWorkspace.id,
+                kind: 'agent',
+                profileId: options.profileId,
+                cols: 100,
+                rows: 30,
+              });
+              if (launchAnswer.type !== 'agency.session.created') {
+                setLaunchErrors((prev) => ({
+                  ...prev,
+                  [newWorkspace.id]: t('agency.ui.noAgentSessionAcknowledgement'),
+                }));
+              }
+            } catch (err) {
+              setLaunchErrors((prev) => ({
+                ...prev,
+                [newWorkspace.id]: err instanceof Error ? err.message : String(err),
+              }));
+            }
+          } else if (options.mode === 'terminal') {
+            try {
+              const launchAnswer = await store.request({
+                type: 'agency.session.create',
+                workspaceId: newWorkspace.id,
+                kind: 'terminal',
+                cols: 100,
+                rows: 30,
+              });
+              if (launchAnswer.type !== 'agency.session.created') {
+                setLaunchErrors((prev) => ({
+                  ...prev,
+                  [newWorkspace.id]: t('agency.ui.noShellSessionAcknowledgement'),
+                }));
+              }
+            } catch (err) {
+              setLaunchErrors((prev) => ({
+                ...prev,
+                [newWorkspace.id]: err instanceof Error ? err.message : String(err),
+              }));
+            }
+          }
         }} />}
     </div>
   );

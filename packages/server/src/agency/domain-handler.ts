@@ -13,8 +13,9 @@ import { AgencyWorkspaceStore, AgencyStoreError, type HasBlockingWorkspaceSessio
 
 type DomainType =
   | 'agency.projects.list' | 'agency.project.create' | 'agency.project.update' | 'agency.project.delete'
+  | 'agency.project.archive' | 'agency.project.unarchive'
   | 'agency.workspaces.list' | 'agency.workspace.create' | 'agency.workspace.update'
-  | 'agency.workspace.done' | 'agency.workspace.restore' | 'agency.workspace.delete';
+  | 'agency.workspace.archive' | 'agency.workspace.done' | 'agency.workspace.restore' | 'agency.workspace.delete';
 export type AgencyDomainRequest = Extract<AgencyClientMessage, { type: DomainType }>;
 type DomainBroadcast = Extract<AgencyServerMessage, { type: 'agency.project.changed' | 'agency.workspace.changed' }>;
 
@@ -22,10 +23,13 @@ const fields: Record<DomainType, readonly string[]> = {
   'agency.projects.list': [],
   'agency.project.create': ['name'],
   'agency.project.update': ['projectId', 'name'],
+  'agency.project.archive': ['projectId'],
+  'agency.project.unarchive': ['projectId'],
   'agency.project.delete': ['projectId'],
   'agency.workspaces.list': ['projectId'],
   'agency.workspace.create': ['projectId', 'name', 'pickerId'],
   'agency.workspace.update': ['workspaceId', 'name'],
+  'agency.workspace.archive': ['workspaceId'],
   'agency.workspace.done': ['workspaceId'],
   'agency.workspace.restore': ['workspaceId'],
   'agency.workspace.delete': ['workspaceId'],
@@ -121,6 +125,16 @@ export async function handleAgencyDomainRequest(
         publishSafely(context, { type: 'agency.project.changed', change: 'updated', projectId: project.id, project });
         return { type: 'agency.project.updated', requestId, project };
       }
+      case 'agency.project.archive': {
+        const project = await context.store.archiveProject(request.projectId);
+        publishSafely(context, { type: 'agency.project.changed', change: 'archived', projectId: project.id, project });
+        return { type: 'agency.project.archived', requestId, project };
+      }
+      case 'agency.project.unarchive': {
+        const project = await context.store.unarchiveProject(request.projectId);
+        publishSafely(context, { type: 'agency.project.changed', change: 'unarchived', projectId: project.id, project });
+        return { type: 'agency.project.unarchived', requestId, project };
+      }
       case 'agency.project.delete':
         await context.store.deleteProject(request.projectId);
         publishSafely(context, { type: 'agency.project.changed', change: 'deleted', projectId: request.projectId });
@@ -138,6 +152,11 @@ export async function handleAgencyDomainRequest(
         const workspace = await context.store.renameWorkspace(request.workspaceId, request.name);
         publishSafely(context, { type: 'agency.workspace.changed', change: 'updated', workspaceId: workspace.id, workspace });
         return { type: 'agency.workspace.updated', requestId, workspace };
+      }
+      case 'agency.workspace.archive': {
+        const workspace = await context.store.archiveWorkspace(request.workspaceId);
+        publishSafely(context, { type: 'agency.workspace.changed', change: 'archived', workspaceId: workspace.id, workspace });
+        return { type: 'agency.workspace.archived', requestId, workspace };
       }
       case 'agency.workspace.done': {
         const workspace = await context.store.markDone(request.workspaceId);
