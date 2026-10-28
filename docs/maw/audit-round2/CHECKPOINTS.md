@@ -56,3 +56,32 @@ R2-01 and R2-02 reproduced before fixes and covered by executable regressions.
 Notification/activity suite: 20 PASS. Server typecheck PASS after R2-01; full
 regression scheduled after remaining changes. No schema changes or deployment.
 Next: finish bounded baseline, snapshot optimization, provider evidence tests.
+
+## CP1/CP4/CP7 — bounded reliability and browser evidence
+
+Added `scripts/audit/round2-soak.mjs` (real disposable MAW/Bash/UI; configurable
+workload 0–3600 seconds) and `scripts/audit/round2-neko-resources.py` (fresh labelled
+fixture only; 1/5/10/15/30 targets, PSS/RSS/CPU/FD/process and post-close sampling).
+Before soak completed 120-second workload, 34 reconnect/create/close cycles,
+100 samples per WS workload, tab switch and inbox toggle. FD/PTY recovery passed.
+Numeric evidence committed; trace `/tmp/maw-round2-before/interaction-trace.zip`.
+Early harness attempts failed on an invisible xterm helper selector and an exact
+tab accessible-name match (status text contributes to the name); those failures
+are not product findings and are excluded from measurements. The completed run
+uses a visible terminal screen and actual current DOM references for timing.
+
+Actual Neko UI acceptance: 11 groups PASS, six viewport media/rename/inbox/sidebar
+checks PASS; screenshots committed. Exact command and coverage in RELIABILITY.md.
+A separate owned-container driver acceptance passed real controller and Chromium
+restart, foreign ownership rejection and receipt continuity (7 assertions).
+The 30-tab no-viewer sample returned to one automatic blank target after cleanup;
+no leak is established. Duration does not establish days-long reliability.
+
+New Codex test: delayed/partial evidence, 100 successive native turns, duplicate
+replay, malformed/oversized lines and dispose: PASS. Activity integration 9 PASS.
+Authentic Codex/Antigravity/ChatGPT completion stays UNVERIFIED. Official hook
+sources and safe continuation requirements are in RELIABILITY.md.
+
+Next: commit measured coordinator optimization after matching after-run finishes,
+assess regressions and incomplete acceptance, push draft PR. Existing user state
+and services remain untouched; fresh fixture cleanup pending final measurements.
