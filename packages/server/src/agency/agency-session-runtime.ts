@@ -504,7 +504,7 @@ export class AgencySessionRuntime extends EventEmitter {
         updatedAt: NOW(),
       } as AgencyRuntimeSession;
       this.sessions.set(id, next);
-      if (!alive && !stopping) this.releaseNative(id);
+      if (!alive && !stopping) { this.releaseNative(id); this.registry.close(terminal.terminalId); }
       if (stopping) this.registry.close(terminal.terminalId);
       await this.publish(next);
       return this.sessions.get(id) ?? next;
@@ -663,7 +663,7 @@ export class AgencySessionRuntime extends EventEmitter {
     const id = this.byTerminal.get(terminalId);
     if (id === undefined) return;
     this.byTerminal.delete(terminalId);
-    void this.finish(id, code, 'exited').catch((error: unknown) => {
+    void this.finish(id, code, 'exited').then(() => { this.registry.close(terminalId); }).catch((error: unknown) => {
       console.warn('[agency] failed persisting PTY exit: ' + String(error));
     });
   };

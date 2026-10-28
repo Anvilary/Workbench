@@ -82,13 +82,20 @@ function parse(contents: string): AgencyRuntimeSession[] {
 /** Deterministic v1 migration retains every runtime/native reference; no process launches. */
 export function migrateSessionTabs(sessions: readonly AgencyRuntimeSession[]): AgencyRuntimeSession[] {
   const selected = new Set(sessions.filter(s => s.tab?.current && s.tab.selected && !s.tab.closedAt).map(s => s.workspaceId));
+  const defaults = new Map<string, number>();
+  for (const [index, session] of sessions.entries()) {
+    if (session.tab || session.recovery?.status === 'superseded') continue;
+    const previous = defaults.get(session.workspaceId);
+    const active = (row: AgencyRuntimeSession) => ['starting','running','stopping'].includes(row.lifecycle);
+    if (previous === undefined || (!active(sessions[previous]!) && active(session))) defaults.set(session.workspaceId, index);
+  }
   return sessions.map((session, index) => {
     if (session.tab) return session;
     const bytes = createHash('sha256').update('maw-tab:' + session.id).digest().subarray(0, 16);
     bytes[6] = (bytes[6]! & 15) | 80; bytes[8] = (bytes[8]! & 63) | 128;
     const hex = bytes.toString('hex');
     const id = [hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join('-');
-    const choose = !selected.has(session.workspaceId); selected.add(session.workspaceId);
+    const choose = !selected.has(session.workspaceId) && defaults.get(session.workspaceId) === index; if (choose) selected.add(session.workspaceId);
     return { ...session, tab: { id, name: null, ...(session.kind === 'terminal' ? { terminalNumber: sessions.slice(0,index).filter(s => s.workspaceId === session.workspaceId && s.kind === 'terminal').length + 1 } : {}), order: index, selected: choose, closedAt: null, current: session.recovery?.status !== 'superseded' } };
   });
 }

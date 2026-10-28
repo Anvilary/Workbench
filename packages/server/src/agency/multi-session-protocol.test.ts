@@ -40,3 +40,12 @@ test('managed Codex discovery does not attribute same-home/CWD native conversati
   await discovery.scanOnce();assert.deepEqual(seen,[]);
   a.cancel();await discovery.scanOnce();assert.deepEqual(seen,[],'Closing one tab cannot retroactively authorize an ambiguous assignment');
 });
+
+test('legacy selection prefers an active current attempt without guessing from update time', async () => {
+  const { migrateSessionTabs }=await import('./agency-session-store.js');
+  const workspaceId=randomUUID() as import('@agent-workbench/shared').WorkspaceId;
+  const now=new Date().toISOString();
+  const row=(lifecycle:'running'|'exited')=>({id:randomUUID() as import('@agent-workbench/shared').RuntimeSessionId,workspaceId,kind:'terminal' as const,profileId:null,nativeSessionId:null,selectedModel:null,selectedEffort:null,terminalId:null,lifecycle,activity:'unknown' as const,createdAt:now,updatedAt:now,startedAt:now,stoppedAt:null,exitCode:null});
+  const past=row('exited'),live=row('running');const migrated=migrateSessionTabs([past,live]);
+  assert.equal(migrated[0]!.tab?.selected,false);assert.equal(migrated[1]!.tab?.selected,true);
+});

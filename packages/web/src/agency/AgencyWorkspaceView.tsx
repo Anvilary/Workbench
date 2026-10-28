@@ -96,6 +96,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, connection,
   const drag = useRef<{ id: number; x: number; scroll: number; moved: boolean } | null>(null);
   const dragged = useRef(false);
   const dialog = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { if (!profileId && profiles.length) setProfileId(profiles[0]!.id); }, [profileId, profiles]);
   useEffect(() => {
     strip.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.parentElement?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
   }, [selected?.tab?.id, tabs.length]);
@@ -145,7 +146,10 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, connection,
     flight.current = true; setBusy(true);
     try { await action(session, 'close'); setClosing(null); }
     catch { /* Keep confirmation and error visible until server termination is confirmed. */ }
-    finally { flight.current = false; setBusy(false); }
+    finally {
+      flight.current = false; setBusy(false);
+      requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.maw-session-pane:not([hidden]) .xterm-helper-textarea')?.focus());
+    }
   }
   async function navigate(event: React.KeyboardEvent) {
     if (!selected || !['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
@@ -173,7 +177,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, connection,
         onClickCapture={event => { if (dragged.current) { event.preventDefault(); event.stopPropagation(); } }}>
         {tabs.map(session => <div className={'maw-session-tab' + (selected?.id === session.id ? ' active' : '')} key={session.tab!.id} data-tab-id={session.tab!.id}>
           <button type="button" role="tab" id={'tab-' + session.tab!.id} aria-selected={selected?.id === session.id} aria-controls={'pane-' + session.tab!.id} tabIndex={selected?.id === session.id ? 0 : -1} title={name(session) + ' · ' + agencySessionText(session)} onClick={() => { setKeyboardTabs(false); void action(session, 'select').catch(() => undefined); }}>
-            <span aria-hidden="true">{session.kind === 'agent' ? '◇' : '>_'}</span><span className="agency-truncate">{name(session)}</span><span className={'agency-status-dot ' + (['awaiting-user','awaiting-permission'].includes(session.activity) ? 'attention' : session.activity === 'working' ? 'working' : 'idle')} aria-label={agencySessionText(session)} />
+            <span aria-hidden="true">{session.kind === 'agent' ? '◇' : '>_'}</span><span className="agency-truncate">{name(session)}</span><span className={'agency-status-dot ' + (session.lifecycle === 'failed' || session.recovery?.status === 'manual' ? 'attention' : session.lifecycle === 'exited' ? 'muted' : ['awaiting-user','awaiting-permission'].includes(session.activity) ? 'attention' : session.activity === 'working' ? 'working' : 'idle')} aria-label={agencySessionText(session)} />
           </button>
           <button type="button" data-close aria-label={t('agency.tabs.closeNamed', { name: name(session) })} disabled={!online || busy} onClick={() => { if (['starting','running','stopping'].includes(session.lifecycle)) setClosing(session); else void close(session); }}>×</button>
         </div>)}

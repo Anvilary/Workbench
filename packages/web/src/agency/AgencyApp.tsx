@@ -85,7 +85,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
       // Only confirmed server transitions, never snapshots or local send clicks.
       new Notification(t('agency.ui.agency'), { body: message, tag: 'agency-' + notice.sessionId + '-' + notice.kind });
     }
-  }, [notice, data.workspaces]);
+  }, [notice, data.workspaces, data.sessions, data.profiles]);
 
   const selected = !showingDone ? data.workspaces.find((ws) => ws.id === selectedId && ws.status === 'active') : undefined;
   useEffect(() => { try { if (selectedId) localStorage.setItem('agency-ui.selected-workspace.v1', selectedId); } catch {} }, [selectedId]);
