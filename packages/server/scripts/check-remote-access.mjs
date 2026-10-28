@@ -533,6 +533,9 @@ try {
       hostOnly.every((type) => remoteRefusal(type, true)?.key === 'remoteHostOnly'));
     check('lo que abre una ventana en el anfitrión se le niega',
       opensOnHost.every((type) => remoteRefusal(type, true)?.key === 'remoteOpensOnHost'));
+    check('Agency profile executable configuration is host-only',
+      remoteRefusal('agency.profile.configure', true)?.key === 'settingsHostOnly' &&
+      remoteRefusal('agency.profile.configure', false) === null);
     check('todo lo demás lo puede pedir',
       ['input', 'agent.submit', 'terminal.open', 'files.read', 'files.write', 'vault.enable', 'notes.create'].every((type) => remoteRefusal(type, true) === null));
     check('al anfitrión no se le niega nada',

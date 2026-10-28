@@ -52,6 +52,17 @@ import type {
 } from './agents/adapter.js';
 import type { AgentRegistry } from './agents/registry.js';
 import type { ArchivedSessions } from './archived-sessions.js';
+import type {
+  AgencyErrorCode,
+} from '@agent-workbench/shared';
+import { asRecord, parseJson } from '@agent-workbench/shared';
+import { AgencyWorkspaceStore } from './agency/store.js';
+import { AgencyProfileStore } from './agency/agency-profile-store.js';
+import { AgencySessionRuntime, AgencyRuntimeError } from './agency/agency-session-runtime.js';
+import { WorkspaceMutex } from './agency/workspace-lock.js';
+import { handleAgencyDomainRequest, type AgencyDomainContext } from './agency/domain-handler.js';
+import type { NativeIdentities } from './agency/native-identity.js';
+import { listAgencyProfiles, inspectAgencyProfile } from './agency/agency-profile-capabilities.js';
 import { DirectoryPickerError, DirectoryPickers } from './directory-picker.js';
 import { MemoryBridgeError } from './memory-bridge.js';
 import { UnknownTerminalError, type MemoryHub } from './memory-hub.js';
@@ -190,6 +201,11 @@ export interface TerminalSocketOptions {
   remote: RemoteAccessService;
   /** Las ramas aparte (`worktree.*`, hito 48, §6.38). */
   worktrees: WorktreeService;
+  agencyWorkspaceStore: AgencyWorkspaceStore;
+  agencyProfileStore: AgencyProfileStore;
+  agencyIdentities?: NativeIdentities;
+  agencyRuntime: AgencySessionRuntime;
+  workspaceLock: WorkspaceMutex;
 }
 
 export function attachTerminalSocket(options: TerminalSocketOptions): () => void {
@@ -211,6 +227,10 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     vault,
     remote,
     worktrees,
+    agencyWorkspaceStore,
+    agencyProfileStore,
+    agencyRuntime,
+    workspaceLock,
   } = options;
 
   const pasteStore = options.pasteStore ?? new PasteStore();
@@ -799,6 +819,14 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
   // Ajustes (Hito 41) avisa a todas las ventanas: el nombre de la consola nueva lo usan todas.
   const onAppSettingsStatus = (settings: AppSettingsStatus): void => broadcast({ type: 'settings.status', settings });
   appSettings.on('status', onAppSettingsStatus);
+  const onAgencySessionChanged = (session: any): void => {
+    broadcast({ type: 'agency.session.changed', sessionId: session.id, session });
+  };
+  const onAgencySessionActivity = (activity: any): void => {
+    broadcast({ type: 'agency.session.activity', ...activity });
+  };
+  agencyRuntime.on('changed', onAgencySessionChanged);
+  agencyRuntime.on('activity', onAgencySessionActivity);
   /*
     Un equipo revocado, o el acceso apagado (null): sus ventanas se cierran ya.
     Con su codigo, para que la pagina deje de reconectar y lo diga. La
@@ -998,18 +1026,46 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     send(socket, { type: 'vault.status', status: vault.status() });
     if (deviceId === null) send(socket, { type: 'remote.status', status: remote.status() });
     send(socket, { type: 'settings.status', settings: appSettings.status() });
+    send(socket, {
+      type: 'agency.projects.snapshot',
+      requestId: '',
+      projects: agencyWorkspaceStore.listProjects(),
+    });
+    send(socket, {
+      type: 'agency.workspaces.snapshot',
+      requestId: '',
+      workspaces: agencyWorkspaceStore.listWorkspaces(),
+    });
+    void listAgencyProfiles(agencyProfileStore, agents, { identities: options.agencyIdentities }).then((profiles) => {
+      send(socket, {
+        type: 'agency.profiles.snapshot',
+        requestId: '',
+        profiles,
+      });
+    }).catch(() => undefined);
+    send(socket, {
+      type: 'agency.sessions.snapshot',
+      requestId: '',
+      sessions: agencyRuntime.list(),
+    });
     // Lo que ya se sabe del plan de cada CLI; lo que llegue despues va por `onChange`.
     planLimits.retain();
     const knownLimits = planLimits.snapshot();
     if (knownLimits.length > 0) send(socket, { type: 'plan.limits', limits: knownLimits });
 
-    socket.on('message', (raw: Buffer | ArrayBuffer | Buffer[]) => {
+    socket.on('message', async (raw: Buffer | ArrayBuffer | Buffer[]) => {
       const text = Array.isArray(raw)
         ? Buffer.concat(raw).toString('utf8')
         : Buffer.from(raw as Buffer).toString('utf8');
 
       const message = parseClientMessage(text);
       if (message === null) {
+        const rawObj = asRecord(parseJson(text));
+        if (rawObj && typeof rawObj['type'] === 'string' && rawObj['type'].startsWith('agency.') && typeof rawObj['requestId'] === 'string') {
+          const requestId = rawObj['requestId'].slice(0, 128);
+          send(socket, { type: 'agency.error', requestId, code: 'invalid-request', message: 'Invalid Agency request' });
+          return;
+        }
         debugLog('socket', `message rejected: ${text.slice(0, 160)}`);
         sendError(socket, 'bad-message', serverText('badMessage'));
         return;
@@ -1019,7 +1075,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
       // Antes de atender nada: lo que a un equipo remoto no se le atiende (hito 37).
       const refusal = remoteRefusal(message.type, deviceId !== null);
       if (refusal !== null) {
-        sendError(socket, 'remote-refused', refusal);
+        sendError(socket, 'remote-refused', refusal, undefined, 'requestId' in message ? message.requestId : undefined);
         return;
       }
 
@@ -2568,7 +2624,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
             try {
               const listing =
                 message.type === 'picker.open'
-                  ? await pickers.open()
+                  ? await pickers.open(message.pickerId)
                   : message.type === 'picker.enter'
                     ? await pickers.enter(message.pickerId, message.name)
                     : message.type === 'picker.root'
@@ -2581,6 +2637,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
                 'picker-failed',
                 error instanceof DirectoryPickerError ? error.text : serverText('pickerListFailed'),
                 error instanceof Error ? error.message : String(error),
+                message.pickerId,
               );
             }
           })();
@@ -3142,6 +3199,131 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           if (deviceId === null) break;
           void remote.revokeDevice(deviceId).catch((error: unknown) => sendRemoteError(socket, error));
           break;
+
+        case 'agency.projects.list':
+        case 'agency.project.create':
+        case 'agency.project.update':
+        case 'agency.project.delete':
+        case 'agency.workspaces.list':
+        case 'agency.workspace.create':
+        case 'agency.workspace.update':
+        case 'agency.workspace.done':
+        case 'agency.workspace.restore':
+        case 'agency.workspace.delete': {
+          const domainContext: AgencyDomainContext = {
+            store: agencyWorkspaceStore,
+            pickers,
+            withSessionReservationLock: (id, op) => workspaceLock.runExclusive(id, op),
+            hasBlockingSessions: async (id) => agencyRuntime.hasWorkspaceReferences(id),
+            publish: (broadcastMsg) => broadcast(broadcastMsg),
+          };
+          const domainResponse = await handleAgencyDomainRequest(message, domainContext);
+          if (domainResponse !== null) {
+            send(socket, domainResponse);
+          }
+          break;
+        }
+
+        case 'agency.profiles.list': {
+          try {
+            const profiles = await listAgencyProfiles(agencyProfileStore, agents, { identities: options.agencyIdentities });
+            send(socket, { type: 'agency.profiles.snapshot', requestId: message.requestId, profiles });
+          } catch {
+            send(socket, { type: 'agency.error', requestId: message.requestId,
+              code: 'internal-error', message: 'Unable to load Agency profiles.' });
+          }
+          break;
+        }
+
+        case 'agency.profile.configure': {
+          try {
+            const { type: _, requestId, profileId, ...changes } = message;
+            const def = await agencyProfileStore.configure(profileId, changes);
+            const profile = await inspectAgencyProfile(def, agents, { identities: options.agencyIdentities });
+            broadcast({ type: 'agency.profile.changed', profileId: profile.id, profile });
+            send(socket, { type: 'agency.profile.configured', requestId: message.requestId, profile });
+          } catch (error) {
+            send(socket, {
+              type: 'agency.error',
+              requestId: message.requestId,
+              code: 'invalid-request',
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+          break;
+        }
+
+        case 'agency.profile.capabilities.get': {
+          try {
+            const def = await agencyProfileStore.getDefinition(message.profileId);
+            if (!def) {
+              send(socket, {
+                type: 'agency.error',
+                requestId: message.requestId,
+                code: 'not-found',
+                message: 'Profile not found',
+              });
+              break;
+            }
+            const profile = await inspectAgencyProfile(def, agents, { identities: options.agencyIdentities });
+            send(socket, {
+              type: 'agency.profile.capabilities',
+              requestId: message.requestId,
+              profileId: profile.id,
+              capabilities: profile.capabilities,
+            });
+          } catch (error) {
+            send(socket, {
+              type: 'agency.error',
+              requestId: message.requestId,
+              code: 'internal-error',
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+          break;
+        }
+
+        case 'agency.sessions.list': {
+          const sessions = agencyRuntime.list(message.workspaceId);
+          send(socket, { type: 'agency.sessions.snapshot', requestId: message.requestId, sessions });
+          break;
+        }
+
+        case 'agency.session.create': {
+          try {
+            const session = await agencyRuntime.create(message);
+            send(socket, { type: 'agency.session.created', requestId: message.requestId, session });
+          } catch (error) {
+            let code: AgencyErrorCode = 'internal-error';
+            let msg = 'Failed to create session';
+            if (error instanceof AgencyRuntimeError) {
+              code = error.code;
+              msg = error.message;
+            } else if (error instanceof Error) {
+              msg = error.message;
+            }
+            send(socket, { type: 'agency.error', requestId: message.requestId, code, message: msg });
+          }
+          break;
+        }
+
+        case 'agency.session.selection.set': {
+          try {
+            const session = await agencyRuntime.setSelection(message.sessionId, message.model, message.effort);
+            send(socket, { type: 'agency.session.selection', requestId: message.requestId, session });
+          } catch (error) {
+            let code: AgencyErrorCode = 'internal-error';
+            let msg = 'Failed to set selection';
+            if (error instanceof AgencyRuntimeError) {
+              code = error.code;
+              msg = error.message;
+            } else if (error instanceof Error) {
+              msg = error.message;
+            }
+            send(socket, { type: 'agency.error', requestId: message.requestId, code, message: msg });
+          }
+          break;
+        }
       }
     });
 
@@ -3205,6 +3387,8 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     appSettings.off('status', onAppSettingsStatus);
     stopRemoteStatus();
     stopRemoteRevoked();
+    agencyRuntime.off('changed', onAgencySessionChanged);
+    agencyRuntime.off('activity', onAgencySessionActivity);
     for (const client of wss.clients) client.terminate();
     wss.close();
   };

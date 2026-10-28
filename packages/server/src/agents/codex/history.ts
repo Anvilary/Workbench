@@ -174,11 +174,15 @@ export function createCodexHistory(options: CodexHistoryOptions = {}): HistorySo
      */
     exists: async (_cwd, sessionId) => (await findReadableRollout(sessionId)) !== null,
 
-    follow(target: { cwd: string; sessionId: string }, options?: FollowOptions): SessionFollower {
+    follow(target: { cwd: string; sessionId: string; nativeHome?: string | null }, options?: FollowOptions): SessionFollower {
       return new CodexSessionFollower(target.cwd, target.sessionId, {
         limits: options?.limits,
         maxEvents: options?.maxEvents,
         onPlanLimits,
+        ...(target.nativeHome !== undefined ? { roots: {
+          sessionsRoot: target.nativeHome === null ? null : path.join(target.nativeHome, 'sessions'),
+          archivedRoot: target.nativeHome === null ? null : path.join(target.nativeHome, 'archived_sessions'),
+        } } : {}),
       });
     },
 

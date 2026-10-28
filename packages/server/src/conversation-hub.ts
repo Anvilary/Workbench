@@ -569,12 +569,15 @@ export class ConversationHub extends EventEmitter {
     sessionId: SessionId,
     adapter: AgentAdapter,
   ): Entry {
+    const nativeIdentity = agent === 'codex' ? this.registry.nativeIdentityOf(terminalId) : undefined;
     return {
       sessionId,
       cwd,
       agent,
       adapter,
-      follower: adapter.history.follow({ cwd, sessionId }),
+      follower: adapter.history.follow({ cwd, sessionId,
+        ...(nativeIdentity !== undefined ? { nativeHome: nativeIdentity?.home ?? null } : {}),
+      }),
       announcedMode: null,
       // Una pestana de revision (hito 49) arranca en el modo de solo lectura de su CLI.
       assumedMode: launchModeFor(adapter.capabilities, this.registry.get(terminalId)?.review === true),
