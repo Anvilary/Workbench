@@ -15,11 +15,10 @@ for (const kind of ['notifications', 'activity'] as const) test(`${kind}: recove
   const workspaceId = randomUUID() as WorkspaceId, tabId = randomUUID();
   const notifications = new AgencyNotificationStore(kind === 'notifications' ? file : path.join(root, 'inbox.json'));
   await notifications.initialize();
-  let manager: TabActivityManager | undefined;
   const open = async () => {
     if (kind === 'notifications') { const store = new AgencyNotificationStore(file); await store.initialize(); return store; }
-    manager = new TabActivityManager({ notificationStore: notifications, filePath: file });
-    await manager.initialize(); t.after(() => manager?.dispose()); return manager;
+    const manager = new TabActivityManager({ notificationStore: notifications, filePath: file });
+    await manager.initialize(); t.after(() => manager.dispose()); return manager;
   };
   const mutate = async (store: AgencyNotificationStore | TabActivityManager, n: number) => {
     if (store instanceof AgencyNotificationStore) await store.create({ workspaceId, tabId, title: 'Fixture', body: 'done', state: 'finished', deduplicationKey: 'turn-' + n });
