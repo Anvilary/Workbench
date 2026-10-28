@@ -209,7 +209,7 @@ export class BrowserTabStore {
       this.inMemoryTabs.set(tab.id, tab);
     }
     this.loaded = true;
-    return this.listTabs();
+    return this.listTabs(undefined, { includeClosed: true });
   }
 
   listTabs(workspaceId?: WorkspaceId, options?: { includeClosed?: boolean }): readonly WebTab[] {

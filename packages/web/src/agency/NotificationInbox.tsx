@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { MawNotificationItem } from '@agent-workbench/shared';
 import { t } from '../i18n/index.js';
+import { notificationText } from './notification-labels.js';
 import { formatWhen } from '../i18n/format.js';
 
 interface Props {
@@ -127,8 +128,8 @@ export function NotificationInbox({
                   </span>
                   <span className="maw-inbox-item-time">{formatTime(item.createdAt)}</span>
                 </div>
-                <div className="maw-inbox-item-title">{item.title}</div>
-                <div className="maw-inbox-item-desc">{item.body}</div>
+                <div className="maw-inbox-item-title">{notificationText(item).title}</div>
+                <div className="maw-inbox-item-desc">{notificationText(item).body}</div>
               </div>
 
               <div className="maw-inbox-item-actions">

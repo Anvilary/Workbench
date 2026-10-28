@@ -3,7 +3,7 @@ import type {
   AgencyCliProfile, AgencyProject, AgencyRuntimeSession, AgencyServerMessage,
   AgencyClientMessage, AgencyWorkspace, AgencyAgentSession, AgencyProfileCapabilities,
   ClientMessage,
-  SessionActivity, SessionLifecycle, WorkspaceId, CliProfileId,
+  SessionActivity, SessionLifecycle, WorkspaceId, CliProfileId, WebTab,
 } from '@agent-workbench/shared';
 
 export interface AgencyTransport {
@@ -23,15 +23,39 @@ export interface AgencySnapshot {
   workspaces: readonly AgencyWorkspace[];
   profiles: readonly AgencyCliProfile[];
   sessions: readonly AgencyRuntimeSession[];
+  webTabs: readonly WebTab[];
 }
 
 export const EMPTY_AGENCY_SNAPSHOT: AgencySnapshot = {
-  projects: [], workspaces: [], profiles: [], sessions: [],
+  projects: [], workspaces: [], profiles: [], sessions: [], webTabs: [],
 };
 
 export function workspaceTabs(sessions: readonly AgencyRuntimeSession[], workspaceId: WorkspaceId): AgencyRuntimeSession[] {
   return sessions.filter(session => session.workspaceId === workspaceId && session.tab?.current && !session.tab.closedAt)
     .sort((a,b) => a.tab!.order - b.tab!.order || a.tab!.id.localeCompare(b.tab!.id));
+}
+
+/** Stable identities from both domains share one server-owned selection and order. */
+export type WorkspaceTab = {
+  id: string; order: number; selected: boolean;
+} & ({ kind: 'native'; session: AgencyRuntimeSession } | { kind: 'web'; web: WebTab });
+
+export function allWorkspaceTabs(
+  sessions: readonly AgencyRuntimeSession[], webTabs: readonly WebTab[], workspaceId: WorkspaceId,
+): WorkspaceTab[] {
+  const native: WorkspaceTab[] = workspaceTabs(sessions, workspaceId).map(session => ({
+    id: session.tab!.id, order: session.tab!.order, selected: session.tab!.selected, kind: 'native', session,
+  }));
+  const web: WorkspaceTab[] = webTabs.filter(tab => tab.workspaceId === workspaceId && !tab.closedAt).map(tab => ({
+    id: tab.id, order: tab.order, selected: tab.selected, kind: 'web', web: tab,
+  }));
+  return [...native, ...web].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+}
+
+/** Conflicting or absent selection during reconciliation never displays an arbitrary target. */
+export function selectedWorkspaceTab(tabs: readonly WorkspaceTab[]): WorkspaceTab | undefined {
+  const selected = tabs.filter(tab => tab.selected);
+  return selected.length === 1 ? selected[0] : undefined;
 }
 
 export function profileForSession(
@@ -66,7 +90,7 @@ export function transitionNotice(
   if (!previous || next.kind !== 'agent') return null;
   if (previous.activity !== next.activity &&
       (next.activity === 'awaiting-user' || next.activity === 'awaiting-permission')) return 'attention';
-  if (previous.activity === 'working' && next.activity === 'idle') return 'completed';
+
   return null;
 }
 

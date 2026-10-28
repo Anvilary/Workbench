@@ -27,6 +27,7 @@ import { copyFile, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   isTabActivityRecord,
+  isMawNotificationItem,
   type MawActivityState,
   type ProjectId,
   type RuntimeSessionId,
@@ -35,7 +36,7 @@ import {
 } from '@agent-workbench/shared';
 import { appConfigDir } from '../paths.js';
 import { writeAtomically } from '../atomic-write.js';
-import type { AgencyNotificationStore } from './agency-notification-store.js';
+import type { AgencyNotificationStore, CreateNotificationInput } from './agency-notification-store.js';
 import { ShellIntegrationParser } from './shell-integration.js';
 import type { BrowserActivityProvider } from './browser-activity-provider.js';
 
@@ -51,7 +52,12 @@ export interface TabActivityKey {
 
 export class TabActivityManager extends EventEmitter {
   private queue: Promise<void> = Promise.resolve();
+  private mutations: Promise<void> = Promise.resolve();
+  private readonly pendingNotifications = new Map<string, CreateNotificationInput>();
+  private shouldDeliver?: (workspaceId: WorkspaceId, tabId: string) => boolean;
+  private disposed = false;
   private readonly states = new Map<string, TabActivityRecord>();
+  private readonly committedStates = new Map<string, TabActivityRecord>();
   private readonly tabTurnSequences = new Map<string, number>();
   private readonly shellParsers = new Map<string, ShellIntegrationParser>();
   private readonly shellCommandCounters = new Map<string, number>();
@@ -107,6 +113,7 @@ export class TabActivityManager extends EventEmitter {
         reliableSignal,
         ...(detail ? { detail } : {}),
       });
+      this.committedStates.set(key, this.states.get(key)!);
     }
     this.initialized = true;
   }
@@ -141,17 +148,31 @@ export class TabActivityManager extends EventEmitter {
     if (root['version'] !== 1 || !Array.isArray(root['records'])) throw new Error('Unsupported tab activity format');
     const records: TabActivityRecord[] = [];
     for (const item of root['records']) {
-      if (isTabActivityRecord(item)) {
-        records.push(item);
-      }
+      if (!isTabActivityRecord(item)) throw new Error('Invalid tab activity record');
+      records.push(item);
     }
+    const receipts = root['pendingNotifications'] ?? [];
+    if (!Array.isArray(receipts)) throw new Error('Invalid pending notifications');
+    const pending = new Map<string, CreateNotificationInput>();
+    for (const receipt of receipts) {
+      if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)) throw new Error('Invalid pending notification');
+      const item = receipt as Record<string, unknown>;
+      if (typeof item['deduplicationKey'] !== 'string' || !item['deduplicationKey'] ||
+          !['finished', 'failed'].includes(String(item['state'])) ||
+          !isMawNotificationItem({ ...item, id: '00000000-0000-4000-8000-000000000001', read: false, createdAt: new Date(0).toISOString() })) {
+        throw new Error('Invalid pending notification');
+      }
+      pending.set(item['deduplicationKey'], receipt as CreateNotificationInput);
+    }
+    this.pendingNotifications.clear();
+    for (const [key, receipt] of pending) this.pendingNotifications.set(key, receipt);
     return records;
   }
 
   private async persist(): Promise<void> {
     const records = [...this.states.values()];
     const serialized = Buffer.from(
-      JSON.stringify({ version: 1, records }, null, 2) + '\n',
+      JSON.stringify({ version: 1, records, pendingNotifications: [...this.pendingNotifications.values()] }, null, 2) + '\n',
       'utf8',
     );
 
@@ -161,6 +182,8 @@ export class TabActivityManager extends EventEmitter {
         if (error.code !== 'ENOENT') throw error;
       });
       await writeAtomically(this.file, serialized, { mode: 0o600 });
+      this.committedStates.clear();
+      for (const record of records) this.committedStates.set(this.makeKey(record.workspaceId, record.tabId), record);
     };
 
     // Recover write queue after individual failure while failing visibly to caller
@@ -169,36 +192,130 @@ export class TabActivityManager extends EventEmitter {
     return next;
   }
 
+  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.mutations.then(operation);
+    this.mutations = next.then(() => undefined, () => undefined);
+    return next;
+  }
+
   flush(): Promise<void> {
-    return this.queue;
+    return this.mutations.then(() => this.queue);
+  }
+
+  /** Retry after tab reconciliation and periodically; authorization also drops deleted tabs. */
+  flushPendingNotifications(shouldDeliver?: (workspaceId: WorkspaceId, tabId: string) => boolean): Promise<void> {
+    if (shouldDeliver) this.shouldDeliver = shouldDeliver;
+    return this.mutate(async () => {
+      try { await this.deliverPendingNotifications(); }
+      catch (error) { console.warn('[agency] pending notification delivery deferred: ' + String(error)); }
+    });
+  }
+
+  private async deliverPendingNotifications(): Promise<void> {
+    if (this.disposed) return;
+    for (const [key, receipt] of this.pendingNotifications) {
+      const record = this.states.get(this.makeKey(receipt.workspaceId, receipt.tabId));
+      if (record && !record.closed && (!this.shouldDeliver || this.shouldDeliver(receipt.workspaceId, receipt.tabId))) {
+        await this.notificationStore.create(receipt);
+      }
+      this.pendingNotifications.delete(key);
+      try { await this.persist(); }
+      catch (error) { this.pendingNotifications.set(key, receipt); throw error; }
+    }
+  }
+
+  private async saveActivity(record: TabActivityRecord, notification?: CreateNotificationInput): Promise<void> {
+    const key = this.makeKey(record.workspaceId, record.tabId);
+    const previous = this.states.get(key);
+    const dedup = notification?.deduplicationKey;
+    const previousReceipt = dedup ? this.pendingNotifications.get(dedup) : undefined;
+    this.states.set(key, record);
+    if (notification && dedup && !this.notificationStore.hasDeduplicationKey(dedup)) {
+      this.pendingNotifications.set(dedup, notification);
+    }
+    try { await this.persist(); }
+    catch (error) {
+      if (previous) this.states.set(key, previous); else this.states.delete(key);
+      if (dedup) {
+        if (previousReceipt) this.pendingNotifications.set(dedup, previousReceipt); else this.pendingNotifications.delete(dedup);
+      }
+      throw error;
+    }
+    if (!this.disposed) this.emit('tabActivity', record);
+    await this.deliverPendingNotifications();
   }
 
   /**
    * Returns current snapshot of all active tab activity states.
    */
   snapshot(): TabActivityRecord[] {
-    return [...this.states.values()].filter((r) => !r.closed);
+    return [...this.committedStates.values()].filter((r) => !r.closed);
   }
 
   getTabState(workspaceId: WorkspaceId, tabId: string): MawActivityState {
     const key = this.makeKey(workspaceId, tabId);
-    return this.states.get(key)?.state ?? 'unknown';
+    return this.committedStates.get(key)?.state ?? 'unknown';
   }
 
   getRecord(workspaceId: WorkspaceId, tabId: string): TabActivityRecord | null {
     const key = this.makeKey(workspaceId, tabId);
-    return this.states.get(key) ?? null;
+    return this.committedStates.get(key) ?? null;
+  }
+
+  /** Register the live tab before accepting events; startup does not imply work. */
+  ensureTab(input: Parameters<TabActivityManager['ensureTabInner']>[0]): Promise<TabActivityRecord> {
+    return this.mutate(() => this.ensureTabInner(input));
+  }
+
+  private async ensureTabInner(input: {
+    workspaceId: WorkspaceId;
+    tabId: string;
+    sessionId?: RuntimeSessionId;
+    source: 'cli' | 'shell' | 'browser';
+  }): Promise<TabActivityRecord> {
+    const key = this.makeKey(input.workspaceId, input.tabId);
+    const existing = this.states.get(key);
+    if (existing?.closed && (!input.sessionId || input.sessionId === existing.sessionId)) return existing;
+    if (existing && !existing.closed && (!input.sessionId || input.sessionId === existing.sessionId)) return existing;
+    const next: TabActivityRecord = existing && !existing.closed && existing.state === 'finished' ? {
+      ...existing, ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    } : {
+      ...input, state: 'unknown', reliableSignal: false, closed: false,
+      updatedAt: NOW(), turnSequence: existing?.turnSequence,
+      detail: 'Awaiting verified activity evidence',
+    };
+    this.states.set(key, next);
+    try { await this.persist(); }
+    catch (error) {
+      if (this.states.get(key) === next) {
+        if (existing) this.states.set(key, existing); else this.states.delete(key);
+      }
+      throw error;
+    }
+    if (input.sessionId && input.sessionId !== existing?.sessionId) {
+      this.shellParsers.get(input.tabId)?.dispose();
+      this.shellParsers.delete(input.tabId);
+      this.shellCommandCounters.delete(input.tabId);
+    }
+    this.emit('tabActivity', next);
+    return next;
   }
 
   /**
    * Marks a tab closed/deleted so it stops receiving events and never emits stale alerts.
    */
-  async closeTab(workspaceId: WorkspaceId, tabId: string): Promise<void> {
+  closeTab(workspaceId: WorkspaceId, tabId: string): Promise<void> {
+    return this.mutate(() => this.closeTabInner(workspaceId, tabId));
+  }
+
+  private async closeTabInner(workspaceId: WorkspaceId, tabId: string): Promise<void> {
     const key = this.makeKey(workspaceId, tabId);
     const existing = this.states.get(key);
-    if (existing) {
+    const removedReceipts = [...this.pendingNotifications].filter(([, receipt]) => receipt.workspaceId === workspaceId && receipt.tabId === tabId);
+    for (const [dedup] of removedReceipts) this.pendingNotifications.delete(dedup);
+    {
       const next: TabActivityRecord = {
-        ...existing,
+        ...(existing ?? { workspaceId, tabId, source: 'manual' as const }),
         closed: true,
         state: 'idle',
         updatedAt: NOW(),
@@ -206,7 +323,14 @@ export class TabActivityManager extends EventEmitter {
         detail: 'tab-closed',
       };
       this.states.set(key, next);
-      await this.persist();
+      try { await this.persist(); }
+      catch (error) {
+        for (const [dedup, receipt] of removedReceipts) this.pendingNotifications.set(dedup, receipt);
+        if (this.states.get(key) === next) {
+          if (existing) this.states.set(key, existing); else this.states.delete(key);
+        }
+        throw error;
+      }
       this.emit('tabActivity', next);
     }
     const parser = this.shellParsers.get(tabId);
@@ -221,7 +345,11 @@ export class TabActivityManager extends EventEmitter {
    * User opened the tab and inspected the result, or explicitly acknowledged it.
    * If in 'finished' state, returns to 'idle'.
    */
-  async acknowledgeTab(workspaceId: WorkspaceId, tabId: string): Promise<TabActivityRecord | null> {
+  acknowledgeTab(workspaceId: WorkspaceId, tabId: string): Promise<TabActivityRecord | null> {
+    return this.mutate(() => this.acknowledgeTabInner(workspaceId, tabId));
+  }
+
+  private async acknowledgeTabInner(workspaceId: WorkspaceId, tabId: string): Promise<TabActivityRecord | null> {
     const key = this.makeKey(workspaceId, tabId);
     const current = this.states.get(key);
 
@@ -245,7 +373,8 @@ export class TabActivityManager extends EventEmitter {
         provider.acknowledgeTab(tabId);
       }
 
-      await this.persist();
+      try { await this.persist(); }
+      catch (error) { if (this.states.get(key) === next) this.states.set(key, current); throw error; }
       this.emit('tabActivity', next);
       return next;
     }
@@ -257,7 +386,11 @@ export class TabActivityManager extends EventEmitter {
    * Audits turn-completion evidence: generic idle is NOT completion!
    * Enforces distinct per-turn identities so consecutive turns produce separate alerts.
    */
-  async handleCliActivity(input: {
+  handleCliActivity(input: Parameters<TabActivityManager['handleCliActivityInner']>[0]): Promise<void> {
+    return this.mutate(() => this.handleCliActivityInner(input));
+  }
+
+  private async handleCliActivityInner(input: {
     workspaceId: WorkspaceId;
     projectId?: ProjectId;
     tabId: string;
@@ -269,12 +402,19 @@ export class TabActivityManager extends EventEmitter {
     lifecycle: string;
     exitCode?: number | null;
     taskId?: string;
+    /** Only an explicit scoped provider event may close a turn successfully. */
+    completionEvidence?: 'native-turn' | 'status-transition';
   }): Promise<void> {
     const key = this.makeKey(input.workspaceId, input.tabId);
     const existing = this.states.get(key);
 
     // Closed or deleted tabs must not generate stale completion alerts
     if (existing?.closed) return;
+    if (input.taskId && input.taskId !== existing?.taskId &&
+        (this.notificationStore.hasDeduplicationKey(`cli-turn:${input.workspaceId}:${input.tabId}:${input.taskId}`) ||
+         this.notificationStore.hasDeduplicationKey(`cli-fail:${input.workspaceId}:${input.tabId}:${input.taskId}`) ||
+         this.pendingNotifications.has(`cli-turn:${input.workspaceId}:${input.tabId}:${input.taskId}`) ||
+         this.pendingNotifications.has(`cli-fail:${input.workspaceId}:${input.tabId}:${input.taskId}`))) return;
 
     let nextState: MawActivityState = 'unknown';
     let reliable = false;
@@ -283,25 +423,45 @@ export class TabActivityManager extends EventEmitter {
     // Manage per-tab turn sequence:
     // When transitioning into 'working', a new turn begins. Advance sequence.
     let currentSeq = this.tabTurnSequences.get(key) ?? existing?.turnSequence ?? 0;
-    if (input.nextActivity === 'working' && existing?.state !== 'working') {
+    const startsTurn = input.nextActivity === 'working' && existing?.state !== 'working' &&
+      (!input.taskId || input.taskId !== existing?.taskId);
+    if (startsTurn &&
+        (!input.taskId || input.taskId !== existing?.taskId)) {
       currentSeq += 1;
       this.tabTurnSequences.set(key, currentSeq);
     }
-    const currentTaskId = input.taskId ?? `turn-${currentSeq > 0 ? currentSeq : 1}`;
+    const currentTaskId = input.taskId ?? (startsTurn ? undefined : existing?.taskId) ?? `turn-${currentSeq > 0 ? currentSeq : 1}`;
+    const sameTask = currentTaskId === existing?.taskId;
+    if (sameTask && existing?.state === 'failed' &&
+        (input.taskId ? input.nextActivity !== 'failed' : input.nextActivity !== 'working')) return;
+    // Replayed terminal events must not revive an acknowledged task or overwrite its result.
+    if (sameTask && existing?.acknowledgedAt && input.nextActivity !== 'working') return;
+    if (sameTask && existing?.state === 'finished' && input.nextActivity !== 'working' &&
+        input.nextActivity !== 'finished' && input.completionEvidence !== 'status-transition') return;
+    if (sameTask && existing?.acknowledgedAt && input.nextActivity === 'working' && input.taskId) return;
+    if (sameTask && existing?.state === 'finished' && input.taskId && input.nextActivity === 'working') return;
 
-    if (input.lifecycle === 'failed' || (input.lifecycle === 'exited' && input.exitCode !== null && input.exitCode !== 0)) {
+    if (input.lifecycle === 'failed' || (input.lifecycle === 'exited' && typeof input.exitCode === 'number' && input.exitCode !== 0)) {
       nextState = 'failed';
       reliable = true;
       detail = `CLI failed or exited with code ${input.exitCode ?? 'error'}`;
+    } else if (input.nextActivity === 'finished' && input.completionEvidence === 'native-turn' && input.taskId) {
+      nextState = 'finished';
+      reliable = true;
+      detail = `Native ${input.provider ?? 'CLI'} turn completed`;
+    } else if (input.nextActivity === 'failed' && input.completionEvidence === 'native-turn' && input.taskId) {
+      nextState = 'failed';
+      reliable = true;
+      detail = `Native ${input.provider ?? 'CLI'} turn failed`;
     } else if (input.nextActivity === 'working') {
       nextState = 'working';
       reliable = true;
       detail = 'CLI working on task';
-    } else if (input.previousActivity === 'working' && input.nextActivity === 'idle') {
+    } else if (existing?.state === 'working' && input.nextActivity === 'idle') {
       // Audit turn completion signals:
       // Only providers with verified turn-completion signals emit 'finished'.
       // Generic idle or providers with statusSource: false (Codex, unconfigured Antigravity) are NOT finished!
-      const isVerifiedTurnProvider = input.provider && VERIFIED_TURN_PROVIDERS.has(input.provider);
+      const isVerifiedTurnProvider = input.completionEvidence === 'status-transition' && input.provider && VERIFIED_TURN_PROVIDERS.has(input.provider);
       if (isVerifiedTurnProvider) {
         nextState = 'finished';
         reliable = true;
@@ -329,7 +489,7 @@ export class TabActivityManager extends EventEmitter {
     }
 
     // Finished persists until acknowledged by opening tab
-    if (existing?.state === 'finished' && !existing.acknowledgedAt && nextState === 'idle') {
+    if (existing?.state === 'finished' && !existing.acknowledgedAt && nextState !== 'working' && nextState !== 'finished' && sameTask) {
       return;
     }
 
@@ -346,15 +506,13 @@ export class TabActivityManager extends EventEmitter {
       detail,
       closed: false,
     };
-    this.states.set(key, record);
-    await this.persist();
-    this.emit('tabActivity', record);
+    let notification: CreateNotificationInput | undefined;
 
     // Create notification upon entering finished or failed with STABLE distinct turn ID deduplication
     if (nextState === 'finished' && reliable) {
       const tabLabel = input.tabName || 'CLI Agent';
       const deduplicationKey = `cli-turn:${input.workspaceId}:${input.tabId}:${currentTaskId}`;
-      await this.notificationStore.create({
+      notification = {
         workspaceId: input.workspaceId,
         ...(input.projectId ? { projectId: input.projectId } : {}),
         tabId: input.tabId,
@@ -363,11 +521,12 @@ export class TabActivityManager extends EventEmitter {
         body: 'Agent completed task',
         state: 'finished',
         deduplicationKey,
-      });
+        metadata: { kind: 'cli', tabName: input.tabName ?? '' },
+      };
     } else if (nextState === 'failed' && reliable) {
       const tabLabel = input.tabName || 'CLI Agent';
       const deduplicationKey = `cli-fail:${input.workspaceId}:${input.tabId}:${currentTaskId}`;
-      await this.notificationStore.create({
+      notification = {
         workspaceId: input.workspaceId,
         ...(input.projectId ? { projectId: input.projectId } : {}),
         tabId: input.tabId,
@@ -376,8 +535,10 @@ export class TabActivityManager extends EventEmitter {
         body: detail || 'Agent encountered an error',
         state: 'failed',
         deduplicationKey,
-      });
+        metadata: { kind: 'cli', tabName: input.tabName ?? '', exitCode: input.exitCode ?? null },
+      };
     }
+    await this.saveActivity(record, notification);
   }
 
   /**
@@ -399,6 +560,7 @@ export class TabActivityManager extends EventEmitter {
 
       const key = this.makeKey(workspaceId, tabId);
       const existing = this.states.get(key);
+      this.shellCommandCounters.set(tabId, existing?.turnSequence ?? 0);
 
       // If no persisted state exists or if in-flight on restart, initialize
       if (!existing) {
@@ -421,57 +583,30 @@ export class TabActivityManager extends EventEmitter {
       });
 
       parser.on('state', (state: MawActivityState, detail?: string) => {
-        const current = this.states.get(key);
-        if (current?.closed) return;
-
-        // 'finished' persists until acknowledged
-        if (current?.state === 'finished' && !current.acknowledgedAt && state === 'idle') {
-          return;
-        }
-
-        const cmdId = `cmd-${this.shellCommandCounters.get(tabId) ?? 1}`;
-        const record: TabActivityRecord = {
-          workspaceId,
-          tabId,
-          ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
-          taskId: cmdId,
-          state,
-          updatedAt: NOW(),
-          reliableSignal: parser!.hasIntegration() && state !== 'unknown',
-          source: 'shell',
-          closed: false,
-          ...(detail ? { detail } : {}),
-        };
-        this.states.set(key, record);
-        void this.persist();
-        this.emit('tabActivity', record);
-
-        if (state === 'finished') {
-          const tabLabel = options?.tabName || 'Terminal';
-          void this.notificationStore.create({
-            workspaceId,
-            ...(options?.projectId ? { projectId: options.projectId } : {}),
-            tabId,
-            ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
-            title: tabLabel,
-            body: 'Command finished successfully',
-            state: 'finished',
-            deduplicationKey: `shell-cmd:${workspaceId}:${tabId}:${cmdId}`,
-          });
-        } else if (state === 'failed') {
-          const tabLabel = options?.tabName || 'Terminal';
-          const exitCode = parser!.getLastExitCode();
-          void this.notificationStore.create({
-            workspaceId,
-            ...(options?.projectId ? { projectId: options.projectId } : {}),
-            tabId,
-            ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
-            title: tabLabel,
-            body: `Command failed with exit code ${exitCode ?? 'error'}`,
-            state: 'failed',
-            deduplicationKey: `shell-cmd-fail:${workspaceId}:${tabId}:${cmdId}`,
-          });
-        }
+        if (detail === 'acknowledged') return;
+        const count = this.shellCommandCounters.get(tabId) ?? 0;
+        const exitCode = parser!.getLastExitCode();
+        const reliableSignal = parser!.hasIntegration() && state !== 'unknown';
+        void this.mutate(async () => {
+          const current = this.states.get(key);
+          if (current?.closed || (options?.sessionId && current?.sessionId && current.sessionId !== options.sessionId)) return;
+          if (current?.state === 'finished' && !current.acknowledgedAt && state === 'idle') return;
+          const cmdId = `cmd-${count}`;
+          const record: TabActivityRecord = {
+            workspaceId, tabId, ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
+            taskId: cmdId, turnSequence: count, state, updatedAt: NOW(), reliableSignal,
+            source: 'shell', closed: false, ...(detail ? { detail } : {}),
+          };
+          const notification: CreateNotificationInput | undefined = state === 'finished' || state === 'failed' ? {
+            workspaceId, ...(options?.projectId ? { projectId: options.projectId } : {}),
+            tabId, ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
+            title: options?.tabName || 'Terminal',
+            body: state === 'finished' ? 'Command finished successfully' : `Command failed with exit code ${exitCode ?? 'error'}`,
+            state, deduplicationKey: `${state === 'finished' ? 'shell-cmd' : 'shell-cmd-fail'}:${workspaceId}:${tabId}:${cmdId}`,
+            metadata: { kind: 'shell', tabName: options?.tabName ?? '', exitCode: state === 'finished' ? 0 : exitCode },
+          } : undefined;
+          await this.saveActivity(record, notification);
+        }).catch(error => console.warn('[agency] failed persisting shell activity/outbox: ' + String(error)));
       });
     }
     return parser;
@@ -492,12 +627,12 @@ export class TabActivityManager extends EventEmitter {
   }
 
   dispose(): void {
+    this.disposed = true;
     for (const parser of this.shellParsers.values()) {
       parser.dispose();
     }
     this.shellParsers.clear();
     this.shellCommandCounters.clear();
-    this.states.clear();
     this.tabTurnSequences.clear();
     this.browserProviders.clear();
     this.removeAllListeners();

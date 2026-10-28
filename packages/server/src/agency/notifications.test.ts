@@ -71,6 +71,7 @@ test('Native CLI activity: consecutive turns, replay deduplication, tab isolatio
       sessionId: randomUUID() as any,
       provider: 'claude-code',
       previousActivity: 'working',
+      completionEvidence: 'status-transition',
       nextActivity: 'idle',
       lifecycle: 'running',
     });
@@ -87,6 +88,7 @@ test('Native CLI activity: consecutive turns, replay deduplication, tab isolatio
       sessionId: randomUUID() as any,
       provider: 'claude-code',
       previousActivity: 'working',
+      completionEvidence: 'status-transition',
       nextActivity: 'idle',
       lifecycle: 'running',
     });
@@ -113,6 +115,7 @@ test('Native CLI activity: consecutive turns, replay deduplication, tab isolatio
       sessionId: randomUUID() as any,
       provider: 'claude-code',
       previousActivity: 'working',
+      completionEvidence: 'status-transition',
       nextActivity: 'idle',
       lifecycle: 'running',
     });
@@ -137,6 +140,7 @@ test('Native CLI activity: consecutive turns, replay deduplication, tab isolatio
       sessionId: randomUUID() as any,
       provider: 'claude-code',
       previousActivity: 'working',
+      completionEvidence: 'status-transition',
       nextActivity: 'idle',
       lifecycle: 'running',
     });
@@ -160,6 +164,7 @@ test('Native CLI activity: consecutive turns, replay deduplication, tab isolatio
       sessionId: randomUUID() as any,
       provider: 'codex',
       previousActivity: 'working',
+      completionEvidence: 'status-transition',
       nextActivity: 'idle',
       lifecycle: 'running',
     });
@@ -189,6 +194,7 @@ test('Native CLI activity: consecutive turns, replay deduplication, tab isolatio
       sessionId: randomUUID() as any,
       provider: 'claude-code',
       previousActivity: 'working',
+      completionEvidence: 'status-transition',
       nextActivity: 'idle',
       lifecycle: 'running',
     });
@@ -365,6 +371,7 @@ test('Durable persistence: atomic writes, 0o600 permissions, failure recovery, a
           sessionId: randomUUID() as any,
           provider: 'claude-code',
           previousActivity: 'working',
+      completionEvidence: 'status-transition',
           nextActivity: 'idle',
           lifecycle: 'running',
         });
@@ -381,6 +388,7 @@ test('Durable persistence: atomic writes, 0o600 permissions, failure recovery, a
       sessionId: randomUUID() as any,
       provider: 'claude-code',
       previousActivity: 'working',
+      completionEvidence: 'status-transition',
       nextActivity: 'idle',
       lifecycle: 'running',
     });

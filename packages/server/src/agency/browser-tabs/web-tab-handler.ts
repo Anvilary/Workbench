@@ -38,6 +38,8 @@ export async function handleWebTabMessage(
           title: message.title,
           order: message.order,
           select: message.select,
+          launchId: message.launchId,
+          unloaded: message.unloaded,
         });
         context.publish?.({
           type: 'agency.webTab.changed',

@@ -39,7 +39,8 @@ def get_docker_gateway() -> str:
 CONTROLLER_URL = os.environ.get("NEKO_CONTROLLER_URL", "http://127.0.0.1:9223")
 AUTH_TOKEN = os.environ.get("CONTROLLER_AUTH_TOKEN", "").strip()
 GATEWAY_IP = get_docker_gateway()
-TEST_PORT = 9876
+TEST_PORT = int(os.environ.get("NEKO_TEST_PORT", "9876"))
+TEST_BIND_ADDRESS = os.environ.get("NEKO_TEST_BIND_ADDRESS", GATEWAY_IP)
 
 # If token not in env, check .env
 if not AUTH_TOKEN:
@@ -141,7 +142,7 @@ def run_test():
     print("Notice: Proves synthetic background SSE stream persistence across tab switching.")
     print("Does NOT claim genuine ChatGPT completion detection.\n")
 
-    server = http.server.ThreadingHTTPServer(("0.0.0.0", TEST_PORT), TestHandler)
+    server = http.server.ThreadingHTTPServer((TEST_BIND_ADDRESS, TEST_PORT), TestHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     time.sleep(0.5)
 
