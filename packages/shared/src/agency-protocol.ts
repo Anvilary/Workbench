@@ -6,7 +6,7 @@
  * The server must validate all inbound messages at runtime before using them.
  */
 
-export const AGENCY_CONTRACT_VERSION = 1 as const;
+export const AGENCY_CONTRACT_VERSION = 2 as const;
 
 /** IDs are deliberately distinct from native CLI sessions and Workbench terminal IDs. */
 export type ProjectId = string & { readonly __agencyProjectId: unique symbol };
@@ -84,7 +84,28 @@ export interface AgencyCliProfile {
   configurationMessage: string | null;
 }
 
+export interface AgencyTab {
+  terminalNumber?: number;
+  id: string;
+  name: string | null;
+  order: number;
+  selected: boolean;
+  closedAt: IsoTimestamp | null;
+  current: boolean;
+}
+
+export function isAgencyTab(value: unknown): value is AgencyTab {
+  if (!value || typeof value !== 'object') return false;
+  const tab = value as Record<string, unknown>;
+  return (tab.terminalNumber === undefined || (Number.isSafeInteger(tab.terminalNumber) && (tab.terminalNumber as number) > 0)) && typeof tab.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tab.id) &&
+    (tab.name === null || (typeof tab.name === 'string' && tab.name.length <= 120)) &&
+    Number.isSafeInteger(tab.order) && (tab.order as number) >= 0 && typeof tab.selected === 'boolean' &&
+    typeof tab.current === 'boolean' && (tab.closedAt === null || (typeof tab.closedAt === 'string' && Number.isFinite(Date.parse(tab.closedAt))));
+}
+
 export interface AgencySessionBase {
+  tab?: AgencyTab;
+  launchId?: string;
   id: RuntimeSessionId;
   workspaceId: WorkspaceId;
   /** The existing server registry owns the process behind this ID. */
@@ -102,6 +123,8 @@ export interface AgencySessionBase {
 
 export interface AgencyAgentSession extends AgencySessionBase {
   kind: 'agent';
+  /** Non-secret argv and context reference; never persist the complete native environment. */
+  launchDefinition?: { executable: string; args: readonly string[]; contextRef: string | null };
   /** Immutable identity captured at launch; absent in legacy rows. */
   nativeIdentity?: Readonly<{ provider: CliProvider; home: string; bindingId?: string }> | null;
   historyAvailability?: 'available' | 'unavailable';
@@ -159,6 +182,7 @@ export type AgencyClientMessage =
   | (AgencyClientRequest<'agency.session.create'> & {
       workspaceId: WorkspaceId;
       kind: 'agent';
+      launchId?: string;
       profileId: CliProfileId;
       resumeNativeSessionId?: string;
       cols: number;
@@ -169,9 +193,12 @@ export type AgencyClientMessage =
   | (AgencyClientRequest<'agency.session.create'> & {
       workspaceId: WorkspaceId;
       kind: 'terminal';
+      launchId?: string;
       cols: number;
       rows: number;
     })
+  | (AgencyClientRequest<'agency.tab.action'> & { workspaceId: WorkspaceId; tabId: string; action: 'select' | 'close' | 'resume' })
+  | (AgencyClientRequest<'agency.tabs.order'> & { workspaceId: WorkspaceId; tabIds: readonly string[] })
   | (AgencyClientRequest<'agency.session.selection.set'> & {
       sessionId: RuntimeSessionId;
       model: string | null;
@@ -389,31 +416,42 @@ export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | nu
         ...(raw['workspaceId'] !== undefined ? { workspaceId: raw['workspaceId'] as WorkspaceId } : {}),
       };
     }
+    case 'agency.tab.action': {
+      if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'tabId', 'action']) || !isValidId(raw.workspaceId) || !isValidId(raw.tabId) || !['select', 'close', 'resume'].includes(raw.action as string)) return null;
+      return { type: 'agency.tab.action', requestId, workspaceId: raw.workspaceId as WorkspaceId, tabId: raw.tabId as string, action: raw.action as 'select' | 'close' | 'resume' };
+    }
+    case 'agency.tabs.order': {
+      if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'tabIds']) || !isValidId(raw.workspaceId) || !Array.isArray(raw.tabIds) || raw.tabIds.length > 10000 || !raw.tabIds.every(isValidId) || new Set(raw.tabIds).size !== raw.tabIds.length) return null;
+      return { type: 'agency.tabs.order', requestId, workspaceId: raw.workspaceId as WorkspaceId, tabIds: raw.tabIds as string[] };
+    }
     case 'agency.session.create': {
       if (!isValidId(raw['workspaceId'])) return null;
+      if (raw.launchId !== undefined && !isValidId(raw.launchId)) return null;
       const cols = raw['cols'];
       const rows = raw['rows'];
       if (typeof cols !== 'number' || !Number.isInteger(cols) || cols < 2 || cols > 500) return null;
       if (typeof rows !== 'number' || !Number.isInteger(rows) || rows < 1 || rows > 200) return null;
       if (raw['kind'] === 'terminal') {
-        if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'kind', 'cols', 'rows'])) return null;
+        if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'kind', 'cols', 'rows', 'launchId'])) return null;
         return {
           type: 'agency.session.create',
           requestId,
           workspaceId: raw['workspaceId'] as WorkspaceId,
           kind: 'terminal',
+          ...(raw.launchId !== undefined ? { launchId: raw.launchId as string } : {}),
           cols,
           rows,
         };
       }
       if (raw['kind'] === 'agent') {
-        if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'kind', 'profileId', 'cols', 'rows', 'resumeNativeSessionId', 'model', 'effort'])) return null;
+        if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'kind', 'profileId', 'cols', 'rows', 'resumeNativeSessionId', 'model', 'effort', 'launchId'])) return null;
         if (typeof raw['profileId'] !== 'string' || raw['profileId'].trim().length === 0 || raw['profileId'].length > 64) return null;
         const result: AgencyClientMessage = {
           type: 'agency.session.create',
           requestId,
           workspaceId: raw['workspaceId'] as WorkspaceId,
           kind: 'agent',
+          ...(raw.launchId !== undefined ? { launchId: raw.launchId as string } : {}),
           profileId: raw['profileId'] as CliProfileId,
           cols,
           rows,
@@ -463,7 +501,7 @@ function isAgencyProject(value: unknown): value is AgencyProject {
 function isAgencyWorkspace(value: unknown): value is AgencyWorkspace {
   return isRecord(value) && isValidId(value['id']) && isValidId(value['projectId']) &&
     typeof value['name'] === 'string' && typeof value['cwd'] === 'string' &&
-    (value['status'] === 'active' || value['status'] === 'done') &&
+    (value['status'] === 'active' || value['status'] === 'done' || value['status'] === 'archived') &&
     isValidIsoTimestamp(value['createdAt']) && isValidIsoTimestamp(value['updatedAt']) &&
     (value['doneAt'] === null || isValidIsoTimestamp(value['doneAt']));
 }
@@ -477,6 +515,7 @@ function isAgencyCliProfile(value: unknown): value is AgencyCliProfile {
 
 function isAgencyRuntimeSession(value: unknown): value is AgencyRuntimeSession {
   if (!isRecord(value) || !isValidId(value['id']) || !isValidId(value['workspaceId'])) return false;
+  if (value.tab !== undefined && !isAgencyTab(value.tab)) return false;
   if (value['terminalId'] !== null && typeof value['terminalId'] !== 'string') return false;
   if (!['starting', 'running', 'stopping', 'exited', 'failed'].includes(value['lifecycle'] as string)) return false;
   if (!['idle', 'working', 'awaiting-user', 'awaiting-permission', 'unknown', 'offline'].includes(value['activity'] as string)) return false;

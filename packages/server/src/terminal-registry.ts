@@ -400,6 +400,8 @@ export class TerminalRegistry extends EventEmitter {
 
     await this.assertDirectory(options.cwd);
     const worktree = await this.worktreeFor(kind, options.cwd);
+    // Registration happens synchronously after the final await; concurrent opens share this limit.
+    if (this.terminals.size >= MAX_TERMINALS) throw new TerminalOpenError('too-many-terminals', serverText('tooManyTabs', { max: MAX_TERMINALS }));
     const requestedNative = options.agencyLaunch?.session.kind === 'known'
       ? options.agencyLaunch.session.sessionId : options.resumeSessionId;
     // Registry-local synchronous gate after the final await before registration.
