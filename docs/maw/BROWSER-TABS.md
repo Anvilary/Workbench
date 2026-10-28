@@ -209,15 +209,58 @@ export interface BrowserControllerDriver {
 }
 ```
 
-### Target Reconciliation & Recovery Semantics:
-1. **Server restart with active Neko**:
-   When MAW restarts, existing Chromium tabs remain alive in Neko. On selection/reattachment, MAW invokes `driver.verifyTargetOwnership(tab.targetRef, { tabId: tab.id, workspaceId: tab.workspaceId })`. If verified, MAW reattaches to the running page. **No duplicate Chromium tabs are opened.**
-2. **Browser restart**:
-   If Neko restarts, old target IDs are invalid. `verifyTargetOwnership` fails. MAW clears the stale `targetRef` and lazily creates a fresh target only when explicitly activated by the user.
-3. **No ambiguous matching**:
-   Targets are never matched by URL or page title alone, preventing misattribution between duplicate conversation URLs or user accounts.
-4. **Background tab survival**:
-   Background tabs continue generating responses and executing network requests while another tab is active. `activateTarget` must not terminate or navigate away inactive tabs.
+### Trusted Target-Ownership Registry Specification
+
+To guarantee safety across server and container restarts, the integration contract defines a trusted server-side target-ownership registry:
+
+1. **Target Creation (`openTarget`)**:
+   - The driver must associate the newly created Chromium page target with `TargetMetadata`: `{ tabId, workspaceId, url }`.
+   - The target ID returned to MAW is treated as an ephemeral runtime handle.
+2. **Reattachment (`verifyTargetOwnership`)**:
+   - MAW loads persisted `targetRef` values strictly as **untrusted reconciliation hints**, never as proof of ownership.
+   - On reattachment / selection, MAW invokes `driver.verifyTargetOwnership(targetRef, expected)`.
+   - The driver MUST verify that:
+     1. The target is alive and valid in Chromium CDP.
+     2. The target's registered metadata matches `expected.tabId` and `expected.workspaceId`.
+   - **Never infer ownership from URL or page title alone**, as distinct workspaces or tabs may share identical URLs.
+   - If verified, MAW activates the target without reopening or navigating the page.
+   - If unverified, stale, dead, or belonging to another workspace, MAW treats the target as unavailable, clears the stale reference, and opens a fresh verified target.
+3. **Closure (`closeTarget`)**:
+   - The driver destroys the Chromium CDP page target and removes its ownership entry from the registry.
+   - If destruction fails (e.g. CDP timeout), MAW marks `cleanupRequired: true` on the tab and safely retries closure later via `reconcileCleanup()`, without affecting sibling tabs.
+4. **Browser Container Restart**:
+   - When the Neko container restarts, all previous Chromium targets are destroyed.
+   - `verifyTargetOwnership` returns `false` for old handles. MAW safely discards stale hints and lazily allocates new targets upon explicit user activation.
+5. **Lane A Implementation Boundary**:
+   - Lane A currently exposes Chromium target IDs in Neko, but has **not yet implemented** server-side metadata attachment and `verifyTargetOwnership`.
+   - **Real Neko reattachment must not be claimed until Lane A implements this registry contract and it is tested against the live controller.**
+   - In Lane B, all reattachment and recovery mechanics are verified deterministically using `MemoryBrowserControllerDriver`. Real Neko integration will take place in the dedicated integration lane once Lane A adds metadata support.
+
+---
+
+## Error Handling & Unavailable Engines
+
+1. **Explicit Engine Failures (`BrowserEngineUnavailableError`)**:
+   - `NullBrowserControllerDriver` (used when Neko is unconfigured or offline) explicitly throws `BrowserEngineUnavailableError` on `openTarget()`, `activateTarget()`, `navigateTarget()`, and `closeTarget()`. It does not invent fictional targets such as `null-target`.
+   - When the engine is unavailable, the user's logical web tab is **safely persisted to disk** with `runtimeState: 'error'` and `targetRef: null`.
+   - The operation throws `BrowserTabStoreError` with code `'session-unavailable'`. A failed browser operation is never presented to the user or client as attached or ready.
+2. **Activation State Safety**:
+   - If `activateTarget()` fails during creation or selection, the tab is **never marked `ready`**; it transitions to `runtimeState: 'error'`.
+   - Selection state is preserved coherently so the user can see which tab was selected and retry.
+3. **Idempotency & Clean Rejection Handling**:
+   - In-flight tab creations are scoped by workspace (`${workspaceId}:${launchId}`).
+   - Launch promise cleanup uses `.catch(() => undefined).finally(...)` to guarantee zero unhandled promise rejections on failure.
+
+---
+
+## Authoritative Workspace Validation
+
+Production `BrowserTabAdapter` operations require an authoritative `AgencyWorkspaceStore` or equivalent `workspaceValidator`:
+- **Workspace Existence**: Rejects non-existent workspace IDs with `not-found`.
+- **Done Workspaces**: Rejects workspaces with `status === 'done'` or `doneAt != null` with `conflict`.
+- **Archived Workspaces**: Rejects workspaces with `status === 'archived'` or `archivedAt != null` with `conflict`.
+- **Parent Project Lifecycle**: Rejects workspaces whose parent project is missing (`not-found`) or archived (`conflict`).
+- **Testing Exemption**: Isolated unit tests must explicitly set `allowUnvalidatedWorkspacesForTesting: true` to bypass authoritative validation.
 
 ---
 
@@ -266,13 +309,31 @@ export interface BrowserControllerDriver {
 
 ## Validation Summary
 
-All 32 focused unit and integration tests pass cleanly with zero external dependencies:
+All 39 focused unit, regression, and acceptance tests pass cleanly with zero external dependencies:
 
 | Test File | Tests | Coverage |
 |---|---|---|
-| `browser-tab-reconciliation.test.ts` | 9 | Reattachment on restart, zero duplicate pages, background page continuation, atomic operations & launchId dedup, failed close & cleanupRequired, workspace validity, shared native/web selection, saved/unloaded tabs, stale/foreign target detection |
+| `browser-tab-reconciliation.test.ts` | 16 | Reattachment on restart, zero duplicate pages, background page continuation, atomic operations & launchId dedup, failed close & cleanupRequired, workspace validity, shared native/web selection, saved/unloaded tabs, stale/foreign target detection, unconfigured Neko driver explicitly failing, failed activation leaving error state, invalid workspace configuration rejecting Done/archived/unknown, cross-workspace duplicate launch IDs, failed creation without unhandled rejection, MAW restart with verified target identity, and failed browser cleanup safe retry |
 | `url-validation.test.ts` | 6 | Canonical ChatGPT URLs, query/fragments, HTTPS enforcement, SSRF defense, port blocking, domain spoofing, credential blocking |
 | `browser-tab-persistence.test.ts` | 7 | Atomic writes, mode 0o600, backup generation, corrupt quarantine, conservative restore, selection normalization, duplicate detection |
 | `browser-tab-adapter.test.ts` | 8 | Target opening, target switching without teardown, lazy attach on select, navigation, renaming, reordering, close with adjacent selection, cross-workspace isolation |
 | `web-tab-handler.test.ts` | 2 | Message parsing, request dispatch, broadcast emission, error mapping to `agency.error` |
-| **Total** | **32** | **100% pass** |
+| **Total** | **39** | **100% pass** |
+
+### Verified via Mocks vs Requiring Real Neko Integration
+
+- **Verified through In-Memory Mocks (`MemoryBrowserControllerDriver`)**:
+  - Serialization of concurrent tab operations per workspace queue.
+  - Idempotent tab creation scoped by workspace and launch ID.
+  - Fail-explicit behavior for unconfigured/offline browser engines (`NullBrowserControllerDriver` throwing `BrowserEngineUnavailableError`).
+  - Coherent error state transitions: failed activation never marks `ready`, preserves selection.
+  - Rejection safety: zero unhandled promise rejections on launch cleanup failure.
+  - Strict ownership verification rejecting foreign, stale, or mismatched targets.
+  - Shared selection coordination ensuring single selection across native CLI, terminal, and web tabs.
+  - Durable persistence: atomic replacement, mode `0o600`, backup recovery, and corruption quarantine.
+  - Authoritative workspace lifecycle validation: rejection of unknown, Done, or archived workspaces and projects.
+- **Requiring Real Neko Integration (Lane A / Integration Lane)**:
+  - Live Chromium DevTools Protocol (CDP) session attachment and target lifecycle events.
+  - Streaming WebRTC rendering of live Chromium tab viewports inside Neko.
+  - Live browser container restart and network reconnect recovery.
+  - ChatGPT session cookies, user credentials, and Cloudflare challenge persistence within Neko's Chromium browser user data directory.

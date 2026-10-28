@@ -20,8 +20,11 @@
  * 3. Atomic operation serialization per workspace prevents race conditions and duplicate targets.
  * 4. Switching tabs activates targets without navigating away, terminating, or disturbing background tasks.
  * 5. Reliable closing persists cleanup-required state on failure and reconciles orphaned targets safely.
- * 6. Validates project/workspace lifecycle and ownership before mutations.
- * 7. Coordinates single-selection contract across native CLI, terminal, and ChatGPT tabs.
+ * 6. Authoritative workspace validation: rejects unknown, deleted, Done, or archived workspaces/projects.
+ * 7. Unavailable browser engines fail explicitly with typed errors while preserving logical tabs.
+ * 8. Never marks a web tab ready when target activation fails.
+ * 9. Scopes launch IDs by workspace and safely catches cleanup handlers to avoid unhandled rejections.
+ * 10. Coordinates single-selection contract across native CLI, terminal, and ChatGPT tabs.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -57,6 +60,8 @@ export interface BrowserTabAdapterOptions {
   workspaceValidator?: WorkspaceValidator;
   workspaceStore?: AgencyWorkspaceStore;
   selectionCoordinator?: SelectionCoordinator;
+  /** Explicitly named flag required to bypass authoritative workspace validation in isolated mock unit tests. */
+  allowUnvalidatedWorkspacesForTesting?: boolean;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -67,12 +72,13 @@ export class BrowserTabAdapter {
   private workspaceValidator?: WorkspaceValidator;
   private workspaceStore?: AgencyWorkspaceStore;
   private selectionCoordinator?: SelectionCoordinator;
+  private readonly allowUnvalidatedWorkspacesForTesting: boolean;
 
   /** Active tabs keyed by tab ID, including ephemeral runtime target references. */
   private liveTabs: Map<string, WebTab> = new Map();
   /** Serialized operation queue per workspace to guarantee atomicity. */
   private workspaceQueues: Map<string, Promise<void>> = new Map();
-  /** In-flight creations keyed by client launchId to prevent duplicate target creation. */
+  /** In-flight creations keyed by workspace-scoped launchId to prevent duplicate target creation. */
   private inFlightLaunches: Map<string, Promise<WebTab>> = new Map();
 
   constructor(options: BrowserTabAdapterOptions) {
@@ -81,6 +87,14 @@ export class BrowserTabAdapter {
     this.workspaceValidator = options.workspaceValidator;
     this.workspaceStore = options.workspaceStore;
     this.selectionCoordinator = options.selectionCoordinator;
+    this.allowUnvalidatedWorkspacesForTesting = !!options.allowUnvalidatedWorkspacesForTesting;
+
+    if (!this.workspaceStore && !this.workspaceValidator && !this.allowUnvalidatedWorkspacesForTesting) {
+      throw new BrowserTabStoreError(
+        'internal-error',
+        'Production BrowserTabAdapter requires an authoritative AgencyWorkspaceStore or workspaceValidator',
+      );
+    }
   }
 
   attachDriver(driver: BrowserControllerDriver): void {
@@ -99,6 +113,10 @@ export class BrowserTabAdapter {
     this.selectionCoordinator = coordinator;
   }
 
+  private launchKey(workspaceId: WorkspaceId, launchId: string): string {
+    return `${workspaceId}:${launchId}`;
+  }
+
   private async assertWorkspaceValid(workspaceId: WorkspaceId): Promise<void> {
     if (typeof workspaceId !== 'string' || !UUID_RE.test(workspaceId)) {
       throw new BrowserTabStoreError('invalid-request', 'Invalid workspace ID format');
@@ -109,24 +127,35 @@ export class BrowserTabAdapter {
       if (!ws) {
         throw new BrowserTabStoreError('not-found', `Workspace ${workspaceId} does not exist`);
       }
-      if (ws.status === 'archived') {
+      if (ws.status === 'archived' || ws.archivedAt != null) {
         throw new BrowserTabStoreError('conflict', `Workspace ${workspaceId} is archived`);
       }
-      const proj = this.workspaceStore.listProjects().find((p) => p.id === ws.projectId);
-      if (!proj || proj.status === 'archived') {
-        throw new BrowserTabStoreError('conflict', `Project for workspace ${workspaceId} is archived or missing`);
+      if (ws.status === 'done' || ws.doneAt != null) {
+        throw new BrowserTabStoreError('conflict', `Workspace ${workspaceId} is marked done`);
       }
-    }
-
-    if (this.workspaceValidator) {
+      const proj = this.workspaceStore.listProjects().find((p) => p.id === ws.projectId);
+      if (!proj) {
+        throw new BrowserTabStoreError('not-found', `Owning project for workspace ${workspaceId} not found`);
+      }
+      if (proj.status === 'archived' || proj.archivedAt != null) {
+        throw new BrowserTabStoreError('conflict', `Owning project for workspace ${workspaceId} is archived`);
+      }
+    } else if (this.workspaceValidator) {
       const res = await this.workspaceValidator(workspaceId);
       if (!res.valid) {
-        const isConflict = res.error?.includes('archived') || res.error?.includes('done');
+        const isConflict =
+          res.error?.toLowerCase().includes('archived') ||
+          res.error?.toLowerCase().includes('done');
         throw new BrowserTabStoreError(
           isConflict ? 'conflict' : 'not-found',
           res.error ?? `Workspace ${workspaceId} is not valid`,
         );
       }
+    } else if (!this.allowUnvalidatedWorkspacesForTesting) {
+      throw new BrowserTabStoreError(
+        'internal-error',
+        'Authoritative workspace validation required',
+      );
     }
   }
 
@@ -186,13 +215,14 @@ export class BrowserTabAdapter {
   async createTab(input: CreateWebTabInput): Promise<WebTab> {
     await this.assertWorkspaceValid(input.workspaceId);
 
-    // Idempotent creation check: if launchId provided and already in-flight or created, reuse
+    // Workspace-scoped idempotent creation check: if launchId provided and already in-flight or created, reuse
     if (input.launchId) {
+      const scopedKey = this.launchKey(input.workspaceId, input.launchId);
       const existing = this.listTabs(input.workspaceId, { includeClosed: true })
         .find((t) => t.launchId === input.launchId);
       if (existing) return { ...existing };
 
-      const inFlight = this.inFlightLaunches.get(input.launchId);
+      const inFlight = this.inFlightLaunches.get(scopedKey);
       if (inFlight) return inFlight;
     }
 
@@ -229,6 +259,7 @@ export class BrowserTabAdapter {
 
       let targetRef: string | null = null;
       let runtimeState: WebTabRuntimeState = input.unloaded ? 'unloaded' : 'detached';
+      let browserError: unknown = null;
 
       // Open target in browser engine only if not explicitly marked unloaded
       if (!input.unloaded) {
@@ -241,9 +272,10 @@ export class BrowserTabAdapter {
           const res = await this.driver.openTarget(val.normalizedUrl!, metadata);
           targetRef = res.targetRef;
           runtimeState = 'attached';
-        } catch {
+        } catch (err) {
           targetRef = null;
-          runtimeState = 'detached';
+          runtimeState = 'error';
+          browserError = err;
         }
       }
 
@@ -279,24 +311,39 @@ export class BrowserTabAdapter {
       this.liveTabs.set(id, newTab);
 
       // If selected and target exists, request activation
-      if (select && targetRef) {
+      if (select && targetRef && !browserError) {
         try {
           await this.driver.activateTarget(targetRef);
           newTab.runtimeState = 'ready';
-        } catch {
-          // Activation failure does not abort tab creation
+        } catch (err) {
+          newTab.runtimeState = 'error';
+          browserError = err;
         }
       }
 
+      // Persist logical web tab safely even if browser engine failed
       await this.persist();
+
+      // If browser engine operation failed, report explicitly so tasks are not falsely acknowledged as ready
+      if (browserError) {
+        throw new BrowserTabStoreError(
+          'session-unavailable',
+          `Web tab saved, but browser engine is unavailable: ${browserError instanceof Error ? browserError.message : String(browserError)}`,
+        );
+      }
+
       return { ...newTab };
     });
 
     if (input.launchId) {
-      this.inFlightLaunches.set(input.launchId, creationPromise);
-      creationPromise.finally(() => {
-        this.inFlightLaunches.delete(input.launchId!);
-      });
+      const scopedKey = this.launchKey(input.workspaceId, input.launchId);
+      this.inFlightLaunches.set(scopedKey, creationPromise);
+      // Clean up without triggering an unhandled promise rejection if creationPromise rejects
+      creationPromise
+        .catch(() => undefined)
+        .finally(() => {
+          this.inFlightLaunches.delete(scopedKey);
+        });
     }
 
     return creationPromise;
@@ -337,18 +384,32 @@ export class BrowserTabAdapter {
         const verified = await this.driver.verifyTargetOwnership(tab.targetRef, expected).catch(() => false);
         if (verified) {
           // Reattach to existing live target without reloading or duplicating
-          await this.driver.activateTarget(tab.targetRef).catch(() => undefined);
-          tab.runtimeState = 'ready';
+          try {
+            await this.driver.activateTarget(tab.targetRef);
+            tab.runtimeState = 'ready';
+          } catch (err) {
+            tab.runtimeState = 'error';
+            await this.persist();
+            throw new BrowserTabStoreError(
+              'session-unavailable',
+              `Failed to activate browser target: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
         } else {
-          // Stale, dead, or foreign target ID: treat as unavailable and open fresh verified target
+          // Stale, dead, or foreign target ID: treat as untrusted reconciliation hint, open fresh target
           try {
             const res = await this.driver.openTarget(tab.url, expected);
             tab.targetRef = res.targetRef;
-            await this.driver.activateTarget(tab.targetRef).catch(() => undefined);
+            await this.driver.activateTarget(tab.targetRef);
             tab.runtimeState = 'ready';
-          } catch {
+          } catch (err) {
             tab.targetRef = null;
             tab.runtimeState = 'error';
+            await this.persist();
+            throw new BrowserTabStoreError(
+              'session-unavailable',
+              `Failed to attach or activate browser target: ${err instanceof Error ? err.message : String(err)}`,
+            );
           }
         }
       } else {
@@ -356,11 +417,16 @@ export class BrowserTabAdapter {
         try {
           const res = await this.driver.openTarget(tab.url, expected);
           tab.targetRef = res.targetRef;
-          await this.driver.activateTarget(tab.targetRef).catch(() => undefined);
+          await this.driver.activateTarget(tab.targetRef);
           tab.runtimeState = 'ready';
-        } catch {
+        } catch (err) {
           tab.targetRef = null;
           tab.runtimeState = 'error';
+          await this.persist();
+          throw new BrowserTabStoreError(
+            'session-unavailable',
+            `Failed to open or activate browser target: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
       }
 
@@ -506,8 +572,12 @@ export class BrowserTabAdapter {
                 url: candidate.url,
               }).catch(() => false);
               if (verified) {
-                await this.driver.activateTarget(candidate.targetRef).catch(() => undefined);
-                candidate.runtimeState = 'ready';
+                try {
+                  await this.driver.activateTarget(candidate.targetRef);
+                  candidate.runtimeState = 'ready';
+                } catch {
+                  candidate.runtimeState = 'error';
+                }
               }
             }
           }
