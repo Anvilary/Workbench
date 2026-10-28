@@ -58,3 +58,6 @@ No optimization supported by measurements yet.
 ## Cosmetic issues
 
 None established.
+
+### SEC-001 evidence extension, 2026-10-28
+Integrated synthetic wrapper/server/browser now renders A-only transcript under B wrapper's session. See 03 continuation 01. Earlier statements that integrated rendering is untested are historical and superseded by this result. Severity remains P1; actual private-account disclosure and real CLI resume remain unverified.
