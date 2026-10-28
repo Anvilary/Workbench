@@ -30,3 +30,22 @@ Restart=on-failure, 5-second delay, at most 3 starts per 120 seconds; `systemctl
 ## Rollback
 
 Warn about PTYs, then `systemctl --user disable --now maw.service`. Preserve the unit for inspection or remove only that unit and run `systemctl --user daemon-reload`. Leave lingering and unrelated services alone. Restore the previous application deployment through Git review; retain JSON backups and native provider history. Optional command removal affects only ~/.local/bin/maw and ~/.local/lib/maw/control.mjs. Never delete profile homes. Recovery fields are additive and old native references are retained; do not overwrite newer metadata with a backup without reviewing the intervening work.
+
+## Native context continuation (2026-10-28)
+
+The former AGY/Claude implementation blocker is resolved by version 2 host bindings and provider-specific native-state checks. Deployment and real authenticated acceptance remain manual. The original main checkout is unchanged and cannot read version 2; therefore no identity manifest was installed into the live configuration. All existing profiles, wrappers, accounts, credentials and sessions were preserved.
+
+Read RECOVERY.md for the per-profile matrix and the distinction between authentication reuse and historical ownership. The observed interactive and systemd contexts both verify against the prepared host manifest with the MAW PATH. No live CLI was launched to obtain this evidence. AGY named wrappers retain their existing private D-Bus/keyring helper behavior; MAW does not recreate that behavior or import secrets into the user manager.
+
+After deploying this branch, review HOST-CONTEXT-SPEC.example.json against the current wrappers and command paths. Generate a NEW private manifest with:
+
+```
+pnpm --filter @agent-workbench/server exec tsx scripts/build-native-attestation.mjs /absolute/reviewed-spec.json /absolute/new-identities.json
+pnpm --filter @agent-workbench/server exec tsx scripts/check-native-context.mjs /absolute/agency-profiles.json /absolute/new-identities.json
+```
+
+The builder reads only reviewed executable/helper artifacts, not credentials, and refuses to overwrite its output. The checker reads only profile/identity configuration and executable metadata; it never launches native CLIs or changes configuration. Check the same inputs under a transient systemd process with the service PATH before installation. A required variable's presence does not prove authentication or an unlocked keyring.
+
+Install the reviewed manifest as mode 0600 at the existing configuration's agency-native-identities.json only after deploying version 2 support. Preserve any prior manifest privately and do not replace an existing one without reviewing its bindings. Never point a pre-feature checkout at the version 2 file. Future binary/wrapper/helper upgrades fail closed until reviewed; do not automatically rehash changes and assume old sessions are safe to resume.
+
+Before rolling back to the original main version, move the version 2 manifest to a private backup and restore the prior version 1 manifest if one existed. This host originally had no identity manifest. Preserve all newer runtime/native references; do not use manifest rollback to erase session metadata. The live service remains disabled; no wrapper, native keyring helper or credential store was modified by this continuation.

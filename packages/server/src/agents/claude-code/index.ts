@@ -245,7 +245,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
       escribe nada. Una sesion nueva no lo abre nunca.
     */
     onSpawned(context: SpawnedContext): LaunchHook | null {
-      if (!context.resumed) return null;
+      if (!context.resumed || context.nativeIdentity !== undefined) return null;
       const cancel = autoAnswerResumeDialog({
         watcher,
         sessionId: context.sessionId,

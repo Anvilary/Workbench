@@ -196,7 +196,7 @@ export class AgencySessionRuntime extends EventEmitter {
       const session: AgencyRuntimeSession = needsRecovery ? {
         ...previous,
         lifecycle: 'exited',
-        ...(previous.kind === 'agent' && previous.lifecycle !== 'stopping' ? { recovery: { status: 'pending' as const, message: null } } : {}),
+        ...(previous.kind === 'agent' && previous.lifecycle !== 'stopping' && !previous.stoppedByUser ? { recovery: { status: 'pending' as const, message: null } } : {}),
         activity: 'offline',
         // A backend restart loses the owned PTY. No exit code can be inferred.
         exitCode: null,
@@ -214,17 +214,17 @@ export class AgencySessionRuntime extends EventEmitter {
   }
 
   /** Startup only. Single-flight and sequential: never invoked by browser reconnect. */
-  recoverActive(projectActive: (workspace: AgencyWorkspace) => boolean): Promise<void> {
+  recoverActive(projectActive: (workspace: AgencyWorkspace) => boolean, capacity: (provider: CliProvider) => Promise<boolean> = async () => true): Promise<void> {
     this.assertReady();
     if (this.recoveryFlight) return this.recoveryFlight;
-    this.recoveryFlight = this.runRecovery(projectActive);
+    this.recoveryFlight = this.runRecovery(projectActive, capacity);
     return this.recoveryFlight;
   }
 
-  private async runRecovery(projectActive: (workspace: AgencyWorkspace) => boolean): Promise<void> {
+  private async runRecovery(projectActive: (workspace: AgencyWorkspace) => boolean, capacity: (provider: CliProvider) => Promise<boolean>): Promise<void> {
     for (const previous of [...this.sessions.values()]) {
       if (this.disposed) return;
-      if (previous.kind !== 'agent' || previous.recovery?.status !== 'pending') continue;
+      if (previous.kind !== 'agent' || previous.recovery?.status !== 'pending' || previous.stoppedByUser) continue;
       const recordOutcome = async (status: 'resuming' | 'resumed' | 'manual' | 'failed' | 'superseded', message: string | null) => {
         const next = { ...previous, recovery: { status, message }, updatedAt: NOW() };
         this.sessions.set(previous.id, next);
@@ -236,7 +236,8 @@ export class AgencySessionRuntime extends EventEmitter {
           await this.assertSafeDirectory(workspace.cwd);
         });
         if (!previous.nativeIdentity || !previous.nativeSessionId) throw new Error('Manual resume required: native identity or conversation is unverified');
-        if (previous.nativeIdentity.provider !== 'codex') throw new Error('Manual resume required: provider ownership validation unavailable');
+        if (previous.nativeIdentity.provider !== 'codex' && !previous.nativeIdentity.bindingId) throw new Error('Manual resume required: historical execution context is unattested');
+        if (!await capacity(previous.nativeIdentity.provider)) throw new Error('Manual resume required: native recovery capacity is unavailable');
         await recordOutcome('resuming', null);
         const resumed = await this.create({ kind: 'agent', workspaceId: previous.workspaceId,
           profileId: previous.profileId, resumeNativeSessionId: previous.nativeSessionId, cols: 100, rows: 30 });
@@ -383,7 +384,7 @@ export class AgencySessionRuntime extends EventEmitter {
         if (input.resumeNativeSessionId !== undefined) {
           if (identity === null || this.list().some((s) => s.id !== id && s.kind === 'agent' &&
               s.nativeSessionId === input.resumeNativeSessionId &&
-              (s.nativeIdentity?.provider !== identity.provider || s.nativeIdentity?.home !== identity.home))) {
+              (s.nativeIdentity?.provider !== identity.provider || s.nativeIdentity?.home !== identity.home || s.nativeIdentity?.bindingId !== identity.bindingId))) {
             throw new AgencyRuntimeError('session-unavailable', 'Native resume ownership is unverified or belongs to another home');
           }
         }
@@ -391,7 +392,7 @@ export class AgencySessionRuntime extends EventEmitter {
         if (reserved.kind === 'agent') {
           this.sessions.set(id, { ...reserved, nativeIdentity: identity,
             nativeSessionId: native.session.kind === 'known' ? native.session.sessionId : null,
-            historyAvailability: native.provider === 'codex' && identity === null ? 'unavailable' : 'available' });
+            historyAvailability: identity === null ? 'unavailable' : 'available' });
         }
         const initialNative = native.session.kind === 'known' ? native.session.sessionId : null;
         const provider = native.provider;

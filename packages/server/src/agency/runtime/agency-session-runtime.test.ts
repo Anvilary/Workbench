@@ -932,3 +932,27 @@ test('failed and interrupted recovery retains original reference without automat
     } finally { f.runtime.dispose(); await rm(cwd,{recursive:true,force:true}); }
   }
 });
+
+test('attested AGY and Claude startup recovery is single-flight and retains exact native profile and binding', async () => {
+  for (const provider of ['antigravity','claude-code'] as const) {
+    const cwd=await mkdtemp(path.join(tmpdir(),'maw-provider-recover-'));
+    const store=new MemoryStore();const id=randomUUID();const bindingId='a'.repeat(64);
+    const profileId=(provider==='antigravity' ? 'agy03' : 'claude-code') as CliProfileId;
+    const seen: string[]=[];
+    const f=fixture(cwd,{store,resolveLaunch:async input=>{
+      seen.push(input.profileId);assert.equal(input.resumeNativeSessionId,id);
+      return {...input,provider,file:'/bin/echo',args:[provider==='antigravity' ? '--conversation' : '--resume',id],env:{},
+        nativeIdentity:{provider,home:cwd,bindingId},session:{kind:'known',sessionId:id}};
+    }});
+    const now=new Date().toISOString();
+    store.data=[{id:randomUUID() as AgencyRuntimeSession['id'],workspaceId:f.one.id,kind:'agent',profileId,nativeSessionId:id,
+      nativeIdentity:{provider,home:cwd,bindingId},terminalId:randomUUID(),lifecycle:'running',activity:'unknown',createdAt:now,updatedAt:now,
+      startedAt:now,stoppedAt:null,exitCode:null,selectedModel:null,selectedEffort:null}];
+    try {
+      await f.runtime.initialize();await Promise.all([f.runtime.recoverActive(()=>true),f.runtime.recoverActive(()=>true)]);
+      assert.deepEqual(seen,[profileId]);assert.equal(f.terminals.opens.length,1);
+      const resumed=f.runtime.list().find(row=>row.recovery?.status==='resumed');
+      assert.equal(resumed?.nativeSessionId,id);assert.equal(resumed?.nativeIdentity?.bindingId,bindingId);
+    } finally {f.runtime.dispose();await rm(cwd,{recursive:true,force:true});}
+  }
+});

@@ -10,6 +10,7 @@
  * sesion cuyo archivo no trae `cwd`.
  */
 
+import { unavailableFollower } from '../unavailable-follower.js';
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { asStringArray } from '@agent-workbench/shared';
@@ -153,8 +154,9 @@ export function createClaudeCodeHistory(variants: ModelVariantRegistry): History
       return pathExists(sessionFilePath(cwd, sessionId));
     },
 
-    follow(target: { cwd: string; sessionId: string }, options?: FollowOptions): SessionFollower {
-      return new ClaudeCodeSessionFollower(target.cwd, target.sessionId, variants, options);
+    follow(target: { cwd: string; sessionId: string; nativeHome?: string | null }, options?: FollowOptions): SessionFollower {
+      if (target.nativeHome === null) return unavailableFollower();
+      return new ClaudeCodeSessionFollower(target.cwd, target.sessionId, variants, options, target.nativeHome);
     },
 
     // `follow` respeta `FollowOptions`: la copia propia puede leer de aca (hito 28).
@@ -162,7 +164,7 @@ export function createClaudeCodeHistory(variants: ModelVariantRegistry): History
 
     plans: { describe: describePlans, read: readPlan },
 
-    // La CLI abre y cierra el archivo en cada linea: el watcher alcanza.
+    // Legacy Workbench uses its watcher; Agency scoped homes are polled by the hub.
     followPollMs: null,
   };
 }

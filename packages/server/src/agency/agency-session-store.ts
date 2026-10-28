@@ -39,6 +39,7 @@ function validSession(value: unknown): value is AgencyRuntimeSession {
   }
   if (value.nativeIdentity != null && (!record(value.nativeIdentity) ||
       !['codex', 'claude-code', 'antigravity'].includes(value.nativeIdentity.provider as string) ||
+      (value.nativeIdentity.bindingId !== undefined && (typeof value.nativeIdentity.bindingId !== 'string' || !/^[a-f0-9]{64}$/.test(value.nativeIdentity.bindingId))) ||
       typeof value.nativeIdentity.home !== 'string' || !path.isAbsolute(value.nativeIdentity.home))) return false;
   if (value.historyAvailability !== undefined &&
       value.historyAvailability !== 'available' && value.historyAvailability !== 'unavailable') return false;
