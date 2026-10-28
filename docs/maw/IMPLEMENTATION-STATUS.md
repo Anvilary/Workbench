@@ -85,3 +85,21 @@ Raw ephemeral logs are /tmp/maw-delivery-{checks,native-integration,distribution
 Draft PR: https://github.com/user/My-Amazing-Workspace/pull/8 (targets main; not merged).
 Implementation commit: d2c51e8df089668e087803d41debe3245c51e450. Subsequent documentation-only delivery checkpoint records this link.
 Final safety inventory: original main clean at af7df497ede5495aaad8696cd5cdac3a05a82355; feature worktree clean after checkpoint; no maw.service installed/enabled; no isolated maw test units remain. Feature branch pushed without force.
+
+## Native authentication-context and all-provider recovery continuation
+
+Starting HEAD: 15c0d9497e0ecff4d600252488c57d5cc1e19c99, clean feature worktree and matching fetched origin branch. PR #8 remains draft against main.
+
+IMPLEMENTED AND VERIFIED (supersedes the earlier AGY/Claude implementation blocker):
+- Version 2 host bindings for all ten exact wrapper paths, with non-secret execution context, immutable profile/argv/override binding, wrapper/helper/native artifact fingerprints and launch dependency resolution. Existing Codex version 1 remains supported. No generic codex/agy executable substitutes a selected named wrapper.
+- Provider-specific owned native-state validation for Codex, AGY and Claude using stat/access/realpath only; no credentials or history bodies read. Canonical root, same-user file ownership, nonempty native state and symlink escape checks fail closed.
+- Durable bindingId comparisons prevent changed profile/context or cross-home historical reassignment. Unknown legacy AGY/Claude session provenance stays manual-only; authentication alone never proves ownership.
+- AGY/Claude automatic native resume is now supported by the startup controller, retaining original profile and native ID. Sequential recovery and atomic slots/claims remain. Same-user AGY process inventory gates recovery at four observed processes, failing closed on unavailable inventory; it cannot atomically coordinate unrelated launchers.
+- AGY/Claude history followers are scoped to the native root, reject foreign watcher redirects and symlink escapes, and expose no global history for unverified managed identity. Global status and Claude global resume-dialog automation cannot misattribute another account to these managed sessions. Native PTYs remain interactive.
+- Prepared explicit reviewed host-context spec/manifest examples and read-only generation/check tools. Ten actual host profiles verified in the interactive process and a transient systemd process using the MAW PATH, without launching a real provider.
+
+Authentication investigation: same UID/HOME/USER/SHELL in both contexts; default systemd PATH differs but the existing MAW unit fixes exact wrapper/NVM resolution. codex-0=.codex, codex-1=.codex-ar, codex-3=.codex-3; AGY01–05 retain their existing isolated HOME/XDG and private D-Bus/keyring helpers; AGY00 preserves its selected symlink and real user session bus; claude-code retains executable claude and the existing .claude namespace. No auth files, credentials, tokens, login/logout or real provider prompts used.
+
+IMPLEMENTED — MANUAL ACTIVATION REQUIRED: Deploy the feature before installing a version 2 identity manifest; old main would reject it. Prepared examples are not installed into live config. The service remains uninstalled/disabled and no native process was stopped. Real provider authentication/keyring availability, each original conversation resume and reboot are controlled user acceptance, not automated success claims. See the ten-profile matrix in RECOVERY.md.
+
+LIMITATION: Existing unverified history is not retroactively attributed to accounts. Cross-tool AGY starts can race the conservative process inventory; there is no trusted shared laptop-wide semaphore. Current external AGY process count may defer recovery. None were terminated.

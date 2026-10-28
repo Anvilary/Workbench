@@ -38,6 +38,7 @@ import {
 } from '@agent-workbench/shared';
 import type { EventPage, LoadedImage, PollResult, SessionFollower } from '../adapter.js';
 import { JsonlFollower } from '../jsonl-follower.js';
+import { withinNativeScope } from '../native-scope.js';
 import { conversationFiles, transcriptPaths, type TranscriptPaths } from './paths.js';
 import { TranscriptMapper } from './transcript-mapper.js';
 import type { EventLimits } from '../transport-limits.js';
@@ -72,6 +73,7 @@ export interface FollowerStatusLine {
 }
 
 export interface AntigravityFollowerDeps {
+  nativeHome?: string;
   statusLine?: FollowerStatusLine | null;
   platform?: string;
   /** Hito 28, `FollowOptions`: los topes de cada parte. Ausente: `TRANSPORT_LIMITS`. */
@@ -102,6 +104,7 @@ async function exists(file: string): Promise<boolean> {
 
 export class AntigravitySessionFollower implements SessionFollower {
   /** null con un id que no es un uuid (`''` incluido): no hay nada que seguir. */
+  private readonly nativeHome?: string;
   private readonly paths: TranscriptPaths | null;
   private readonly statusLine: FollowerStatusLine | null;
   private readonly platform: string;
@@ -118,7 +121,8 @@ export class AntigravitySessionFollower implements SessionFollower {
     private readonly sessionId: string,
     deps: AntigravityFollowerDeps = {},
   ) {
-    this.paths = transcriptPaths(sessionId);
+    this.nativeHome = deps.nativeHome;
+    this.paths = transcriptPaths(sessionId, deps.nativeHome);
     this.statusLine = deps.statusLine ?? null;
     this.platform = deps.platform ?? process.platform;
     this.limits = deps.limits;
@@ -139,6 +143,7 @@ export class AntigravitySessionFollower implements SessionFollower {
   async poll(): Promise<PollResult> {
     const empty: PollResult = { reset: false, added: [], turns: [], plans: [], parts: [] };
     if (this.paths === null) return empty;
+    if (this.nativeHome !== undefined && (!await withinNativeScope(this.nativeHome, this.paths.full) || !await withinNativeScope(this.nativeHome, this.paths.compact))) return empty;
 
     await this.statusLine?.refresh(this.sessionId);
 
@@ -160,7 +165,7 @@ export class AntigravitySessionFollower implements SessionFollower {
     }
 
     const hasData = this.jsonl !== null && this.jsonl.bytesRead > 0;
-    const files = conversationFiles(this.sessionId);
+    const files = conversationFiles(this.sessionId, this.nativeHome);
     this.legacyHistory = !hasData && files !== null && (await hasBytes(files.pb));
 
     /*

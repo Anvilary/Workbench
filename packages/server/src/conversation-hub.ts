@@ -569,7 +569,7 @@ export class ConversationHub extends EventEmitter {
     sessionId: SessionId,
     adapter: AgentAdapter,
   ): Entry {
-    const nativeIdentity = agent === 'codex' ? this.registry.nativeIdentityOf(terminalId) : undefined;
+    const nativeIdentity = this.registry.nativeIdentityOf(terminalId);
     return {
       sessionId,
       cwd,
@@ -607,7 +607,8 @@ export class ConversationHub extends EventEmitter {
    * Con Claude Code no corre: su `followPollMs` es null.
    */
   private startFollowTicker(terminalId: TerminalId, entry: Entry): void {
-    const everyMs = entry.adapter.history.followPollMs ?? null;
+    const scopedClaude = entry.agent === 'claude-code' && this.registry.nativeIdentityOf(terminalId) !== undefined;
+    const everyMs = scopedClaude ? 1000 : entry.adapter.history.followPollMs ?? null;
     if (everyMs === null || entry.followTicker !== null) return;
     entry.followTicker = setInterval(() => {
       if (this.entries.get(terminalId) !== entry) return;

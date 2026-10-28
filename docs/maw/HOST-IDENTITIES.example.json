@@ -1,0 +1,435 @@
+{
+  "version": 2,
+  "identities": [
+    {
+      "profileId": "codex-0",
+      "provider": "codex",
+      "executable": "/home/user/.local/bin/codex-0",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/user/.codex",
+      "launchContext": {
+        "HOME": "/home/user",
+        "USER": "user",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {
+        "codex": "/home/user/.nvm/versions/node/v24.22.0/bin/codex",
+        "node": "/home/user/.nvm/versions/node/v24.22.0/bin/node",
+        "bash": "/usr/bin/bash"
+      },
+      "artifacts": [
+        {
+          "path": "/home/user/.local/bin/codex-0",
+          "sha256": "47baf371523e6eb31b8655f673e9feaad564575ee99a75854b3cf981876b32ce"
+        },
+        {
+          "path": "/home/user/.nvm/versions/node/v24.22.0/bin/codex",
+          "sha256": "61b0194f3bb6534439c8d26a3ed57d0805f84b884588b761795323eeb92fcf70"
+        },
+        {
+          "path": "/home/user/.nvm/versions/node/v24.22.0/bin/node",
+          "sha256": "67ca5783febb8bf85736c79fcdd92c8d6d465a0eb2a082672bcdfa76a506751c"
+        },
+        {
+          "path": "/usr/bin/bash",
+          "sha256": "3efccc187bafa75ff1e37d246270ab3e7aa559f242c7a52bf3ec2a1b5450bdbd"
+        }
+      ],
+      "requiredEnvironment": []
+    },
+    {
+      "profileId": "codex-1",
+      "provider": "codex",
+      "executable": "/home/user/.local/bin/codex-1",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/user/.codex-ar",
+      "launchContext": {
+        "HOME": "/home/user",
+        "USER": "user",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {
+        "codex": "/home/user/.nvm/versions/node/v24.22.0/bin/codex",
+        "node": "/home/user/.nvm/versions/node/v24.22.0/bin/node",
+        "bash": "/usr/bin/bash"
+      },
+      "artifacts": [
+        {
+          "path": "/home/user/.local/bin/codex-1",
+          "sha256": "477fad46ccd9f99fa6c516e01ee0a9805f122f0f7f87cc119b1233ddbd175ccd"
+        },
+        {
+          "path": "/home/user/.nvm/versions/node/v24.22.0/bin/codex",
+          "sha256": "61b0194f3bb6534439c8d26a3ed57d0805f84b884588b761795323eeb92fcf70"
+        },
+        {
+          "path": "/home/user/.nvm/versions/node/v24.22.0/bin/node",
+          "sha256": "67ca5783febb8bf85736c79fcdd92c8d6d465a0eb2a082672bcdfa76a506751c"
+        },
+        {
+          "path": "/usr/bin/bash",
+          "sha256": "3efccc187bafa75ff1e37d246270ab3e7aa559f242c7a52bf3ec2a1b5450bdbd"
+        }
+      ],
+      "requiredEnvironment": []
+    },
+    {
+      "profileId": "codex-3",
+      "provider": "codex",
+      "executable": "/home/user/.local/bin/codex-3",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/user/.codex-3",
+      "launchContext": {
+        "HOME": "/home/user",
+        "USER": "user",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {
+        "codex": "/home/user/.nvm/versions/node/v24.22.0/bin/codex",
+        "node": "/home/user/.nvm/versions/node/v24.22.0/bin/node",
+        "bash": "/usr/bin/bash"
+      },
+      "artifacts": [
+        {
+          "path": "/home/user/.local/bin/codex-3",
+          "sha256": "5f57203547723e1bf610b2a2da51337284fcf8fe46de7588a61daeb664754802"
+        },
+        {
+          "path": "/home/user/.nvm/versions/node/v24.22.0/bin/codex",
+          "sha256": "61b0194f3bb6534439c8d26a3ed57d0805f84b884588b761795323eeb92fcf70"
+        },
+        {
+          "path": "/home/user/.nvm/versions/node/v24.22.0/bin/node",
+          "sha256": "67ca5783febb8bf85736c79fcdd92c8d6d465a0eb2a082672bcdfa76a506751c"
+        },
+        {
+          "path": "/usr/bin/bash",
+          "sha256": "3efccc187bafa75ff1e37d246270ab3e7aa559f242c7a52bf3ec2a1b5450bdbd"
+        }
+      ],
+      "requiredEnvironment": []
+    },
+    {
+      "profileId": "agy-0",
+      "provider": "antigravity",
+      "executable": "/home/user/.local/bin/agy-0",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/user/.gemini/antigravity-cli",
+      "launchContext": {
+        "HOME": "/home/user",
+        "USER": "user",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {},
+      "artifacts": [
+        {
+          "path": "/home/user/.local/bin/agy-0",
+          "sha256": "1c9102d0a36194d57f6b4a66249217ece0bf563e108bcdd1046b81c5b6d6004c"
+        }
+      ],
+      "requiredEnvironment": [
+        "DBUS_SESSION_BUS_ADDRESS"
+      ]
+    },
+    {
+      "profileId": "agy-1",
+      "provider": "antigravity",
+      "executable": "/home/user/.local/bin/agy-1",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/user/.local/share/agy-1-profile/home/.gemini/antigravity-cli",
+      "launchContext": {
+        "HOME": "/home/user",
+        "USER": "user",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {
+        "bash": "/usr/bin/bash",
+        "dbus-daemon": "/usr/bin/dbus-daemon",
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon"
+      },
+      "artifacts": [
+        {
+          "path": "/home/user/.local/bin/agy-1",
+          "sha256": "21615040314e8ccbadf1e32c796193a27a7881d149c00d4993621b830bc3b348"
+        },
+        {
+          "path": "/home/user/.local/bin/agy-1-profile-start",
+          "sha256": "512412634d3a30204043dd655c0e2088284db2537fb52b444c1773ebe61d52a8"
+        },
+        {
+          "path": "/home/user/.local/bin/agy",
+          "sha256": "1c9102d0a36194d57f6b4a66249217ece0bf563e108bcdd1046b81c5b6d6004c"
+        },
+        {
+          "path": "/usr/bin/bash",
+          "sha256": "3efccc187bafa75ff1e37d246270ab3e7aa559f242c7a52bf3ec2a1b5450bdbd"
+        },
+        {
+          "path": "/usr/bin/dbus-daemon",
+          "sha256": "bd0a019f1c4ed911eeb974f6e396d1eae9777ebac19a773361c1291a90addc5c"
+        },
+        {
+          "path": "/usr/bin/gnome-keyring-daemon",
+          "sha256": "7a1845384af79d64e35d30a624c6348fea0c966a83ef0db1ae5e89ffe94bded5"
+        }
+      ],
+      "requiredEnvironment": []
+    },
+    {
+      "profileId": "agy-2",
+      "provider": "antigravity",
+      "executable": "/home/user/.local/bin/agy-2",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/user/.local/share/agy-2-profile/home/.gemini/antigravity-cli",
+      "launchContext": {
+        "HOME": "/home/user",
+        "USER": "user",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {
+        "bash": "/usr/bin/bash",
+        "dbus-daemon": "/usr/bin/dbus-daemon",
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon"
+      },
+      "artifacts": [
+        {
+          "path": "/home/user/.local/bin/agy-2",
+          "sha256": "9d3245a563a0ee0c147e5503a565076aef000f30c4b1f59535d426d2f5c9a5c0"
+        },
+        {
+          "path": "/home/user/.local/bin/agy-2-profile-start",
+          "sha256": "19be71d9a20a7ec36beed687408caff7eb62874da229fbaa6633484bd7be63aa"
+        },
+        {
+          "path": "/home/user/.local/bin/agy",
+          "sha256": "1c9102d0a36194d57f6b4a66249217ece0bf563e108bcdd1046b81c5b6d6004c"
+        },
+        {
+          "path": "/usr/bin/bash",
+          "sha256": "3efccc187bafa75ff1e37d246270ab3e7aa559f242c7a52bf3ec2a1b5450bdbd"
+        },
+        {
+          "path": "/usr/bin/dbus-daemon",
+          "sha256": "bd0a019f1c4ed911eeb974f6e396d1eae9777ebac19a773361c1291a90addc5c"
+        },
+        {
+          "path": "/usr/bin/gnome-keyring-daemon",
+          "sha256": "7a1845384af79d64e35d30a624c6348fea0c966a83ef0db1ae5e89ffe94bded5"
+        }
+      ],
+      "requiredEnvironment": []
+    },
+    {
+      "profileId": "agy-3",
+      "provider": "antigravity",
+      "executable": "/home/user/.local/bin/agy-3",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/user/.local/share/agy-3-profile/home/.gemini/antigravity-cli",
+      "launchContext": {
+        "HOME": "/home/user",
+        "USER": "user",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {
+        "bash": "/usr/bin/bash",
+        "dbus-daemon": "/usr/bin/dbus-daemon",
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon"
+      },
+      "artifacts": [
+        {
+          "path": "/home/user/.local/bin/agy-3",
+          "sha256": "f4063c77f98b7ee6dfa872a4c5d0134bb1911c780dd2b43a0443514e2255c01e"
+        },
+        {
+          "path": "/home/user/.local/bin/agy-3-profile-start",
+          "sha256": "1ea29d7a70aff71ab7636a44631ed38d76220a93837686534fe20843b4295f65"
+        },
+        {
+          "path": "/home/user/.local/bin/agy",
+          "sha256": "1c9102d0a36194d57f6b4a66249217ece0bf563e108bcdd1046b81c5b6d6004c"
+        },
+        {
+          "path": "/usr/bin/bash",
+          "sha256": "3efccc187bafa75ff1e37d246270ab3e7aa559f242c7a52bf3ec2a1b5450bdbd"
+        },
+        {
+          "path": "/usr/bin/dbus-daemon",
+          "sha256": "bd0a019f1c4ed911eeb974f6e396d1eae9777ebac19a773361c1291a90addc5c"
+        },
+        {
+          "path": "/usr/bin/gnome-keyring-daemon",
+          "sha256": "7a1845384af79d64e35d30a624c6348fea0c966a83ef0db1ae5e89ffe94bded5"
+        }
+      ],
+      "requiredEnvironment": []
+    },
+    {
+      "profileId": "agy-4",
+      "provider": "antigravity",
+      "executable": "/home/user/.local/bin/agy-4",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/user/.local/share/agy-4-profile/home/.gemini/antigravity-cli",
+      "launchContext": {
+        "HOME": "/home/user",
+        "USER": "user",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {
+        "bash": "/usr/bin/bash",
+        "dbus-daemon": "/usr/bin/dbus-daemon",
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon"
+      },
+      "artifacts": [
+        {
+          "path": "/home/user/.local/bin/agy-4",
+          "sha256": "ff63bd512f169a1fa245cd89ec25fc471d653d6f87fd82a6041e149e486f684f"
+        },
+        {
+          "path": "/home/user/.local/bin/agy-4-profile-start",
+          "sha256": "a1b59013adf86cce9685a46124786f181e58c256caac230692f75c51dc04aff0"
+        },
+        {
+          "path": "/home/user/.local/bin/agy",
+          "sha256": "1c9102d0a36194d57f6b4a66249217ece0bf563e108bcdd1046b81c5b6d6004c"
+        },
+        {
+          "path": "/usr/bin/bash",
+          "sha256": "3efccc187bafa75ff1e37d246270ab3e7aa559f242c7a52bf3ec2a1b5450bdbd"
+        },
+        {
+          "path": "/usr/bin/dbus-daemon",
+          "sha256": "bd0a019f1c4ed911eeb974f6e396d1eae9777ebac19a773361c1291a90addc5c"
+        },
+        {
+          "path": "/usr/bin/gnome-keyring-daemon",
+          "sha256": "7a1845384af79d64e35d30a624c6348fea0c966a83ef0db1ae5e89ffe94bded5"
+        }
+      ],
+      "requiredEnvironment": []
+    },
+    {
+      "profileId": "agy-5",
+      "provider": "antigravity",
+      "executable": "/home/user/.local/bin/agy-5",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/user/.local/share/agy-5-profile/home/.gemini/antigravity-cli",
+      "launchContext": {
+        "HOME": "/home/user",
+        "USER": "user",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {
+        "bash": "/usr/bin/bash",
+        "dbus-daemon": "/usr/bin/dbus-daemon",
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon"
+      },
+      "artifacts": [
+        {
+          "path": "/home/user/.local/bin/agy-5",
+          "sha256": "b1cfb3b34a977033f7e439404ff06071336916df3d46229ffae7a3fd22b13c6d"
+        },
+        {
+          "path": "/home/user/.local/bin/agy-5-profile-start",
+          "sha256": "e60ea68971cdecfcda87eda1e336227d1b2c40952aa2511e0862ad870e26b410"
+        },
+        {
+          "path": "/home/user/.local/bin/agy",
+          "sha256": "1c9102d0a36194d57f6b4a66249217ece0bf563e108bcdd1046b81c5b6d6004c"
+        },
+        {
+          "path": "/usr/bin/bash",
+          "sha256": "3efccc187bafa75ff1e37d246270ab3e7aa559f242c7a52bf3ec2a1b5450bdbd"
+        },
+        {
+          "path": "/usr/bin/dbus-daemon",
+          "sha256": "bd0a019f1c4ed911eeb974f6e396d1eae9777ebac19a773361c1291a90addc5c"
+        },
+        {
+          "path": "/usr/bin/gnome-keyring-daemon",
+          "sha256": "7a1845384af79d64e35d30a624c6348fea0c966a83ef0db1ae5e89ffe94bded5"
+        }
+      ],
+      "requiredEnvironment": []
+    },
+    {
+      "profileId": "claude-code",
+      "provider": "claude-code",
+      "executable": "/home/user/.local/bin/claude",
+      "args": [],
+      "environmentOverrides": {},
+      "home": "/home/user/.claude",
+      "launchContext": {
+        "HOME": "/home/user",
+        "USER": "user",
+        "SHELL": "/usr/bin/zsh",
+        "XDG_CONFIG_HOME": null,
+        "XDG_DATA_HOME": null,
+        "XDG_STATE_HOME": null,
+        "XDG_CACHE_HOME": null,
+        "CLAUDE_CONFIG_DIR": null
+      },
+      "commands": {},
+      "artifacts": [
+        {
+          "path": "/home/user/.local/bin/claude",
+          "sha256": "86dc1fcc69498159eaf15f446613e847010f9036bfbbdffd4c49350be8489ada"
+        }
+      ],
+      "requiredEnvironment": []
+    }
+  ]
+}

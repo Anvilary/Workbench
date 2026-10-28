@@ -7,6 +7,7 @@
  * de sacar.
  */
 
+import { nativeRecoveryCapacity } from './agency/recovery-capacity.js';
 import { acquireStoreOwnership, publishReadiness } from './maw-host.js';
 import { existsSync } from 'node:fs';
 import { createServer, type Server as HttpServer } from 'node:http';
@@ -592,7 +593,7 @@ async function main(): Promise<void> {
   }
 
   const url = `http://${LOOPBACK_HOST}:${port}/?${TOKEN_QUERY_PARAM}=${token}`;
-  void agencyRuntime.recoverActive(workspace => agencyWorkspaceStore.listProjects().some(project => project.id === workspace.projectId && project.status !== 'archived')).catch(error => console.error('[maw] recovery stopped:', String(error)));
+  void agencyRuntime.recoverActive(workspace => agencyWorkspaceStore.listProjects().some(project => project.id === workspace.projectId && project.status !== 'archived'), nativeRecoveryCapacity).catch(error => console.error('[maw] recovery stopped:', String(error)));
   const remoteStatus = remote.status();
   describeStartup(
     process.env['MAW_RUNTIME_DIR'] ? `http://${LOOPBACK_HOST}:${port}/ (use maw open)` : url,

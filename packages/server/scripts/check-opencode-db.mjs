@@ -1215,7 +1215,7 @@ const followerOf = (db, sessionId, extra = {}) => new OpenCodeSessionFollower({ 
     terminalId: 't-oc', kind: 'agent', cwd: 'D:\\Otro', agent: 'opencode', sessionId: 'ses_hub', label: 't-oc', resumed: false,
     createdAt: 0, alive: true, exitCode: null, sleeping: false,
   };
-  const hub = new ConversationHub({ get: (id) => (id === 't-oc' ? descriptor : null), on: () => undefined, launchedAtOf: () => null }, registry);
+  const hub = new ConversationHub({ nativeIdentityOf: () => undefined, get: (id) => (id === 't-oc' ? descriptor : null), on: () => undefined, launchedAtOf: () => null }, registry);
   const appends = [];
   hub.on('append', (...args) => appends.push(args));
   const snapshot = await hub.subscribe('t-oc');

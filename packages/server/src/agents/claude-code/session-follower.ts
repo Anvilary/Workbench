@@ -17,6 +17,7 @@
  */
 
 import path from 'node:path';
+import { withinNativeScope } from '../native-scope.js';
 import {
   normalizeCwdKey,
   type ContextUsage,
@@ -31,7 +32,7 @@ import { readAgentDefaults } from './agent-defaults.js';
 import { ConversationFollower } from './conversation-follower.js';
 import { loadConversationImage } from './conversation-image.js';
 import type { ModelVariantRegistry } from './model-variants.js';
-import { sessionFilePath } from './paths.js';
+import { projectSlugFor, sessionFilePath } from './paths.js';
 
 /**
  * true si dos rutas nombran el mismo archivo, sin tocar el disco.
@@ -58,8 +59,9 @@ export class ClaudeCodeSessionFollower implements SessionFollower {
     private readonly sessionId: string,
     variants: ModelVariantRegistry,
     private readonly options: FollowOptions = {},
+    private readonly nativeHome?: string,
   ) {
-    this.inner = new ConversationFollower(sessionFilePath(cwd, sessionId), variants, {
+    this.inner = new ConversationFollower(nativeHome === undefined ? sessionFilePath(cwd, sessionId) : path.join(nativeHome, 'projects', projectSlugFor(cwd), sessionId + '.jsonl'), variants, {
       ...options,
       // Las raices de los documentos que la conversacion nombre (hito 31).
       target: { cwd, sessionId },
@@ -75,6 +77,7 @@ export class ClaudeCodeSessionFollower implements SessionFollower {
   }
 
   async poll(): Promise<PollResult> {
+    if (this.nativeHome !== undefined && !await withinNativeScope(this.nativeHome, this.inner.filePath)) return { reset: false, added: [], turns: [], plans: [], parts: [] };
     // Si lanza, lanza: el hub lo loguea con `label`.
     const result = await this.inner.poll();
     // Un `/model` en el archivo significa que la configuracion pudo cambiar.
@@ -95,7 +98,7 @@ export class ClaudeCodeSessionFollower implements SessionFollower {
    * usuario la cambia, no cada 300 ms.
    */
   private async applyDefaults(): Promise<void> {
-    if (this.cwd.length === 0) return;
+    if (this.cwd.length === 0 || this.nativeHome !== undefined) return;
     try {
       const defaults = await readAgentDefaults(this.cwd);
       this.inner.setConfiguredAlias(defaults.model);
@@ -106,6 +109,7 @@ export class ClaudeCodeSessionFollower implements SessionFollower {
 
   noticeChange(filePath: string): boolean {
     if (isSameFilePath(this.inner.filePath, filePath, process.platform)) return true;
+    if (this.nativeHome !== undefined) return false;
 
     if (
       this.inner.getState() === 'waiting' &&

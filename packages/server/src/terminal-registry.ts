@@ -883,6 +883,11 @@ export class TerminalRegistry extends EventEmitter {
 
     const { terminalId, kind, agent, sessionId } = entry.descriptor;
     if (kind !== 'agent' || agent === null) return;
+    // Global provider status is not evidence for a named Agency account.
+    if (entry.agencyManaged && (agent === 'antigravity' || agent === 'claude-code')) {
+      if (entry.session !== null) this.setActivity(terminalId, 'unknown');
+      return;
+    }
 
     /*
       Una CLI que no publica su estado no tiene nada que seguir: se dice una
