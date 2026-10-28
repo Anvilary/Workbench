@@ -11,7 +11,16 @@ import urllib.parse
 import urllib.request
 
 DEFAULT_CONTROLLER_URL = os.environ.get("NEKO_CONTROLLER_URL", "http://127.0.0.1:9223")
-AUTH_TOKEN = os.environ.get("NEKO_CONTROLLER_TOKEN", "").strip()
+AUTH_TOKEN = os.environ.get("CONTROLLER_AUTH_TOKEN", os.environ.get("NEKO_CONTROLLER_TOKEN", "")).strip()
+
+if not AUTH_TOKEN:
+    _env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    if os.path.exists(_env_path):
+        with open(_env_path) as _f:
+            for _line in _f:
+                if _line.startswith("CONTROLLER_AUTH_TOKEN="):
+                    AUTH_TOKEN = _line.split("=", 1)[1].strip()
+                    break
 
 
 class TabClient:

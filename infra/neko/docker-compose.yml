@@ -5,6 +5,9 @@ services:
     hostname: maw-neko
     restart: unless-stopped
     shm_size: "2gb"
+    cap_add:
+      # Enables Chromium multi-process user namespace sandboxing without privileged mode
+      - SYS_ADMIN
     entrypoint: ["/entrypoint-maw.sh"]
     command: ["/usr/bin/supervisord", "-c", "/etc/neko/supervisord.conf"]
     ports:
@@ -21,9 +24,11 @@ services:
       NEKO_WEBRTC_EPR: "52000-52010"
       NEKO_WEBRTC_ICELITE: "true"
       NEKO_MEMBER_PROVIDER: "multiuser"
-      NEKO_MEMBER_MULTIUSER_USER_PASSWORD: "${NEKO_PASSWORD:-neko}"
-      NEKO_MEMBER_MULTIUSER_ADMIN_PASSWORD: "${NEKO_ADMIN_PASSWORD:-admin}"
-      CONTROLLER_AUTH_TOKEN: "${CONTROLLER_AUTH_TOKEN:-}"
+      # Explicitly required strong secrets - fail closed if missing or empty
+      NEKO_MEMBER_MULTIUSER_USER_PASSWORD: "${NEKO_PASSWORD:?NEKO_PASSWORD is required and must not be empty}"
+      NEKO_MEMBER_MULTIUSER_ADMIN_PASSWORD: "${NEKO_ADMIN_PASSWORD:?NEKO_ADMIN_PASSWORD is required and must not be empty}"
+      CONTROLLER_AUTH_TOKEN: "${CONTROLLER_AUTH_TOKEN:?CONTROLLER_AUTH_TOKEN is required and must not be empty}"
+      PERMITTED_ORIGINS: "${PERMITTED_ORIGINS:-}"
       CDP_HOST: "127.0.0.1"
       CDP_PORT: "9222"
       CONTROLLER_PORT: "9223"
@@ -32,13 +37,13 @@ services:
       - neko-profile:/home/neko/.config/chromium
       # Overridden Chromium supervisor definition with background streaming and loopback CDP
       - ./config/chromium.conf:/etc/neko/supervisord/chromium.conf:ro
-      # Managed enterprise policies enabling CDP and disabling destructive tab discarding
+      # Managed enterprise policies enabling CDP, URL blocks, and disabling destructive tab discarding
       - ./config/policies.json:/etc/chromium/policies/managed/policies.json:ro
       # Supervisor configuration for restricted tab controller
       - ./config/controller.conf:/etc/neko/supervisord/controller.conf:ro
       # Restricted Chromium tab controller script
       - ./controller/tab_controller.py:/etc/neko/tab_controller.py:ro
-      # Startup wrapper for singleton lock cleanup and cookie preference initialization
+      # Startup wrapper for singleton lock cleanup, credential validation, and cookie preference initialization
       - ./scripts/entrypoint.sh:/entrypoint-maw.sh:ro
 
 volumes:
