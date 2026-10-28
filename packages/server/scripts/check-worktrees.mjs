@@ -131,7 +131,7 @@ async function makeRepo(name) {
   await writeFile(path.join(repo, 'README.md'), '# prueba\n');
   await writeFile(
     path.join(repo, '.gitignore'),
-    ['CLAUDE.md', 'CHECKLIST.md', 'docs/', 'node_modules/', '.claude/', '.mcp.json', 'big/', 'linked/', 'suelto.txt', ''].join('\n'),
+    ['CLAUDE.md', 'CHECKLIST.md', 'docs/', 'node_modules/', '.claude/', '.mcp.json', 'big/', 'linked', 'linked/', 'suelto.txt', ''].join('\n'),
   );
   await writeFile(path.join(repo, '.worktreeinclude'), ['CHECKLIST.md', 'docs/', '.claude/', '.mcp.json', 'linked/', ''].join('\n'));
   git(repo, 'add', '.');

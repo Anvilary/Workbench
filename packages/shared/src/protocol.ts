@@ -1,3 +1,10 @@
+import {
+  parseAgencyClientMessage,
+  parseAgencyServerMessage,
+  type AgencyClientMessage,
+  type AgencyServerMessage,
+} from './agency-protocol.js';
+export * from './agency-protocol.js';
 /**
  * Protocolo WebSocket entre el navegador y el servidor local.
  *
@@ -853,6 +860,8 @@ export interface ClientSendNoteMessage {
  */
 export interface ClientPickerOpenMessage {
   type: 'picker.open';
+  /** Client correlation allocated before opening; enables immediate cancellation. */
+  pickerId?: string;
 }
 
 export interface ClientPickerEnterMessage {
@@ -1428,7 +1437,8 @@ export type ClientMessage =
   | ClientWorktreePlanIntegrateMessage
   | ClientWorktreeIntegrateMessage
   | ClientWorktreePlanDeleteBranchMessage
-  | ClientWorktreeDeleteBranchMessage;
+  | ClientWorktreeDeleteBranchMessage
+  | AgencyClientMessage;
 
 export type ClientMessageType = ClientMessage['type'];
 
@@ -2490,7 +2500,8 @@ export type ServerMessage =
   | ServerWorktreeIntegratedMessage
   | ServerWorktreeDeleteBranchPlanMessage
   | ServerWorktreeBranchDeletedMessage
-  | ServerErrorMessage;
+  | ServerErrorMessage
+  | AgencyServerMessage;
 
 export type ServerMessageType = ServerMessage['type'];
 
@@ -2567,6 +2578,10 @@ function parseSelection(value: unknown): AnswerSelection | null {
 export function parseClientMessage(raw: string): ClientMessage | null {
   const record = asRecord(parseJson(raw));
   if (record === null) return null;
+
+  if (typeof record['type'] === 'string' && record['type'].startsWith('agency.')) {
+    return parseAgencyClientMessage(record);
+  }
 
   switch (record['type']) {
     case 'input': {
@@ -2861,8 +2876,11 @@ export function parseClientMessage(raw: string): ClientMessage | null {
         ? null
         : { type: 'notes.send', noteId, terminalId };
     }
-    case 'picker.open':
-      return { type: 'picker.open' };
+    case 'picker.open': {
+      if (record['pickerId'] === undefined) return { type: 'picker.open' };
+      const pickerId = asNonEmptyString(record['pickerId']);
+      return pickerId === null || !/^[0-9a-f-]{36}$/i.test(pickerId) ? null : { type: 'picker.open', pickerId };
+    }
     case 'picker.enter': {
       const pickerId = asNonEmptyString(record['pickerId']);
       const name = asNonEmptyString(record['name']);
@@ -3222,6 +3240,10 @@ function parseLiveQuestion(value: unknown): ConversationQuestionPart | null {
 export function parseServerMessage(raw: string): ServerMessage | null {
   const record = asRecord(parseJson(raw));
   if (record === null) return null;
+
+  if (typeof record['type'] === 'string' && record['type'].startsWith('agency.')) {
+    return parseAgencyServerMessage(record);
+  }
 
   switch (record['type']) {
     case 'hello': {

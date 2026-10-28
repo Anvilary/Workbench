@@ -17,7 +17,7 @@
  * process of node-pty when the pty is killed. It's noise, not a failure.
  */
 import { execFileSync, spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -45,8 +45,18 @@ mkdirSync(appDir, { recursive: true });
 mkdirSync(homeDir, { recursive: true });
 // A copy with a plain relative name: nothing to quote for the shell npm needs on Windows.
 copyFileSync(tarball, path.join(appDir, 'package.tgz'));
-execFileSync('npm', ['init', '-y'], { cwd: appDir, stdio: 'ignore', shell: true });
-execFileSync('npm', ['install', '--no-audit', '--no-fund', './package.tgz'], { cwd: appDir, stdio: 'inherit', shell: true });
+execFileSync('npm', ['init', '-y'], { cwd: appDir, stdio: 'ignore', shell: process.platform === 'win32' });
+const pkgPath = path.join(appDir, 'package.json');
+try {
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+  pkg.allowScripts = { 'node-pty': true };
+  writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
+} catch {}
+try {
+  execFileSync('npm', ['install', '--no-audit', '--no-fund', '--foreground-scripts', '--dangerously-allow-all-scripts', './package.tgz'], { cwd: appDir, stdio: 'inherit', shell: process.platform === 'win32' });
+} catch {
+  execFileSync('npm', ['install', '--no-audit', '--no-fund', '--foreground-scripts', './package.tgz'], { cwd: appDir, stdio: 'inherit', shell: process.platform === 'win32' });
+}
 
 const packageDir = path.join(appDir, 'node_modules', 'agent-workbench');
 const serverFile = path.join(packageDir, 'dist', 'server.js');

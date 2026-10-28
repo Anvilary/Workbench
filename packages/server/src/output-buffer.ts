@@ -13,6 +13,25 @@
 /** Suficiente para varias pantallas de una TUI, sin que 10 pestanas pesen. */
 const DEFAULT_LIMIT_BYTES = 256 * 1024;
 
+/** Keep a Unicode-safe suffix whose UTF-8 bytes fit into the remaining budget. */
+function suffixWithinBytes(value: string, budget: number): string {
+  let start = value.length;
+  let left = Math.max(0, budget);
+  while (start > 0) {
+    let previous = start - 1;
+    const code = value.charCodeAt(previous);
+    if (previous > 0 && code >= 0xdc00 && code <= 0xdfff) {
+      const high = value.charCodeAt(previous - 1);
+      if (high >= 0xd800 && high <= 0xdbff) previous--;
+    }
+    const length = Buffer.byteLength(value.slice(previous, start), 'utf8');
+    if (length > left) break;
+    left -= length;
+    start = previous;
+  }
+  return value.slice(start);
+}
+
 export class OutputBuffer {
   private chunks: string[] = [];
   private sizeBytes = 0;
@@ -26,10 +45,19 @@ export class OutputBuffer {
     this.chunks.push(chunk);
     this.sizeBytes += Buffer.byteLength(chunk, 'utf8');
 
-    while (this.sizeBytes > this.limitBytes && this.chunks.length > 1) {
-      const removed = this.chunks.shift();
-      if (removed === undefined) break;
-      this.sizeBytes -= Buffer.byteLength(removed, 'utf8');
+    while (this.sizeBytes > this.limitBytes && this.chunks.length > 0) {
+      const oldest = this.chunks[0]!;
+      const size = Buffer.byteLength(oldest, 'utf8');
+      const remainingWithoutOldest = this.sizeBytes - size;
+      if (remainingWithoutOldest >= this.limitBytes) {
+        this.chunks.shift();
+        this.sizeBytes -= size;
+      } else {
+        const suffix = suffixWithinBytes(oldest, this.limitBytes - remainingWithoutOldest);
+        if (suffix.length === 0) this.chunks.shift();
+        else this.chunks[0] = suffix;
+        this.sizeBytes -= size - Buffer.byteLength(suffix, 'utf8');
+      }
       this.truncated = true;
     }
   }

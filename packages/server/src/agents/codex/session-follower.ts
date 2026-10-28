@@ -30,7 +30,7 @@ import {
 import type { EventPage, LoadedImage, PollResult, SessionFollower } from '../adapter.js';
 import { JsonlFollower } from '../jsonl-follower.js';
 import { createRolloutFiles } from './compressed-rollout.js';
-import { findReadableRollout } from './find-rollout.js';
+import { type FindRolloutRoots, findReadableRollout } from './find-rollout.js';
 import { parseCompressedRolloutFileName, parseRolloutFileName } from './paths.js';
 import { loadRolloutImage } from './rollout-image.js';
 import { CodexRolloutSink } from './rollout-sink.js';
@@ -40,6 +40,7 @@ import type { EventLimits } from '../transport-limits.js';
 const LOOKUP_INTERVAL_MS = 2_000;
 
 export interface CodexFollowerOptions {
+  roots?: FindRolloutRoots;
   /** Reloj del reintento de busqueda. Solo para el chequeo. */
   now?: () => number;
   /** Hito 28, `FollowOptions`. Ausente: `TRANSPORT_LIMITS`. */
@@ -61,6 +62,7 @@ function samePath(a: string, b: string): boolean {
 }
 
 export class CodexSessionFollower implements SessionFollower {
+  private readonly roots: FindRolloutRoots;
   private readonly sink: CodexRolloutSink;
   private jsonl: JsonlFollower;
   private readonly maxEvents: number | undefined;
@@ -75,6 +77,7 @@ export class CodexSessionFollower implements SessionFollower {
     private readonly sessionId: string,
     options: CodexFollowerOptions = {},
   ) {
+    this.roots = Object.freeze({ ...options.roots });
     this.sink = new CodexRolloutSink(sessionId, options.limits, options.onPlanLimits);
     this.maxEvents = options.maxEvents;
     this.jsonl = this.followerFor(null);
@@ -137,7 +140,7 @@ export class CodexSessionFollower implements SessionFollower {
     if (!this.relookupPending && !(vanished && due)) return false;
     this.relookupPending = false;
     this.lastLookupAt = this.now();
-    const found = await findReadableRollout(this.sessionId);
+    const found = await findReadableRollout(this.sessionId, this.roots);
     if (found === null || samePath(found, own) || this.jsonl.filePath !== own) return false;
     this.sink.reset();
     this.jsonl = this.followerFor(found);
@@ -147,7 +150,7 @@ export class CodexSessionFollower implements SessionFollower {
   private async lookup(): Promise<void> {
     if (this.sessionId.length === 0 || this.jsonl.filePath !== null) return;
     this.lastLookupAt = this.now();
-    const found = await findReadableRollout(this.sessionId);
+    const found = await findReadableRollout(this.sessionId, this.roots);
     // Entre la busqueda y aca, el watcher pudo haberla fijado.
     if (found !== null && this.jsonl.filePath === null) this.jsonl.setPath(found);
   }
@@ -159,6 +162,14 @@ export class CodexSessionFollower implements SessionFollower {
    * sesion, la busca otra vez en el proximo `poll` (§10.12).
    */
   noticeChange(filePath: string): boolean {
+    if (this.roots.sessionsRoot !== undefined || this.roots.archivedRoot !== undefined) {
+      if (![this.roots.sessionsRoot, this.roots.archivedRoot].some((root) => root != null &&
+          filePath.startsWith(root + path.sep))) return false;
+      if (sessionIdOf(filePath) !== this.sessionId.toLowerCase()) return false;
+      this.relookupPending = true;
+      this.lastLookupAt = null;
+      return true;
+    }
     const own = this.jsonl.filePath;
     if (own !== null && samePath(own, filePath)) return true;
     if (this.sessionId.length === 0) return false;
