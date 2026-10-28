@@ -69,19 +69,33 @@ export interface BrowserControllerDriver {
   hasOngoingOperation?(targetRef: string): Promise<boolean>;
 }
 
+export class BrowserEngineUnavailableError extends Error {
+  constructor(message = 'Browser engine is unavailable or unconfigured') {
+    super(message);
+    this.name = 'BrowserEngineUnavailableError';
+  }
+}
+
 /**
- * Safe null driver used when Neko browser engine is unconfigured or offline.
+ * Null driver representing an unconfigured or offline Neko browser engine.
+ * Explicitly fails browser operations with a typed error rather than inventing fictional targets.
  */
 export class NullBrowserControllerDriver implements BrowserControllerDriver {
   async openTarget(_url: string, _metadata?: TargetMetadata): Promise<OpenTargetResult> {
-    return { targetRef: 'null-target' };
+    throw new BrowserEngineUnavailableError('Browser engine is not configured or unavailable');
   }
 
-  async activateTarget(_targetRef: string): Promise<void> {}
+  async activateTarget(_targetRef: string): Promise<void> {
+    throw new BrowserEngineUnavailableError('Browser engine is not configured or unavailable');
+  }
 
-  async navigateTarget(_targetRef: string, _url: string): Promise<void> {}
+  async navigateTarget(_targetRef: string, _url: string): Promise<void> {
+    throw new BrowserEngineUnavailableError('Browser engine is not configured or unavailable');
+  }
 
-  async closeTarget(_targetRef: string): Promise<void> {}
+  async closeTarget(_targetRef: string): Promise<void> {
+    throw new BrowserEngineUnavailableError('Browser engine is not configured or unavailable');
+  }
 
   async isTargetAlive(_targetRef: string): Promise<boolean> {
     return false;
@@ -110,6 +124,8 @@ export class MemoryBrowserControllerDriver implements BrowserControllerDriver {
   readonly callLog: Array<{ method: string; args: unknown[] }> = [];
   /** Target refs configured to fail destruction during closeTarget */
   readonly failCloseTargets = new Set<string>();
+  /** Target refs configured to fail activation during activateTarget */
+  readonly failActivateTargets = new Set<string>();
 
   async openTarget(url: string, metadata?: TargetMetadata): Promise<OpenTargetResult> {
     this.callLog.push({ method: 'openTarget', args: [url, metadata] });
@@ -125,6 +141,9 @@ export class MemoryBrowserControllerDriver implements BrowserControllerDriver {
 
   async activateTarget(targetRef: string): Promise<void> {
     this.callLog.push({ method: 'activateTarget', args: [targetRef] });
+    if (this.failActivateTargets.has(targetRef)) {
+      throw new Error(`Simulated failure activating target ${targetRef}`);
+    }
     const target = this.targets.get(targetRef);
     if (!target || target.closed) {
       throw new Error(`Target ${targetRef} not found or already closed`);

@@ -17,7 +17,11 @@ async function createFixture(t: import('node:test').TestContext) {
   const store = new BrowserTabStore(path.join(dir, 'agency-web-tabs.json'));
   await store.load();
   const driver = new MemoryBrowserControllerDriver();
-  const adapter = new BrowserTabAdapter({ store, driver });
+  const adapter = new BrowserTabAdapter({
+    store,
+    driver,
+    allowUnvalidatedWorkspacesForTesting: true,
+  });
   const published: WebTabServerMessage[] = [];
   const publish = (msg: WebTabServerMessage) => {
     published.push(msg);

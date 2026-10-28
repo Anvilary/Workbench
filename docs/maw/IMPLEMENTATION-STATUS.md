@@ -154,9 +154,14 @@ Key deliverables:
 - Adapter contract: `BrowserTabAdapter` implementing `createTab`, `selectTab`, `listTabs`, `navigateTab`, `closeTab`, `renameTab`, `orderTabs`, `getTabState`, `restore`.
 - Decoupled driver interface: `BrowserControllerDriver` allows Lane A to connect the Neko Chromium controller without coupling to Neko internals.
 - Non-destructive switching: Switching between ChatGPT tabs activates targets without closing or navigating away previous targets.
-- 23 focused tests passing 100% across URL validation, persistence & quarantine, adapter lifecycle & isolation, and protocol request dispatch.
+- Fail-explicit engine errors: `NullBrowserControllerDriver` throws `BrowserEngineUnavailableError`; failed browser operations safely persist the logical tab but report `session-unavailable` and transition to `runtimeState: 'error'`.
+- Authoritative workspace validation: Production operations require `AgencyWorkspaceStore` or `workspaceValidator`, rejecting unknown, Done, archived workspaces or archived parent projects. Test bypass explicitly flagged (`allowUnvalidatedWorkspacesForTesting: true`).
+- Coherent activation state: Never marks web tab `ready` when `activateTarget()` fails; maintains selection and sets `runtimeState: 'error'`.
+- Idempotency & launch rejection safety: Workspace-scoped launch IDs (`${workspaceId}:${launchId}`) and `.catch(() => undefined).finally(...)` promise cleanup with zero unhandled rejections.
+- Target reconciliation: Persisted `targetRef` treated as untrusted hints, verified via `{ tabId, workspaceId }` metadata before reattachment.
+- 39 focused tests passing 100% across URL validation, persistence & quarantine, adapter lifecycle & isolation, protocol request dispatch, target reconciliation, and error handling.
 - Zero modifications to live service, existing native session runtime, or `AgencyWorkspaceView.tsx`.
 
 Draft delivery: [PR #10](https://github.com/user/My-Amazing-Workspace/pull/10) (draft against `main`).
-Verified implementation commit: `6615d5b`; subsequent delivery checkpoint records this PR link. All changes pushed without force; live service untouched.
+Verified implementation commit: `b7be13a`; subsequent delivery checkpoint records this PR link. All changes pushed without force; live service untouched.
 

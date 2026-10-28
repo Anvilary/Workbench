@@ -16,7 +16,11 @@ async function createFixture(t: import('node:test').TestContext) {
   const store = new BrowserTabStore(path.join(dir, 'agency-web-tabs.json'));
   await store.load();
   const driver = new MemoryBrowserControllerDriver();
-  const adapter = new BrowserTabAdapter({ store, driver });
+  const adapter = new BrowserTabAdapter({
+    store,
+    driver,
+    allowUnvalidatedWorkspacesForTesting: true,
+  });
   return { dir, store, driver, adapter };
 }
 
@@ -134,7 +138,11 @@ test('adapter: conservative restore and lazy target attachment on select', async
   ]);
 
   const newDriver = new MemoryBrowserControllerDriver();
-  const freshAdapter = new BrowserTabAdapter({ store, driver: newDriver });
+  const freshAdapter = new BrowserTabAdapter({
+    store,
+    driver: newDriver,
+    allowUnvalidatedWorkspacesForTesting: true,
+  });
   await freshAdapter.restore();
 
   // Tab exists in memory with conversation reference intact
