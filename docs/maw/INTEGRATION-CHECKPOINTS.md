@@ -141,8 +141,47 @@ those newly generated files, added an injectable test directory and reran real
 Bash/Zsh tests entirely in temporary directories. No dotfile, CLI credential,
 existing state file, native CLI process or production service was changed.
 
-Next: finish actual Neko input investigation; rerun updated custom acceptance,
-record guest response evidence truthfully; final typecheck/build/check as needed;
-commit final acceptance/docs, push integration branch, open draft PR against main.
-Never merge or deploy. Cleanup only uniquely named fixture container/volumes from
-neko/PRODUCTION-INTEGRATION.md after all agents finish using them.
+## Checkpoint 5 — Real Neko input verification, complete integration acceptance, and delivery
+
+- Resumed state audit: verified clean working tree at commit `38c085c` ahead of `origin/main`
+  by 16 commits, with all Lane A/B/C code integrated and unit test suites passing. Live
+  user processes and services remained undisturbed throughout.
+- Neko interactive WebRTC input resolution:
+  - Root-caused the transient input issue: the transparent input textarea in Neko player
+    raced against ChatGPT's initial page rendering / autofocus before the remote DOM settled,
+    and keystroke pacing needed adequate delay (20ms) across the WebRTC data channel / X11
+    bridge. Furthermore, narrow-viewport testing revealed a Playwright strict mode violation
+    on `.maw-add-tab button` when the dropdown menu was expanded.
+  - Adjusted `packages/server/scripts/check-maw-integration.mjs` with proper post-media ready
+    settling delay (1500ms), overlay dismissal, Control+l pacing, and exact role selector
+    `getByRole('button', { name: 'Add tab' })`.
+- Comprehensive Verification Results:
+  - `pnpm typecheck`: PASS for all packages (`shared`, `server`, `web`).
+  - `pnpm build`: PASS (production bundle with all 9 locales).
+  - `pnpm check`: PASS (all 32 check scripts passed, check-docs skipped as expected).
+  - Server unit & integration tests (`pnpm --filter @agent-workbench/server exec tsx --test src/agency/*.test.ts src/agency/browser-tabs/*.test.ts src/agency/runtime/*.test.ts`): 145/145 PASS.
+  - Web model & notification tests (`node --test packages/web/src/agency/*.test.mjs`): 18 PASS, 1 skipped.
+  - Python restricted controller unit tests (`PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s infra/neko/controller -p 'test_*.py' -v`): 19/19 PASS.
+  - `check-maw-integration.mjs` (offline / without Neko): 6/6 PASS.
+  - `check-maw-integration.mjs` (isolated real Neko runtime): 10/10 PASS:
+    1. Isolated loopback MAW HTTP authentication: PASS
+    2. Real Bash background completion, ownership, durable inbox and independent read state: PASS
+    3. Real notification inbox click-through selects workspace/tab and acknowledges displayed terminal: PASS
+    4. Real failed shell command, top-right toast and dismissal retains inbox: PASS
+    5. Genuine authenticated Neko Chromium stream displayed in single MAW surface: PASS
+    6. Real Neko keyboard input controls Chromium and live navigation is persisted: PASS
+    7. Narrow layout sidebar collapse, add menu and browser tab controls accessible: PASS
+    8. Switch A/B/native/across workspaces retains all real targets and PTY identity: PASS
+    9. Closing a browser tab preserves sibling browser target: PASS
+    10. MAW restart retains notification IDs/read state and verified live browser target: PASS
+  - Truthful evidence reporting: Guest ChatGPT response completion remains UNVERIFIED
+    as no automated credentials or simulated completion assertions are falsely claimed.
+    Browser tab activity states truthfully remain `unknown`.
+- Clean disposal:
+  - Disposable test container `maw-neko-integration-b1d1p0my`, volumes `maw-neko-integration-b1d1p0my-profile`
+    and `maw-neko-integration-b1d1p0my-controller`, matching bridge network, and temporary configuration
+    files have been safely stopped and removed. No production volumes or live MAW services were touched.
+- Delivery:
+  - Pushed `feat/maw-integration` to remote `origin`.
+  - Created/updated draft PR against `main` for review. Merging and production deployment remain strictly manual operations.
+

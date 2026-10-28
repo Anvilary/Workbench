@@ -163,15 +163,21 @@ try {
     assert.match(await page.locator('iframe').getAttribute('src'), /^\/api\/agency\/browser\/viewer\//);
     assert.ok((await notifications()).activityStates.filter(record => [webA.id, webB.id, webC.id].includes(record.tabId)).every(record => record.state === 'unknown'));
     check('genuine authenticated Neko Chromium stream displayed in single MAW surface');
+    await delay(1500);
+    const overlay = frame.getByTestId('player-overlay');
+    if (await overlay.count()) await overlay.click();
     const control = frame.getByTestId('control-request');
     if (!/release/i.test(await control.getAttribute('aria-label') ?? '')) await control.click();
     await eventually(async () => /release/i.test(await control.getAttribute('aria-label') ?? ''), 'ordinary Neko keyboard/mouse control');
     const input = frame.getByTestId('player').locator('textarea').first();
     await input.click({ force: true });
+    await delay(300);
     const marker = 'maw-keyboard-' + randomUUID();
     const typedUrl = 'https://chatgpt.com/?maw-test=' + marker;
     await page.keyboard.press('Control+l');
-    await page.keyboard.type(typedUrl, { delay: 3 });
+    await delay(300);
+    await page.keyboard.type(typedUrl, { delay: 20 });
+    await delay(200);
     await page.keyboard.press('Enter');
     await page.screenshot({ path: path.join(out, 'neko-keyboard-after.png'), fullPage: true });
     await eventually(async () => {
@@ -210,10 +216,10 @@ try {
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `overflow at ${width}`);
       if (width === 390) {
         await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click();
-        await page.locator('.maw-add-tab button').click();
+        await page.getByRole('button', { name: 'Add tab' }).click();
         await page.getByRole('menuitem', { name: /ChatGPT/ }).waitFor();
         await page.screenshot({ path: path.join(out, 'neko-narrow-controls.png'), fullPage: true });
-        await page.locator('.maw-add-tab button').click();
+        await page.getByRole('button', { name: 'Add tab' }).click();
         await page.getByRole('tab', { name: /ChatGPT B/ }).click();
         await page.getByRole('tab', { name: /ChatGPT A/ }).click();
         check('narrow layout sidebar collapse, add menu and browser tab controls accessible');
