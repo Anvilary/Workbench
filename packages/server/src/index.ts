@@ -490,7 +490,7 @@ async function main(): Promise<void> {
   const agencyWorkspaceStore = new AgencyWorkspaceStore(path.join(appConfigDir(), 'agency-state.json'));
   await agencyWorkspaceStore.load();
 
-  const agencyIdentities = await NativeIdentities.load(path.join(appConfigDir(), 'agency-native-identities.json'));
+  const agencyIdentities = await NativeIdentities.loadForInteractive(path.join(appConfigDir(), 'agency-native-identities.json'));
   agents.protectNativeHomes(agencyIdentities.protectedDirs());
   const agencyProfileStore = new AgencyProfileStore(path.join(appConfigDir(), 'agency-profiles.json'));
   await agencyProfileStore.listDefinitions();

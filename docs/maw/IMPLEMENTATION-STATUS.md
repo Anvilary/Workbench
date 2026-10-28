@@ -103,3 +103,31 @@ Authentication investigation: same UID/HOME/USER/SHELL in both contexts; default
 IMPLEMENTED — MANUAL ACTIVATION REQUIRED: Deploy the feature before installing a version 2 identity manifest; old main would reject it. Prepared examples are not installed into live config. The service remains uninstalled/disabled and no native process was stopped. Real provider authentication/keyring availability, each original conversation resume and reboot are controlled user acceptance, not automated success claims. See the ten-profile matrix in RECOVERY.md.
 
 LIMITATION: Existing unverified history is not retroactively attributed to accounts. Cross-tool AGY starts can race the conservative process inventory; there is no trusted shared laptop-wide semaphore. Current external AGY process count may defer recovery. None were terminated.
+
+Final safety refinement: corrupt optional identity manifests now disable recovery without preventing interactive launch; tests cover that behavior. AGY keyring/XDG directories are included in protected native namespaces. Presence-only auth environment inspection found GEMINI_API_KEY set only interactively; all six profiles have account mode, so native CLI docs say the variable alone has no effect. Account mode is now explicitly bound and revalidated; API-key/unknown mode refuses automatic recovery. No credential values were output or persisted. Official source: https://www.antigravity.google/docs/install/.
+
+Manual deployment caveat confirmed from wrapper helper structure: newly created AGY private bus/keyring daemons inherit their launch cgroup; already-running helpers are simply reused. Before live activation, original helper contexts must have an independent user-service lifetime so MAW control-group shutdown cannot disrupt manual wrappers reusing their bus. No helper or live native CLI was run/relocated to test this against real accounts. Instructions and the acceptance boundary are in OPERATIONS.md; do not claim real keyring/reboot lifecycle fully verified.
+
+## Continuation final verification
+
+All following final commands exited 0:
+
+| Command | Verified result |
+| --- | --- |
+| pnpm typecheck | Shared/server/web pass |
+| pnpm check | Complete configured chain and nine-locale i18n pass; baseline internal-guide check still explicitly skips its missing guide |
+| pnpm --filter @agent-workbench/server exec tsx --test src/agency/native-context.test.ts src/agency/native-identity.test.ts src/agency/runtime/agency-session-runtime.test.ts src/agents/profiles/profiles.test.ts src/agency/domain.test.ts src/maw-host.test.ts | 66/66 tests; ten original-entry-point fixtures in real node-pty; resume flags, separate homes, changed code/context, ownership failures and retained references |
+| pnpm --filter @agent-workbench/server exec tsx scripts/check-native-systemd.mjs | Five native-context tests pass under a disposable systemd user unit, including all ten PTY wrapper fixtures |
+| pnpm --filter @agent-workbench/server exec tsx scripts/check-maw-lifecycle.mjs | Isolated readiness, duplicate owner rejection, durable metadata, restart, repeated start/stop pass |
+| pnpm --filter @agent-workbench/server exec tsx scripts/check-agency-remediation.mjs | 6/6 groups pass |
+| pnpm --filter @agent-workbench/server exec tsx scripts/check-agency-e2e.mjs | 25/25 cases pass |
+| pnpm build:npm | Production web and server package build pass |
+| pnpm --filter @agent-workbench/server exec tsx scripts/check-maw-package.mjs | Package contents, clean temporary npm install, authenticated startup from arbitrary cwd pass |
+| AGENCY_SCREENSHOT_DIR=/tmp/maw-native-browser-screenshots pnpm --filter @agent-workbench/server exec tsx scripts/capture-agency-screenshots.mjs | 21 captures; five widths; zero console/page errors; refresh/navigation create zero PTYs |
+| check-native-context.mjs with actual host profiles and prepared manifest | All ten verified interactively and under transient systemd with the MAW PATH; authentication not probed |
+
+Evidence logs: /tmp/maw-provider-acceptance.log, /tmp/maw-provider-artifact.log, /tmp/maw-native-systemd-verified.log, /tmp/maw-native-lifecycle-verified.log, /tmp/maw-native-remediation-verified.log, /tmp/maw-native-e2e-verified.log, /tmp/maw-native-browser.log, /tmp/maw-host-auth-mode-{interactive,systemd}.log. Only disposable fixture URLs/tokens occur in integration logs; no real credential values were output or committed.
+
+One concurrent build/lifecycle attempt failed because Vite temporarily removed dist during restart. The journal confirmed missing compiled UI; packaging was completed and lifecycle/integration rerun sequentially with exit 0. This was a verification orchestration error, not a native resume fallback; no live service was involved.
+
+Final safety checks: original main remains clean; no maw.service installed/enabled, no temporary MAW units remain, no live identity manifest installed, no real wrappers/helpers/credentials changed, and no pre-existing CLI process signaled. Recovery activation and manual checks are documented in OPERATIONS.md/RECOVERY.md. Retain the original source and all native references when continuing; do not auto-assign legacy sessions to newly attested identities.

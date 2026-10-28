@@ -40,6 +40,7 @@ async function fixture() {
     const profile=await store.configure(definition.id,{executable,args:['literal two words']});
     profiles.push(profile);
     rows.push({profileId:profile.id,provider:profile.provider,executable,args:profile.args,environmentOverrides:{},home,
+      ...(profile.provider === 'antigravity' ? {authenticationMode:'account'} : {}),
       artifacts:[{path:executable,sha256:await artifactDigest(executable)},{path:native,sha256:await artifactDigest(native)}],
       launchContext:{HOME:launchHome,USER:'fixture',CLAUDE_CONFIG_DIR:null},commands:{},requiredEnvironment:[]});
   }
@@ -88,6 +89,12 @@ test('missing history/context, changed wrappers, and escaped native state fail c
     const request={profileId:profile.id,cwd:f.cwd,resumeNativeSessionId:id,proposedSessionId:randomUUID(),launchToken:randomUUID(),environment:f.env};
     await assert.rejects(buildAgencyProfileLaunch(f.store,f.registry,request,{identities:f.identities}),/unavailable/);
     const file=await historyFile(profile.provider,row.home,f.cwd,id);
+    if (profile.provider === 'antigravity') {
+      const settings = path.join(row.home, 'settings.json');
+      await writeFile(settings, JSON.stringify({ modelProvider: 'gemini' }));
+      assert.equal(await f.identities.verifiedForProfile(profile, {...f.env, GEMINI_API_KEY: 'disposable-test-value'}), null);
+      await rm(settings);
+    }
     assert.equal(await ownsNativeSession(identity,id,f.cwd),true);
     assert.equal(await f.identities.verifiedForProfile(profile,{...f.env,HOME:'/another'}),null);
     assert.equal(await f.identities.verifiedForProfile({...profile,args:['changed']},f.env),null);
@@ -135,4 +142,17 @@ test('AGY recovery capacity observes existing same-user processes and fails clos
   }
   assert.equal(await nativeRecoveryCapacity('antigravity',path.join(root,'absent')),false);
   assert.equal(await nativeRecoveryCapacity('codex',path.join(root,'absent')),true);
+});
+
+test('invalid recovery attestations disable identity while keeping exact interactive wrapper launch available', async t => {
+  const f=await fixture();t.after(()=>rm(f.root,{recursive:true,force:true}));
+  const corrupt=path.join(f.root,'corrupt.json');await writeFile(corrupt,'{invalid');
+  const identities=await NativeIdentities.loadForInteractive(corrupt);
+  const profile=f.profiles.find(row=>row.id==='agy03')!;
+  const plan=await buildAgencyProfileLaunch(f.store,f.registry,{profileId:profile.id,cwd:f.cwd,proposedSessionId:randomUUID(),launchToken:randomUUID(),environment:f.env},{identities});
+  assert.equal(plan.file,profile.executable);assert.equal(plan.nativeIdentity,null);
+  await assert.rejects(buildAgencyProfileLaunch(f.store,f.registry,{profileId:profile.id,cwd:f.cwd,proposedSessionId:randomUUID(),launchToken:randomUUID(),environment:f.env,resumeNativeSessionId:randomUUID()},{identities}),/unverified/);
+  const protectedDirs=f.identities.protectedDirs();
+  const agy=f.rows.find(row=>row.profileId==='agy03')!;
+  assert.ok(protectedDirs.includes(path.join(path.dirname(path.dirname(agy.home)),'.local/share/keyrings')));
 });

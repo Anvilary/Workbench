@@ -50,3 +50,13 @@ History followers receive the verified native root for all providers. Unknown ma
 ## Manual acceptance still required
 
 After reviewed deployment, validate each matrix row using its original wrapper: existing authentication is reused without login; the correct prior conversation resumes; a mismatched home refuses; browser reconnect keeps one controller; and a controlled restart/reboot preserves eligible intent. Check AGY private D-Bus/keyring helpers after reboot and before graphical login. An encrypted/locked keyring may require user interaction; MAW never unlocks or copies it. Historical records without launch provenance remain manual-only. Do not stop unrelated workflows merely to clear AGY capacity during acceptance.
+
+## Authentication-environment finding
+
+A presence-only comparison found ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, OPENAI_API_KEY and GOOGLE_API_KEY absent in both contexts. GEMINI_API_KEY is present interactively and absent under systemd; its value was never printed, copied or stored. DBUS_SESSION_BUS_ADDRESS is present in both, while GNOME_KEYRING_CONTROL is absent. Only the non-secret modelProvider field was inspected in each AGY settings.json; all six use account mode.
+
+The [official AGY authentication documentation](https://www.antigravity.google/docs/install/) says that GEMINI_API_KEY alone has no effect; API-key operation requires modelProvider=gemini. Thus this observed variable difference does not select API-key authentication for the current six profiles. Version 2 AGY bindings explicitly require account mode and recheck that non-secret setting on each verification. Changed/unrecognized/API-key mode fails closed for recovery, retaining interactive wrapper launch. API-key mode has no verified named-account ownership in this implementation; MAW never imports the key into systemd. Settings symlinks cannot escape the attested native root.
+
+An invalid optional identity manifest disables recovery and trusted historical attribution, while keeping interactive CLI startup available through the original selected wrapper. AGY account-specific .gemini, XDG configuration and keyring directories are protected from workspace selection.
+
+Shared-helper caveat: AGY keyring/D-Bus daemons newly created inside MAW can inherit its service cgroup, unlike already-running helpers created by normal terminal use. Keep required helper contexts independent of MAW before live activation so a server stop cannot tear down a private bus reused by manual workflows. The original helper executables remain unchanged. This requires controlled deployment/lifetime acceptance; fixture PTY success does not establish real keyring lifecycle safety.

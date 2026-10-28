@@ -26,7 +26,8 @@
         "/home/alteixeira20/.local/bin/codex00",
         "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/codex",
         "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/node",
-        "/usr/bin/bash"
+        "/usr/bin/bash",
+        "/home/alteixeira20/.nvm/versions/node/v24.22.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex"
       ],
       "requiredEnvironment": []
     },
@@ -56,7 +57,8 @@
         "/home/alteixeira20/.local/bin/codex01",
         "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/codex",
         "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/node",
-        "/usr/bin/bash"
+        "/usr/bin/bash",
+        "/home/alteixeira20/.nvm/versions/node/v24.22.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex"
       ],
       "requiredEnvironment": []
     },
@@ -86,7 +88,8 @@
         "/home/alteixeira20/.local/bin/codex03",
         "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/codex",
         "/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/node",
-        "/usr/bin/bash"
+        "/usr/bin/bash",
+        "/home/alteixeira20/.nvm/versions/node/v24.22.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex"
       ],
       "requiredEnvironment": []
     },
@@ -113,7 +116,8 @@
       ],
       "requiredEnvironment": [
         "DBUS_SESSION_BUS_ADDRESS"
-      ]
+      ],
+      "authenticationMode": "account"
     },
     {
       "profileId": "agy01",
@@ -135,7 +139,15 @@
       "commands": {
         "bash": "/usr/bin/bash",
         "dbus-daemon": "/usr/bin/dbus-daemon",
-        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon"
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon",
+        "cat": "/usr/bin/cat",
+        "sed": "/usr/bin/sed",
+        "rm": "/usr/bin/rm",
+        "mkdir": "/usr/bin/mkdir",
+        "chmod": "/usr/bin/chmod",
+        "mktemp": "/usr/bin/mktemp",
+        "sleep": "/usr/bin/sleep",
+        "env": "/usr/bin/env"
       },
       "artifacts": [
         "/home/alteixeira20/.local/bin/agy01",
@@ -143,9 +155,18 @@
         "/home/alteixeira20/.local/bin/agy",
         "/usr/bin/bash",
         "/usr/bin/dbus-daemon",
-        "/usr/bin/gnome-keyring-daemon"
+        "/usr/bin/gnome-keyring-daemon",
+        "/usr/bin/cat",
+        "/usr/bin/sed",
+        "/usr/bin/rm",
+        "/usr/bin/mkdir",
+        "/usr/bin/chmod",
+        "/usr/bin/mktemp",
+        "/usr/bin/sleep",
+        "/usr/bin/env"
       ],
-      "requiredEnvironment": []
+      "requiredEnvironment": [],
+      "authenticationMode": "account"
     },
     {
       "profileId": "agy02",
@@ -167,7 +188,15 @@
       "commands": {
         "bash": "/usr/bin/bash",
         "dbus-daemon": "/usr/bin/dbus-daemon",
-        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon"
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon",
+        "cat": "/usr/bin/cat",
+        "sed": "/usr/bin/sed",
+        "rm": "/usr/bin/rm",
+        "mkdir": "/usr/bin/mkdir",
+        "chmod": "/usr/bin/chmod",
+        "mktemp": "/usr/bin/mktemp",
+        "sleep": "/usr/bin/sleep",
+        "env": "/usr/bin/env"
       },
       "artifacts": [
         "/home/alteixeira20/.local/bin/agy02",
@@ -175,9 +204,18 @@
         "/home/alteixeira20/.local/bin/agy",
         "/usr/bin/bash",
         "/usr/bin/dbus-daemon",
-        "/usr/bin/gnome-keyring-daemon"
+        "/usr/bin/gnome-keyring-daemon",
+        "/usr/bin/cat",
+        "/usr/bin/sed",
+        "/usr/bin/rm",
+        "/usr/bin/mkdir",
+        "/usr/bin/chmod",
+        "/usr/bin/mktemp",
+        "/usr/bin/sleep",
+        "/usr/bin/env"
       ],
-      "requiredEnvironment": []
+      "requiredEnvironment": [],
+      "authenticationMode": "account"
     },
     {
       "profileId": "agy03",
@@ -199,7 +237,15 @@
       "commands": {
         "bash": "/usr/bin/bash",
         "dbus-daemon": "/usr/bin/dbus-daemon",
-        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon"
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon",
+        "cat": "/usr/bin/cat",
+        "sed": "/usr/bin/sed",
+        "rm": "/usr/bin/rm",
+        "mkdir": "/usr/bin/mkdir",
+        "chmod": "/usr/bin/chmod",
+        "mktemp": "/usr/bin/mktemp",
+        "sleep": "/usr/bin/sleep",
+        "env": "/usr/bin/env"
       },
       "artifacts": [
         "/home/alteixeira20/.local/bin/agy03",
@@ -207,9 +253,18 @@
         "/home/alteixeira20/.local/bin/agy",
         "/usr/bin/bash",
         "/usr/bin/dbus-daemon",
-        "/usr/bin/gnome-keyring-daemon"
+        "/usr/bin/gnome-keyring-daemon",
+        "/usr/bin/cat",
+        "/usr/bin/sed",
+        "/usr/bin/rm",
+        "/usr/bin/mkdir",
+        "/usr/bin/chmod",
+        "/usr/bin/mktemp",
+        "/usr/bin/sleep",
+        "/usr/bin/env"
       ],
-      "requiredEnvironment": []
+      "requiredEnvironment": [],
+      "authenticationMode": "account"
     },
     {
       "profileId": "agy04",
@@ -231,7 +286,15 @@
       "commands": {
         "bash": "/usr/bin/bash",
         "dbus-daemon": "/usr/bin/dbus-daemon",
-        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon"
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon",
+        "cat": "/usr/bin/cat",
+        "sed": "/usr/bin/sed",
+        "rm": "/usr/bin/rm",
+        "mkdir": "/usr/bin/mkdir",
+        "chmod": "/usr/bin/chmod",
+        "mktemp": "/usr/bin/mktemp",
+        "sleep": "/usr/bin/sleep",
+        "env": "/usr/bin/env"
       },
       "artifacts": [
         "/home/alteixeira20/.local/bin/agy04",
@@ -239,9 +302,18 @@
         "/home/alteixeira20/.local/bin/agy",
         "/usr/bin/bash",
         "/usr/bin/dbus-daemon",
-        "/usr/bin/gnome-keyring-daemon"
+        "/usr/bin/gnome-keyring-daemon",
+        "/usr/bin/cat",
+        "/usr/bin/sed",
+        "/usr/bin/rm",
+        "/usr/bin/mkdir",
+        "/usr/bin/chmod",
+        "/usr/bin/mktemp",
+        "/usr/bin/sleep",
+        "/usr/bin/env"
       ],
-      "requiredEnvironment": []
+      "requiredEnvironment": [],
+      "authenticationMode": "account"
     },
     {
       "profileId": "agy05",
@@ -263,7 +335,15 @@
       "commands": {
         "bash": "/usr/bin/bash",
         "dbus-daemon": "/usr/bin/dbus-daemon",
-        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon"
+        "gnome-keyring-daemon": "/usr/bin/gnome-keyring-daemon",
+        "cat": "/usr/bin/cat",
+        "sed": "/usr/bin/sed",
+        "rm": "/usr/bin/rm",
+        "mkdir": "/usr/bin/mkdir",
+        "chmod": "/usr/bin/chmod",
+        "mktemp": "/usr/bin/mktemp",
+        "sleep": "/usr/bin/sleep",
+        "env": "/usr/bin/env"
       },
       "artifacts": [
         "/home/alteixeira20/.local/bin/agy05",
@@ -271,9 +351,18 @@
         "/home/alteixeira20/.local/bin/agy",
         "/usr/bin/bash",
         "/usr/bin/dbus-daemon",
-        "/usr/bin/gnome-keyring-daemon"
+        "/usr/bin/gnome-keyring-daemon",
+        "/usr/bin/cat",
+        "/usr/bin/sed",
+        "/usr/bin/rm",
+        "/usr/bin/mkdir",
+        "/usr/bin/chmod",
+        "/usr/bin/mktemp",
+        "/usr/bin/sleep",
+        "/usr/bin/env"
       ],
-      "requiredEnvironment": []
+      "requiredEnvironment": [],
+      "authenticationMode": "account"
     },
     {
       "profileId": "claude-code",
