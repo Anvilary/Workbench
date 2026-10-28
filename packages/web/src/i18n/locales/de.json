@@ -25,6 +25,7 @@
   "agency.tabs.sessionCount": "{{count}} Sitzungen",
   "agency.tabs.shellRestarted": "Terminal neu gestartet (neuer Prozess)",
   "agency.tabs.tabList": "Sitzungstabs; Pfeile wählen, Alt+Pfeile sortieren",
+  "agency.tabs.terminalNamed": "Terminal {{number}}",
   "agency.ui.actionNeededInTheNativeCLI": "Action needed in the native CLI",
   "agency.ui.activeProcessesWarning": "Warnung: Dieser Arbeitsbereich verfügt über aktive Prozesse. Sie werden beendet.",
   "agency.ui.activityUnknown": "Aktivität unbekannt",

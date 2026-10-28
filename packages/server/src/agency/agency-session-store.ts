@@ -89,7 +89,7 @@ export function migrateSessionTabs(sessions: readonly AgencyRuntimeSession[]): A
     const hex = bytes.toString('hex');
     const id = [hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join('-');
     const choose = !selected.has(session.workspaceId); selected.add(session.workspaceId);
-    return { ...session, tab: { id, name: session.kind === 'terminal' ? 'Terminal ' + (sessions.slice(0,index).filter(s => s.workspaceId === session.workspaceId && s.kind === 'terminal').length + 1) : null, order: index, selected: choose, closedAt: null, current: session.recovery?.status !== 'superseded' } };
+    return { ...session, tab: { id, name: null, ...(session.kind === 'terminal' ? { terminalNumber: sessions.slice(0,index).filter(s => s.workspaceId === session.workspaceId && s.kind === 'terminal').length + 1 } : {}), order: index, selected: choose, closedAt: null, current: session.recovery?.status !== 'superseded' } };
   });
 }
 

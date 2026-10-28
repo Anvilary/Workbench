@@ -1026,3 +1026,64 @@ test('version 1 migration preserves runtime/native references and creates determ
     assert.deepEqual(await store.load(),first);
   } finally {await rm(dir,{recursive:true,force:true});}
 });
+
+test('activity remains keyed by runtime/terminal ID across multiple sessions in one workspace', async () => {
+  const cwd=await mkdtemp(path.join(tmpdir(),'maw-tab-activity-'));const f=fixture(cwd);
+  try {
+    await f.runtime.initialize();const a=await f.runtime.create({kind:'agent',workspaceId:f.one.id,profileId:agentProfile,cols:80,rows:24});
+    const b=await f.runtime.create({kind:'agent',workspaceId:f.one.id,profileId:agentProfile,cols:80,rows:24});
+    f.terminals.emit('activity',a.terminalId,'busy');await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(f.runtime.get(a.id)?.activity,'working');assert.equal(f.runtime.get(b.id)?.activity,'unknown');
+    f.terminals.emit('activity',b.terminalId,'waiting');await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(f.runtime.get(a.id)?.activity,'working');assert.equal(f.runtime.get(b.id)?.activity,'awaiting-user');
+  } finally {f.runtime.dispose();await rm(cwd,{recursive:true,force:true});}
+});
+
+test('inactive workspaces and explicitly closed shell tabs never recover', async () => {
+  for(const status of ['done','archived','stopped','exited'] as const) {
+    const cwd=await mkdtemp(path.join(tmpdir(),'maw-shell-exclusions-'));const store=new MemoryStore();const f=fixture(cwd,{store});
+    const now=new Date().toISOString();
+    if(status==='done'||status==='archived')f.workspaces.set(f.one.id,{...f.one,status});
+    store.data=[{id:randomUUID() as AgencyRuntimeSession['id'],workspaceId:f.one.id,kind:'terminal',profileId:null,nativeSessionId:null,selectedModel:null,selectedEffort:null,terminalId:randomUUID(),lifecycle:status==='stopped'?'stopping':status==='exited'?'exited':'running',activity:'unknown',createdAt:now,updatedAt:now,startedAt:now,stoppedAt:null,exitCode:null,stoppedByUser:status==='stopped'}];
+    try {await f.runtime.initialize();await f.runtime.recoverActive(()=>true);assert.equal(f.terminals.opens.length,0,status);}
+    finally {f.runtime.dispose();await rm(cwd,{recursive:true,force:true});}
+  }
+});
+
+test('closing all tabs resolves workspace deletion blockers without erasing historical/native metadata', async () => {
+  const cwd=await mkdtemp(path.join(tmpdir(),'maw-tabs-delete-'));const f=fixture(cwd);
+  try {
+    await f.runtime.initialize();const one=await f.runtime.create({kind:'terminal',workspaceId:f.one.id,cols:80,rows:24});
+    const two=await f.runtime.create({kind:'terminal',workspaceId:f.one.id,cols:80,rows:24});
+    assert.equal(f.runtime.hasWorkspaceReferences(f.one.id),true);
+    await f.runtime.tabAction(f.one.id,one.tab!.id,'close');assert.equal(f.runtime.hasWorkspaceReferences(f.one.id),true);
+    await f.runtime.tabAction(f.one.id,two.tab!.id,'close');assert.equal(f.runtime.hasWorkspaceReferences(f.one.id),false);
+    assert.equal(f.runtime.list(f.one.id).length,2,'Historical attempts remain durable');
+  } finally {f.runtime.dispose();await rm(cwd,{recursive:true,force:true});}
+});
+
+test('three real same-directory PTYs keep input, output, dimensions and close independent', {skip:process.platform!=='linux',timeout:15000}, async () => {
+  const cwd=await mkdtemp(path.join(tmpdir(),'maw-three-pty-'));
+  const registry=new TerminalRegistry(new AgentRegistry([]),{file:'/bin/sh',args:['-i'],name:'sh'},new DisposableWorkspaceStore());
+  try {
+    const shells=await Promise.all(Array.from({length:3},()=>registry.open({cwd,kind:'shell',agencyManaged:true,cols:80,rows:24})));
+    const output=['','',''];shells.forEach((shell,index)=>registry.attach(shell.terminalId,(_id,chunk)=>{output[index]+=chunk;}));
+    shells.forEach((shell,index)=>registry.write(shell.terminalId,`printf '%s%s\\n' '${index}_' 'ISOLATED'\r`));
+    await until(()=>output.every((text,index)=>text.includes(index+'_ISOLATED')));
+    output.forEach((text,index)=>shells.forEach((_shell,other)=>{if(index!==other)assert.ok(!text.includes(other+'_ISOLATED'));}));
+    registry.resize(shells[1]!.terminalId,77,19);registry.write(shells[1]!.terminalId,'stty size\r');await until(()=>output[1]!.includes('19 77'));
+    assert.ok(!output[0]!.includes('19 77'));assert.ok(!output[2]!.includes('19 77'));
+    registry.close(shells[1]!.terminalId);assert.equal(registry.has(shells[1]!.terminalId),false);
+    for(const index of [0,2])assert.equal(registry.get(shells[index]!.terminalId)?.alive,true);
+  } finally {registry.disposeAll();await rm(cwd,{recursive:true,force:true});}
+});
+
+test('the registry process limit remains atomic across concurrent raw and managed opens', {skip:process.platform!=='linux',timeout:15000}, async () => {
+  const cwd=await mkdtemp(path.join(tmpdir(),'maw-pty-limit-'));
+  const registry=new TerminalRegistry(new AgentRegistry([]),{file:'/bin/sh',args:['-i'],name:'sh'},new DisposableWorkspaceStore());
+  try {
+    const results=await Promise.allSettled(Array.from({length:25},(_,index)=>registry.open({cwd,kind:'shell',agencyManaged:index%2===0,cols:80,rows:24})));
+    assert.equal(results.filter(result=>result.status==='fulfilled').length,24);
+    assert.equal(results.filter(result=>result.status==='rejected').length,1);assert.equal(registry.list().length,24);
+  } finally {registry.disposeAll();await rm(cwd,{recursive:true,force:true});}
+});

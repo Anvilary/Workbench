@@ -25,6 +25,7 @@
   "agency.tabs.sessionCount": "{{count}} 个会话",
   "agency.tabs.shellRestarted": "终端已重启（新进程）",
   "agency.tabs.tabList": "会话标签页；方向键选择，Alt+方向键排序",
+  "agency.tabs.terminalNamed": "终端 {{number}}",
   "agency.ui.actionNeededInTheNativeCLI": "Action needed in the native CLI",
   "agency.ui.activeProcessesWarning": "警告：此工作区有正在运行的活动进程。它们将被停止。",
   "agency.ui.activityUnknown": "活动未知",

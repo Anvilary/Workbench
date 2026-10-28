@@ -25,6 +25,7 @@
   "agency.tabs.sessionCount": "{{count}} sessões",
   "agency.tabs.shellRestarted": "Terminal reiniciado (novo processo)",
   "agency.tabs.tabList": "Abas; setas selecionam, Alt+setas reordenam",
+  "agency.tabs.terminalNamed": "Terminal {{number}}",
   "agency.ui.actionNeededInTheNativeCLI": "Action needed in the native CLI",
   "agency.ui.activeProcessesWarning": "Aviso: este espaço de trabalho possui processos ativos em execução. Eles serão interrompidos.",
   "agency.ui.activityUnknown": "Atividade desconhecida",

@@ -191,6 +191,7 @@ export function createCodexAdapter(): AgentAdapter {
         const identity = context.nativeIdentity;
         if (identity === null || identity.provider !== 'codex') return null;
         scoped = profileDiscoveries.get(identity.home) ?? new CodexSessionDiscovery({
+          strictAttribution: true,
           sessionsRoot: () => path.join(identity.home, 'sessions'),
         });
         profileDiscoveries.set(identity.home, scoped);

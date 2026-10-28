@@ -25,6 +25,7 @@
   "agency.tabs.sessionCount": "{{count}} sessions",
   "agency.tabs.shellRestarted": "Terminal restarted (new process)",
   "agency.tabs.tabList": "Session tabs; arrows select, Alt+arrows reorder",
+  "agency.tabs.terminalNamed": "Terminal {{number}}",
   "agency.ui.actionNeededInTheNativeCLI": "Action needed in the native CLI",
   "agency.ui.activeProcessesWarning": "Warning: This workspace has active processes running. They will be stopped.",
   "agency.ui.activityUnknown": "Activity unknown",

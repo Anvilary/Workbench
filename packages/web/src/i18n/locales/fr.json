@@ -25,6 +25,7 @@
   "agency.tabs.sessionCount": "{{count}} sessions",
   "agency.tabs.shellRestarted": "Terminal redémarré (nouveau processus)",
   "agency.tabs.tabList": "Onglets ; flèches pour choisir, Alt+flèches pour déplacer",
+  "agency.tabs.terminalNamed": "Terminal {{number}}",
   "agency.ui.actionNeededInTheNativeCLI": "Action needed in the native CLI",
   "agency.ui.activeProcessesWarning": "Avertissement : cet espace de travail a des processus en cours d'exécution. Ils seront arrêtés.",
   "agency.ui.activityUnknown": "Activité inconnue",
