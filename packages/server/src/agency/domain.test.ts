@@ -296,3 +296,90 @@ test('workspace delete is fail-closed without the shared session reservation loc
   assert.equal(success?.type, 'agency.workspace.deleted');
   assert.equal(store.getWorkspace(workspace.id), null);
 });
+
+test('workspace and project archive: distinct state, broadcasts, unarchive/restore and backwards compatibility', async (t) => {
+  const { dir, store } = await fixture(t);
+  const pickers = new DirectoryPickers([]);
+
+  const broadcasts: unknown[] = [];
+  const ctx = {
+    store,
+    pickers,
+    publish: (msg: unknown) => broadcasts.push(msg),
+  };
+
+  // 1. Create project and workspace
+  const pRes = await handleAgencyDomainRequest({
+    type: 'agency.project.create',
+    requestId: 'p-req',
+    name: 'Archivable Project',
+  }, ctx);
+  assert.equal(pRes?.type, 'agency.project.created');
+  const project = (pRes as { project: { id: string } }).project;
+
+  const cwd = path.join(dir, 'archive-ws');
+  await mkdir(cwd);
+  const pickerId = await pick(pickers, cwd);
+
+  const wsRes = await handleAgencyDomainRequest({
+    type: 'agency.workspace.create',
+    requestId: 'ws-req',
+    projectId: project.id,
+    name: 'Archivable Workspace',
+    pickerId,
+  }, ctx);
+  assert.equal(wsRes?.type, 'agency.workspace.created');
+  const workspace = (wsRes as { workspace: { id: string; status: string } }).workspace;
+  assert.equal(workspace.status, 'active');
+
+  // 2. Archive workspace
+  const wsArchRes = await handleAgencyDomainRequest({
+    type: 'agency.workspace.archive',
+    requestId: 'ws-arch-req',
+    workspaceId: workspace.id,
+  }, ctx);
+  assert.equal(wsArchRes?.type, 'agency.workspace.archived');
+  const archivedWs = (wsArchRes as { workspace: { status: string; archivedAt: string | null } }).workspace;
+  assert.equal(archivedWs.status, 'archived');
+  assert.ok(archivedWs.archivedAt);
+
+  // 3. Restore workspace
+  const wsRestRes = await handleAgencyDomainRequest({
+    type: 'agency.workspace.restore',
+    requestId: 'ws-rest-req',
+    workspaceId: workspace.id,
+  }, ctx);
+  assert.equal(wsRestRes?.type, 'agency.workspace.restored');
+  const restoredWs = (wsRestRes as { workspace: { status: string; archivedAt: string | null } }).workspace;
+  assert.equal(restoredWs.status, 'active');
+  assert.equal(restoredWs.archivedAt, null);
+
+  // 4. Archive project
+  const pArchRes = await handleAgencyDomainRequest({
+    type: 'agency.project.archive',
+    requestId: 'p-arch-req',
+    projectId: project.id,
+  }, ctx);
+  assert.equal(pArchRes?.type, 'agency.project.archived');
+  const archivedProj = (pArchRes as { project: { status: string; archivedAt: string | null } }).project;
+  assert.equal(archivedProj.status, 'archived');
+  assert.ok(archivedProj.archivedAt);
+
+  // 5. Unarchive project
+  const pUnarchRes = await handleAgencyDomainRequest({
+    type: 'agency.project.unarchive',
+    requestId: 'p-unarch-req',
+    projectId: project.id,
+  }, ctx);
+  assert.equal(pUnarchRes?.type, 'agency.project.unarchived');
+  const unarchivedProj = (pUnarchRes as { project: { status: string; archivedAt: string | null } }).project;
+  assert.equal(unarchivedProj.status, 'active');
+  assert.equal(unarchivedProj.archivedAt, null);
+
+  // 6. Verify broadcasts emitted
+  const types = broadcasts.map((b: any) => `${b.type}:${b.change}`);
+  assert.ok(types.includes('agency.workspace.changed:archived'));
+  assert.ok(types.includes('agency.workspace.changed:restored'));
+  assert.ok(types.includes('agency.project.changed:archived'));
+  assert.ok(types.includes('agency.project.changed:unarchived'));
+});

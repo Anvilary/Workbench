@@ -21,7 +21,7 @@
  * **antes** de cerrar, que es cuando el selector todavia existe.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DirectoryPickerListing, ServerMessage } from '@agent-workbench/shared';
 import type { AgentConnection } from './connection.js';
 import { t } from './i18n/index.js';
@@ -56,8 +56,23 @@ export function FolderPicker({
   const [problem, setProblem] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [draftName, setDraftName] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const pickerId = useRef<string | null>(null);
   const createRef = useRef<HTMLInputElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    setSearchQuery('');
+  }, [listing?.path]);
+
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filteredEntries = useMemo(() => {
+    if (!listing) return [];
+    if (!normalizedQuery) return listing.entries;
+    return listing.entries.filter((name) =>
+      name.toLowerCase().includes(normalizedQuery),
+    );
+  }, [listing, normalizedQuery]);
 
   useEffect(() => {
     const open = () => {
@@ -173,8 +188,55 @@ export function FolderPicker({
               {listing.path}
             </p>
 
+            <div className="picker-search-bar">
+              <input
+                ref={searchInputRef}
+                type="text"
+                className="picker-search-input"
+                placeholder={t('picker.searchPlaceholder')}
+                aria-label={t('picker.searchPlaceholder')}
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    if (searchQuery.length > 0) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setSearchQuery('');
+                      return;
+                    }
+                  }
+                  event.stopPropagation();
+                }}
+                spellCheck={false}
+              />
+              {searchQuery.length > 0 && (
+                <button
+                  type="button"
+                  className="picker-search-clear"
+                  onClick={() => {
+                    setSearchQuery('');
+                    searchInputRef.current?.focus();
+                  }}
+                  title={t('picker.clearSearch')}
+                  aria-label={t('picker.clearSearch')}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
+            {normalizedQuery.length > 0 && (
+              <p className="picker-search-status" role="status" aria-live="polite">
+                {t('picker.searchResults', {
+                  count: filteredEntries.length,
+                  total: listing.entries.length,
+                })}
+              </p>
+            )}
+
             <div className="picker-list">
-              {listing.canGoUp && (
+              {listing.canGoUp && !normalizedQuery && (
                 <button className="picker-entry picker-up" onClick={() => enter('..')}>
                   ‹ {t('picker.up')}
                 </button>
@@ -184,7 +246,11 @@ export function FolderPicker({
                 <p className="panel-note">{t('picker.empty')}</p>
               )}
 
-              {listing.entries.map((name) => (
+              {listing.entries.length > 0 && filteredEntries.length === 0 && (
+                <p className="panel-note">{t('picker.noSearchResults')}</p>
+              )}
+
+              {filteredEntries.map((name) => (
                 <button key={name} className="picker-entry" onClick={() => enter(name)}>
                   {name}
                 </button>

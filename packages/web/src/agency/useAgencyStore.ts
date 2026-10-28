@@ -1,7 +1,7 @@
 import { serverTextMessage } from '../i18n/server-text.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
-  AgencyClientMessage, AgencyRuntimeSession, AgencyServerMessage, AgencyWorkspace,
+  AgencyClientMessage, AgencyProject, AgencyRuntimeSession, AgencyServerMessage, AgencyWorkspace,
 } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import {
@@ -94,7 +94,10 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
       } else if (message.type === 'agency.sessions.snapshot') {
         message.sessions.forEach((session) => record(session, false));
         setData((old) => ({ ...old, sessions: message.sessions }));
-      } else if (message.type === 'agency.project.created' || message.type === 'agency.project.updated') {
+      } else if (
+        message.type === 'agency.project.created' || message.type === 'agency.project.updated' ||
+        message.type === 'agency.project.archived' || message.type === 'agency.project.unarchived'
+      ) {
         setData((old) => ({ ...old, projects: replaceById(old.projects, message.project) }));
       } else if (message.type === 'agency.project.deleted') {
         setData((old) => ({ ...old, projects: old.projects.filter((p) => p.id !== message.projectId) }));
@@ -107,7 +110,8 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
         }));
       } else if (
         message.type === 'agency.workspace.created' || message.type === 'agency.workspace.updated' ||
-        message.type === 'agency.workspace.done' || message.type === 'agency.workspace.restored'
+        message.type === 'agency.workspace.done' || message.type === 'agency.workspace.restored' ||
+        message.type === 'agency.workspace.archived'
       ) {
         setData((old) => ({ ...old, workspaces: replaceById(old.workspaces, message.workspace) }));
       } else if (message.type === 'agency.workspace.deleted') {
@@ -128,12 +132,13 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
         record(message.session, true);
         setData((old) => ({ ...old, sessions: replaceById(old.sessions, message.session) }));
       } else if (message.type === 'agency.session.activity') {
-        const previous = lastSessions.current.get(message.sessionId);
-        if (previous) {
+        setData((old) => {
+          const previous = old.sessions.find((s) => s.id === message.sessionId) ?? lastSessions.current.get(message.sessionId);
+          if (!previous) return old;
           const next = { ...previous, activity: message.activity, lifecycle: message.lifecycle };
           record(next, true);
-          setData((old) => ({ ...old, sessions: replaceById(old.sessions, next) }));
-        }
+          return { ...old, sessions: replaceById(old.sessions, next) };
+        });
       }
       if (!('requestId' in message)) return;
       const waiting = pending.current.get(message.requestId);
@@ -166,12 +171,28 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
   }, [connection, transport, refresh]);
 
   const createProject = (name: string) => request({ type: 'agency.project.create', name });
+  const renameProject = (projectId: AgencyProject['id'], name: string) =>
+    request({ type: 'agency.project.update', projectId, name });
+  const archiveProject = (projectId: AgencyProject['id']) =>
+    request({ type: 'agency.project.archive', projectId });
+  const unarchiveProject = (projectId: AgencyProject['id']) =>
+    request({ type: 'agency.project.unarchive', projectId });
+  const deleteProject = (projectId: AgencyProject['id']) =>
+    request({ type: 'agency.project.delete', projectId });
   const createWorkspace = (projectId: AgencyWorkspace['projectId'], name: string, pickerId: string) =>
     request({ type: 'agency.workspace.create', projectId, name, pickerId });
+  const archiveWorkspace = (workspaceId: AgencyWorkspace['id']) =>
+    request({ type: 'agency.workspace.archive', workspaceId });
   const markDone = (workspaceId: AgencyWorkspace['id']) =>
     request({ type: 'agency.workspace.done', workspaceId });
   const restore = (workspaceId: AgencyWorkspace['id']) =>
     request({ type: 'agency.workspace.restore', workspaceId });
+  const deleteWorkspace = (workspaceId: AgencyWorkspace['id']) =>
+    request({ type: 'agency.workspace.delete', workspaceId });
 
-  return { data, online, loaded, notice, request, refresh, createProject, createWorkspace, markDone, restore };
+  return {
+    data, online, loaded, notice, request, refresh,
+    createProject, renameProject, archiveProject, unarchiveProject, deleteProject,
+    createWorkspace, archiveWorkspace, markDone, restore, deleteWorkspace,
+  };
 }
