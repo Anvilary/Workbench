@@ -100,8 +100,8 @@ const commonEnv = {
 
 function startServer() {
   const child = spawn(
-    'pnpm',
-    ['--dir', 'packages/server', 'exec', 'tsx', 'src/index.ts', '--prod'],
+    process.execPath,
+    ['--import', path.join(repoRoot, 'packages/server/node_modules/tsx/dist/loader.mjs'), path.join(repoRoot, 'packages/server/src/index.ts'), '--prod'],
     {
       cwd: repoRoot,
       env: commonEnv,

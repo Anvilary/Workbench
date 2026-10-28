@@ -866,3 +866,69 @@ test('opaque Codex identity keeps its PTY usable while discovery and resume fail
     assert.equal(f.terminals.opens.length, 1);
   } finally { f.runtime.dispose(); await rm(cwd, { recursive: true, force: true }); }
 });
+
+test('startup recovery is single-flight and preserves native ID through a replacement PTY', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'maw-auto-'));
+  const store = new MemoryStore();
+  const f = fixture(cwd, { store });
+  const now = new Date().toISOString();
+  const nativeId = randomUUID();
+  store.data = [{ id: randomUUID() as AgencyRuntimeSession['id'], workspaceId: f.one.id,
+    kind: 'agent', profileId: agentProfile, nativeSessionId: nativeId,
+    nativeIdentity: { provider: 'codex', home: path.join(cwd, 'fixture-native-home') },
+    terminalId: randomUUID(), lifecycle: 'running', activity: 'unknown', createdAt: now,
+    updatedAt: now, startedAt: now, stoppedAt: null, exitCode: null, selectedModel: null, selectedEffort: null }];
+  try {
+    await f.runtime.initialize();
+    await Promise.all([f.runtime.recoverActive(() => true), f.runtime.recoverActive(() => true)]);
+    assert.equal(f.terminals.opens.length, 1);
+    const live = f.runtime.list().find(s => s.lifecycle === 'running');
+    assert.equal(live?.nativeSessionId, nativeId);
+    assert.equal(live?.recovery?.status, 'resumed');
+    assert.notEqual(live?.terminalId, store.data[0]?.terminalId);
+  } finally { f.runtime.dispose(); await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('Done, Archived, archived project, stopping, unknown identity and unsupported provider never auto-launch', async () => {
+  for (const variant of ['done', 'archived', 'project', 'stopping', 'identity', 'antigravity', 'claude-code', 'missing-directory']) {
+    const cwd = await mkdtemp(path.join(tmpdir(), 'maw-skip-'));
+    const store = new MemoryStore();
+    const f = fixture(cwd, { store });
+    const now = new Date().toISOString();
+    if (variant === 'done' || variant === 'archived') f.workspaces.set(f.one.id, { ...f.one, status: variant });
+    store.data = [{ id: randomUUID() as AgencyRuntimeSession['id'], workspaceId: f.one.id,
+      kind: 'agent', profileId: agentProfile, nativeSessionId: randomUUID(),
+      nativeIdentity: variant === 'identity' ? null : { provider: variant === 'antigravity' || variant === 'claude-code' ? variant : 'codex', home: cwd },
+      terminalId: randomUUID(), lifecycle: variant === 'stopping' ? 'stopping' : 'running', activity: 'unknown',
+      createdAt: now, updatedAt: now, startedAt: now, stoppedAt: null, exitCode: null, selectedModel: null, selectedEffort: null }];
+    try {
+      if (variant === 'missing-directory') await rm(cwd, { recursive: true, force: true });
+      await f.runtime.initialize();
+      await f.runtime.recoverActive(() => variant !== 'project');
+      assert.equal(f.terminals.opens.length, 0, variant);
+      assert.equal(f.runtime.list()[0]?.nativeSessionId, store.data[0]?.nativeSessionId);
+    } finally { f.runtime.dispose(); await rm(cwd, { recursive: true, force: true }); }
+  }
+});
+
+test('failed and interrupted recovery retains original reference without automatic retries', async () => {
+  for (const variant of ['profile-changed', 'interrupted']) {
+    const cwd = await mkdtemp(path.join(tmpdir(), 'maw-retry-'));
+    const store = new MemoryStore();
+    let attempts = 0;
+    const f = fixture(cwd, { store, resolveLaunch: async () => { attempts++; throw new Error('Verified profile identity changed'); } });
+    const now = new Date().toISOString(); const nativeId = randomUUID();
+    store.data = [{ id: randomUUID() as AgencyRuntimeSession['id'], workspaceId: f.one.id, kind: 'agent',
+      profileId: agentProfile, nativeSessionId: nativeId, nativeIdentity: { provider: 'codex', home: cwd },
+      terminalId: null, lifecycle: variant === 'interrupted' ? 'exited' : 'running', activity: 'unknown',
+      recovery: variant === 'interrupted' ? {status:'resuming',message:null} : undefined,
+      createdAt:now, updatedAt:now, startedAt:now, stoppedAt:null, exitCode:null, selectedModel:null, selectedEffort:null }];
+    try {
+      await f.runtime.initialize(); await f.runtime.recoverActive(() => true); await f.runtime.recoverActive(() => true);
+      assert.equal(attempts,1); assert.equal(f.terminals.opens.length,0);
+      const original = f.runtime.list().find(item => item.nativeSessionId === nativeId);
+      assert.equal(original?.recovery?.status,'manual');
+      assert.match(original?.recovery?.message ?? '',/identity changed/);
+    } finally { f.runtime.dispose(); await rm(cwd,{recursive:true,force:true}); }
+  }
+});

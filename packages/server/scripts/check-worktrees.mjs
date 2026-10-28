@@ -1895,7 +1895,7 @@ let reviewSession = '';
       !keepsNoteBase('docs/a.md', Buffer.alloc(NOTE_BASE_MAX_BYTES + 1, 97)));
 
   const basesDir = path.join(root, 'copias-j');
-  const bases = new NoteBases(basesDir, { graceMs: 0 });
+  const bases = new NoteBases(basesDir, { graceMs: 0, now: () => Date.now() + 1000 });
   await bases.save('a.md', text('hola\n'));
   await bases.save('b.md', text('chau\n'));
   await bases.save('.env', text('TOKEN=x\n'));

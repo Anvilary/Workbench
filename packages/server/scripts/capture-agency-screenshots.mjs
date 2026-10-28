@@ -72,8 +72,8 @@ const commonEnv = {
 
 console.log('Starting production server for screenshot capture...');
 const server = spawn(
-  'pnpm',
-  ['--dir', 'packages/server', 'exec', 'tsx', 'src/index.ts', '--prod'],
+  process.execPath,
+  ['--import', path.join(rootDir, 'packages/server/node_modules/tsx/dist/loader.mjs'), path.join(rootDir, 'packages/server/src/index.ts'), '--prod'],
   { cwd: rootDir, env: commonEnv, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' },
 );
 process.on('exit', () => {
@@ -264,6 +264,10 @@ const consoleErrors = [];
 const pageErrors = [];
 
 const page = await context.newPage();
+const browserCreates = [];
+page.on('websocket', socket => socket.on('framesent', frame => {
+  try { if (JSON.parse(frame.payload).type === 'agency.session.create') browserCreates.push(frame.payload); } catch {}
+}));
 page.on('console', (msg) => {
   if (msg.type() === 'error') consoleErrors.push(msg.text());
 });
@@ -412,6 +416,14 @@ console.log('Two workspace switches with terminal attachment (ms):', Math.round(
 await page.locator('.agency-history-toggle').click();
 await page.locator('.agency-done-row').filter({ hasText: 'Completed Task' }).getByRole('button', { name: 'Restore' }).click();
 await page.locator('.agency-workspace-view').waitFor();
+await selectWorkspace('Combined Workspace');
+await page.getByRole('button', { name: 'CLI', exact: true }).click();
+await page.getByRole('button', { name: 'Stop agent', exact: true }).click();
+await page.locator('.agency-agent-pane .terminal-surface').waitFor({ state: 'detached' });
+await page.getByRole('button', { name: 'Start new CLI session', exact: true }).waitFor();
+await saveShot('15-exited-session.png');
+assert.equal(browserCreates.length, 0, 'Navigation or refresh created a new native PTY');
+assert.ok(await page.locator('.agency-breadcrumb-path').getAttribute('title'));
 assert.deepEqual(pageErrors, [], 'Unexpected browser page errors');
 
 const hashes = ['01-empty-workspace.png', '02-shell-only-workspace.png', '03-agent-only-workspace.png',

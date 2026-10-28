@@ -2027,13 +2027,17 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         }
 
         case 'terminal.close':
-          if (!dropTab(message.terminalId)) {
-            sendError(socket, 'unknown-terminal', serverText('terminalGone'));
-          } else {
-            subscriptions.delete(message.terminalId);
-            gitSubscriptions.delete(message.terminalId);
-            memorySubscriptions.delete(message.terminalId);
-          }
+          void (async () => {
+            const session = agencyRuntime.list().find(item => item.terminalId === message.terminalId);
+            if (session) await agencyRuntime.stop(session.id);
+            if (!dropTab(message.terminalId) && !session) {
+              sendError(socket, 'unknown-terminal', serverText('terminalGone'));
+            } else {
+              subscriptions.delete(message.terminalId);
+              gitSubscriptions.delete(message.terminalId);
+              memorySubscriptions.delete(message.terminalId);
+            }
+          })().catch(error => sendError(socket, 'unknown-terminal', serverText('terminalGone'), String(error)));
           break;
 
         case 'terminal.attach': {

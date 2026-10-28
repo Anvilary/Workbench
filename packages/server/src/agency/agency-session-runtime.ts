@@ -176,6 +176,8 @@ export class AgencySessionRuntime extends EventEmitter {
   /** No two live Agency PTYs may control one provider-native conversation. */
   private readonly nativeClaims = new Map<string, RuntimeSessionId>();
   private initialized = false;
+  private recoveryFlight: Promise<void> | null = null;
+  private disposed = false;
 
   constructor(options: AgencyRuntimeOptions) {
     super();
@@ -190,10 +192,11 @@ export class AgencySessionRuntime extends EventEmitter {
     if (this.initialized) throw new Error('Agency runtime already initialized');
     let changed = false;
     for (const previous of await this.store.load()) {
-      const needsRecovery = ACTIVE.has(previous.lifecycle);
+      const needsRecovery = ACTIVE.has(previous.lifecycle) || previous.recovery?.status === 'resuming';
       const session: AgencyRuntimeSession = needsRecovery ? {
         ...previous,
         lifecycle: 'exited',
+        ...(previous.kind === 'agent' && previous.lifecycle !== 'stopping' ? { recovery: { status: 'pending' as const, message: null } } : {}),
         activity: 'offline',
         // A backend restart loses the owned PTY. No exit code can be inferred.
         exitCode: null,
@@ -208,6 +211,43 @@ export class AgencySessionRuntime extends EventEmitter {
     this.registry.on('activity', this.onActivity);
     this.registry.on('session', this.onNativeSession);
     this.initialized = true;
+  }
+
+  /** Startup only. Single-flight and sequential: never invoked by browser reconnect. */
+  recoverActive(projectActive: (workspace: AgencyWorkspace) => boolean): Promise<void> {
+    this.assertReady();
+    if (this.recoveryFlight) return this.recoveryFlight;
+    this.recoveryFlight = this.runRecovery(projectActive);
+    return this.recoveryFlight;
+  }
+
+  private async runRecovery(projectActive: (workspace: AgencyWorkspace) => boolean): Promise<void> {
+    for (const previous of [...this.sessions.values()]) {
+      if (this.disposed) return;
+      if (previous.kind !== 'agent' || previous.recovery?.status !== 'pending') continue;
+      const recordOutcome = async (status: 'resuming' | 'resumed' | 'manual' | 'failed' | 'superseded', message: string | null) => {
+        const next = { ...previous, recovery: { status, message }, updatedAt: NOW() };
+        this.sessions.set(previous.id, next);
+        await this.publish(next);
+      };
+      try {
+        await this.workspaces.withSessionReservation(previous.workspaceId, async workspace => {
+          if (!workspace || workspace.status !== 'active' || !projectActive(workspace)) throw new Error('Workspace or project is inactive');
+          await this.assertSafeDirectory(workspace.cwd);
+        });
+        if (!previous.nativeIdentity || !previous.nativeSessionId) throw new Error('Manual resume required: native identity or conversation is unverified');
+        if (previous.nativeIdentity.provider !== 'codex') throw new Error('Manual resume required: provider ownership validation unavailable');
+        await recordOutcome('resuming', null);
+        const resumed = await this.create({ kind: 'agent', workspaceId: previous.workspaceId,
+          profileId: previous.profileId, resumeNativeSessionId: previous.nativeSessionId, cols: 100, rows: 30 });
+        const next = { ...resumed, recovery: { status: 'resumed' as const, message: null } };
+        this.sessions.set(next.id, next);
+        await this.publish(next);
+        await recordOutcome('superseded', null);
+      } catch (error) {
+        await recordOutcome('manual', error instanceof Error ? error.message : 'Native recovery failed');
+      }
+    }
   }
 
   list(workspaceId?: WorkspaceId): AgencyRuntimeSession[] {
@@ -363,6 +403,7 @@ export class AgencySessionRuntime extends EventEmitter {
           }
           this.claimNative('provider:' + provider + ':' + initialNative, id);
         }
+        await this.publish(this.sessions.get(id)!);
         options.agent = providerAgent(provider);
         if (input.resumeNativeSessionId !== undefined) options.resumeSessionId = input.resumeNativeSessionId;
         options.agencyLaunch = {
@@ -399,7 +440,7 @@ export class AgencySessionRuntime extends EventEmitter {
         };
       }
       // Stop during async profile resolution must prevent spawning.
-      if (this.sessions.get(id)?.lifecycle === 'stopping') {
+      if (this.disposed || this.sessions.get(id)?.lifecycle === 'stopping') {
         return await this.finish(id, null, 'exited');
       }
       // A previously safe path or CLI home may have been swapped while the
@@ -481,7 +522,7 @@ export class AgencySessionRuntime extends EventEmitter {
     const session = this.sessions.get(sessionId);
     if (session === undefined) throw new AgencyRuntimeError('not-found', 'Session does not exist');
     if (!ACTIVE.has(session.lifecycle) || session.lifecycle === 'stopping') return session;
-    const stopping = { ...session, lifecycle: 'stopping' as const, updatedAt: NOW() };
+    const stopping = { ...session, stoppedByUser: true, lifecycle: 'stopping' as const, updatedAt: NOW() };
     this.sessions.set(sessionId, stopping);
     await this.publish(stopping);
     if (stopping.terminalId === null) return stopping; // pending open resolves and stops itself
@@ -531,6 +572,7 @@ export class AgencySessionRuntime extends EventEmitter {
 
   /** Detach listeners at shutdown; TerminalRegistry.disposeAll owns termination. */
   dispose(): void {
+    this.disposed = true;
     this.registry.off('exit', this.onExit);
     this.registry.off('activity', this.onActivity);
     this.registry.off('session', this.onNativeSession);

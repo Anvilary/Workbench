@@ -1,5 +1,5 @@
 import { t } from '../i18n/index.js';
-import { agencyActivityText } from './agency-labels.js';
+import { agencySessionText } from './agency-labels.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AgencyCliProfile, AgencyRuntimeSession, AgencyWorkspace, CliProfileId,
@@ -39,6 +39,9 @@ export function AgencyWorkspaceView({
   const activeAgent = agentSession(currentSession(sessions, workspace.id, 'agent'));
   const activeShell = currentSession(sessions, workspace.id, 'terminal');
   const pastAgent = agentSession(latestSession(sessions, workspace.id, 'agent'));
+  const resumeAgent = pastAgent?.nativeSessionId ? pastAgent : agentSession([...sessions].reverse().find(item => item.workspaceId === workspace.id && item.kind === 'agent' && item.nativeSessionId !== null));
+  const recoverySource = [...sessions].reverse().find(item => item.workspaceId === workspace.id && item.recovery?.status === 'manual');
+  const retryResume = useRef(false);
   const agent = activeAgent;
 
   const [profileId, setProfileId] = useState<CliProfileId | ''>(() =>
@@ -100,13 +103,15 @@ export function AgencyWorkspaceView({
   }, [view, workspace.id]);
 
   const workspaceStatus = useMemo(() => {
-    if (agent) return agencyActivityText(agent.activity, agent.lifecycle);
-    if (activeShell) return agencyActivityText(activeShell.activity, activeShell.lifecycle);
+    if (agent) return agencySessionText(agent);
+    if (activeShell) return agencySessionText(activeShell);
     return t('agency.ui.ready');
   }, [agent, activeShell]);
 
-  async function launchAgent() {
-    if (!profile || !canLaunchAgent(profile) || agent || !online) {
+  async function launchAgent(resume = false) {
+    retryResume.current = resume;
+    const launchProfile = resume ? profiles.find(item => item.id === resumeAgent?.profileId) : profile;
+    if (!launchProfile || !canLaunchAgent(launchProfile) || (resume && (!resumeAgent?.nativeSessionId || !launchProfile.capabilities.canResumeNativeSession)) || agent || !online) {
       setSessionError(t('agency.ui.agentProfileIsUnavailable'));
       return;
     }
@@ -118,7 +123,8 @@ export function AgencyWorkspaceView({
         type: 'agency.session.create',
         workspaceId: workspace.id,
         kind: 'agent',
-        profileId: profile.id,
+        profileId: launchProfile.id,
+        ...(resume && resumeAgent?.nativeSessionId ? { resumeNativeSessionId: resumeAgent.nativeSessionId } : {}),
         cols: 100,
         rows: 30,
       });
@@ -318,7 +324,7 @@ export function AgencyWorkspaceView({
         <div role="alert" className="agency-error-bar">
           <span>{t('agency.ui.launchFailed', { error: activeLaunchError })}</span>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <button type="button" className="agency-secondary-button" onClick={() => void launchAgent()}>
+            <button type="button" className="agency-secondary-button" onClick={() => void launchAgent(retryResume.current)}>
               {t('agency.ui.retryLaunch')}
             </button>
             <button type="button" onClick={() => { setSessionError(null); onClearLaunchError?.(); }} aria-label={t('agency.ui.dismissError')}>×</button>
@@ -338,7 +344,7 @@ export function AgencyWorkspaceView({
           >
             <div className="agency-pane-bar">
               <span className="agency-pane-label">{profile?.label ?? t('agency.ui.agentLabel')}</span>
-              {agent && <span className="agency-muted agency-pane-status">{agencyActivityText(agent.activity, agent.lifecycle)}</span>}
+              {agent && <span className="agency-muted agency-pane-status">{agencySessionText(agent)}</span>}
               <span className="agency-flex-spacer" />
 
               {/* Copy dropdown */}
@@ -460,7 +466,8 @@ export function AgencyWorkspaceView({
               ) : (
                 <div className="agency-shell-placeholder">
                   <p>{pastAgent ? (pastAgent.exitCode === null ? t('agency.ui.previousAgentExited') : t('agency.ui.previousAgentExitedCode', { code: pastAgent.exitCode })) : t('agency.ui.noSession')}</p>
-                  <span>{t('agency.ui.readyWhenYouAre')}</span>
+                  <span>{recoverySource?.recovery?.message ?? pastAgent?.recovery?.message ?? t('agency.ui.readyWhenYouAre')}</span>
+                  {resumeAgent?.nativeSessionId && profiles.find(p => p.id === resumeAgent.profileId)?.capabilities.canResumeNativeSession && <button type="button" className="agency-secondary-button" disabled={!online || agentStarting} onClick={() => void launchAgent(true)}>{t('agency.ui.resumeNative')}</button>}
                   {profiles.length > 0 && (
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                       <select
@@ -510,7 +517,7 @@ export function AgencyWorkspaceView({
           >
             <div className="agency-pane-bar">
               <span className="agency-pane-label">{t('agency.ui.shell')}</span>
-              {activeShell && <span className="agency-muted agency-pane-status">{agencyActivityText(activeShell.activity, activeShell.lifecycle)}</span>}
+              {activeShell && <span className="agency-muted agency-pane-status">{agencySessionText(activeShell)}</span>}
               <span className="agency-flex-spacer" />
 
               {/* Copy dropdown */}

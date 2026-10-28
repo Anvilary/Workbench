@@ -24,6 +24,8 @@ function nullableTimestamp(value: unknown): boolean {
 
 function validSession(value: unknown): value is AgencyRuntimeSession {
   if (!record(value)) return false;
+  if (value.stoppedByUser !== undefined && typeof value.stoppedByUser !== 'boolean') return false;
+  if (value.recovery !== undefined && (!record(value.recovery) || !['pending', 'resuming', 'resumed', 'manual', 'failed', 'superseded'].includes(value.recovery.status as string) || (value.recovery.message !== null && typeof value.recovery.message !== 'string'))) return false;
   if (typeof value.id !== 'string' || !ID_PATTERN.test(value.id)) return false;
   if (typeof value.workspaceId !== 'string' || !ID_PATTERN.test(value.workspaceId)) return false;
   if (value.terminalId !== null && (typeof value.terminalId !== 'string' || !ID_PATTERN.test(value.terminalId))) return false;

@@ -67,10 +67,10 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
 
   useEffect(() => {
     if (!loaded || showingDone) return;
-    const active = data.workspaces.filter((ws) => ws.status === 'active');
+    const active = data.workspaces.filter((ws) => ws.status === 'active' && data.projects.some(project => project.id === ws.projectId && project.status !== 'archived'));
     if (selectedId && active.some((ws) => ws.id === selectedId)) return;
     setSelectedId(active[0]?.id ?? null);
-  }, [loaded, showingDone, data.workspaces, selectedId]);
+  }, [loaded, showingDone, data.workspaces, data.projects, selectedId]);
 
   useEffect(() => {
     if (!notice || seenNotice.current.has(notice.serial)) return;
