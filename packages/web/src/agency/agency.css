@@ -382,6 +382,8 @@
 .maw-session-tab [role=tab] { display:flex; gap:8px; align-items:center; flex:1; min-width:0; height:100%; padding:8px; }
 .maw-session-tab [data-close] { padding:8px; }
 .maw-session-tab.active [role=tab] { color:#fff; }
+.maw-tab-name-input { width:160px; min-width:72px; max-width:100%; flex:1; margin:4px; padding:6px; border:1px solid #9ca9e3; border-radius:3px; background:#161821; color:#fff; font:inherit; user-select:text; }
+.maw-tab-name-input[aria-invalid=true] { border-color:#ef7777; }
 .maw-add-tab { flex:none; }
 .maw-session-content { flex:1; min-height:0; position:relative; display:flex; }
 .maw-session-pane { display:flex; flex:1; min-width:0; min-height:0; flex-direction:column; }

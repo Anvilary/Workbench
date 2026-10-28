@@ -10,7 +10,7 @@ export const AGENCY_CONTRACT_VERSION = 2 as const;
 
 import {
   type WebTabClientMessage, type WebTabServerMessage,
-  parseWebTabClientMessage, parseWebTabServerMessage,
+  parseWebTabClientMessage, parseWebTabServerMessage, validateWebTabTitle,
 } from './browser-tabs.js';
 
 import {
@@ -210,6 +210,7 @@ export type AgencyClientMessage =
       rows: number;
     })
   | (AgencyClientRequest<'agency.tab.action'> & { workspaceId: WorkspaceId; tabId: string; action: 'select' | 'close' | 'resume' })
+  | (AgencyClientRequest<'agency.tab.rename'> & { workspaceId: WorkspaceId; tabId: string; name: string })
   | (AgencyClientRequest<'agency.tabs.order'> & { workspaceId: WorkspaceId; tabIds: readonly string[] })
   | (AgencyClientRequest<'agency.session.selection.set'> & {
       sessionId: RuntimeSessionId;
@@ -436,6 +437,10 @@ export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | nu
     case 'agency.tab.action': {
       if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'tabId', 'action']) || !isValidId(raw.workspaceId) || !isValidId(raw.tabId) || !['select', 'close', 'resume'].includes(raw.action as string)) return null;
       return { type: 'agency.tab.action', requestId, workspaceId: raw.workspaceId as WorkspaceId, tabId: raw.tabId as string, action: raw.action as 'select' | 'close' | 'resume' };
+    }
+    case 'agency.tab.rename': {
+      if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'tabId', 'name']) || !isValidId(raw.workspaceId) || !isValidId(raw.tabId) || !validateWebTabTitle(raw.name)) return null;
+      return { type: 'agency.tab.rename', requestId, workspaceId: raw.workspaceId as WorkspaceId, tabId: raw.tabId as string, name: (raw.name as string).trim() };
     }
     case 'agency.tabs.order': {
       if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'tabIds']) || !isValidId(raw.workspaceId) || !Array.isArray(raw.tabIds) || raw.tabIds.length > 10000 || !raw.tabIds.every(isValidId) || new Set(raw.tabIds).size !== raw.tabIds.length) return null;

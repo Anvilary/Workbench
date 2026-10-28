@@ -1,0 +1,118 @@
+{
+  "results": [
+    {
+      "label": "isolated loopback MAW HTTP authentication"
+    },
+    {
+      "label": "real Bash background completion, ownership, durable inbox and independent read state"
+    },
+    {
+      "label": "real notification inbox click-through selects workspace/tab and acknowledges displayed terminal"
+    },
+    {
+      "label": "real failed shell command, top-right toast and dismissal retains inbox"
+    },
+    {
+      "label": "genuine authenticated Neko Chromium stream displayed in single MAW surface"
+    },
+    {
+      "label": "real Neko keyboard input controls Chromium and live navigation is persisted"
+    },
+    {
+      "label": "live viewer 390x844",
+      "status": "PASS"
+    },
+    {
+      "label": "narrow layout sidebar collapse, add menu and browser tab controls accessible"
+    },
+    {
+      "label": "live viewer 768x1024",
+      "status": "PASS"
+    },
+    {
+      "label": "live viewer 1280x720",
+      "status": "PASS"
+    },
+    {
+      "label": "live viewer 1366x768",
+      "status": "PASS"
+    },
+    {
+      "label": "live viewer 1920x1080",
+      "status": "PASS"
+    },
+    {
+      "label": "live viewer 2560x1440",
+      "status": "PASS"
+    },
+    {
+      "label": "switch A/B/native/across workspaces retains all real targets and PTY identity"
+    },
+    {
+      "label": "closing a browser tab preserves sibling browser target"
+    },
+    {
+      "label": "stable native tab rename survives page refresh and MAW restart"
+    },
+    {
+      "label": "MAW restart retains notification IDs/read state and verified live browser target"
+    }
+  ],
+  "measurements": {
+    "startupsMs": [
+      469.953443,
+      465.323527999999
+    ],
+    "switchMs": [
+      0.29161000000021886,
+      0.3053660000000491,
+      0.34994000000006054,
+      0.3215770000001612,
+      0.341012999999748,
+      0.3505609999997432,
+      0.2793169999999918,
+      0.2758800000001429,
+      0.28076000000010026,
+      0.2701390000001993,
+      0.2480080000000271,
+      0.2730650000003152,
+      0.29342300000007526,
+      0.23708699999997407,
+      0.18969700000025114,
+      0.1970309999996971,
+      0.2454929999998967,
+      0.2574460000000727,
+      0.22954299999992145,
+      0.22446400000035283,
+      0.23590500000000247,
+      0.1839869999998882,
+      0.17300599999998667,
+      0.16069299999981013,
+      0.15261799999962022,
+      0.19729200000028868,
+      0.19382500000028813,
+      0.16241600000012113,
+      0.1696300000003248,
+      0.18848499999967316,
+      0.19056000000000495,
+      0.16978999999992084,
+      0.18288500000016938,
+      0.15600400000039372,
+      0.1910699999998542,
+      0.1581780000001345,
+      0.14920200000005934,
+      0.22981300000037663,
+      0.2740770000000339,
+      0.20975499999985914
+    ],
+    "renderMs": 191.19708200000014,
+    "selectionEvents": 120,
+    "serverSmaps": [
+      "Rss:              120072 kB",
+      "Pss:               67529 kB"
+    ]
+  },
+  "pageErrors": [],
+  "realChatGPTResponse": "UNVERIFIED: disposable browser has no user authentication; no completion claim",
+  "evidence": "/tmp/maw-audit-ui-matrix"
+}

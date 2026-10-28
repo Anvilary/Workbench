@@ -30,6 +30,7 @@ const now=new Date().toISOString();
 const project={id:p,name:'Project',status:'active',createdAt:now,updatedAt:now};
 const workspace={id:ws,projectId:p,name:'Workspace',status:'active',cwd:'/fixture',createdAt:now,updatedAt:now};
 let sessions=[{id:'session',workspaceId:ws,kind:'terminal',terminalId:'term',lifecycle:'running',activity:'idle',exitCode:null,tab:{id:native,order:0,selected:true,current:true,closedAt:null,name:'Native shell',terminalNumber:1}}];
+sessions.push({...sessions[0],id:'cli-session',kind:'agent',profileId:'codex00',terminalId:null,lifecycle:'exited',tab:{...sessions[0].tab,id:'66666666-6666-4666-8666-666666666666',order:2,selected:false,name:'Native CLI'}});
 let tabs=[{id:web,workspaceId:ws,kind:'web',title:'Research',url:'https://chatgpt.com/',order:1,selected:false,closedAt:null,createdAt:now,updatedAt:now,targetRef:'target',runtimeState:'ready'}];
 let activities=[{workspaceId:ws,tabId:web,state:'finished',updatedAt:now,reliableSignal:true,source:'browser'}];
 let notifications=[{id:'55555555-5555-4555-8555-555555555555',workspaceId:ws,tabId:web,title:'Research',body:'Browser finished',state:'finished',read:false,createdAt:now,metadata:{kind:'browser',tabName:'Research'}}];
@@ -37,7 +38,7 @@ const listeners=new Set(),statuses=new Set(),reopens=new Set(),requests=[];
 let status='open';
 function emit(m){for(const fn of listeners)fn(m);}
 function snapshots(){emit({type:'agency.sessions.snapshot',requestId:'',sessions:structuredClone(sessions)});emit({type:'agency.webTabs.snapshot',requestId:'',tabs:structuredClone(tabs)});}
-const api={requests,failSelect:false,failActivationOnce:false,setStatus(next){status=next; for(const fn of statuses)fn(next); if(next==='open')for(const fn of reopens)fn();},emit,finish(){activities=activities.map(a=>({...a,state:'finished',updatedAt:new Date().toISOString()}));emit({type:'agency.tab.activity',activity:activities[0]});}};
+const api={requests,failRename:false,failSelect:false,failActivationOnce:false,setStatus(next){status=next; for(const fn of statuses)fn(next); if(next==='open')for(const fn of reopens)fn();},emit,finish(){activities=activities.map(a=>({...a,state:'finished',updatedAt:new Date().toISOString()}));emit({type:'agency.tab.activity',activity:activities[0]});}};
 const connection={getStatus:()=>status,onStatus:fn=>(statuses.add(fn),()=>statuses.delete(fn)),onReopen:fn=>(reopens.add(fn),()=>reopens.delete(fn)),onMessage:fn=>(listeners.add(fn),()=>listeners.delete(fn)),send(m){return this.sendImmediate(m);},sendImmediate(m){
 if(status!=='open')return false; requests.push(m);
 queueMicrotask(()=>{
@@ -52,12 +53,15 @@ case 'agency.notifications.list':reply('agency.notifications.snapshot',{notifica
 case 'terminal.attach':emit({type:'terminal.replay',terminalId:'term',data:'native prompt\\r\\n',truncated:false});break;
 case 'agency.webTab.select':case 'agency.tab.action':
  if(api.failSelect || (m.type==='agency.webTab.select' && api.failActivationOnce && tabs.find(t=>t.id===m.tabId)?.selected)){api.failActivationOnce=false;reply('agency.error',{message:'Selection failed',code:'session-unavailable'});break;}
- sessions=sessions.map(s=>({...s,tab:{...s.tab,selected:m.tabId===native}}));tabs=tabs.map(t=>({...t,selected:t.id===m.tabId}));snapshots();
+ sessions=sessions.map(s=>({...s,tab:{...s.tab,selected:s.tab.id===m.tabId}}));tabs=tabs.map(t=>({...t,selected:t.id===m.tabId}));snapshots();
  if(m.type==='agency.webTab.select')reply('agency.webTab.updated',{tab:tabs.find(t=>t.id===m.tabId)});else reply('agency.session.changed',{session:sessions[0]});break;
 case 'agency.notification.markRead':notifications=notifications.map(n=>n.id===m.notificationId?{...n,read:true,readAt:new Date().toISOString()}:n);reply('agency.notification.changed',{notification:notifications[0]});break;
 case 'agency.tab.acknowledge':activities=activities.map(a=>({...a,state:'idle'}));reply('agency.tab.activity',{activity:activities[0]});break;
-case 'agency.webTab.close':tabs=tabs.map(t=>t.id===m.tabId?{...t,closedAt:now,selected:false}:t);sessions=sessions.map(s=>({...s,tab:{...s.tab,selected:true}}));snapshots();reply('agency.webTab.closed',{tab:tabs.find(t=>t.id===m.tabId)});break;
+case 'agency.webTab.close':tabs=tabs.map(t=>t.id===m.tabId?{...t,closedAt:now,selected:false}:t);sessions=sessions.map(s=>({...s,tab:{...s.tab,selected:s.tab.id===native}}));snapshots();reply('agency.webTab.closed',{tab:tabs.find(t=>t.id===m.tabId)});break;
 case 'agency.tabs.order':sessions=sessions.map(s=>({...s,tab:{...s.tab,order:m.tabIds.indexOf(s.tab.id)}}));tabs=tabs.map(t=>({...t,order:m.tabIds.indexOf(t.id)}));snapshots();reply('agency.sessions.snapshot',{sessions:structuredClone(sessions)});break;
+case 'agency.tab.rename':
+ if(api.failRename){reply('agency.error',{message:'Rename failed',code:'internal-error'});break;}
+ sessions=sessions.map(s=>s.tab.id===m.tabId?{...s,tab:{...s.tab,name:m.name}}:s);reply('agency.sessions.snapshot',{sessions:structuredClone(sessions)});break;
 case 'agency.webTab.rename':tabs=tabs.map(t=>t.id===m.tabId?{...t,title:m.title}:t);reply('agency.webTab.updated',{tab:tabs.find(t=>t.id===m.tabId)});break;
 case 'agency.webTab.navigate':tabs=tabs.map(t=>t.id===m.tabId?{...t,url:m.url}:t);reply('agency.webTab.updated',{tab:tabs.find(t=>t.id===m.tabId)});break;
 }
@@ -99,6 +103,7 @@ test('Actual Agency UI preserves native input and delays web inspection until se
   const browser = await chromium.launch({ headless:true, executablePath });
   t.after(async () => { await browser.close(); await new Promise(resolve => server.close(resolve)); });
   const page = await browser.newPage({ viewport:{width:1280,height:1000} });
+  page.setDefaultTimeout(8000);
   const errors=[]; page.on('pageerror', error => errors.push(error.message));
   await page.goto('http://127.0.0.1:' + server.address().port);
   await page.getByRole('tab', {name:'Native shell'}).waitFor();
@@ -130,7 +135,9 @@ test('Actual Agency UI preserves native input and delays web inspection until se
   assert.equal(reads[0].notificationId,'55555555-5555-4555-8555-555555555555');
   await page.getByRole('button',{name:'Rename tab',exact:true}).click();
   await page.getByLabel('Tab title',{exact:true}).fill('Renamed research');
-  await page.getByRole('dialog').getByRole('button',{name:'Rename tab',exact:true}).click();
+  await frame.evaluate(()=>{const input=document.createElement('input');document.body.append(input);input.focus();});
+  await page.waitForFunction(()=>document.activeElement?.classList.contains('maw-tab-name-input'));
+  await page.getByLabel('Tab title',{exact:true}).press('Enter');
   await page.getByRole('tab',{name:'Renamed research'}).waitFor();
   await page.getByRole('tab',{name:'Renamed research'}).press('Alt+ArrowLeft');
   await page.waitForFunction(()=>window.agencyTest.requests.some(m=>m.type==='agency.tabs.order' && m.tabIds[0]==='44444444-4444-4444-8444-444444444444'));
@@ -142,5 +149,30 @@ test('Actual Agency UI preserves native input and delays web inspection until se
   assert.equal(await page.locator('iframe').count(),0);
   assert.equal(await page.getByRole('tab',{name:'Native shell'}).getAttribute('aria-selected'),'true');
   assert.equal(await page.evaluate(()=>window.agencyTest.requests.filter(m=>m.type==='terminal.close').length),0);
+  const shell = page.getByRole('tab', {name:'Native shell'});
+  await shell.press('F2');
+  const input = page.getByLabel('Tab title',{exact:true});
+  await input.fill('Cancelled'); await input.press('Escape');
+  await shell.waitFor(); await page.waitForFunction(()=>document.activeElement?.id==='tab-33333333-3333-4333-8333-333333333333');
+  await shell.locator('.agency-truncate').dblclick();
+  await input.fill('Blur cancels'); await page.getByRole('button',{name:'Mark Done',exact:true}).focus();
+  await shell.waitFor();
+  await shell.press('F2'); await input.fill('   '); await input.press('Enter');
+  assert.equal(await input.getAttribute('aria-invalid'),'true');
+  await input.fill('Shell renamed');
+  await page.evaluate(()=>window.agencyTest.failRename=true); await input.press('Enter');
+  await page.waitForFunction(()=>window.agencyTest.requests.some(m=>m.type==='agency.tab.rename'));
+  await page.getByRole('alert').filter({hasText:/error|failed/i}).first().waitFor();
+  assert.equal(await input.count(),1,'failed save retains edit and old title');
+  await page.evaluate(()=>window.agencyTest.failRename=false); await input.press('Enter');
+  await page.getByRole('tab',{name:'Shell renamed'}).waitFor();
+  assert.equal(await page.evaluate(()=>window.agencyTest.requests.filter(m=>m.type==='agency.tab.rename').every(m=>m.tabId==='33333333-3333-4333-8333-333333333333')),true);
+  await page.getByRole('tab',{name:'Native CLI'}).press('F2');
+  await input.fill('CLI renamed'); await input.press('Enter');
+  await page.getByRole('tab',{name:'CLI renamed'}).waitFor();
+  assert.equal(await page.evaluate(()=>window.agencyTest.requests.filter(m=>m.type==='agency.tab.rename').at(-1).tabId),'66666666-6666-4666-8666-666666666666');
+  await page.getByRole('button',{name:'Add tab',exact:true}).click();
+  await page.getByRole('menuitem',{name:'Rename tab',exact:true}).click();
+  await input.waitFor(); await input.press('Escape');
   assert.deepEqual(errors,[]);
 });

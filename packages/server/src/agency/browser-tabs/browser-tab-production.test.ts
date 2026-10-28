@@ -19,7 +19,7 @@ async function fixture(t: import('node:test').TestContext) {
   const store = new BrowserTabStore(filePath);
   await store.load();
   const adapter = new BrowserTabAdapter({ store, driver, allowUnvalidatedWorkspacesForTesting: true });
-  return { filePath, driver, adapter };
+  return { filePath, driver, adapter, store };
 }
 
 test('production: logical identity is persisted before browser creation', async (t) => {
@@ -152,4 +152,21 @@ test('production: live URL refresh persists conversation address without page mu
   const restored = await new BrowserTabStore(filePath).load();
   assert.equal(restored[0]!.url, 'https://chatgpt.com/c/user-created-conversation');
   assert.equal(driver.getTargetCount(), opened);
+});
+
+
+test('failed browser rename preserves visible and durable title; retry persists stable ownership', async t => {
+  const { adapter, store, filePath } = await fixture(t);
+  const tab = await adapter.createTab({workspaceId:WS,url:'https://chatgpt.com/',title:'Original'});
+  const save = store.save.bind(store);
+  store.save = async () => { throw new Error('fixture disk full'); };
+  await assert.rejects(adapter.renameTab(WS,tab.id,'Unsaved'),/fixture disk full/);
+  assert.equal(adapter.getTabState(tab.id)!.title,'Original');
+  assert.equal(JSON.parse(await readFile(filePath,'utf8')).tabs[0].title,'Original');
+  store.save = save;
+  await adapter.renameTab(WS,tab.id,'Retried');
+  const restored = new BrowserTabAdapter({store:new BrowserTabStore(filePath),driver:new MemoryBrowserControllerDriver(),allowUnvalidatedWorkspacesForTesting:true});
+  await restored.restore();
+  assert.equal(restored.getTabState(tab.id)!.title,'Retried');
+  assert.equal(restored.getTabState(tab.id)!.targetRef,tab.targetRef);
 });

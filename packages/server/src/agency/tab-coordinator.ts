@@ -92,10 +92,11 @@ export class AgencyTabCoordinator {
     });
   }
 
-  async nativeAction(message: Extract<AgencyClientMessage, { type: 'agency.tab.action' | 'agency.tabs.order' }>): Promise<void> {
+  async nativeAction(message: Extract<AgencyClientMessage, { type: 'agency.tab.action' | 'agency.tabs.order' | 'agency.tab.rename' }>): Promise<void> {
     return this.mutations.runExclusive(message.workspaceId, async () => {
       try {
-        if (message.type === 'agency.tabs.order') await this.order(message.workspaceId, message.tabIds);
+        if (message.type === 'agency.tab.rename') await this.native.renameTab(message.workspaceId, message.tabId, message.name);
+        else if (message.type === 'agency.tabs.order') await this.order(message.workspaceId, message.tabIds);
         else {
           await this.native.tabAction(message.workspaceId, message.tabId, message.action);
           if (message.action === 'select' || message.action === 'resume') await this.browser.clearWorkspaceSelection(message.workspaceId);
