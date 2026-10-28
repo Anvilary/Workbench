@@ -157,3 +157,6 @@ Key deliverables:
 - 23 focused tests passing 100% across URL validation, persistence & quarantine, adapter lifecycle & isolation, and protocol request dispatch.
 - Zero modifications to live service, existing native session runtime, or `AgencyWorkspaceView.tsx`.
 
+Draft delivery: [PR #10](https://github.com/alteixeira20/My-Amazing-Workspace/pull/10) (draft against `main`).
+Verified implementation commit: `6615d5b`; subsequent delivery checkpoint records this PR link. All changes pushed without force; live service untouched.
+
