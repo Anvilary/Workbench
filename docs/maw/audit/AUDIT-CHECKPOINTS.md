@@ -109,3 +109,10 @@ Validation:
 
 Next: reproduce malformed-cookie WS upgrade behavior in a disposable process;
 then review persistence failure truthfulness and measure redundant snapshots.
+
+## Checkpoint 1a — confirmed P1 fixed before optimization
+
+A01 reproduced in isolated child (exit 1, URIError), patched cookie decoder,
+regression passes, child now exits 0/HTTP 403. Commands and impact in FINDINGS.md.
+No live server was targeted. Next: persistence failure reproduction, lifecycle
+matrix, provider evidence loss, then isolated responsive/performance fixtures.

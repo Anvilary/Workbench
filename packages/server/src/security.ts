@@ -81,7 +81,10 @@ function readCookie(request: IncomingMessage, name: string): string | null {
     if (separator === -1) continue;
     if (pair.slice(0, separator).trim() !== name) continue;
     const value = pair.slice(separator + 1).trim();
-    return value.length > 0 ? decodeURIComponent(value) : null;
+    // Cookies are untrusted even before authentication. A malformed escape must
+    // not throw out of the HTTP server's synchronous WebSocket upgrade listener.
+    try { return value.length > 0 ? decodeURIComponent(value) : null; }
+    catch { return null; }
   }
   return null;
 }
