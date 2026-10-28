@@ -4,7 +4,7 @@ import type { AgencyCliProfile, AgencyProject, CliProfileId, ProfileStatus, Proj
 import type { AgentConnection } from '../connection.js';
 import { FolderPicker } from '../FolderPicker.js';
 
-export type WorkspaceCreationMode = 'agent' | 'terminal' | 'empty';
+export type WorkspaceCreationMode = 'agent' | 'terminal' | 'combined' | 'empty';
 
 export interface WorkspaceCreationOptions {
   mode: WorkspaceCreationMode;
@@ -49,6 +49,7 @@ export function AgencyWorkspaceCreator({
   const [picking, setPicking] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const creatingFlight = useRef(false);
   const dialogRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -89,12 +90,13 @@ export function AgencyWorkspaceCreator({
   }, [picking, creating, onClose]);
 
   function choose(pickerId: string): void {
-    if (!projectId || !name.trim() || creating) return;
+    if (!projectId || !name.trim() || creatingFlight.current) return;
+    creatingFlight.current = true;
     setCreating(true);
     // Keep the server-owned picker alive until creation is acknowledged, even if handlers are async.
     void onCreate(projectId, name.trim(), pickerId, {
       mode,
-      profileId: mode === 'agent' && profileId ? profileId : undefined,
+      profileId: (mode === 'agent' || mode === 'combined') && profileId ? profileId : undefined,
     }).then(() => {
       setPicking(false);
       onClose();
@@ -102,6 +104,7 @@ export function AgencyWorkspaceCreator({
       setPicking(false);
       setError(reason instanceof Error ? reason.message : t('agency.ui.workspaceCreationFailed'));
       setCreating(false);
+      creatingFlight.current = false;
     });
   }
 
@@ -135,11 +138,12 @@ export function AgencyWorkspaceCreator({
             <select value={mode} disabled={creating}
               onChange={(event) => setMode(event.target.value as WorkspaceCreationMode)}>
               <option value="agent">{t('agency.ui.agentWorkspace')}</option>
+              <option value="combined">{t('agency.tabs.combined')}</option>
               <option value="terminal">{t('agency.ui.terminalOnlyWorkspace')}</option>
               <option value="empty">{t('agency.ui.emptyWorkspace')}</option>
             </select>
           </label>
-          {mode === 'agent' && profiles.length > 0 && (
+          {(mode === 'agent' || mode === 'combined') && profiles.length > 0 && (
             <label className="agency-field">
               <span>{t('agency.ui.cliProfile')}</span>
               <select value={profileId} disabled={creating}

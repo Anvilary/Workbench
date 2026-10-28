@@ -3311,6 +3311,18 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           break;
         }
 
+        case 'agency.tab.action':
+        case 'agency.tabs.order': {
+          try {
+            if (message.type === 'agency.tab.action') await agencyRuntime.tabAction(message.workspaceId, message.tabId, message.action);
+            else await agencyRuntime.orderTabs(message.workspaceId, message.tabIds);
+            send(socket, { type: 'agency.sessions.snapshot', requestId: message.requestId, sessions: agencyRuntime.list() });
+          } catch (error) {
+            send(socket, { type: 'agency.error', requestId: message.requestId, code: error instanceof AgencyRuntimeError ? error.code : 'internal-error', message: error instanceof Error ? error.message : String(error) });
+          }
+          break;
+        }
+
         case 'agency.session.selection.set': {
           try {
             const session = await agencyRuntime.setSelection(message.sessionId, message.model, message.effort);

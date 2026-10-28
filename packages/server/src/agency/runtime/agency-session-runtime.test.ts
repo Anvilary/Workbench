@@ -18,7 +18,7 @@ import { TerminalRegistry } from '../../terminal-registry.js';
 import { AgentRegistry } from '../../agents/registry.js';
 import { WorkspaceStore, type WorkspaceState } from '../../workspace-store.js';
 import type { AgentAdapter, SpawnedContext } from '../../agents/adapter.js';
-import { AgencySessionStore, UnsupportedAgencySessionSchemaError } from '../agency-session-store.js';
+import { AgencySessionStore, migrateSessionTabs, UnsupportedAgencySessionSchemaError } from '../agency-session-store.js';
 import {
   AgencyRuntimeError,
   AgencySessionRuntime,
@@ -190,7 +190,7 @@ class MemoryStore extends AgencySessionStore {
   }
 }
 
-test('empty workspaces, two independent shells and same-workspace atomic slot gate', async () => {
+test('multiple same-workspace shells reserve distinct runtime and tab identities atomically', async () => {
   const f = fixture(await mkdtemp(path.join(tmpdir(), 'agency-c-')));
   try {
     await f.runtime.initialize();
@@ -198,12 +198,13 @@ test('empty workspaces, two independent shells and same-workspace atomic slot ga
     const calls = Array.from({ length: 12 }, () =>
       f.runtime.create({ kind: 'terminal', workspaceId: f.one.id, cols: 80, rows: 24 }));
     const settled = await Promise.allSettled(calls);
-    assert.equal(settled.filter((result) => result.status === 'fulfilled').length, 1);
+    assert.equal(settled.filter((result) => result.status === 'fulfilled').length, 12);
     assert.equal(settled.filter((result) => result.status === 'rejected' &&
-      result.reason instanceof AgencyRuntimeError && result.reason.code === 'conflict').length, 11);
+      result.reason instanceof AgencyRuntimeError && result.reason.code === 'conflict').length, 0);
     const other = await f.runtime.create({ kind: 'terminal', workspaceId: f.two.id, cols: 100, rows: 32 });
     assert.equal(other.lifecycle, 'running');
-    assert.equal(f.terminals.opens.length, 2);
+    assert.equal(f.terminals.opens.length, 13);
+    assert.equal(new Set(f.runtime.list().map(row => row.tab!.id)).size, 13);
     assert.notEqual(f.runtime.list()[0]?.id, other.id);
   } finally {
     f.runtime.dispose();
@@ -624,8 +625,8 @@ test('missing primary recovers a validated backup, without discarding history', 
     await store.save([saved]);
     await store.save([saved]);
     await rm(file);
-    assert.deepEqual(await store.load(), [saved]);
-    assert.deepEqual(JSON.parse(await readFile(file + '.bak', 'utf8')).sessions, [saved]);
+    assert.deepEqual(await store.load(), migrateSessionTabs([saved]));
+    assert.deepEqual(JSON.parse(await readFile(file + '.bak', 'utf8')).sessions, migrateSessionTabs([saved]));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -640,14 +641,14 @@ test('corrupt primary recovers verified backup and quarantines original bytes', 
     await store.save([saved]);
     await store.save([saved]);
     await writeFile(file, '{broken-json', 'utf8');
-    assert.deepEqual(await store.load(), [saved]);
+    assert.deepEqual(await store.load(), migrateSessionTabs([saved]));
     const files = await readdir(dir);
     const corrupt = files.find((name) => name.startsWith('sessions.json.corrupt-'));
     assert.ok(corrupt);
     assert.equal(await readFile(path.join(dir, corrupt), 'utf8'), '{broken-json');
     // A structurally corrupt JSON object is recoverable, unlike an explicit future version.
     await writeFile(file, JSON.stringify({ sessions: [saved] }));
-    assert.deepEqual(await store.load(), [saved]);
+    assert.deepEqual(await store.load(), migrateSessionTabs([saved]));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -658,10 +659,10 @@ test('future schema and dual corrupt stores fail closed without destructive reco
   const file = path.join(dir, 'sessions.json');
   try {
     const store = new AgencySessionStore(file);
-    await writeFile(file, JSON.stringify({ version: 2, sessions: [sampleSession()] }));
+    await writeFile(file, JSON.stringify({ version: 99, sessions: [sampleSession()] }));
     await assert.rejects(store.load(), (error: unknown) =>
       error instanceof UnsupportedAgencySessionSchemaError);
-    assert.ok((await readFile(file, 'utf8')).includes('"version":2'));
+    assert.ok((await readFile(file, 'utf8')).includes('"version":99'));
     await writeFile(file, '{bad');
     await writeFile(file + '.bak', '{also bad');
     await assert.rejects(store.load(), AggregateError);
@@ -955,4 +956,73 @@ test('attested AGY and Claude startup recovery is single-flight and retains exac
       assert.equal(resumed?.nativeSessionId,id);assert.equal(resumed?.nativeIdentity?.bindingId,bindingId);
     } finally {f.runtime.dispose();await rm(cwd,{recursive:true,force:true});}
   }
+});
+
+test('mixed CLI profiles, repeated profile conversations and shell tabs coexist; closing one preserves every other PTY', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'maw-many-'));
+  const f = fixture(cwd, { resolveLaunch: async input => ({ ...input, provider: input.profileId.startsWith('agy') ? 'antigravity' : input.profileId === 'claude-code' ? 'claude-code' : 'codex', file: '/bin/echo', args: [input.profileId], env: {}, nativeIdentity: {provider: input.profileId.startsWith('agy') ? 'antigravity' : input.profileId === 'claude-code' ? 'claude-code' : 'codex', home:path.join(cwd,input.profileId)}, session:{kind:'known',sessionId:input.resumeNativeSessionId ?? input.proposedSessionId} }) });
+  try {
+    await f.runtime.initialize();
+    const agents = await Promise.all(['codex-0','codex-1','agy-3','claude-code','codex-0'].map(profileId => f.runtime.create({kind:'agent',workspaceId:f.one.id,profileId:profileId as CliProfileId,cols:80,rows:24})));
+    const shells = await Promise.all(Array.from({length:3},()=>f.runtime.create({kind:'terminal',workspaceId:f.one.id,cols:90,rows:25})));
+    assert.equal(f.terminals.opens.length,8);assert.equal(new Set(agents.map(s=>s.nativeSessionId)).size,5);
+    assert.equal(new Set([...agents,...shells].map(s=>s.tab!.id)).size,8);
+    const before=f.terminals.opens.length;
+    await f.runtime.tabAction(f.one.id,agents[2]!.tab!.id,'select');
+    assert.equal(f.runtime.list(f.one.id).filter(s=>s.tab?.selected && s.tab.current).length,1);
+    assert.equal(f.terminals.opens.length,before);
+    const order=[...agents,...shells].map(s=>s.tab!.id).reverse();await f.runtime.orderTabs(f.one.id,order);
+    assert.deepEqual(f.runtime.list(f.one.id).sort((a,b)=>a.tab!.order-b.tab!.order).map(s=>s.tab!.id),order);
+    await f.runtime.tabAction(f.one.id,shells[1]!.tab!.id,'close');
+    assert.ok(f.runtime.get(shells[1]!.id)?.tab?.closedAt);
+    assert.equal(f.runtime.get(shells[1]!.id)?.stoppedByUser,true);
+    for(const session of [...agents,shells[0]!,shells[2]!])assert.equal(f.terminals.get(session.terminalId!)?.alive,true);
+    f.terminals.exit(agents[0]!.terminalId!,7);await new Promise(resolve=>setImmediate(resolve));
+    await f.runtime.tabAction(f.one.id,agents[0]!.tab!.id,'close');assert.equal(f.runtime.get(agents[0]!.id)?.exitCode,7);
+  } finally {f.runtime.dispose();await rm(cwd,{recursive:true,force:true});}
+});
+
+test('launch operation IDs are single-flight and durable; logical tab count is independent of the 24-process limit', async () => {
+  const cwd=await mkdtemp(path.join(tmpdir(),'maw-tab-launch-'));const store=new MemoryStore();const f=fixture(cwd,{store});
+  try {
+    await f.runtime.initialize();const launchId=randomUUID();
+    const results=await Promise.all(Array.from({length:8},()=>f.runtime.create({kind:'terminal',workspaceId:f.one.id,launchId,cols:80,rows:24})));
+    assert.equal(new Set(results.map(s=>s.id)).size,1);assert.equal(f.terminals.opens.length,1);
+    await f.runtime.tabAction(f.one.id,results[0]!.tab!.id,'close');
+    assert.equal((await f.runtime.create({kind:'terminal',workspaceId:f.one.id,launchId,cols:80,rows:24})).id,results[0]!.id);
+    assert.equal(f.terminals.opens.length,1,'Closed duplicate request must not resurrect');
+    const many=await Promise.allSettled(Array.from({length:25},()=>f.runtime.create({kind:'terminal',workspaceId:f.one.id,cols:80,rows:24})));
+    assert.equal(many.filter(r=>r.status==='fulfilled').length,24);assert.equal(many.filter(r=>r.status==='rejected').length,1);
+  } finally {f.runtime.dispose();await rm(cwd,{recursive:true,force:true});}
+});
+
+test('restart recreates eligible shells in their stable ordered tabs, preserves selection, and excludes closed/Done/Archived tabs', async () => {
+  const cwd=await mkdtemp(path.join(tmpdir(),'maw-tab-reboot-'));const store=new MemoryStore();const first=fixture(cwd,{store});
+  let restarted: ReturnType<typeof fixture> | undefined;
+  try {
+    await first.runtime.initialize();const one=await first.runtime.create({kind:'terminal',workspaceId:first.one.id,cols:80,rows:24});
+    const two=await first.runtime.create({kind:'terminal',workspaceId:first.one.id,cols:80,rows:24});
+    const closed=await first.runtime.create({kind:'terminal',workspaceId:first.one.id,cols:80,rows:24});
+    await first.runtime.tabAction(first.one.id,closed.tab!.id,'close');await first.runtime.tabAction(first.one.id,one.tab!.id,'select');
+    await first.runtime.orderTabs(first.one.id,[two.tab!.id,one.tab!.id]);first.runtime.dispose();
+    restarted=fixture(cwd,{store});restarted.workspaces.set(first.one.id,first.one);
+    await restarted.runtime.initialize();await Promise.all([restarted.runtime.recoverActive(()=>true),restarted.runtime.recoverActive(()=>true)]);
+    const current=restarted.runtime.list(first.one.id).filter(s=>s.tab?.current && !s.tab.closedAt).sort((a,b)=>a.tab!.order-b.tab!.order);
+    assert.equal(restarted.terminals.opens.length,2);assert.deepEqual(current.map(s=>s.tab!.id),[two.tab!.id,one.tab!.id]);
+    assert.equal(current.find(s=>s.tab?.selected)?.tab?.id,one.tab!.id);
+    assert.ok(current.every(s=>s.id!==one.id && s.id!==two.id && s.recovery?.status==='resumed'));
+    assert.ok(restarted.runtime.get(closed.id)?.tab?.closedAt);
+  } finally {first.runtime.dispose();restarted?.runtime.dispose();await rm(cwd,{recursive:true,force:true});}
+});
+
+test('version 1 migration preserves runtime/native references and creates deterministic distinct logical tab IDs', async () => {
+  const dir=await mkdtemp(path.join(tmpdir(),'maw-tabs-v1-'));const file=path.join(dir,'sessions.json');
+  try {
+    const old=[sampleSession(),{...sampleSession(),id:randomUUID() as AgencyRuntimeSession['id']}];
+    await writeFile(file,JSON.stringify({version:1,sessions:old}));const store=new AgencySessionStore(file);
+    const first=await store.load();const second=await store.load();assert.deepEqual(first,second);
+    assert.deepEqual(first.map(s=>s.id),old.map(s=>s.id));assert.ok(first.every(s=>s.tab?.id!==s.id));
+    await store.save(first);assert.equal(JSON.parse(await readFile(file,'utf8')).version,2);
+    assert.deepEqual(await store.load(),first);
+  } finally {await rm(dir,{recursive:true,force:true});}
 });

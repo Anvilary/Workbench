@@ -4,7 +4,7 @@ import { useState } from 'react';
 import type {
   AgencyProject, AgencyRuntimeSession, AgencyWorkspace, ProjectId, WorkspaceId,
 } from '@agent-workbench/shared';
-import { activeByProject, currentSession, isAttention, latestSession } from './model.js';
+import { activeByProject, isAttention, workspaceTabs } from './model.js';
 
 export interface AgencySidebarProps {
   projects: readonly AgencyProject[];
@@ -24,15 +24,6 @@ export interface AgencySidebarProps {
   onArchiveProject: (project: AgencyProject) => void;
   onDeleteProject: (project: AgencyProject) => void;
   onRestore: (workspace: AgencyWorkspace) => void;
-}
-
-function WorkspaceIndicator({ session }: { session: AgencyRuntimeSession | undefined }) {
-  if (!session) return <span className="agency-status-dot muted" title={t('agency.ui.noSession')} />;
-  const label = agencySessionText(session);
-  const tone = isAttention(session.activity) ? 'attention' :
-    session.lifecycle === 'running' && session.activity === 'working' ? 'working' :
-    session.lifecycle === 'exited' || session.lifecycle === 'failed' ? 'muted' : 'idle';
-  return <span className={'agency-status-dot ' + tone} title={label} aria-label={label} />;
 }
 
 export function AgencySidebar({
@@ -154,10 +145,9 @@ export function AgencySidebar({
                 {!collapsed.has(project.id) && (
                   <div className="agency-project-children">
                     {items.map((workspace) => {
-                      const session = currentSession(sessions, workspace.id, 'agent') ??
-                        currentSession(sessions, workspace.id, 'terminal') ??
-                        latestSession(sessions, workspace.id, 'agent') ??
-                        latestSession(sessions, workspace.id, 'terminal');
+                      const collection = workspaceTabs(sessions, workspace.id);
+                      const attention = collection.some(item => isAttention(item.activity));
+                      const working = collection.some(item => item.activity === 'working');
                       const isWsMenuOpen = openMenu?.type === 'workspace' && openMenu.id === workspace.id;
                       return (
                         <div className={'agency-workspace-nav-row' + (selected === workspace.id && !showingDone ? ' selected' : '')}
@@ -165,7 +155,7 @@ export function AgencySidebar({
                           <button className="agency-workspace-nav-button" type="button" onClick={() => onSelect(workspace.id)}
                             aria-current={selected === workspace.id && !showingDone ? 'page' : undefined}
                             title={workspace.cwd}>
-                            <WorkspaceIndicator session={session} />
+                            <span className={'agency-status-dot ' + (attention ? 'attention' : working ? 'working' : collection.some(item => item.lifecycle === 'running') ? 'idle' : 'muted')} title={collection.map(item => agencySessionText(item)).join(', ')} aria-label={t('agency.tabs.sessionCount', { count: collection.length })} />
                             <span className="agency-truncate">{workspace.name}</span>
                           </button>
                           <div className="agency-dropdown" onClick={(e) => e.stopPropagation()}>

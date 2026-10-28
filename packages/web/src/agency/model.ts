@@ -29,20 +29,9 @@ export const EMPTY_AGENCY_SNAPSHOT: AgencySnapshot = {
   projects: [], workspaces: [], profiles: [], sessions: [],
 };
 
-export function currentSession(
-  sessions: readonly AgencyRuntimeSession[], workspaceId: WorkspaceId, kind: 'agent' | 'terminal',
-): AgencyRuntimeSession | undefined {
-  return sessions.find((session) =>
-    session.workspaceId === workspaceId && session.kind === kind &&
-    (session.lifecycle === 'starting' || session.lifecycle === 'running' || session.lifecycle === 'stopping'),
-  );
-}
-
-export function latestSession(
-  sessions: readonly AgencyRuntimeSession[], workspaceId: WorkspaceId, kind: 'agent' | 'terminal',
-): AgencyRuntimeSession | undefined {
-  return sessions.filter((session) => session.workspaceId === workspaceId && session.kind === kind)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+export function workspaceTabs(sessions: readonly AgencyRuntimeSession[], workspaceId: WorkspaceId): AgencyRuntimeSession[] {
+  return sessions.filter(session => session.workspaceId === workspaceId && session.tab?.current && !session.tab.closedAt)
+    .sort((a,b) => a.tab!.order - b.tab!.order || a.tab!.id.localeCompare(b.tab!.id));
 }
 
 export function profileForSession(
@@ -135,15 +124,6 @@ export function acknowledgeWorkspaceDraft(
   drafts: Readonly<Record<string, string>>, workspaceId: WorkspaceId, deliveredText: string,
 ): Record<string, string> {
   return drafts[workspaceId] === deliveredText ? { ...drafts, [workspaceId]: '' } : { ...drafts };
-}
-
-export type AgencyLayout = 'empty' | 'agent-only' | 'terminal-only' | 'combined';
-
-export function workspaceLayout(hasAgent: boolean, hasShell: boolean): AgencyLayout {
-  if (hasAgent && hasShell) return 'combined';
-  if (hasAgent) return 'agent-only';
-  if (hasShell) return 'terminal-only';
-  return 'empty';
 }
 
 /**
