@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { access, appendFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, appendFile, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -225,4 +225,19 @@ for (const shell of ['bash', 'zsh']) test(`real ${shell} PTY through Agency runt
     await manager.flush(); await notifications.flush();
     await rm(root, { recursive: true, force: true });
   }
+});
+
+
+test('Codex evidence loss becomes unknown once, without inventing a completion', async t => {
+  const root = await mkdtemp(path.join(tmpdir(),'maw-codex-loss-')); t.after(()=>rm(root,{recursive:true,force:true}));
+  const id = randomUUID(), at=Date.now(), turns:CodexNativeTurn[]=[];
+  const folder=path.join(root,'sessions','2026','10','28'); await mkdir(folder,{recursive:true});
+  const file=path.join(folder,`rollout-2026-10-28T00-00-00-${id}.jsonl`);
+  const lines=[{type:'session_meta',payload:{id,cwd:root}},{type:'event_msg',timestamp:new Date(at+1).toISOString(),payload:{type:'task_started',turn_id:'active'}}];
+  await writeFile(file,lines.map(row=>JSON.stringify(row)).join('\n')+'\n');
+  const watcher=new CodexTurnWatcher({home:root,cwd:root,sessionId:id,launchedAt:at,onTurn:turn=>turns.push(turn)});t.after(()=>watcher.dispose());
+  await watcher.poll();assert.deepEqual(turns.map(t=>t.phase),['working']);
+  await rename(file,path.join(root,'backup.jsonl')); // retain fixture evidence before loss
+  await watcher.poll();await watcher.poll();
+  assert.deepEqual(turns.map(t=>t.phase),['working','unknown']);
 });

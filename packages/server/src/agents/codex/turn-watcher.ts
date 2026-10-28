@@ -26,6 +26,7 @@ export class CodexTurnWatcher {
   private droppingLine = false;
   private readonly active = new Set<string>();
   private readonly completed = new Set<string>();
+  private evidenceLost = false;
   private disposed = false;
   private polling: Promise<void> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -49,7 +50,7 @@ export class CodexTurnWatcher {
     if (this.disposed) return Promise.resolve();
     if (this.polling) return this.polling;
     this.polling = this.read().catch(() => {
-      // A missing/partial/rotating rollout provides no completion evidence.
+      this.loseEvidence();
     }).finally(() => { this.polling = null; });
     return this.polling;
   }
@@ -59,13 +60,15 @@ export class CodexTurnWatcher {
       sessionsRoot: path.join(this.input.home, 'sessions'),
       archivedRoot: null,
     });
-    if (this.disposed || !file || !await withinNativeScope(this.input.home, file)) return;
+    if (this.disposed) return;
+    if (!file || !await withinNativeScope(this.input.home, file)) { this.loseEvidence(); return; }
     const handle = await open(file, 'r');
     try {
       const info = await handle.stat();
-      if (!info.isFile()) return;
+      if (!info.isFile()) { this.loseEvidence(); return; }
       const identity = `${info.dev}:${info.ino}`;
       if (file !== this.file || identity !== this.fileIdentity || info.size < this.offset) {
+        this.loseEvidence();
         this.file = file;
         this.fileIdentity = identity;
         this.offset = 0;
@@ -112,6 +115,7 @@ export class CodexTurnWatcher {
     const taskId = `${this.input.sessionId}:${turnId}`;
     if (payload['type'] === 'task_started' || payload['type'] === 'turn_started') {
       if (this.active.has(turnId)) return;
+      this.evidenceLost = false;
       this.active.add(turnId);
       this.input.onTurn({ taskId, phase: 'working' });
     } else if (this.active.has(turnId) && ['task_complete', 'turn_complete', 'turn_aborted'].includes(String(payload['type']))) {
@@ -121,6 +125,12 @@ export class CodexTurnWatcher {
       const phase = payload['type'] === 'turn_aborted' ? 'unknown' : payload['error'] ? 'failed' : 'finished';
       this.input.onTurn({ taskId, phase });
     }
+  }
+
+  private loseEvidence(): void {
+    if (this.disposed || this.evidenceLost) return;
+    this.evidenceLost = true;
+    for (const turnId of this.active) this.input.onTurn({ taskId: `${this.input.sessionId}:${turnId}`, phase: 'unknown' });
   }
 
   dispose(): void {
