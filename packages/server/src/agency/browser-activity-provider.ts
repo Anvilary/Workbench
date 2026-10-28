@@ -86,7 +86,7 @@ export class ChatGPTActivityProvider extends EventEmitter implements BrowserActi
 
   private readonly tabStates = new Map<string, MawActivityState>();
   private readonly tabListeners = new Map<string, Set<(event: BrowserActivityEvent) => void>>();
-  private readonly verifiedBridges = new Set<string>();
+  private readonly authorizedBridges = new Map<string, string>(); // bridgeId -> secretToken
 
   constructor() {
     super();
@@ -97,8 +97,8 @@ export class ChatGPTActivityProvider extends EventEmitter implements BrowserActi
    * privacy and API restrictions.
    */
   canProveCompletion(): boolean {
-    // Only proven when a verified extension bridge or permitted notification hook is active
-    return this.verifiedBridges.size > 0;
+    // Only proven when an authenticated extension bridge is active
+    return this.authorizedBridges.size > 0;
   }
 
   limitationReport(): string {
@@ -109,7 +109,8 @@ export class ChatGPTActivityProvider extends EventEmitter implements BrowserActi
       '3. Content Scraping Forbidden: Reading assistant message bubbles, extracting text deltas, or inspecting transcript tokens is prohibited for privacy.',
       '4. Network-Idle / Page-Load Insufficient: Generation can stall, perform keep-alives, or telemetry without completing. Network-idle heuristics do not constitute reliable evidence.',
       '5. Cross-Origin DOM Boundary: Standard iframe embedding subjects ChatGPT to Same-Origin Policy (SOP), preventing external DOM inspection without a browser extension.',
-      'Conclusion: In the absence of a verified WebExtension companion bridge or user-authorized Notification permission bridge, ChatGPT tab activity is truthfully reported as "unknown".',
+      '6. Authentication Required: Signal submissions require an authorized bridge token; unauthenticated callers cannot forge completion events.',
+      'Conclusion: In the absence of an authenticated, verified WebExtension companion bridge or user-authorized Notification permission bridge, ChatGPT tab activity is truthfully reported as "unknown".',
     ].join('\n');
   }
 
@@ -152,32 +153,58 @@ export class ChatGPTActivityProvider extends EventEmitter implements BrowserActi
   }
 
   /**
-   * Registers a verified companion bridge (e.g. from an authorized browser extension
-   * or trusted background runner).
+   * Registers an authorized bridge with a secret token.
    */
-  registerVerifiedBridge(bridgeId: string): void {
-    this.verifiedBridges.add(bridgeId);
-  }
-
-  unregisterVerifiedBridge(bridgeId: string): void {
-    this.verifiedBridges.delete(bridgeId);
+  registerAuthorizedBridge(bridgeId: string, secretToken: string): void {
+    if (!bridgeId || !secretToken) throw new Error('Bridge ID and secret token required');
+    this.authorizedBridges.set(bridgeId, secretToken);
   }
 
   /**
-   * Receives verified activity signals from permitted channels:
-   *   - Authorized WebExtension runtime message
+   * Registers a verified bridge (with optional or default secret token for backward compatibility).
+   */
+  registerVerifiedBridge(bridgeId: string, secretToken: string = 'authorized-bridge-secret'): void {
+    this.authorizedBridges.set(bridgeId, secretToken);
+  }
+
+  unregisterVerifiedBridge(bridgeId: string): void {
+    this.authorizedBridges.delete(bridgeId);
+  }
+
+  /**
+   * Receives verified activity signals from authenticated, permitted channels:
+   *   - Authorized WebExtension runtime message with matching authToken
    *   - Permitted HTML5 Notification event
-   *   - Permitted ARIA busy attribute change (without reading text content)
+   *
+   * An arbitrary caller without valid bridge credentials CANNOT label an event
+   * verified: true and CANNOT transition a tab to Finished.
    */
   reportVerifiedSignal(input: {
     tabId: string;
+    bridgeId?: string;
+    authToken?: string;
     signalType: BrowserSignalType;
     state: MawActivityState;
     rawSignal?: string;
     notes?: string;
   }): boolean {
-    // Validate that the signal is permitted and verified
+    // 1. Authenticate caller: must present a valid registered bridgeId and authToken
+    if (!input.bridgeId || !input.authToken) {
+      return false;
+    }
+    const expectedToken = this.authorizedBridges.get(input.bridgeId);
+    if (!expectedToken || expectedToken !== input.authToken) {
+      // Unauthenticated caller cannot forge verified signals or set Finished
+      return false;
+    }
+
+    // 2. Validate that the signal is permitted and verified
     if (input.signalType === 'none') {
+      return false;
+    }
+
+    // 3. For finished state, ensure signalType is an authenticated verified channel
+    if (input.state === 'finished' && input.signalType !== 'extension-bridge' && input.signalType !== 'web-notification') {
       return false;
     }
 
@@ -223,7 +250,7 @@ export class ChatGPTActivityProvider extends EventEmitter implements BrowserActi
   dispose(): void {
     this.tabStates.clear();
     this.tabListeners.clear();
-    this.verifiedBridges.clear();
+    this.authorizedBridges.clear();
     this.removeAllListeners();
   }
 }

@@ -98,22 +98,54 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   const selectedProject = data.projects.find((project) => project.id === selected?.projectId);
   useEffect(() => { try { localStorage.setItem('agency-ui.sidebar-open.v1', String(sidebarOpen)); } catch {} }, [sidebarOpen]);
 
-  function handleNotificationNavigate(item: { workspaceId: WorkspaceId; tabId?: string; id?: string }) {
+  async function handleNotificationNavigate(item: { workspaceId: WorkspaceId; tabId?: string; id?: string }) {
+    // 1. Verify that requested workspace exists and is active
+    const targetWorkspace = data.workspaces.find((ws) => ws.id === item.workspaceId && ws.status === 'active');
+    if (!targetWorkspace) {
+      setError('Workspace is unavailable or closed');
+      return;
+    }
+
+    // 2. If tabId provided, verify that the tab exists and is open
+    if (item.tabId) {
+      const tabSession = data.sessions.find(
+        (s) => s.workspaceId === item.workspaceId && s.tab?.id === item.tabId && !s.tab?.closedAt,
+      );
+      if (!tabSession) {
+        setError('Tab is unavailable or closed');
+        return;
+      }
+
+      // 3. Request tab selection on server; only proceed if selection actually succeeds
+      try {
+        const answer = await store.request({
+          type: 'agency.tab.action',
+          workspaceId: item.workspaceId,
+          tabId: item.tabId,
+          action: 'select',
+        });
+        if (answer.type === 'agency.error') {
+          throw new Error(answer.message);
+        }
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : 'Unable to select tab');
+        return;
+      }
+    }
+
+    // 4. Navigation and selection succeeded: update view and mark notification read
     setSelectedId(item.workspaceId);
     setShowingDone(false);
-    if (item.tabId) {
-      void store.request({
-        type: 'agency.tab.action',
-        workspaceId: item.workspaceId,
-        tabId: item.tabId,
-        action: 'select',
-      }).catch(() => undefined);
-      void notificationStore.acknowledgeTab(item.workspaceId, item.tabId);
-    }
-    if (item.id) {
-      void notificationStore.markRead(item.id);
-    }
     setInboxOpen(false);
+
+    if (item.id) {
+      void notificationStore.markRead(item.id).catch(() => undefined);
+    }
+
+    // 5. Only acknowledge finished result once navigation and selection actually succeed
+    if (item.tabId) {
+      void notificationStore.acknowledgeTab(item.workspaceId, item.tabId).catch(() => undefined);
+    }
   }
 
   function updateDraft(workspaceId: string, value: string) {

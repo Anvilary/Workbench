@@ -242,8 +242,11 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
   const agencyActivityManager = options.agencyActivityManager ?? new TabActivityManager({ notificationStore: agencyNotificationStore });
   const chatgptProvider = new ChatGPTActivityProvider();
   agencyActivityManager.registerBrowserProvider(chatgptProvider);
-  void agencyNotificationStore.initialize().catch((err: unknown) => {
-    console.warn('[agency] failed to initialize notification store: ' + String(err));
+  void Promise.all([
+    agencyNotificationStore.initialize(),
+    agencyActivityManager.initialize(),
+  ]).catch((err: unknown) => {
+    console.warn('[agency] failed to initialize notification or activity store: ' + String(err));
   });
 
   const pasteStore = options.pasteStore ?? new PasteStore();
@@ -874,7 +877,9 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         projectId: ws?.projectId,
         tabId: session.tab.id,
         sessionId: session.id,
+        provider: session.nativeIdentity?.provider ?? null,
         tabName: session.tab.name,
+        previousActivity: session.activity,
         nextActivity: activity.activity,
         lifecycle: activity.lifecycle,
         exitCode: session.exitCode,
@@ -3394,6 +3399,8 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
               await agencyRuntime.tabAction(message.workspaceId, message.tabId, message.action);
               if (message.action === 'select') {
                 await agencyActivityManager.acknowledgeTab(message.workspaceId, message.tabId);
+              } else if (message.action === 'close') {
+                await agencyActivityManager.closeTab(message.workspaceId, message.tabId);
               }
             } else {
               await agencyRuntime.orderTabs(message.workspaceId, message.tabIds);
@@ -3436,7 +3443,9 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         case 'agency.notification.markRead': {
           const item = await agencyNotificationStore.markRead(message.notificationId);
           if (item) {
-            send(socket, { type: 'agency.notification.changed', notification: item });
+            send(socket, { type: 'agency.notification.changed', requestId: message.requestId, notification: item });
+          } else {
+            send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Notification not found' });
           }
           break;
         }
@@ -3454,7 +3463,9 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         case 'agency.notification.dismiss': {
           const item = await agencyNotificationStore.dismiss(message.notificationId);
           if (item) {
-            send(socket, { type: 'agency.notification.changed', notification: item });
+            send(socket, { type: 'agency.notification.changed', requestId: message.requestId, notification: item });
+          } else {
+            send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Notification not found' });
           }
           break;
         }
@@ -3462,7 +3473,10 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         case 'agency.tab.acknowledge': {
           const record = await agencyActivityManager.acknowledgeTab(message.workspaceId, message.tabId);
           if (record) {
+            send(socket, { type: 'agency.tab.activity', requestId: message.requestId, activity: record });
             broadcast({ type: 'agency.tab.activity', activity: record });
+          } else {
+            send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Tab activity not found or already acknowledged' });
           }
           break;
         }

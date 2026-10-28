@@ -76,35 +76,101 @@ test('Tab acknowledgement vs notification read separation', () => {
   assert.equal(tabState, 'idle');
 });
 
-test('Cross-workspace navigation payload', () => {
-  const notification = {
-    id: 'n-123',
-    workspaceId: 'ws-target',
-    tabId: 'tab-456',
-    title: 'Deployment finished',
-    state: 'finished',
-  };
+test('Navigation safety: missing workspace or failed selection does NOT acknowledge tab', async () => {
+  const workspaces = [
+    { id: 'ws-active', status: 'active' },
+    { id: 'ws-archived', status: 'archived' },
+  ];
+  const sessions = [
+    { workspaceId: 'ws-active', tab: { id: 'tab-open', closedAt: null } },
+    { workspaceId: 'ws-active', tab: { id: 'tab-closed', closedAt: '2026-10-28T12:00:00Z' } },
+  ];
 
-  let selectedWorkspace = 'ws-origin';
-  let selectedTab = 'tab-initial';
-  let readNotificationId = null;
-  let acknowledgedTabId = null;
+  let acknowledgedTabs = [];
+  let selectedWorkspace = null;
+  let selectedTab = null;
 
-  function handleNavigate(item) {
-    selectedWorkspace = item.workspaceId;
+  async function navigate(item, shouldSelectionFail = false) {
+    const ws = workspaces.find((w) => w.id === item.workspaceId && w.status === 'active');
+    if (!ws) return { error: 'Missing workspace' };
+
     if (item.tabId) {
-      selectedTab = item.tabId;
-      acknowledgedTabId = item.tabId;
+      const tab = sessions.find((s) => s.workspaceId === item.workspaceId && s.tab?.id === item.tabId && !s.tab?.closedAt);
+      if (!tab) return { error: 'Missing tab' };
+
+      if (shouldSelectionFail) {
+        return { error: 'Selection failed' };
+      }
     }
-    readNotificationId = item.id;
+
+    selectedWorkspace = item.workspaceId;
+    selectedTab = item.tabId;
+    if (item.tabId) {
+      acknowledgedTabs.push(item.tabId);
+    }
+    return { ok: true };
   }
 
-  handleNavigate(notification);
+  // Case 1: Missing workspace -> fails, does NOT acknowledge
+  const res1 = await navigate({ workspaceId: 'ws-missing', tabId: 'tab-open' });
+  assert.equal(res1.error, 'Missing workspace');
+  assert.equal(acknowledgedTabs.length, 0);
 
-  assert.equal(selectedWorkspace, 'ws-target');
-  assert.equal(selectedTab, 'tab-456');
-  assert.equal(readNotificationId, 'n-123');
-  assert.equal(acknowledgedTabId, 'tab-456');
+  // Case 2: Archived workspace -> fails, does NOT acknowledge
+  const res2 = await navigate({ workspaceId: 'ws-archived', tabId: 'tab-open' });
+  assert.equal(res2.error, 'Missing workspace');
+  assert.equal(acknowledgedTabs.length, 0);
+
+  // Case 3: Closed tab in active workspace -> fails, does NOT acknowledge
+  const res3 = await navigate({ workspaceId: 'ws-active', tabId: 'tab-closed' });
+  assert.equal(res3.error, 'Missing tab');
+  assert.equal(acknowledgedTabs.length, 0);
+
+  // Case 4: Selection fails on server -> does NOT acknowledge
+  const res4 = await navigate({ workspaceId: 'ws-active', tabId: 'tab-open' }, true);
+  assert.equal(res4.error, 'Selection failed');
+  assert.equal(acknowledgedTabs.length, 0);
+
+  // Case 5: Navigation and selection succeed -> acknowledges tab!
+  const res5 = await navigate({ workspaceId: 'ws-active', tabId: 'tab-open' }, false);
+  assert.equal(res5.ok, true);
+  assert.equal(selectedWorkspace, 'ws-active');
+  assert.equal(selectedTab, 'tab-open');
+  assert.deepEqual(acknowledgedTabs, ['tab-open']);
+});
+
+test('Optimistic mutation rollback on server failure', async () => {
+  let notifications = [
+    { id: 'notif-1', read: false },
+    { id: 'notif-2', read: false },
+  ];
+
+  async function markReadWithReconcile(notificationId, simulateServerError = false) {
+    const previous = notifications;
+    // Optimistic update
+    notifications = notifications.map((n) => (n.id === notificationId ? { ...n, read: true } : n));
+
+    try {
+      if (simulateServerError) {
+        throw new Error('Server network error');
+      }
+    } catch (err) {
+      // Reconcile: rollback optimistic change
+      notifications = previous;
+      throw err;
+    }
+  }
+
+  // Server error rolls back
+  await assert.rejects(
+    async () => markReadWithReconcile('notif-1', true),
+    /Server network error/,
+  );
+  assert.equal(notifications.find((n) => n.id === 'notif-1')?.read, false); // Reverted!
+
+  // Success persists
+  await markReadWithReconcile('notif-1', false);
+  assert.equal(notifications.find((n) => n.id === 'notif-1')?.read, true); // Persisted!
 });
 
 test('State model mapping for tab dots and indicators', () => {

@@ -155,6 +155,13 @@ Core guarantees implemented:
 - Header bell with unread badge, persistent popover inbox, and auto-dismissing floating toasts.
 - Full keyboard accessibility and 9-locale i18n support.
 
-Verification: Shared, server, and web typecheck (0 errors); 9-locale i18n check (100% pass); 4/4 server notification and activity tests pass; 6/6 web notification tests pass; 62/62 server agency tests pass; 9/9 web model tests pass; web production build exits 0.
+Verification: Shared, server, and web typecheck (0 errors); 9-locale i18n check (100% pass); 4/4 server notification and activity tests pass; 7/7 web notification tests pass; 62/62 server agency tests pass; 9/9 web model tests pass; web production build exits 0.
 
-Draft delivery branch: `feat/maw-notifications` pushed to `origin/feat/maw-notifications`. Target: `main`. Verified implementation commit: `dc6d3b86dbb5fa4d6d05cbc1e371954fdb3ab967`. No live services activated or merged.
+Lane C Amendment updates:
+- Audited native CLI turn completion: Claude Code and OpenCode provide verified turn completion; Codex and unverified Antigravity do not; generic idle transitions are strictly rejected as completion.
+- OSC 133 strictly requires valid numeric exit codes; missing/malformed codes strictly preserve unknown status; safe standalone bash/zsh scripts installed without touching user dotfiles.
+- ChatGPT browser provider enforces token-based bridge authorization; arbitrary unauthenticated callers cannot forge completion signals; privacy boundaries preserved.
+- Durable task states across server restart: in-flight tasks become unknown rather than falsely finished; uninspected finished states remain finished; closed tabs do not alert; stable event/task IDs used for deduplication.
+- Navigation safety: missing workspace or failed selection does not acknowledge tab; optimistic updates roll back immediately on server error.
+
+Draft delivery branch: `feat/maw-notifications` pushed to `origin/feat/maw-notifications`. Target: `main`. No live services activated or merged.

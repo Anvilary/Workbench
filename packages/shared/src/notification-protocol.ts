@@ -48,11 +48,14 @@ export interface TabActivityRecord {
   workspaceId: WorkspaceId;
   tabId: string;
   sessionId?: RuntimeSessionId;
+  taskId?: string;
   state: MawActivityState;
   updatedAt: IsoTimestamp;
   reliableSignal: boolean;
+  acknowledgedAt?: IsoTimestamp | null;
   source: NotificationSourceKind;
   detail?: string;
+  closed?: boolean;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -92,11 +95,14 @@ export function isTabActivityRecord(value: unknown): value is TabActivityRecord 
   if (!isValidId(value.workspaceId)) return false;
   if (typeof value.tabId !== 'string' || value.tabId.length === 0) return false;
   if (value.sessionId !== undefined && value.sessionId !== null && !isValidId(value.sessionId)) return false;
+  if (value.taskId !== undefined && value.taskId !== null && typeof value.taskId !== 'string') return false;
   if (!isMawActivityState(value.state)) return false;
   if (!isValidIsoTimestamp(value.updatedAt)) return false;
   if (typeof value.reliableSignal !== 'boolean') return false;
+  if (value.acknowledgedAt !== undefined && value.acknowledgedAt !== null && !isValidIsoTimestamp(value.acknowledgedAt)) return false;
   if (!['cli', 'shell', 'browser', 'manual'].includes(value.source as string)) return false;
   if (value.detail !== undefined && typeof value.detail !== 'string') return false;
+  if (value.closed !== undefined && typeof value.closed !== 'boolean') return false;
   return true;
 }
 
@@ -116,13 +122,16 @@ export type NotificationServerMessage =
     }
   | {
       type: 'agency.notification.created';
+      requestId?: RequestId;
       notification: MawNotificationItem;
     }
   | {
       type: 'agency.notification.changed';
+      requestId?: RequestId;
       notification: MawNotificationItem;
     }
   | {
       type: 'agency.tab.activity';
+      requestId?: RequestId;
       activity: TabActivityRecord;
     };

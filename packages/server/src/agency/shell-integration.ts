@@ -16,6 +16,8 @@
  */
 
 import { EventEmitter } from 'node:events';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import type { MawActivityState } from '@agent-workbench/shared';
 
 export interface ShellCommandStartEvent {
@@ -23,7 +25,7 @@ export interface ShellCommandStartEvent {
 }
 
 export interface ShellCommandExitEvent {
-  exitCode: number;
+  exitCode: number | null;
   timestamp: number;
   reliable: boolean;
 }
@@ -60,6 +62,10 @@ export class ShellIntegrationParser extends EventEmitter {
   }
 
   isIntegrationEstablished(): boolean {
+    return this.integrationEstablished;
+  }
+
+  hasIntegration(): boolean {
     return this.integrationEstablished;
   }
 
@@ -138,13 +144,19 @@ export class ShellIntegrationParser extends EventEmitter {
           break;
 
         case 'D': { // Command finished / command exited
-          let exitCode = 0;
-          if (params !== undefined && params.length > 0) {
-            const parsed = parseInt(params.trim(), 10);
-            if (!Number.isNaN(parsed)) {
-              exitCode = parsed;
-            }
+          // Requirement: never interpret missing, malformed or nonnumeric exit codes as successful exit code 0.
+          // Preserve Unknown when completion cannot be established.
+          const trimmed = params?.trim();
+          if (!trimmed || !/^-?\d+$/.test(trimmed)) {
+            // Missing, malformed or nonnumeric exit code
+            this.lastExitCode = null;
+            this.currentState = 'unknown';
+            this.emit('commandExit', { exitCode: null, timestamp: now, reliable: false });
+            this.emit('state', 'unknown', 'command-exit-unverified');
+            break;
           }
+
+          const exitCode = parseInt(trimmed, 10);
           this.lastExitCode = exitCode;
 
           if (exitCode === 0) {
@@ -184,3 +196,88 @@ export const ShellSequences = {
   commandStart: '\x1b]133;C\x07',
   commandExit: (exitCode: number = 0) => `\x1b]133;D;${exitCode}\x07`,
 } as const;
+
+/**
+ * Generates safe Bash shell integration script.
+ * Safely appends to PROMPT_COMMAND; never overwrites existing functions or configuration.
+ */
+export function generateBashIntegrationScript(): string {
+  return `#!/usr/bin/env bash
+# MAW Safe Bash Shell Integration (OSC 133)
+# Safely chains with existing PROMPT_COMMAND; does not overwrite user configuration.
+
+__maw_osc133_prompt_start() {
+  printf "\\033]133;A\\007"
+}
+
+__maw_osc133_prompt_end() {
+  printf "\\033]133;B\\007"
+}
+
+__maw_osc133_command_start() {
+  printf "\\033]133;C\\007"
+}
+
+__maw_osc133_precmd() {
+  local last_status="$?"
+  printf "\\033]133;D;%d\\007" "$last_status"
+  printf "\\033]133;A\\007"
+}
+
+if [[ -z "\${PROMPT_COMMAND:-}" ]]; then
+  PROMPT_COMMAND="__maw_osc133_precmd"
+elif [[ "$PROMPT_COMMAND" != *"__maw_osc133_precmd"* ]]; then
+  PROMPT_COMMAND="__maw_osc133_precmd; $PROMPT_COMMAND"
+fi
+`;
+}
+
+/**
+ * Generates safe Zsh shell integration script.
+ * Appends to precmd_functions and preexec_functions; never overwrites user configuration.
+ */
+export function generateZshIntegrationScript(): string {
+  return `#!/usr/bin/env zsh
+# MAW Safe Zsh Shell Integration (OSC 133)
+# Safely hooks precmd and preexec without mutating user dotfiles.
+
+__maw_osc133_zsh_precmd() {
+  local last_status="$?"
+  print -n "\\e]133;D;\${last_status}\\a"
+  print -n "\\e]133;A\\a"
+}
+
+__maw_osc133_zsh_preexec() {
+  print -n "\\e]133;C\\a"
+}
+
+autoload -Uz add-zsh-hook 2>/dev/null || true
+if typeset -f add-zsh-hook >/dev/null 2>&1; then
+  add-zsh-hook precmd __maw_osc133_zsh_precmd
+  add-zsh-hook preexec __maw_osc133_zsh_preexec
+else
+  typeset -ga precmd_functions
+  precmd_functions+=(__maw_osc133_zsh_precmd)
+  typeset -ga preexec_functions
+  preexec_functions+=(__maw_osc133_zsh_preexec)
+fi
+`;
+}
+
+/**
+ * Writes the standalone integration scripts safely into targetDir.
+ * NEVER touches or alters user dotfiles (~/.bashrc, ~/.zshrc, etc.).
+ */
+export async function installShellIntegrationSafely(targetDir: string): Promise<{
+  bashScriptPath: string;
+  zshScriptPath: string;
+}> {
+  await mkdir(targetDir, { recursive: true });
+  const bashScriptPath = path.join(targetDir, 'maw-bash-integration.sh');
+  const zshScriptPath = path.join(targetDir, 'maw-zsh-integration.zsh');
+
+  await writeFile(bashScriptPath, generateBashIntegrationScript(), { mode: 0o755 });
+  await writeFile(zshScriptPath, generateZshIntegrationScript(), { mode: 0o755 });
+
+  return { bashScriptPath, zshScriptPath };
+}
