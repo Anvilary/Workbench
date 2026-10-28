@@ -44,7 +44,7 @@ test('persistence: returns empty list when primary and backup do not exist', asy
   assert.equal(store.isLoaded, true);
 });
 
-test('persistence: atomic save and conservative restore strips ephemeral targetRef', async (t) => {
+test('persistence: atomic save and conservative restore preserves targetRef for reconciliation while resetting runtimeState', async (t) => {
   const { store, filePath } = await createFixture(t);
   const ws1 = 'a0000000-0000-4000-8000-000000000001' as WorkspaceId;
   const tab1 = makeTab('b0000000-0000-4000-8000-000000000001', ws1, 0, true);
@@ -56,9 +56,9 @@ test('persistence: atomic save and conservative restore strips ephemeral targetR
   const st = await stat(filePath);
   assert.equal(st.mode & 0o777, 0o600);
 
-  // Check raw contents do not store targetRef
+  // Check raw contents store targetRef for controller reconciliation across restarts
   const raw = await readFile(filePath, 'utf8');
-  assert.ok(!raw.includes('ephemeral-target-123'), 'targetRef must not be written to disk');
+  assert.ok(raw.includes('ephemeral-target-123'), 'targetRef must be written to disk for reconciliation');
 
   // Load via new store instance
   const reopened = new BrowserTabStore(filePath);
@@ -71,11 +71,11 @@ test('persistence: atomic save and conservative restore strips ephemeral targetR
   assert.equal(r1.id, tab1.id);
   assert.equal(r1.workspaceId, ws1);
   assert.equal(r1.selected, true);
-  assert.equal(r1.targetRef, null, 'Conservative restore initializes targetRef as null');
+  assert.equal(r1.targetRef, 'ephemeral-target-123', 'Conservative restore retains targetRef for verification');
   assert.equal(r1.runtimeState, 'detached', 'Conservative restore initializes runtimeState as detached');
 
   assert.equal(r2.selected, false);
-  assert.equal(r2.targetRef, null);
+  assert.equal(r2.targetRef, 'ephemeral-target-123');
   assert.equal(r2.runtimeState, 'detached');
 });
 

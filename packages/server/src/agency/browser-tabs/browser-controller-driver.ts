@@ -2,19 +2,38 @@
  * Driver interface for the underlying browser engine (e.g. Neko Chromium controller).
  *
  * Keeps the durable tab domain decoupled from Neko internals.
- * Lane A can implement this interface once the control transport is confirmed.
+ * Lane A implements this interface to reconcile live Chromium targets and manage page lifecycles.
  */
 
 export interface OpenTargetResult {
   targetRef: string;
 }
 
+export interface TargetMetadata {
+  /** Stable MAW tab ID. */
+  tabId: string;
+  /** Owning Agency workspace ID. */
+  workspaceId: string;
+  /** Conversation URL. */
+  url?: string;
+}
+
+export interface TargetInfo {
+  targetRef: string;
+  tabId?: string;
+  workspaceId?: string;
+  url?: string;
+  alive: boolean;
+  active: boolean;
+}
+
 export interface BrowserControllerDriver {
   /**
-   * Request that the browser engine open a new Chromium page/target at the specified URL.
+   * Request that the browser engine open a new Chromium page/target at the specified URL
+   * tagged with MAW tab ownership metadata.
    * Returns the browser engine's runtime target reference.
    */
-  openTarget(url: string): Promise<OpenTargetResult>;
+  openTarget(url: string, metadata?: TargetMetadata): Promise<OpenTargetResult>;
 
   /**
    * Request that the browser engine display/focus an already-loaded target.
@@ -36,13 +55,25 @@ export interface BrowserControllerDriver {
    * Inquire whether a target reference is still open/alive in the browser engine.
    */
   isTargetAlive(targetRef: string): Promise<boolean>;
+
+  /**
+   * Verify whether an existing browser target strictly matches the expected tab ownership.
+   * Returns true only when tabId and workspaceId match.
+   * Never blindly matches based on URL or title alone.
+   */
+  verifyTargetOwnership(targetRef: string, expected: TargetMetadata): Promise<boolean>;
+
+  /**
+   * Inquire active ongoing background operations (e.g. assistant streaming response).
+   */
+  hasOngoingOperation?(targetRef: string): Promise<boolean>;
 }
 
 /**
  * Safe null driver used when Neko browser engine is unconfigured or offline.
  */
 export class NullBrowserControllerDriver implements BrowserControllerDriver {
-  async openTarget(_url: string): Promise<OpenTargetResult> {
+  async openTarget(_url: string, _metadata?: TargetMetadata): Promise<OpenTargetResult> {
     return { targetRef: 'null-target' };
   }
 
@@ -55,20 +86,40 @@ export class NullBrowserControllerDriver implements BrowserControllerDriver {
   async isTargetAlive(_targetRef: string): Promise<boolean> {
     return false;
   }
+
+  async verifyTargetOwnership(_targetRef: string, _expected: TargetMetadata): Promise<boolean> {
+    return false;
+  }
 }
 
 /**
- * In-memory driver for deterministic testing and headless verification.
+ * In-memory driver for deterministic testing, reconciliation, and headless verification.
  */
 export class MemoryBrowserControllerDriver implements BrowserControllerDriver {
   private counter = 0;
-  readonly targets = new Map<string, { url: string; active: boolean; closed: boolean }>();
+  readonly targets = new Map<
+    string,
+    {
+      url: string;
+      active: boolean;
+      closed: boolean;
+      metadata?: TargetMetadata;
+      ongoingOperation?: string;
+    }
+  >();
   readonly callLog: Array<{ method: string; args: unknown[] }> = [];
+  /** Target refs configured to fail destruction during closeTarget */
+  readonly failCloseTargets = new Set<string>();
 
-  async openTarget(url: string): Promise<OpenTargetResult> {
-    this.callLog.push({ method: 'openTarget', args: [url] });
+  async openTarget(url: string, metadata?: TargetMetadata): Promise<OpenTargetResult> {
+    this.callLog.push({ method: 'openTarget', args: [url, metadata] });
     const targetRef = `mem-target-${++this.counter}`;
-    this.targets.set(targetRef, { url, active: true, closed: false });
+    this.targets.set(targetRef, {
+      url,
+      active: true,
+      closed: false,
+      metadata,
+    });
     return { targetRef };
   }
 
@@ -94,10 +145,14 @@ export class MemoryBrowserControllerDriver implements BrowserControllerDriver {
 
   async closeTarget(targetRef: string): Promise<void> {
     this.callLog.push({ method: 'closeTarget', args: [targetRef] });
+    if (this.failCloseTargets.has(targetRef)) {
+      throw new Error(`Simulated CDP failure closing target ${targetRef}`);
+    }
     const target = this.targets.get(targetRef);
     if (target) {
       target.closed = true;
       target.active = false;
+      target.ongoingOperation = undefined;
     }
   }
 
@@ -106,10 +161,37 @@ export class MemoryBrowserControllerDriver implements BrowserControllerDriver {
     return !!target && !target.closed;
   }
 
+  async verifyTargetOwnership(targetRef: string, expected: TargetMetadata): Promise<boolean> {
+    const target = this.targets.get(targetRef);
+    if (!target || target.closed) return false;
+    if (!target.metadata) return false;
+    // Strict ownership verification: requires matching tabId and workspaceId
+    return (
+      target.metadata.tabId === expected.tabId &&
+      target.metadata.workspaceId === expected.workspaceId
+    );
+  }
+
+  setOngoingOperation(targetRef: string, operationDescription: string): void {
+    const target = this.targets.get(targetRef);
+    if (target) {
+      target.ongoingOperation = operationDescription;
+    }
+  }
+
+  async hasOngoingOperation(targetRef: string): Promise<boolean> {
+    const target = this.targets.get(targetRef);
+    return !!target && !target.closed && target.ongoingOperation !== undefined;
+  }
+
   getActiveTarget(): string | null {
     for (const [id, t] of this.targets.entries()) {
       if (t.active && !t.closed) return id;
     }
     return null;
+  }
+
+  getTargetCount(): number {
+    return Array.from(this.targets.values()).filter((t) => !t.closed).length;
   }
 }

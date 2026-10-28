@@ -11,6 +11,7 @@ import type { WorkspaceId, IsoTimestamp, RequestId } from './agency-protocol.js'
 export type WebTabKind = 'web';
 
 export type WebTabRuntimeState =
+  | 'unloaded'
   | 'detached'
   | 'attaching'
   | 'attached'
@@ -48,6 +49,10 @@ export interface WebTab {
   targetRef?: string | null;
   /** Ephemeral runtime state in the browser controller. */
   runtimeState?: WebTabRuntimeState;
+  /** Set to true if Chromium target destruction failed during close and requires subsequent cleanup. */
+  cleanupRequired?: boolean;
+  /** Optional client-supplied idempotent launch identifier. */
+  launchId?: string;
 }
 
 export interface CreateWebTabInput {
@@ -56,6 +61,8 @@ export interface CreateWebTabInput {
   title?: string;
   order?: number;
   select?: boolean;
+  launchId?: string;
+  unloaded?: boolean;
 }
 
 export interface UrlValidationResult {
@@ -159,6 +166,18 @@ export function validateWebTabTitle(title: unknown): boolean {
   return clean.length >= 1 && clean.length <= 120 && !/[\u0000-\u001f\u007f]/.test(clean);
 }
 
+const VALID_RUNTIME_STATES = new Set<string>([
+  'unloaded',
+  'detached',
+  'attaching',
+  'attached',
+  'navigating',
+  'ready',
+  'crashed',
+  'closed',
+  'error',
+]);
+
 export function isWebTab(value: unknown): value is WebTab {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const tab = value as Record<string, unknown>;
@@ -173,7 +192,9 @@ export function isWebTab(value: unknown): value is WebTab {
   if (typeof tab.updatedAt !== 'string' || Number.isNaN(Date.parse(tab.updatedAt))) return false;
   if (tab.closedAt !== null && (typeof tab.closedAt !== 'string' || Number.isNaN(Date.parse(tab.closedAt)))) return false;
   if (tab.targetRef !== undefined && tab.targetRef !== null && typeof tab.targetRef !== 'string') return false;
-  if (tab.runtimeState !== undefined && !['detached', 'attaching', 'attached', 'navigating', 'ready', 'crashed', 'closed'].includes(tab.runtimeState as string)) return false;
+  if (tab.runtimeState !== undefined && !VALID_RUNTIME_STATES.has(tab.runtimeState as string)) return false;
+  if (tab.cleanupRequired !== undefined && typeof tab.cleanupRequired !== 'boolean') return false;
+  if (tab.launchId !== undefined && (typeof tab.launchId !== 'string' || tab.launchId.length < 1 || tab.launchId.length > 128)) return false;
   return true;
 }
 
@@ -182,7 +203,7 @@ export function isWebTab(value: unknown): value is WebTab {
 // ---------------------------------------------------------------------------
 
 export type WebTabClientMessage =
-  | { type: 'agency.webTab.create'; requestId: RequestId; workspaceId: WorkspaceId; url: string; title?: string; order?: number; select?: boolean }
+  | { type: 'agency.webTab.create'; requestId: RequestId; workspaceId: WorkspaceId; url: string; title?: string; order?: number; select?: boolean; launchId?: string; unloaded?: boolean }
   | { type: 'agency.webTab.select'; requestId: RequestId; workspaceId: WorkspaceId; tabId: string }
   | { type: 'agency.webTab.navigate'; requestId: RequestId; workspaceId: WorkspaceId; tabId: string; url: string }
   | { type: 'agency.webTab.rename'; requestId: RequestId; workspaceId: WorkspaceId; tabId: string; title: string }
@@ -231,6 +252,16 @@ export function parseWebTabClientMessage(raw: unknown): WebTabClientMessage | nu
         if (typeof raw.select !== 'boolean') return null;
         select = raw.select;
       }
+      let launchId: string | undefined;
+      if (raw.launchId !== undefined) {
+        if (typeof raw.launchId !== 'string' || raw.launchId.length < 1 || raw.launchId.length > 128) return null;
+        launchId = raw.launchId;
+      }
+      let unloaded: boolean | undefined;
+      if (raw.unloaded !== undefined) {
+        if (typeof raw.unloaded !== 'boolean') return null;
+        unloaded = raw.unloaded;
+      }
       return {
         type: 'agency.webTab.create',
         requestId,
@@ -239,6 +270,8 @@ export function parseWebTabClientMessage(raw: unknown): WebTabClientMessage | nu
         ...(title !== undefined ? { title } : {}),
         ...(order !== undefined ? { order } : {}),
         ...(select !== undefined ? { select } : {}),
+        ...(launchId !== undefined ? { launchId } : {}),
+        ...(unloaded !== undefined ? { unloaded } : {}),
       };
     }
     case 'agency.webTab.select': {
