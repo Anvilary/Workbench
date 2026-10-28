@@ -1,12 +1,14 @@
-IN_PROGRESS
+FINAL — BOUNDED AUDIT COMPLETE
+
+Final decision: bounded audit complete; final continuation sections below and 08/09 supersede historical checkpoint limitations. No performance refactoring before QA; Group A/B corrections remain required.
 
 # Functional Reliability
 
-Audited source: `90a74a4fb12364e888e78cd72927f24898ca0950`  
-Audit branch: `audit/agency-ui-pre-qa-20261027`  
-Date: 2026-10-27 (UTC); environment: Ubuntu/Linux x86_64, kernel 7.0.0-38-generic; Node v24.22.0; npm 11.8.0; git 2.53.0; gh 2.46.0.  
-Limitations: major audit phases remain incomplete; conclusions are limited to the evidence documented below and in 00-STATUS.md.  
-Last completed step: initialized and pushed audit checkpoints; most recent completed investigation is FUNC-001 browser reproduction (checkpoint 00j).
+Audited source: `90a74a4fb12364e888e78cd72927f24898ca0950`
+Audit branch: `audit/agency-ui-pre-qa-20261027`
+Date: 2026-10-28 (UTC); environment: Ubuntu/Linux x86_64, kernel 7.0.0-38-generic; Node v24.22.0; npm 11.8.0; git 2.53.0; gh 2.46.0.
+Limitations: synthetic/local bounded review; real-provider checks require manual QA. Earlier checkpoint sections are historical; final continuation conclusions supersede their incomplete-state statements.
+Last completed step: integrated account isolation, critical boundary review, sustained PTYs, long transcript and browser reconnection; final backlog and handoff.
 
 
 ## FUNC-001 — rapid close leaks server picker; next picker remains in loading state
@@ -44,3 +46,9 @@ const counts=await page.evaluate(()=>({errors:window.__pickerErrors||0,listings:
 ## Continuation 02 — authenticated socket and picker recovery
 
 Disposable production server: actual WS `unexpected-response` HTTP status is 403 for each of bad token, foreign Origin, and foreign Host (three independent attempts; transport errors cannot satisfy these assertions). An Agency workspace.create containing arbitrary cwd is rejected as `Invalid Agency request`. Exhaust eight pickers, observe ninth `picker-failed`, close that socket, connect fresh socket without Origin using valid token, and receive a new picker listing. Reattach existing shell, execute `printf '%s%s\\n' 'EXECUTED_' 'MARKER'`; assert joined EXECUTED_MARKER in actual terminal.output, then `exit 42` and assert the exact runtime row publishes exitCode 42. This extends earlier E2E coverage using non-echo output and real exit code. Fixture `/tmp/agency-audit-boundaries.mjs`, same isolated setup as 05 screenshot harness. FUNC-001 reconnect workaround is now verified at socket level; browser remains responsible for refreshing state.
+
+## Continuation 04 — browser reconnect and real process preservation
+
+Real Chrome with disposable server: select Shell Only, click workspace-header Done, restore the Shell Only row from Done view, select it again. Set browser context offline, explicitly close instrumented browser WebSockets, wait until connected indicator disappears, click Done while offline and assert visible role=alert. Count sent Agency mutations before reconnect; restore connectivity, await connected indicator and500ms settle, assert mutation count unchanged. A separate authenticated socket attaches the **original** shell terminal ID and executes split printf marker `PRESERVED_` + `SHELL`; assert joined output from terminal.output. All assertions passed. Thus Done/Restore + disconnect preserved this actual shell and no attempted offline mutation replayed. Does not guarantee the outcome of a mutation already sent before a connection failed; UI correctly asks user to verify state. Fixture `/tmp/agency-audit-browser-reconnect.mjs`, derived from screenshot setup, page.addInitScript wraps WebSocket only to retain socket instances/count outgoing Agency non-list messages; no app modifications.
+
+Concurrent start/stop, duplicate native controllers, launch failures, stale/symlink cwd, restart reconciliation, corruption/future-schema handling: reviewed assertions in prior independently passing runtime/domain/profile suites (06). Preserve distinction between fake registries and actual provider behavior. Rapid switching and dialog Tab/Escape checks have browser evidence (04/05). First-load picker error visibility remains FUNC-001. No new reliability finding is assigned solely from coverage limits.

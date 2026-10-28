@@ -1,30 +1,19 @@
-IN_PROGRESS
+# Definitive engineering backlog
 
-# Recommendations
+Pinned application: `90a74a4fb12364e888e78cd72927f24898ca0950`; audit branch `audit/agency-ui-pre-qa-20261027`. Report-only audit, 2026-10-28. Findings/evidence/source references:07 and03; functional reproduction:02; measurements:05. Completion is the finite audit, not approval to merge unfixed defects.
 
-Audited source: `90a74a4fb12364e888e78cd72927f24898ca0950`  
-Audit branch: `audit/agency-ui-pre-qa-20261027`  
-Date: 2026-10-27 (UTC); environment: Ubuntu/Linux x86_64, kernel 7.0.0-38-generic; Node v24.22.0; npm 11.8.0; git 2.53.0; gh 2.46.0.  
-Limitations: major audit phases remain incomplete; conclusions are limited to the evidence documented below and in 00-STATUS.md.  
-Last completed step: initialized and pushed audit checkpoints; most recent completed investigation is FUNC-001 browser reproduction (checkpoint 00j).
+| Order | Group | Item | Narrow implementation and acceptance |
+|---|---|---|---|
+|1|A — before native-profile manual QA|SEC-001 P1|Disable guessed-home discovery/history for opaque profiles immediately, expose unavailable state; then carry immutable verified native-home context from launch through discovery/history/follow/protected dirs/resume. Never use server home as fallback. Verify dual-home synthetic browser negative controls and explicit unavailable behavior. Preserve single native PTY/native prompts.|
+|2|B — before merge PR#5|SEC-002 P2|Extend existing remoteRefusal host-configuration policy to agency.profile.configure for device credentials; server enforcement first, hide unsupported device controls. Device denied, host accepted, persisted profile unchanged on refusal.|
+|3|B — before merge|FUNC-001 P2|Correlate/cancel picker opens and release late allocations; render initial error without requiring listing. Preserve socket scoping and shared consumers. Repeat >8 delayed cancellations, reopen/concurrent opens, injected first-load failure and reconnect.|
+|4|B — before merge|TEST-001 P2 coverage gap|Correct E2E and focused real-PTY echo predicates; require actual supported exit status, split/generated output marker absent literally from input, interruption completion and ANSI assertions; WS rejection must assert expected HTTP status. Negative self-tests: echo only, missing exitCode, unrelated connection refusal must fail. Run focused and browser suites at corrected SHA.|
+|5|B — before merge|Define historical native-resume ownership policy (unverified concern)|CONTRACT#7/#9 do not bind a native session permanently to a profile. Decide whether verified-home/provider identity or named profile is owner; document supported transfer, enforce it if forbidden and test after exit/restart. Active controller exclusion must remain. Do not call current acceptance an established exploit.|
+|6|C — optional later|Resource instrumentation/soak|Attribute Chrome listener count growth (185→365 across60 switches with GC); collect retained targets and longer stable-state heap/CPU. No demonstrated user-visible degradation or confirmed root cause.|
+|7|C — optional later|Durability and performance characterization|If crash/power-loss durability is required, evaluate fsync + atomic backups/fault injection. Longer native soak, isolated render profiling and machine-cold startup only if relevant. No benchmark-backed performance refactor before QA.|
 
+Group A is a prerequisite to manual QA with real named Codex histories. Group B is a prerequisite to merge; optional remote access remains disabled by default, but enabling it is supported and its authorization bypass must be closed. Group C does not block QA/merge without new evidence.
 
-## Provisional engineering priorities — audit incomplete
+Required regressions: immutable profile/home context with identical cwd/time in both homes; no A-only marker or native ID attached to B; opaque/unverified and legacy unknown homes fail closed; valid correct-home read/resume and protected-home checks. Profile configure device/host authorization. Picker cancellation/first-error/reconnect. Assertion negative controls. Existing runtime concurrent reservation/deletion, start/stop, duplicate-controller, restart, symlink, corruption/backup/future-schema suites; preserve genuine Done/Restore PTY and split-marker exit42 tests; offline browser non-replay. Re-run implementation tests after fixes, not merely audit results at old SHA.
 
-These are limited to established findings and will need revision after the remaining audit. No implementation has been changed.
-
-### Group A — before manual QA involving named Codex profiles
-
-- SEC-001 (P1): ensure discovery and history reads are bound to a verified effective native home for each launch; when a wrapper's effective home is opaque, report history/discovery unavailable and do not attribute a server-home rollout. Preserve the single native PTY and upstream adapters. Requires dual-home wrong-attribution and history tests and an account-safe wrapper identity strategy. An integration agent must decide how to establish the effective home without exposing or changing credentials. Full browser disclosure and native resume impact remain unverified.
-
-### Group B — before merge
-
-- FUNC-001 (P2): ensure every aborted picker open releases its late server allocation and show initial picker errors even when no listing arrived; test delayed replies and repeated open/cancel, multiple outstanding requests and reconnect. Shared picker is upstream infrastructure, so test its other consumers as well.
-- TEST-001 (P2 coverage gap): correct false-positive exit/terminal output/WS rejection assertions and add negative tests; run the real focused/browser suites at the final implementation SHA. Do not count the 25 labels as complete acceptance.
-- Resolve the historically cross-profile native resume policy and test enforcement if profiles own sessions; current fake-registry test demonstrates acceptance after exit but does not establish a security exploit.
-
-### Group C — after initial release, conditional on the remaining audit
-
-No performance optimization is recommended solely from current measurements. The 1.13 MB raw / 310 kB gzip main bundle is a measurement, not yet a demonstrated bottleneck. Collect cold/warm parse and startup distributions, output-load and memory evidence before deciding on splitting or other changes.
-
-Dependencies and regression risks: account isolation requires an explicit identity mechanism, not guessing a wrapper's internal environment; profile discovery, history and resume must agree on ownership. Picker cleanup must preserve concurrent consumers and socket scoping. All groups remain provisional pending completion of the audit.
+Manual QA after Group A: real installed wrappers/authenticated CLI startup without changing credentials; provider-native prompts/permission/interrupt semantics, real native resume under agreed ownership, provider history/compressed rollouts and native model/effort capability availability. The audit did not invoke paid inference or access private histories. Unsupported selection must remain visibly unavailable.

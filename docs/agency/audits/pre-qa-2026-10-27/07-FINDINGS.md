@@ -1,18 +1,20 @@
-IN_PROGRESS
+FINAL — BOUNDED AUDIT COMPLETE
+
+Final decision: bounded audit complete; final continuation sections below and 08/09 supersede historical checkpoint limitations. No performance refactoring before QA; Group A/B corrections remain required.
 
 # Findings
 
-Audited source: `90a74a4fb12364e888e78cd72927f24898ca0950`  
-Audit branch: `audit/agency-ui-pre-qa-20261027`  
-Date: 2026-10-27 (UTC); environment: Ubuntu/Linux x86_64, kernel 7.0.0-38-generic; Node v24.22.0; npm 11.8.0; git 2.53.0; gh 2.46.0.  
-Limitations: major audit phases remain incomplete; conclusions are limited to the evidence documented below and in 00-STATUS.md.  
-Last completed step: initialized and pushed audit checkpoints; most recent completed investigation is FUNC-001 browser reproduction (checkpoint 00j).
+Audited source: `90a74a4fb12364e888e78cd72927f24898ca0950`
+Audit branch: `audit/agency-ui-pre-qa-20261027`
+Date: 2026-10-28 (UTC); environment: Ubuntu/Linux x86_64, kernel 7.0.0-38-generic; Node v24.22.0; npm 11.8.0; git 2.53.0; gh 2.46.0.
+Limitations: synthetic/local bounded review; real-provider checks require manual QA. Earlier checkpoint sections are historical; final continuation conclusions supersede their incomplete-state statements.
+Last completed step: integrated account isolation, critical boundary review, sustained PTYs, long transcript and browser reconnection; final backlog and handoff.
 
 
 ## Confirmed defects
 
 ### SEC-001 — Codex discovery is not scoped to a profile's actual native home
-- Severity: P1; confidence: high for wrong-home discovery and wrong-ID attribution, demonstrated in synthetic discovery fixture. End-to-end disclosure and actual wrapper behavior remain unverified. Category: security and functional reliability.
+- Severity: P1; confidence: high for wrong-home discovery and wrong-ID attribution, demonstrated in synthetic discovery fixture. Integrated synthetic wrapper/server/browser transcript misattribution is now verified (03 continuation01); real-account disclosure remains unverified. Category: security and functional reliability.
 - Affected: `packages/server/src/agents/codex/paths.ts:82`, `discovery.ts:175`, `index.ts:187`, `history.ts:110`, `find-rollout.ts:150`, `packages/server/src/terminal-registry.ts:742`, `packages/server/src/agency/agency-profile-capabilities.ts:159`.
 - Observed: provider discovery/history resolve the server home; a configured wrapper may start its CLI with a different home, unavailable to the hook. Expected: discovery, readers and ownership use a trustworthy, profile-scoped home; otherwise fail closed as unavailable.
 - Reproduction: with two synthetic homes, register a pending terminal representing profile B while the server uses A; write fixture rollouts under each. This component-level test does not launch a wrapper, read real histories, or run inference. Observed: after a rollout is written under B, scan reports no ID; after a matching rollout is written under A, scan reports the A ID for B’s pending terminal. Full command and fixture in 03-SECURITY.md.
@@ -34,7 +36,7 @@ None established.
 
 ## Unverified risks
 
-Cross-profile transcript disclosure and bad resume under SEC-001 have not been demonstrated end to end. Potential native-home protection gaps require inspection.
+Real-account disclosure and real native resume impact under SEC-001 remain unverified. Integrated synthetic wrong-home transcript rendering is established. Wrapper-home protected-directory coverage must be included in SEC-001 remediation.
 
 ### Unverified risk — historical profile ownership on resume
 
@@ -43,7 +45,7 @@ Synthetic runtime fixture confirms an inactive native ID previously recorded und
 
 ## Performance opportunities
 
-No optimization supported by measurements yet.
+No performance refactoring before QA is justified by these measurements; repeatable browser listener-count growth remains unattributed (05 continuation04).
 
 ## Test coverage gaps
 
@@ -69,3 +71,14 @@ Source: `packages/server/src/remote-access.ts:377` (only settings.update + remot
 Reproduction: production server with **disposable** XDG settings `{version:1,remote:{enabled:true,port:29871}}`; host-token socket requests remote.pairing.start; redeem its one-use code by HTTP GET `/?pair=<code>` with redirects disabled; use returned device cookie, **no startup token**, for a second WS. Send agency.profile.configure for codex-1 with executable pointing to disposable no-inference fixture and args `["REMOTE_CHANGED"]`. Actual reply is agency.profile.configured containing new arguments; same paired socket sends valid settings.update `{consoleShell:'auto'}` and receives `remote-refused`. All assertions passed. Fixture `/tmp/agency-audit-remote-profile.mjs`; no SSH setup, real credentials or provider interaction. First harness attempt used invalid settings.update shape and got bad-message; corrected negative control uses valid shape and got remote-refused.
 
 Root cause: remoteRefusal's host-only executable/settings policy was not extended to the new Agency mutation. Impact: an already-paired device can alter shared executable/argv/disabled/profile environment configuration affecting subsequent host launches. This is **not unauthenticated RCE**; paired clients already have broad terminal permissions. Severity P2 reflects persistent host-configuration authority bypass, conditional on explicit remote enablement (default disabled). Narrow fix: reject agency.profile.configure for device credentials at the existing policy gate; hide/disable host-only UI controls for paired clients, retaining server enforcement. Regression: two authenticated credentials against disposable server, device configure denied and unchanged profile persisted, host configure accepted; valid device settings.update remains denied. No widening of device permissions.
+
+## Final register and release gates
+
+| ID | Severity | Gate | Established scope |
+|---|---|---|---|
+| SEC-001 | P1 | A | Integrated synthetic wrong-home ID/transcript attribution; verified wrapper effective home ignored |
+| SEC-002 | P2 | B | Paired device writes shared host executable/profile configuration; remote-enabled only |
+| FUNC-001 | P2 | B | Cancel-before-first-listing leaks picker allocations; initial error hidden |
+| TEST-001 | P2 coverage gap | B | Echo/missing exit status/generic WS failure can falsely pass checks |
+
+No P0 established. No further confirmed findings. Historical cross-profile resume policy, real private-account exposure, atomic power-loss durability and browser listener retention remain explicit uncertainties; none is labeled an exploit or proven data-loss/leak defect. Required fixes and negative regression controls are in08; standalone implementation packet is09.

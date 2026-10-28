@@ -1,12 +1,14 @@
-IN_PROGRESS
+FINAL — BOUNDED AUDIT COMPLETE
+
+Final decision: bounded audit complete; final continuation sections below and 08/09 supersede historical checkpoint limitations. No performance refactoring before QA; Group A/B corrections remain required.
 
 # Test Coverage
 
-Audited source: `90a74a4fb12364e888e78cd72927f24898ca0950`  
-Audit branch: `audit/agency-ui-pre-qa-20261027`  
-Date: 2026-10-27 (UTC); environment: Ubuntu/Linux x86_64, kernel 7.0.0-38-generic; Node v24.22.0; npm 11.8.0; git 2.53.0; gh 2.46.0.  
-Limitations: major audit phases remain incomplete; conclusions are limited to the evidence documented below and in 00-STATUS.md.  
-Last completed step: initialized and pushed audit checkpoints; most recent completed investigation is FUNC-001 browser reproduction (checkpoint 00j).
+Audited source: `90a74a4fb12364e888e78cd72927f24898ca0950`
+Audit branch: `audit/agency-ui-pre-qa-20261027`
+Date: 2026-10-28 (UTC); environment: Ubuntu/Linux x86_64, kernel 7.0.0-38-generic; Node v24.22.0; npm 11.8.0; git 2.53.0; gh 2.46.0.
+Limitations: synthetic/local bounded review; real-provider checks require manual QA. Earlier checkpoint sections are historical; final continuation conclusions supersede their incomplete-state statements.
+Last completed step: integrated account isolation, critical boundary review, sustained PTYs, long transcript and browser reconnection; final backlog and handoff.
 
 
 ## Focused suite reruns (independent, 2026-10-27)
@@ -39,3 +41,9 @@ Disposable production server: actual WS `unexpected-response` HTTP status is 403
 Existing focused tests were already independently run (48 server + 9 frontend), so were not repeated wholesale. Reviewed their concurrency, guard, corruption and native registry assertions: many runtime tests use fake registry/store; source labels do not prove browser behavior. `runtime/agency-session-runtime.test.ts:681–728` uses a real PTY but its AFTER_INTERRUPTION literal can also be matched in echoed command; TEST-001 regression scope must include this focused assertion. `domain.test.ts:113–129` spawns a child unrelated to the store/runtime: proves metadata operations leave that child alive but not integrated Done/Restore process ownership. Keep the new strict split-marker/exit42 socket fixture as an acceptance pattern.
 
 Additional independent `corepack pnpm --dir packages/server exec tsx scripts/check-remote-access.mjs` passed (final output Todo bien). Tests use disposable stores, deterministic crypto fixtures and no provider calls; they do not cover Agency profile mutation policy, now reproduced as SEC-002. Existing screenshot focus checks cover Tab trapping and Escape restoration; first-load picker error visibility fails under FUNC-001. Source useAgencyStore.ts:35–65,140–157 demonstrates offline immediate-send and pending cancellation; prior mocked transport test covers no replay. Actual browser reconnect fixture is added separately; do not infer delivery guarantees for an in-flight mutation whose response was lost.
+
+## Continuation 04 — browser reconnect and real process preservation
+
+Real Chrome with disposable server: select Shell Only, click workspace-header Done, restore the Shell Only row from Done view, select it again. Set browser context offline, explicitly close instrumented browser WebSockets, wait until connected indicator disappears, click Done while offline and assert visible role=alert. Count sent Agency mutations before reconnect; restore connectivity, await connected indicator and500ms settle, assert mutation count unchanged. A separate authenticated socket attaches the **original** shell terminal ID and executes split printf marker `PRESERVED_` + `SHELL`; assert joined output from terminal.output. All assertions passed. Thus Done/Restore + disconnect preserved this actual shell and no attempted offline mutation replayed. Does not guarantee the outcome of a mutation already sent before a connection failed; UI correctly asks user to verify state. Fixture `/tmp/agency-audit-browser-reconnect.mjs`, derived from screenshot setup, page.addInitScript wraps WebSocket only to retain socket instances/count outgoing Agency non-list messages; no app modifications.
+
+Concurrent start/stop, duplicate native controllers, launch failures, stale/symlink cwd, restart reconciliation, corruption/future-schema handling: reviewed assertions in prior independently passing runtime/domain/profile suites (06). Preserve distinction between fake registries and actual provider behavior. Rapid switching and dialog Tab/Escape checks have browser evidence (04/05). First-load picker error visibility remains FUNC-001. No new reliability finding is assigned solely from coverage limits.

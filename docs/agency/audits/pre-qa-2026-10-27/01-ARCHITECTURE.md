@@ -1,12 +1,14 @@
-IN_PROGRESS
+FINAL — BOUNDED AUDIT COMPLETE
+
+Final decision: bounded audit complete; final continuation sections below and 08/09 supersede historical checkpoint limitations. No performance refactoring before QA; Group A/B corrections remain required.
 
 # Architecture
 
-Audited source: `90a74a4fb12364e888e78cd72927f24898ca0950`  
-Audit branch: `audit/agency-ui-pre-qa-20261027`  
-Date: 2026-10-27 (UTC); environment: Ubuntu/Linux x86_64, kernel 7.0.0-38-generic; Node v24.22.0; npm 11.8.0; git 2.53.0; gh 2.46.0.  
-Limitations: major audit phases remain incomplete; conclusions are limited to the evidence documented below and in 00-STATUS.md.  
-Last completed step: initialized and pushed audit checkpoints; most recent completed investigation is FUNC-001 browser reproduction (checkpoint 00j).
+Audited source: `90a74a4fb12364e888e78cd72927f24898ca0950`
+Audit branch: `audit/agency-ui-pre-qa-20261027`
+Date: 2026-10-28 (UTC); environment: Ubuntu/Linux x86_64, kernel 7.0.0-38-generic; Node v24.22.0; npm 11.8.0; git 2.53.0; gh 2.46.0.
+Limitations: synthetic/local bounded review; real-provider checks require manual QA. Earlier checkpoint sections are historical; final continuation conclusions supersede their incomplete-state statements.
+Last completed step: integrated account isolation, critical boundary review, sustained PTYs, long transcript and browser reconnection; final backlog and handoff.
 
 
 ## Preliminary map (not a completed phase)

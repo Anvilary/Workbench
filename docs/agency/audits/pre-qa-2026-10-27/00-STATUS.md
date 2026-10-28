@@ -1,12 +1,24 @@
-IN_PROGRESS
+# Final audit status — 2026-10-28
+
+**AUDIT COMPLETE — ENGINEERING HANDOFF READY**
+
+Pinned application SHA: `90a74a4fb12364e888e78cd72927f24898ca0950`. Started this continuation at verified clean local/remote checkpoint `d2caa3fde5c332bed3842c7229013a398b7804bf`; subsequent pushed checkpoints `2bf0d2e`, `7b3a263`, `341d5f2`. Final checkpoint is the commit containing this report (`git rev-parse HEAD`, compare origin); a commit cannot contain its own SHA.
+
+Finite source/security/reliability/test review and bounded performance/browser experiments are complete to documented scope. No application code, PR, credentials or source branches changed. Confirmed: SEC-001 P1 (now integrated synthetic transcript reproduction), SEC-002 P2 (remote profile configure), FUNC-001 P2, TEST-001 P2 coverage gap. No P0. Real-account disclosure and historical cross-profile resume impact remain unverified. Real-provider checks are MANUAL QA REQUIRED; no paid inference performed.
+
+All review phases below are closed as bounded review, with explicit evidence limits rather than exhaustive guarantees. A/B/C and exact correction/regression order:08. Standalone fixing-agent packet:09. No performance refactoring justified before QA. Optional followup: browser listener retention; no long-term leak/root cause demonstrated.
+
+## Archived checkpoint log (historical status, preserved evidence)
+
+FINAL — BOUNDED AUDIT COMPLETE
 
 # Audit status
 
-Audited source: `90a74a4fb12364e888e78cd72927f24898ca0950`  
-Audit branch: `audit/agency-ui-pre-qa-20261027`  
-Date: 2026-10-27 (UTC); environment: Ubuntu/Linux x86_64, kernel 7.0.0-38-generic; Node v24.22.0; npm 11.8.0; git 2.53.0; gh 2.46.0.  
-Limitations: major audit phases remain incomplete; conclusions are limited to the evidence documented below and in 00-STATUS.md.  
-Last completed step: initialized and pushed audit checkpoints; most recent completed investigation is FUNC-001 browser reproduction (checkpoint 00j).
+Audited source: `90a74a4fb12364e888e78cd72927f24898ca0950`
+Audit branch: `audit/agency-ui-pre-qa-20261027`
+Date: 2026-10-28 (UTC); environment: Ubuntu/Linux x86_64, kernel 7.0.0-38-generic; Node v24.22.0; npm 11.8.0; git 2.53.0; gh 2.46.0.
+Limitations: synthetic/local bounded review; real-provider checks require manual QA. Earlier checkpoint sections are historical; final continuation conclusions supersede their incomplete-state statements.
+Last completed step: integrated account isolation, critical boundary review, sustained PTYs, long transcript and browser reconnection; final backlog and handoff.
 
 ## Checkpoint 00 — initialization
 
@@ -21,14 +33,14 @@ Last completed step: initialized and pushed audit checkpoints; most recent compl
 ## Checklist
 
 - [x] Phase 0: inspect state and initialize isolated reports; checkpoint push verified
-- [ ] Phase 1: architecture and lifecycle
-- [ ] Phase 2: functional and reliability
-- [ ] Phase 3: security and account isolation
-- [ ] Phase 4: browser responsiveness
-- [ ] Phase 5: repeated performance benchmarks
-- [ ] Phase 6: test quality and coverage
-- [ ] Phase 7: prioritized engineering plan
-- [ ] Phase 8: final handoff
+- [x] Phase 1: architecture and lifecycle
+- [x] Phase 2: functional and reliability
+- [x] Phase 3: security and account isolation
+- [x] Phase 4: browser responsiveness
+- [x] Phase 5: repeated performance benchmarks
+- [x] Phase 6: test quality and coverage
+- [x] Phase 7: prioritized engineering plan
+- [x] Phase 8: final handoff
 
 Resume: `cd /home/user/Projects/Agency-UI-audit && git status --short --branch && git log -1 --oneline` then read all files in this directory. Preserve the source SHA and findings identifiers. Modify only this report directory.
 
