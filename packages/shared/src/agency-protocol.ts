@@ -95,6 +95,9 @@ export interface AgencySessionBase {
 
 export interface AgencyAgentSession extends AgencySessionBase {
   kind: 'agent';
+  /** Immutable identity captured at launch; absent in legacy rows. */
+  nativeIdentity?: Readonly<{ provider: CliProvider; home: string }> | null;
+  historyAvailability?: 'available' | 'unavailable';
   profileId: CliProfileId;
   nativeSessionId: string | null;
   selectedModel: string | null;

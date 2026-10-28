@@ -860,6 +860,8 @@ export interface ClientSendNoteMessage {
  */
 export interface ClientPickerOpenMessage {
   type: 'picker.open';
+  /** Client correlation allocated before opening; enables immediate cancellation. */
+  pickerId?: string;
 }
 
 export interface ClientPickerEnterMessage {
@@ -2874,8 +2876,11 @@ export function parseClientMessage(raw: string): ClientMessage | null {
         ? null
         : { type: 'notes.send', noteId, terminalId };
     }
-    case 'picker.open':
-      return { type: 'picker.open' };
+    case 'picker.open': {
+      if (record['pickerId'] === undefined) return { type: 'picker.open' };
+      const pickerId = asNonEmptyString(record['pickerId']);
+      return pickerId === null || !/^[0-9a-f-]{36}$/i.test(pickerId) ? null : { type: 'picker.open', pickerId };
+    }
     case 'picker.enter': {
       const pickerId = asNonEmptyString(record['pickerId']);
       const name = asNonEmptyString(record['name']);

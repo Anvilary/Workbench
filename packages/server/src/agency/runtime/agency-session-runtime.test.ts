@@ -162,6 +162,7 @@ function fixture(
   workspaces.set(two.id, two);
   const profiles: AgencyProfileLaunchProvider = {
     resolveLaunch: options.resolveLaunch ?? (async ({profileId, cwd, resumeNativeSessionId, proposedSessionId, launchToken}) => ({
+      nativeIdentity: Object.freeze({ provider: 'codex' as const, home: path.join(cwd, 'fixture-native-home') }),
       profileId, provider: 'codex', file: '/bin/echo', args: ['literal space'],
       env: { PATH: '/usr/bin', AGENCY_FIXTURE: '1' }, cwd, proposedSessionId, launchToken,
       session: resumeNativeSessionId === null
@@ -410,6 +411,7 @@ test('native conversation controller is exclusive across workspaces', async () =
   const f = fixture(cwd, {
     resolveLaunch: async ({ profileId, resumeNativeSessionId, proposedSessionId, launchToken, cwd }) => ({
       profileId,
+      nativeIdentity: Object.freeze({ provider: 'codex' as const, home: path.join(cwd, 'fixture-native-home') }),
       provider: 'codex',
       file: '/bin/echo',
       args: ['literal argv'],
@@ -450,6 +452,7 @@ test('mismatched named profile identity is never accepted as fallback', async ()
   const f = fixture(cwd, {
     resolveLaunch: async ({ cwd, proposedSessionId, launchToken }) => ({
       profileId: 'codex-1' as CliProfileId,
+      nativeIdentity: Object.freeze({ provider: 'codex' as const, home: path.join(cwd, 'fixture-native-home') }),
       provider: 'codex', file: '/bin/echo', args: [], env: { PATH: '/usr/bin' },
       cwd, proposedSessionId, launchToken, session: { kind: 'discover' },
     }),
@@ -471,6 +474,7 @@ test('Codex and AGY native discovery before open settles is retained without inv
   const f = fixture(cwd, {
     resolveLaunch: async ({ profileId, cwd, proposedSessionId, launchToken }) => ({
       profileId, cwd, proposedSessionId, launchToken,
+      nativeIdentity: profileId === ('agy-0' as CliProfileId) ? null : Object.freeze({ provider: 'codex' as const, home: path.join(cwd, 'fixture-native-home') }),
       provider: profileId === ('agy-0' as CliProfileId) ? 'antigravity' : 'codex',
       file: '/bin/echo', args: ['native CLI', 'literal space'], env: { PATH: '/usr/bin' },
       session: { kind: 'discover' },
@@ -516,6 +520,7 @@ test('Claude known session and native resume identity reach terminal descriptor 
   const f = fixture(cwd, {
     resolveLaunch: async ({ profileId, cwd, proposedSessionId, launchToken, resumeNativeSessionId }) => ({
       profileId, cwd, proposedSessionId, launchToken,
+      nativeIdentity: Object.freeze({ provider: 'claude-code' as const, home: path.join(cwd, 'fixture-claude-home') }),
       provider: 'claude-code', file: '/bin/echo', args: ['--session-id', proposedSessionId],
       env: { PATH: '/usr/bin' },
       session: { kind: 'known', sessionId: resumeNativeSessionId ?? proposedSessionId },
@@ -547,6 +552,7 @@ test('different profiles of the same provider cannot resume one native conversat
   const f = fixture(cwd, {
     resolveLaunch: async ({ profileId, cwd, proposedSessionId, launchToken, resumeNativeSessionId }) => ({
       profileId, cwd, proposedSessionId, launchToken,
+      nativeIdentity: Object.freeze({ provider: 'codex' as const, home: path.join(cwd, 'fixture-native-home') }),
       provider: 'codex', file: '/bin/echo', args: ['resume', resumeNativeSessionId ?? ''],
       env: { PATH: '/usr/bin' },
       session: resumeNativeSessionId === null ? { kind: 'discover' } :
@@ -698,11 +704,14 @@ test('real disposable node-pty shell: cwd, input, resize, replay, detach, Ctrl+C
     assert.equal(registry.resize(id, 101, 37), true);
     registry.write(id, 'stty size\r');
     await until(() => /37 101/.test(output));
-    registry.write(id, 'sleep 10\r');
+    registry.write(id, "printf '%s%s\\n' 'SLEEP_' 'STARTED'; sleep 60\r");
+    await until(() => output.includes('SLEEP_STARTED'));
     await new Promise<void>((resolve) => setTimeout(resolve, 150));
     registry.write(id, '\x03');
-    registry.write(id, "printf 'AFTER_INTERRUPTION\\n'\r");
-    await until(() => output.includes('AFTER_INTERRUPTION'));
+    registry.write(id, "printf '%s%s:%s\\n' 'INTERRUPT_' 'STATUS' \"$?\"\r");
+    await until(() => /INTERRUPT_STATUS:130\r?\n/.test(output));
+    registry.write(id, "printf '\\033[32m%s%s\\033[0m\\n' 'EXECUTED_' 'GREEN'\r");
+    await until(() => output.includes('\x1b[32mEXECUTED_GREEN\x1b[0m'));
     registry.detach(id, listener);
     assert.equal(registry.has(id), true);
     const replay = registry.attach(id, listener);
@@ -717,9 +726,11 @@ test('real disposable node-pty shell: cwd, input, resize, replay, detach, Ctrl+C
         resolve({ code, signal });
       });
     });
-    assert.equal(registry.close(id), true);
+    assert.equal(registry.write(id, 'exit 42\r'), true);
     const result = await exited;
-    assert.ok(Number.isInteger(result.code));
+    assert.equal(result.code, 42);
+    assert.equal(registry.get(id)?.exitCode, 42);
+    assert.equal(registry.close(id), true);
     assert.equal(registry.has(id), false);
   } finally {
     registry.disposeAll();
@@ -764,6 +775,7 @@ test('native adapter onSpawned is invoked exactly once by real registry PTY', {
       agencyLaunch: {
         file: '/bin/sh', args: ['-i'], env: { PATH: '/usr/bin:/bin', TERM: 'xterm-256color' },
         session: { kind: 'discover' }, launchToken: token, proposedSessionId: randomUUID(),
+        nativeIdentity: Object.freeze({ provider: 'codex', home: path.join(cwd, 'native-home') }),
       },
     });
     assert.equal(launchedByAdapter, 0);
@@ -771,6 +783,8 @@ test('native adapter onSpawned is invoked exactly once by real registry PTY', {
     assert.equal(created.sessionId, nativeId);
     assert.equal(registry.get(created.terminalId)?.sessionId, nativeId);
     assert.equal((seen as SpawnedContext | null)?.launchToken, token);
+    assert.deepEqual((seen as SpawnedContext | null)?.nativeIdentity, { provider: 'codex', home: path.join(cwd, 'native-home') });
+    assert.ok(Object.isFrozen(registry.nativeIdentityOf(created.terminalId)));
     assert.equal((seen as SpawnedContext | null)?.resumed, false);
     assert.equal(registry.close(created.terminalId), true);
     assert.equal(canceled, 1);
@@ -778,4 +792,77 @@ test('native adapter onSpawned is invoked exactly once by real registry PTY', {
     registry.disposeAll();
     await rm(cwd, { recursive: true, force: true });
   }
+});
+
+test('inactive resume ownership survives restart: same verified home transfers, other and legacy homes refuse', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'agency-resume-owner-'));
+  const store = new MemoryStore();
+  let home = path.join(cwd, 'account-a');
+  const resolveLaunch: AgencyProfileLaunchProvider['resolveLaunch'] = async (input) => ({
+    ...input, provider: 'codex', file: '/bin/echo', args: [], env: {},
+    nativeIdentity: Object.freeze({ provider: 'codex', home }),
+    session: input.resumeNativeSessionId === null ? { kind: 'discover' } :
+      { kind: 'known', sessionId: input.resumeNativeSessionId },
+  });
+  const first = fixture(cwd, { store, resolveLaunch });
+  let restarted: ReturnType<typeof fixture> | undefined;
+  try {
+    await first.runtime.initialize();
+    const id = randomUUID();
+    const owned = await first.runtime.create({ workspaceId: first.one.id, kind: 'agent',
+      profileId: agentProfile, cols: 80, rows: 24, resumeNativeSessionId: id });
+    first.terminals.exit(owned.terminalId!, 0);
+    await new Promise<void>((done) => setImmediate(done));
+    first.runtime.dispose();
+    restarted = fixture(cwd, { store, resolveLaunch });
+    await restarted.runtime.initialize();
+    home = path.join(cwd, 'account-b');
+    await assert.rejects(restarted.runtime.create({ workspaceId: restarted.one.id, kind: 'agent',
+      profileId: 'codex-3' as CliProfileId, cols: 80, rows: 24, resumeNativeSessionId: id }), /another home/);
+    assert.equal(restarted.terminals.opens.length, 0);
+    home = path.join(cwd, 'account-a');
+    const transferred = await restarted.runtime.create({ workspaceId: restarted.one.id, kind: 'agent',
+      profileId: 'codex-3' as CliProfileId, cols: 80, rows: 24, resumeNativeSessionId: id });
+    assert.equal(transferred.nativeSessionId, id);
+    restarted.terminals.exit(transferred.terminalId!, 0);
+    await new Promise<void>((done) => setImmediate(done));
+    restarted.runtime.dispose();
+    // Legacy metadata cannot acquire trusted ownership by restarting.
+    store.data = store.data.filter((s) => s.id === owned.id).map((s) => {
+      const legacy = { ...s };
+      if (legacy.kind === 'agent') delete legacy.nativeIdentity;
+      return legacy;
+    });
+    restarted = fixture(cwd, { store, resolveLaunch });
+    await restarted.runtime.initialize();
+    await assert.rejects(restarted.runtime.create({ workspaceId: restarted.one.id, kind: 'agent',
+      profileId: agentProfile, cols: 80, rows: 24, resumeNativeSessionId: id }), /unverified/);
+    assert.equal(restarted.terminals.opens.length, 0);
+  } finally {
+    first.runtime.dispose();
+    restarted?.runtime.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test('opaque Codex identity keeps its PTY usable while discovery and resume fail closed', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'agency-opaque-home-'));
+  const f = fixture(cwd, { resolveLaunch: async (input) => ({ ...input,
+    provider: 'codex', file: '/bin/echo', args: ['literal words'], env: {}, nativeIdentity: null,
+    session: input.resumeNativeSessionId === null ? { kind: 'discover' } :
+      { kind: 'known', sessionId: input.resumeNativeSessionId },
+  }) });
+  try {
+    await f.runtime.initialize();
+    const session = await f.runtime.create({ workspaceId: f.one.id, kind: 'agent',
+      profileId: agentProfile, cols: 80, rows: 24 });
+    assert.equal(session.lifecycle, 'running');
+    assert.equal(session.kind === 'agent' && session.historyAvailability, 'unavailable');
+    assert.equal(f.terminals.opens[0]!.agencyLaunch?.acceptNativeSessionId?.(session.terminalId!, randomUUID()), false);
+    assert.equal(f.terminals.write(session.terminalId!, 'native interactive input'), true);
+    assert.equal(f.runtime.get(session.id)?.nativeSessionId, null);
+    await assert.rejects(f.runtime.create({ workspaceId: f.two.id, kind: 'agent',
+      profileId: agentProfile, cols: 80, rows: 24, resumeNativeSessionId: randomUUID() }), /unverified/);
+    assert.equal(f.terminals.opens.length, 1);
+  } finally { f.runtime.dispose(); await rm(cwd, { recursive: true, force: true }); }
 });

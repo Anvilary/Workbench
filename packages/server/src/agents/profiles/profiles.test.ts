@@ -9,6 +9,7 @@ import { AgentRegistry } from '../registry.js';
 import { createCodexAdapter } from '../codex/index.js';
 import { createClaudeCodeAdapter } from '../claude-code/index.js';
 import { createAntigravityAdapter } from '../antigravity/index.js';
+import { NativeIdentities } from '../../agency/native-identity.js';
 import { defaultDefinitions, isolatedEnvironment } from './definition.js';
 import { resolveConfiguredExecutable } from './executable.js';
 import { AgencyProfileStore } from '../../agency/agency-profile-store.js';
@@ -158,11 +159,18 @@ test('native Workbench Codex resume and literal profile args are preserved', asy
     await f.store.configure(asId('codex-3'), {
       executable: f.binary, args: ['--config', 'key="space preserving"'],
     });
+    const home = path.join(f.root, 'native-home');
+    await mkdir(path.join(home, 'archived_sessions'), { recursive: true });
+    await writeFile(path.join(home, 'archived_sessions', 'rollout-2026-10-28T00-00-00-' + UUID3 + '.jsonl'), '');
+    const manifest = path.join(f.root, 'identities.json');
+    await writeFile(manifest, JSON.stringify({ version: 1, identities: [{ profileId: 'codex-3', provider: 'codex',
+      executable: f.binary, args: ['--config', 'key="space preserving"'], environmentOverrides: {}, home }] }));
+    const identities = await NativeIdentities.load(manifest);
     const launch = await buildAgencyProfileLaunch(f.store, nativeRegistry(), {
       profileId: asId('codex-3'), cwd: f.root, proposedSessionId: UUID1,
       launchToken: UUID2, resumeNativeSessionId: UUID3,
       environment: { PATH: '/bin', TERM: 'xterm', TRACE_TAG: 'base' },
-    });
+    }, { identities });
     assert.equal(launch.file, f.binary);
     assert.deepEqual(launch.args, ['--config', 'key="space preserving"', 'resume', UUID3]);
     assert.deepEqual(launch.session, { kind: 'known', sessionId: UUID3 });
@@ -180,9 +188,14 @@ test('Claude native resume flags and isolated per-process environment', async ()
     const before = JSON.stringify(base);
     const launch = await buildAgencyProfileLaunch(f.store, nativeRegistry(), {
       profileId: asId('claude-code'), cwd: f.root, proposedSessionId: UUID1,
-      launchToken: UUID2, resumeNativeSessionId: UUID3, environment: base,
+      launchToken: UUID2, environment: base,
     });
-    assert.deepEqual(launch.args.slice(-2), ['--resume', UUID3]);
+    const native = createClaudeCodeAdapter().launch({ location: { file: f.binary, resolvedPath: f.binary, prefixArgs: [], version: null },
+      cwd: f.root, proposedSessionId: UUID1, launchToken: UUID2, resumeSessionId: UUID3 });
+    assert.deepEqual((await native).args.slice(-2), ['--resume', UUID3]);
+    await assert.rejects(buildAgencyProfileLaunch(f.store, nativeRegistry(), {
+      profileId: asId('claude-code'), cwd: f.root, proposedSessionId: UUID1, launchToken: UUID2,
+      resumeNativeSessionId: UUID3 }), /home is unverified/);
     assert.equal(launch.env['LANG'], 'pt_PT.UTF-8');
     assert.equal(launch.env['CLAUDE_CODE_CHILD_SESSION'], undefined);
     assert.equal(JSON.stringify(base), before);
@@ -245,11 +258,16 @@ test('Antigravity native resume retains --conversation and literal profile argum
     });
     const launch = await buildAgencyProfileLaunch(f.store, nativeRegistry(), {
       profileId: asId('agy-5'), cwd: f.root, proposedSessionId: UUID1,
-      launchToken: UUID2, resumeNativeSessionId: UUID3,
+      launchToken: UUID2,
     });
     assert.deepEqual(launch.args.slice(0, 2), ['--flag', 'two literal words']);
-    assert.deepEqual(launch.args.slice(-2), ['--conversation', UUID3]);
-    assert.deepEqual(launch.session, { kind: 'known', sessionId: UUID3 });
+    const native = await createAntigravityAdapter().launch({ location: { file: f.binary, resolvedPath: f.binary, prefixArgs: [], version: null },
+      cwd: f.root, proposedSessionId: UUID1, launchToken: UUID2, resumeSessionId: UUID3 });
+    assert.deepEqual(native.args.slice(-2), ['--conversation', UUID3]);
+    assert.deepEqual(native.session, { kind: 'known', sessionId: UUID3 });
+    await assert.rejects(buildAgencyProfileLaunch(f.store, nativeRegistry(), {
+      profileId: asId('agy-5'), cwd: f.root, proposedSessionId: UUID1, launchToken: UUID2,
+      resumeNativeSessionId: UUID3 }), /home is unverified/);
   } finally { await f.cleanup(); }
 });
 

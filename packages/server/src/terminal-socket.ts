@@ -61,6 +61,7 @@ import { AgencyProfileStore } from './agency/agency-profile-store.js';
 import { AgencySessionRuntime, AgencyRuntimeError } from './agency/agency-session-runtime.js';
 import { WorkspaceMutex } from './agency/workspace-lock.js';
 import { handleAgencyDomainRequest, type AgencyDomainContext } from './agency/domain-handler.js';
+import type { NativeIdentities } from './agency/native-identity.js';
 import { listAgencyProfiles, inspectAgencyProfile } from './agency/agency-profile-capabilities.js';
 import { DirectoryPickerError, DirectoryPickers } from './directory-picker.js';
 import { MemoryBridgeError } from './memory-bridge.js';
@@ -202,6 +203,7 @@ export interface TerminalSocketOptions {
   worktrees: WorktreeService;
   agencyWorkspaceStore: AgencyWorkspaceStore;
   agencyProfileStore: AgencyProfileStore;
+  agencyIdentities?: NativeIdentities;
   agencyRuntime: AgencySessionRuntime;
   workspaceLock: WorkspaceMutex;
 }
@@ -1034,7 +1036,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
       requestId: '',
       workspaces: agencyWorkspaceStore.listWorkspaces(),
     });
-    void listAgencyProfiles(agencyProfileStore, agents).then((profiles) => {
+    void listAgencyProfiles(agencyProfileStore, agents, { identities: options.agencyIdentities }).then((profiles) => {
       send(socket, {
         type: 'agency.profiles.snapshot',
         requestId: '',
@@ -1073,7 +1075,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
       // Antes de atender nada: lo que a un equipo remoto no se le atiende (hito 37).
       const refusal = remoteRefusal(message.type, deviceId !== null);
       if (refusal !== null) {
-        sendError(socket, 'remote-refused', refusal);
+        sendError(socket, 'remote-refused', refusal, undefined, 'requestId' in message ? message.requestId : undefined);
         return;
       }
 
@@ -2622,7 +2624,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
             try {
               const listing =
                 message.type === 'picker.open'
-                  ? await pickers.open()
+                  ? await pickers.open(message.pickerId)
                   : message.type === 'picker.enter'
                     ? await pickers.enter(message.pickerId, message.name)
                     : message.type === 'picker.root'
@@ -2635,6 +2637,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
                 'picker-failed',
                 error instanceof DirectoryPickerError ? error.text : serverText('pickerListFailed'),
                 error instanceof Error ? error.message : String(error),
+                message.pickerId,
               );
             }
           })();
@@ -3223,7 +3226,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
 
         case 'agency.profiles.list': {
           try {
-            const profiles = await listAgencyProfiles(agencyProfileStore, agents);
+            const profiles = await listAgencyProfiles(agencyProfileStore, agents, { identities: options.agencyIdentities });
             send(socket, { type: 'agency.profiles.snapshot', requestId: message.requestId, profiles });
           } catch {
             send(socket, { type: 'agency.error', requestId: message.requestId,
@@ -3236,7 +3239,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           try {
             const { type: _, requestId, profileId, ...changes } = message;
             const def = await agencyProfileStore.configure(profileId, changes);
-            const profile = await inspectAgencyProfile(def, agents);
+            const profile = await inspectAgencyProfile(def, agents, { identities: options.agencyIdentities });
             broadcast({ type: 'agency.profile.changed', profileId: profile.id, profile });
             send(socket, { type: 'agency.profile.configured', requestId: message.requestId, profile });
           } catch (error) {
@@ -3262,7 +3265,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
               });
               break;
             }
-            const profile = await inspectAgencyProfile(def, agents);
+            const profile = await inspectAgencyProfile(def, agents, { identities: options.agencyIdentities });
             send(socket, {
               type: 'agency.profile.capabilities',
               requestId: message.requestId,

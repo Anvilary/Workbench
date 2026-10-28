@@ -2148,6 +2148,7 @@ const orderedIds = (state) => workspace.orderedTabs(state).map((e) => (e.kind ==
   const fakeAgents = { get: (id) => (adapters[id] === undefined ? null : { adapter: adapters[id], location: null }) };
   const descriptors = new Map();
   const registry = new EventEmitter();
+  registry.nativeIdentityOf = () => undefined; // Workbench native fixture, not an Agency named profile.
   registry.get = (terminalId) => descriptors.get(terminalId) ?? null;
   // Sin pty viva: el aviso de llamada abierta lo prueba W7 aparte.
   registry.launchedAtOf = () => null;
@@ -2245,6 +2246,7 @@ const orderedIds = (state) => workspace.orderedTabs(state).map((e) => (e.kind ==
   const adapters = { lenta: makeAdapter('lenta', 40), avisada: makeAdapter('avisada', null) };
   const descriptors = new Map();
   const registry = new EventEmitter();
+  registry.nativeIdentityOf = () => undefined; // Workbench native fixture, not an Agency named profile.
   registry.get = (terminalId) => descriptors.get(terminalId) ?? null;
   registry.launchedAtOf = () => null;
   const describe = (terminalId, agent, sessionId) => ({
@@ -2327,6 +2329,7 @@ const orderedIds = (state) => workspace.orderedTabs(state).map((e) => (e.kind ==
   };
   const descriptors = new Map();
   const registry = new EventEmitter();
+  registry.nativeIdentityOf = () => undefined; // Workbench native fixture, not an Agency named profile.
   registry.get = (terminalId) => descriptors.get(terminalId) ?? null;
   registry.launchedAtOf = () => null;
   for (const id of Object.keys(adapters)) {
@@ -3008,6 +3011,7 @@ const tab = (agent, cwd, kind = 'agent') => ({ kind, agent, cwd });
   });
   const adapters = { codex: adapterWith('codex', false), 'con-estado': adapterWith('con-estado', true) };
   const registry = new EventEmitter();
+  registry.nativeIdentityOf = () => undefined; // Workbench native fixture, not an Agency named profile.
   const descriptors = new Map([
     ['tx', { terminalId: 'tx', kind: 'agent', agent: 'codex', cwd: CWD, sessionId: 's1', label: '', resumed: false, createdAt: 0, alive: true, exitCode: null, sleeping: false }],
     ['ty', { terminalId: 'ty', kind: 'agent', agent: 'con-estado', cwd: CWD, sessionId: 's2', label: '', resumed: false, createdAt: 0, alive: true, exitCode: null, sleeping: false }],

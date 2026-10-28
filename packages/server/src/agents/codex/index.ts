@@ -124,6 +124,7 @@ export const CODEX_INPUT: AgentInput = codexInput(process.platform);
 
 export function createCodexAdapter(): AgentAdapter {
   const discovery = new CodexSessionDiscovery();
+  const profileDiscoveries = new Map<string, CodexSessionDiscovery>();
   /*
     Los limites del plan de la cuenta (hito 47, §10.14): los escribe Codex en
     cada `token_count`, y se juntan aca a medida que los seguidores leen.
@@ -185,8 +186,17 @@ export function createCodexAdapter(): AgentAdapter {
       suelte con el primer mensaje, que es justo cuando aparece la sesion.
     */
     onSpawned(context: SpawnedContext): LaunchHook | null {
-      if (context.resumed) return discovery.watchLive({ terminalId: context.terminalId, cwd: context.cwd });
-      return discovery.register({
+      let scoped = discovery;
+      if (context.nativeIdentity !== undefined) {
+        const identity = context.nativeIdentity;
+        if (identity === null || identity.provider !== 'codex') return null;
+        scoped = profileDiscoveries.get(identity.home) ?? new CodexSessionDiscovery({
+          sessionsRoot: () => path.join(identity.home, 'sessions'),
+        });
+        profileDiscoveries.set(identity.home, scoped);
+      }
+      if (context.resumed) return scoped.watchLive({ terminalId: context.terminalId, cwd: context.cwd });
+      return scoped.register({
         terminalId: context.terminalId,
         cwd: context.cwd,
         launchedAt: context.launchedAt,
@@ -217,6 +227,8 @@ export function createCodexAdapter(): AgentAdapter {
 
     dispose: () => {
       discovery.dispose();
+      for (const scoped of profileDiscoveries.values()) scoped.dispose();
+      profileDiscoveries.clear();
       planLimits.dispose();
     },
   };

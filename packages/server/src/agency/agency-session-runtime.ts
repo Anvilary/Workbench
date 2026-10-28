@@ -16,6 +16,7 @@ import type { AgentId, TerminalActivity, TerminalId } from '@agent-workbench/sha
 import type { OpenTerminalOptions, TerminalRegistry } from '../terminal-registry.js';
 import { isInsideProtected } from '../directory-picker.js';
 import type { LaunchSession } from '../agents/adapter.js';
+import type { NativeIdentity } from './native-identity.js';
 import { AgencySessionStore } from './agency-session-store.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -38,6 +39,7 @@ export type AgencySessionCreateInput =
 export interface ValidatedNativeLaunch {
   /** Exact requested named profile. Cross-account fallback is forbidden. */
   profileId: CliProfileId;
+  nativeIdentity?: NativeIdentity | null;
   provider: CliProvider;
   file: string;
   args: readonly string[];
@@ -275,7 +277,7 @@ export class AgencySessionRuntime extends EventEmitter {
             ...base,
             kind: 'agent',
             profileId: input.profileId,
-            nativeSessionId: input.resumeNativeSessionId ?? null,
+            nativeSessionId: null,
             selectedModel: null,
             selectedEffort: null,
           }
@@ -334,6 +336,23 @@ export class AgencySessionRuntime extends EventEmitter {
             (native.session.kind !== 'known' || native.session.sessionId !== input.resumeNativeSessionId)) {
           throw new AgencyRuntimeError('session-unavailable', 'Native resume identity was not preserved');
         }
+        const identity = native.nativeIdentity ?? null;
+        if (identity !== null && (identity.provider !== native.provider || !path.isAbsolute(identity.home))) {
+          throw new AgencyRuntimeError('profile-unavailable', 'Native home identity changed provider or is invalid');
+        }
+        if (input.resumeNativeSessionId !== undefined) {
+          if (identity === null || this.list().some((s) => s.id !== id && s.kind === 'agent' &&
+              s.nativeSessionId === input.resumeNativeSessionId &&
+              (s.nativeIdentity?.provider !== identity.provider || s.nativeIdentity?.home !== identity.home))) {
+            throw new AgencyRuntimeError('session-unavailable', 'Native resume ownership is unverified or belongs to another home');
+          }
+        }
+        const reserved = this.sessions.get(id)!;
+        if (reserved.kind === 'agent') {
+          this.sessions.set(id, { ...reserved, nativeIdentity: identity,
+            nativeSessionId: native.session.kind === 'known' ? native.session.sessionId : null,
+            historyAvailability: native.provider === 'codex' && identity === null ? 'unavailable' : 'available' });
+        }
         const initialNative = native.session.kind === 'known' ? native.session.sessionId : null;
         const provider = native.provider;
         if (initialNative !== null) {
@@ -347,6 +366,7 @@ export class AgencySessionRuntime extends EventEmitter {
         options.agent = providerAgent(provider);
         if (input.resumeNativeSessionId !== undefined) options.resumeSessionId = input.resumeNativeSessionId;
         options.agencyLaunch = {
+          nativeIdentity: identity,
           file: native.file,
           args: native.args,
           env: native.env,
@@ -355,6 +375,7 @@ export class AgencySessionRuntime extends EventEmitter {
           proposedSessionId,
           acceptNativeSessionId: (terminalId, discovered) => {
             const current = this.sessions.get(id);
+            if (provider === 'codex' && identity === null) return false;
             if (current === undefined || !ACTIVE.has(current.lifecycle) ||
                 discovered.length === 0 || discovered.length > 512) return false;
             if (this.registry.list().some((terminal) =>

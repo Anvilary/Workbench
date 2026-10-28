@@ -14,6 +14,8 @@ import {
   isolatedEnvironment, type ProfileDefinition,
 } from '../agents/profiles/definition.js';
 import { resolveConfiguredExecutable } from '../agents/profiles/executable.js';
+import type { NativeIdentities, NativeIdentity } from './native-identity.js';
+import { findReadableRollout } from '../agents/codex/find-rollout.js';
 import type { AgencyProfileStore } from './agency-profile-store.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -32,6 +34,7 @@ export interface VerifiedNativeCatalog {
  */
 export interface CapabilityContext {
   readonly environment?: NodeJS.ProcessEnv;
+  readonly identities?: NativeIdentities;
   readonly catalog?: VerifiedNativeCatalog | null;
 }
 
@@ -72,7 +75,7 @@ export async function inspectAgencyProfile(
         evidence.provider === definition.provider;
       capabilities = {
         canLaunch: true,
-        canResumeNativeSession: native.resume,
+        canResumeNativeSession: native.resume && context.identities?.forProfile(definition) != null,
         canInterrupt: registered.adapter.input.interruptPresses > 0,
         canReportActivity: native.statusSource,
         // Existing TUI model/effort shortcuts have no reliable synchronous
@@ -127,6 +130,7 @@ export interface ValidatedProfileLaunch {
   readonly env: Record<string, string>;
   readonly session: LaunchSession;
   readonly environmentNotice: string | null;
+  readonly nativeIdentity: NativeIdentity | null;
 }
 
 /**
@@ -138,6 +142,7 @@ export async function buildAgencyProfileLaunch(
   store: AgencyProfileStore,
   registry: AgentRegistry,
   request: ProfileLaunchRequest,
+  context: CapabilityContext = {},
 ): Promise<ValidatedProfileLaunch> {
   const definition = await store.getDefinition(request.profileId);
   if (definition === null) throw new Error('Unknown Agency CLI profile.');
@@ -162,6 +167,17 @@ export async function buildAgencyProfileLaunch(
   const executable = await resolveConfiguredExecutable(definition.executable, base);
   if (executable.status !== 'available') throw new Error(executable.reason);
 
+  const nativeIdentity = context.identities?.forProfile(definition) ?? null;
+  if (nativeIdentity !== null && (await realpath(nativeIdentity.home) !== nativeIdentity.home ||
+      !(await stat(nativeIdentity.home)).isDirectory())) throw new Error('Verified native home changed.');
+  if (request.resumeNativeSessionId != null) {
+    if (nativeIdentity === null) throw new Error('Native resume unavailable: profile home is unverified.');
+    if (await findReadableRollout(request.resumeNativeSessionId, {
+      sessionsRoot: path.join(nativeIdentity.home, 'sessions'),
+      archivedRoot: path.join(nativeIdentity.home, 'archived_sessions'),
+    }) === null) throw new Error('Native session is unavailable in the verified profile home.');
+  }
+
   const location = { resolvedPath: executable.file, file: executable.file, prefixArgs: [], version: null };
   const native = await entry.adapter.launch({
     location,
@@ -184,5 +200,6 @@ export async function buildAgencyProfileLaunch(
     env,
     session: native.session,
     environmentNotice: adapterEnv.notice,
+    nativeIdentity,
   };
 }

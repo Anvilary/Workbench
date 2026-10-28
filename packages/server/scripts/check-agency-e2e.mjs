@@ -36,6 +36,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
+import { ansiGreen, executed, interrupted, exited, rejectedUpgrade } from './terminal-evidence.mjs';
 import { chromium } from 'playwright';
 
 // Polyfill window for imports from web package
@@ -145,44 +146,17 @@ const resNoToken = await fetch(`${baseOrigin}/`);
 const resBadToken = await fetch(`${baseOrigin}/?token=invalid-token`);
 const resForeignOrigin = await fetch(s1.url, { headers: { Origin: 'http://malicious.attacker.com' } });
 
-let wsRejectedToken = false;
-try {
-  await new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${s1.port}/ws?token=wrong-token`, {
-      headers: { Origin: baseOrigin },
-    });
-    ws.on('open', () => reject(new Error('WebSocket opened with bad token')));
-    ws.on('unexpected-response', (req, res) => {
-      if (res.statusCode === 401 || res.statusCode === 403) resolve(true);
-      else reject(new Error(`Status: ${res.statusCode}`));
-    });
-    ws.on('error', () => resolve(true));
-    setTimeout(() => reject(new Error('Timeout waiting for WS rejection')), 3000);
-  });
-  wsRejectedToken = true;
-} catch {}
-
-let wsRejectedOrigin = false;
-try {
-  await new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${s1.port}/ws?token=${s1.token}`, {
-      headers: { Origin: 'http://evil.example.com' },
-    });
-    ws.on('open', () => reject(new Error('WebSocket opened with bad Origin')));
-    ws.on('unexpected-response', (req, res) => {
-      if (res.statusCode === 403) resolve(true);
-      else reject(new Error(`Status: ${res.statusCode}`));
-    });
-    ws.on('error', () => resolve(true));
-    setTimeout(() => reject(new Error('Timeout waiting for WS rejection')), 3000);
-  });
-  wsRejectedOrigin = true;
-} catch {}
+const wsRejectedToken = await rejectedUpgrade(WebSocket,
+  `ws://127.0.0.1:${s1.port}/ws?token=wrong-token`, { Origin: baseOrigin });
+const wsRejectedOrigin = await rejectedUpgrade(WebSocket,
+  `ws://127.0.0.1:${s1.port}/ws?token=${s1.token}`, { Origin: 'http://evil.example.com' });
+const wsRejectedHost = await rejectedUpgrade(WebSocket,
+  `ws://127.0.0.1:${s1.port}/ws?token=${s1.token}`, { Origin: baseOrigin, Host: 'evil.example.com' });
 
 check(
   2,
   'Unknown token and foreign Origin are rejected',
-  resNoToken.status === 401 && resBadToken.status === 401 && resForeignOrigin.status === 403 && wsRejectedToken && wsRejectedOrigin,
+  resNoToken.status === 401 && resBadToken.status === 401 && resForeignOrigin.status === 403 && wsRejectedToken && wsRejectedOrigin && wsRejectedHost,
   `NoToken:${resNoToken.status} BadToken:${resBadToken.status} ForeignOrigin:${resForeignOrigin.status} WsToken:${wsRejectedToken} WsOrigin:${wsRejectedOrigin}`,
 );
 
@@ -492,7 +466,7 @@ const markerText = 'AGENCY_E2E_GREEN';
 client1.send({
   type: 'input',
   terminalId: session1.terminalId,
-  data: `printf "\\033[32m${markerText}\\033[0m\\n"\n`,
+  data: "printf '\\033[32m%s%s\\033[0m\\n' 'AGENCY_E2E_' 'GREEN'\n",
 });
 
 let ansiOutput = '';
@@ -500,7 +474,7 @@ const ansiMatched = await new Promise((resolve) => {
   const handler = (m) => {
     if (m.type === 'terminal.output' && m.terminalId === session1.terminalId) {
       ansiOutput += m.data;
-      if (ansiOutput.includes(markerText)) {
+      if (ansiGreen(ansiOutput, markerText)) {
         resolve(true);
       }
     }
@@ -515,10 +489,11 @@ check(11, 'Verify ANSI and interactive input', ansiMatched, 'Received ANSI color
 client1.send({
   type: 'input',
   terminalId: session1.terminalId,
-  data: 'sleep 60\n',
+  data: "printf '%s%s\\n' 'SLEEP_' 'STARTED'; sleep 60\n",
 });
 
-await new Promise((r) => setTimeout(r, 200));
+await client1.waitFor((m) => m.type === 'terminal.output' &&
+  m.terminalId === session1.terminalId && m.data.includes('SLEEP_STARTED'));
 
 // Send Ctrl+C
 client1.send({
@@ -531,7 +506,7 @@ client1.send({
 client1.send({
   type: 'input',
   terminalId: session1.terminalId,
-  data: 'echo SLEEP_INTERRUPTED_OK\n',
+  data: "printf '%s%s:%s\\n' 'INTERRUPT_' 'STATUS' \"$?\"\n",
 });
 
 let interruptOutput = '';
@@ -539,7 +514,7 @@ const interruptMatched = await new Promise((resolve) => {
   const handler = (m) => {
     if (m.type === 'terminal.output' && m.terminalId === session1.terminalId) {
       interruptOutput += m.data;
-      if (interruptOutput.includes('SLEEP_INTERRUPTED_OK')) {
+      if (interrupted(interruptOutput)) {
         resolve(true);
       }
     }
@@ -681,7 +656,7 @@ const wsRestRes = await client2.waitFor((m) => m.type === 'agency.workspace.rest
 client2.send({
   type: 'input',
   terminalId: session1.terminalId,
-  data: 'echo RESTORE_PROBE_ALIVE\n',
+  data: "printf '%s%s\\n' 'RESTORE_PROBE_' 'ALIVE'\n",
 });
 
 let probeOutput = '';
@@ -689,7 +664,7 @@ const probeMatched = await new Promise((resolve) => {
   const handler = (m) => {
     if (m.type === 'terminal.output' && m.terminalId === session1.terminalId) {
       probeOutput += m.data;
-      if (probeOutput.includes('RESTORE_PROBE_ALIVE')) {
+      if (executed(probeOutput, 'RESTORE_PROBE_ALIVE')) {
         resolve(true);
       }
     }
@@ -733,8 +708,8 @@ const s1Final = listLifecycle.sessions.find((s) => s.id === session1.id);
 check(
   18,
   'Verify actual exit status and persisted lifecycle',
-  s1Final?.lifecycle === 'exited' && (s1Final?.exitCode !== null || s1Final?.exitSignal !== null),
-  `Lifecycle: ${s1Final?.lifecycle}, Code: ${s1Final?.exitCode}, Signal: ${s1Final?.exitSignal}`,
+  exited(s1Final),
+  `Lifecycle: ${s1Final?.lifecycle}, Code: ${s1Final?.exitCode}`,
 );
 
 // 19. Restart backend and verify metadata recovery, without pretending the original OS process survived

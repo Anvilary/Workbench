@@ -56,6 +56,7 @@ import { WorktreeLinks } from './worktrees/links.js';
 import { WorktreeService } from './worktrees/service.js';
 import { WorktreeStore } from './worktrees/store.js';
 import { AgencyWorkspaceStore } from './agency/store.js';
+import { NativeIdentities } from './agency/native-identity.js';
 import { AgencyProfileStore } from './agency/agency-profile-store.js';
 import { AgencySessionStore } from './agency/agency-session-store.js';
 import {
@@ -486,6 +487,8 @@ async function main(): Promise<void> {
   const agencyWorkspaceStore = new AgencyWorkspaceStore(path.join(appConfigDir(), 'agency-state.json'));
   await agencyWorkspaceStore.load();
 
+  const agencyIdentities = await NativeIdentities.load(path.join(appConfigDir(), 'agency-native-identities.json'));
+  agents.protectNativeHomes(agencyIdentities.protectedDirs());
   const agencyProfileStore = new AgencyProfileStore(path.join(appConfigDir(), 'agency-profiles.json'));
   await agencyProfileStore.listDefinitions();
 
@@ -493,7 +496,7 @@ async function main(): Promise<void> {
 
   const agencyProfileLaunchProvider: AgencyProfileLaunchProvider = {
     async resolveLaunch(input) {
-      const plan = await buildAgencyProfileLaunch(agencyProfileStore, agents, input);
+      const plan = await buildAgencyProfileLaunch(agencyProfileStore, agents, input, { identities: agencyIdentities });
       return {
         ...plan,
         launchToken: input.launchToken,
@@ -520,6 +523,7 @@ async function main(): Promise<void> {
   const detachSocket = attachTerminalSocket({
     agencyWorkspaceStore,
     agencyProfileStore,
+    agencyIdentities,
     agencyRuntime,
     workspaceLock,
     pasteStore,

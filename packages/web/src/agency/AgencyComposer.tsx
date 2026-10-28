@@ -17,13 +17,14 @@ export interface AgencyComposerProps {
   onLaunch: () => Promise<void>;
   onSubmit: (text: string) => Promise<void>;
   onInterrupt: () => void;
+  canConfigureProfile?: boolean;
   onConfigureProfile: (profile: AgencyCliProfile, executable: string, args: string[]) => Promise<void>;
   online: boolean;
 }
 
 export function AgencyComposer({
   draft, onDraft, profileId, profiles, onProfile, agent,
-  selectedModel, selectedEffort, onSelection, onLaunch, onSubmit, onInterrupt, onConfigureProfile, online,
+  selectedModel, selectedEffort, onSelection, onLaunch, onSubmit, onInterrupt, onConfigureProfile, canConfigureProfile = true, online,
 }: AgencyComposerProps): JSX.Element {
   const [sending, setSending] = useState(false);
   const [launching, setLaunching] = useState(false);
@@ -85,7 +86,7 @@ export function AgencyComposer({
               </option>)}
             </select>
           </label>
-          {profile && !agent && <button type="button" className="agency-text-button" disabled={!online || waiting}
+          {profile && !agent && canConfigureProfile && <button type="button" className="agency-text-button" disabled={!online || waiting}
             aria-label={t('agency.profile.configure')} onClick={() => setShowConfigure(true)}>
             {t('agency.profile.configure')}
           </button>}

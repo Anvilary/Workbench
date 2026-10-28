@@ -36,6 +36,9 @@ const RECONNECT_MAX_MS = 8_000;
 export class AgentConnection {
   private socket: WebSocket | null = null;
   private status: ConnectionStatus = 'connecting';
+  private remoteClient = true;
+
+  isRemoteClient(): boolean { return this.remoteClient; }
   private attempt = 0;
   private closedByUs = false;
   private hasConnectedOnce = false;
@@ -104,6 +107,7 @@ export class AgentConnection {
         console.warn('[conexion] mensaje del servidor no reconocido');
         return;
       }
+      if (message.type === 'hello') this.remoteClient = message.remoteClient;
       for (const handler of this.messageHandlers) handler(message);
     };
 

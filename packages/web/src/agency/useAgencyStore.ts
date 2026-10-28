@@ -1,3 +1,4 @@
+import { serverTextMessage } from '../i18n/server-text.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AgencyClientMessage, AgencyRuntimeSession, AgencyServerMessage, AgencyWorkspace,
@@ -74,6 +75,14 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
       lastSessions.current.set(next.id, next);
     }
 
+    const offRefusal = connection.onMessage((message) => {
+      if (message.type !== 'error' || !message.requestId) return;
+      const task = pending.current.get(message.requestId);
+      if (!task) return;
+      window.clearTimeout(task.timeout);
+      pending.current.delete(message.requestId);
+      task.reject(new Error(serverTextMessage(message.text)));
+    });
     const offMessage = transport.onMessage((message) => {
       if (message.type === 'agency.projects.snapshot') {
         setData((old) => ({ ...old, projects: message.projects }));
@@ -153,7 +162,7 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
     });
     // Existing authenticated socket may already have opened before this UI mounted.
     refresh();
-    return () => { offMessage(); offStatus(); cancelPending(); };
+    return () => { offRefusal(); offMessage(); offStatus(); cancelPending(); };
   }, [connection, transport, refresh]);
 
   const createProject = (name: string) => request({ type: 'agency.project.create', name });
