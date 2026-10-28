@@ -1,3 +1,5 @@
+Current multi-session behavior supersedes historical singleton/layout notes below; see docs/maw/MULTI-SESSION-STATUS.md.
+
 # Agency UI integration handoff (Lane D)
 
 Status: **isolated frontend implementation only**. Built on `a784b0b3e176f06911a016d093f1a118f2072bca`. This lane never edits `App.tsx`, `main.tsx`, server files, shared protocol or root manifests.
@@ -55,7 +57,7 @@ Extend the existing protocol encoder/parser for Agency messages as part of integ
 1. Merge Lane A/B/C into `dev` under the foundation contract, then add Agency message validation to `packages/shared/src/protocol.ts` and dispatch in `packages/server/src/terminal-socket.ts`.
 2. Instantiate a **stable** adapter around the existing `AgentConnection`, and pass it plus that same connection to `AgencyApp` from the current frontend entry route. No direct API credentials or additional browser socket.
 3. Confirm responses include the same `requestId` and that the client receives `agency.*.snapshot` on startup and reconnect, including lifecycle/terminal IDs.
-4. Make `agency.session.create` server-atomic for one active agent and one active shell. It must start the **original** CLI through Lane B's validated profile launcher. Verify server-managed canonical cwd, session-to-terminal mapping and capability confirmation before enabling controls.
+4. Make `agency.session.create` server-atomic for independent per-tab attempts, supporting multiple agents and shells. It must start the **original** CLI through Lane B's validated profile launcher. Verify server-managed canonical cwd, session-to-terminal mapping and capability confirmation before enabling controls.
 5. Validate the optional old Workbench conversation bridge against each native CLI. Unsupported native transcript parsers must fall back to the interactive PTY, not invent history.
 6. Run typecheck, build and a real disposable Ubuntu smoke. No local runtime, screenshots or authenticated CLI acceptance were performed by this lane.
 

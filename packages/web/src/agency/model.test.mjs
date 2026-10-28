@@ -2,8 +2,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  activeByProject, acknowledgeWorkspaceDraft, canLaunchAgent, currentSession,
-  putWorkspaceDraft, selectableEfforts, selectableModels, transitionNotice, workspaceLayout,
+  activeByProject, acknowledgeWorkspaceDraft, canLaunchAgent, workspaceTabs,
+  putWorkspaceDraft, selectableEfforts, selectableModels, transitionNotice,
   createAgencyTransport, parseProfileArgv,
 } from './model.ts';
 
@@ -25,23 +25,12 @@ test('Active and Done navigation preserves archive metadata', () => {
   assert.equal(workspaces.find((ws) => ws.id === 'done').status, 'done');
 });
 
-test('Empty, terminal-only, agent-only and combined layouts are disjoint', () => {
-  assert.equal(workspaceLayout(false, false), 'empty');
-  assert.equal(workspaceLayout(false, true), 'terminal-only');
-  assert.equal(workspaceLayout(true, false), 'agent-only');
-  assert.equal(workspaceLayout(true, true), 'combined');
-});
 
-test('One active slot per kind is selected independently', () => {
-  const sessions = [
-    { id: 'shell-1', workspaceId: 'ws', kind: 'terminal', lifecycle: 'running' },
-    { id: 'agent-old', workspaceId: 'ws', kind: 'agent', lifecycle: 'exited' },
-    { id: 'agent-2', workspaceId: 'ws', kind: 'agent', lifecycle: 'running' },
-    { id: 'other', workspaceId: 'other-ws', kind: 'agent', lifecycle: 'running' },
-  ];
-  assert.equal(currentSession(sessions, 'ws', 'terminal').id, 'shell-1');
-  assert.equal(currentSession(sessions, 'ws', 'agent').id, 'agent-2');
-  assert.equal(currentSession(sessions, 'missing', 'agent'), undefined);
+test('Explicit current tab identities retain order; closed/history rows never become selected views', () => {
+  const row=(id,order,extra={})=>({id,workspaceId:'ws',kind:'agent',tab:{id,order,current:true,closedAt:null,selected:false,...extra}});
+  const sessions=[row('b',2),row('a',1),row('closed',3,{closedAt:'2026-10-28'}),row('old',0,{current:false})];
+  assert.deepEqual(workspaceTabs(sessions,'ws').map(s=>s.id),['a','b']);
+  assert.deepEqual(workspaceTabs(sessions,'missing'),[]);
 });
 
 test('Do not invent models or reasoning effort for undetected native profiles', () => {
@@ -123,4 +112,11 @@ test('Profile argv JSON preserves spaces and rejects shell-like parsing', () => 
   assert.equal(parseProfileArgv('--model two words'), null);
   assert.equal(parseProfileArgv('["okay", 123]'), null);
   assert.equal(parseProfileArgv('{"args": ["test"]}'), null);
+});
+
+test('Session notices remain independent for two agents in the same workspace', () => {
+  const one={kind:'agent',lifecycle:'running',activity:'working'};
+  const two={kind:'agent',lifecycle:'running',activity:'idle'};
+  assert.equal(transitionNotice(one,{...one,activity:'awaiting-user'}),'attention');
+  assert.equal(transitionNotice(two,two),null);
 });

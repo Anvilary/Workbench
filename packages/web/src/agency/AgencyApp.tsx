@@ -76,14 +76,16 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
     if (!notice || seenNotice.current.has(notice.serial)) return;
     seenNotice.current.add(notice.serial);
     const ws = data.workspaces.find((item) => item.id === notice.workspaceId);
-    const label = ws?.name ?? t('agency.ui.workspace');
+    const noticeSession = data.sessions.find(session => session.id === notice.sessionId);
+    const sessionName = noticeSession?.tab?.name ?? (noticeSession?.kind === 'terminal' ? t('agency.tabs.terminalNamed', { number: noticeSession.tab?.terminalNumber ?? 1 }) : data.profiles.find(profile => profile.id === noticeSession?.profileId)?.label ?? '');
+    const label = (ws?.name ?? t('agency.ui.workspace')) + (sessionName ? ' / ' + sessionName : '');
     const message = notice.kind === 'attention' ? t('agency.ui.needsAttentionNamed', { name: label }) : t('agency.ui.completedTurnNamed', { name: label });
     setStatusToast(message);
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) {
       // Only confirmed server transitions, never snapshots or local send clicks.
       new Notification(t('agency.ui.agency'), { body: message, tag: 'agency-' + notice.sessionId + '-' + notice.kind });
     }
-  }, [notice, data.workspaces]);
+  }, [notice, data.workspaces, data.sessions, data.profiles]);
 
   const selected = !showingDone ? data.workspaces.find((ws) => ws.id === selectedId && ws.status === 'active') : undefined;
   useEffect(() => { try { if (selectedId) localStorage.setItem('agency-ui.selected-workspace.v1', selectedId); } catch {} }, [selectedId]);
@@ -322,50 +324,16 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
           setSelectedId(newWorkspace.id);
           setShowingDone(false);
 
-          if (options.mode === 'agent' && options.profileId) {
+          const failures: string[] = [];
+          const launch = async (kind: 'agent' | 'terminal') => {
             try {
-              const launchAnswer = await store.request({
-                type: 'agency.session.create',
-                workspaceId: newWorkspace.id,
-                kind: 'agent',
-                profileId: options.profileId,
-                cols: 100,
-                rows: 30,
-              });
-              if (launchAnswer.type !== 'agency.session.created') {
-                setLaunchErrors((prev) => ({
-                  ...prev,
-                  [newWorkspace.id]: t('agency.ui.noAgentSessionAcknowledgement'),
-                }));
-              }
-            } catch (err) {
-              setLaunchErrors((prev) => ({
-                ...prev,
-                [newWorkspace.id]: err instanceof Error ? err.message : String(err),
-              }));
-            }
-          } else if (options.mode === 'terminal') {
-            try {
-              const launchAnswer = await store.request({
-                type: 'agency.session.create',
-                workspaceId: newWorkspace.id,
-                kind: 'terminal',
-                cols: 100,
-                rows: 30,
-              });
-              if (launchAnswer.type !== 'agency.session.created') {
-                setLaunchErrors((prev) => ({
-                  ...prev,
-                  [newWorkspace.id]: t('agency.ui.noShellSessionAcknowledgement'),
-                }));
-              }
-            } catch (err) {
-              setLaunchErrors((prev) => ({
-                ...prev,
-                [newWorkspace.id]: err instanceof Error ? err.message : String(err),
-              }));
-            }
-          }
+              await store.request({ type: 'agency.session.create', workspaceId: newWorkspace.id, kind, launchId: crypto.randomUUID(), cols: 100, rows: 30,
+                ...(kind === 'agent' ? { profileId: options.profileId! } : {}) } as Parameters<typeof store.request>[0]);
+            } catch (reason) { failures.push((kind === 'agent' ? t('agency.ui.agentLabel') : t('agency.ui.shell')) + ': ' + String(reason)); }
+          };
+          if ((options.mode === 'agent' || options.mode === 'combined') && options.profileId) await launch('agent');
+          if (options.mode === 'terminal' || options.mode === 'combined') await launch('terminal');
+          if (failures.length) setLaunchErrors(prev => ({ ...prev, [newWorkspace.id]: failures.join(' · ') }));
         }} />}
     </div>
   );

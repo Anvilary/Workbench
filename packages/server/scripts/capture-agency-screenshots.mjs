@@ -25,7 +25,7 @@ import WebSocket from 'ws';
 
 const serverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const rootDir = path.resolve(serverDir, '../..');
-const outDir = process.env.AGENCY_SCREENSHOT_DIR || path.join(rootDir, 'docs', 'agency', 'screenshots');
+const outDir = process.env.AGENCY_SCREENSHOT_DIR || path.join(rootDir, 'docs', 'maw', 'multi-session-screenshots');
 mkdirSync(outDir, { recursive: true });
 
 const temp = mkdtempSync(path.join(tmpdir(), 'aw-agency-shots-'));
@@ -58,6 +58,8 @@ const commonEnv = {
   ...process.env,
   AGENT_WORKBENCH_NO_OPEN: '1',
   AGENT_WORKBENCH_NO_RESTORE: '1',
+  // A deterministic real interactive shell, independent of host zsh setup.
+  SHELL: '/bin/bash',
   HOME: testHome,
   USERPROFILE: testHome,
   APPDATA: testAppdata,
@@ -190,7 +192,7 @@ await request({ type: 'agency.workspace.create', requestId: 'ws-long', projectId
   name: 'A workspace with a deliberately long name for responsive navigation', pickerId: extraPicker.pickerId });
 
 // These disposable processes deliberately do not run or authenticate any real CLI.
-for (const profileId of ['codex00', 'claude-code']) {
+for (const profileId of ['codex00', 'codex01', 'agy03', 'claude-code']) {
   const configured = await request({ type: 'agency.profile.configure', requestId: `fixture-${profileId}`,
     profileId, executable: fixture, args: [] });
   assert.equal(configured.profile.configurationStatus, 'available');
@@ -251,7 +253,7 @@ await request({
   workspaceId: wsDone.id,
 });
 
-ws.close();
+// Keep the disposable control socket for per-session routing assertions.
 
 console.log('Launching Chromium at 1440x900 viewport...');
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
@@ -280,171 +282,147 @@ await page.goto(url);
 await page.waitForLoadState('networkidle');
 await page.waitForTimeout(1000);
 
-// Save only after the requested state has been reached.
-async function saveShot(filename) {
-  const p1 = path.join(outDir, filename);
-  await page.screenshot({ path: p1 });
-  console.log(`Saved screenshot: ${p1}`);
-}
 
+let serial = 0;
+const api = msg => request({ ...msg, requestId: 'multi-' + (++serial) });
+const snapshot = async () => (await api({ type: 'agency.sessions.list' })).sessions;
+const openTabs = rows => rows.filter(row => row.workspaceId === wsCombined.id && row.tab?.current && !row.tab.closedAt).sort((a,b) => a.tab.order - b.tab.order);
+async function until(predicate) { for(let i=0;i<200;i++) { if(await predicate()) return; await new Promise(resolve=>setTimeout(resolve,40)); } throw new Error('Assertion timed out: '+predicate); }
+async function shot(name) { await page.screenshot({ path: path.join(outDir,name+'.png') }); console.log('Screenshot', name); }
 async function selectWorkspace(name) {
-  const button = page.locator('.agency-workspace-nav-button').filter({ hasText: name }).first();
-  await button.click();
-  await page.getByRole('region', { name: 'Workspace ' + name }).waitFor({ state: 'visible' }).catch(() => page.locator('.agency-workspace-view').waitFor());
-  assert.equal(await button.getAttribute('aria-current'), 'page');
+  await page.locator('.agency-workspace-nav-button').filter({hasText:name}).first().click();
+  await page.getByRole('region',{name:'Workspace '+name,exact:true}).waitFor();
 }
-async function expectVisible(selector) {
-  await page.locator(selector).first().waitFor({ state: 'visible' });
+const add = page.getByRole('button',{name:'Add tab',exact:true});
+async function addCLI(profile) {
+  await add.click(); await page.getByRole('menuitem',{name:'New CLI',exact:true}).click();
+  await page.locator('[role=dialog] select').selectOption(profile);
+  await page.getByRole('button',{name:'Start new CLI session',exact:true}).click();
+  await page.getByRole('dialog').waitFor({state:'hidden'});
 }
-async function expectAbsent(selector) {
-  assert.equal(await page.locator(selector + ':visible').count(), 0, `${selector} should be hidden`);
-}
+async function addShell() { await add.click();await page.getByRole('menuitem',{name:'New Terminal',exact:true}).click(); }
+async function selectTab(id) { await page.locator(`[data-tab-id="${id}"] [role=tab]`).click();await until(async()=>await page.locator(`[data-tab-id="${id}"] [role=tab]`).getAttribute('aria-selected')==='true'); }
+
 await selectWorkspace('Empty Workspace');
-await expectVisible('.agency-agent-pane');
-await expectAbsent('.agency-shell-pane');
-await expectAbsent('.terminal-surface');
-const profileOptions = await page.locator('.agency-shell-placeholder select').locator('option').evaluateAll(
-  (options) => options.map((option) => option.value).filter(Boolean));
-assert.deepEqual(profileOptions, ['codex00', 'codex01', 'codex03', 'agy00', 'agy01', 'agy02', 'agy03', 'agy04', 'agy05', 'claude-code']);
-await saveShot('01-empty-workspace.png');
-
+assert.equal(await page.getByRole('tab').count(),0);
+await shot('01-empty');
+await selectWorkspace('Combined Workspace');
+assert.equal(await page.getByRole('tab').count(),2);
+await add.click();await shot('02-add-open');await add.click();assert.equal(await page.getByRole('menu').count(),0);
+await add.click();await page.keyboard.press('Escape');assert.equal(await add.evaluate(el=>document.activeElement===el),true);
+await add.click();await page.locator('.agency-breadcrumbs').click();assert.equal(await page.getByRole('menu').count(),0);
+await addCLI('codex00'); await addCLI('agy03'); await addCLI('claude-code');
+await addShell(); await addShell();
+let rows = openTabs(await snapshot());
+assert.equal(rows.length,7); assert.equal(rows.filter(s=>s.kind==='agent').length,4); assert.equal(rows.filter(s=>s.kind==='terminal').length,3);
+const sameProfile = rows.filter(s=>s.profileId==='claude-code');assert.equal(sameProfile.length,2);assert.notEqual(sameProfile[0].nativeSessionId,sameProfile[1].nativeSessionId);
+assert.equal(new Set(rows.map(s=>s.terminalId)).size,7);
+await until(async()=>await page.getByRole('tab').count()===7);
+await until(async()=>await page.locator(`[data-tab-id="${rows.at(-1).tab.id}"] [role=tab]`).getAttribute('aria-selected')==='true');
+await shot('03-mixed-seven-tabs');
+const shellRows=rows.filter(s=>s.kind==='terminal');
+const captures=new Map();
+ws.on('message',raw=>{const msg=JSON.parse(raw);if(msg.type==='terminal.output')captures.set(msg.terminalId,(captures.get(msg.terminalId)??'')+msg.data);});
+for(const row of rows) ws.send(JSON.stringify({type:'terminal.attach',terminalId:row.terminalId,cols:100,rows:30}));
+await selectTab(shellRows[0].tab.id);
+await page.locator('.maw-session-pane:visible .xterm-helper-textarea').focus();
+await page.keyboard.type("printf '\\nUI_FOCUS_ONLY\\n'");await page.keyboard.press('Enter');
+await until(()=>captures.get(shellRows[0].terminalId)?.includes('UI_FOCUS_ONLY'));
+for(const row of rows.filter(s=>s.id!==shellRows[0].id))assert.ok(!(captures.get(row.terminalId)??'').includes('UI_FOCUS_ONLY'),'Input leaked to another session');
+ws.send(JSON.stringify({type:'resize',terminalId:shellRows[1].terminalId,cols:93,rows:31}));
+ws.send(JSON.stringify({type:'input',terminalId:shellRows[1].terminalId,data:'stty size\r'}));
+await until(()=>captures.get(shellRows[1].terminalId)?.includes('31 93'));
+assert.ok(!(captures.get(shellRows[0].terminalId)??'').includes('31 93'));
+await shot('04-terminal-focus-and-routing');
+const starts = browserCreates.length;
+for(const row of rows)await selectTab(row.tab.id);
+assert.equal(browserCreates.length,starts); assert.equal((await snapshot()).length,9); // includes shell-only and agent-only fixture workspaces
+assert.equal(await page.locator('.maw-session-pane:visible').count(),1);
+assert.equal(await page.locator('.agency-pane-divider,.agency-content-split').count(),0);
+const selectedBeforeReload=(await snapshot()).find(s=>s.workspaceId===wsCombined.id&&s.tab?.selected&&s.tab.current);
+await page.reload();await page.waitForLoadState('networkidle');await page.getByRole('tab').last().waitFor();
+assert.equal(await page.locator(`[data-tab-id="${selectedBeforeReload.tab.id}"] [role=tab]`).getAttribute('aria-selected'),'true');
+assert.equal(browserCreates.length,starts);
+// Four actual creation flows: initial mode affects only the first launches.
+for(const [mode,count] of [['empty',0],['agent',1],['terminal',1],['combined',2]]) {
+  await page.locator('.agency-project-add[aria-label^="New workspace"]').first().click();
+  await page.locator('[role=dialog] input').fill('Created '+mode);
+  await page.getByLabel('Initial sessions').selectOption(mode);
+  if(mode==='agent'||mode==='combined') await page.getByLabel('CLI profile').selectOption('claude-code');
+  await page.getByRole('button',{name:'Select existing folder',exact:true}).click();
+  await page.locator('.picker-entry').filter({hasText:/^empty-project$/}).click();
+  await page.locator('.picker-open').click();
+  await page.getByRole('region',{name:'Workspace Created '+mode,exact:true}).waitFor();
+  await until(async()=>await page.getByRole('tab').count()===count);
+  await shot('creation-'+mode);
+}
 await page.locator('.agency-project-add[aria-label^="New workspace"]').first().click();
-await expectVisible('[role="dialog"]');
-await saveShot('07-new-workspace-dialog.png');
-for (let i = 0; i < 8; i++) {
-  await page.keyboard.press('Tab');
-  assert.ok(await page.locator('[role="dialog"]').evaluate((dialog) => dialog.contains(document.activeElement)),
-    'Keyboard focus escaped the dialog');
+await page.locator('[role=dialog] input').fill('Combined launch failure');
+await page.getByLabel('Initial sessions').selectOption('combined');await page.getByLabel('CLI profile').selectOption('codex03');
+await page.getByRole('button',{name:'Select existing folder',exact:true}).click();
+await page.locator('.picker-entry').filter({hasText:/^empty-project$/}).click();await page.locator('.picker-open').click();
+await page.getByRole('region',{name:'Workspace Combined launch failure',exact:true}).waitFor();
+await until(async()=>await page.getByRole('tab').count()===2);
+const failedWorkspace=(await api({type:'agency.workspaces.list'})).workspaces.find(row=>row.name==='Combined launch failure');
+const partial=(await snapshot()).filter(row=>row.workspaceId===failedWorkspace.id);
+assert.equal(partial.find(row=>row.kind==='agent').profileId,'codex03');assert.equal(partial.find(row=>row.kind==='agent').lifecycle,'failed');
+assert.equal(partial.find(row=>row.kind==='terminal').lifecycle,'running');
+await until(async()=>await page.locator(`[data-tab-id="${partial.find(row=>row.kind==='agent').tab.id}"] .agency-status-dot`).getAttribute('aria-label')==='Failed');
+await shot('creation-combined-partial-failure');
+await selectWorkspace('Combined Workspace');
+// Deliberately exited PTY shows its real code; closing it never closes another PTY.
+await selectTab(shellRows[2].tab.id);
+ws.send(JSON.stringify({type:'terminal.attach',terminalId:shellRows[2].terminalId,cols:100,rows:30}));
+await page.locator('.maw-session-pane:visible .xterm-helper-textarea').focus();
+await page.keyboard.press('Control+c');
+await page.keyboard.type('exit 7');await page.keyboard.press('Enter');
+await until(async()=>(await snapshot()).find(row=>row.id===shellRows[2].id)?.lifecycle==='exited').catch(async error=>{console.log('Exit fixture diagnostic',JSON.stringify((await snapshot()).find(row=>row.id===shellRows[2].id)),JSON.stringify(captures.get(shellRows[2].terminalId)?.slice(-600)));throw error;});
+await page.locator('.maw-session-pane:visible .agency-shell-placeholder').waitFor();
+assert.equal((await snapshot()).find(row=>row.id===shellRows[2].id).exitCode,7);
+await shot('05-exited-code-seven');
+await page.locator(`[data-tab-id="${shellRows[2].tab.id}"] [data-close]`).click();
+await until(async()=>await page.getByRole('tab').count()===6);
+assert.equal(await page.getByRole('dialog').count(),0);
+await selectTab(shellRows[1].tab.id);await page.locator(`[data-tab-id="${shellRows[1].tab.id}"] [data-close]`).click();
+await page.getByRole('dialog').waitFor();await shot('06-close-confirmation');
+await page.getByRole('button',{name:'Cancel',exact:true}).click();
+assert.equal((await snapshot()).find(row=>row.id===shellRows[1].id).lifecycle,'running');
+await page.locator(`[data-tab-id="${shellRows[1].tab.id}"] [data-close]`).click();await page.getByRole('button',{name:'Close session',exact:true}).click();
+await until(async()=>await page.getByRole('tab').count()===5);
+rows=openTabs(await snapshot());assert.ok(rows.every(row=>row.lifecycle==='running'));
+assert.ok((await snapshot()).find(row=>row.id===shellRows[1].id).stoppedByUser);
+await shot('07-close-only-one');
+// More logical tabs than fit, without exceeding the process ceiling.
+for(let index=0;index<9;index++)await api({type:'agency.session.create',workspaceId:wsCombined.id,kind:'terminal',launchId:crypto.randomUUID(),cols:100,rows:30});
+await until(async()=>await page.getByRole('tab').count()===14);
+let before=openTabs(await snapshot());const active=before.find(row=>row.tab.selected);
+const strip=page.getByRole('tablist');await strip.evaluate(el=>{el.scrollLeft=0;});
+const rect=await strip.boundingBox();await page.mouse.move(rect.x+45,rect.y+8);await page.mouse.down();await page.mouse.move(rect.x-180,rect.y+8,{steps:12});await page.mouse.up();
+assert.ok(await strip.evaluate(el=>el.scrollLeft)>40,'Drag should scroll overflowing tabs');
+assert.equal(openTabs(await snapshot()).find(row=>row.tab.selected).tab.id,active.tab.id,'Dragging activated a tab');
+await selectTab(before[0].tab.id);await page.getByRole('tab',{selected:true}).focus();
+await page.keyboard.press('ArrowRight');await until(async()=>openTabs(await snapshot()).find(row=>row.tab.selected).tab.id===before[1].tab.id);
+await until(async()=>await page.locator(`[data-tab-id="${before[1].tab.id}"] [role=tab]`).getAttribute('aria-selected')==='true');
+console.log('Keyboard focus before reorder',await page.evaluate(()=>document.activeElement?.getAttribute('id')));
+await page.keyboard.press('Alt+ArrowRight');await until(async()=>openTabs(await snapshot())[2].tab.id===before[1].tab.id);
+const order=openTabs(await snapshot()).map(row=>row.tab.id);const chosen=before[1].tab.id;
+await page.reload();await page.waitForLoadState('networkidle');assert.deepEqual(openTabs(await snapshot()).map(row=>row.tab.id),order);
+assert.equal(await page.locator(`[data-tab-id="${chosen}"] [role=tab]`).getAttribute('aria-selected'),'true');
+await shot('08-overflow-and-order');
+for(const width of [390,768,1024,1440,1920]) {
+  await page.setViewportSize({width,height:900});
+  if(width===390)await page.getByRole('button',{name:'Collapse sidebar',exact:true}).click();
+  const metrics=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,panes:[...document.querySelectorAll('.maw-session-pane')].filter(el=>!el.hidden).length,strip:document.querySelector('.maw-tabs-strip').getBoundingClientRect().height}));
+  assert.ok(metrics.scroll<=metrics.width,JSON.stringify(metrics));assert.equal(metrics.panes,1);assert.ok(metrics.strip<55);
+  await until(async()=>await strip.evaluate(el=>{const tab=el.querySelector('[aria-selected="true"]');if(!tab)return false;const a=tab.parentElement.getBoundingClientRect(),b=el.getBoundingClientRect();return a.left>=b.left-1 && a.right<=b.right+1;}));
+  await shot('responsive-'+width);
+  await add.click();await add.click();assert.equal(await page.getByRole('menu').count(),0);
 }
-await page.locator('.agency-dialog input').fill('Search Test WS');
-await page.getByRole('button', { name: 'Select existing folder' }).click();
-await expectVisible('.picker-modal');
-await page.locator('.picker-search-input').fill('project');
-await saveShot('08-folder-picker-live-search.png');
-await page.keyboard.press('Escape');
-await page.keyboard.press('Escape');
-
-await selectWorkspace('Shell Only');
-await page.getByRole('button', { name: 'Terminal', exact: true }).click();
-await expectVisible('.agency-shell-pane .terminal-surface');
-await expectVisible('.agency-shell-pane .xterm-screen');
-await expectAbsent('.agency-agent-pane');
-await saveShot('02-shell-only-workspace.png');
-
-await selectWorkspace('Agent Only');
-await expectVisible('.agency-agent-pane .terminal-surface');
-await expectAbsent('.agency-shell-pane');
-await page.getByText('AGENCY TEST FIXTURE', { exact: false }).first().waitFor({ state: 'visible' });
-await saveShot('03-agent-only-workspace.png');
-
-await selectWorkspace('Combined Workspace');
-await page.getByRole('button', { name: 'Split view', exact: true }).click();
-await expectVisible('.agency-agent-pane .terminal-surface');
-await expectVisible('.agency-shell-pane .terminal-surface');
-await expectVisible('.agency-pane-divider');
-await saveShot('04-combined-workspace.png');
-await expectVisible('.agency-sidebar-nav');
-const projectMenu = page.getByRole('button', { name: 'Project actions', exact: true }).first();
-const workspaceMenu = page.getByRole('button', { name: 'Workspace actions', exact: true }).first();
-await projectMenu.click();
-await saveShot('10-project-menu-open.png');
-await projectMenu.click();
-assert.equal(await page.getByRole('menu').count(), 0);
-await saveShot('11-project-menu-closed.png');
-await workspaceMenu.click();
-await saveShot('12-workspace-menu-open.png');
-await projectMenu.click();
-assert.equal(await page.getByRole('menu').count(), 1);
-await page.keyboard.press('Escape');
-assert.equal(await projectMenu.evaluate(el => el === document.activeElement), true);
-await page.getByRole('button', { name: 'CLI', exact: true }).click();
-await saveShot('13-cli-tab.png');
-await page.getByRole('button', { name: 'Terminal', exact: true }).click();
-await saveShot('14-terminal-tab.png');
-await page.reload();
-await page.waitForLoadState('networkidle');
-assert.equal(await page.getByRole('button', { name: 'Terminal', exact: true }).getAttribute('aria-pressed'), 'true');
-await page.getByRole('button', { name: 'Split view', exact: true }).click();
-const copyMenu = page.locator('.agency-agent-pane .agency-dropdown > button');
-await copyMenu.click(); await copyMenu.click();
-assert.equal(await page.getByRole('menu').count(), 0);
-await copyMenu.click();
-await page.keyboard.press('Escape');
-assert.equal(await copyMenu.evaluate(el => el === document.activeElement), true);
-await saveShot('05a-sidebar-expanded.png');
-const sidebarToggle = page.getByRole('button', { name: /^(Collapse|Expand) sidebar$/ });
-await sidebarToggle.click();
-await page.locator('.agency-sidebar-nav').waitFor({ state: 'hidden' });
-await saveShot('05b-sidebar-collapsed.png');
-await sidebarToggle.click();
-await expectVisible('.agency-sidebar-nav');
-
-await page.locator('.agency-history-toggle').click();
-await expectVisible('.agency-done-view:has-text("Completed Task")');
-await expectVisible('.agency-done-view button');
-await saveShot('06-done-restore-view.png');
-
-// Exercise populated combined state at each requested width: 390, 768, 1024, 1440, 1920.
-for (const width of [390, 768, 1024, 1440, 1920]) {
-  await page.setViewportSize({ width, height: 900 });
-  await selectWorkspace('Combined Workspace');
-  if (width <= 680) await sidebarToggle.click();
-  await expectVisible('.agency-agent-pane .terminal-surface');
-  await expectVisible('.agency-shell-pane .terminal-surface');
-  const metrics = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth,
-    scroll: document.documentElement.scrollWidth,
-    terminals: [...document.querySelectorAll('.terminal-surface')].map(el => {
-      const r = el.getBoundingClientRect(); return { width: r.width, height: r.height };
-    }) }));
-  assert.ok(metrics.scroll <= metrics.viewport, `Overflow at ${width}: ${JSON.stringify(metrics)}`);
-  assert.ok(metrics.terminals.every(r => r.width > 80 && r.height > 50), `Terminal too small at ${width}: ${JSON.stringify(metrics)}`);
-  console.log('Combined layout:', width, JSON.stringify(metrics));
-  await saveShot('responsive-' + width + '.png');
-  if (width === 1920) {
-    await saveShot('09-desktop-1920.png');
-  }
-  if (width <= 680) await sidebarToggle.click();
-}
-
-// Workspace switching preserves terminal attachment.
-await selectWorkspace('Shell Only');
-const switchStart = performance.now();
-await selectWorkspace('Combined Workspace');
-await selectWorkspace('Shell Only');
-console.log('Two workspace switches with terminal attachment (ms):', Math.round(performance.now() - switchStart));
-
-await page.locator('.agency-history-toggle').click();
-await page.locator('.agency-done-row').filter({ hasText: 'Completed Task' }).getByRole('button', { name: 'Restore' }).click();
-await page.locator('.agency-workspace-view').waitFor();
-await selectWorkspace('Combined Workspace');
-await page.getByRole('button', { name: 'CLI', exact: true }).click();
-await page.getByRole('button', { name: 'Stop agent', exact: true }).click();
-await page.locator('.agency-agent-pane .terminal-surface').waitFor({ state: 'detached' });
-await page.getByRole('button', { name: 'Start new CLI session', exact: true }).waitFor();
-await saveShot('15-exited-session.png');
-assert.equal(browserCreates.length, 0, 'Navigation or refresh created a new native PTY');
-assert.ok(await page.locator('.agency-breadcrumb-path').getAttribute('title'));
-assert.deepEqual(pageErrors, [], 'Unexpected browser page errors');
-
-const hashes = ['01-empty-workspace.png', '02-shell-only-workspace.png', '03-agent-only-workspace.png',
-  '04-combined-workspace.png', '05a-sidebar-expanded.png', '05b-sidebar-collapsed.png',
-  '06-done-restore-view.png', '07-new-workspace-dialog.png', '08-folder-picker-live-search.png', '09-desktop-1920.png']
-  .map((name) => createHash('sha256').update(readFileSync(path.join(outDir, name))).digest('hex'));
-assert.equal(new Set(hashes).size, hashes.length, 'Distinct UI states produced duplicate screenshots');
-console.log('Browser page errors:', pageErrors.length, 'console errors:', consoleErrors.length);
-
-await browser.close();
-try {
-  server.kill('SIGTERM');
-  const killTimer = setTimeout(() => {
-    try { server.kill('SIGKILL'); } catch {}
-  }, 4000);
-  await new Promise((r) => server.once('exit', r));
-  clearTimeout(killTimer);
-} catch {}
-
-try {
-  rmSync(temp, { recursive: true, force: true });
-} catch {}
-
+await page.getByRole('button',{name:'Expand sidebar',exact:true}).click();
+await shot('09-sidebar-and-breadcrumb');
+assert.deepEqual(pageErrors,[]);assert.deepEqual(consoleErrors,[]);
+console.log('PASS multi-session creation, coexistence, native IDs, routing/resize, close isolation, refresh, order, dragging, keyboard, responsive/no-split assertions.');
+await browser.close();ws.close();
+const exit=new Promise(resolve=>server.once('exit',resolve));server.kill('SIGTERM');await exit;
+rmSync(temp,{recursive:true,force:true});
 console.log('Browser Quality & Screenshot Capture Finished Successfully.');
