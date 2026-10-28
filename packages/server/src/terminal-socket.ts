@@ -3467,6 +3467,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           break;
         }
 
+        case 'agency.tab.rename':
         case 'agency.tab.action':
         case 'agency.tabs.order': {
           try {

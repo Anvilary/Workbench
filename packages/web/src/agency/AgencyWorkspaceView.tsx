@@ -6,6 +6,7 @@ import { TerminalView } from '../TerminalView.js';
 import { t } from '../i18n/index.js';
 import { agencySessionText, agencyTabActivityText } from './agency-labels.js';
 import { allWorkspaceTabs, canLaunchAgent, selectedWorkspaceTab, type WorkspaceTab } from './model.js';
+import { TabNameInput } from './TabNameInput.js';
 import { AgencyBrowserViewer } from './AgencyBrowserViewer.js';
 import { validateChatGptUrl, validateWebTabTitle } from '@agent-workbench/shared';
 import type { AgencyTransport } from './model.js';
@@ -107,7 +108,8 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
   const [keyboardTabs, setKeyboardTabs] = useState(false);
   const [menu, setMenu] = useState(false);
   const [picker, setPicker] = useState(false);
-  const [webDialog, setWebDialog] = useState<'create' | 'rename' | 'navigate' | null>(null);
+  const [webDialog, setWebDialog] = useState<'create' | 'navigate' | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [webUrl, setWebUrl] = useState('https://chatgpt.com/');
   const [webTitle, setWebTitle] = useState('');
   const [profileId, setProfileId] = useState<CliProfileId | ''>(profiles[0]?.id ?? '');
@@ -192,7 +194,9 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
     catch { /* Keep confirmation and error visible until the server confirms close. */ }
     finally {
       flight.current = false; setBusy(false);
-      requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.maw-session-pane:not([hidden]) .xterm-helper-textarea')?.focus());
+      requestAnimationFrame(() => {
+        if (!document.activeElement?.closest('input, [role=tab]')) document.querySelector<HTMLTextAreaElement>('.maw-session-pane:not([hidden]) .xterm-helper-textarea')?.focus();
+      });
     }
   }
   async function navigate(event: React.KeyboardEvent) {
@@ -214,7 +218,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
     const session = tab.session;
     return session.tab?.name ?? (session.kind === 'terminal' ? t('agency.tabs.terminalNamed', { number: session.tab?.terminalNumber ?? 1 }) : profiles.find(profile => profile.id === session.profileId)?.label ?? t('agency.ui.agentLabel'));
   }
-  function webEditor(mode: 'create' | 'rename' | 'navigate') {
+  function webEditor(mode: 'create' | 'navigate') {
     setMenu(false); setError(null); setWebDialog(mode);
     setWebUrl(selected?.kind === 'web' && mode !== 'create' ? selected.web.url : 'https://chatgpt.com/');
     setWebTitle(selected?.kind === 'web' && mode !== 'create' ? selected.web.title : t('agency.web.defaultTitle'));
@@ -222,23 +226,21 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
   async function saveWeb() {
     if (flight.current || !online || !webDialog) return;
     const url = validateChatGptUrl(webUrl);
-    if (webDialog !== 'rename' && !url.valid) { setError(t('agency.web.invalidUrl')); return; }
+    if (!url.valid) { setError(t('agency.web.invalidUrl')); return; }
     if (webDialog !== 'navigate' && !validateWebTabTitle(webTitle)) { setError(t('agency.web.invalidTitle')); return; }
     flight.current = true; setBusy(true); setError(null);
     try {
       if (webDialog === 'create') await request({ type: 'agency.webTab.create', workspaceId: workspace.id, url: url.normalizedUrl!, title: webTitle.trim(), select: true, launchId: crypto.randomUUID() });
-      else if (selected?.kind === 'web') await request(webDialog === 'rename'
-        ? { type: 'agency.webTab.rename', workspaceId: workspace.id, tabId: selected.id, title: webTitle.trim() }
-        : { type: 'agency.webTab.navigate', workspaceId: workspace.id, tabId: selected.id, url: url.normalizedUrl! });
+      else if (selected?.kind === 'web') await request({ type: 'agency.webTab.navigate', workspaceId: workspace.id, tabId: selected.id, url: url.normalizedUrl! });
       setWebDialog(null);
     } catch (reason) { setError(String(reason)); }
     finally { flight.current = false; setBusy(false); }
   }
-  const webHeading = webDialog === 'create' ? t('agency.web.newTab') : webDialog === 'rename' ? t('agency.web.rename') : t('agency.web.navigate');
+  const webHeading = webDialog === 'create' ? t('agency.web.newTab') : t('agency.web.navigate');
   return <section className="agency-workspace-view" aria-label={t('agency.ui.workspaceNamed', { name: workspace.name })}>
     <header className="maw-tabs-header">
       <div className="maw-tabs-strip" ref={strip} role="tablist" aria-label={t('agency.tabs.tabList')} onKeyDown={event => void navigate(event)}
-        onPointerDown={event => { if (event.button !== 0 || (event.target as Element).closest('[data-close]')) return; drag.current = { id: event.pointerId, x: event.clientX, scroll: event.currentTarget.scrollLeft, moved: false }; }}
+        onPointerDown={event => { if (event.button !== 0 || (event.target as Element).closest('[data-close], input')) return; drag.current = { id: event.pointerId, x: event.clientX, scroll: event.currentTarget.scrollLeft, moved: false }; }}
         onPointerMove={event => { const start = drag.current; if (!start) return; if (Math.abs(event.clientX - start.x) > 6) { start.moved = true; event.currentTarget.setPointerCapture(event.pointerId); } if (start.moved) { event.preventDefault(); event.currentTarget.scrollLeft = start.scroll - (event.clientX - start.x); } }}
         onPointerUp={event => { dragged.current = !!drag.current?.moved; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); drag.current = null; setTimeout(() => { dragged.current = false; }, 0); }}
         onPointerCancel={() => { drag.current = null; dragged.current = false; }}
@@ -253,9 +255,14 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
             session && ['awaiting-user','awaiting-permission'].includes(session.activity) ? 'attention' :
             tabState ?? (session?.activity === 'working' ? 'working' : session?.activity === 'idle' ? 'idle' : 'unknown');
           return <div className={'maw-session-tab' + (selected?.id === tab.id ? ' active' : '')} key={tab.id} data-tab-id={tab.id}>
-            <button type="button" role="tab" id={'tab-' + tab.id} aria-selected={selected?.id === tab.id} aria-controls={'pane-' + tab.id} tabIndex={selected?.id === tab.id || (!selected && index === 0) ? 0 : -1} disabled={!online} title={name(tab) + ' · ' + status} onClick={() => { setKeyboardTabs(false); void action(tab, 'select').catch(() => undefined); }}>
-              <span aria-hidden="true">{tab.kind === 'web' ? '◎' : session?.kind === 'agent' ? '◇' : '>_'}</span><span className="agency-truncate">{name(tab)}</span><span className={'agency-status-dot ' + dotClass} aria-label={status} />
-            </button>
+            {renaming === tab.id ? <TabNameInput name={name(tab)} report={setError}
+              onSave={async title => { await request(tab.kind === 'web'
+                ? { type: 'agency.webTab.rename', workspaceId: workspace.id, tabId: tab.id, title }
+                : { type: 'agency.tab.rename', workspaceId: workspace.id, tabId: tab.id, name: title }); setError(null); }}
+              onClose={restore => { setRenaming(null); if (restore) requestAnimationFrame(() => document.getElementById('tab-' + tab.id)?.focus()); }}
+            /> : <button type="button" role="tab" id={'tab-' + tab.id} aria-selected={selected?.id === tab.id} aria-controls={'pane-' + tab.id} tabIndex={selected?.id === tab.id || (!selected && index === 0) ? 0 : -1} disabled={!online} title={name(tab) + ' · ' + status} onKeyDown={event => { if (event.key === 'F2') { event.preventDefault(); event.stopPropagation(); setKeyboardTabs(true); setRenaming(tab.id); } }} onClick={() => { setKeyboardTabs(false); void action(tab, 'select').catch(() => undefined); }}>
+              <span aria-hidden="true">{tab.kind === 'web' ? '◎' : session?.kind === 'agent' ? '◇' : '>_'}</span><span className="agency-truncate" onDoubleClick={() => { setKeyboardTabs(true); setRenaming(tab.id); }}>{name(tab)}</span><span className={'agency-status-dot ' + dotClass} aria-label={status} />
+            </button>}
             <button type="button" data-close aria-label={t('agency.tabs.closeNamed', { name: name(tab) })} disabled={!online || busy} onClick={() => { if (session && ['starting','running','stopping'].includes(session.lifecycle)) setClosing(tab); else void close(tab); }}>×</button>
           </div>;
         })}
@@ -266,6 +273,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
           <button type="button" role="menuitem" onClick={() => { setMenu(false); setPicker(true); }}>{t('agency.tabs.newCLI')}</button>
           <button type="button" role="menuitem" onClick={() => void add('terminal')}>{t('agency.tabs.newTerminal')}</button>
           <button type="button" role="menuitem" onClick={() => webEditor('create')}>{t('agency.web.newTab')}</button>
+          {selected && <button type="button" role="menuitem" onClick={() => { setMenu(false); setKeyboardTabs(true); setRenaming(selected.id); }}>{t('agency.web.rename')}</button>}
         </div>}
       </div>
       <button type="button" className="agency-text-button" onClick={onDone}>{t('agency.ui.markDone')}</button>
@@ -276,7 +284,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
       {selected?.kind === 'web' && <div className="maw-session-pane" role="tabpanel" id={'pane-' + selected.id} aria-labelledby={'tab-' + selected.id}>
         <div className="agency-pane-bar maw-browser-toolbar"><span className="agency-truncate" title={selected.web.url}>{selected.web.url}</span><span className="agency-flex-spacer" />
           <button type="button" className="agency-text-button" disabled={!online || busy} onClick={() => webEditor('navigate')}>{t('agency.web.navigate')}</button>
-          <button type="button" className="agency-text-button" disabled={!online || busy} onClick={() => webEditor('rename')}>{t('agency.web.rename')}</button>
+          <button type="button" className="agency-text-button" disabled={!online || busy} onClick={() => { setKeyboardTabs(true); setRenaming(selected.id); }}>{t('agency.web.rename')}</button>
         </div>
         <AgencyBrowserViewer key={selected.id + ':' + selected.web.targetRef} tab={selected.web} online={online} onDisplayed={reportDisplayed} onReconnect={() => action(selected, 'select')} />
       </div>}
@@ -289,7 +297,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
       {!closing && !webDialog && !canLaunchAgent(profiles.find(profile => profile.id === profileId)) && <p role="status">{profiles.find(profile => profile.id === profileId)?.configurationMessage}</p>}
       {closing ? <p>{t('agency.tabs.closeExplanation')}</p> : webDialog ? <form id="maw-web-tab-form" onSubmit={event => { event.preventDefault(); void saveWeb(); }}>
         {webDialog !== 'navigate' && <label className="agency-field"><span>{t('agency.web.title')}</span><input autoFocus value={webTitle} maxLength={120} required onChange={event => setWebTitle(event.target.value)} /></label>}
-        {webDialog !== 'rename' && <label className="agency-field"><span>{t('agency.web.url')}</span><input autoFocus={webDialog === 'navigate'} type="url" value={webUrl} maxLength={2048} required onChange={event => setWebUrl(event.target.value)} /></label>}
+        {<label className="agency-field"><span>{t('agency.web.url')}</span><input autoFocus={webDialog === 'navigate'} type="url" value={webUrl} maxLength={2048} required onChange={event => setWebUrl(event.target.value)} /></label>}
       </form> : <label className="agency-field"><span>{t('agency.ui.cliProfile')}</span><select autoFocus value={profileId} onChange={event => setProfileId(event.target.value as CliProfileId)}>{profiles.map(profile => <option value={profile.id} key={profile.id}>{profile.label}</option>)}</select></label>}
       {error && <p role="alert" className="agency-error">{error}</p>}
       <div className="agency-dialog-actions"><button type="button" autoFocus={!!closing} disabled={busy} onClick={() => { setPicker(false); setClosing(null); setWebDialog(null); }}>{t('common.cancel')}</button>

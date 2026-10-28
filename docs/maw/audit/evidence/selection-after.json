@@ -1,0 +1,32 @@
+{
+  "node": "v24.22.0",
+  "platform": "linux",
+  "tabs": 15,
+  "fixture": "real JSON persistence, fake PTYs, no network",
+  "results": [
+    {
+      "mode": "repeat",
+      "n": 300,
+      "p50Ms": 0.0028149999999982356,
+      "p95Ms": 0.006732999999996991,
+      "p99Ms": 0.018024000000025353,
+      "writes": 0,
+      "events": 0,
+      "bytes": 0,
+      "cpuMs": 3.635,
+      "rssBytes": 97898496
+    },
+    {
+      "mode": "alternate",
+      "n": 300,
+      "p50Ms": 0.17951800000000162,
+      "p95Ms": 0.33710400000001073,
+      "p99Ms": 0.7595190000000116,
+      "writes": 300,
+      "events": 600,
+      "bytes": 350700,
+      "cpuMs": 69.488,
+      "rssBytes": 98684928
+    }
+  ]
+}

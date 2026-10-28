@@ -52,6 +52,19 @@ jobs:
       # fail for reasons that aren't bugs in the app. Porting them is welcome.
       - run: pnpm check
         if: runner.os == 'Windows'
+      - name: MAW security, native lifecycle, browser ownership and activity regressions
+        if: runner.os == 'Linux'
+        working-directory: packages/server
+        run: pnpm exec tsx --test src/security.test.ts src/maw-host.test.ts src/agency/*.test.ts src/agency/browser-tabs/*.test.ts src/agency/runtime/*.test.ts
+      - name: Restricted Neko controller regressions
+        if: runner.os == 'Linux'
+        run: python3 -m unittest discover -s infra/neko/controller -p 'test_*.py'
+      - name: Browser for MAW UI regressions
+        if: runner.os == 'Linux'
+        run: pnpm exec playwright install chromium --with-deps
+      - name: MAW real browser and notification UI regressions
+        if: runner.os == 'Linux'
+        run: node --test packages/web/src/agency/browser-tabs.test.mjs packages/web/src/agency/notifications.test.mjs
       - run: pnpm build
 
   package:

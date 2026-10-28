@@ -49,3 +49,11 @@ test('legacy selection prefers an active current attempt without guessing from u
   const past=row('exited'),live=row('running');const migrated=migrateSessionTabs([past,live]);
   assert.equal(migrated[0]!.tab?.selected,false);assert.equal(migrated[1]!.tab?.selected,true);
 });
+
+
+test('rename validates stable IDs, title and forbids process identity fields', () => {
+  const message = { type: 'agency.tab.rename', requestId: 'rename', workspaceId: randomUUID(), tabId: randomUUID(), name: 'Title' };
+  assert.deepEqual(parseAgencyClientMessage(message), message);
+  for (const name of ['', '  ', 'x'.repeat(121), 'bad\u0000title', 'bad\ntitle']) assert.equal(parseAgencyClientMessage({ ...message, name }), null);
+  for (const change of [{tabId:'../tab'}, {workspaceId:'wrong'}, {profileId:'codex-1'}, {cwd:'/tmp'}, {terminalId:randomUUID()}]) assert.equal(parseAgencyClientMessage({...message,...change}),null);
+});
