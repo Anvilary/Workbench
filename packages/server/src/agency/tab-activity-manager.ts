@@ -22,8 +22,9 @@
  *     and queue recovery on write failure.
  */
 
+import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { copyFile, mkdir, readFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import {
   isTabActivityRecord,
@@ -129,9 +130,10 @@ export class TabActivityManager extends EventEmitter {
       primaryFailure = err;
     }
 
+    let recovered;
     try {
       const backupContents = await readFile(this.file + '.bak', 'utf8');
-      return this.parse(backupContents);
+      recovered = this.parse(backupContents);
     } catch (backupError) {
       const backupMissing = (backupError as NodeJS.ErrnoException).code === 'ENOENT';
       if (primaryMissing && backupMissing) {
@@ -139,6 +141,10 @@ export class TabActivityManager extends EventEmitter {
       }
       throw new AggregateError([primaryFailure, backupError], 'Agency tab activity metadata could not be recovered');
     }
+    // A subsequent save copies the primary to .bak. Never let damaged bytes
+    // replace the validated recovery copy. Refuse recovery if preservation fails.
+    if (!primaryMissing) await rename(this.file, this.file + '.corrupt-' + randomUUID());
+    return recovered;
   }
 
   private parse(contents: string): TabActivityRecord[] {

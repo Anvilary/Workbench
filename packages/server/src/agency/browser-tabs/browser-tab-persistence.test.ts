@@ -175,3 +175,16 @@ test('persistence: normalizes multiple selections to lowest order', () => {
   assert.equal(s1.selected, false);
   assert.equal(s3.selected, false);
 });
+
+test('persistence: future schema refuses fallback without quarantining or overwriting either file', async t => {
+  const { store, filePath, dir } = await createFixture(t);
+  const future = JSON.stringify({ version: 999, tabs: [], futureData: 'must retain' });
+  const backup = JSON.stringify({ version: 1, tabs: [] });
+  await writeFile(filePath, future);
+  await writeFile(filePath + '.bak', backup);
+  await assert.rejects(store.load(), /Unsupported browser tab store version/);
+  assert.equal(store.isLoaded, false);
+  assert.equal(await readFile(filePath, 'utf8'), future);
+  assert.equal(await readFile(filePath + '.bak', 'utf8'), backup);
+  assert.equal((await readdir(dir)).some(name => name.includes('.corrupt-')), false);
+});
