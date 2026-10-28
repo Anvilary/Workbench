@@ -140,3 +140,52 @@ The multi-session implementation supersedes the historical single-agent/shell an
 Multi-session delivery checks: typecheck, full check/i18n (internal guide absent and explicitly skipped), production build, npm distribution and installed-package smoke exit 0; server suites 80/80, frontend model 9/9, native systemd 5/5, remediation 6/6, Agency E2E 25/25 and browser 19 captures/5 widths exit 0. Browser shell fixture was made deterministic after a host-shell exit stall; final focused browser run passed. Completed managed PTYs release capacity without removing logical exited history (26-tab real-PTY regression). No live service is installed/enabled/active and no disposable MAW units remain. Deployment, real authentication/keyring and reboot acceptance remain manual.
 
 Draft delivery: [PR #9](https://github.com/alteixeira20/My-Amazing-Workspace/pull/9) targets the unmerged dependency branch. Verified implementation: `687c22676506cc0ff0e9b31df16ee24acd224ef3`; subsequent documentation-only commit records the delivery URL. Feature branch is pushed without force; nothing merged or activated.
+
+## Lane B continuation — Persistent ChatGPT workspace tabs — 2026-10-28
+
+Branch: `feat/maw-web-tabs`. Base commit: `07942a15e5992d7b61e103fffce072969783878e` (main).
+Owns the durable browser-tab domain and adapter contract for ChatGPT workspace tabs.
+See [BROWSER-TABS.md](BROWSER-TABS.md) for full architecture, typed schemas, security model, driver contract for Lane A, and integration hooks.
+
+Key deliverables:
+- Domain schema: `WebTab` with stable ID, workspace ID, title, validated URL, order, selected flag, and ephemeral target reference.
+- Durable persistence: `agency-web-tabs.json` (mode 0o600, atomic writes, `.bak` copy, corrupt quarantine, conservative restart).
+- Security & SSRF defense: Strict HTTPS ChatGPT URL validator rejecting loopback, localhost, private RFC1918 IPs, cloud metadata, non-standard ports, user credentials, and domain lookalikes.
+- Adapter contract: `BrowserTabAdapter` implementing `createTab`, `selectTab`, `listTabs`, `navigateTab`, `closeTab`, `renameTab`, `orderTabs`, `getTabState`, `restore`.
+- Decoupled driver interface: `BrowserControllerDriver` allows Lane A to connect the Neko Chromium controller without coupling to Neko internals.
+- Non-destructive switching: Switching between ChatGPT tabs activates targets without closing or navigating away previous targets.
+- Fail-explicit engine errors: `NullBrowserControllerDriver` throws `BrowserEngineUnavailableError`; failed browser operations safely persist the logical tab but report `session-unavailable` and transition to `runtimeState: 'error'`.
+- Authoritative workspace validation: Production operations require `AgencyWorkspaceStore` or `workspaceValidator`, rejecting unknown, Done, archived workspaces or archived parent projects. Test bypass explicitly flagged (`allowUnvalidatedWorkspacesForTesting: true`).
+- Coherent activation state: Never marks web tab `ready` when `activateTarget()` fails; maintains selection and sets `runtimeState: 'error'`.
+- Idempotency & launch rejection safety: Workspace-scoped launch IDs (`${workspaceId}:${launchId}`) and `.catch(() => undefined).finally(...)` promise cleanup with zero unhandled rejections.
+- Target reconciliation: Persisted `targetRef` treated as untrusted hints, verified via `{ tabId, workspaceId }` metadata before reattachment.
+- 39 focused tests passing 100% across URL validation, persistence & quarantine, adapter lifecycle & isolation, protocol request dispatch, target reconciliation, and error handling.
+- Zero modifications to live service, existing native session runtime, or `AgencyWorkspaceView.tsx`.
+
+Draft delivery: [PR #10](https://github.com/alteixeira20/My-Amazing-Workspace/pull/10) (draft against `main`).
+Verified implementation commit: `b7be13a`; subsequent delivery checkpoint records this PR link. All changes pushed without force; live service untouched.
+
+
+## Activity State and Notification System (Lane C) — 2026-10-28
+
+The activity-state and notification subsystem implements unified, durable notification and 5-state lifecycle management (`idle`, `working`, `finished`, `unknown`, `failed`) across CLI, shell terminal, and browser/web tabs. Continue in `/home/alteixeira20/Projects/My-Amazing-Workspace-notifications` on branch `feat/maw-notifications`, based on starting commit `07942a15e5992d7b61e103fffce072969783878e` (`main`). See [NOTIFICATIONS-STATUS.md](NOTIFICATIONS-STATUS.md) for full architecture, wire protocol specifications, evidence requirements, and validation commands.
+
+Core guarantees implemented:
+- 5-state activity model with strict completion gates (OSC 133 semantic sequences for shells, native turn completion events for CLI, companion extension hooks for browser).
+- Persistent `finished` status until tab inspection/acknowledgement.
+- Strict decoupling of inbox read operations and tab completion acknowledgement.
+- Durable persistence in `agency-notifications.json` with `.bak` recovery and atomic writes.
+- Deduplication of repeated completion events within a time window.
+- Header bell with unread badge, persistent popover inbox, and auto-dismissing floating toasts.
+- Full keyboard accessibility and 9-locale i18n support.
+
+Verification: Shared, server, and web typecheck (0 errors); 9-locale i18n check (100% pass); 4/4 server notification and activity tests pass; 7/7 web notification tests pass; 62/62 server agency tests pass; 9/9 web model tests pass; web production build exits 0.
+
+Lane C Amendment & Final Corrections updates:
+- Distinct per-turn identities: Controlled per-tab turn sequence advances on `working` transitions (`turn-1`, `turn-2`), producing distinct completion alerts for consecutive turns; replayed turn events deduplicate permanently; restart recovery restores highest turn sequence to prevent reuse; workspace tabs remain strictly isolated; unverified providers (Codex, Antigravity) remain Idle or Unknown without fabricated completion events.
+- Functional Bash integration: Command start hooked via `PS0="\[\033]133;C\007\]"` before command execution; command exit hooked via `PROMPT_COMMAND` with `$?` and `133;D;%d\007\033]133;A\007`; command prompt input line via `PS1`. Verified with a real disposable interactive Bash PTY process emitting exit codes 0 and 33. Precise shell terminal integration hook documented for spawning PTYs without touching user dotfiles or modifying shared native session runtime. Zsh integration cleanly hooks `precmd` and `preexec`.
+- Browser bridge credentials & target binding: Default predictable credentials eliminated; registration requires explicit, strong 256-bit cryptographically secure tokens (min 16 chars) bound to explicit `allowedTabIds` (unrelated tabs rejected); default ChatGPT state truthfully reported as `unknown`; limitations formally documented (token proves authorization/binding, not third-party web content accuracy).
+- Durable persistence failure recovery: `TabActivityManager` uses `writeAtomically` with private `0o600` permissions and `.bak` backup copy; write queue failure continuity ensures an individual I/O failure fails visibly to the immediate caller while subsequent writes succeed cleanly; verified with simulated write failure under read-only permissions followed by recovery.
+- Verification findings: Working UI (PASS), Native CLI completion signals (PASS), Shell completion signals (PASS), ChatGPT completion support (UNVERIFIED / LIMITATION DOCUMENTED), Remaining blockers (NONE).
+
+Draft delivery branch: `feat/maw-notifications` pushed to `origin/feat/maw-notifications`. Target: `main`. No live services activated or merged.

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, readFile, rm, writeFile, readdir, mkdir, symlink } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile, readdir, mkdir, symlink, appendFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -1118,4 +1118,33 @@ test('more than 24 logical exited tabs can be retained while completed PTYs rele
     const tabs=runtime.list(row.id).filter(session=>session.tab?.current && !session.tab.closedAt);
     assert.equal(tabs.length,26);assert.ok(tabs.every(session=>session.exitCode===0));assert.equal(registry.list().length,0);
   } finally {runtime.dispose();registry.disposeAll();await rm(cwd,{recursive:true,force:true});}
+});
+
+test('runtime follows explicit scoped Codex turn evidence without a conversation subscriber', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'maw-runtime-codex-events-'));
+  const home = path.join(cwd, 'native'); const nativeId = randomUUID();
+  const f = fixture(cwd, { resolveLaunch: async input => ({ ...input, provider: 'codex',
+    nativeIdentity: { provider: 'codex', home }, file: '/bin/echo', args: [], env: {},
+    session: { kind: 'known', sessionId: nativeId } }) });
+  const events: Array<{ sessionId: string; taskId: string; phase: string }> = [];
+  f.runtime.on('nativeTurn', event => events.push(event));
+  try {
+    await f.runtime.initialize();
+    const session = await f.runtime.create({ kind: 'agent', workspaceId: f.one.id, profileId: agentProfile, cols: 80, rows: 24 });
+    const folder = path.join(home, 'sessions', '2026', '10', '28'); await mkdir(folder, { recursive: true });
+    const file = path.join(folder, `rollout-2026-10-28T00-00-00-${nativeId}.jsonl`);
+    const at = new Date(Date.now() + 10).toISOString();
+    const line = (type: string, payload: object) => JSON.stringify({ timestamp: at, type, payload }) + '\n';
+    await writeFile(file, line('session_meta', { id: nativeId, cwd }) +
+      line('event_msg', { type: 'task_started', turn_id: 'first' }) +
+      line('event_msg', { type: 'task_complete', turn_id: 'first' }));
+    await until(() => events.length === 2);
+    assert.deepEqual(events.map(row => row.phase), ['working', 'finished']);
+    assert.equal(events[1]?.sessionId, session.id);
+    assert.equal(events[1]?.taskId, `${nativeId}:first`);
+    await appendFile(file, line('event_msg', { type: 'task_complete', turn_id: 'first' }));
+    await f.runtime.stop(session.id);
+    await until(() => f.runtime.get(session.id)?.lifecycle === 'exited');
+    assert.equal(events.length, 2);
+  } finally { f.runtime.dispose(); await rm(cwd, { recursive: true, force: true }); }
 });

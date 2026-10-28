@@ -38,6 +38,8 @@ import { OutputBuffer } from './output-buffer.js';
 import { PtySession, type LaunchSpec } from './pty-session.js';
 import { createPtyScreen, type PtyScreen } from './pty-screen.js';
 import type { ShellLocation } from './shell-locator.js';
+import { prepareIntegratedShell } from './agency/shell-integration.js';
+import { integrationsDir } from './paths.js';
 
 import { ActivityBook, wakeActionFor, type ActivityEntry } from './terminal-activity.js';
 import { TerminalOpenError, resolveLaunchPlan } from './terminal-open-error.js';
@@ -241,6 +243,8 @@ export class TerminalRegistry extends EventEmitter {
     private readonly sessionAgentOf: SessionAgentLookup = () => null,
     /** Hito 48. Sin quien conteste, ninguna pestana sabe su rama: la barra es la de siempre. */
     private readonly tabWorktreeOf: TabWorktreeLookup = () => Promise.resolve(null),
+    /** Disposable integration directory for fixture PTYs. */
+    private readonly shellIntegrationDir: () => string = () => integrationsDir() + '/shell',
   ) {
     super();
   }
@@ -660,9 +664,15 @@ export class TerminalRegistry extends EventEmitter {
       }
       launch = { file: launcher.shell.file, args: [...launcher.shell.args] };
     }
-    const env = entry.agencyLaunch === null
+    let env = entry.agencyLaunch === null
       ? this.agents.composedEnvironment(process.env)
       : { ...entry.agencyLaunch.env };
+    if (entry.agencyManaged && kind === 'shell') {
+      const integrated = await prepareIntegratedShell(launch, env, this.shellIntegrationDir());
+      launch = integrated.launch;
+      env = integrated.env;
+      if (this.terminals.get(terminalId) !== entry) return false;
+    }
 
     const launchedAt = Date.now();
     let session: PtySession;
