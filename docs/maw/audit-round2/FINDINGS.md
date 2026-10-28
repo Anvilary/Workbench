@@ -23,7 +23,16 @@ error now bypasses fallback for both primary and backup, preserving the existing
 BrowserTabStoreError interface. Evidence `/tmp/maw-round2-schema-before.log` and
 `/tmp/maw-round2-persistence-after.log` (56 focused tests PASS).
 
+## R2-03 — P3 — duplicate selection broadcasts global state (IMPROVED)
+
+Coordinator `snapshot()` unconditionally broadcasts both domains even for no-op
+native selection. A real server with 15 PTYs sends 300 messages / 1,929,300 bytes
+for 100 repeated selects. Domain comparison reduces that to 100 / 963,500.
+Direct responses/reconnect snapshots remain unconditional. Focused coordinator
+regression, 120-second before/after soak and native/Neko acceptance pass.
+This is an efficiency defect; no visible latency improvement is claimed.
+See BENCHMARKS.md and OPTIMIZATIONS.md, including changed-selection tail cost.
+
 ## Pending hypotheses
 
-Coordinator global snapshot amplification is measured; optimization pending.
 Resource growth from retained history is distinct from a leak; no confirmed leak.
