@@ -117,6 +117,15 @@ try {
   }
   results.cycles = cycle; results.reconnects = reconnects;
   results.ui = await page.evaluate(() => ({ longTasksMs: window.auditLongTasks, layoutShift: window.auditShifts.reduce((a,b)=>a+b,0) }));
+  const reloads = Number(process.env.MAW_ROUND2_RELOADS || 0);
+  assert.ok(Number.isInteger(reloads) && reloads >= 0 && reloads <= 100);
+  if (reloads) {
+    for (let i = 0; i < reloads; i++) { await page.reload(); await page.locator('.agency-app').waitFor(); }
+    results.reloadDiagnostic = { reloads, beforeGC: await cdp.send('Memory.getDOMCounters') };
+    // Diagnostic only: never force GC in interaction latency measurements.
+    await cdp.send('HeapProfiler.collectGarbage');
+    results.reloadDiagnostic.afterGC = await cdp.send('Memory.getDOMCounters');
+  }
   await context.tracing.stop({path:path.join(out, 'interaction-trace.zip')});
   await browser.close(); browser = null; cdp = null;
   for (const s of sessions) await request({ type: 'agency.tab.action', workspaceId: s.workspaceId, tabId: s.tab.id, action: 'close' });

@@ -12,6 +12,8 @@ import { handleWebTabMessage } from './browser-tabs/web-tab-handler.js';
 export class AgencyTabCoordinator {
   readonly mutations = new WorkspaceMutex();
   private readonly browserSurface = new WorkspaceMutex();
+  private lastNativeSnapshot: string | undefined;
+  private lastBrowserSnapshot: string | undefined;
 
   constructor(
     readonly native: AgencySessionRuntime,
@@ -40,8 +42,20 @@ export class AgencyTabCoordinator {
   }
 
   snapshot(): void {
-    this.publish({ type: 'agency.sessions.snapshot', requestId: '', sessions: this.native.list() });
-    this.publish({ type: 'agency.webTabs.snapshot', requestId: '', tabs: this.browser.listTabs() });
+    // New/reconnecting sockets receive unconditional snapshots at connection
+    // setup. Broadcast only changed domains here, including partial failures.
+    const sessions = this.native.list();
+    const nativeSnapshot = JSON.stringify(sessions);
+    if (nativeSnapshot !== this.lastNativeSnapshot) {
+      this.publish({ type: 'agency.sessions.snapshot', requestId: '', sessions });
+      this.lastNativeSnapshot = nativeSnapshot;
+    }
+    const tabs = this.browser.listTabs();
+    const browserSnapshot = JSON.stringify(tabs);
+    if (browserSnapshot !== this.lastBrowserSnapshot) {
+      this.publish({ type: 'agency.webTabs.snapshot', requestId: '', tabs });
+      this.lastBrowserSnapshot = browserSnapshot;
+    }
   }
 
   /** Resolve a partial cross-store selection commit conservatively on startup. */

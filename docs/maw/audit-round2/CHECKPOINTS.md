@@ -85,3 +85,29 @@ sources and safe continuation requirements are in RELIABILITY.md.
 Next: commit measured coordinator optimization after matching after-run finishes,
 assess regressions and incomplete acceptance, push draft PR. Existing user state
 and services remain untouched; fresh fixture cleanup pending final measurements.
+
+## CP2/CP6 — measured snapshot reduction
+
+O2-01: coordinator publishes only changed domains; finally snapshots still run
+on failures, and direct responses/connection snapshots are preserved. Repeat
+100 selects: 300→100 messages, 1,929,300→963,500 bytes. Real selected-state +
+two-rAF p95 50.2→50.6 ms: no visible speed improvement. Alternating WS p95
+.847→1.475 ms in shared-host runs; extra comparison cost and overlapping setup
+are explicitly recorded, not hidden. See BENCHMARKS.md/OPTIMIZATIONS.md.
+Before/after each complete 34 cycles in a 120-second workload. FD and all PTY
+children recover; historical session rows are retained intentionally. CDP listener
+count increased across reloads; separate diagnostic GC investigation pending.
+
+Final broad regression command as CP0: 179 PASS, 0 skipped. Web 19 PASS;
+Python controller 19 PASS; real native acceptance 25 PASS; remediation 6/6;
+`pnpm check` PASS (internal guide check explicitly SKIP); typecheck all packages
+PASS; production build PASS (existing large chunk warning). Initial TS narrowing
+in a new test was corrected and typecheck rerun. No product type errors remain.
+Raw logs `/tmp/maw-round2-{final-*,check,native-e2e,remediation}.log`; compact
+results committed in evidence/regressions.json. No additional production source
+changes after these checks. Cleanup verified unique owned container ID, audit
+label, no volumes, read-only fixture mounts and loopback published ports before
+removing only that container. See evidence/cleanup.json.
+
+Next: finish reload/GC diagnosis and responsive/release limitations, push draft
+PR and verify its CI startup status. No merge or deployment authorized.

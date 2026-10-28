@@ -34,3 +34,25 @@ for (const kind of ['notifications', 'activity'] as const) test(`${kind}: recove
   if (twice instanceof AgencyNotificationStore) assert.equal(twice.list()[0]?.deduplicationKey, backup.notifications[0].deduplicationKey);
   else assert.ok(twice.getRecord(workspaceId, tabId));
 });
+
+for (const kind of ['notifications', 'activity'] as const) test(`${kind}: both corrupt refuse startup and retain evidence; missing primary restores backup`, async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'maw-round2-corruption-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const file = path.join(root, kind + '.json');
+  const notifications = new AgencyNotificationStore(path.join(root, 'inbox.json')); await notifications.initialize();
+  const open = async () => {
+    const store = kind === 'notifications' ? new AgencyNotificationStore(file) : new TabActivityManager({ notificationStore: notifications, filePath: file });
+    if (store instanceof TabActivityManager) t.after(() => store.dispose());
+    await store.initialize();
+    return store;
+  };
+  await writeFile(file, '{primary broken'); await writeFile(file + '.bak', '{backup broken');
+  await assert.rejects(open(), AggregateError);
+  assert.equal(await readFile(file, 'utf8'), '{primary broken');
+  assert.equal(await readFile(file + '.bak', 'utf8'), '{backup broken');
+  await rm(file);
+  const backup = JSON.stringify(kind === 'notifications' ? { version: 1, notifications: [] } : { version: 1, records: [], pendingNotifications: [] });
+  await writeFile(file + '.bak', backup);
+  await open();
+  assert.equal(await readFile(file + '.bak', 'utf8'), backup, 'recovery must retain the only validated copy');
+});
