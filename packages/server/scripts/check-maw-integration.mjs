@@ -245,11 +245,17 @@ try {
   }
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.screenshot({ path: path.join(out, 'integrated-workspace.png'), fullPage: true });
+  await request({type:'agency.tab.rename',workspaceId:alpha.id,tabId:shellA.tab.id,name:'Audit shell'});
+  assert.equal((await snapshot()).sessions.find(s=>s.id===shellA.id).terminalId,shellA.terminalId);
+  await page.reload();
+  await page.getByRole('tab',{name:'Audit shell'}).waitFor();
   const notificationsBeforeRestart = (await notifications()).notifications;
   const targetBeforeRestart = webA?.targetRef;
   await page.close();
   await stop(); await start();
   state = await notifications();
+  assert.equal((await snapshot()).sessions.find(s=>s.tab?.id===shellA.tab.id && s.tab.current).tab.name,'Audit shell');
+  check('stable native tab rename survives page refresh and MAW restart');
   assert.deepEqual(state.notifications.map(item => [item.id, item.read]).sort(), notificationsBeforeRestart.map(item => [item.id, item.read]).sort());
   if (webA) {
     const restored = (await selectWeb(webA)).tab;

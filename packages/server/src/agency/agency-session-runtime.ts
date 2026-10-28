@@ -12,6 +12,7 @@ import type {
   SessionActivity,
   WorkspaceId,
 } from '@agent-workbench/shared';
+import { validateWebTabTitle } from '@agent-workbench/shared';
 import type { AgentId, TerminalActivity, TerminalId } from '@agent-workbench/shared';
 import type { OpenTerminalOptions, TerminalRegistry } from '../terminal-registry.js';
 import { isInsideProtected } from '../directory-picker.js';
@@ -573,6 +574,26 @@ export class AgencySessionRuntime extends EventEmitter {
     if (source.kind === 'agent' && !source.nativeSessionId) throw new AgencyRuntimeError('session-unavailable', 'Native conversation is unknown; start a new CLI explicitly');
     return this.create({ workspaceId, tabId, kind: source.kind, cols: 100, rows: 30,
       ...(source.kind === 'agent' ? { profileId: source.profileId, resumeNativeSessionId: source.nativeSessionId! } : {}) } as AgencySessionCreateInput);
+  }
+
+  async renameTab(workspaceId: WorkspaceId, tabId: string, name: string): Promise<void> {
+    this.assertReady();
+    checkId(workspaceId); checkId(tabId);
+    if (!validateWebTabTitle(name)) throw new AgencyRuntimeError('invalid-request', 'Invalid tab title');
+    await this.workspaces.withSessionReservation(workspaceId, async () => {
+      const source = this.list(workspaceId).find(s => s.tab?.id === tabId && s.tab.current && !s.tab.closedAt);
+      if (!source?.tab) throw new AgencyRuntimeError('not-found', 'Tab does not exist');
+      const next = { ...source, tab: { ...source.tab, name: name.trim() }, updatedAt: NOW() };
+      this.sessions.set(source.id, next);
+      try { await this.persist(); }
+      catch (error) {
+        // PTY events can arrive while saving; roll back only the title, never process state.
+        const current = this.sessions.get(source.id)!;
+        this.sessions.set(source.id, { ...current, tab: { ...current.tab!, name: source.tab.name } });
+        throw error;
+      }
+      this.emit('changed', this.sessions.get(source.id));
+    });
   }
 
   async tabAction(workspaceId: WorkspaceId, tabId: string, action: 'select' | 'close' | 'resume'): Promise<void> {
