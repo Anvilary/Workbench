@@ -77,6 +77,7 @@ export type SessionAgentLookup = (sessionId: string) => AgentId | null;
 export type TabWorktreeLookup = (cwd: string) => Promise<TabWorktree | null>;
 
 export interface AgencyPreparedTerminalLaunch {
+  nativeIdentity?: Readonly<{ provider: string; home: string }> | null;
   file: string;
   args: readonly string[];
   env: Record<string, string>;
@@ -293,6 +294,11 @@ export class TerminalRegistry extends EventEmitter {
   }
 
   /** Descriptor de una pestana, o null si ya no existe. */
+  nativeIdentityOf(terminalId: TerminalId): Readonly<{ provider: string; home: string }> | null | undefined {
+    const entry = this.terminals.get(terminalId);
+    return entry?.agencyManaged ? entry.agencyLaunch?.nativeIdentity ?? null : undefined;
+  }
+
   get(terminalId: TerminalId): TerminalDescriptor | null {
     return this.terminals.get(terminalId)?.descriptor ?? null;
   }
@@ -442,6 +448,8 @@ export class TerminalRegistry extends EventEmitter {
       launching: true,
       agencyManaged: options.agencyManaged === true,
       agencyLaunch: options.agencyLaunch === undefined ? null : {
+        nativeIdentity: options.agencyLaunch.nativeIdentity == null ? null :
+          Object.freeze({ ...options.agencyLaunch.nativeIdentity }),
         file: options.agencyLaunch.file,
         args: [...options.agencyLaunch.args],
         env: { ...options.agencyLaunch.env },
@@ -740,6 +748,7 @@ export class TerminalRegistry extends EventEmitter {
       let hook: LaunchHook | null = null;
       let finished = false;
       hook = adapter.onSpawned({
+        ...(entry.agencyManaged ? { nativeIdentity: entry.agencyLaunch?.nativeIdentity ?? null } : {}),
         terminalId,
         sessionId: launchedSessionId,
         cwd,

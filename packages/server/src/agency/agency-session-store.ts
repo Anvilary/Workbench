@@ -35,6 +35,11 @@ function validSession(value: unknown): value is AgencyRuntimeSession {
     return value.profileId === null && value.nativeSessionId === null &&
       value.selectedModel === null && value.selectedEffort === null;
   }
+  if (value.nativeIdentity != null && (!record(value.nativeIdentity) ||
+      !['codex', 'claude-code', 'antigravity'].includes(value.nativeIdentity.provider as string) ||
+      typeof value.nativeIdentity.home !== 'string' || !path.isAbsolute(value.nativeIdentity.home))) return false;
+  if (value.historyAvailability !== undefined &&
+      value.historyAvailability !== 'available' && value.historyAvailability !== 'unavailable') return false;
   return value.kind === 'agent' && typeof value.profileId === 'string' && value.profileId.length > 0 &&
     (value.nativeSessionId === null || typeof value.nativeSessionId === 'string') &&
     (value.selectedModel === null || typeof value.selectedModel === 'string') &&

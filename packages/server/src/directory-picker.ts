@@ -142,13 +142,14 @@ export class DirectoryPickers {
   constructor(private readonly protectedDirs: readonly string[]) {}
 
   /** Abre un selector en el directorio del usuario. */
-  async open(): Promise<DirectoryPickerListing> {
-    if (this.pickers.size >= MAX_PICKERS) {
+  async open(id: string = randomUUID()): Promise<DirectoryPickerListing> {
+    if (this.pickers.has(id) || this.pickers.size >= MAX_PICKERS) {
       throw new DirectoryPickerError(serverText('pickerTooMany'));
     }
-    const picker: Picker = { id: randomUUID(), current: homedir(), entries: new Set() };
+    const picker: Picker = { id, current: homedir(), entries: new Set() };
     this.pickers.set(picker.id, picker);
-    return this.listing(picker);
+    try { return await this.listing(picker); }
+    catch (error) { this.pickers.delete(picker.id); throw error; }
   }
 
   close(pickerId: string): void {

@@ -102,6 +102,8 @@ export interface AgentEnvironment {
 
 /** Lo que recibe el gancho posterior al lanzamiento. */
 export interface SpawnedContext {
+  /** undefined: Workbench native behavior; null: opaque Agency identity. */
+  nativeIdentity?: Readonly<{ provider: string; home: string }> | null;
   terminalId: string;
   /** `''` si la sesion se descubre despues (`LaunchSession` de tipo `discover`). */
   sessionId: string;
@@ -473,7 +475,7 @@ export interface HistorySource {
   /** ¿Hay algo que reanudar? Decide entre reanudar y sesion nueva al despertar. */
   exists(cwd: string, sessionId: string): Promise<boolean>;
   /** `options` ausente: como la sigue el hub. Ver `FollowOptions` y `wholeRead`. */
-  follow(target: { cwd: string; sessionId: string }, options?: FollowOptions): SessionFollower;
+  follow(target: { cwd: string; sessionId: string; nativeHome?: string | null }, options?: FollowOptions): SessionFollower;
   readonly plans: PlanSource | null;
   /**
    * Cada cuantos ms el hub relee una sesion que alguien sigue, ademas de los

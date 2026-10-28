@@ -60,28 +60,36 @@ export function FolderPicker({
   const createRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
+    const open = () => {
+      const id = crypto.randomUUID();
+      pickerId.current = id;
+      setListing(null);
+      setProblem(null);
+      connection.sendImmediate({ type: 'picker.open', pickerId: id });
+    };
     const offMessage = connection.onMessage((message: ServerMessage) => {
-      if (message.type === 'picker.listing') {
-        pickerId.current = message.listing.pickerId;
+      if (message.type === 'picker.listing' && message.listing.pickerId === pickerId.current) {
         setListing(message.listing);
         setProblem(null);
         setCreating(false);
         setDraftName('');
-        return;
-      }
-      // Un error del selector se muestra en el dialogo y no en la barra de
-      // arriba: pasa aca adentro y aca es donde se lo mira.
-      if (message.type === 'error' && message.code === 'picker-failed') {
+      } else if (message.type === 'error' && message.code === 'picker-failed' &&
+                 message.requestId === pickerId.current) {
         setProblem(serverTextMessage(message.text));
       }
     });
-
-    connection.send({ type: 'picker.open' });
-
+    const offStatus = connection.onStatus((status) => {
+      pickerId.current = null;
+      setListing(null);
+      if (status === 'open') open();
+    });
+    if (connection.getStatus() === 'open') open();
     return () => {
       offMessage();
+      offStatus();
       const id = pickerId.current;
-      if (id !== null) connection.send({ type: 'picker.close', pickerId: id });
+      pickerId.current = null;
+      if (id !== null) connection.sendImmediate({ type: 'picker.close', pickerId: id });
     };
   }, [connection]);
 
@@ -106,7 +114,7 @@ export function FolderPicker({
     (name: string) => {
       const id = pickerId.current;
       if (id === null) return;
-      connection.send({ type: 'picker.enter', pickerId: id, name });
+      connection.sendImmediate({ type: 'picker.enter', pickerId: id, name });
     },
     [connection],
   );
@@ -115,7 +123,7 @@ export function FolderPicker({
     (rootIndex: number) => {
       const id = pickerId.current;
       if (id === null) return;
-      connection.send({ type: 'picker.root', pickerId: id, rootIndex });
+      connection.sendImmediate({ type: 'picker.root', pickerId: id, rootIndex });
     },
     [connection],
   );
@@ -124,7 +132,7 @@ export function FolderPicker({
     const id = pickerId.current;
     const name = draftName.trim();
     if (id === null || name.length === 0) return;
-    connection.send({ type: 'picker.create', pickerId: id, name });
+    connection.sendImmediate({ type: 'picker.create', pickerId: id, name });
   }, [connection, draftName]);
 
   return (
@@ -142,8 +150,9 @@ export function FolderPicker({
           </button>
         </header>
 
+        {problem !== null && <p className="picker-problem" role="alert">{problem}</p>}
         {listing === null ? (
-          <p className="panel-note">{t('picker.loading')}</p>
+          problem === null ? <p className="panel-note">{t('picker.loading')}</p> : null
         ) : (
           <>
             <div className="picker-roots">
@@ -184,7 +193,6 @@ export function FolderPicker({
               {listing.truncated && <p className="panel-note">{t('picker.truncated')}</p>}
             </div>
 
-            {problem !== null && <p className="picker-problem">{problem}</p>}
 
             <footer className="picker-footer">
               {creating ? (

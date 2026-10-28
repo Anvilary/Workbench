@@ -64,7 +64,8 @@ export function AgencyWorkspaceView({
   const layout = workspaceLayout(hasAgent || addingAgent, hasShell);
   const hasBoth = layout === 'combined';
   // Native PTY first until a provider produces real structured events.
-  const nativeFallback = !!agent?.terminalId && feed.events.length === 0;
+  const historyUnavailable = (agent ?? pastAgent)?.historyAvailability === 'unavailable';
+  const nativeFallback = !!agent?.terminalId && (historyUnavailable || feed.events.length === 0);
   const nativeView = !!agentTerminalId && (showNative || nativeFallback);
 
   const workspaceStatus = useMemo(() => {
@@ -186,13 +187,14 @@ export function AgencyWorkspaceView({
                 onClick={() => stop(agent.terminalId)}>{t('agency.ui.stopAgent')}</button>}
             </div>
             <div className="agency-agent-body">
-              {nativeFallback && <p className="agency-native-fallback" role="status">{t('agency.ui.unverifiedHistory')}</p>}
+              {historyUnavailable && <p className="agency-native-fallback" role="status">{t('agency.ui.unverifiedHistory')}</p>}
               {nativeView && agentTerminalId ? <AgentTerminal terminalId={agentTerminalId} connection={connection} /> :
-                <AgencyTranscript events={feed.events} onOpenCli={() => setShowNative(true)} />}
+                <AgencyTranscript events={historyUnavailable ? [] : feed.events} onOpenCli={() => setShowNative(true)} />}
             </div>
             <AgencyComposer draft={draft} onDraft={onDraft} profiles={profiles} profileId={profileId}
               onProfile={(id) => { setProfileId(id); setChoice({ model: null, effort: null }); }} agent={agent} selectedModel={model} selectedEffort={effort}
               onSelection={selectModel} onLaunch={launchAgent} onSubmit={submitPrompt}
+              canConfigureProfile={!connection.isRemoteClient()}
               onConfigureProfile={async (selectedProfile, executable, args) => {
                 const result = await request({ type: 'agency.profile.configure', profileId: selectedProfile.id, executable, args });
                 if (result.type !== 'agency.profile.configured') throw new Error(t('agency.ui.profileSettingsWereNotConfirmed'));
