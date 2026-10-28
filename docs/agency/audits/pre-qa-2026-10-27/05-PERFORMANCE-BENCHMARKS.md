@@ -140,3 +140,17 @@ for(let p=0;p<8;p++) {
  }
 }
 ```
+
+## Continuation 02 — sustained eight-PTY workload (2026-10-28)
+
+Real production server / Chrome 155, same hardware and pinned source; ten projects / **56** workspaces (50 plus six load fixtures), eight concurrent shell PTYs plus two idle agent fixtures. Eight Python generators each emit 260-character lines with 10 ms sleep for a maximum 60 seconds. An independent attached socket counts all eight streams. During 60 browser switches, alternate Combined Workspace and Agent Only; focus composer, type `abc`, assert its value ends with abc, then wait 400 ms. Send Ctrl+C to generators, perform 20 detach/attach cycles and await actual terminal.replay. Tear down owned processes and temp directories. Observed 5,980,506 output bytes across 29,238 ms (~204.5 kB/s overall). This is a bounded ~29-second trial, not a soak or throughput ceiling.
+
+| Measurement | p50 ms | p95 ms | max ms | n |
+|---|---:|---:|---:|---:|
+| Loaded navigation, visible workspace + aria-current | 59.12 | 68.79 | 71.91 | 60 |
+| Composer type abc + value check | 9.92 | 14.53 | 20.18 | 60 |
+| Socket terminal replay delivery | 1.72 | 3.59 | 4.73 | 20 |
+
+Nearest-rank p95; median averages central pair; wall clock includes Playwright/WS polling overhead. Replay delivery does not measure completion of xterm painting. Resources sampled before load and every fifth switch (13 observations): server launcher process-group summed RSS 360428..367440 KiB (first/last), fd count 84 initially, 83 then 81 stable; three launcher/server group processes (PTY children in other process groups are excluded). Summed RSS is not PSS or server heap. Browser CDP metrics after forced GC, before/after: JS heap 4,998,296 / 7,844,004 bytes; DOM nodes 902 / 989; event listeners 373 / 553. ScriptDuration delta 1.801 s; TaskDuration delta 6.525 s. These are cumulative main-thread execution costs including parsing/dispatch/rendering, not isolated parser costs. Listener growth requires attribution/longer investigation; do not call this proof of a production leak or a material bottleneck. No fd growth observed; no latency degradation established. Do not refactor performance before QA on this evidence.
+
+Runnable ephemeral fixture `/tmp/agency-audit-sustained.mjs`, derived from 05 scale harness: add six picker-created shell workspaces, attach all eight shell IDs on one observer socket, send the Python command from the short-output fixture with sleep(0.01)/6000 iterations, run the 60 switch/type/sleep cycles above, sample /proc as earlier, and use CDP Performance.getMetrics plus HeapProfiler.collectGarbage. Original workload design and metrics remain preserved above.
