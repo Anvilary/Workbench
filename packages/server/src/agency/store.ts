@@ -61,26 +61,43 @@ export function parseAgencySnapshot(value: unknown): Snapshot {
         projectIds.has(valueProject['id'])) {
       throw new AgencyStoreError('internal-error', 'Invalid or duplicate Agency project');
     }
+    const status = valueProject['status'] === undefined ? 'active' : valueProject['status'];
+    if (status !== 'active' && status !== 'archived') {
+      throw new AgencyStoreError('internal-error', 'Invalid project status');
+    }
+    const archivedAt = valueProject['archivedAt'] === undefined || valueProject['archivedAt'] === null
+      ? null : valueProject['archivedAt'];
+    if (archivedAt !== null && !validTime(archivedAt)) {
+      throw new AgencyStoreError('internal-error', 'Invalid project archivedAt');
+    }
     projectIds.add(valueProject['id']);
     projects.push({
       id: valueProject['id'] as ProjectId,
       name: valueProject['name'],
+      status,
       createdAt: valueProject['createdAt'],
       updatedAt: valueProject['updatedAt'],
+      archivedAt,
     });
   }
   for (const valueWorkspace of value['workspaces']) {
+    const wStatus = valueWorkspace['status'];
     if (!record(valueWorkspace) || !validId(valueWorkspace['id']) ||
         !validId(valueWorkspace['projectId']) ||
         !projectIds.has(valueWorkspace['projectId']) ||
         !validName(valueWorkspace['name']) || !validCwd(valueWorkspace['cwd']) ||
-        (valueWorkspace['status'] !== 'active' && valueWorkspace['status'] !== 'done') ||
+        (wStatus !== 'active' && wStatus !== 'done' && wStatus !== 'archived') ||
         !validTime(valueWorkspace['createdAt']) || !validTime(valueWorkspace['updatedAt']) ||
         !(valueWorkspace['doneAt'] === null || validTime(valueWorkspace['doneAt'])) ||
-        (valueWorkspace['status'] === 'active' && valueWorkspace['doneAt'] !== null) ||
-        (valueWorkspace['status'] === 'done' && valueWorkspace['doneAt'] === null) ||
+        (wStatus === 'active' && valueWorkspace['doneAt'] !== null) ||
+        (wStatus === 'done' && valueWorkspace['doneAt'] === null) ||
         workspaceIds.has(valueWorkspace['id'])) {
       throw new AgencyStoreError('internal-error', 'Invalid or duplicate Agency workspace');
+    }
+    const archivedAt = valueWorkspace['archivedAt'] === undefined || valueWorkspace['archivedAt'] === null
+      ? null : valueWorkspace['archivedAt'];
+    if (archivedAt !== null && !validTime(archivedAt)) {
+      throw new AgencyStoreError('internal-error', 'Invalid workspace archivedAt');
     }
     workspaceIds.add(valueWorkspace['id']);
     workspaces.push({
@@ -88,10 +105,11 @@ export function parseAgencySnapshot(value: unknown): Snapshot {
       projectId: valueWorkspace['projectId'] as ProjectId,
       name: valueWorkspace['name'],
       cwd: valueWorkspace['cwd'],
-      status: valueWorkspace['status'],
+      status: wStatus,
       createdAt: valueWorkspace['createdAt'],
       updatedAt: valueWorkspace['updatedAt'],
       doneAt: valueWorkspace['doneAt'],
+      archivedAt,
     });
   }
   return { version: VERSION, projects, workspaces };
@@ -216,7 +234,14 @@ export class AgencyWorkspaceStore {
     const clean = checkedName(name);
     return this.transact((state) => {
       const now = new Date().toISOString();
-      const project: AgencyProject = { id: randomUUID() as ProjectId, name: clean, createdAt: now, updatedAt: now };
+      const project: AgencyProject = {
+        id: randomUUID() as ProjectId,
+        name: clean,
+        status: 'active',
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+      };
       return [{ ...state, projects: [...state.projects, project] }, { ...project }];
     });
   }
@@ -227,6 +252,36 @@ export class AgencyWorkspaceStore {
       const original = state.projects.find((p) => p.id === id);
       if (!original) throw new AgencyStoreError('not-found', 'Project not found');
       const project = { ...original, name: clean, updatedAt: new Date().toISOString() };
+      return [{ ...state, projects: state.projects.map((p) => p.id === id ? project : p) }, { ...project }];
+    });
+  }
+
+  async archiveProject(id: ProjectId): Promise<AgencyProject> {
+    return this.transact((state) => {
+      const original = state.projects.find((p) => p.id === id);
+      if (!original) throw new AgencyStoreError('not-found', 'Project not found');
+      const now = new Date().toISOString();
+      const project: AgencyProject = {
+        ...original,
+        status: 'archived',
+        archivedAt: now,
+        updatedAt: now,
+      };
+      return [{ ...state, projects: state.projects.map((p) => p.id === id ? project : p) }, { ...project }];
+    });
+  }
+
+  async unarchiveProject(id: ProjectId): Promise<AgencyProject> {
+    return this.transact((state) => {
+      const original = state.projects.find((p) => p.id === id);
+      if (!original) throw new AgencyStoreError('not-found', 'Project not found');
+      const now = new Date().toISOString();
+      const project: AgencyProject = {
+        ...original,
+        status: 'active',
+        archivedAt: null,
+        updatedAt: now,
+      };
       return [{ ...state, projects: state.projects.map((p) => p.id === id ? project : p) }, { ...project }];
     });
   }
@@ -266,7 +321,7 @@ export class AgencyWorkspaceStore {
       const now = new Date().toISOString();
       const workspace: AgencyWorkspace = {
         id: randomUUID() as WorkspaceId, projectId, name: clean, cwd: canonicalCwd,
-        status: 'active', createdAt: now, updatedAt: now, doneAt: null,
+        status: 'active', createdAt: now, updatedAt: now, doneAt: null, archivedAt: null,
       };
       return [{ ...state, workspaces: [...state.workspaces, workspace] }, { ...workspace }];
     });
@@ -281,9 +336,25 @@ export class AgencyWorkspaceStore {
       w.status === 'done' ? w : { ...w, status: 'done', doneAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
   }
 
+  async archiveWorkspace(id: WorkspaceId): Promise<AgencyWorkspace> {
+    return this.updateWorkspace(id, (w) =>
+      w.status === 'archived' ? w : {
+        ...w,
+        status: 'archived',
+        archivedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+  }
+
   async restore(id: WorkspaceId): Promise<AgencyWorkspace> {
     return this.updateWorkspace(id, (w) =>
-      w.status === 'active' ? w : { ...w, status: 'active', doneAt: null, updatedAt: new Date().toISOString() });
+      w.status === 'active' ? w : {
+        ...w,
+        status: 'active',
+        doneAt: null,
+        archivedAt: null,
+        updatedAt: new Date().toISOString(),
+      });
   }
 
   private updateWorkspace(id: WorkspaceId, fn: (w: AgencyWorkspace) => AgencyWorkspace): Promise<AgencyWorkspace> {

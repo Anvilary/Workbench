@@ -17,14 +17,18 @@ export type RuntimeSessionId = string & { readonly __agencyRuntimeSessionId: uni
 export type IsoTimestamp = string;
 export type RequestId = string;
 
+export type ProjectStatus = 'active' | 'archived';
+
 export interface AgencyProject {
   id: ProjectId;
   name: string;
+  status?: ProjectStatus;
   createdAt: IsoTimestamp;
   updatedAt: IsoTimestamp;
+  archivedAt?: IsoTimestamp | null;
 }
 
-export type WorkspaceStatus = 'active' | 'done';
+export type WorkspaceStatus = 'active' | 'done' | 'archived';
 
 export interface AgencyWorkspace {
   id: WorkspaceId;
@@ -36,6 +40,7 @@ export interface AgencyWorkspace {
   createdAt: IsoTimestamp;
   updatedAt: IsoTimestamp;
   doneAt: IsoTimestamp | null;
+  archivedAt?: IsoTimestamp | null;
 }
 
 export type CliProvider = 'codex' | 'antigravity' | 'claude-code';
@@ -123,6 +128,8 @@ export type AgencyClientMessage =
   | AgencyClientRequest<'agency.projects.list'>
   | (AgencyClientRequest<'agency.project.create'> & { name: string })
   | (AgencyClientRequest<'agency.project.update'> & { projectId: ProjectId; name: string })
+  | (AgencyClientRequest<'agency.project.archive'> & { projectId: ProjectId })
+  | (AgencyClientRequest<'agency.project.unarchive'> & { projectId: ProjectId })
   | (AgencyClientRequest<'agency.project.delete'> & { projectId: ProjectId })
   | (AgencyClientRequest<'agency.workspaces.list'> & { projectId?: ProjectId })
   | (AgencyClientRequest<'agency.workspace.create'> & {
@@ -132,6 +139,7 @@ export type AgencyClientMessage =
       pickerId: string;
     })
   | (AgencyClientRequest<'agency.workspace.update'> & { workspaceId: WorkspaceId; name: string })
+  | (AgencyClientRequest<'agency.workspace.archive'> & { workspaceId: WorkspaceId })
   | (AgencyClientRequest<'agency.workspace.done'> & { workspaceId: WorkspaceId })
   | (AgencyClientRequest<'agency.workspace.restore'> & { workspaceId: WorkspaceId })
   | (AgencyClientRequest<'agency.workspace.delete'> & { workspaceId: WorkspaceId })
@@ -184,10 +192,13 @@ export type AgencyServerMessage =
   | { type: 'agency.projects.snapshot'; requestId: RequestId; projects: readonly AgencyProject[] }
   | { type: 'agency.project.created'; requestId: RequestId; project: AgencyProject }
   | { type: 'agency.project.updated'; requestId: RequestId; project: AgencyProject }
+  | { type: 'agency.project.archived'; requestId: RequestId; project: AgencyProject }
+  | { type: 'agency.project.unarchived'; requestId: RequestId; project: AgencyProject }
   | { type: 'agency.project.deleted'; requestId: RequestId; projectId: ProjectId }
   | { type: 'agency.workspaces.snapshot'; requestId: RequestId; workspaces: readonly AgencyWorkspace[] }
   | { type: 'agency.workspace.created'; requestId: RequestId; workspace: AgencyWorkspace }
   | { type: 'agency.workspace.updated'; requestId: RequestId; workspace: AgencyWorkspace }
+  | { type: 'agency.workspace.archived'; requestId: RequestId; workspace: AgencyWorkspace }
   | { type: 'agency.workspace.done'; requestId: RequestId; workspace: AgencyWorkspace }
   | { type: 'agency.workspace.restored'; requestId: RequestId; workspace: AgencyWorkspace }
   | { type: 'agency.workspace.deleted'; requestId: RequestId; workspaceId: WorkspaceId }
@@ -199,8 +210,8 @@ export type AgencyServerMessage =
   | { type: 'agency.session.selection'; requestId: RequestId; session: AgencyAgentSession }
   | { type: 'agency.error'; requestId: RequestId; code: AgencyErrorCode; message: string }
   /** Broadcasts are emitted to every authorized connected browser, not only the caller. */
-  | { type: 'agency.project.changed'; change: 'created' | 'updated' | 'deleted'; projectId: ProjectId; project?: AgencyProject }
-  | { type: 'agency.workspace.changed'; change: 'created' | 'updated' | 'done' | 'restored' | 'deleted'; workspaceId: WorkspaceId; workspace?: AgencyWorkspace }
+  | { type: 'agency.project.changed'; change: 'created' | 'updated' | 'archived' | 'unarchived' | 'deleted'; projectId: ProjectId; project?: AgencyProject }
+  | { type: 'agency.workspace.changed'; change: 'created' | 'updated' | 'done' | 'restored' | 'archived' | 'deleted'; workspaceId: WorkspaceId; workspace?: AgencyWorkspace }
   | { type: 'agency.profile.changed'; profileId: CliProfileId; profile: AgencyCliProfile }
   | { type: 'agency.session.changed'; sessionId: RuntimeSessionId; session: AgencyRuntimeSession }
   | { type: 'agency.session.activity'; sessionId: RuntimeSessionId; workspaceId: WorkspaceId; activity: SessionActivity; lifecycle: SessionLifecycle };
@@ -261,6 +272,14 @@ export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | nu
           !isValidId(raw['projectId']) || !isValidName(raw['name'])) return null;
       return { type: 'agency.project.update', requestId, projectId: raw['projectId'] as ProjectId, name: raw['name'] };
     }
+    case 'agency.project.archive': {
+      if (!hasOnlyKeys(raw, ['type', 'requestId', 'projectId']) || !isValidId(raw['projectId'])) return null;
+      return { type: 'agency.project.archive', requestId, projectId: raw['projectId'] as ProjectId };
+    }
+    case 'agency.project.unarchive': {
+      if (!hasOnlyKeys(raw, ['type', 'requestId', 'projectId']) || !isValidId(raw['projectId'])) return null;
+      return { type: 'agency.project.unarchive', requestId, projectId: raw['projectId'] as ProjectId };
+    }
     case 'agency.project.delete': {
       if (!hasOnlyKeys(raw, ['type', 'requestId', 'projectId']) || !isValidId(raw['projectId'])) return null;
       return { type: 'agency.project.delete', requestId, projectId: raw['projectId'] as ProjectId };
@@ -294,6 +313,10 @@ export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | nu
         workspaceId: raw['workspaceId'] as WorkspaceId,
         name: raw['name'],
       };
+    }
+    case 'agency.workspace.archive': {
+      if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId']) || !isValidId(raw['workspaceId'])) return null;
+      return { type: 'agency.workspace.archive', requestId, workspaceId: raw['workspaceId'] as WorkspaceId };
     }
     case 'agency.workspace.done': {
       if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId']) || !isValidId(raw['workspaceId'])) return null;
