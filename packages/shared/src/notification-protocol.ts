@@ -49,6 +49,7 @@ export interface TabActivityRecord {
   tabId: string;
   sessionId?: RuntimeSessionId;
   taskId?: string;
+  turnSequence?: number;
   state: MawActivityState;
   updatedAt: IsoTimestamp;
   reliableSignal: boolean;
@@ -96,6 +97,7 @@ export function isTabActivityRecord(value: unknown): value is TabActivityRecord 
   if (typeof value.tabId !== 'string' || value.tabId.length === 0) return false;
   if (value.sessionId !== undefined && value.sessionId !== null && !isValidId(value.sessionId)) return false;
   if (value.taskId !== undefined && value.taskId !== null && typeof value.taskId !== 'string') return false;
+  if (value.turnSequence !== undefined && value.turnSequence !== null && typeof value.turnSequence !== 'number') return false;
   if (!isMawActivityState(value.state)) return false;
   if (!isValidIsoTimestamp(value.updatedAt)) return false;
   if (typeof value.reliableSignal !== 'boolean') return false;

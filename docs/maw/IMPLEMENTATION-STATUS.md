@@ -157,11 +157,11 @@ Core guarantees implemented:
 
 Verification: Shared, server, and web typecheck (0 errors); 9-locale i18n check (100% pass); 4/4 server notification and activity tests pass; 7/7 web notification tests pass; 62/62 server agency tests pass; 9/9 web model tests pass; web production build exits 0.
 
-Lane C Amendment updates:
-- Audited native CLI turn completion: Claude Code and OpenCode provide verified turn completion; Codex and unverified Antigravity do not; generic idle transitions are strictly rejected as completion.
-- OSC 133 strictly requires valid numeric exit codes; missing/malformed codes strictly preserve unknown status; safe standalone bash/zsh scripts installed without touching user dotfiles.
-- ChatGPT browser provider enforces token-based bridge authorization; arbitrary unauthenticated callers cannot forge completion signals; privacy boundaries preserved.
-- Durable task states across server restart: in-flight tasks become unknown rather than falsely finished; uninspected finished states remain finished; closed tabs do not alert; stable event/task IDs used for deduplication.
-- Navigation safety: missing workspace or failed selection does not acknowledge tab; optimistic updates roll back immediately on server error.
+Lane C Amendment & Final Corrections updates:
+- Distinct per-turn identities: Controlled per-tab turn sequence advances on `working` transitions (`turn-1`, `turn-2`), producing distinct completion alerts for consecutive turns; replayed turn events deduplicate permanently; restart recovery restores highest turn sequence to prevent reuse; workspace tabs remain strictly isolated; unverified providers (Codex, Antigravity) remain Idle or Unknown without fabricated completion events.
+- Functional Bash integration: Command start hooked via `PS0="\[\033]133;C\007\]"` before command execution; command exit hooked via `PROMPT_COMMAND` with `$?` and `133;D;%d\007\033]133;A\007`; command prompt input line via `PS1`. Verified with a real disposable interactive Bash PTY process emitting exit codes 0 and 33. Precise shell terminal integration hook documented for spawning PTYs without touching user dotfiles or modifying shared native session runtime. Zsh integration cleanly hooks `precmd` and `preexec`.
+- Browser bridge credentials & target binding: Default predictable credentials eliminated; registration requires explicit, strong 256-bit cryptographically secure tokens (min 16 chars) bound to explicit `allowedTabIds` (unrelated tabs rejected); default ChatGPT state truthfully reported as `unknown`; limitations formally documented (token proves authorization/binding, not third-party web content accuracy).
+- Durable persistence failure recovery: `TabActivityManager` uses `writeAtomically` with private `0o600` permissions and `.bak` backup copy; write queue failure continuity ensures an individual I/O failure fails visibly to the immediate caller while subsequent writes succeed cleanly; verified with simulated write failure under read-only permissions followed by recovery.
+- Verification findings: Working UI (PASS), Native CLI completion signals (PASS), Shell completion signals (PASS), ChatGPT completion support (UNVERIFIED / LIMITATION DOCUMENTED), Remaining blockers (NONE).
 
 Draft delivery branch: `feat/maw-notifications` pushed to `origin/feat/maw-notifications`. Target: `main`. No live services activated or merged.
