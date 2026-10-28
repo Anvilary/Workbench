@@ -1148,3 +1148,31 @@ test('runtime follows explicit scoped Codex turn evidence without a conversation
     assert.equal(events.length, 2);
   } finally { f.runtime.dispose(); await rm(cwd, { recursive: true, force: true }); }
 });
+
+
+test('CLI and shell names survive store reload without changing process or native identity; failed writes roll back', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'maw-rename-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = new AgencySessionStore(path.join(root, 'sessions.json'));
+  const f = fixture(root, { store }); t.after(() => f.runtime.dispose());
+  await f.runtime.initialize();
+  const agent = await f.runtime.create({kind:'agent', workspaceId:f.one.id, profileId:agentProfile, cols:80, rows:24});
+  const shell = await f.runtime.create({kind:'terminal', workspaceId:f.one.id, cols:80, rows:24});
+  for (const session of [agent, shell]) {
+    const before = structuredClone(f.runtime.get(session.id)!);
+    await f.runtime.renameTab(f.one.id, session.tab!.id, '  Renamed ' + session.kind + '  ');
+    const after = f.runtime.get(session.id)!;
+    assert.deepEqual({...after, tab:before.tab, updatedAt:before.updatedAt}, before);
+    assert.equal(after.tab!.name, 'Renamed ' + session.kind);
+    assert.equal((await new AgencySessionStore(store.file).load()).find(s=>s.id===session.id)?.tab?.name, after.tab!.name);
+    await assert.rejects(f.runtime.renameTab(f.two.id, session.tab!.id, 'Foreign'));
+    await assert.rejects(f.runtime.renameTab(f.one.id, session.tab!.id, ''));
+  }
+  assert.equal(f.terminals.opens.length,2); assert.equal(f.terminals.closeCount,0);
+  const save = store.save.bind(store);
+  store.save = async () => { throw new Error('fixture disk failure'); };
+  await assert.rejects(f.runtime.renameTab(f.one.id, shell.tab!.id, 'Lost'), /fixture disk failure/);
+  assert.equal(f.runtime.get(shell.id)?.tab?.name,'Renamed terminal');
+  store.save = save;
+  await f.runtime.renameTab(f.one.id,shell.tab!.id,'Retry succeeds');
+});

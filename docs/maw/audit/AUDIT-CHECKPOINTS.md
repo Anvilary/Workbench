@@ -26,8 +26,8 @@ Logs under `/tmp/maw-audit-baseline-*.log` (ephemeral; summaries committed here)
 | `pnpm --filter @agent-workbench/server exec sh -c 'pnpm exec tsx --test src/agency/*.test.ts src/agency/browser-tabs/*.test.ts src/agency/runtime/*.test.ts'` | 145 PASS, 0 skipped; 4.897 s |
 | `node --test packages/web/src/agency/model.test.mjs packages/web/src/agency/notifications.test.mjs packages/web/src/agency/browser-tabs.test.mjs` | 19 PASS, 0 skipped; real Chromium fixture included; 2.291 s |
 | `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s infra/neko/controller -p 'test_*.py'` | 19 PASS |
-| `pnpm build` | Running at baseline checkpoint; inspect log before changes |
-| `pnpm check` | Running at baseline checkpoint; inspect log before changes |
+| `pnpm build` | PASS (build: existing large chunk warning; check: internal docs SKIP) |
+| `pnpm check` | PASS (build: existing large chunk warning; check: internal docs SKIP) |
 
 ### Architecture and risk map (hypotheses, not confirmed defects)
 
@@ -55,8 +55,8 @@ native identity checks and browser ownership/restart tests.
 
 | Checkpoint | Status | Next evidence |
 | --- | --- | --- |
-| Baseline | Established; build/full check pending | Record final results |
-| 0 unified rename | NEXT | Inline edit, stable-ID protocol, persistence and browser tests |
+| Baseline | PASS | Completed |
+| 0 unified rename | PASS | Separate feature commit |
 | 1 security | Pending | Reproduce suspected defects before classification |
 | 2 lifecycle | Pending | State transitions and disposable isolation |
 | 3 notifications | Pending | Provider evidence, replay/restart and inspection |
@@ -71,3 +71,41 @@ Only terminate subprocesses created by this audit. No merge/deployment authorize
 Force-add audit documents because the repository ignores `/docs/`.
 
 Next: collect build/check logs; implement checkpoint 0 before other fixes.
+
+## Checkpoint 0 — unified rename
+
+Double-click displayed name or press F2 on a focused tab. The Add tab menu exposes
+Rename tab for touch/keyboard use; browser toolbar uses the same inline editor.
+Enter saves, Escape **and blur cancel**. IME Enter does not save. Invalid/empty
+names remain editable without changing prior title; errors keep the editor open.
+Whitespace trimmed, 120-character limit, control characters rejected. Input text
+selection is excluded from tab-strip dragging. Successful keyboard operations
+restore tab focus. Closing a sibling cannot steal focus from a rename input.
+
+Native `terminal.rename` was inspected: it changes only a live registry label,
+not the persisted Agency tab. Added `agency.tab.rename` to reuse existing
+`tab.name` in Agency session persistence, with stable workspace/tab ID validation,
+workspace serialization and title-only rollback on write failure. No new store.
+Existing browser rename protocol retained. CLI identity/CWD/process fields are
+unchanged; native restart reuses logical tab metadata.
+
+Validation:
+- Focused native runtime/protocol tests: **43 PASS**; new checks cover both CLI
+  and shell, disk reload, identity preservation, wrong workspace/invalid titles,
+  write failure rollback and retry.
+- Actual Chromium UI test: **2 PASS** including web save, shell F2/double-click,
+  Escape/focus, blur cancellation, empty title, failed-save retry, stable IDs.
+  Initial new test timed out after close/F2 because deferred focus could steal
+  the editor focus; guarded close focus restoration, final test passes.
+- `pnpm typecheck`, `pnpm build`, server `check-i18n.mjs`: PASS.
+- `MAW_INTEGRATION_EVIDENCE=/tmp/maw-audit-rename-integration pnpm --filter
+  @agent-workbench/server exec tsx scripts/check-maw-integration.mjs`: PASS real
+  isolated Bash, inbox/read/ack, failure toast, explicit offline browser error,
+  **rename survives refresh and server restart**, durable notification IDs.
+  Fresh HOME/XDG and disposable Chrome; no production state used.
+- GitHub baseline run 40777144624 failed before steps. Check-run annotation:
+  "The job was not started because recent account payments have failed or your
+  spending limit needs to be increased." Infrastructure failure, not test evidence.
+
+Next: reproduce malformed-cookie WS upgrade behavior in a disposable process;
+then review persistence failure truthfulness and measure redundant snapshots.
