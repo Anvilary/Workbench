@@ -1,4 +1,5 @@
 import type { CliProfileId, CliProvider } from '@agent-workbench/shared';
+import { resolveConfiguredExecutable } from './executable.js';
 
 export interface ProfileDefinition {
   readonly id: CliProfileId;
@@ -137,4 +138,33 @@ export function isolatedEnvironment(
   const reviewed = validateEnv(overrides);
   for (const [key, value] of Object.entries(reviewed)) env[key] = value;
   return env;
+}
+
+/**
+ * Another enabled profile of the same provider whose launch plan is identical (same resolved entry point,
+ * literal args and overrides) necessarily runs the same native account under a different label. Profiles
+ * that share a binary but differ in args remain allowed: args may legitimately select another account.
+ */
+export async function identicalLaunchPeer(
+  definition: ProfileDefinition,
+  all: readonly ProfileDefinition[],
+  environment: NodeJS.ProcessEnv,
+): Promise<ProfileDefinition | null> {
+  if (definition.disabled || !definition.executable) return null;
+  const sameArgs = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+  const sameEnv = (a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>) =>
+    Object.keys(a).length === Object.keys(b).length && Object.keys(a).every((k) => a[k] === b[k]);
+  const own = await resolveConfiguredExecutable(definition.executable, environment);
+  for (const other of all) {
+    if (other.id === definition.id || other.provider !== definition.provider || other.disabled || !other.executable) continue;
+    if (!sameArgs(other.args, definition.args) || !sameEnv(other.environmentOverrides, definition.environmentOverrides)) continue;
+    if (other.executable === definition.executable) return other;
+    const theirs = await resolveConfiguredExecutable(other.executable, environment);
+    if (own.status === 'available' && theirs.status === 'available' && own.file === theirs.file) return other;
+  }
+  return null;
+}
+
+export function identicalLaunchMessage(peer: ProfileDefinition): string {
+  return `Same executable and arguments as ${peer.label}: both would run the same native account. Give each profile its own account wrapper.`;
 }

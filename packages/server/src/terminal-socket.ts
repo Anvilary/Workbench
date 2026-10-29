@@ -3445,7 +3445,8 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
 
         case 'agency.sessions.list': {
           const sessions = agencyRuntime.list(message.workspaceId);
-          send(socket, { type: 'agency.sessions.snapshot', requestId: message.requestId, sessions });
+          send(socket, { type: 'agency.sessions.snapshot', requestId: message.requestId, sessions,
+            ...(message.workspaceId !== undefined ? { workspaceId: message.workspaceId } : {}) });
           break;
         }
 

@@ -108,7 +108,7 @@ test('corrupt primary recovers only from validated backup, preserving corrupt by
   const f = await fixture();
   try {
     await f.store.configure(asId('codex00'), { executable: f.binary });
-    await f.store.configure(asId('codex01'), { executable: f.binary });
+    await f.store.configure(asId('codex01'), { executable: f.binary, args: ['--profile', 'other'] });
     await writeFile(f.file, '{ invalid json');
     const recovered = await f.store.listDefinitions();
     assert.equal(recovered.find((x) => x.id === 'codex00')?.executable, f.binary);
@@ -350,7 +350,7 @@ test('future schema fails closed even with older valid backup, without overwriti
   const f = await fixture();
   try {
     await f.store.configure(asId('codex00'), { executable: f.binary });
-    await f.store.configure(asId('codex01'), { executable: f.binary });
+    await f.store.configure(asId('codex01'), { executable: f.binary, args: ['--profile', 'other'] });
     const backupBefore = await readFile(f.file + '.bak', 'utf8');
     const future = JSON.stringify({ schemaVersion: 2, profiles: [{ future: 'keep me' }] }) + '\n';
     await writeFile(f.file, future);
@@ -380,5 +380,39 @@ test('corruption without valid backup refuses to silently replace existing state
     await assert.rejects(f.store.listDefinitions(), /no valid backup exists/);
     assert.equal(await readFile(f.file, 'utf8'), '{ malformed');
     assert.equal((await readdir(f.root)).some((name) => name.startsWith('profiles.json.corrupt-')), false);
+  } finally { await f.cleanup(); }
+});
+
+test('C-1: two profiles with an identical launch plan (same account) are refused at configure, inspect and launch', async () => {
+  const f = await fixture();
+  try {
+    const alias = path.join(f.root, 'alias');
+    await symlink(f.binary, alias);
+    await f.store.configure(asId('codex00'), { executable: f.binary });
+    await assert.rejects(f.store.configure(asId('codex01'), { executable: f.binary }), /Same executable and arguments as Codex 00/);
+    // Different args may select another account: allowed. A different symlinked entry point is a distinct wrapper.
+    await f.store.configure(asId('codex01'), { executable: f.binary, args: ['--profile', 'second'] });
+    await f.store.configure(asId('codex03'), { executable: alias });
+    // Other providers may share a binary path.
+    await f.store.configure(asId('agy00'), { executable: f.binary });
+
+    // A pre-existing duplicate on disk (older build) is surfaced and cannot launch.
+    const raw = JSON.parse(await readFile(f.file, 'utf8'));
+    const rows = Array.isArray(raw) ? raw : raw.profiles;
+    rows.find((row: { id: string }) => row.id === 'codex01').args = [];
+    await writeFile(f.file, JSON.stringify(raw));
+    const registry = nativeRegistry();
+    const { listAgencyProfiles } = await import('../../agency/agency-profile-capabilities.js');
+    const listed = await listAgencyProfiles(f.store, registry);
+    for (const id of ['codex00', 'codex01']) {
+      const profile = listed.find((p) => p.id === id)!;
+      assert.equal(profile.configurationStatus, 'error');
+      assert.equal(profile.capabilities.canLaunch, false);
+      assert.match(profile.configurationMessage ?? '', /same native account/);
+    }
+    assert.equal(listed.find((p) => p.id === 'codex03')!.capabilities.canLaunch, true);
+    await assert.rejects(buildAgencyProfileLaunch(f.store, registry, {
+      profileId: asId('codex01'), cwd: await (await import('node:fs/promises')).realpath(f.root), proposedSessionId: UUID1, launchToken: UUID2,
+    }), /same native account/);
   } finally { await f.cleanup(); }
 });
