@@ -21,7 +21,7 @@ maw {start|stop|restart|status|logs [--follow]|url|open [browser]|update [--no-r
 
 | Subcommand | Description | Safety / Side-Effects |
 | --- | --- | --- |
-| `maw start` | Starts `maw.service` via `systemctl --user start maw.service` | Idempotent; waits for systemd start. Never auto-opens a browser. |
+| `maw start` | Starts and verifies the release, or verifies an already active service | Requires authenticated HTTP success, matching MainPID and release ID. Never auto-opens a browser. |
 | `maw stop` | Gracefully stops `maw.service` | Warns before stopping; server-owned live PTYs terminate; workspace metadata and native history remain intact. |
 | `maw restart` | Restarts `maw.service` safely from outside or inside MAW | Warns that live PTYs terminate; delegates via transient user unit when invoked inside MAW; verifies readiness and auto-rolls back if replacement fails. |
 | `maw status` | Displays systemd unit state, MainPID, and runs an authenticated loopback HTTP readiness probe | Token is never printed; queries `$XDG_RUNTIME_DIR/maw/maw-ready.json`. |
@@ -41,7 +41,7 @@ Starts the MAW service under `systemd --user`.
 ```sh
 maw start
 ```
-- Invokes `systemctl --user start maw.service`.
+- Uses the activation helper and its authenticated readiness check. An already active service is probed without restarting it or activating a staged update. A failed probe exits nonzero and leaves its release pointers unchanged. A successful probe can establish the first `healthy` pointer for a previously unverified release.
 - Note: `maw start` does not automatically launch a browser. Use `maw open` or `maw url` to access the interface.
 
 ### `maw stop`

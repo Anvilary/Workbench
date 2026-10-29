@@ -67,7 +67,7 @@ test('real systemd: crash-looping candidate hits start-limit, is detected, and t
   const unitDir = path.join(process.env['XDG_RUNTIME_DIR']!, 'systemd/user');
   const unitFile = path.join(unitDir, unit);
   const root = await realpath(await mkdtemp(path.join(tmpdir(), 'maw-systemd-')));
-  const state = path.join(root, 'state');
+  const state = path.join(root, '.local/share/maw');
   const releases = path.join(state, 'releases');
   await mkdir(releases, { recursive: true });
   const env = {
@@ -153,11 +153,11 @@ test('real systemd: a release built from this repository activates, is verified 
   const unitFile = path.join(unitDir, unit);
   const dropIn = path.join(unitDir, unit + '.d');
   const root = await realpath(await mkdtemp(path.join(tmpdir(), 'maw-real-release-')));
-  const state = path.join(root, 'state');
+  const state = path.join(root, '.local/share/maw');
   const sandbox = path.join(root, 'sandbox');
   const repoRoot = path.resolve(SCRIPT_DIR, '../..');
   const env = { ...process.env, MAW_STATE_DIR: state, MAW_UNIT: unit, MAW_RUNTIME_DIR: path.join(process.env['XDG_RUNTIME_DIR']!, runtimeName),
-    MAW_NODE_BIN: process.execPath, MAW_READY_TIMEOUT: '60', MAW_CGROUP_FILE: path.join(root, 'none') };
+    MAW_NODE_BIN: process.execPath, MAW_READY_TIMEOUT: '20', MAW_CGROUP_FILE: path.join(root, 'none'), MAW_ENV_FILE: path.join(root, 'no-environment') };
   try {
     const built = await exec('/bin/sh', [path.join(SCRIPT_DIR, 'maw-update.sh'), '--initial', '--source', repoRoot, '--ref', 'HEAD', '--allow-unapproved-ref'],
       { env, maxBuffer: 64 * 1024 * 1024, timeout: 600_000 });
@@ -179,12 +179,13 @@ test('real systemd: a release built from this repository activates, is verified 
       '[Service]',
       `Environment=HOME=${sandbox}/home`, `Environment=XDG_CONFIG_HOME=${sandbox}/config`, `Environment=XDG_DATA_HOME=${sandbox}/data`,
       `Environment=XDG_STATE_HOME=${sandbox}/state`, `Environment=XDG_CACHE_HOME=${sandbox}/cache`, `Environment=CODEX_HOME=${sandbox}/home/.codex`,
-      'Environment=AGENT_WORKBENCH_NO_RESTORE=1', 'Environment=SHELL=/bin/bash', '',
+      'Environment=AGENT_WORKBENCH_NO_RESTORE=1', 'Environment=SHELL=/bin/bash',
+      `Environment=PATH=${sandbox}/bin:/usr/bin:/bin`, '',
     ].join('\n'));
 
     const started = Date.now();
     let out = '';
-    try { const r = await exec(path.join(SCRIPT_DIR, 'maw-restart-helper.sh'), ['--unit', unit], { env }); out = r.stdout + r.stderr; }
+    try { const r = await exec(path.join(SCRIPT_DIR, 'maw'), ['start'], { env }); out = r.stdout + r.stderr; }
     catch (e) { const x = e as { stdout: string; stderr: string }; assert.fail('activation failed: ' + x.stdout + x.stderr); }
     assert.match(out, new RegExp(`healthy on release ${id}`));
     assert.equal(path.basename(await readlink(path.join(state, 'healthy'))), id);
@@ -195,6 +196,15 @@ test('real systemd: a release built from this repository activates, is verified 
     const builtIndex = await (await import('node:fs/promises')).readFile(path.join(release, 'packages/web/dist/index.html'), 'utf8');
     const mainChunk = builtIndex.match(/assets\/index-[\w-]+\.js/)?.[0];
     assert.ok(mainChunk && page.includes(mainChunk), 'the service serves this release\'s own built UI');
+    const assetUrl = new URL(mainChunk, url); assetUrl.search = new URL(url).search;
+    assert.equal((await fetch(assetUrl)).status, 200, 'built assets under hidden release parents');
+    const missingUrl = new URL('/assets/missing.js', url); missingUrl.search = new URL(url).search;
+    assert.equal((await fetch(missingUrl)).status, 404, 'missing assets never become healthy HTML');
+    assert.equal((await fetch(new URL('/', url))).status, 401, 'UI remains authenticated');
+    const startedPid = Number((await exec('systemctl', ['--user', 'show', unit, '--property=MainPID', '--value'])).stdout.trim());
+    await exec(path.join(SCRIPT_DIR, 'maw'), ['start'], { env });
+    assert.equal(Number((await exec('systemctl', ['--user', 'show', unit, '--property=MainPID', '--value'])).stdout.trim()), startedPid,
+      'verified repeated start does not restart the process');
     const pid = Number((await exec('systemctl', ['--user', 'show', unit, '--property=MainPID', '--value'])).stdout.trim());
     assert.equal(await realpath(`/proc/${pid}/cwd`), release, 'the process runs from the release, not a checkout');
     // Isolation is proven from the service process itself: its HOME/XDG point into the sandbox (the store is

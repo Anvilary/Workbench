@@ -49,7 +49,7 @@ export interface BrowserControllerDriver {
   /**
    * Request that the browser engine close a target.
    */
-  closeTarget(targetRef: string): Promise<void>;
+  closeTarget(targetRef: string, signal?: AbortSignal): Promise<void>;
 
   /**
    * Inquire whether a target reference is still open/alive in the browser engine.
@@ -61,13 +61,13 @@ export interface BrowserControllerDriver {
    * Returns true only when tabId and workspaceId match.
    * Never blindly matches based on URL or title alone.
    */
-  verifyTargetOwnership(targetRef: string, expected: TargetMetadata): Promise<boolean>;
+  verifyTargetOwnership(targetRef: string, expected: TargetMetadata, signal?: AbortSignal): Promise<boolean>;
 
   /** Observe the current page address through trusted target inventory only. */
-  getTargetUrl?(targetRef: string): Promise<string | null>;
+  getTargetUrl?(targetRef: string, signal?: AbortSignal): Promise<string | null>;
 
   /** Resolve a durable controller receipt after a create response was lost. */
-  findOwnedTarget?(expected: TargetMetadata): Promise<string | null>;
+  findOwnedTarget?(expected: TargetMetadata, signal?: AbortSignal): Promise<string | null>;
 
   /**
    * Inquire active ongoing background operations (e.g. assistant streaming response).
