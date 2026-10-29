@@ -13,6 +13,7 @@
   "agency.notifications.commandFailedCode": "종료 코드 {{code}}로 명령 실패",
   "agency.notifications.commandFinished": "명령 완료",
   "agency.notifications.dismissToast": "알림 닫기",
+  "agency.notifications.done": "완료",
   "agency.notifications.empty": "알림 없음",
   "agency.notifications.markAllRead": "모두 읽음으로 표시",
   "agency.notifications.markRead": "읽음으로 표시",

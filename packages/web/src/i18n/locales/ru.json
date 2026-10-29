@@ -13,6 +13,7 @@
   "agency.notifications.commandFailedCode": "Команда завершилась с кодом {{code}}",
   "agency.notifications.commandFinished": "Команда завершена",
   "agency.notifications.dismissToast": "Закрыть уведомление",
+  "agency.notifications.done": "Готово",
   "agency.notifications.empty": "Нет уведомлений",
   "agency.notifications.markAllRead": "Отметить все как прочитанные",
   "agency.notifications.markRead": "Отметить как прочитанное",

@@ -13,6 +13,7 @@
   "agency.notifications.commandFailedCode": "El comando falló con el código {{code}}",
   "agency.notifications.commandFinished": "Comando finalizado",
   "agency.notifications.dismissToast": "Descartar notificación",
+  "agency.notifications.done": "Listo",
   "agency.notifications.empty": "Sin notificaciones",
   "agency.notifications.markAllRead": "Marcar todas como leídas",
   "agency.notifications.markRead": "Marcar como leída",
