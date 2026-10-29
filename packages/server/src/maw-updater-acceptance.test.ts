@@ -734,3 +734,103 @@ test('active start requires authenticated HTTP success and adopts the first heal
     assert.ok(existsSync(f.initialDir), 'first release remains installed');
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
 }));
+
+test('35. in-app lifecycle commands isolate systemd invocations to canonical user bus when private DBUS_SESSION_BUS_ADDRESS is present', () => withFixture(async f => {
+  const runLog = path.join(f.root, 'systemd-run.log');
+  const runEnvLog = path.join(f.root, 'systemd-run-env.log');
+  await writeFile(path.join(f.binDir, 'systemd-run'), `#!/bin/sh
+echo "$@" >> "${runLog}"
+echo "DBUS=\${DBUS_SESSION_BUS_ADDRESS:-UNSET} XDG=\${XDG_RUNTIME_DIR:-UNSET}" >> "${runEnvLog}"
+exit 0
+`, { mode: 0o755 });
+
+  const ctlEnvLog = path.join(f.root, 'systemctl-env.log');
+  const origSystemctl = await readFile(path.join(f.binDir, 'systemctl'), 'utf8');
+  await writeFile(path.join(f.binDir, 'systemctl'), `#!/bin/sh
+echo "DBUS=\${DBUS_SESSION_BUS_ADDRESS:-UNSET} XDG=\${XDG_RUNTIME_DIR:-UNSET}" >> "${ctlEnvLog}"
+exec /bin/sh -c '${origSystemctl.replace(/'/g, "'\\''")}' "$0" "$@"
+`, { mode: 0o755 });
+
+  const cgroup = path.join(f.root, 'cgroup');
+  await writeFile(cgroup, '0::/user.slice/user-1000.slice/user@1000.service/app.slice/maw-fixture.service\n');
+
+  const privateBus = 'unix:path=/tmp/private-dbus-session.sock';
+  const callerEnv = {
+    ...f.env,
+    MAW_CGROUP_FILE: cgroup,
+    DBUS_SESSION_BUS_ADDRESS: privateBus,
+    MAW_SYSTEMD_RUNTIME_DIR: f.runtimeDir,
+    MAW_SYSTEMD_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
+  };
+
+  // Verify restart from inside MAW delegates via systemd-run with canonical bus
+  const restartRes = await exec(MAW_BIN, ['restart'], { env: callerEnv });
+  assert.match(restartRes.stdout, /Safe restart scheduled/);
+  const runEnv = await readFile(runEnvLog, 'utf8');
+  assert.match(runEnv, /DBUS=unix:path=\/run\/user\/1000\/bus/);
+  assert.ok(!runEnv.includes(privateBus), 'private bus was not leaked to systemd-run');
+
+  // Verify status executes systemctl with canonical bus
+  await exec(MAW_BIN, ['status'], { env: callerEnv });
+  const ctlEnv = await readFile(ctlEnvLog, 'utf8');
+  assert.match(ctlEnv, /DBUS=unix:path=\/run\/user\/1000\/bus/);
+  assert.ok(!ctlEnv.includes(privateBus), 'private bus was not leaked to systemctl');
+
+  // Verify stop executes systemctl with canonical bus
+  await exec(MAW_BIN, ['stop'], { env: callerEnv });
+  const ctlEnv2 = await readFile(ctlEnvLog, 'utf8');
+  assert.ok(!ctlEnv2.includes(privateBus), 'private bus was not leaked to systemctl on stop');
+
+  // Verify caller's environment is untouched
+  assert.equal(callerEnv.DBUS_SESSION_BUS_ADDRESS, privateBus);
+}));
+
+test('36. in-app update --restart delegates with canonical bus isolation', () => withFixture(async f => {
+  const runLog = path.join(f.root, 'systemd-run.log');
+  const runEnvLog = path.join(f.root, 'systemd-run-env.log');
+  await writeFile(path.join(f.binDir, 'systemd-run'), `#!/bin/sh
+echo "$@" >> "${runLog}"
+echo "DBUS=\${DBUS_SESSION_BUS_ADDRESS:-UNSET} XDG=\${XDG_RUNTIME_DIR:-UNSET}" >> "${runEnvLog}"
+exit 0
+`, { mode: 0o755 });
+
+  const cgroup = path.join(f.root, 'cgroup');
+  await writeFile(cgroup, '0::/user.slice/user-1000.slice/user@1000.service/app.slice/maw-fixture.service\n');
+
+  const privateBus = 'unix:path=/tmp/private-dbus-session-2.sock';
+  const callerEnv = {
+    ...f.env,
+    MAW_CGROUP_FILE: cgroup,
+    DBUS_SESSION_BUS_ADDRESS: privateBus,
+    MAW_SYSTEMD_RUNTIME_DIR: f.runtimeDir,
+    MAW_SYSTEMD_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
+  };
+
+  await pushUpstream(f, 'feature-restart');
+  const res = await update(f, ['--restart'], callerEnv);
+  assert.match(res.stdout, /Safe restart scheduled/);
+  const runEnv = await readFile(runEnvLog, 'utf8');
+  assert.match(runEnv, /DBUS=unix:path=\/run\/user\/1000\/bus/);
+  assert.ok(!runEnv.includes(privateBus), 'private bus was not leaked on update --restart');
+}));
+
+test('37. failure handling when systemd user manager runtime is unavailable', () => withFixture(async f => {
+  const cgroup = path.join(f.root, 'cgroup');
+  await writeFile(cgroup, '0::/user.slice/user-1000.slice/user@1000.service/app.slice/maw-fixture.service\n');
+
+  await writeFile(path.join(f.binDir, 'systemd-run'), `#!/bin/sh
+echo "Failed to connect to bus: No such file or directory" >&2
+exit 1
+`, { mode: 0o755 });
+
+  const callerEnv = {
+    ...f.env,
+    MAW_CGROUP_FILE: cgroup,
+    DBUS_SESSION_BUS_ADDRESS: 'unix:path=/nonexistent/bus',
+    MAW_SYSTEMD_RUNTIME_DIR: '/nonexistent/runtime',
+    MAW_SYSTEMD_BUS_ADDRESS: 'unix:path=/nonexistent/bus',
+  };
+
+  await assert.rejects(exec(MAW_BIN, ['restart'], { env: callerEnv }), (err: { code: number; stderr: string }) =>
+    err.code === 1 && /Failed to schedule safe restart/.test(err.stderr));
+}));

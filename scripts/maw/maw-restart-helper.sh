@@ -54,7 +54,7 @@ trap 'on_signal HUP' HUP
 trap 'on_signal INT' INT
 trap 'on_signal TERM' TERM
 
-sctl() { systemctl --user "$@"; }
+sctl() { maw_sctl "$@"; }
 
 unit_state() { sctl show "$unit" --property=ActiveState --value 2>/dev/null || true; }
 

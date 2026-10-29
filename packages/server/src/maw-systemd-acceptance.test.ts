@@ -16,7 +16,7 @@ import { mkdtemp, mkdir, writeFile, symlink, rm, readlink, realpath } from 'node
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
@@ -219,5 +219,172 @@ test('real systemd: a release built from this repository activates, is verified 
     await exec('systemctl', ['--user', 'reset-failed', unit]).catch(() => undefined);
     if (path.basename(unitFile).startsWith('maw-test-')) { await rm(unitFile, { force: true }); await rm(dropIn, { recursive: true, force: true }); }
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * Real systemd user-bus isolation acceptance:
+ * Verifies that all MAW lifecycle commands (start, stop, status, restart, rollback)
+ * correctly interact with the systemd user manager both outside MAW and inside MAW,
+ * specifically when executing under an isolated private D-Bus daemon (FINDING-01).
+ */
+test('real systemd: in-app lifecycle commands and restart delegation succeed under simulated private D-Bus session', { skip: !enabled || !TSX }, async () => {
+  const suffix = randomBytes(4).toString('hex');
+  const unit = `maw-test-${suffix}.service`;
+  const helperUnit = `maw-test-helper-${suffix}`;
+  const runtimeName = `maw-test-${suffix}`;
+  const uid = process.getuid ? process.getuid() : 1000;
+  const userDir = `/run/user/${uid}`;
+  const unitDir = path.join(userDir, 'systemd/user');
+  const unitFile = path.join(unitDir, unit);
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), 'maw-systemd-')));
+  const state = path.join(root, '.local/share/maw');
+  const releases = path.join(state, 'releases');
+  const cgroupFile = path.join(root, 'cgroup');
+  await writeFile(cgroupFile, `0::/user.slice/user-${uid}.slice/user@${uid}.service/app.slice/${unit}\n`);
+  await mkdir(releases, { recursive: true });
+  await mkdir(unitDir, { recursive: true });
+
+  const runtimeDir = path.join(userDir, runtimeName);
+  const ptr = async (name: string) => { try { return path.basename(await readlink(path.join(state, name))); } catch { return null; } };
+
+  // Start a private D-Bus daemon to simulate the private provider bus (e.g. agy01-agy05 / gnome-keyring)
+  let privateBusPid = 0;
+  let privateBusAddress = '';
+  try {
+    const busInfo = (await exec('dbus-daemon', ['--session', '--fork', '--print-address=1', '--print-pid=1'])).stdout.trim().split('\n');
+    privateBusAddress = busInfo[0]?.trim() || '';
+    privateBusPid = Number(busInfo[1]?.trim() || 0);
+  } catch (e) {
+    throw new Error('dbus-daemon required for private D-Bus isolation test: ' + e);
+  }
+
+  const baseEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    MAW_STATE_DIR: state,
+    MAW_UNIT: unit,
+    MAW_HELPER_UNIT: helperUnit,
+    MAW_RUNTIME_DIR: runtimeDir,
+    MAW_NODE_BIN: process.execPath,
+    MAW_READY_TIMEOUT: '25',
+  };
+
+  try {
+    const rendered = await exec('/bin/sh', [path.join(SCRIPT_DIR, 'maw-render-unit.sh')],
+      { env: { ...baseEnv, MAW_RUNTIME_NAME: runtimeName, MAW_BIN_DIR: path.join(root, 'bin') } });
+    await writeFile(unitFile, rendered.stdout);
+
+    const H = await makeRelease(releases, '20261029000001-aaaaaaa', HEALTHY_SERVER);
+    await symlink(H, path.join(state, 'current'));
+
+    // 1. External terminal start with normal D-Bus
+    const extStart = await exec(path.join(SCRIPT_DIR, 'maw'), ['start'], { env: baseEnv });
+    assert.match(extStart.stdout + extStart.stderr, /healthy on release 20261029000001-aaaaaaa/);
+    assert.equal(await ptr('healthy'), path.basename(H));
+
+    // Simulated private inside-MAW environment:
+    // Has MAW_CGROUP_FILE pointing to the unit cgroup, private DBUS_SESSION_BUS_ADDRESS, and unset XDG_RUNTIME_DIR.
+    const inAppEnv: NodeJS.ProcessEnv = {
+      ...baseEnv,
+      MAW_CGROUP_FILE: cgroupFile,
+      DBUS_SESSION_BUS_ADDRESS: privateBusAddress,
+    };
+    delete inAppEnv.XDG_RUNTIME_DIR;
+
+    // Verify negative check: raw systemctl and systemd-run fail without bus routing under this environment
+    await assert.rejects(
+      exec('systemctl', ['--user', 'status', unit], { env: inAppEnv }),
+      /Process org.freedesktop.systemd1 exited with status 1|No such file or directory/
+    );
+    await assert.rejects(
+      exec('systemd-run', ['--user', 'true'], { env: inAppEnv }),
+      /Process org.freedesktop.systemd1 exited with status 1|No such file or directory/
+    );
+
+    // 2. In-app status with simulated private D-Bus
+    const statusRes = await exec(path.join(SCRIPT_DIR, 'maw'), ['status'], { env: inAppEnv });
+    assert.match(statusRes.stdout, /ActiveState=active/);
+    assert.match(statusRes.stdout, /current: 20261029000001-aaaaaaa/);
+    assert.match(statusRes.stdout, /healthy: 20261029000001-aaaaaaa/);
+
+    // 3. In-app restart with simulated private D-Bus
+    const C = await makeRelease(releases, '20261029000002-ccccccc', HEALTHY_SERVER);
+    await symlink(C, path.join(state, 'staged'));
+
+    const restartRes = await exec(path.join(SCRIPT_DIR, 'maw'), ['restart'], { env: inAppEnv });
+    assert.match(restartRes.stderr, /Restarting MAW from inside MAW\. Delegating restart outside service control group/);
+    assert.match(restartRes.stdout, /Safe restart scheduled/);
+
+    // Wait for helper delegation to complete
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      if ((await ptr('healthy')) === path.basename(C)) break;
+      await new Promise(r => setTimeout(r, 500));
+    }
+    assert.equal(await ptr('healthy'), path.basename(C), 'candidate promoted to healthy');
+    assert.equal(await ptr('current'), path.basename(C));
+    assert.equal(await ptr('previous'), path.basename(H));
+    assert.equal(await ptr('staged'), null);
+
+    // 4. Repeat / concurrent restart rejection
+    const lock = path.join(runtimeDir, 'restart.lock');
+    await mkdir(path.dirname(lock), { recursive: true });
+    const lockHolder = spawn('flock', [lock, 'sh', '-c', 'read x'], { stdio: ['pipe', 'ignore', 'ignore'] });
+    try {
+      await new Promise(r => setTimeout(r, 200));
+      await assert.rejects(
+        exec(path.join(SCRIPT_DIR, 'maw'), ['restart'], { env: inAppEnv }),
+        (err: { stderr: string }) => /Duplicate restart avoided/.test(err.stderr)
+      );
+    } finally {
+      lockHolder.stdin.end();
+      lockHolder.kill('SIGKILL');
+      for (let i = 0; i < 50; i++) {
+        const free = await exec('flock', ['-n', lock, 'true']).then(() => true, () => false);
+        if (free) break;
+        await new Promise(r => setTimeout(r, 100));
+      }
+    }
+
+    // 5. In-app rollback with simulated private D-Bus
+    for (let i = 0; i < 50; i++) {
+      const active = await exec('systemctl', ['--user', 'is-active', `${helperUnit}.service`]).then(r => r.stdout.trim() === 'active', () => false);
+      if (!active) break;
+      await new Promise(r => setTimeout(r, 200));
+    }
+    const rollbackRes = await exec(path.join(SCRIPT_DIR, 'maw'), ['rollback'], { env: inAppEnv });
+    assert.match(rollbackRes.stderr, /Restarting MAW from inside MAW/);
+    assert.match(rollbackRes.stdout, /Safe restart scheduled/);
+    const rollbackDeadline = Date.now() + 30_000;
+    while (Date.now() < rollbackDeadline) {
+      if ((await ptr('healthy')) === path.basename(H)) break;
+      await new Promise(r => setTimeout(r, 500));
+    }
+    assert.equal(await ptr('healthy'), path.basename(H), 'rolled back release restored');
+
+    // 6. Native CLI environment safety
+    assert.equal(inAppEnv.DBUS_SESSION_BUS_ADDRESS, privateBusAddress);
+
+    // 7. Failure handling when user manager is unavailable
+    const brokenEnv: NodeJS.ProcessEnv = {
+      ...inAppEnv,
+      MAW_SYSTEMD_RUNTIME_DIR: '/nonexistent/runtime',
+      MAW_SYSTEMD_BUS_ADDRESS: 'unix:path=/nonexistent/bus',
+    };
+    await assert.rejects(
+      exec(path.join(SCRIPT_DIR, 'maw'), ['restart'], { env: brokenEnv }),
+      (err: { stderr: string }) => /Failed to schedule safe restart/.test(err.stderr)
+    );
+  } finally {
+    if (privateBusPid) {
+      try { process.kill(privateBusPid, 'SIGTERM'); } catch {}
+    }
+    await exec('systemctl', ['--user', 'stop', unit]).catch(() => undefined);
+    await exec('systemctl', ['--user', 'stop', `${helperUnit}.service`]).catch(() => undefined);
+    await exec('systemctl', ['--user', 'stop', `${helperUnit}.timer`]).catch(() => undefined);
+    await exec('systemctl', ['--user', 'reset-failed', unit]).catch(() => undefined);
+    if (path.basename(unitFile).startsWith('maw-test-')) await rm(unitFile, { force: true });
+    await rm(root, { recursive: true, force: true });
+    await rm(runtimeDir, { recursive: true, force: true }).catch(() => undefined);
   }
 });
