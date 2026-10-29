@@ -8,7 +8,7 @@
  */
 
 import { nativeRecoveryCapacity } from './agency/recovery-capacity.js';
-import { acquireStoreOwnership, publishReadiness } from './maw-host.js';
+import { acquireStoreOwnership, publishReadiness, readReleaseIdentity } from './maw-host.js';
 import { existsSync } from 'node:fs';
 import { createServer, type Server as HttpServer } from 'node:http';
 import path from 'node:path';
@@ -629,7 +629,7 @@ async function main(): Promise<void> {
     shell,
     remoteAccessStartupLine(remoteStatus.state, remoteStatus.port, remote.pairedDevices),
   );
-  const clearReadiness = process.env['MAW_RUNTIME_DIR'] ? await publishReadiness(process.env['MAW_RUNTIME_DIR'], url) : async () => {};
+  const clearReadiness = process.env['MAW_RUNTIME_DIR'] ? await publishReadiness(process.env['MAW_RUNTIME_DIR'], url, await readReleaseIdentity(repoRoot)) : async () => {};
   // Escape para desarrollo y pruebas automatizadas: arrancar sin abrir nada.
   if (process.env['AGENT_WORKBENCH_NO_OPEN'] !== '1') openBrowser(url);
 

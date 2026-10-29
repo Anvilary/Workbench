@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:net';
-import { mkdir, realpath, rm } from 'node:fs/promises';
+import { mkdir, readFile, realpath, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { writeAtomically } from './atomic-write.js';
 
@@ -27,9 +27,22 @@ export async function acquireStoreOwnership(directory: string): Promise<Server |
   return server;
 }
 
-export async function publishReadiness(directory: string, url: string): Promise<() => Promise<void>> {
+/**
+ * The MAW release this process was started from, as written by `maw update` into the release root.
+ * `null` when running from a source checkout (no release metadata) or when the metadata is unusable.
+ * Read once at startup: the process stays pinned to its release even if `current` is switched later.
+ */
+export async function readReleaseIdentity(root: string): Promise<string | null> {
+  try {
+    const meta: unknown = JSON.parse(await readFile(path.join(root, '.maw-release-meta.json'), 'utf8'));
+    const id = typeof meta === 'object' && meta !== null ? (meta as { releaseId?: unknown }).releaseId : undefined;
+    return typeof id === 'string' && /^[0-9]{14}-[0-9a-f]{4,40}(-[0-9]+)?$/.test(id) && id === path.basename(root) ? id : null;
+  } catch { return null; }
+}
+
+export async function publishReadiness(directory: string, url: string, releaseId: string | null = null): Promise<() => Promise<void>> {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const file = path.join(directory, 'maw-ready.json');
-  await writeAtomically(file, Buffer.from(JSON.stringify({ pid: process.pid, url }) + '\n'), { mode: 0o600 });
+  await writeAtomically(file, Buffer.from(JSON.stringify({ pid: process.pid, url, releaseId }) + '\n'), { mode: 0o600 });
   return () => rm(file, { force: true });
 }

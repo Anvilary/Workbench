@@ -1,3 +1,5 @@
+# Template rendered by install.sh (@NODE_BIN@, @STATE_DIR@, @PATH@, @RUNTIME_NAME@).
+# The service always boots `current`; only the restart helper changes `current` (see maw-lib.sh).
 [Unit]
 Description=My Amazing Workspace
 After=network.target
@@ -6,13 +8,14 @@ StartLimitBurst=3
 
 [Service]
 Type=exec
-WorkingDirectory=/home/alteixeira20/.local/share/maw/current
-ExecStartPre=/usr/bin/test -f /home/alteixeira20/.local/share/maw/current/packages/server/src/maw-host.ts
-ExecStart=/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/node --import /home/alteixeira20/.local/share/maw/current/packages/server/node_modules/tsx/dist/loader.mjs /home/alteixeira20/.local/share/maw/current/packages/server/src/index.ts --prod
-Environment=PATH=/home/alteixeira20/.nvm/versions/node/v24.22.0/bin:/home/alteixeira20/.local/bin:/usr/local/bin:/usr/bin:/bin
+WorkingDirectory=@STATE_DIR@/current
+ExecStartPre=/usr/bin/test -f @STATE_DIR@/current/.maw-release-meta.json
+ExecStartPre=/usr/bin/test -f @STATE_DIR@/current/packages/server/src/maw-host.ts
+ExecStart=@NODE_BIN@ --import @STATE_DIR@/current/packages/server/node_modules/tsx/dist/loader.mjs @STATE_DIR@/current/packages/server/src/index.ts --prod
+Environment=PATH=@PATH@
 Environment=AGENT_WORKBENCH_NO_OPEN=1
-Environment=MAW_RUNTIME_DIR=%t/maw
-RuntimeDirectory=maw
+Environment=MAW_RUNTIME_DIR=%t/@RUNTIME_NAME@
+RuntimeDirectory=@RUNTIME_NAME@
 RuntimeDirectoryMode=0700
 UMask=0077
 Restart=on-failure

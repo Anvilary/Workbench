@@ -70,7 +70,7 @@ Manual acceptance: create each preset; add mixed/repeated profiles and three she
 
 1. **`maw url`**: Prints the authenticated localhost URL (e.g. `http://127.0.0.1:<port>/?token=<token>`) strictly to standard output for the invoking authorized user. The session token is never emitted into systemd logs or journalctl, preserving loopback credential confinement.
 2. **Improved `maw open [browser]`**: Accepts an optional browser binary parameter (e.g., `maw open brave`, `maw open google-chrome`, `maw open firefox`). When omitted, defaults to `xdg-open`. Pre-validates service readiness and URL validity before spawning. Browsers are never automatically spawned on service startup.
-3. **`maw update`**: Automated, guarded repository updates supporting `--no-restart` (default for staging without interrupting active work) and `--restart` (immediate reload). It verifies worktree cleanliness (`git status --porcelain`) and branch convergence before attempting a fast-forward merge (`git merge --ff-only`), executes frozen dependency installation (`corepack pnpm install --frozen-lockfile`), validates build artifacts (`pnpm typecheck`, profile tests, `pnpm build`), and records operational history to `~/.local/share/maw/update-log.jsonl`. If build verification fails, it rolls back git and dependency state automatically to leave the running server unaffected.
+3. **`maw update`**: stages the approved channel (`origin/main`) as an isolated release without touching what the service boots; `maw restart` activates and verifies it, rolling back to the last verified healthy release on failure. Details: [UPDATE-ROLLBACK.md](UPDATE-ROLLBACK.md).
 
 ### Developer-Safe Restart Mechanism
 
@@ -90,5 +90,5 @@ This enables the update process to finish writing audit logs and exit code 0 cle
 
 For complete operational details, safety procedures, and onboarding guides, refer to:
 - [LAUNCHER.md](file:///home/alteixeira20/Projects/My-Amazing-Workspace/docs/maw/LAUNCHER.md): Complete command reference, security model, and acceptance workflow.
-- [UPDATE-ROLLBACK.md](file:///home/alteixeira20/Projects/My-Amazing-Workspace/docs/maw/UPDATE-ROLLBACK.md): Detailed update lifecycle, rollback boundaries, and manual recovery steps.
+- [UPDATE-ROLLBACK.md](UPDATE-ROLLBACK.md): Detailed update lifecycle, rollback boundaries, and manual recovery steps.
 - [PROFILE-ONBOARDING.md](file:///home/alteixeira20/Projects/My-Amazing-Workspace/docs/maw/PROFILE-ONBOARDING.md): First-run setup, wrapper naming rules, and provider-specific configurations.

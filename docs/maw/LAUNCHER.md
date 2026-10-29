@@ -66,8 +66,8 @@ maw restart
   Metadata and native history remain. Eligible verified native conversations use replacement PTYs during recovery.
   ```
 - **Inside-MAW Protection**: Automatically detects when running inside the `maw.service` cgroup or process hierarchy.
-  Instead of killing the calling shell synchronously, it schedules a detached transient systemd user timer unit (`maw-restart-<timestamp>`), avoids duplicate restart requests via lock file, reports scheduling status, and hands off the restart cleanly.
-- **Readiness Verification**: Monitored by `maw-restart-helper.sh`, which verifies HTTP loopback readiness. If the new service fails to become healthy, it automatically rolls back `current` to `previous` and restarts the previous release.
+  Instead of killing the calling shell synchronously, it schedules the detached transient unit `maw-restart-helper` (fixed name, so systemd rejects a duplicate; `--collect`), passes the `MAW_*` environment explicitly, and hands off the restart. The outcome is recorded in `update-log.jsonl`.
+- **Readiness Verification**: `maw-restart-helper.sh` verifies authenticated loopback readiness **and the release ID** of the started release. On failure it rolls back to the last verified `healthy` release (exit 2) or reports CRITICAL (exit 3). See [UPDATE-ROLLBACK.md](UPDATE-ROLLBACK.md).
 
 ### `maw status`
 Checks both service-manager state and HTTP loopback readiness:
@@ -106,49 +106,15 @@ maw open
 
 ## Verified Release-Staging (`maw update`)
 
-The `maw update` command provides a safe, non-destructive update workflow for local checkouts:
-
 ```sh
-# Stage update without restarting:
-maw update --no-restart
-
-# Stage update and restart immediately:
-maw update --restart
-
-# Update against specific ref:
-maw update --ref origin/main
+maw update --no-restart     # stage the approved channel (origin/main) only
+maw update --restart        # stage and activate
+maw update --ref origin/feature/x --allow-unapproved-ref   # explicit non-channel build
 ```
 
-### Safety and Staging Pipeline
-
-```mermaid
-flowchart TD
-    A["maw update"] --> B{"Worktree Clean?"}
-    B -- No --> C["Abort (Worktree dirty; developer changes preserved)"]
-    B -- Yes --> D{"Unpushed Commits?"}
-    D -- Yes --> E["Abort (Prevent orphaning local commits)"]
-    D -- No --> F{"Fast-Forward Upstream?"}
-    F -- No --> G["Abort (Diverged branches)"]
-    F -- Yes --> H["Create Isolated Staging Dir\ngit worktree add --detach ~/.local/share/maw/releases/..."]
-    H --> I["Build in Staging Dir:\npnpm install --frozen-lockfile\npnpm typecheck\npnpm build\nprofiles test"]
-    I -- Build Fails --> J["Delete Candidate Dir\nRunning release & source worktree untouched"]
-    I -- Success --> K["Atomically Update Pointers:\nprevious -> old current\ncurrent -> new candidate"]
-    K --> L{"--restart requested?"}
-    L -- No --> M["Done: Update staged. Service remains on old release until restart."]
-    L -- Yes --> N["maw restart (Safe transient unit handoff)"]
-```
-
-1. **Non-Destructive Staging**:
-   - The developer's source repository is **never modified, merged into, or reset**.
-   - Candidate releases are built in separate immutable directories (`~/.local/share/maw/releases/<timestamp>-<hash>`).
-   - Even if concurrent modifications occur in the developer checkout during update staging, they survive untouched.
-2. **Worktree Cleanliness & Upstream Verification**:
-   - Checks `git status --porcelain` and `git log @{u}..HEAD`.
-   - Native support for both `.git` directories and `.git` linked worktrees.
-3. **Atomic Pointer Switch**:
-   - On verification success, `~/.local/share/maw/previous` records the old release, and `~/.local/share/maw/current` is atomically updated via `mv -Tf`.
-4. **Automatic Rollback**:
-   - If the new release fails to achieve readiness on restart, `maw-restart-helper.sh` reverts `current` to `previous` and restores the healthy service.
+`maw update` builds a detached release under `~/.local/share/maw/releases/` and sets only the `staged`
+pointer. `current` (what the service boots), `healthy` and `previous` change only when `maw restart`
+verifies the release. The full state machine, logging and recovery are in [UPDATE-ROLLBACK.md](UPDATE-ROLLBACK.md).
 
 ---
 
@@ -156,14 +122,15 @@ flowchart TD
 
 Developing MAW from within MAW web terminals or CLI tabs is fully supported:
 
-- **Safe Staging**: You can run `maw update --no-restart` while working in multiple CLI tabs. The active running server continues serving existing modules without disconnecting tabs or invalidating loaded assets.
+- **Safe Staging**: You can run `maw update --no-restart` while working in multiple CLI tabs. The running server stays pinned to its release, and the service keeps booting it after a crash or reboot until `maw restart` activates the staged release.
 - **Safe Restart**: When you are ready to activate the new version, running `maw restart` inside a MAW terminal schedules an independent transient unit outside the service control group:
   ```sh
   systemd-run --user \
-    --unit="maw-restart-$(date +%s)" \
+    --unit=maw-restart-helper --collect \
     --no-block \
     --description="MAW safe restart helper" \
     --on-active=1 \
+    --setenv=MAW_STATE_DIR=... (all MAW_* paths) \
     /bin/sh maw-restart-helper.sh --unit maw.service
   ```
 - Active server-owned live PTYs terminate when the server restarts, and eligible native sessions resume with replacement PTYs upon reconnection.
