@@ -191,6 +191,8 @@ export type AgencyClientMessage =
     })
   | (AgencyClientRequest<'agency.profile.capabilities.get'> & { profileId: CliProfileId })
   | (AgencyClientRequest<'agency.sessions.list'> & { workspaceId?: WorkspaceId })
+  /** Closed tabs and superseded attempts, newest first; not part of live snapshots. */
+  | (AgencyClientRequest<'agency.sessions.history'> & { workspaceId?: WorkspaceId; offset?: number; limit?: number })
   | (AgencyClientRequest<'agency.session.create'> & {
       workspaceId: WorkspaceId;
       kind: 'agent';
@@ -251,6 +253,7 @@ export type AgencyServerMessage =
   | { type: 'agency.profile.capabilities'; requestId: RequestId; profileId: CliProfileId; capabilities: AgencyProfileCapabilities }
   /** `workspaceId` is present only when the snapshot is scoped to one workspace (a scoped list request). */
   | { type: 'agency.sessions.snapshot'; requestId: RequestId; sessions: readonly AgencyRuntimeSession[]; workspaceId?: WorkspaceId }
+  | { type: 'agency.sessions.history'; requestId: RequestId; sessions: readonly AgencyRuntimeSession[]; total: number; offset: number }
   | { type: 'agency.session.created'; requestId: RequestId; session: AgencyRuntimeSession }
   | { type: 'agency.session.selection'; requestId: RequestId; session: AgencyAgentSession }
   | { type: 'agency.error'; requestId: RequestId; code: AgencyErrorCode; message: string }
@@ -432,6 +435,16 @@ export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | nu
       return {
         type: 'agency.sessions.list',
         requestId,
+        ...(raw['workspaceId'] !== undefined ? { workspaceId: raw['workspaceId'] as WorkspaceId } : {}),
+      };
+    }
+    case 'agency.sessions.history': {
+      if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'offset', 'limit'])) return null;
+      if (raw['workspaceId'] !== undefined && !isValidId(raw['workspaceId'])) return null;
+      const offset = raw['offset'] ?? 0, limit = raw['limit'] ?? 50;
+      if (!Number.isInteger(offset) || (offset as number) < 0 || !Number.isInteger(limit) || (limit as number) < 1 || (limit as number) > 200) return null;
+      return {
+        type: 'agency.sessions.history', requestId, offset: offset as number, limit: limit as number,
         ...(raw['workspaceId'] !== undefined ? { workspaceId: raw['workspaceId'] as WorkspaceId } : {}),
       };
     }
@@ -645,6 +658,11 @@ export function parseAgencyServerMessage(raw: unknown): AgencyServerMessage | nu
       if (raw['workspaceId'] !== undefined && typeof raw['workspaceId'] !== 'string') return null;
       return { type: 'agency.sessions.snapshot', requestId: raw['requestId'], sessions: raw['sessions'],
         ...(typeof raw['workspaceId'] === 'string' ? { workspaceId: raw['workspaceId'] as WorkspaceId } : {}) };
+    }
+    case 'agency.sessions.history': {
+      if (typeof raw['requestId'] !== 'string' || !Array.isArray(raw['sessions']) || !raw['sessions'].every(isAgencyRuntimeSession) ||
+          !Number.isInteger(raw['total']) || !Number.isInteger(raw['offset'])) return null;
+      return { type: 'agency.sessions.history', requestId: raw['requestId'], sessions: raw['sessions'], total: raw['total'] as number, offset: raw['offset'] as number };
     }
     case 'agency.session.created': {
       if (typeof raw['requestId'] !== 'string' || !isAgencyRuntimeSession(raw['session'])) return null;

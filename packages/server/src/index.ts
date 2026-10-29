@@ -60,7 +60,7 @@ import { WorktreeStore } from './worktrees/store.js';
 import { AgencyWorkspaceStore } from './agency/store.js';
 import { NativeIdentities } from './agency/native-identity.js';
 import { AgencyProfileStore } from './agency/agency-profile-store.js';
-import { AgencySessionStore } from './agency/agency-session-store.js';
+import { SplitAgencySessionStore } from './agency/agency-session-store.js';
 import {
   AgencySessionRuntime,
   type AgencyProfileLaunchProvider,
@@ -521,7 +521,7 @@ async function main(): Promise<void> {
       }),
   };
 
-  const agencySessionStore = new AgencySessionStore(path.join(appConfigDir(), 'agency-sessions.json'));
+  const agencySessionStore = new SplitAgencySessionStore(path.join(appConfigDir(), 'agency-sessions.json'));
   const agencyRuntime = new AgencySessionRuntime({
     registry,
     workspaces: agencyWorkspaceSource,
