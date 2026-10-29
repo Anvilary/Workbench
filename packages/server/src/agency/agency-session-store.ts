@@ -164,3 +164,83 @@ export class AgencySessionStore {
     return this.queue;
   }
 }
+
+const ACTIVE_LIFECYCLES = new Set(['starting', 'running', 'stopping']);
+
+/**
+ * A session that belongs in live state: any active process, or a tab that is open and is the tab's current
+ * runtime attempt. Closed tabs and superseded attempts are history: retained, but not sent with every
+ * snapshot or rewritten with every save.
+ */
+export function isLiveSession(session: AgencyRuntimeSession): boolean {
+  if (ACTIVE_LIFECYCLES.has(session.lifecycle)) return true;
+  if (!session.tab) return true;
+  return session.tab.current !== false && !session.tab.closedAt;
+}
+
+export interface AgencySessionPersistence {
+  load(): Promise<AgencyRuntimeSession[]>;
+  save(sessions: readonly AgencyRuntimeSession[]): Promise<void>;
+  flush(): Promise<void>;
+}
+
+/**
+ * Live rows in `agency-sessions.json` (rewritten on every change), history rows in
+ * `agency-sessions-history.json` (rewritten only when the set of history rows changes, e.g. a tab closes).
+ * Both files use the regular store format, validated-backup recovery and schema checks.
+ *
+ * Crash safety: when a row moves to history, history is written first, then live. A crash in between leaves
+ * the row in both files; load keeps the most recently updated copy, preferring closed history on timestamp
+ * ties (multiple runtime changes can share a millisecond). Older builds read only the live file and simply
+ * do not see history (it is not deleted).
+ */
+export class SplitAgencySessionStore implements AgencySessionPersistence {
+  private readonly live: AgencySessionStore;
+  private readonly history: AgencySessionStore;
+  private queue: Promise<void> = Promise.resolve();
+  private savedHistory: readonly AgencyRuntimeSession[] | null = null;
+
+  constructor(readonly file: string, readonly historyFile: string = file.replace(/\.json$/, '') + '-history.json') {
+    this.live = new AgencySessionStore(file);
+    this.history = new AgencySessionStore(historyFile);
+  }
+
+  async load(): Promise<AgencyRuntimeSession[]> {
+    const [live, history] = await Promise.all([this.live.load(), this.history.load()]);
+    const byId = new Map<string, AgencyRuntimeSession>();
+    for (const row of history) byId.set(row.id, row);
+    for (const row of live) {
+      const other = byId.get(row.id);
+      if (!other || row.updatedAt > other.updatedAt || (row.updatedAt === other.updatedAt && !other.tab?.closedAt)) {
+        byId.set(row.id, row);
+      }
+    }
+    // Live first (stable order for the runtime), then history in file order.
+    const order = [...live.map(row => row.id), ...history.map(row => row.id)];
+    const merged = [...new Set(order)].map(id => byId.get(id)!);
+    this.savedHistory = null;   // the first save rewrites both files in the split layout
+    return merged;
+  }
+
+  save(sessions: readonly AgencyRuntimeSession[]): Promise<void> {
+    const liveRows = sessions.filter(isLiveSession);
+    const historyRows = sessions.filter(row => !isLiveSession(row));
+    const perform = async (): Promise<void> => {
+      const previous = this.savedHistory;
+      // Rows are immutable snapshots: identity comparison detects any change without serializing history.
+      const changed = previous === null || previous.length !== historyRows.length || historyRows.some((row, i) => row !== previous[i]);
+      if (changed) {
+        await this.history.save(historyRows);
+        this.savedHistory = historyRows;
+      }
+      await this.live.save(liveRows);
+    };
+    const next = this.queue.then(perform);
+    this.queue = next.catch(() => { this.savedHistory = null; });
+    return next;
+  }
+
+  flush(): Promise<void> {
+    return this.queue.then(() => Promise.all([this.live.flush(), this.history.flush()])).then(() => undefined);
+  }
+}

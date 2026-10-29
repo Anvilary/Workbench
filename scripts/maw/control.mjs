@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import { spawn, execFileSync } from 'node:child_process';
 import path from 'node:path';
 
@@ -17,11 +17,23 @@ try {
   const unit = process.env.MAW_UNIT || 'maw.service';
   const pid = Number(execFileSync('systemctl', ['--user', 'show', unit, '--property=MainPID', '--value'], { encoding: 'utf8' }).trim());
   if (!Number.isInteger(pid) || pid <= 0 || state.pid !== pid) throw new Error('Service starting, stopped, or stale readiness');
+  // Release identity: the activation helper names the release it expects. A server that publishes its
+  // release ID must match it exactly; an older server without the field is checked through the working
+  // directory systemd gave it (WorkingDirectory=<state>/current, resolved when the process started).
+  const expected = process.env.MAW_EXPECT_RELEASE_ID || '';
+  if (expected) {
+    if (typeof state.releaseId === 'string' || state.releaseId === null) {
+      if (state.releaseId !== expected) throw new Error(`Serving release ${state.releaseId}, expected ${expected}`);
+    } else if (path.basename(await realpath(`/proc/${pid}/cwd`)) !== expected) {
+      throw new Error(`Service working directory is not release ${expected}`);
+    }
+  }
   const url = new URL(state.url);
   if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port || !url.searchParams.get('token') || url.username || url.password) throw new Error('Invalid authenticated loopback URL');
   const response = await fetch(url, { signal: AbortSignal.timeout(3000), redirect: 'error' });
   if (!response.ok) throw new Error('Service is not ready');
-  if (process.argv[2] === 'status') console.log(`Healthy; PID ${pid}; loopback port ${url.port}`);
+  const release = typeof state.releaseId === 'string' ? `; release ${state.releaseId}` : '';
+  if (process.argv[2] === 'status') console.log(`Healthy; PID ${pid}; loopback port ${url.port}${release}`);
   else if (process.argv[2] === 'url') console.log(url.href);
   else if (process.argv[2] === 'open') {
     const browser = process.argv[3] || 'xdg-open';

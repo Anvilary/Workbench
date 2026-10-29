@@ -114,6 +114,7 @@ import { QueuedSubmitBook, reclaimQueuedSubmits } from './queued-submits.js';
 import type { RepoHub } from './repo-hub.js';
 import { revealPath } from './reveal.js';
 import type { SessionIndex } from './session-index.js';
+import { OutputBackpressure } from './output-backpressure.js';
 import { AppSettingsChangeError, type AppSettingsService } from './app-settings-service.js';
 import { TerminalOpenError, type OutputListener, type TerminalRegistry } from './terminal-registry.js';
 import { TerminalWriteQueue, type PieceWriter } from './terminal-write-queue.js';
@@ -1045,8 +1046,16 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
 
     // Un oyente por socket. Se engancha y desengancha de terminales concretas
     // sin que ninguna se entere de que hubo una reconexion.
+    // A client that stops reading must not make the server buffer PTY output without bound (audit N-3):
+    // over the high-water mark output is skipped, and once the socket drains the client gets the replay.
+    const backpressure = new OutputBackpressure(socket, (terminalIds) => {
+      for (const terminalId of terminalIds) {
+        const attached = registry.attach(terminalId, listener);
+        if (attached !== null) send(socket, { type: 'terminal.replay', terminalId, data: attached.replay, truncated: attached.truncated });
+      }
+    });
     const listener: OutputListener = (terminalId, chunk) => {
-      send(socket, { type: 'terminal.output', terminalId, data: chunk });
+      if (backpressure.shouldSend(terminalId)) send(socket, { type: 'terminal.output', terminalId, data: chunk });
     };
 
     // Conversaciones y repos que sigue **este** socket. Se sueltan al cerrarse,
@@ -1185,7 +1194,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     send(socket, {
       type: 'agency.sessions.snapshot',
       requestId: '',
-      sessions: agencyRuntime.list(),
+      sessions: agencyRuntime.liveList(),
     });
     send(socket, {
       type: 'agency.notifications.snapshot',
@@ -2185,6 +2194,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
               sendError(socket, 'unknown-terminal', serverText('terminalGone'));
             } else {
               subscriptions.delete(message.terminalId);
+              backpressure.forget(message.terminalId);
               gitSubscriptions.delete(message.terminalId);
               memorySubscriptions.delete(message.terminalId);
             }
@@ -2210,6 +2220,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
 
         case 'terminal.detach':
           registry.detach(message.terminalId, listener);
+          backpressure.forget(message.terminalId);
           break;
 
         case 'terminal.rename':
@@ -3444,8 +3455,18 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         }
 
         case 'agency.sessions.list': {
-          const sessions = agencyRuntime.list(message.workspaceId);
-          send(socket, { type: 'agency.sessions.snapshot', requestId: message.requestId, sessions });
+          const sessions = agencyRuntime.liveList(message.workspaceId);
+          send(socket, { type: 'agency.sessions.snapshot', requestId: message.requestId, sessions,
+            ...(message.workspaceId !== undefined ? { workspaceId: message.workspaceId } : {}) });
+          break;
+        }
+
+        case 'agency.sessions.history': {
+          const page = agencyRuntime.history({
+            ...(message.workspaceId !== undefined ? { workspaceId: message.workspaceId } : {}),
+            offset: message.offset ?? 0, limit: message.limit ?? 50,
+          });
+          send(socket, { type: 'agency.sessions.history', requestId: message.requestId, sessions: page.sessions, total: page.total, offset: message.offset ?? 0 });
           break;
         }
 
@@ -3475,7 +3496,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
             if (message.type === 'agency.tab.action' && message.action === 'close') {
               await agencyActivityManager.closeTab(message.workspaceId, message.tabId);
             }
-            send(socket, { type: 'agency.sessions.snapshot', requestId: message.requestId, sessions: agencyRuntime.list() });
+            send(socket, { type: 'agency.sessions.snapshot', requestId: message.requestId, sessions: agencyRuntime.liveList() });
           } catch (error) {
             send(socket, { type: 'agency.error', requestId: message.requestId, code: error instanceof AgencyRuntimeError ? error.code : 'internal-error', message: error instanceof Error ? error.message : String(error) });
           }
@@ -3590,6 +3611,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         tornDown = true;
         planLimits.release();
       }
+      backpressure.dispose();
       if (phonePairingOwner === socket) {
         phonePairingOwner = null;
         remote.cancelPhonePairing();

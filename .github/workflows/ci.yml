@@ -55,7 +55,13 @@ jobs:
       - name: MAW security, native lifecycle, browser ownership and activity regressions
         if: runner.os == 'Linux'
         working-directory: packages/server
-        run: pnpm exec tsx --test src/security.test.ts src/maw-host.test.ts src/agency/*.test.ts src/agency/browser-tabs/*.test.ts src/agency/runtime/*.test.ts
+        run: pnpm exec tsx --test src/security.test.ts src/maw-host.test.ts src/output-backpressure.test.ts src/agency/*.test.ts src/agency/browser-tabs/*.test.ts src/agency/runtime/*.test.ts
+      - name: MAW updater, activation and rollback acceptance (mocked systemd)
+        if: runner.os == 'Linux'
+        working-directory: packages/server
+        run: pnpm exec tsx --test src/maw-updater-acceptance.test.ts
+      # Real-systemd activation/rollback (src/maw-systemd-acceptance.test.ts) needs a user systemd manager,
+      # which hosted runners do not provide; it runs locally with MAW_REAL_SYSTEMD=1 and skips here.
       - name: Restricted Neko controller regressions
         if: runner.os == 'Linux'
         run: python3 -m unittest discover -s infra/neko/controller -p 'test_*.py'
@@ -64,7 +70,7 @@ jobs:
         run: pnpm exec playwright install chromium --with-deps
       - name: MAW real browser and notification UI regressions
         if: runner.os == 'Linux'
-        run: node --test packages/web/src/agency/browser-tabs.test.mjs packages/web/src/agency/notifications.test.mjs
+        run: node --test packages/web/src/agency/browser-tabs.test.mjs packages/web/src/agency/notifications.test.mjs packages/web/src/maw-root.test.mjs packages/web/src/terminal-webgl.test.mjs
       - run: pnpm build
 
   package:

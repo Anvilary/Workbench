@@ -28,6 +28,7 @@ const ws='11111111-1111-4111-8111-111111111111', p='22222222-2222-4222-8222-2222
 const native='33333333-3333-4333-8333-333333333333', web='44444444-4444-4444-8444-444444444444';
 const now=new Date().toISOString();
 const project={id:p,name:'Project',status:'active',createdAt:now,updatedAt:now};
+const profile={id:'codex-0',label:'Codex 00',provider:'codex',executable:'/fixture/codex-0',args:[],environmentOverrides:{},configurationStatus:'available',configurationMessage:null,capabilities:{canLaunch:true,canResumeNativeSession:false,canInterrupt:true,canReportActivity:false,canSelectModel:false,canSelectEffort:false,canRequestPermissions:false,models:[],discovery:'unavailable'}};
 const workspace={id:ws,projectId:p,name:'Workspace',status:'active',cwd:'/fixture',createdAt:now,updatedAt:now};
 let sessions=[{id:'session',workspaceId:ws,kind:'terminal',terminalId:'term',lifecycle:'running',activity:'idle',exitCode:null,tab:{id:native,order:0,selected:true,current:true,closedAt:null,name:'Native shell',terminalNumber:1}}];
 sessions.push({...sessions[0],id:'cli-session',kind:'agent',profileId:'codex-0',terminalId:null,lifecycle:'exited',tab:{...sessions[0].tab,id:'66666666-6666-4666-8666-666666666666',order:2,selected:false,name:'Native CLI'}});
@@ -46,12 +47,15 @@ const reply=(type,extra={})=>emit({type,requestId:m.requestId,...extra});
 switch(m.type){
 case 'agency.projects.list':reply('agency.projects.snapshot',{projects:[project]});break;
 case 'agency.workspaces.list':reply('agency.workspaces.snapshot',{workspaces:[workspace]});break;
-case 'agency.profiles.list':reply('agency.profiles.snapshot',{profiles:[]});break;
+case 'agency.profiles.list':reply('agency.profiles.snapshot',{profiles:[profile]});break;
+case 'agency.session.create':{const id=crypto.randomUUID();const created={...sessions[1],id,launchId:m.launchId,lifecycle:'starting',profileId:m.profileId,tab:{...sessions[1].tab,id:crypto.randomUUID(),closedAt:null,current:true,selected:true,name:null,order:9}};sessions=[...sessions.map(s=>({...s,tab:{...s.tab,selected:false}})),created];snapshots();reply('agency.session.created',{session:created});break;}
 case 'agency.sessions.list':reply('agency.sessions.snapshot',{sessions:structuredClone(sessions)});break;
 case 'agency.webTabs.list':reply('agency.webTabs.snapshot',{tabs:structuredClone(tabs)});break;
 case 'agency.notifications.list':reply('agency.notifications.snapshot',{notifications:structuredClone(notifications),activityStates:structuredClone(activities)});break;
 case 'terminal.attach':emit({type:'terminal.replay',terminalId:'term',data:'native prompt\\r\\n',truncated:false});break;
-case 'agency.webTab.select':case 'agency.tab.action':
+case 'agency.tab.action':
+ if(m.action==='close'){sessions=sessions.map(s=>s.tab.id===m.tabId?{...s,tab:{...s.tab,closedAt:now,selected:false}}:s);snapshots();reply('agency.sessions.snapshot',{sessions:structuredClone(sessions)});break;}
+case 'agency.webTab.select':
  if(api.failSelect || (m.type==='agency.webTab.select' && api.failActivationOnce && tabs.find(t=>t.id===m.tabId)?.selected)){api.failActivationOnce=false;reply('agency.error',{message:'Selection failed',code:'session-unavailable'});break;}
  sessions=sessions.map(s=>({...s,tab:{...s.tab,selected:s.tab.id===m.tabId}}));tabs=tabs.map(t=>({...t,selected:t.id===m.tabId}));snapshots();
  if(m.type==='agency.webTab.select')reply('agency.webTab.updated',{tab:tabs.find(t=>t.id===m.tabId)});else reply('agency.session.changed',{session:sessions[0]});break;
@@ -174,5 +178,15 @@ test('Actual Agency UI preserves native input and delays web inspection until se
   await page.getByRole('button',{name:'Add tab',exact:true}).click();
   await page.getByRole('menuitem',{name:'Rename tab',exact:true}).click();
   await input.waitFor(); await input.press('Escape');
+  // C-2: an exited agent tab without a native conversation offers Configure profile and Start again.
+  await page.getByRole('tab',{name:'CLI renamed'}).click();
+  await page.getByRole('button',{name:'Configure profile',exact:true}).click();
+  await page.getByRole('dialog',{name:'Configure profile'}).waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog',{name:'Configure profile'}).waitFor({state:'detached'});
+  await page.getByRole('button',{name:'Start again',exact:true}).click();
+  await page.waitForFunction(()=>window.agencyTest.requests.some(m=>m.type==='agency.session.create'));
+  const replaced=await page.evaluate(()=>window.agencyTest.requests.filter(m=>(m.type==='agency.tab.action'&&m.action==='close')||m.type==='agency.session.create').map(m=>m.type+':'+(m.tabId??m.profileId)));
+  assert.deepEqual(replaced,['agency.tab.action:66666666-6666-4666-8666-666666666666','agency.session.create:codex-0']);
   assert.deepEqual(errors,[]);
 });

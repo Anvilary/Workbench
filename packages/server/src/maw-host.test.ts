@@ -131,7 +131,7 @@ test('control url outputs authenticated loopback URL and open launches specified
     ]);
 
     const helpOut = await run(maw, ['help'], { cwd: '/', env: environment });
-    assert.match(helpOut.stdout, /Usage: maw \{start\|stop\|restart\|status\|logs \[--follow\]\|url\|open \[browser\]\|update \[--no-restart\|--restart\]\|help\}/);
+    assert.match(helpOut.stdout, /Usage: maw \{start\|stop\|restart\|rollback\|status\|logs \[--follow\]\|url\|open \[browser\]\|update \[--no-restart\|--restart\] \[--ref <ref> --allow-unapproved-ref\]\|help\}/);
 
     await assert.rejects(run(maw, ['url', 'extra'], { cwd: '/', env: environment }));
     await assert.rejects(run(maw, ['open', 'b1', 'b2'], { cwd: '/', env: environment }));
@@ -140,4 +140,53 @@ test('control url outputs authenticated loopback URL and open launches specified
     await new Promise<void>(resolve => server.close(() => resolve()));
     await rm(temp, { recursive: true, force: true });
   }
+});
+
+test('U-10: readiness carries the release identity and control refuses a different release', async () => {
+  const { createServer } = await import('node:http');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const { writeFile, mkdir, symlink } = await import('node:fs/promises');
+  const { fileURLToPath } = await import('node:url');
+  const { readReleaseIdentity } = await import('./maw-host.js');
+  const run = promisify(execFile);
+  const temp = await mkdtemp(path.join(tmpdir(), 'maw-release-id-'));
+  const id = '20261029010101-abcdef1';
+  const release = path.join(temp, 'releases', id);
+  await mkdir(release, { recursive: true });
+  try {
+    assert.equal(await readReleaseIdentity(release), null, 'no metadata: source checkout');
+    await writeFile(path.join(release, '.maw-release-meta.json'), JSON.stringify({ releaseId: id, commit: 'x' }));
+    assert.equal(await readReleaseIdentity(release), id);
+    await writeFile(path.join(release, '.maw-release-meta.json'), JSON.stringify({ releaseId: '20261029010101-0000000' }));
+    assert.equal(await readReleaseIdentity(release), null, 'metadata must name its own directory');
+    await writeFile(path.join(release, '.maw-release-meta.json'), JSON.stringify({ releaseId: id }));
+
+    const bin = path.join(temp, 'bin'); await mkdir(bin);
+    await writeFile(path.join(bin, 'systemctl'), '#!/bin/sh\nprintf "%s\\n" "$MAW_TEST_PID"\n', { mode: 0o700 });
+    const server = createServer((request, response) => { response.statusCode = request.url?.includes('token=t0k') ? 200 : 401; response.end(); });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address(); assert.ok(address && typeof address !== 'string');
+    const control = fileURLToPath(new URL('../../../scripts/maw/control.mjs', import.meta.url));
+    const runtime = path.join(temp, 'maw');
+    const url = `http://127.0.0.1:${address.port}/?token=t0k`;
+    const env = { ...process.env, MAW_RUNTIME_DIR: runtime, PATH: bin + ':' + process.env.PATH, MAW_TEST_PID: String(process.pid) };
+    const clear = await publishReadiness(runtime, url, id);
+    try {
+      assert.equal(JSON.parse(await readFile(path.join(runtime, 'maw-ready.json'), 'utf8')).releaseId, id);
+      assert.match((await run(process.execPath, [control, 'status'], { env: { ...env, MAW_EXPECT_RELEASE_ID: id } })).stdout, new RegExp(`release ${id}`));
+      await assert.rejects(run(process.execPath, [control, 'status'], { env: { ...env, MAW_EXPECT_RELEASE_ID: '20261029010101-1111111' } }));
+      // Older server without the field: the service's working directory decides. This process's cwd is not the release.
+      await writeFile(path.join(runtime, 'maw-ready.json'), JSON.stringify({ pid: process.pid, url }), { mode: 0o600 });
+      await assert.rejects(run(process.execPath, [control, 'status'], { env: { ...env, MAW_EXPECT_RELEASE_ID: id } }));
+      // A child started with cwd inside the release (through a `current` symlink, like systemd) passes.
+      await symlink(release, path.join(temp, 'current'));
+      const { spawn } = await import('node:child_process');
+      const child = spawn('sleep', ['10'], { cwd: path.join(temp, 'current'), stdio: 'ignore' });
+      try {
+        await writeFile(path.join(runtime, 'maw-ready.json'), JSON.stringify({ pid: child.pid, url }), { mode: 0o600 });
+        await run(process.execPath, [control, 'status'], { env: { ...env, MAW_TEST_PID: String(child.pid), MAW_EXPECT_RELEASE_ID: id } });
+      } finally { child.kill(); }
+    } finally { await clear(); await new Promise<void>(resolve => server.close(() => resolve())); }
+  } finally { await rm(temp, { recursive: true, force: true }); }
 });
