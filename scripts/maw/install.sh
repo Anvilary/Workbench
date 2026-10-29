@@ -69,6 +69,8 @@ if [ "$mode" = --service ]; then
   MAW_NODE_BIN="$node_bin" MAW_STATE_DIR="$state_dir" MAW_BIN_DIR="$bin_dir" MAW_RUNTIME_NAME="$runtime_name" \
     /bin/sh "$lib_dir/maw-render-unit.sh" > "$unit_dir/$unit_name.tmp" && mv -f "$unit_dir/$unit_name.tmp" "$unit_dir/$unit_name"
   chmod 644 "$unit_dir/$unit_name"
-  systemctl --user daemon-reload
+  # shellcheck source=scripts/maw/maw-lib.sh
+  . "$script_dir/maw-lib.sh"
+  maw_sctl daemon-reload
   printf '%s\n' 'Service installed but not enabled or started. Start and verify it with: maw start'
 fi

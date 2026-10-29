@@ -26,7 +26,7 @@ is_inside_maw() {
       END { exit found ? 0 : 1 }' "$cgroup_file"; then
     return 0
   fi
-  maw_pid=$(systemctl --user show "$unit" --property=MainPID --value 2>/dev/null || true)
+  maw_pid=$(maw_sctl show "$unit" --property=MainPID --value 2>/dev/null || true)
   if [ -n "$maw_pid" ] && [ "$maw_pid" -gt 0 ] 2>/dev/null; then
     check_pid=$$
     while [ -n "$check_pid" ] && [ "$check_pid" -gt 1 ] 2>/dev/null; do
@@ -50,7 +50,11 @@ run_activation() {   # extra helper args...
     # Fixed unit name: systemd itself rejects a second scheduled restart. --collect frees the name even
     # when the helper exits non-zero. The helper's environment is passed explicitly (systemd-run does not
     # inherit the caller's).
-    if systemd-run --user \
+    _extra_setenv=""
+    [ -z "${MAW_SYSTEMD_RUNTIME_DIR:-}" ] || _extra_setenv="--setenv=MAW_SYSTEMD_RUNTIME_DIR=$MAW_SYSTEMD_RUNTIME_DIR"
+    _extra_bus_setenv=""
+    [ -z "${MAW_SYSTEMD_BUS_ADDRESS:-}" ] || _extra_bus_setenv="--setenv=MAW_SYSTEMD_BUS_ADDRESS=$MAW_SYSTEMD_BUS_ADDRESS"
+    if maw_systemd_run \
         --unit="${MAW_HELPER_UNIT:-maw-restart-helper}" \
         --collect \
         --no-block \
@@ -66,6 +70,8 @@ run_activation() {   # extra helper args...
         --setenv=MAW_RESTART_LOCK="$restart_lock" \
         --setenv=MAW_NODE_BIN="$node_bin" \
         --setenv=MAW_CONTROL_SCRIPT="$control_script" \
+        ${_extra_setenv:+"$_extra_setenv"} \
+        ${_extra_bus_setenv:+"$_extra_bus_setenv"} \
         /bin/sh "$restart_helper" --unit "$unit" "$@"; then
       printf '%s\n' "Safe restart scheduled (transient unit: ${MAW_HELPER_UNIT:-maw-restart-helper})."
       printf '%s\n' "Your terminal session will be interrupted shortly. The outcome is recorded in $log_file; check it with: maw status"
@@ -81,7 +87,7 @@ command_name=${1:-help}
 case "$command_name" in
   start)
     [ "$#" -eq 1 ] || { usage >&2; exit 2; }
-    if [ "$(systemctl --user show "$unit" --property=ActiveState --value 2>/dev/null || true)" = active ]; then
+    if [ "$(maw_sctl show "$unit" --property=ActiveState --value 2>/dev/null || true)" = active ]; then
       exec /bin/sh "$restart_helper" --unit "$unit" --start
     fi
     run_activation --start
@@ -89,7 +95,8 @@ case "$command_name" in
   stop)
     [ "$#" -eq 1 ] || { usage >&2; exit 2; }
     printf '%s\n' 'Server-owned live PTYs will terminate. Metadata and native history remain.' >&2
-    exec systemctl --user stop "$unit"
+    maw_sctl stop "$unit"
+    exit $?
     ;;
   restart)
     [ "$#" -eq 1 ] || { usage >&2; exit 2; }
@@ -108,7 +115,7 @@ case "$command_name" in
     run_activation
     ;;
   status)
-    systemctl --user show "$unit" --property=ActiveState,SubState,MainPID,ExecMainStatus || true
+    maw_sctl show "$unit" --property=ActiveState,SubState,MainPID,ExecMainStatus || true
     for p in current staged healthy previous; do
       t=$(maw_pointer_raw "$p")
       printf '%-9s%s\n' "$p:" "${t:+$(basename "$t")}"
@@ -121,8 +128,8 @@ case "$command_name" in
     ;;
   logs)
     case "${2:-}" in
-      '') exec journalctl --user -u "$unit" -n 80 --no-pager ;;
-      --follow|-f) exec journalctl --user -u "$unit" -n 80 --follow ;;
+      '') maw_journalctl -u "$unit" -n 80 --no-pager; exit $? ;;
+      --follow|-f) maw_journalctl -u "$unit" -n 80 --follow; exit $? ;;
       *) usage >&2; exit 2 ;;
     esac
     ;;
