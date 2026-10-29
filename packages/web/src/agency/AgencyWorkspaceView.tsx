@@ -316,20 +316,20 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
           fontSize: '12px',
           color: '#fef08a',
         }}>
-          <span>⚙ Profile not configured — click Configure to set the executable path</span>
+          <span>⚙ {t('agency.profile.notConfiguredBanner')}</span>
           <button
             type="button"
             className="agency-primary-button"
             style={{ padding: '6px 14px', fontSize: '12px', whiteSpace: 'nowrap' }}
             onClick={() => setConfiguringProfile(selectedProfile ?? null)}
           >
-            Configure
+            {t('agency.profile.configureAction')}
           </button>
         </div>
       )}
       {!closing && !webDialog && !isUnconfigured && !canLaunchAgent(selectedProfile) && (
         <p role="status">{selectedProfile?.configurationStatus === 'not-installed'
-          ? 'Executable configured but not found on PATH. Check the command name and try again.'
+          ? t('agency.profile.executableNotFound')
           : selectedProfile?.configurationMessage}
         </p>
       )}
@@ -350,7 +350,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
             style={{ height: '40px', padding: '0 14px', whiteSpace: 'nowrap', fontWeight: 600 }}
             onClick={() => setConfiguringProfile(selectedProfile)}
           >
-            Configure
+            {t('agency.profile.configureAction')}
           </button>
         )}
       </div>}

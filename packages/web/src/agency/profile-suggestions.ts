@@ -1,4 +1,5 @@
 import type { CliProvider } from '@agent-workbench/shared';
+import { t } from '../i18n/index.js';
 
 /** 
  * Returns the suggested command-line executable for a given profile.
@@ -17,19 +18,8 @@ export function suggestedExecutable(profileId: string, provider: CliProvider): s
  * Provider-specific setup instructions shown during first-time configuration.
  */
 export function providerSetupNote(provider: CliProvider): string {
-  if (provider === 'codex') {
-    return 'Each Codex profile uses its own named wrapper binary with separate credentials. ' +
-      'Do not share executables between profiles.';
-  }
-  if (provider === 'antigravity') {
-    return 'Each AGY profile uses its own named wrapper binary (agy-0–agy-5) with separate authentication. ' +
-      'Do not share executables between profiles.';
-  }
-  if (provider === 'claude-code') {
-    return 'Enter the path to the Claude Code CLI binary, typically "claude". ' +
-      'Each Claude Code profile maintains its own authentication context.';
-  }
-  return 'Enter the full path or command name for this profile\'s CLI executable.';
+  void provider;
+  return t('agency.profile.noShareNotice');
 }
 
 /**
@@ -37,13 +27,14 @@ export function providerSetupNote(provider: CliProvider): string {
  */
 export function providerSetupDescription(provider: CliProvider): string {
   if (provider === 'codex') {
-    return 'Enter the path to your Codex wrapper. Each Codex profile uses its own named wrapper (e.g., codex-0) with separate credentials.';
+    return t('agency.profile.setupNoteCodex');
   }
   if (provider === 'antigravity') {
-    return 'Enter the path to your AGY wrapper. Each AGY profile uses its own named wrapper (e.g., agy-0) with separate credentials.';
+    return t('agency.profile.setupNoteAntigravity');
   }
   if (provider === 'claude-code') {
-    return 'Enter the path to the Claude Code CLI. Typically claude or an absolute path.';
+    return t('agency.profile.setupNoteClaudeCode');
   }
-  return 'Enter the path to your CLI executable.';
+  return t('agency.profile.setupNoteGeneric');
 }
+
