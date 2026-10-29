@@ -397,6 +397,8 @@
   "common.copyCode": "Copy code",
   "common.dismissNotice": "Dismiss the notice",
   "common.gotIt": "Got it",
+  "common.moduleLoadFailed": "This view could not be loaded. Check that MAW is running and reload the page.",
+  "common.reloadPage": "Reload page",
   "common.save": "Save",
   "composer.attach": "Attach a file",
   "composer.attachTitle": "Attach a file: a log, a PDF, a document or an image",

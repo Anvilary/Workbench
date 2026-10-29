@@ -391,6 +391,8 @@
   "common.copyCode": "复制代码",
   "common.dismissNotice": "关闭此提示",
   "common.gotIt": "知道了",
+  "common.moduleLoadFailed": "无法加载此视图。请确认 MAW 正在运行，然后重新加载页面。",
+  "common.reloadPage": "重新加载页面",
   "common.save": "保存",
   "composer.attach": "附加文件",
   "composer.attachTitle": "附加文件：日志、PDF、文档或图片",

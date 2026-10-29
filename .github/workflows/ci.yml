@@ -70,7 +70,7 @@ jobs:
         run: pnpm exec playwright install chromium --with-deps
       - name: MAW real browser and notification UI regressions
         if: runner.os == 'Linux'
-        run: node --test packages/web/src/agency/browser-tabs.test.mjs packages/web/src/agency/notifications.test.mjs
+        run: node --test packages/web/src/agency/browser-tabs.test.mjs packages/web/src/agency/notifications.test.mjs packages/web/src/maw-root.test.mjs
       - run: pnpm build
 
   package:

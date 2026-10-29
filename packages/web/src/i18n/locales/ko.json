@@ -391,6 +391,8 @@
   "common.copyCode": "코드 복사",
   "common.dismissNotice": "알림 닫기",
   "common.gotIt": "확인",
+  "common.moduleLoadFailed": "이 화면을 불러오지 못했습니다. MAW가 실행 중인지 확인하고 페이지를 새로 고치세요.",
+  "common.reloadPage": "페이지 새로 고침",
   "common.save": "저장",
   "composer.attach": "파일 첨부",
   "composer.attachTitle": "파일 첨부: 로그, PDF, 문서 또는 이미지",
