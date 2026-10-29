@@ -1,0 +1,5 @@
+{"conclusion":"failure","id":123162555608,"name":"Android app","steps":0}
+{"conclusion":"failure","id":123162555824,"name":"Node 22 on windows-latest","steps":0}
+{"conclusion":"failure","id":123162555941,"name":"Package contents","steps":0}
+{"conclusion":"failure","id":123162556017,"name":"Node 22 on ubuntu-latest","steps":0}
+{"conclusion":"skipped","id":123162573706,"name":"Install and start · Node ${{ matrix.node }} on ${{ matrix.os }}","steps":0}

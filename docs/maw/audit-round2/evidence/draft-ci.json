@@ -1,0 +1,47 @@
+{
+  "runId": 40790978936,
+  "url": "https://github.com/alteixeira20/My-Amazing-Workspace/actions/runs/40790978936",
+  "jobs": [
+    {
+      "name": "Android app",
+      "steps": 0,
+      "conclusion": "failure",
+      "annotations": [
+        "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+        "\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748\""
+      ]
+    },
+    {
+      "name": "Node 22 on windows-latest",
+      "steps": 0,
+      "conclusion": "failure",
+      "annotations": [
+        "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings"
+      ]
+    },
+    {
+      "name": "Package contents",
+      "steps": 0,
+      "conclusion": "failure",
+      "annotations": [
+        "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+        "\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748\""
+      ]
+    },
+    {
+      "name": "Node 22 on ubuntu-latest",
+      "steps": 0,
+      "conclusion": "failure",
+      "annotations": [
+        "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+        "\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748\""
+      ]
+    },
+    {
+      "name": "Install and start \u00b7 Node ${{ matrix.node }} on ${{ matrix.os }}",
+      "steps": 0,
+      "conclusion": "skipped",
+      "annotations": []
+    }
+  ]
+}

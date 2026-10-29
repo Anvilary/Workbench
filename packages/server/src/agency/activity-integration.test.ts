@@ -241,3 +241,32 @@ test('Codex evidence loss becomes unknown once, without inventing a completion',
   await watcher.poll();await watcher.poll();
   assert.deepEqual(turns.map(t=>t.phase),['working','unknown']);
 });
+
+test('Codex delayed evidence recovery and successive turns never duplicate or infer completion', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'maw-codex-recovery-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const id = randomUUID(), at = Date.now(), turns: CodexNativeTurn[] = [];
+  const folder = path.join(root, 'sessions', '2026', '10', '28'); await mkdir(folder, { recursive: true });
+  const file = path.join(folder, `rollout-2026-10-28T00-00-00-${id}.jsonl`);
+  const saved = path.join(root, 'saved.jsonl');
+  const event = (type: string, turn_id: string) => JSON.stringify({ type: 'event_msg', timestamp: new Date(at + 1).toISOString(), payload: { type, turn_id } }) + '\n';
+  await writeFile(file, JSON.stringify({ type: 'session_meta', payload: { id, cwd: root } }) + '\n' + event('task_started', 'first'));
+  const watcher = new CodexTurnWatcher({ home: root, cwd: root, sessionId: id, launchedAt: at, onTurn: turn => turns.push(turn) });
+  t.after(() => watcher.dispose());
+  await watcher.poll(); await rename(file, saved); await watcher.poll(); await watcher.poll();
+  assert.deepEqual(turns.map(turn => turn.phase), ['working', 'unknown']);
+  await rename(saved, file);
+  const completion = event('task_complete', 'first');
+  await appendFile(file, completion.slice(0, -3)); await watcher.poll();
+  assert.equal(turns.at(-1)?.phase, 'unknown', 'incomplete completion cannot finish a task');
+  await appendFile(file, completion.slice(-3)); await watcher.poll();
+  assert.equal(turns.at(-1)?.phase, 'finished', 'explicit delayed evidence restores completion');
+  const events = Array.from({ length: 100 }, (_, n) => event('task_started', 'turn-' + n) + event('task_complete', 'turn-' + n)).join('');
+  await appendFile(file, '{invalid JSON}\n' + 'x'.repeat(300 * 1024) + '\n' + events);
+  await watcher.poll(); await watcher.poll();
+  assert.equal(turns.filter(turn => turn.phase === 'finished').length, 101);
+  await appendFile(file, events); await watcher.poll();
+  assert.equal(turns.filter(turn => turn.phase === 'finished').length, 101, 'replayed turns remain deduplicated');
+  watcher.dispose(); await appendFile(file, event('task_started', 'late')); await watcher.poll();
+  assert.equal(turns.length, 203, 'disposed watcher cannot emit late activity');
+});

@@ -1,0 +1,376 @@
+{
+  "container": "maw-neko-integration-audit-fm1n7jvb",
+  "workload": "fresh unauthenticated ChatGPT pages; no generation, no viewer; shared host; 3s samples; settled does not guarantee page idle",
+  "results": [
+    {
+      "tabs": 1,
+      "actualTargets": 1,
+      "phase": "loading",
+      "intervalSeconds": 3.2170102520030923,
+      "hz": 100,
+      "groups": {
+        "other": {
+          "rssKiB": 141568,
+          "pssKiB": 102773,
+          "ticks": 40,
+          "processes": 7,
+          "fds": 76,
+          "unreadableProcesses": 1,
+          "cpuPercentOneCore": 0.6216952522158383
+        },
+        "chromium": {
+          "rssKiB": 1104408,
+          "pssKiB": 469522,
+          "ticks": 376,
+          "processes": 13,
+          "fds": 451,
+          "cpuPercentOneCore": 57.81765845607296
+        },
+        "neko": {
+          "rssKiB": 41636,
+          "pssKiB": 33815,
+          "ticks": 8,
+          "processes": 1,
+          "fds": 10,
+          "cpuPercentOneCore": 0
+        }
+      }
+    },
+    {
+      "tabs": 1,
+      "actualTargets": 1,
+      "phase": "settled",
+      "intervalSeconds": 3.197564677990158,
+      "hz": 100,
+      "groups": {
+        "other": {
+          "rssKiB": 141668,
+          "pssKiB": 102777,
+          "ticks": 40,
+          "processes": 7,
+          "fds": 76,
+          "unreadableProcesses": 1,
+          "cpuPercentOneCore": 0
+        },
+        "chromium": {
+          "rssKiB": 1101092,
+          "pssKiB": 467736,
+          "ticks": 382,
+          "processes": 13,
+          "fds": 451,
+          "cpuPercentOneCore": 1.5636900277315953
+        },
+        "neko": {
+          "rssKiB": 41636,
+          "pssKiB": 33815,
+          "ticks": 8,
+          "processes": 1,
+          "fds": 10,
+          "cpuPercentOneCore": 0
+        }
+      }
+    },
+    {
+      "tabs": 5,
+      "actualTargets": 5,
+      "phase": "loading",
+      "intervalSeconds": 3.2390843579923967,
+      "hz": 100,
+      "groups": {
+        "other": {
+          "rssKiB": 141632,
+          "pssKiB": 102446,
+          "ticks": 45,
+          "processes": 7,
+          "fds": 76,
+          "unreadableProcesses": 1,
+          "cpuPercentOneCore": 0.9261876717096116
+        },
+        "chromium": {
+          "rssKiB": 1889240,
+          "pssKiB": 739218,
+          "ticks": 850,
+          "processes": 17,
+          "fds": 676,
+          "cpuPercentOneCore": 138.92815075644174
+        },
+        "neko": {
+          "rssKiB": 41636,
+          "pssKiB": 33783,
+          "ticks": 8,
+          "processes": 1,
+          "fds": 10,
+          "cpuPercentOneCore": 0
+        }
+      }
+    },
+    {
+      "tabs": 5,
+      "actualTargets": 5,
+      "phase": "settled",
+      "intervalSeconds": 3.226069037002162,
+      "hz": 100,
+      "groups": {
+        "other": {
+          "rssKiB": 141696,
+          "pssKiB": 102448,
+          "ticks": 45,
+          "processes": 7,
+          "fds": 76,
+          "unreadableProcesses": 1,
+          "cpuPercentOneCore": 0.3099747675980469
+        },
+        "chromium": {
+          "rssKiB": 1881496,
+          "pssKiB": 732874,
+          "ticks": 858,
+          "processes": 17,
+          "fds": 676,
+          "cpuPercentOneCore": 2.479798140784375
+        },
+        "neko": {
+          "rssKiB": 41636,
+          "pssKiB": 33783,
+          "ticks": 8,
+          "processes": 1,
+          "fds": 10,
+          "cpuPercentOneCore": 0
+        }
+      }
+    },
+    {
+      "tabs": 10,
+      "actualTargets": 10,
+      "phase": "loading",
+      "intervalSeconds": 3.2796517329989,
+      "hz": 100,
+      "groups": {
+        "other": {
+          "rssKiB": 141580,
+          "pssKiB": 102287,
+          "ticks": 53,
+          "processes": 7,
+          "fds": 76,
+          "unreadableProcesses": 1,
+          "cpuPercentOneCore": 1.8294625431199745
+        },
+        "chromium": {
+          "rssKiB": 2854356,
+          "pssKiB": 1059761,
+          "ticks": 1462,
+          "processes": 22,
+          "fds": 967,
+          "cpuPercentOneCore": 177.45786668263753
+        },
+        "neko": {
+          "rssKiB": 41636,
+          "pssKiB": 33760,
+          "ticks": 8,
+          "processes": 1,
+          "fds": 10,
+          "cpuPercentOneCore": 0
+        }
+      }
+    },
+    {
+      "tabs": 10,
+      "actualTargets": 10,
+      "phase": "settled",
+      "intervalSeconds": 3.2921399849874433,
+      "hz": 100,
+      "groups": {
+        "other": {
+          "rssKiB": 141696,
+          "pssKiB": 102304,
+          "ticks": 53,
+          "processes": 7,
+          "fds": 76,
+          "unreadableProcesses": 1,
+          "cpuPercentOneCore": 0.3037537907136759
+        },
+        "chromium": {
+          "rssKiB": 2842360,
+          "pssKiB": 1049391,
+          "ticks": 1470,
+          "processes": 22,
+          "fds": 967,
+          "cpuPercentOneCore": 2.4300303257094074
+        },
+        "neko": {
+          "rssKiB": 41636,
+          "pssKiB": 33760,
+          "ticks": 8,
+          "processes": 1,
+          "fds": 10,
+          "cpuPercentOneCore": 0
+        }
+      }
+    },
+    {
+      "tabs": 15,
+      "actualTargets": 15,
+      "phase": "loading",
+      "intervalSeconds": 3.328895829996327,
+      "hz": 100,
+      "groups": {
+        "other": {
+          "rssKiB": 141816,
+          "pssKiB": 102215,
+          "ticks": 57,
+          "processes": 7,
+          "fds": 76,
+          "unreadableProcesses": 1,
+          "cpuPercentOneCore": 0.9011997230334811
+        },
+        "chromium": {
+          "rssKiB": 3814724,
+          "pssKiB": 1374400,
+          "ticks": 2158,
+          "processes": 27,
+          "fds": 1259,
+          "cpuPercentOneCore": 198.8647388827215
+        },
+        "neko": {
+          "rssKiB": 41636,
+          "pssKiB": 33746,
+          "ticks": 8,
+          "processes": 1,
+          "fds": 10,
+          "cpuPercentOneCore": 0
+        }
+      }
+    },
+    {
+      "tabs": 15,
+      "actualTargets": 15,
+      "phase": "settled",
+      "intervalSeconds": 3.316504553993582,
+      "hz": 100,
+      "groups": {
+        "other": {
+          "rssKiB": 141672,
+          "pssKiB": 102225,
+          "ticks": 56,
+          "processes": 7,
+          "fds": 76,
+          "unreadableProcesses": 1,
+          "cpuPercentOneCore": 0
+        },
+        "chromium": {
+          "rssKiB": 3798856,
+          "pssKiB": 1360257,
+          "ticks": 2167,
+          "processes": 27,
+          "fds": 1259,
+          "cpuPercentOneCore": 2.412178204419098
+        },
+        "neko": {
+          "rssKiB": 41640,
+          "pssKiB": 33750,
+          "ticks": 8,
+          "processes": 1,
+          "fds": 10,
+          "cpuPercentOneCore": 0
+        }
+      }
+    },
+    {
+      "tabs": 30,
+      "actualTargets": 30,
+      "phase": "loading",
+      "intervalSeconds": 3.5247253440029453,
+      "hz": 100,
+      "groups": {
+        "other": {
+          "rssKiB": 141728,
+          "pssKiB": 102114,
+          "ticks": 79,
+          "processes": 7,
+          "fds": 76,
+          "unreadableProcesses": 1,
+          "cpuPercentOneCore": 4.823070832717284
+        },
+        "chromium": {
+          "rssKiB": 6312872,
+          "pssKiB": 2116983,
+          "ticks": 3554,
+          "processes": 41,
+          "fds": 2098,
+          "unreadableProcesses": 1,
+          "cpuPercentOneCore": 376.19952495194815
+        },
+        "neko": {
+          "rssKiB": 41640,
+          "pssKiB": 33727,
+          "ticks": 8,
+          "processes": 1,
+          "fds": 10,
+          "cpuPercentOneCore": 0
+        }
+      }
+    },
+    {
+      "tabs": 30,
+      "actualTargets": 30,
+      "phase": "settled",
+      "intervalSeconds": 3.5559784609940834,
+      "hz": 100,
+      "groups": {
+        "other": {
+          "rssKiB": 141792,
+          "pssKiB": 102108,
+          "ticks": 77,
+          "processes": 7,
+          "fds": 76,
+          "unreadableProcesses": 1,
+          "cpuPercentOneCore": 0
+        },
+        "chromium": {
+          "rssKiB": 6549660,
+          "pssKiB": 2219416,
+          "ticks": 3926,
+          "processes": 42,
+          "fds": 2165,
+          "cpuPercentOneCore": 54.83722754200463
+        },
+        "neko": {
+          "rssKiB": 41640,
+          "pssKiB": 33727,
+          "ticks": 8,
+          "processes": 1,
+          "fds": 10,
+          "cpuPercentOneCore": 0
+        }
+      }
+    },
+    {
+      "phase": "cleanup",
+      "actualTargets": 1,
+      "hz": 100,
+      "groups": {
+        "other": {
+          "rssKiB": 141936,
+          "pssKiB": 103081,
+          "ticks": 69,
+          "processes": 7,
+          "fds": 76,
+          "unreadableProcesses": 1
+        },
+        "neko": {
+          "rssKiB": 41996,
+          "pssKiB": 34167,
+          "ticks": 8,
+          "processes": 1,
+          "fds": 10
+        },
+        "chromium": {
+          "rssKiB": 982620,
+          "pssKiB": 376993,
+          "ticks": 91,
+          "processes": 13,
+          "fds": 419
+        }
+      }
+    }
+  ]
+}

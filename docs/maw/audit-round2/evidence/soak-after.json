@@ -1,0 +1,193 @@
+{
+  "fixture": "real server, disposable Bash PTYs, production UI; shared host; double-rAF paint opportunity, not hardware paint",
+  "node": "v24.22.0",
+  "durationSeconds": 120,
+  "samples": [
+    {
+      "activePtys": 0,
+      "knownClients": 1,
+      "phase": "baseline",
+      "at": 869.320432,
+      "rssKiB": 117252,
+      "pssKiB": 67781,
+      "fds": 24,
+      "cpuTicks": 65,
+      "childProcesses": 0,
+      "sessions": 0
+    },
+    {
+      "activePtys": 15,
+      "knownClients": 1,
+      "phase": "warm",
+      "at": 1488.356749,
+      "rssKiB": 125832,
+      "pssKiB": 75701,
+      "fds": 39,
+      "cpuTicks": 80,
+      "childProcesses": 15,
+      "sessions": 15
+    },
+    {
+      "activePtys": 15,
+      "knownClients": 2,
+      "phase": "ui-warm",
+      "at": 44283.980133,
+      "rssKiB": 129100,
+      "pssKiB": 80877,
+      "fds": 40,
+      "cpuTicks": 123,
+      "childProcesses": 15,
+      "sessions": 15,
+      "domNodes": 419,
+      "heapBytes": 11212441,
+      "documents": 1,
+      "nodes": 1553,
+      "jsEventListeners": 381
+    },
+    {
+      "activePtys": 15,
+      "knownClients": 2,
+      "phase": "workload-0",
+      "at": 47468.175717,
+      "rssKiB": 129208,
+      "pssKiB": 80953,
+      "fds": 42,
+      "cpuTicks": 131,
+      "childProcesses": 15,
+      "sessions": 16,
+      "domNodes": 398,
+      "heapBytes": 11200597,
+      "documents": 1,
+      "nodes": 1154,
+      "jsEventListeners": 362
+    },
+    {
+      "activePtys": 15,
+      "knownClients": 2,
+      "phase": "workload-10",
+      "at": 83014.704607,
+      "rssKiB": 129952,
+      "pssKiB": 81697,
+      "fds": 42,
+      "cpuTicks": 191,
+      "childProcesses": 15,
+      "sessions": 26,
+      "domNodes": 384,
+      "heapBytes": 14775535,
+      "documents": 2,
+      "nodes": 3058,
+      "jsEventListeners": 368
+    },
+    {
+      "activePtys": 15,
+      "knownClients": 2,
+      "phase": "workload-20",
+      "at": 118557.715428,
+      "rssKiB": 107824,
+      "pssKiB": 59569,
+      "fds": 42,
+      "cpuTicks": 259,
+      "childProcesses": 15,
+      "sessions": 36,
+      "domNodes": 398,
+      "heapBytes": 17393748,
+      "documents": 5,
+      "nodes": 5283,
+      "jsEventListeners": 867
+    },
+    {
+      "activePtys": 15,
+      "knownClients": 2,
+      "phase": "workload-30",
+      "at": 154111.778784,
+      "rssKiB": 112760,
+      "pssKiB": 64505,
+      "fds": 42,
+      "cpuTicks": 339,
+      "childProcesses": 15,
+      "sessions": 46,
+      "domNodes": 384,
+      "heapBytes": 22429706,
+      "documents": 5,
+      "nodes": 3435,
+      "jsEventListeners": 861
+    },
+    {
+      "activePtys": 0,
+      "knownClients": 1,
+      "phase": "cleanup",
+      "at": 212785.924463,
+      "rssKiB": 113368,
+      "pssKiB": 65078,
+      "fds": 24,
+      "cpuTicks": 402,
+      "childProcesses": 0,
+      "sessions": 49
+    },
+    {
+      "activePtys": 0,
+      "knownClients": 1,
+      "phase": "settled",
+      "at": 215793.095754,
+      "rssKiB": 113368,
+      "pssKiB": 65078,
+      "fds": 24,
+      "cpuTicks": 402,
+      "childProcesses": 0,
+      "sessions": 49
+    },
+    {
+      "activePtys": 0,
+      "knownClients": 1,
+      "phase": "recovery",
+      "at": 216277.483209,
+      "rssKiB": 118180,
+      "pssKiB": 70580,
+      "fds": 24,
+      "cpuTicks": 53,
+      "childProcesses": 0,
+      "sessions": 49
+    }
+  ],
+  "errors": [],
+  "startupMs": 577.3846229999999,
+  "repeat": {
+    "wsResponseMs": {
+      "n": 100,
+      "p50": 0.2507709999999861,
+      "p95": 0.3618820000001506,
+      "p99": 0.7135829999999714
+    },
+    "messages": 100,
+    "bytes": 963500
+  },
+  "alternate": {
+    "wsResponseMs": {
+      "n": 100,
+      "p50": 0.6572470000000976,
+      "p95": 1.4754370000000563,
+      "p99": 4.601439000000028
+    },
+    "messages": 397,
+    "bytes": 2058242
+  },
+  "visibleTabSwitchMs": {
+    "n": 100,
+    "p50": 50,
+    "p95": 50.599999994039536,
+    "p99": 50.80000001192093
+  },
+  "inboxToggleMs": {
+    "n": 100,
+    "p50": 33.30000001192093,
+    "p95": 33.400000005960464,
+    "p99": 33.6000000089407
+  },
+  "cycles": 34,
+  "reconnects": 34,
+  "ui": {
+    "longTasksMs": [],
+    "layoutShift": 0
+  },
+  "restartMs": 466.5935350000218
+}
