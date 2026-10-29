@@ -1,42 +1,31 @@
 #!/bin/sh
 set -eu
 
-unit="${MAW_UNIT:-maw.service}"
-node_bin=$(command -v node 2>/dev/null || printf '%s' '/home/user/.nvm/versions/node/v24.22.0/bin/node')
-[ -n "$node_bin" ] || node_bin='/home/user/.nvm/versions/node/v24.22.0/bin/node'
-
+: "${HOME:?HOME is required}"
+lib_dir="${MAW_LIB_DIR:-$HOME/.local/lib/maw}"
 self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-if [ -n "${MAW_CONTROL_SCRIPT:-}" ]; then
-  control_script="$MAW_CONTROL_SCRIPT"
-elif [ -f "$self_dir/control.mjs" ]; then
-  control_script="$self_dir/control.mjs"
-else
-  control_script=/home/user/.local/lib/maw/control.mjs
-fi
-if [ -n "${MAW_UPDATE_SCRIPT:-}" ]; then
-  update_script="$MAW_UPDATE_SCRIPT"
-elif [ -f "$self_dir/maw-update.sh" ]; then
-  update_script="$self_dir/maw-update.sh"
-else
-  update_script=/home/user/.local/lib/maw/maw-update.sh
-fi
-if [ -n "${MAW_RESTART_HELPER:-}" ]; then
-  restart_helper="$MAW_RESTART_HELPER"
-elif [ -f "$self_dir/maw-restart-helper.sh" ]; then
-  restart_helper="$self_dir/maw-restart-helper.sh"
-else
-  restart_helper=/home/user/.local/lib/maw/maw-restart-helper.sh
-fi
+# Scripts live next to this launcher in the repository, or in the installed library directory.
+script_dir="$self_dir"
+[ -f "$script_dir/maw-lib.sh" ] || script_dir="$lib_dir"
+# shellcheck source=maw-lib.sh
+. "$script_dir/maw-lib.sh"
+maw_init_paths
 
-usage() { printf '%s\n' 'Usage: maw {start|stop|restart|status|logs [--follow]|url|open [browser]|update [--no-restart|--restart]|help}'; }
+control_script="${MAW_CONTROL_SCRIPT:-$script_dir/control.mjs}"
+update_script="${MAW_UPDATE_SCRIPT:-$script_dir/maw-update.sh}"
+restart_helper="${MAW_RESTART_HELPER:-$script_dir/maw-restart-helper.sh}"
 
+usage() { printf '%s\n' 'Usage: maw {start|stop|restart|rollback|status|logs [--follow]|url|open [browser]|update [--no-restart|--restart] [--ref <ref> --allow-unapproved-ref]|help}'; }
+
+# True when this command runs inside the MAW service (its PTYs inherit the unit's cgroup), or descends
+# from the service's main process (e.g. a PTY moved into another scope). Exact cgroup path component.
 is_inside_maw() {
-  # 1. Cgroup inspection
-  if [ -r /proc/self/cgroup ] && grep -q "${unit}" /proc/self/cgroup 2>/dev/null; then
+  cgroup_file="${MAW_CGROUP_FILE:-/proc/self/cgroup}"
+  if [ -r "$cgroup_file" ] && awk -F: -v u="$unit" '
+      { n = split($3, parts, "/"); for (i = 1; i <= n; i++) if (parts[i] == u) found = 1 }
+      END { exit found ? 0 : 1 }' "$cgroup_file"; then
     return 0
   fi
-  # 2. Ancestor PID chain inspection
-  local maw_pid check_pid
   maw_pid=$(systemctl --user show "$unit" --property=MainPID --value 2>/dev/null || true)
   if [ -n "$maw_pid" ] && [ "$maw_pid" -gt 0 ] 2>/dev/null; then
     check_pid=$$
@@ -49,11 +38,54 @@ is_inside_maw() {
   return 1
 }
 
+run_activation() {   # extra helper args...
+  printf '%s\n' 'Warning: Active server-owned live PTYs will terminate. Original PTY will not survive.' >&2
+  printf '%s\n' 'Metadata and native history remain. Eligible verified native conversations use replacement PTYs during recovery.' >&2
+  if is_inside_maw; then
+    if maw_restart_locked; then
+      printf '%s\n' 'A restart is already in progress or scheduled. Duplicate restart avoided.' >&2
+      exit 1
+    fi
+    printf '%s\n' 'Restarting MAW from inside MAW. Delegating restart outside service control group...' >&2
+    # Fixed unit name: systemd itself rejects a second scheduled restart. --collect frees the name even
+    # when the helper exits non-zero. The helper's environment is passed explicitly (systemd-run does not
+    # inherit the caller's).
+    if systemd-run --user \
+        --unit="${MAW_HELPER_UNIT:-maw-restart-helper}" \
+        --collect \
+        --no-block \
+        --description="MAW safe restart helper" \
+        --on-active=1 \
+        --setenv=HOME="$HOME" \
+        --setenv=PATH="$PATH" \
+        --setenv=MAW_STATE_DIR="$state_dir" \
+        --setenv=MAW_RELEASES_DIR="$releases_dir" \
+        --setenv=MAW_LOG_FILE="$log_file" \
+        --setenv=MAW_UPDATE_LOCK="$update_lock" \
+        --setenv=MAW_RUNTIME_DIR="$runtime_dir" \
+        --setenv=MAW_RESTART_LOCK="$restart_lock" \
+        --setenv=MAW_NODE_BIN="$node_bin" \
+        --setenv=MAW_CONTROL_SCRIPT="$control_script" \
+        /bin/sh "$restart_helper" --unit "$unit" "$@"; then
+      printf '%s\n' "Safe restart scheduled (transient unit: ${MAW_HELPER_UNIT:-maw-restart-helper})."
+      printf '%s\n' "Your terminal session will be interrupted shortly. The outcome is recorded in $log_file; check it with: maw status"
+      exit 0
+    fi
+    printf '%s\n' 'Error: Failed to schedule safe restart (another restart may already be scheduled).' >&2
+    exit 1
+  fi
+  exec /bin/sh "$restart_helper" --unit "$unit" "$@"
+}
+
 command_name=${1:-help}
 case "$command_name" in
   start)
     [ "$#" -eq 1 ] || { usage >&2; exit 2; }
-    exec systemctl --user start "$unit"
+    if [ "$(systemctl --user show "$unit" --property=ActiveState --value 2>/dev/null || true)" = active ]; then
+      printf '%s\n' "$unit is already running. Use maw status or maw restart."
+      exit 0
+    fi
+    run_activation --start
     ;;
   stop)
     [ "$#" -eq 1 ] || { usage >&2; exit 2; }
@@ -62,40 +94,29 @@ case "$command_name" in
     ;;
   restart)
     [ "$#" -eq 1 ] || { usage >&2; exit 2; }
-    printf '%s\n' 'Warning: Active server-owned live PTYs will terminate. Original PTY will not survive.' >&2
-    printf '%s\n' 'Metadata and native history remain. Eligible verified native conversations use replacement PTYs during recovery.' >&2
-    if is_inside_maw; then
-      runtime_dir="${MAW_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/maw}"
-      lock_file="${MAW_RESTART_LOCK:-$runtime_dir/restart.lock}"
-      if [ -f "$lock_file" ]; then
-        lpid=$(cat "$lock_file" 2>/dev/null || true)
-        if [ -n "$lpid" ] && kill -0 "$lpid" 2>/dev/null; then
-          printf '%s\n' 'A restart is already in progress or scheduled. Duplicate restart avoided.' >&2
-          exit 1
-        fi
-      fi
-      ts=$(date +%s)
-      unit_name="maw-restart-$ts"
-      printf '%s\n' 'Restarting MAW from inside MAW. Delegating restart outside service control group...' >&2
-      if systemd-run --user \
-          --unit="$unit_name" \
-          --no-block \
-          --description="MAW safe restart helper" \
-          --on-active=1 \
-          /bin/sh "$restart_helper" --unit "$unit"; then
-        printf '%s\n' "Safe restart scheduled successfully (transient unit: $unit_name)."
-        printf '%s\n' "Your terminal session will be interrupted shortly. Use 'maw status' to verify."
-        exit 0
-      else
-        printf '%s\n' 'Error: Failed to schedule safe restart transient unit.' >&2
-        exit 1
-      fi
-    else
-      exec /bin/sh "$restart_helper" --unit "$unit"
-    fi
+    run_activation
+    ;;
+  rollback)
+    [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+    previous=$(maw_pointer previous)
+    [ -n "$previous" ] || { printf '%s\n' 'No verified previous release is available.' >&2; exit 1; }
+    maw_lock_update 0 || { printf '%s\n' 'An update or activation is in progress.' >&2; exit 1; }
+    maw_set_pointer staged "$previous"
+    exec 9>&-
+    maw_log rollback-requested release "$(basename "$previous")"
+    printf '%s\n' "Activating previous verified release $(basename "$previous")..."
+    run_activation
     ;;
   status)
-    systemctl --user show "$unit" --property=ActiveState,SubState,MainPID,ExecMainStatus
+    systemctl --user show "$unit" --property=ActiveState,SubState,MainPID,ExecMainStatus || true
+    for p in current staged healthy previous; do
+      t=$(maw_pointer_raw "$p")
+      printf '%-9s%s\n' "$p:" "${t:+$(basename "$t")}"
+    done
+    if [ -n "$(maw_pointer_raw current)" ] && [ "$(maw_pointer_raw current)" != "$(maw_pointer_raw healthy)" ]; then
+      printf '%s\n' 'Note: current is not the verified healthy release (unverified activation or legacy layout).'
+    fi
+    if [ -f "$log_file" ]; then printf 'last:    %s\n' "$(tail -n 1 "$log_file")"; fi
     exec "$node_bin" "$control_script" status
     ;;
   logs)

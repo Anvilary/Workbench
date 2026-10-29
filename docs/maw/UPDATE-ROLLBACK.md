@@ -1,137 +1,93 @@
-# MAW Update and Rollback Guide
+# MAW Update, Activation and Rollback
 
-This guide details the release-staging architecture, state boundaries, safety guarantees, automated fallbacks, and executable recovery procedures for the `maw update` command.
+State directory: `~/.local/share/maw` (`MAW_STATE_DIR`). Service: `maw.service` (`MAW_UNIT`).
+Audit log: `~/.local/share/maw/update-log.jsonl` (one JSON object per line).
 
-Repository location: `/home/user/Projects/My-Amazing-Workspace`  
-Releases directory: `~/.local/share/maw/releases`  
-Active release pointer: `~/.local/share/maw/current` (symlink)  
-Previous release pointer: `~/.local/share/maw/previous` (symlink)  
-Update audit log: `~/.local/share/maw/update-log.jsonl`  
-Service name: `maw.service`
+## Release state machine
 
----
+| Pointer (symlink) | Meaning | Written by |
+|---|---|---|
+| `releases/<id>/` | A built release. `.maw-candidate` exists only while it is being built; `.maw-release-meta.json` names it. | `maw update` |
+| `staged` | Built and validated, **never activated**. | `maw update` only |
+| `current` | What `maw.service` boots (`WorkingDirectory`/`ExecStart` go through it). | restart helper only (and the installer's first release) |
+| `healthy` | Last release whose readiness was verified **with its own release ID**. | restart helper, after verification |
+| `previous` | The healthy release before `healthy`. | restart helper, after verification |
 
-## Verified Release-Staging Architecture
+Consequences:
 
-`maw update` implements an isolated release-staging model that completely separates candidate release builds from both the live running service and the developer's source repository.
+- Staging (`maw update --no-restart`) never changes `current`, `healthy` or `previous`. A crash restart,
+  reboot or `systemctl --user restart` keeps booting the release that was running. Staging twice simply
+  replaces `staged`; the verified rollback target is unaffected.
+- A running server is pinned to the release it started from (Node resolves real paths at startup), so
+  switching any pointer never changes the live process. Its readiness file (`$MAW_RUNTIME_DIR/maw-ready.json`)
+  contains `pid`, the authenticated loopback `url` and `releaseId`.
+- The service refuses to start anything that is not a release (`ExecStartPre` checks the metadata), so it
+  never runs from a mutable developer checkout.
 
-### Key Architectural Principles
-1. **Developer Worktree Immutability**:
-   - `maw update` **never** executes destructive git commands (`git reset --hard`, `git checkout -- .`) against the developer's active source repository or worktree.
-   - Candidate releases are built in separate, immutable directories (`~/.local/share/maw/releases/<release-id>`) using detached Git worktrees.
-   - Even if concurrent modifications or uncommitted edits take place in the developer's checkout during update staging, those modifications survive completely untouched.
-2. **Zero In-Place Dependency or Asset Replacement**:
-   - The running server runs out of `~/.local/share/maw/current` (an atomic symlink pointing to an immutable release directory).
-   - Candidate releases install their dependencies (`pnpm install --frozen-lockfile`) and build frontend bundles (`pnpm build`) entirely inside the candidate directory.
-   - Assets and dependencies currently loaded or served by the live server are never overwritten or deleted while running.
-3. **Explicit and Verified Update Source**:
-   - Update target ref is explicitly determined (default: `origin/main` or verified tracking upstream; customizable via `--ref <ref>`).
-   - Arbitrary uncommitted branches or detached development states are never accidentally deployed.
-4. **Git Worktree Compatibility**:
-   - Both standard Git repositories (with `.git` directories) and linked Git worktrees (with `.git` files) are supported natively using Git inspection commands (`git rev-parse --is-inside-work-tree`, `--show-toplevel`, `--git-dir`).
-   - If an invalid repository path is detected, the updater refuses execution rather than silently falling back to an unexpected directory.
-
----
-
-## State Boundaries: What `maw update` Touches vs. Preserves
-
-### What `maw update` Preserves
-- **Developer Source Checkouts and Worktrees**:
-  - The working directory, staged index, stash, untracked files, and local branch pointers are never reset or cleaned up.
-- **Application Configuration**:
-  - Main configuration root at `~/.config/agent-workbench/` (or designated `$XDG_CONFIG_HOME` path).
-  - Profile settings and arguments in `agency-profiles.json`.
-  - Native identity mappings in `agency-native-identities.json`.
-- **Workspaces and Session Metadata**:
-  - `agency-workspaces.json`: All workspace configurations, project assignments, tab order, and active tab selections.
-  - `agency-sessions.json`: Historical tab associations, session IDs, and persistent terminal/agent references.
-- **Native Authentication & Provider Storage**:
-  - Codex configuration and conversation state (`~/.codex*`).
-  - Antigravity / AGY profiles, conversation trees, and settings (`~/.gemini/antigravity-cli`, `~/.local/share/agy*-profile/`).
-  - Claude Code state directories (`~/.claude/`).
-  - System keyrings, GNOME Keyring daemon, and D-Bus session helpers.
-- **Running Server State (with `--no-restart`)**:
-  - The active server process continues serving existing loaded modules and active PTYs without disruption until an explicit restart.
-
----
-
-## Automated Safety and Rollback Behavior
-
-During execution, `maw update` enforces strict pre-flight and staging gates:
-
-| Stage | Safety Gate | Behavior on Failure |
-| --- | --- | --- |
-| Pre-flight | `git status --porcelain` | **Refuses execution.** Alerts developer to uncommitted changes. Developer worktree is untouched. |
-| Divergence Check | Upstream comparison | **Refuses execution.** Prevents orphaning local commits or pulling non-fast-forward diverged history. |
-| Runtime Check | Node version vs engines | **Refuses execution.** Validates runtime version compatibility before staging. |
-| Isolated Staging | `git worktree add --detach` | Builds candidate in `~/.local/share/maw/releases/<release-id>`. |
-| Dependencies & Build | `pnpm install`, `typecheck`, `build`, tests | **Candidate Discarded.** If any build/test step fails, the candidate directory is deleted. Developer worktree and running server remain untouched. |
-| Activation | Service readiness probe | **Automatic Rollback.** If replacement service fails readiness probe within timeout, symlink `current` reverts to `previous` and service restarts. |
-
----
-
-## Executable Rollback Procedures
-
-### Automated Rollback (Activation Failure)
-If `maw restart` (or `maw update --restart`) fails to achieve readiness on the replacement service:
-1. `maw-restart-helper.sh` detects failure during loopback token/readiness polling.
-2. It inspects `~/.local/share/maw/previous`.
-3. It atomically reverts `~/.local/share/maw/current` to point to the previous verified release.
-4. It restarts `maw.service` with the verified previous release and re-verifies readiness.
-5. Audit logs in `~/.local/share/maw/update-log.jsonl` record the activation failure and rollback result.
-
-### Manual Rollback Procedure
-If regressions are discovered after a successful update and restart, rollback to the previous verified release immediately:
+## `maw update`
 
 ```sh
-# 1. Inspect active and previous release pointers
-ls -l ~/.local/share/maw/current ~/.local/share/maw/previous
-
-# 2. Atomically revert 'current' to the previous release
-ln -sfn "$(readlink -f ~/.local/share/maw/previous)" ~/.local/share/maw/current.tmp
-mv -Tf ~/.local/share/maw/current.tmp ~/.local/share/maw/current
-
-# 3. Restart the service safely
-maw restart
-
-# 4. Verify healthy operation
-maw status
-maw url
+maw update                 # stage the approved channel, prompt to activate in a terminal
+maw update --no-restart    # stage only
+maw update --restart       # stage and activate
+maw update --ref origin/feature/x --allow-unapproved-ref   # explicit, confirmed, recorded as "unapproved"
 ```
 
-Notice that this manual rollback does not modify git or rebuild packages: it simply switches the release symlink pointer and restarts the service in milliseconds.
+- Target: the approved channel, `origin/main` by default (`MAW_UPDATE_CHANNEL` or one line in
+  `$MAW_STATE_DIR/channel`). The branch the developer checkout tracks is never used implicitly.
+- Builds from committed objects in a detached worktree under `releases/`; never resets, checks out or
+  cleans the developer checkout (a dirty checkout is still refused, to surface uncommitted work).
+- Steps: fetch → fast-forward check against the healthy release → engines check → frozen install →
+  typecheck → build → profile tests → metadata → `staged`.
+- Exclusive `flock` lock (`update.lock`): concurrent updaters are refused; the kernel releases the lock if
+  the process dies, so there are no stale locks.
+- HUP/INT/TERM abort the running step immediately, remove only this run's candidate (path and marker
+  checked) and exit 130 with every pointer unchanged. After SIGKILL/power loss the next run removes the
+  orphan: only entries inside `releases/` that carry the candidate marker or are registered worktrees of
+  the source repository without release metadata, and that no pointer references.
 
----
+## `maw restart` / `maw start` / `maw rollback` (activation)
 
-## Recovery from a Service Failure or Crashed State
+The helper (`maw-restart-helper.sh`) takes the restart lock and the update lock, then:
 
-If an update or service crash leaves `maw.service` in a failed state:
+1. target = `staged` if present, else `current`.
+2. `current := target`, `systemctl --user reset-failed`, `systemctl --user restart`.
+3. Polls the authenticated readiness probe (`control.mjs status` with `MAW_EXPECT_RELEASE_ID`): the
+   unit's MainPID must answer on its token URL **and** report the target's release ID. A unit that enters
+   `failed` (e.g. start-limit-hit) is detected immediately; otherwise the timeout is 20 s
+   (`MAW_READY_TIMEOUT`).
+4. Success → `previous := healthy`, `healthy := target`, `staged` cleared, unreferenced releases
+   garbage-collected (one spare kept, `MAW_KEEP_RELEASES`). Exit 0.
+5. Failure (including a failing `systemctl restart`) → `staged` cleared (a failed release is never retried
+   implicitly), `current := healthy`, reset-failed, restart, verify the healthy release ID.
+   - recovered → exit **2**, "UPDATE FAILED, SERVICE RECOVERED".
+   - rollback also failed, or no verified release exists, or the healthy release itself fails → exit **3**,
+     "CRITICAL". The helper never loops.
 
-1. **Check Failure State**:
-   ```sh
-   maw status
-   maw logs
-   ```
-2. **Clear Transient Rate Limits**:
-   If systemd applied start rate-limiting:
-   ```sh
-   systemctl --user reset-failed maw.service
-   ```
-3. **Clear Stale Runtime Locks**:
-   If a dead process left a stale readiness or restart lock:
-   ```sh
-   rm -f "${XDG_RUNTIME_DIR:-/tmp}/maw/maw-ready.json"
-   rm -f "${XDG_RUNTIME_DIR:-/tmp}/maw/restart.lock"
-   ```
-4. **Restore Previous Release Pointer**:
-   ```sh
-   if [ -L ~/.local/share/maw/previous ]; then
-     ln -sfn "$(readlink -f ~/.local/share/maw/previous)" ~/.local/share/maw/current.tmp
-     mv -Tf ~/.local/share/maw/current.tmp ~/.local/share/maw/current
-   fi
-   ```
-5. **Start and Verify**:
-   ```sh
-   maw start
-   maw status
-   ```
+Every transition is logged: `stage-success`, `activation-start`, `activation-success`, `activation-failure`,
+`rollback-success`, `rollback-failure`, `activation-critical`, `activation-interrupted`, `orphan-removed`,
+`release-removed`, `healthy-adopted`. `maw status` shows all pointers, warns when `current` is not the
+verified healthy release, and prints the last log line.
+
+Inside a MAW terminal, `maw restart` delegates to a transient unit `maw-restart-helper` (fixed name, so a
+second scheduled restart is rejected by systemd; `--collect` frees the name afterwards) with the `MAW_*`
+environment passed explicitly. The terminal is interrupted; the outcome is in the log.
+
+`maw rollback` stages `previous` and activates it like any other release.
+
+## Installation and migration
+
+- `install.sh --service` builds the first release with the same pipeline (`maw-update.sh --initial`) and
+  points `current` at it; it becomes `healthy` on the first verified `maw start`.
+- An old-layout `current` that points at a checkout is preserved as `legacy-current` (never deleted).
+- A running release from an older build without `healthy` is adopted as healthy only when the live service
+  proves it serves exactly that release (release ID, or its working directory for older servers).
+
+## Manual recovery
+
+```sh
+maw status                                   # pointers, last log event, readiness
+journalctl --user -u maw-restart-helper      # delegated activation output
+systemctl --user reset-failed maw.service    # after a CRITICAL outcome
+maw rollback                                 # activate the previous verified release
+```
