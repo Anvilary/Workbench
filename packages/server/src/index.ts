@@ -271,7 +271,9 @@ Run "pnpm build" before "pnpm start", or use "pnpm dev".`,
       response.status(404).type('text/plain').send(NOT_FOUND_TEXT);
       return;
     }
-    response.sendFile(indexHtml);
+    // Absolute paths include hidden install parents such as ~/.local. `send`
+    // rejects those as dotfiles unless the trusted asset root is explicit.
+    response.sendFile('index.html', { root: webDist });
   });
 
   return () => Promise.resolve();
@@ -658,7 +660,8 @@ async function main(): Promise<void> {
     registry.disposeAll();
     remote.dispose();
 
-    void Promise.all([
+    void Promise.allSettled([
+      agencyBrowserTabs.captureFinalUrls(),
       store.flush(),
       agencySessionStore.flush(),
       agencyWorkspaceStore.flush(),

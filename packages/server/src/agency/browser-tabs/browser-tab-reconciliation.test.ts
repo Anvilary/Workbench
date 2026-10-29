@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -12,6 +12,81 @@ import {
 } from './browser-controller-driver.js';
 import { BrowserTabStore, BrowserTabStoreError } from './browser-tab-store.js';
 import { AgencyWorkspaceStore } from '../store.js';
+
+class ObservedBrowserDriver extends MemoryBrowserControllerDriver {
+  unavailable = false;
+  async getTargetUrl(ref: string): Promise<string | null> {
+    if (this.unavailable) throw new BrowserEngineUnavailableError();
+    return this.targets.get(ref)?.url ?? null;
+  }
+  override async verifyTargetOwnership(ref: string, owner: import('./browser-controller-driver.js').TargetMetadata): Promise<boolean> {
+    if (this.unavailable) throw new BrowserEngineUnavailableError();
+    return super.verifyTargetOwnership(ref, owner);
+  }
+  async findOwnedTarget(owner: import('./browser-controller-driver.js').TargetMetadata): Promise<string | null> {
+    if (this.unavailable) throw new BrowserEngineUnavailableError();
+    return [...this.targets].find(([, target]) => !target.closed && target.metadata?.tabId === owner.tabId && target.metadata.workspaceId === owner.workspaceId)?.[0] ?? null;
+  }
+}
+
+test('observed selected and background conversations survive restart, controller outage, and target loss', async t => {
+  const { filePath, store } = await createFixture(t);
+  const driver = new ObservedBrowserDriver();
+  const options = { driver, allowUnvalidatedWorkspacesForTesting: true };
+  const adapter = new BrowserTabAdapter({ ...options, store });
+  const a = await adapter.createTab({ workspaceId: WS1, url: 'https://chatgpt.com/', title: 'A' });
+  const b = await adapter.createTab({ workspaceId: WS1, url: 'https://chatgpt.com/', title: 'B' });
+  const urls = ['https://chatgpt.com/c/11111111-2222-4333-8444-555555555555?model=auto', 'https://chatgpt.com/g/g-fixture/c/66666666-7777-4888-8999-000000000000'];
+  driver.targets.get(a.targetRef!)!.url = urls[0]!;
+  driver.targets.get(b.targetRef!)!.url = urls[1]!;
+  await adapter.refreshLiveTabs();
+  assert.deepEqual(adapter.listTabs().map(tab => tab.url), urls);
+  const restored = new BrowserTabAdapter({ ...options, store: new BrowserTabStore(filePath) });
+  await restored.restore();
+  driver.unavailable = true;
+  await restored.refreshLiveTabs();
+  await assert.rejects(restored.selectTab(WS1, b.id), /browser/i);
+  assert.deepEqual(restored.listTabs().map(tab => tab.url), urls);
+  assert.equal(restored.getTabState(b.id)!.runtimeState, 'error');
+  assert.equal(driver.getTargetCount(), 2);
+  driver.unavailable = false;
+  await restored.refreshLiveTabs();
+  assert.equal(restored.getTabState(b.id)!.runtimeState, 'attached', 'polling clears recoverable outage state');
+  const selected = await restored.selectTab(WS1, b.id);
+  assert.equal(selected.targetRef, b.targetRef);
+  assert.equal(driver.getTargetCount(), 2);
+  // Transient homepage/auth redirects must not erase a committed conversation.
+  driver.targets.get(b.targetRef!)!.url = 'https://chatgpt.com/';
+  await restored.refreshLiveTabs();
+  assert.equal(restored.getTabState(b.id)!.url, urls[1]);
+  driver.targets.get(b.targetRef!)!.closed = true;
+  await restored.selectTab(WS1, b.id);
+  assert.equal(driver.targets.get(restored.getTabState(b.id)!.targetRef!)!.url, urls[1]);
+  assert.equal(driver.getTargetCount(), 2);
+  // Final capture observes a navigation that happened after the last poll.
+  const final = 'https://chatgpt.com/c/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  driver.targets.get(a.targetRef!)!.url = final;
+  await restored.captureFinalUrls();
+  const committed = JSON.parse(await readFile(filePath, 'utf8'));
+  assert.equal(committed.tabs.find((tab: { id: string }) => tab.id === a.id).url, final);
+});
+
+test('lost target hint reattaches only an owned receipt and commits live URL before selection', async t => {
+  const { filePath, store } = await createFixture(t);
+  const driver = new ObservedBrowserDriver();
+  const adapter = new BrowserTabAdapter({ store, driver, allowUnvalidatedWorkspacesForTesting: true });
+  const tab = await adapter.createTab({ workspaceId: WS1, url: 'https://chatgpt.com/' });
+  const url = 'https://chatgpt.com/c/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  driver.targets.get(tab.targetRef!)!.url = url;
+  await store.save([{ ...tab, targetRef: null }]);
+  const restored = new BrowserTabAdapter({ store: new BrowserTabStore(filePath), driver, allowUnvalidatedWorkspacesForTesting: true });
+  await restored.restore();
+  const selected = await restored.selectTab(WS1, tab.id);
+  assert.equal(selected.targetRef, tab.targetRef);
+  assert.equal(selected.url, url);
+  assert.equal(driver.getTargetCount(), 1);
+  assert.equal(JSON.parse(await readFile(filePath, 'utf8')).tabs[0].url, url);
+});
 
 async function createFixture(t: import('node:test').TestContext) {
   const dir = await mkdtemp(path.join(tmpdir(), 'maw-reconciliation-test-'));

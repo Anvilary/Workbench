@@ -93,6 +93,23 @@ healthy=$(maw_pointer healthy)
 staged=$(maw_pointer staged)
 previous=$(maw_pointer previous)
 
+# Idempotent start must prove the running release is operational. Do not restart
+# a live service or activate a staged update just because readiness fails.
+if [ "$mode" = start ] && [ "$(unit_state)" = active ]; then
+  if ! maw_valid_release "$current_raw" || ! probe "$(maw_release_id "$current_raw")"; then
+    maw_log start-unhealthy release "$(basename "$current_raw")"
+    printf '%s\n' 'MAW is active but authenticated readiness failed. Inspect maw status and maw logs; use maw restart to activate a repaired release.' >&2
+    exit 1
+  fi
+  if [ "$current_raw" != "$healthy" ]; then
+    [ -z "$healthy" ] || maw_set_pointer previous "$healthy" || exit 1
+    maw_set_pointer healthy "$current_raw" || exit 1
+    maw_log healthy-adopted release "$(basename "$current_raw")"
+  fi
+  printf '%s\n' "MAW service $unit is already running and verified healthy on release $(basename "$current_raw")."
+  exit 0
+fi
+
 # Migration from layouts without `healthy`: adopt the running release only when the live service proves
 # it is serving exactly that release. A legacy (non-release) current is never adopted.
 if [ -z "$healthy" ] && maw_valid_release "$current_raw" && probe "$(maw_release_id "$current_raw")"; then
