@@ -7,7 +7,7 @@ import type {
 } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import {
-  EMPTY_AGENCY_SNAPSHOT, replaceById, transitionNotice,
+  EMPTY_AGENCY_SNAPSHOT, applySessionActivity, applySessionsSnapshot, replaceById, transitionNotice,
   type AgencySnapshot, type AgencyTransport, type AgencyNoticeKind,
 } from './model.js';
 
@@ -118,7 +118,7 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
           : message.tab ? replaceById(old.webTabs, message.tab) : old.webTabs }));
       } else if (message.type === 'agency.sessions.snapshot') {
         message.sessions.forEach((session) => record(session, false));
-        setData((old) => ({ ...old, sessions: message.sessions }));
+        setData((old) => ({ ...old, sessions: applySessionsSnapshot(old.sessions, message.sessions, message.workspaceId) }));
       } else if (
         message.type === 'agency.project.created' || message.type === 'agency.project.updated' ||
         message.type === 'agency.project.archived' || message.type === 'agency.project.unarchived'
@@ -157,13 +157,11 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
         record(message.session, true);
         setData((old) => ({ ...old, sessions: replaceById(old.sessions, message.session) }));
       } else if (message.type === 'agency.session.activity') {
-        setData((old) => {
-          const previous = old.sessions.find((s) => s.id === message.sessionId) ?? lastSessions.current.get(message.sessionId);
-          if (!previous) return old;
-          const next = { ...previous, activity: message.activity, lifecycle: message.lifecycle };
-          record(next, true);
-          return { ...old, sessions: replaceById(old.sessions, next) };
-        });
+        // Side effects (notice, last-session bookkeeping) happen once here, never inside the state updater,
+        // which React may invoke again. lastSessions mirrors every session message, so it is current.
+        const previous = lastSessions.current.get(message.sessionId);
+        if (previous) record({ ...previous, activity: message.activity, lifecycle: message.lifecycle }, true);
+        setData((old) => ({ ...old, sessions: applySessionActivity(old.sessions, previous, message) }));
       }
       if (!('requestId' in message) || !message.requestId) return;
       const waiting = pending.current.get(message.requestId);

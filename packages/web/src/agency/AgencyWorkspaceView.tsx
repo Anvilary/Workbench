@@ -34,9 +34,11 @@ interface Props {
   onAcknowledgeTab?: (workspaceId: WorkspaceId, tabId: string) => Promise<void> | void;
 }
 
-function SessionPane({ session, active, focusTerminal, connection, online, request, sendImmediate, report, onDisplayed }: {
+function SessionPane({ session, active, focusTerminal, connection, online, request, sendImmediate, report, onDisplayed, profile, busy, onConfigure, onStartAgain }: {
   session: AgencyRuntimeSession; active: boolean; focusTerminal: boolean; connection: AgentConnection; online: boolean;
   request: Props['request']; sendImmediate: Props['sendImmediate']; report: (error: string) => void; onDisplayed: (tabId: string, ready: boolean) => void;
+  /** Recovery for an agent tab that failed or exited without a native conversation (nothing to resume). */
+  profile?: AgencyCliProfile; busy?: boolean; onConfigure?: (profile: AgencyCliProfile) => void; onStartAgain?: (session: AgencyRuntimeSession) => void;
 }) {
   const terminal = useRef<Terminal | null>(null);
   const [rendered, setRendered] = useState(false);
@@ -98,9 +100,11 @@ function SessionPane({ session, active, focusTerminal, connection, online, reque
         {session.recovery?.message && <p role="status">{session.recovery.message}</p>}
         <p>{t('agency.tabs.historyKept')}</p>
         {(session.kind === 'terminal' || session.nativeSessionId) && <button type="button" className="agency-secondary-button" disabled={!online || resuming || live} onClick={() => void resume()}>{session.kind === 'terminal' ? t('agency.tabs.restartShell') : t('agency.ui.resumeNative')}</button>}
-        {session.kind === 'agent' && !session.nativeSessionId && (session.lifecycle === 'failed' || session.lifecycle === 'exited') && session.tab && (
+        {session.kind === 'agent' && !session.nativeSessionId && (session.lifecycle === 'failed' || session.lifecycle === 'exited') && session.tab && (<div className="agency-dialog-actions">
+          {onStartAgain && <button type="button" className="agency-secondary-button" disabled={!online || busy || !canLaunchAgent(profile)} onClick={() => onStartAgain(session)}>{t('agency.tabs.startAgain')}</button>}
+          {onConfigure && profile && <button type="button" className="agency-secondary-button" disabled={!online} onClick={() => onConfigure(profile)}>{t('agency.profile.configure')}</button>}
           <button type="button" className="agency-secondary-button" disabled={!online} onClick={() => void request({ type: 'agency.tab.action', workspaceId: session.workspaceId, tabId: session.tab!.id, action: 'close' })}>{t('agency.tabs.closeSession')}</button>
-        )}
+        </div>)}
       </div>}
     </div>
   </div>;
@@ -186,6 +190,17 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
     } catch (reason) { setError(String(reason)); }
     finally { flight.current = false; setBusy(false); }
   }
+  // A failed/exited agent tab without a native conversation has nothing to resume: replace it with a fresh
+  // launch of the same profile (after the user optionally fixed the profile configuration).
+  async function startAgain(session: AgencyRuntimeSession) {
+    if (flight.current || !online || session.kind !== 'agent' || !session.tab) return;
+    flight.current = true; setBusy(true); setError(null);
+    try {
+      await request({ type: 'agency.tab.action', workspaceId: workspace.id, tabId: session.tab.id, action: 'close' });
+      await request({ type: 'agency.session.create', workspaceId: workspace.id, kind: 'agent', launchId: crypto.randomUUID(), cols: 100, rows: 30, profileId: session.profileId } as Parameters<Props['request']>[0]);
+    } catch (reason) { setError(String(reason)); }
+    finally { flight.current = false; setBusy(false); }
+  }
   async function action(tab: WorkspaceTab, action: 'select' | 'close') {
     if (!online) throw new Error(t('agency.web.disconnected'));
     try {
@@ -267,7 +282,13 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
               onSave={async title => { await request(tab.kind === 'web'
                 ? { type: 'agency.webTab.rename', workspaceId: workspace.id, tabId: tab.id, title }
                 : { type: 'agency.tab.rename', workspaceId: workspace.id, tabId: tab.id, name: title }); setError(null); }}
-              onClose={restore => { setRenaming(null); if (restore) requestAnimationFrame(() => document.getElementById('tab-' + tab.id)?.focus()); }}
+              onClose={restore => { setRenaming(null); if (restore) requestAnimationFrame(() => {
+                // Restore focus only if it was lost with the input. If the user already moved on (e.g. F2 on
+                // another tab opened a new rename input), stealing focus would blur and cancel that edit.
+                const active = document.activeElement;
+                if (active && active !== document.body && active.isConnected) return;
+                document.getElementById('tab-' + tab.id)?.focus();
+              }); }}
             /> : <button type="button" role="tab" id={'tab-' + tab.id} aria-selected={selected?.id === tab.id} aria-controls={'pane-' + tab.id} tabIndex={selected?.id === tab.id || (!selected && index === 0) ? 0 : -1} disabled={!online} title={name(tab) + ' · ' + status} onKeyDown={event => { if (event.key === 'F2') { event.preventDefault(); event.stopPropagation(); setKeyboardTabs(true); setRenaming(tab.id); } }} onClick={() => { setKeyboardTabs(false); void action(tab, 'select').catch(() => undefined); }}>
               <span aria-hidden="true">{tab.kind === 'web' ? '◎' : session?.kind === 'agent' ? '◇' : '>_'}</span><span className="agency-truncate" onDoubleClick={() => { setKeyboardTabs(true); setRenaming(tab.id); }}>{name(tab)}</span><span className={'agency-status-dot ' + dotClass} aria-label={status} />
             </button>}
@@ -288,7 +309,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
     </header>
     {(error || launchError) && <div className="agency-error-bar" role="alert"><span>{error || launchError}</span><button type="button" aria-label={t('agency.ui.dismissError')} onClick={() => { setError(null); onClearLaunchError?.(); }}>×</button></div>}
     <div className="maw-session-content">
-      {tabs.filter(tab => tab.kind === 'native').map(tab => tab.kind === 'native' && <SessionPane focusTerminal={!keyboardTabs} key={tab.id} session={tab.session} active={selected?.id === tab.id} connection={connection} online={online} request={request} sendImmediate={sendImmediate} report={setError} onDisplayed={reportDisplayed} />)}
+      {tabs.filter(tab => tab.kind === 'native').map(tab => tab.kind === 'native' && <SessionPane focusTerminal={!keyboardTabs} key={tab.id} session={tab.session} active={selected?.id === tab.id} connection={connection} online={online} request={request} sendImmediate={sendImmediate} report={setError} onDisplayed={reportDisplayed} profile={tab.session.kind === 'agent' ? profiles.find(profile => profile.id === tab.session.profileId) : undefined} busy={busy} onConfigure={setConfiguringProfile} onStartAgain={session => void startAgain(session)} />)}
       {selected?.kind === 'web' && <div className="maw-session-pane" role="tabpanel" id={'pane-' + selected.id} aria-labelledby={'tab-' + selected.id}>
         <div className="agency-pane-bar maw-browser-toolbar"><span className="agency-truncate" title={selected.web.url}>{selected.web.url}</span><span className="agency-flex-spacer" />
           <button type="button" className="agency-text-button" disabled={!online || busy} onClick={() => webEditor('navigate')}>{t('agency.web.navigate')}</button>

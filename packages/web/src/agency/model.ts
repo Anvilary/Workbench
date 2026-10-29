@@ -119,6 +119,30 @@ export function replaceById<T extends { id: string }>(values: readonly T[], inco
   return values.map((item, index) => index === existing ? incoming : item);
 }
 
+/**
+ * Apply an `agency.sessions.snapshot`. A snapshot scoped to one workspace (server sets `workspaceId`)
+ * replaces only that workspace's sessions; an unscoped snapshot is authoritative for all of them.
+ */
+export function applySessionsSnapshot(
+  current: readonly AgencyRuntimeSession[],
+  incoming: readonly AgencyRuntimeSession[],
+  workspaceId?: WorkspaceId,
+): AgencyRuntimeSession[] {
+  if (workspaceId === undefined) return [...incoming];
+  return [...current.filter(session => session.workspaceId !== workspaceId), ...incoming.filter(session => session.workspaceId === workspaceId)];
+}
+
+/** Apply an `agency.session.activity` update to the latest state (pure: safe inside a React updater). */
+export function applySessionActivity(
+  current: readonly AgencyRuntimeSession[],
+  fallback: AgencyRuntimeSession | undefined,
+  update: { sessionId: string; activity: SessionActivity; lifecycle: SessionLifecycle },
+): AgencyRuntimeSession[] {
+  const base = current.find(session => session.id === update.sessionId) ?? fallback;
+  if (!base) return [...current];
+  return replaceById(current, { ...base, activity: update.activity, lifecycle: update.lifecycle });
+}
+
 export function agentSession(session: AgencyRuntimeSession | undefined): AgencyAgentSession | undefined {
   return session?.kind === 'agent' ? session : undefined;
 }

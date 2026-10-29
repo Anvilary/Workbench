@@ -57,3 +57,12 @@ test('rename validates stable IDs, title and forbids process identity fields', (
   for (const name of ['', '  ', 'x'.repeat(121), 'bad\u0000title', 'bad\ntitle']) assert.equal(parseAgencyClientMessage({ ...message, name }), null);
   for (const change of [{tabId:'../tab'}, {workspaceId:'wrong'}, {profileId:'codex01'}, {cwd:'/tmp'}, {terminalId:randomUUID()}]) assert.equal(parseAgencyClientMessage({...message,...change}),null);
 });
+
+test('F-1: sessions snapshot scope survives parsing; unscoped stays unscoped; malformed scope rejected', async () => {
+  const { parseAgencyServerMessage } = await import('@agent-workbench/shared');
+  const workspaceId = randomUUID();
+  assert.deepEqual(parseAgencyServerMessage({ type: 'agency.sessions.snapshot', requestId: 'r', sessions: [], workspaceId }),
+    { type: 'agency.sessions.snapshot', requestId: 'r', sessions: [], workspaceId });
+  assert.equal('workspaceId' in parseAgencyServerMessage({ type: 'agency.sessions.snapshot', requestId: 'r', sessions: [] })!, false);
+  assert.equal(parseAgencyServerMessage({ type: 'agency.sessions.snapshot', requestId: 'r', sessions: [], workspaceId: 7 }), null);
+});

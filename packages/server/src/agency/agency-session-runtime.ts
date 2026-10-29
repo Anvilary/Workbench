@@ -18,7 +18,7 @@ import type { OpenTerminalOptions, TerminalRegistry } from '../terminal-registry
 import { isInsideProtected } from '../directory-picker.js';
 import type { LaunchSession } from '../agents/adapter.js';
 import type { NativeIdentity } from './native-identity.js';
-import { AgencySessionStore, migrateSessionTabs } from './agency-session-store.js';
+import { AgencySessionStore, isLiveSession, migrateSessionTabs, type AgencySessionPersistence } from './agency-session-store.js';
 import { CodexTurnWatcher } from '../agents/codex/turn-watcher.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -108,7 +108,7 @@ export interface AgencyRuntimeOptions {
   registry: AgencyTerminalRegistry;
   workspaces: AgencyWorkspaceSource;
   profiles: AgencyProfileLaunchProvider;
-  store?: AgencySessionStore;
+  store?: AgencySessionPersistence;
 }
 
 /** Stable error codes are mapped by the integration owner to agency.error. */
@@ -172,7 +172,7 @@ function validateLaunch(plan: ValidatedNativeLaunch): void {
  */
 export class AgencySessionRuntime extends EventEmitter {
   private readonly sessions = new Map<RuntimeSessionId, AgencyRuntimeSession>();
-  private readonly store: AgencySessionStore;
+  private readonly store: AgencySessionPersistence;
   private readonly registry: AgencyTerminalRegistry;
   private readonly workspaces: AgencyWorkspaceSource;
   private readonly profiles: AgencyProfileLaunchProvider;
@@ -263,6 +263,20 @@ export class AgencySessionRuntime extends EventEmitter {
     if (workspaceId !== undefined) checkId(workspaceId);
     return [...this.sessions.values()].filter((session) =>
       workspaceId === undefined || session.workspaceId === workspaceId);
+  }
+
+  /** Live sessions only (see isLiveSession): what snapshots carry. */
+  liveList(workspaceId?: WorkspaceId): AgencyRuntimeSession[] {
+    return this.list(workspaceId).filter(isLiveSession);
+  }
+
+  /** Closed tabs and superseded attempts, newest first, paged. Retained in memory and on disk. */
+  history(options: { workspaceId?: WorkspaceId; offset?: number; limit?: number } = {}): { sessions: AgencyRuntimeSession[]; total: number } {
+    const at = (s: AgencyRuntimeSession) => s.tab?.closedAt ?? s.stoppedAt ?? s.updatedAt;
+    const rows = this.list(options.workspaceId).filter(session => !isLiveSession(session))
+      .sort((a, b) => (at(a) < at(b) ? 1 : at(a) > at(b) ? -1 : a.id.localeCompare(b.id)));
+    const offset = options.offset ?? 0;
+    return { sessions: rows.slice(offset, offset + (options.limit ?? 50)), total: rows.length };
   }
 
   get(sessionId: RuntimeSessionId): AgencyRuntimeSession | null {
@@ -614,15 +628,16 @@ export class AgencySessionRuntime extends EventEmitter {
       const wasSelected = rows.find(s => s.tab?.id === tabId && s.tab.current)?.tab?.selected;
       const next = rows.filter(s => s.tab?.current && !s.tab.closedAt && s.tab.id !== tabId).sort((a,b) => a.tab!.order - b.tab!.order)[0];
       const changed: AgencyRuntimeSession[] = [];
+      const updatedAt = NOW();
       for (const row of rows) {
         if (!row.tab) continue;
         const tab = { ...row.tab };
         if (action === 'select') tab.selected = tab.current && !tab.closedAt && tab.id === tabId;
-        else if (tab.id === tabId) { tab.closedAt = NOW(); tab.selected = false; }
+        else if (tab.id === tabId) { tab.closedAt = updatedAt; tab.selected = false; }
         else if (wasSelected) tab.selected = tab.current && tab.id === next?.tab?.id;
         if (tab.selected === row.tab.selected && tab.closedAt === row.tab.closedAt) continue;
         changed.push(row);
-        this.sessions.set(row.id, { ...row, tab });
+        this.sessions.set(row.id, { ...row, tab, updatedAt });
       }
       if (!changed.length) return;
       try { await this.persist(); }

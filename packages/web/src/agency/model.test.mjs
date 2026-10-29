@@ -5,6 +5,7 @@ import {
   activeByProject, acknowledgeWorkspaceDraft, canLaunchAgent, workspaceTabs,
   putWorkspaceDraft, selectableEfforts, selectableModels, transitionNotice,
   createAgencyTransport, parseProfileArgv, allWorkspaceTabs, selectedWorkspaceTab,
+  applySessionsSnapshot, applySessionActivity,
 } from './model.ts';
 
 const emptyCapabilities = {
@@ -131,4 +132,31 @@ test('Native and browser tabs share stable order and require a unique server sel
   assert.equal(selectedWorkspaceTab(tabs.map(tab => ({ ...tab, selected: true }))), undefined);
   assert.equal(selectedWorkspaceTab(tabs.map(tab => ({ ...tab, selected: false }))), undefined);
   assert.deepEqual(allWorkspaceTabs([session], [web], 'other'), []);
+});
+
+test('F-1: a workspace-scoped sessions snapshot replaces only that workspace', () => {
+  const a1 = { id: 'a1', workspaceId: 'A', activity: 'idle', lifecycle: 'running' };
+  const b1 = { id: 'b1', workspaceId: 'B', activity: 'idle', lifecycle: 'running' };
+  const a2 = { id: 'a2', workspaceId: 'A', activity: 'idle', lifecycle: 'running' };
+  assert.deepEqual(applySessionsSnapshot([a1, b1], [a2], 'A').map(s => s.id), ['b1', 'a2']);
+  // A scoped snapshot can never inject another workspace's rows.
+  assert.deepEqual(applySessionsSnapshot([a1, b1], [a2, { ...b1, id: 'b9' }], 'A').map(s => s.id), ['b1', 'a2']);
+  // Unscoped = authoritative for everything (connection snapshot, tab-action replies).
+  assert.deepEqual(applySessionsSnapshot([a1, b1], [a2]).map(s => s.id), ['a2']);
+});
+
+test('F-2: session activity is applied purely to the latest state (idempotent on replay)', () => {
+  const s1 = { id: 's1', workspaceId: 'A', activity: 'idle', lifecycle: 'running', tab: { id: 't' } };
+  const update = { sessionId: 's1', activity: 'working', lifecycle: 'running' };
+  const state = [s1];
+  const once = applySessionActivity(state, undefined, update);
+  const twice = applySessionActivity(once, undefined, update);
+  assert.deepEqual(once, twice);
+  assert.equal(state[0].activity, 'idle', 'input not mutated');
+  assert.equal(once[0].activity, 'working');
+  // Unknown session without fallback: unchanged.
+  assert.deepEqual(applySessionActivity(state, undefined, { ...update, sessionId: 'zz' }), state);
+  // The latest state wins over an older fallback (e.g. a rename that arrived in between).
+  const renamed = [{ ...s1, tab: { id: 't', name: 'new' } }];
+  assert.equal(applySessionActivity(renamed, s1, update)[0].tab.name, 'new');
 });
