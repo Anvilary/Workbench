@@ -190,8 +190,9 @@ export interface AgencySessionPersistence {
  * Both files use the regular store format, validated-backup recovery and schema checks.
  *
  * Crash safety: when a row moves to history, history is written first, then live. A crash in between leaves
- * the row in both files; load keeps the most recently updated copy (the closed one), so a closed tab can never
- * come back as open. Older builds read only the live file and simply do not see history (it is not deleted).
+ * the row in both files; load keeps the most recently updated copy, preferring closed history on timestamp
+ * ties (multiple runtime changes can share a millisecond). Older builds read only the live file and simply
+ * do not see history (it is not deleted).
  */
 export class SplitAgencySessionStore implements AgencySessionPersistence {
   private readonly live: AgencySessionStore;
@@ -210,7 +211,9 @@ export class SplitAgencySessionStore implements AgencySessionPersistence {
     for (const row of history) byId.set(row.id, row);
     for (const row of live) {
       const other = byId.get(row.id);
-      if (!other || row.updatedAt >= other.updatedAt) byId.set(row.id, row);
+      if (!other || row.updatedAt > other.updatedAt || (row.updatedAt === other.updatedAt && !other.tab?.closedAt)) {
+        byId.set(row.id, row);
+      }
     }
     // Live first (stable order for the runtime), then history in file order.
     const order = [...live.map(row => row.id), ...history.map(row => row.id)];

@@ -9,6 +9,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { AgencyRuntimeSession } from '@agent-workbench/shared';
 import { parseAgencyClientMessage, parseAgencyServerMessage } from '@agent-workbench/shared';
 import { AgencySessionStore, SplitAgencySessionStore, isLiveSession } from './agency-session-store.js';
@@ -60,7 +62,7 @@ test('split store: live file holds only live rows; history is rewritten only whe
   assert.equal(after.mtimeMs, before.mtimeMs, 'history file untouched by a live-only change');
   assert.equal(after.ino, before.ino);
 
-  const closed = { ...renamed, tab: { ...renamed.tab!, closedAt: new Date().toISOString() }, updatedAt: new Date(Date.now() + 1000).toISOString() } as AgencyRuntimeSession;
+  const closed = { ...renamed, tab: { ...renamed.tab!, closedAt: new Date().toISOString() } } as AgencyRuntimeSession;
   await store.save([closed, live[1]!, ...history]);
   assert.equal(JSON.parse(await readFile(path.join(dir, 'agency-sessions-history.json'), 'utf8')).sessions.length, 301);
   assert.equal(JSON.parse(await readFile(path.join(dir, 'agency-sessions.json'), 'utf8')).sessions.length, 1);
@@ -69,17 +71,104 @@ test('split store: live file holds only live rows; history is rewritten only whe
   assert.equal(reloaded.length, 302, 'nothing lost across restart');
 });
 
-test('split store: crash between the history and live writes never resurrects a closed tab', async t => {
+test('split store: closed history wins equal timestamps; strictly newer live state remains authoritative', async t => {
   const dir = await temp(t);
-  const open = row({ open: true, at: '2026-10-29T10:00:00.000Z' });
-  const closed = { ...open, tab: { ...open.tab!, closedAt: '2026-10-29T10:05:00.000Z' }, updatedAt: '2026-10-29T10:05:00.000Z' } as AgencyRuntimeSession;
-  // History already written (closed), live still has the pre-close row: the state after a crash in between.
+  const file = path.join(dir, 'agency-sessions.json');
+  const closed = row({ open: false, at: '2026-10-29T10:00:00.000Z' });
   await new AgencySessionStore(path.join(dir, 'agency-sessions-history.json')).save([closed]);
-  await new AgencySessionStore(path.join(dir, 'agency-sessions.json')).save([open]);
-  const loaded = await new SplitAgencySessionStore(path.join(dir, 'agency-sessions.json')).load();
-  assert.equal(loaded.length, 1);
-  assert.equal(loaded[0]!.tab!.closedAt, '2026-10-29T10:05:00.000Z');
+  for (const at of ['2026-10-29T09:59:59.999Z', closed.updatedAt, '2026-10-29T10:00:00.001Z']) {
+    const live = { ...closed, tab: { ...closed.tab!, closedAt: null }, updatedAt: at } as AgencyRuntimeSession;
+    await new AgencySessionStore(file).save([live]);
+    const [loaded] = await new SplitAgencySessionStore(file).load();
+    assert.equal(loaded!.tab!.closedAt, at > closed.updatedAt ? null : closed.tab!.closedAt);
+  }
 });
+
+for (const advanceClock of [false, true]) {
+  test(`runtime close: crash after history write preserves closures across restart (${advanceClock ? 'newer' : 'equal'} timestamps)`, async t => {
+    const dir = await temp(t);
+    const file = path.join(dir, 'agency-sessions.json');
+    const historyFile = path.join(dir, 'agency-sessions-history.json');
+    const at = '2026-10-29T10:00:00.000Z';
+    const first = row({ open: true, at });
+    first.tab!.selected = true;
+    const second = row({ open: true, at });
+    const survivor = row({ open: true, at });
+    const active = { ...row({ open: true, workspaceId: WS_B, at }), lifecycle: 'running', stoppedAt: null } as AgencyRuntimeSession;
+    const history = [row({ open: false, at }), row({ open: false, superseded: true, at })];
+    const rows = [first, second, survivor, active, ...history];
+    await new SplitAgencySessionStore(file).save(rows);
+
+    // Exit the child at the actual live-store save boundary. The real split store has already committed
+    // history, and process.exit prevents runtime error handling or shutdown from saving anything else.
+    const script = `
+      import assert from 'node:assert/strict';
+      import { mock } from 'node:test';
+      import { EventEmitter } from 'node:events';
+      import { AgencySessionRuntime } from ${JSON.stringify(new URL('./agency-session-runtime.ts', import.meta.url).href)};
+      import { AgencySessionStore, SplitAgencySessionStore } from ${JSON.stringify(new URL('./agency-session-store.ts', import.meta.url).href)};
+      mock.timers.enable({ apis: ['Date'], now: ${Date.parse(at)} });
+      const registry = Object.assign(new EventEmitter(), {
+        open: async () => { throw new Error('unexpected launch'); }, get: () => null, has: () => false,
+        list: () => [], close: () => true, activityOf: () => 'unknown',
+      });
+      const runtime = new AgencySessionRuntime({ registry, store: new SplitAgencySessionStore(${JSON.stringify(file)}),
+        profiles: { resolveLaunch: async () => { throw new Error('unexpected launch'); } },
+        workspaces: { protectedDirectories: () => [], withSessionReservation: async (_, action) => action(null) },
+      });
+      await runtime.initialize();
+      mock.timers.setTime(${Date.parse(at) + 1000});
+      await runtime.tabAction(${JSON.stringify(WS_A)}, ${JSON.stringify(second.tab!.id)}, 'select');
+      assert.equal(runtime.get(${JSON.stringify(second.id)}).updatedAt, new Date().toISOString(), 'selection timestamps changed rows');
+      await runtime.tabAction(${JSON.stringify(WS_A)}, ${JSON.stringify(first.tab!.id)}, 'close');
+      assert.equal(runtime.get(${JSON.stringify(first.id)}).updatedAt, new Date().toISOString(), 'close timestamps changed rows');
+      ${advanceClock ? `mock.timers.setTime(${Date.parse(at) + 1001});` : ''}
+      const save = AgencySessionStore.prototype.save;
+      AgencySessionStore.prototype.save = function (sessions) {
+        if (this.file === ${JSON.stringify(file)}) process.exit(73);
+        return save.call(this, sessions);
+      };
+      await runtime.tabAction(${JSON.stringify(WS_A)}, ${JSON.stringify(second.tab!.id)}, 'close');
+      throw new Error('crash boundary was not reached');
+    `;
+    await assert.rejects(promisify(execFile)(process.execPath, ['--import', import.meta.resolve('tsx'), '--input-type=module', '--eval', script]),
+      (error: unknown) => { assert.equal((error as { code: number; stderr: string }).code, 73, (error as { stderr: string }).stderr); return true; });
+
+    const staleLive = await new AgencySessionStore(file).load();
+    const committedHistory = await new AgencySessionStore(historyFile).load();
+    const staleSecond = staleLive.find(s => s.id === second.id)!;
+    const closedSecond = committedHistory.find(s => s.id === second.id)!;
+    assert.equal(staleSecond.tab!.closedAt, null, 'live file still contains the pre-close row');
+    assert.equal(closedSecond.updatedAt, closedSecond.tab!.closedAt);
+    assert.equal(Date.parse(closedSecond.updatedAt) - Date.parse(staleSecond.updatedAt), advanceClock ? 1 : 0);
+    for (const previous of history) assert.deepEqual(committedHistory.find(s => s.id === previous.id), previous);
+
+    // Two complete initializations also exercise the first post-crash repair save and another restart.
+    for (let restart = 0; restart < 2; restart++) {
+      const registry = Object.assign(new EventEmitter(), {
+        open: async () => { throw new Error('unexpected launch'); }, get: () => null, has: () => false,
+        list: () => [], close: () => true, activityOf: () => 'unknown' as const,
+      });
+      const runtime = new AgencySessionRuntime({
+        registry: registry as unknown as ConstructorParameters<typeof AgencySessionRuntime>[0]['registry'],
+        store: new SplitAgencySessionStore(file),
+        profiles: { resolveLaunch: async () => { throw new Error('unexpected launch'); } },
+        workspaces: { protectedDirectories: () => [], withSessionReservation: async (_, action) => action(null) },
+      });
+      t.after(() => runtime.dispose());
+      await runtime.initialize();
+      assert.equal(runtime.list().length, rows.length, 'every live and historical record survives');
+      assert.deepEqual(new Set(runtime.liveList().map(s => s.id)), new Set([survivor.id, active.id]));
+      assert.equal(runtime.get(active.id)!.recovery?.status, 'pending', 'active sibling remains eligible for normal recovery');
+      for (const closed of [first, second]) {
+        assert.ok(runtime.get(closed.id)!.tab!.closedAt);
+        assert.notEqual(runtime.get(closed.id)!.recovery?.status, 'pending');
+      }
+      for (const previous of history) assert.deepEqual(runtime.get(previous.id), previous);
+      runtime.dispose();
+    }
+  });
+}
 
 test('split store: legacy single-file history migrates on first save without loss; corrupt history recovers from backup', async t => {
   const dir = await temp(t);
@@ -100,6 +189,31 @@ test('split store: legacy single-file history migrates on first save without los
   await writeFile(path.join(dir, 'agency-sessions-history.json'), '{ corrupt');
   const recovered = await new SplitAgencySessionStore(file).load();
   assert.ok(recovered.length >= 21, 'backup recovery keeps history');
+});
+
+test('single-file downgrade leaves split history untouched and a later upgrade retains both generations', async t => {
+  const dir = await temp(t);
+  const file = path.join(dir, 'agency-sessions.json');
+  const historyFile = path.join(dir, 'agency-sessions-history.json');
+  const live = row({ open: true });
+  const history = [row({ open: false }), row({ open: false, superseded: true })];
+  const split = new SplitAgencySessionStore(file);
+  await split.save([live, ...history]);
+  await split.save([live, ...history, row({ open: false })]);
+  const before = await Promise.all([readFile(historyFile), readFile(historyFile + '.bak')]);
+  const single = new AgencySessionStore(file);
+  assert.deepEqual(await single.load(), [live], 'older release sees the live file only');
+  const closedDuringDowngrade = row({ open: false });
+  await single.save([live, closedDuringDowngrade]);
+  assert.deepEqual(await Promise.all([readFile(historyFile), readFile(historyFile + '.bak')]), before, 'dormant history and backup are byte-identical');
+  const upgraded = new SplitAgencySessionStore(file);
+  const restored = await upgraded.load();
+  assert.equal(restored.length, 5);
+  assert.deepEqual(restored.find(s => s.id === live.id), live);
+  for (const previous of [...history, closedDuringDowngrade]) assert.deepEqual(restored.find(s => s.id === previous.id), previous);
+  await upgraded.save(restored);
+  assert.deepEqual(await new AgencySessionStore(file).load(), [live]);
+  assert.equal((await new SplitAgencySessionStore(file).load()).length, 5);
 });
 
 test('runtime: snapshots carry live rows only; history is paged newest-first and workspace-scoped', async t => {

@@ -274,6 +274,7 @@ test('8. U-1: candidate that never becomes ready is rolled back to the verified 
   const r = await helper(f);
   assert.equal(r.code, 2, r.stderr);
   assert.match(r.stderr, /UPDATE FAILED, SERVICE RECOVERED/);
+  assert.match(r.stderr, /Executable rollback does not guarantee historical-data compatibility/);
   assert.deepEqual(await pointers(f), { current: f.initialId, staged: null, healthy: f.initialId, previous: null });
   assert.equal((await readFile(path.join(f.root, 'running'), 'utf8')).trim().split('/').pop(), f.initialId);
   const events = (await logEvents(f)).map(e => e.event);
@@ -363,10 +364,12 @@ test('16b. U-2: helper killed after switching pointers; reboot boots unverified 
   await update(f);
   const B = (await pointers(f)).staged!;
   await writeFile(path.join(f.root, 'broken', B), '');
-  const child = spawn(MAW_RESTART_HELPER_BIN, ['--unit', 'maw-fixture.service'], { env: { ...f.env, MAW_READY_TIMEOUT: '30' }, stdio: 'ignore' });
+  const child = spawn(MAW_RESTART_HELPER_BIN, ['--unit', 'maw-fixture.service'], { env: { ...f.env, MAW_READY_TIMEOUT: '30' }, stdio: 'ignore', detached: true });
   for (let i = 0; i < 100 && (await pointer(f, 'current')) !== B; i++) await new Promise(r => setTimeout(r, 50));
   assert.equal(await pointer(f, 'current'), B, 'helper switched current to B');
-  child.kill('SIGKILL');
+  // A reboot also kills helper children that can briefly inherit its flock descriptors.
+  assert.ok(child.pid);
+  process.kill(-child.pid, 'SIGKILL');
   await new Promise(r => child.once('exit', r));
   // Machine crash/reboot: systemd boots `current` = B (unverified, broken).
   await exec('systemctl', ['--user', 'restart', 'maw-fixture.service'], { env: f.env });
@@ -388,6 +391,7 @@ test('17. U-2: successful activation promotes healthy and keeps the old healthy 
   assert.ok((await logEvents(f)).some(e => e.event === 'activation-success' && e.release === S));
   // maw rollback reactivates the previous verified release.
   const rb = await exec(MAW_BIN, ['rollback'], { env: f.env });
+  assert.match(rb.stderr, /Executable rollback does not guarantee historical-data compatibility/);
   assert.match(rb.stdout, /Activating previous verified release/);
   assert.deepEqual(await pointers(f), { current: H, staged: null, healthy: H, previous: S });
 }));
@@ -617,6 +621,46 @@ test('31. U-3/U-13a: install --service builds an isolated first release and rend
   assert.ok(unit.includes(`ExecStart=${process.execPath} --import ${state}/current/packages/server/node_modules/tsx/dist/loader.mjs`));
   assert.ok(unit.includes(`WorkingDirectory=${state}/current`));
   assert.match(unit, /ExecStartPre=\/usr\/bin\/test -f .*\.maw-release-meta\.json/);
+}));
+
+test('31b. installed library renders and runs after the installer source is removed', () => withFixture(async f => {
+  const repo = path.join(f.root, 'installer-source');
+  await mkdir(path.join(repo, 'scripts'), { recursive: true });
+  await exec('cp', ['-r', SCRIPT_DIR, path.join(repo, 'scripts/maw')]);
+  const env = {
+    ...f.env, MAW_LIB_DIR: path.join(f.root, 'installed-lib'), MAW_BIN_DIR: path.join(f.root, 'installed-bin'),
+    MAW_RUNTIME_NAME: 'maw-installed-fixture',
+  };
+  await exec(path.join(repo, 'scripts/maw/install.sh'), ['--commands-only'], { env });
+  await rm(repo, { recursive: true, force: true });
+  for (const [name, mode] of [['maw-render-unit.sh', 0o755], ['maw.service', 0o644]] as const) {
+    assert.equal((await stat(path.join(env.MAW_LIB_DIR, name))).mode & 0o777, mode);
+  }
+  const rendered = await exec(path.join(env.MAW_LIB_DIR, 'maw-render-unit.sh'), [], { env, cwd: f.root });
+  assert.ok(!rendered.stdout.includes('@'), 'installed template is fully rendered');
+  assert.ok(rendered.stdout.includes(`WorkingDirectory=${f.stateDir}/current`));
+  assert.ok(rendered.stdout.includes(`ExecStart=${process.execPath} --import `));
+  assert.ok(rendered.stdout.includes('RuntimeDirectory=maw-installed-fixture'));
+  const installedMaw = path.join(env.MAW_BIN_DIR, 'maw');
+  assert.match((await exec(installedMaw, ['help'], { env, cwd: f.root })).stdout, /Usage: maw/);
+  assert.match((await exec(installedMaw, ['update', '--help'], { env, cwd: f.root })).stdout, /Usage: maw update/);
+  await pushUpstream(f, 'installed-update');
+  await exec(installedMaw, ['update', '--no-restart'], { env, cwd: f.root });
+  assert.ok(await pointer(f, 'staged'), 'installed updater builds from the configured fixture Git source');
+  const activated = await exec(path.join(env.MAW_LIB_DIR, 'maw-restart-helper.sh'), ['--unit', env.MAW_UNIT], { env, cwd: f.root });
+  assert.match(activated.stdout, /healthy on release/);
+
+  // Exercise the installed control.mjs as well, using only fixture readiness and a local HTTP server.
+  const server = createServer((req, res) => { res.statusCode = req.url?.includes('token=installed-fixture') ? 200 : 401; res.end(); });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const addr = server.address();
+    assert.ok(addr && typeof addr !== 'string');
+    const url = `http://127.0.0.1:${addr.port}/?token=installed-fixture`;
+    await writeFile(path.join(f.runtimeDir, 'maw-ready.json'), JSON.stringify({ pid: process.pid, url, releaseId: f.initialId }), { mode: 0o600 });
+    await writeFile(path.join(f.root, 'mainpid'), `${process.pid}\n`);
+    assert.equal((await exec(installedMaw, ['url'], { env: { ...env, MAW_CONTROL_SCRIPT: '' }, cwd: f.root })).stdout.trim(), url);
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
 }));
 
 // ---------------------------------------------------------------------------

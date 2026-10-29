@@ -100,6 +100,7 @@ case "$command_name" in
     [ "$#" -eq 1 ] || { usage >&2; exit 2; }
     previous=$(maw_pointer previous)
     [ -n "$previous" ] || { printf '%s\n' 'No verified previous release is available.' >&2; exit 1; }
+    printf '%s\n' 'Executable rollback does not guarantee historical-data compatibility; older releases cannot display split session history.' >&2
     maw_lock_update 0 || { printf '%s\n' 'An update or activation is in progress.' >&2; exit 1; }
     maw_set_pointer staged "$previous"
     exec 9>&-
