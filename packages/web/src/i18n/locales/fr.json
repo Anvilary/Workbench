@@ -59,6 +59,7 @@
   "agency.tabs.restartShell": "Redémarrer le terminal",
   "agency.tabs.sessionCount": "{{count}} sessions",
   "agency.tabs.shellRestarted": "Terminal redémarré (nouveau processus)",
+  "agency.tabs.startAgain": "Relancer",
   "agency.tabs.tabList": "Onglets ; flèches pour choisir, Alt+flèches pour déplacer",
   "agency.tabs.terminalNamed": "Terminal {{number}}",
   "agency.ui.actionNeededInTheNativeCLI": "Action needed in the native CLI",

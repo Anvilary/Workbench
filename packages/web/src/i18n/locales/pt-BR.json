@@ -59,6 +59,7 @@
   "agency.tabs.restartShell": "Reiniciar terminal",
   "agency.tabs.sessionCount": "{{count}} sessões",
   "agency.tabs.shellRestarted": "Terminal reiniciado (novo processo)",
+  "agency.tabs.startAgain": "Iniciar novamente",
   "agency.tabs.tabList": "Abas; setas selecionam, Alt+setas reordenam",
   "agency.tabs.terminalNamed": "Terminal {{number}}",
   "agency.ui.actionNeededInTheNativeCLI": "Action needed in the native CLI",
