@@ -53,29 +53,27 @@ test('CLI completion and receipt persist together; acknowledgement preserves rec
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('shell completion receipts survive delivery failure and restart independently of parser lifetime', async () => {
+test('ordinary shell commands produce zero outbox notifications and return to idle', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'maw-outbox-shell-'));
   try {
     const file = path.join(root, 'notifications.json');
-    const broken = new InterruptedNotifications(file); await broken.initialize();
-    const manager = new TabActivityManager({ notificationStore: broken, storageDir: root }); await manager.initialize();
+    const store = new AgencyNotificationStore(file); await store.initialize();
+    const manager = new TabActivityManager({ notificationStore: store, storageDir: root }); await manager.initialize();
     const input = baseInput();
-    const persistedStates: Array<Promise<string>> = [];
-    manager.on('tabActivity', record => {
-      if (record.state === 'finished') persistedStates.push(disk(manager).then(value => value.records[0]!.state));
-    });
     const parser = manager.getOrCreateShellParser(input.workspaceId, input.tabId, { sessionId: input.sessionId });
-    parser.feed(ShellSequences.commandStart + ShellSequences.commandExit(0));
+    parser.feed(ShellSequences.commandStart);
     await manager.flush();
-    assert.deepEqual(await Promise.all(persistedStates), ['finished']);
-    assert.equal((await disk(manager)).pendingNotifications[0]?.metadata?.['kind'], 'shell');
+    assert.equal(manager.getTabState(input.workspaceId, input.tabId), 'working');
+    parser.feed(ShellSequences.commandExit(0));
+    await manager.flush();
+    assert.equal(manager.getTabState(input.workspaceId, input.tabId), 'idle');
+    assert.equal((await disk(manager)).pendingNotifications.length, 0);
+    assert.equal(store.list().length, 0);
     manager.dispose();
     const recovered = new AgencyNotificationStore(file); await recovered.initialize();
     const restarted = new TabActivityManager({ notificationStore: recovered, storageDir: root }); await restarted.initialize();
-    await restarted.flushPendingNotifications(() => true);
-    assert.equal(recovered.list().length, 1);
-    assert.equal(restarted.getTabState(input.workspaceId, input.tabId), 'finished');
-    assert.equal((await disk(restarted)).pendingNotifications.length, 0);
+    assert.equal(recovered.list().length, 0);
+    assert.equal(restarted.getTabState(input.workspaceId, input.tabId), 'idle');
     restarted.dispose();
   } finally { await rm(root, { recursive: true, force: true }); }
 });

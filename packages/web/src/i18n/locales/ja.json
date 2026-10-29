@@ -13,6 +13,7 @@
   "agency.notifications.commandFailedCode": "コマンドが終了コード{{code}}で失敗しました",
   "agency.notifications.commandFinished": "コマンドが完了しました",
   "agency.notifications.dismissToast": "通知を閉じる",
+  "agency.notifications.done": "完了",
   "agency.notifications.empty": "通知はありません",
   "agency.notifications.markAllRead": "すべて既読にする",
   "agency.notifications.markRead": "既読にする",

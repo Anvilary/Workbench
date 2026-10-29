@@ -310,6 +310,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
             onSelect={handleNotificationNavigate}
             onMarkRead={id => { void notificationStore.markRead(id).catch(reason => setError(String(reason))); }}
             onMarkAllRead={() => { void notificationStore.markAllRead().catch(reason => setError(String(reason))); }}
+            onDone={id => { void notificationStore.markDone(id).catch(reason => setError(String(reason))); }}
           />
         )}
         {error && <div role="alert" className="agency-error-bar">{error}

@@ -536,6 +536,10 @@ export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | nu
       if (!hasOnlyKeys(raw, ['type', 'requestId', 'notificationId']) || !isValidId(raw['notificationId'])) return null;
       return { type: 'agency.notification.dismiss', requestId, notificationId: raw['notificationId'] as string };
     }
+    case 'agency.notification.done': {
+      if (!hasOnlyKeys(raw, ['type', 'requestId', 'notificationId']) || !isValidId(raw['notificationId'])) return null;
+      return { type: 'agency.notification.done', requestId, notificationId: raw['notificationId'] as string };
+    }
     case 'agency.tab.acknowledge': {
       if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'tabId']) || !isValidId(raw['workspaceId']) || !isValidId(raw['tabId'])) return null;
       return { type: 'agency.tab.acknowledge', requestId, workspaceId: raw['workspaceId'] as WorkspaceId, tabId: raw['tabId'] as string };

@@ -104,8 +104,9 @@ export class TabActivityManager extends EventEmitter {
         reliableSignal = false;
         detail = 'Server restarted while task in-flight (status unknown)';
       } else if (state === 'finished' && !record.acknowledgedAt) {
-        // Uninspected finished states remain finished!
-        state = 'finished';
+        // Uninspected finished states remain finished for native agent turns;
+        // ordinary shell commands never leave a persistent finished badge.
+        state = record.source === 'shell' ? 'idle' : 'finished';
       }
 
       this.states.set(key, {
@@ -355,6 +356,73 @@ export class TabActivityManager extends EventEmitter {
     return this.mutate(() => this.acknowledgeTabInner(workspaceId, tabId));
   }
 
+  /**
+   * Atomic compare-and-acknowledge for Done action:
+   * Only clears the 'finished' state on the tab if the tab's current completion matches
+   * the specified turn/task identity.
+   * When notifications lack identity (old/legacy), fails safely by completing only the inbox item,
+   * not guessing the current turn.
+   */
+  acknowledgeMatchingTurn(
+    workspaceId: WorkspaceId,
+    tabId: string,
+    match: { taskId?: string; turnSequence?: number },
+  ): Promise<TabActivityRecord | null> {
+    return this.mutate(() => this.acknowledgeMatchingTurnInner(workspaceId, tabId, match));
+  }
+
+  private async acknowledgeMatchingTurnInner(
+    workspaceId: WorkspaceId,
+    tabId: string,
+    match: { taskId?: string; turnSequence?: number },
+  ): Promise<TabActivityRecord | null> {
+    // When old/legacy notifications lack identity, fail safely by completing only the inbox item,
+    // not guessing the current turn.
+    if (!match.taskId && match.turnSequence === undefined) {
+      return null;
+    }
+
+    const key = this.makeKey(workspaceId, tabId);
+    const current = this.states.get(key);
+    if (!current || current.state !== 'finished') {
+      return current ?? null;
+    }
+
+    // Verify identity match: if taskId is provided, must match; if turnSequence is provided, must match.
+    const taskIdMatches = match.taskId !== undefined ? current.taskId === match.taskId : true;
+    const turnSeqMatches = match.turnSequence !== undefined ? current.turnSequence === match.turnSequence : true;
+
+    if (!taskIdMatches || !turnSeqMatches) {
+      // Current tab completion belongs to a different (e.g. newer) turn.
+      // Do not clear the completion!
+      return current;
+    }
+
+    const next: TabActivityRecord = {
+      ...current,
+      state: 'idle',
+      updatedAt: NOW(),
+      acknowledgedAt: NOW(),
+      reliableSignal: true,
+      detail: 'inspected-and-acknowledged',
+    };
+    this.states.set(key, next);
+
+    // Acknowledge shell parser if present
+    const parser = this.shellParsers.get(tabId);
+    parser?.acknowledge();
+
+    // Acknowledge browser provider if present
+    for (const provider of this.browserProviders.values()) {
+      provider.acknowledgeTab(tabId);
+    }
+
+    try { await this.persist(); }
+    catch (error) { if (this.states.get(key) === next) this.states.set(key, current); throw error; }
+    this.emit('tabActivity', next);
+    return next;
+  }
+
   private async acknowledgeTabInner(workspaceId: WorkspaceId, tabId: string): Promise<TabActivityRecord | null> {
     const key = this.makeKey(workspaceId, tabId);
     const current = this.states.get(key);
@@ -527,7 +595,7 @@ export class TabActivityManager extends EventEmitter {
         body: 'Agent completed task',
         state: 'finished',
         deduplicationKey,
-        metadata: { kind: 'cli', tabName: input.tabName ?? '' },
+        metadata: { kind: 'cli', tabName: input.tabName ?? '', taskId: currentTaskId, turnSequence: currentSeq > 0 ? currentSeq : undefined },
       };
     } else if (nextState === 'failed' && reliable) {
       const tabLabel = input.tabName || 'CLI Agent';
@@ -541,7 +609,7 @@ export class TabActivityManager extends EventEmitter {
         body: detail || 'Agent encountered an error',
         state: 'failed',
         deduplicationKey,
-        metadata: { kind: 'cli', tabName: input.tabName ?? '', exitCode: input.exitCode ?? null },
+        metadata: { kind: 'cli', tabName: input.tabName ?? '', exitCode: input.exitCode ?? null, taskId: currentTaskId, turnSequence: currentSeq > 0 ? currentSeq : undefined },
       };
     }
     await this.saveActivity(record, notification);
@@ -591,27 +659,22 @@ export class TabActivityManager extends EventEmitter {
       parser.on('state', (state: MawActivityState, detail?: string) => {
         if (detail === 'acknowledged') return;
         const count = this.shellCommandCounters.get(tabId) ?? 0;
-        const exitCode = parser!.getLastExitCode();
         const reliableSignal = parser!.hasIntegration() && state !== 'unknown';
         void this.mutate(async () => {
           const current = this.states.get(key);
           if (current?.closed || (options?.sessionId && current?.sessionId && current.sessionId !== options.sessionId)) return;
-          if (current?.state === 'finished' && !current.acknowledgedAt && state === 'idle') return;
+          // Ordinary shell command completion must not leave a persistent "finished" badge on its terminal tab.
+          // Terminal returns to idle when a command completes or exits.
+          const effectiveState: MawActivityState = (state === 'finished' || state === 'failed') ? 'idle' : state;
           const cmdId = `cmd-${count}`;
           const record: TabActivityRecord = {
             workspaceId, tabId, ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
-            taskId: cmdId, turnSequence: count, state, updatedAt: NOW(), reliableSignal,
+            taskId: cmdId, turnSequence: count, state: effectiveState, updatedAt: NOW(), reliableSignal,
             source: 'shell', closed: false, ...(detail ? { detail } : {}),
           };
-          const notification: CreateNotificationInput | undefined = state === 'finished' || state === 'failed' ? {
-            workspaceId, ...(options?.projectId ? { projectId: options.projectId } : {}),
-            tabId, ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
-            title: options?.tabName || 'Terminal',
-            body: state === 'finished' ? 'Command finished successfully' : `Command failed with exit code ${exitCode ?? 'error'}`,
-            state, deduplicationKey: `${state === 'finished' ? 'shell-cmd' : 'shell-cmd-fail'}:${workspaceId}:${tabId}:${cmdId}`,
-            metadata: { kind: 'shell', tabName: options?.tabName ?? '', exitCode: state === 'finished' ? 0 : exitCode },
-          } : undefined;
-          await this.saveActivity(record, notification);
+          // Commands such as ls, pwd, git status, echo, cd and ordinary failed shell commands must not create
+          // individual inbox notifications, desktop notifications or toast messages.
+          await this.saveActivity(record, undefined);
         }).catch(error => console.warn('[agency] failed persisting shell activity/outbox: ' + String(error)));
       });
     }

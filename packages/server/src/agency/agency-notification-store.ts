@@ -129,7 +129,7 @@ export class AgencyNotificationStore extends EventEmitter {
   }
 
   unreadCount(workspaceId?: WorkspaceId): number {
-    return this.list(workspaceId).filter((item) => !item.read).length;
+    return this.list(workspaceId).filter((item) => !item.read && !item.acknowledgedAt).length;
   }
 
   /**
@@ -282,9 +282,13 @@ export class AgencyNotificationStore extends EventEmitter {
     const existing = this.notifications.get(notificationId);
     if (!existing) return null;
 
+    const now = NOW();
     const updated: MawNotificationItem = {
       ...existing,
-      acknowledgedAt: NOW(),
+      acknowledgedAt: existing.acknowledgedAt ?? now,
+      read: true,
+      readAt: existing.readAt ?? now,
+      dismissedAt: existing.dismissedAt ?? now,
     };
 
     this.notifications.set(notificationId, updated);

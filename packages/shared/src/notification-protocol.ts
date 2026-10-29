@@ -113,6 +113,7 @@ export type NotificationClientMessage =
   | { type: 'agency.notification.markRead'; requestId: RequestId; notificationId: string }
   | { type: 'agency.notification.markAllRead'; requestId: RequestId }
   | { type: 'agency.notification.dismiss'; requestId: RequestId; notificationId: string }
+  | { type: 'agency.notification.done'; requestId: RequestId; notificationId: string }
   | { type: 'agency.tab.acknowledge'; requestId: RequestId; workspaceId: WorkspaceId; tabId: string };
 
 export type NotificationServerMessage =
