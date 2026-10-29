@@ -55,3 +55,28 @@ real-systemd 1/1, i18n check PASS, server+web `tsc` clean, production build PASS
 
 Next: Checkpoint 5 (notifications, high-volume PTY output, Neko reconnection, cross-workspace isolation),
 then Checkpoint 6 full regression + real release activation + PR.
+
+## Checkpoint 5 — previously unexamined areas (IN PROGRESS)
+
+Notifications (`src/agency/notification-semantics.test.ts`, commit `6ffb7d6`) — 4/4 PASS, no defect:
+read ≠ acknowledge (each independent), duplicate/replayed/out-of-order/stale-turn events (one alert per turn,
+older turn cannot regress newer), finish without seen start alerts once, restart durability without duplicate,
+closed tab never alerts, same tab id in another workspace isolated. Archived workspaces: by inspection,
+`hasOpenActivityTab` (terminal-socket.ts) gates on workspace existence, not status → alerts for a still-running
+CLI in an archived workspace are delivered (observed behaviour, not changed).
+
+Cross-workspace isolation (`src/agency/cross-workspace-isolation.test.ts`, `6ffb7d6`) — PASS 10/10 randomized
+runs: 242 concurrent ops (selects, renames, own closes, 120 forged cross-workspace select/close/order) leave B
+byte-identical, B browser targets and PTYs untouched, exactly one selection per workspace. Native identity
+reassignment covered by existing runtime tests (`agency-session-runtime.test.ts`: "native conversation
+controller is exclusive across workspaces", "different profiles of the same provider cannot resume one native
+conversation", "inactive resume ownership survives restart…").
+
+High-volume terminal output (`scripts/audit/pty-flood.mjs`, real disposable server, real bash PTYs, isolated
+HOME/XDG): 2 concurrent `seq` floods of 1M lines (15.8 MB) at 20–24 MB/s, server CPU ~0.7 s, RSS +10–20 MB;
+untyped streams intact in every run (≥12 runs × 1M lines, plus 5M-line runs). Keystrokes typed DURING a flood
+are mangled mid-line ~1 in 20 echoes — reproduced 8/8 on a raw node-pty without MAW (kernel tty echo
+interleaving), so not a MAW defect. New defect N-3 (unbounded buffering for stalled clients) found and fixed.
+Not measured: browser-side render cost of floods (xterm paint) and input latency in a real browser under flood.
+
+Next: Neko reconnection (disposable fixture container), then Checkpoint 6.
