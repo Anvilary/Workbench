@@ -38,6 +38,7 @@ case "$command_name" in
       2) exec "$node_bin" "$control_script" open "$2" ;;
       *) usage >&2; exit 2 ;;
     esac ;;
+  update) exec /bin/sh /home/user/.local/lib/maw/maw-update.sh "$@" ;;
   help|--help|-h) usage ;;
   *) usage >&2; exit 2 ;;
 esac

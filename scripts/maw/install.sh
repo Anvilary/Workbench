@@ -14,6 +14,7 @@ esac
 install -d -m 700 /home/user/.local/lib/maw
 install -d /home/user/.local/bin
 install -m 644 "$script_dir/control.mjs" /home/user/.local/lib/maw/control.mjs
+install -m 755 "$script_dir/maw-update.sh" /home/user/.local/lib/maw/maw-update.sh
 install -m 755 "$script_dir/maw" /home/user/.local/bin/maw
 if [ "${1:---commands-only}" = --service ]; then
   install -d /home/user/.config/systemd/user
