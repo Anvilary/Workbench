@@ -321,6 +321,19 @@ test('9d. U-1: early failure detection uses the unit state instead of waiting th
   assert.match(r.stderr, /unit entered failed state/);
 }));
 
+test('9e. U-1: an invalid rollback target (healthy points at a non-release) is never used; CRITICAL', () => withFixture(async f => {
+  await pushUpstream(f, 'v2');
+  await update(f);
+  await writeFile(path.join(f.root, 'broken', (await pointers(f)).staged!), '');
+  await rm(path.join(f.stateDir, 'healthy'));
+  await symlink(f.sourceDir, path.join(f.stateDir, 'healthy'));   // mutable checkout: not a release
+  await writeFile(path.join(f.root, 'running'), '');   // service down, so nothing can be adopted as healthy
+  const r = await helper(f);
+  assert.equal(r.code, 3);
+  assert.match(r.stderr, /no verified healthy release is available/);
+  assert.equal((await readFile(path.join(f.root, 'restarts'), 'utf8')).trim(), '1', 'no restart into the invalid target');
+}));
+
 test('16. U-2: two staged updates never replace the verified rollback target; failed B recovers H, not A', () => withFixture(async f => {
   const H = f.initialId;
   await pushUpstream(f, 'releaseA');
