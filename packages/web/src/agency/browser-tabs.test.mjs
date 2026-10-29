@@ -87,6 +87,9 @@ function browserExecutable() {
     const path = cache + '/' + folder + '/chrome-headless-shell-linux64/chrome-headless-shell';
     if (existsSync(path)) return path;
   }
+  for (const bin of ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser']) {
+    if (existsSync(bin)) return bin;
+  }
   return undefined;
 }
 

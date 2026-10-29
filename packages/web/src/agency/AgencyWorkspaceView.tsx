@@ -102,7 +102,7 @@ function SessionPane({ session, active, focusTerminal, connection, online, reque
         {(session.kind === 'terminal' || session.nativeSessionId) && <button type="button" className="agency-secondary-button" disabled={!online || resuming || live} onClick={() => void resume()}>{session.kind === 'terminal' ? t('agency.tabs.restartShell') : t('agency.ui.resumeNative')}</button>}
         {session.kind === 'agent' && !session.nativeSessionId && (session.lifecycle === 'failed' || session.lifecycle === 'exited') && session.tab && (<div className="agency-dialog-actions">
           {onStartAgain && <button type="button" className="agency-secondary-button" disabled={!online || busy || !canLaunchAgent(profile)} onClick={() => onStartAgain(session)}>{t('agency.tabs.startAgain')}</button>}
-          {onConfigure && profile && <button type="button" className="agency-secondary-button" disabled={!online} onClick={() => onConfigure(profile)}>{t('agency.profile.configure')}</button>}
+          {onConfigure && profile && !(connection.isRemoteClient ? connection.isRemoteClient() : false) && <button type="button" className="agency-secondary-button" disabled={!online} onClick={() => onConfigure(profile)}>{t('agency.profile.configure')}</button>}
           <button type="button" className="agency-secondary-button" disabled={!online} onClick={() => void request({ type: 'agency.tab.action', workspaceId: session.workspaceId, tabId: session.tab!.id, action: 'close' })}>{t('agency.tabs.closeSession')}</button>
         </div>)}
       </div>}
@@ -131,6 +131,15 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
   const [displayed, setDisplayed] = useState<string | null>(null);
   const flight = useRef(false);
   const acknowledged = useRef(new Set<string>());
+  const [dragState, setDragState] = useState<{ tabId: string; targetIndex: number } | null>(null);
+  const tabDrag = useRef<{ tabId: string; pointerId: number; startX: number; startY: number; isDragging: boolean; targetIndex: number } | null>(null);
+  const autoScrollRef = useRef<number | null>(null);
+  const stopAutoScroll = useCallback(() => {
+    if (autoScrollRef.current !== null) {
+      cancelAnimationFrame(autoScrollRef.current);
+      autoScrollRef.current = null;
+    }
+  }, []);
   const strip = useRef<HTMLDivElement | null>(null);
   const drag = useRef<{ id: number; x: number; scroll: number; moved: boolean } | null>(null);
   const dragged = useRef(false);
@@ -138,6 +147,20 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
   const reportDisplayed = useCallback((id: string, ready: boolean) => {
     setDisplayed(previous => ready ? id : previous === id ? null : previous);
   }, []);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && tabDrag.current) {
+        tabDrag.current = null;
+        setDragState(null);
+        stopAutoScroll();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      stopAutoScroll();
+    };
+  }, [stopAutoScroll]);
   useEffect(() => { if (!profileId && profiles.length) setProfileId(profiles[0]!.id); }, [profileId, profiles]);
   useEffect(() => {
     strip.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.parentElement?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
@@ -262,11 +285,122 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
   const webHeading = webDialog === 'create' ? t('agency.web.newTab') : t('agency.web.navigate');
   return <section className="agency-workspace-view" aria-label={t('agency.ui.workspaceNamed', { name: workspace.name })}>
     <header className="maw-tabs-header">
-      <div className="maw-tabs-strip" ref={strip} role="tablist" aria-label={t('agency.tabs.tabList')} onKeyDown={event => void navigate(event)}
-        onPointerDown={event => { if (event.button !== 0 || (event.target as Element).closest('[data-close], input')) return; drag.current = { id: event.pointerId, x: event.clientX, scroll: event.currentTarget.scrollLeft, moved: false }; }}
-        onPointerMove={event => { const start = drag.current; if (!start) return; if (Math.abs(event.clientX - start.x) > 6) { start.moved = true; event.currentTarget.setPointerCapture(event.pointerId); } if (start.moved) { event.preventDefault(); event.currentTarget.scrollLeft = start.scroll - (event.clientX - start.x); } }}
-        onPointerUp={event => { dragged.current = !!drag.current?.moved; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); drag.current = null; setTimeout(() => { dragged.current = false; }, 0); }}
-        onPointerCancel={() => { drag.current = null; dragged.current = false; }}
+      <div className={'maw-tabs-strip' + (dragState ? ' is-dragging' : '')} ref={strip} role="tablist" aria-label={t('agency.tabs.tabList')} onKeyDown={event => void navigate(event)}
+        onPointerDown={event => {
+          if (event.button !== 0 || (event.target as Element).closest('[data-close], input')) return;
+          const tabEl = (event.target as Element).closest<HTMLElement>('.maw-session-tab');
+          if (tabEl) {
+            const tabId = tabEl.getAttribute('data-tab-id');
+            if (tabId) {
+              const idx = tabs.findIndex(t => t.id === tabId);
+              tabDrag.current = { tabId, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, isDragging: false, targetIndex: idx };
+              return;
+            }
+          }
+          drag.current = { id: event.pointerId, x: event.clientX, scroll: event.currentTarget.scrollLeft, moved: false };
+        }}
+        onPointerMove={event => {
+          if (tabDrag.current && tabDrag.current.pointerId === event.pointerId) {
+            if (!tabDrag.current.isDragging) {
+              if (Math.hypot(event.clientX - tabDrag.current.startX, event.clientY - tabDrag.current.startY) > 6) {
+                tabDrag.current.isDragging = true;
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }
+            }
+            if (tabDrag.current.isDragging && strip.current) {
+              event.preventDefault();
+              const tabElements = Array.from(strip.current.querySelectorAll<HTMLElement>('.maw-session-tab'));
+              let target = tabs.length;
+              for (let i = 0; i < tabElements.length; i++) {
+                const rect = tabElements[i]!.getBoundingClientRect();
+                const mid = rect.left + rect.width / 2;
+                if (event.clientX < mid) {
+                  target = i;
+                  break;
+                }
+              }
+              tabDrag.current.targetIndex = target;
+              setDragState({ tabId: tabDrag.current.tabId, targetIndex: target });
+
+              // Edge autoscroll
+              const stripRect = strip.current.getBoundingClientRect();
+              const leftZone = stripRect.left + 40;
+              const rightZone = stripRect.right - 40;
+              stopAutoScroll();
+              if (event.clientX < leftZone) {
+                const speed = Math.max(2, Math.min(15, (leftZone - event.clientX) * 0.4));
+                const scroll = () => {
+                  if (!tabDrag.current?.isDragging || !strip.current) return;
+                  strip.current.scrollLeft -= speed;
+                  autoScrollRef.current = requestAnimationFrame(scroll);
+                };
+                autoScrollRef.current = requestAnimationFrame(scroll);
+              } else if (event.clientX > rightZone) {
+                const speed = Math.max(2, Math.min(15, (event.clientX - rightZone) * 0.4));
+                const scroll = () => {
+                  if (!tabDrag.current?.isDragging || !strip.current) return;
+                  strip.current.scrollLeft += speed;
+                  autoScrollRef.current = requestAnimationFrame(scroll);
+                };
+                autoScrollRef.current = requestAnimationFrame(scroll);
+              }
+            }
+            return;
+          }
+          const start = drag.current;
+          if (!start) return;
+          if (Math.abs(event.clientX - start.x) > 6) {
+            start.moved = true;
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }
+          if (start.moved) {
+            event.preventDefault();
+            event.currentTarget.scrollLeft = start.scroll - (event.clientX - start.x);
+          }
+        }}
+        onPointerUp={async event => {
+          stopAutoScroll();
+          if (tabDrag.current && tabDrag.current.pointerId === event.pointerId) {
+            const dragInfo = tabDrag.current;
+            tabDrag.current = null;
+            setDragState(null);
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+            if (dragInfo.isDragging) {
+              dragged.current = true;
+              setTimeout(() => { dragged.current = false; }, 50);
+              const currentIdx = tabs.findIndex(t => t.id === dragInfo.tabId);
+              const targetIdx = dragInfo.targetIndex;
+              if (currentIdx !== -1 && targetIdx !== currentIdx && targetIdx !== currentIdx + 1) {
+                const ids = tabs.map(t => t.id);
+                const [draggedId] = ids.splice(currentIdx, 1);
+                const insertIdx = targetIdx > currentIdx ? targetIdx - 1 : targetIdx;
+                ids.splice(insertIdx, 0, draggedId!);
+                try {
+                  await request({ type: 'agency.tabs.order', workspaceId: workspace.id, tabIds: ids });
+                } catch (reason) {
+                  setError(String(reason));
+                }
+              }
+            }
+            return;
+          }
+          dragged.current = !!drag.current?.moved;
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+          drag.current = null;
+          setTimeout(() => { dragged.current = false; }, 0);
+        }}
+        onPointerCancel={event => {
+          stopAutoScroll();
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+          tabDrag.current = null;
+          setDragState(null);
+          drag.current = null;
+          dragged.current = false;
+        }}
         onClickCapture={event => { if (dragged.current) { event.preventDefault(); event.stopPropagation(); } }}>
         {tabs.map((tab, index) => {
           const tabState = getTabActivity?.(workspace.id, tab.id);
@@ -277,7 +411,17 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
             session?.lifecycle === 'exited' ? 'muted' :
             session && ['awaiting-user','awaiting-permission'].includes(session.activity) ? 'attention' :
             tabState ?? (session?.activity === 'working' ? 'working' : session?.activity === 'idle' ? 'idle' : 'unknown');
-          return <div className={'maw-session-tab' + (selected?.id === tab.id ? ' active' : '')} key={tab.id} data-tab-id={tab.id}>
+          const isBeingDragged = dragState?.tabId === tab.id;
+          const isTargetBefore = dragState !== null && dragState.tabId !== tab.id && dragState.targetIndex === index;
+          const isTargetAfter = dragState !== null && dragState.tabId !== tab.id && dragState.targetIndex === tabs.length && index === tabs.length - 1;
+          const tabClassName = [
+            'maw-session-tab',
+            selected?.id === tab.id ? 'active' : '',
+            isBeingDragged ? 'dragging' : '',
+            isTargetBefore ? 'maw-drop-target-before' : '',
+            isTargetAfter ? 'maw-drop-target-after' : '',
+          ].filter(Boolean).join(' ');
+          return <div className={tabClassName} key={tab.id} data-tab-id={tab.id}>
             {renaming === tab.id ? <TabNameInput name={name(tab)} report={setError}
               onSave={async title => { await request(tab.kind === 'web'
                 ? { type: 'agency.webTab.rename', workspaceId: workspace.id, tabId: tab.id, title }

@@ -11,6 +11,7 @@ interface Props {
   onSelect: (item: MawNotificationItem) => void;
   onMarkRead: (notificationId: string) => void;
   onMarkAllRead: () => void;
+  onDone: (notificationId: string) => void;
 }
 
 export function NotificationInbox({
@@ -20,6 +21,7 @@ export function NotificationInbox({
   onSelect,
   onMarkRead,
   onMarkAllRead,
+  onDone,
 }: Props): JSX.Element {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -133,7 +135,19 @@ export function NotificationInbox({
               </div>
 
               <div className="maw-inbox-item-actions">
-                {!item.read ? (
+                <button
+                  type="button"
+                  className="maw-done-button"
+                  title={t('agency.notifications.done')}
+                  aria-label={t('agency.notifications.done')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDone(item.id);
+                  }}
+                >
+                  ✓
+                </button>
+                {!item.read && (
                   <button
                     type="button"
                     className="maw-mark-read-button"
@@ -144,10 +158,8 @@ export function NotificationInbox({
                       onMarkRead(item.id);
                     }}
                   >
-                    ✓
+                    ●
                   </button>
-                ) : (
-                  <span className="maw-read-check" aria-hidden="true">✓</span>
                 )}
               </div>
             </div>

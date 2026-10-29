@@ -13,6 +13,7 @@
   "agency.notifications.commandFailedCode": "命令失败，退出代码为 {{code}}",
   "agency.notifications.commandFinished": "命令已完成",
   "agency.notifications.dismissToast": "关闭通知",
+  "agency.notifications.done": "完成",
   "agency.notifications.empty": "暂无通知",
   "agency.notifications.markAllRead": "全部标记为已读",
   "agency.notifications.markRead": "标记为已读",

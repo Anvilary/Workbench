@@ -54,6 +54,7 @@ import type { AgentRegistry } from './agents/registry.js';
 import type { ArchivedSessions } from './archived-sessions.js';
 import type {
   AgencyErrorCode,
+  RequestId,
 } from '@agent-workbench/shared';
 import { asRecord, parseJson } from '@agent-workbench/shared';
 import { AgencyWorkspaceStore } from './agency/store.js';
@@ -215,6 +216,62 @@ export interface TerminalSocketOptions {
   agencyNotificationStore?: AgencyNotificationStore;
   agencyActivityManager?: TabActivityManager;
   agencyBrowserTabs?: BrowserTabAdapter;
+}
+
+export interface DoneHandlerContext {
+  agencyNotificationStore: AgencyNotificationStore;
+  agencyActivityManager: TabActivityManager;
+  agencyWorkspaceStore: Pick<AgencyWorkspaceStore, 'getWorkspace'>;
+  send: (socket: WebSocket, message: ServerMessage) => void;
+}
+
+export async function handleAgencyNotificationDone(
+  message: { type: 'agency.notification.done'; requestId: RequestId; notificationId: string },
+  socket: WebSocket,
+  context: DoneHandlerContext,
+): Promise<void> {
+  const item = context.agencyNotificationStore.get(message.notificationId);
+  if (!item) {
+    context.send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Notification not found' });
+    return;
+  }
+  const workspace = context.agencyWorkspaceStore.getWorkspace(item.workspaceId);
+  if (!workspace) {
+    context.send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Workspace not found' });
+    return;
+  }
+
+  try {
+    // Durably acknowledge the notification item
+    const updated = await context.agencyNotificationStore.acknowledge(message.notificationId);
+    if (!updated) {
+      context.send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Notification not found' });
+      return;
+    }
+
+    // Atomic turn-specific acknowledgement before reporting success:
+    // When old/legacy notifications lack identity, fail safely by completing only the inbox item,
+    // not guessing the current turn.
+    const notifTaskId = (item.metadata?.taskId as string | undefined) ?? (item.deduplicationKey?.split(':').slice(3).join(':') || undefined);
+    const notifTurnSeq = item.metadata?.turnSequence as number | undefined;
+
+    if (item.tabId && (notifTaskId || notifTurnSeq !== undefined)) {
+      await context.agencyActivityManager.acknowledgeMatchingTurn(item.workspaceId, item.tabId, {
+        taskId: notifTaskId,
+        turnSequence: notifTurnSeq,
+      });
+    }
+
+    // Send success to caller only after intended acknowledgement has been durably processed
+    context.send(socket, { type: 'agency.notification.changed', requestId: message.requestId, notification: updated });
+  } catch (error) {
+    context.send(socket, {
+      type: 'agency.error',
+      requestId: message.requestId,
+      code: 'internal-error',
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 export function attachTerminalSocket(options: TerminalSocketOptions): () => void {
@@ -3576,6 +3633,16 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           } else {
             send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Notification not found' });
           }
+          break;
+        }
+
+        case 'agency.notification.done': {
+          await handleAgencyNotificationDone(message, socket, {
+            agencyNotificationStore,
+            agencyActivityManager,
+            agencyWorkspaceStore,
+            send,
+          });
           break;
         }
 

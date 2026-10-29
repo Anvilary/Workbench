@@ -111,16 +111,11 @@ try {
   command(shellA, "sleep 1; printf 'MAW_BACKGROUND_COMMAND_OK\\n'");
   await eventually(async () => (await notifications()).activityStates.some(record => record.tabId === shellA.tab.id && record.state === 'working'), 'working shell');
   await selectNative(shellB);
-  await eventually(async () => (await notifications()).notifications.some(item => item.tabId === shellA.tab.id && item.state === 'finished'), 'background shell notification');
-  let state = await notifications();
-  let completion = state.notifications.find(item => item.tabId === shellA.tab.id && item.state === 'finished');
-  assert.equal(state.activityStates.find(record => record.tabId === shellA.tab.id).state, 'finished');
-  assert.equal(completion.projectId, project.id); assert.equal(completion.sessionId, shellA.id);
-  await request({ type: 'agency.notification.markRead', notificationId: completion.id });
-  assert.equal((await notifications()).activityStates.find(record => record.tabId === shellA.tab.id).state, 'finished');
-  check('real Bash background completion, ownership, durable inbox and independent read state');
+  await eventually(async () => (await notifications()).activityStates.some(record => record.tabId === shellA.tab.id && record.state === 'idle'), 'shell returns to idle');
+  assert.equal((await notifications()).notifications.length, 0, 'ordinary shell command produces zero inbox notifications');
+  check('real Bash background completion returns to idle without notification spam');
   await selectNative(shellA);
-  assert.equal((await notifications()).activityStates.find(record => record.tabId === shellA.tab.id).state, 'finished', 'selection alone is not inspection');
+  assert.equal((await notifications()).activityStates.find(record => record.tabId === shellA.tab.id).state, 'idle', 'selection retains idle state');
 
   browser = await chromium.launch({ channel: 'chrome', headless: true });
   page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
@@ -132,19 +127,16 @@ try {
   measurements.renderMs=performance.now()-renderStart;
   await page.locator('.maw-bell-button').click();
   await page.locator('.maw-notification-inbox').waitFor();
-  await page.locator('.maw-inbox-item').filter({ hasText: /finished/i }).first().click();
-  await eventually(async () => (await notifications()).activityStates.find(record => record.tabId === shellA.tab.id)?.state === 'idle', 'inspection acknowledges after terminal render');
-  assert.equal(await page.locator('[role=tab][aria-selected=true]').getAttribute('id'), 'tab-' + shellA.tab.id);
-  check('real notification inbox click-through selects workspace/tab and acknowledges displayed terminal');
+  assert.equal(await page.locator('.maw-inbox-item').count(), 0);
+  await page.keyboard.press('Escape');
+  check('real notification inbox shows zero spam notifications for shell commands');
 
   await selectNative(shellB);
   command(shellA, 'false');
-  await eventually(async () => (await notifications()).notifications.some(item => item.tabId === shellA.tab.id && item.state === 'failed'), 'failed shell notification');
-  await page.locator('.maw-toast-item').first().waitFor();
-  const beforeDismiss = (await notifications()).notifications.length;
-  await page.locator('.maw-toast-dismiss').first().click();
-  assert.equal((await notifications()).notifications.length, beforeDismiss);
-  check('real failed shell command, top-right toast and dismissal retains inbox');
+  await delay(1000);
+  assert.equal((await notifications()).notifications.length, 0, 'failed shell command produces zero notifications');
+  assert.equal(await page.locator('.maw-toast-item').count(), 0, 'failed shell command produces zero toasts');
+  check('real failed shell command produces zero notification spam and zero toasts');
 
   const trafficStart=traffic.length;
   for(let i=0;i<40;i++){const began=performance.now();await selectNative(i%2?shellA:shellB);measurements.switchMs.push(performance.now()-began);}
@@ -279,13 +271,14 @@ try {
   await page.screenshot({ path: path.join(out, 'integrated-workspace.png'), fullPage: true });
   await request({type:'agency.tab.rename',workspaceId:alpha.id,tabId:shellA.tab.id,name:'Audit shell'});
   assert.equal((await snapshot()).sessions.find(s=>s.id===shellA.id).terminalId,shellA.terminalId);
+  await page.evaluate(id => localStorage.setItem('agency-ui.selected-workspace.v1', id), alpha.id);
   await page.reload();
   await page.getByRole('tab',{name:'Audit shell'}).waitFor();
   const notificationsBeforeRestart = (await notifications()).notifications;
   const targetBeforeRestart = webA?.targetRef;
   await page.close();
   await stop(); await start();
-  state = await notifications();
+  const state = await notifications();
   assert.equal((await snapshot()).sessions.find(s=>s.tab?.id===shellA.tab.id && s.tab.current).tab.name,'Audit shell');
   check('stable native tab rename survives page refresh and MAW restart');
   assert.deepEqual(state.notifications.map(item => [item.id, item.read]).sort(), notificationsBeforeRestart.map(item => [item.id, item.read]).sort());

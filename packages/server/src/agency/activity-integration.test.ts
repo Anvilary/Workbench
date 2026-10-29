@@ -126,10 +126,9 @@ test('shell command identity advances after restart and acknowledges without los
       const parser = manager.getOrCreateShellParser(ws, tab);
       parser.feed(ShellSequences.commandStart + ShellSequences.commandExit(0));
       await manager.flush(); await store.flush();
-      assert.equal(store.list().length, count);
+      assert.equal(store.list().length, 0, 'shell commands produce no inbox notification spam');
       assert.equal(manager.getRecord(ws, tab)?.turnSequence, count);
-      await manager.acknowledgeTab(ws, tab);
-      assert.ok(manager.getRecord(ws, tab)?.acknowledgedAt);
+      assert.equal(manager.getRecord(ws, tab)?.state, 'idle', 'ordinary shell commands do not leave finished badge');
       manager.dispose();
     }
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -204,13 +203,13 @@ for (const shell of ['bash', 'zsh']) test(`real ${shell} PTY through Agency runt
     assert.match(output, /config:preserved/);
     assert.match(output, /user_prompt_hook/);
     await manager.flush(); await notifications.flush();
-    assert.equal(notifications.list().length, 1);
-    await manager.acknowledgeTab(ws.id, session.tab!.id);
+    assert.equal(notifications.list().length, 0, 'successful shell command produces no inbox notification');
+    assert.equal(manager.getTabState(ws.id, session.tab!.id), 'idle', 'ordinary shell command completion returns to idle');
     registry.write(terminal, '(exit 23)\r');
     await until(() => parser.getState() === 'failed');
     await tick(); assert.equal(parser.getState(), 'failed', 'prompt must not erase failure');
     await manager.flush(); await notifications.flush();
-    assert.equal(notifications.list().length, 2);
+    assert.equal(notifications.list().length, 0, 'failed shell command produces no inbox notification');
     const selected = runtime.list(ws.id).find(row => row.tab?.selected)!;
     await runtime.clearWorkspaceSelection(ws.id);
     assert.equal(runtime.list(ws.id).some(row => row.tab?.selected), false);
