@@ -9,13 +9,11 @@ real Neko container; **MOCKED** = stubbed systemctl/pnpm or fake connection; **I
 
 ## 1. Final commit, PR, CI
 
-- Final commit: the HEAD of `fix/maw-claude-audit-remediation` (this report is committed last; last code commit `36ae0f2`).
-- Draft PR: **NOT CREATED — BLOCKED.** `gh` is not authenticated in this environment and no token is available.
-  The branch is pushed. Create it with (from the worktree): `gh pr create --draft --base main --head fix/maw-claude-audit-remediation --title "MAW independent audit remediation" --body-file docs/maw/claude-review/PR-BODY.md`,
-  or via https://github.com/user/My-Amazing-Workspace/pull/new/fix/maw-claude-audit-remediation
-- CI: **UNVERIFIED / not started** — `ci.yml` runs on push to main/develop and on pull_request; no PR exists yet,
-  and run status cannot be queried without `gh` auth. Round 2 recorded GitHub billing blocking runners before
-  startup; if that recurs it is an infrastructure BLOCK, not a pass.
+- Final commit: the HEAD of `fix/maw-claude-audit-remediation`; this report is committed after the tested code.
+  AGY corrections code commit: `44524d5c8c63d04f1d4ef48dc8fa6ea1048d56fe`.
+- Existing PR: [#16](https://github.com/user/My-Amazing-Workspace/pull/16), open and unmerged.
+- Hosted CI is blocked before runner startup by account billing/spending limits (queried through `gh`).
+  This is an infrastructure block, not a passing CI result. Current local verification and AGY findings are in §14.
 
 ## 2. Dispositions — all 19 audit findings (+3 found during remediation)
 
@@ -29,12 +27,12 @@ real Neko container; **MOCKED** = stubbed systemctl/pnpm or fake connection; **I
 | U-6 | P2 | Fixed | `ff3171d` | MOCKED UPD 21: abort < 1 s during a 20 s step, exit 130, pointers unchanged, lock free |
 | U-7 | P2 | Fixed | `ff3171d` | MOCKED UPD 3, 19: plain update stages `origin/main` even on a pushed feature branch; other refs need `--allow-unapproved-ref` (+ typed confirmation on a TTY), recorded `channel: unapproved` |
 | U-8 | P2 | Fixed | `ff3171d` | Log events asserted in UPD 1/8/9b/17/21/22; `maw status` shows pointers + last event |
-| P-1 | P2 | Fixed | `cbae913` | `session-history.test.ts` 6/6; bench: 2,000 closed → snapshot 2,140,229 → 12,327 B, live-change save p50 12.40 → 0.45 ms |
+| P-1 | P2 | Fixed, AGY correction verified | `cbae913`, `44524d5` | `session-history.test.ts` 9/9, including real runtime close, interrupted persistence and equal timestamps (§14); original bench: 2,000 closed → snapshot 2,140,229 → 12,327 B, live-change save p50 12.40 → 0.45 ms |
 | U-9 | P3 | Fixed | `ff3171d` | MOCKED UPD 24: 20/20 races, exactly one updater proceeds (flock) |
 | U-10 | P3 | Fixed | `ff3171d` | `maw-host.test.ts` U-10; UPD 18; REAL systemd probes by release ID |
 | U-11 | P3 | Fixed | `ff3171d` | UPD 25 (no stale lock after `--restart`) |
 | U-12 | P3 | Fixed | `ff3171d` | UPD 26 (GC keeps pointers + 1 spare, never touches non-release entries) |
-| U-13a | P3 | Fixed | `ff3171d`, `36ae0f2` | UPD 30/31; REAL systemd runs the rendered template |
+| U-13a | P3 | Fixed | `ff3171d`, `36ae0f2`, `44524d5` | UPD 30/31/31b; installed renderer and template work after source removal; REAL systemd runs the rendered template |
 | U-13b | P3 | Fixed | `ff3171d` | UPD 27/28/29 (env passed to delegated helper, fixed collectable unit, exact cgroup match, duplicate refused) |
 | C-1 | P3 | Fixed | `33e3745` | `profiles.test.ts` C-1 (configure/inspect/launch refuse an identical launch plan; distinct args / symlinked wrapper / other provider allowed) |
 | C-2 | P3 | Fixed | `ddf89ab` | REAL Chromium `browser-tabs.test.mjs`: Configure profile + Start again (close, then relaunch same profile) |
@@ -169,7 +167,7 @@ differences under ~15 ms are noise. Opt-C alone vs Opt-A: bytes and heap consist
 
 ## 11. CI status
 
-Local, final HEAD before this report (all exit 0, 0 skipped unless stated):
+Original remediation verification before the AGY follow-up (current results are in §14):
 
 | Command | Result |
 |---|---|
@@ -189,20 +187,20 @@ real-systemd tests intentionally local-only (no user systemd on hosted runners).
 
 ## 12. Release readiness verdict
 
-**Code: release candidate — PASS for local verification; delivery BLOCKED on PR creation/CI.**
+**Code: release candidate — PASS for local verification; hosted CI blocked on billing. PR #16 remains unmerged.**
 - No confirmed P0/P1 remains; both P1s are fixed with real-systemd proof.
 - Automatic rollback recovers a verified release (REAL), and reports CRITICAL instead of looping when it cannot.
 - Staging cannot activate an unapproved branch implicitly (channel policy; explicit, recorded override only).
 - No production state, service or native identity was touched.
 - Not yet verified: GitHub CI on this branch, and a human-reviewed first activation on the real host.
-Recommended: create the draft PR, confirm CI (or record the infrastructure block), review, then on the real host
+Recommended: review PR #16 and its AGY corrections, confirm CI (or record the infrastructure block), then on the real host
 run `scripts/maw/install.sh --service` (preserves the legacy `current`), `maw start`, `maw status`.
 
 ## 13. Handoff
 
 1. `cd /home/user/Projects/My-Amazing-Workspace-claude-review && git switch fix/maw-claude-audit-remediation && git pull`.
 2. Read REMEDIATION-CHECKPOINTS.md (chronological log) and REMEDIATION-MATRIX.md (per finding).
-3. Create the draft PR (command in §1); inspect CI; record result here.
+3. Inspect existing PR #16 and CI; do not create a replacement PR.
 4. Re-run local gates: commands in §11. Real-systemd: `cd packages/server && MAW_REAL_SYSTEMD=1 MAW_REAL_RELEASE=1 npx tsx --test src/maw-systemd-acceptance.test.ts`
    (needs a clean checkout; creates only `maw-test-*` runtime units and removes them).
 5. Neko: `python3 scripts/audit/start-neko-fixture.py` → config path; run `scripts/check-maw-integration.mjs` and
@@ -212,3 +210,65 @@ run `scripts/maw/install.sh --service` (preserves the legacy `current`), `maw st
 7. Open follow-ups (optional): viewer auto-reconnect after Neko restart; in-browser flood paint measurement;
    archived-workspace alert policy; real `systemd-run` delegation test from a MAW PTY.
 8. Do not merge or deploy without review; first real activation should be supervised.
+
+## 14. Final AGY review corrections (2026-10-29)
+
+Independent source: [AGY FINAL-REPORT.md](https://github.com/user/My-Amazing-Workspace/blob/9b1d55dc0551fe1b55106d9939c75bb635608d3d/docs/maw/agy-review/FINAL-REPORT.md),
+read with `git show origin/audit/maw-agy-review:docs/maw/agy-review/FINAL-REPORT.md`.
+The review branch remains at `9b1d55dc0551fe1b55106d9939c75bb635608d3d` and was not modified.
+All three confirmed findings are addressed by code commit `44524d5c8c63d04f1d4ef48dc8fa6ea1048d56fe`:
+
+| Finding | Correction | Evidence |
+|---|---|---|
+| P2 closed-tab resurrection after interrupted persistence | `tabAction` timestamps every changed row, using the same instant for `closedAt` and `updatedAt`; closed history wins an equal-timestamp conflict, while strictly newer live state remains authoritative | REAL runtime/store, simulated crash: child executes select and two closes, then exits at the live-save boundary after history commits. Equal timestamps and a 1 ms advance both survive two complete restarts; old closed/superseded history and an active sibling's recovery metadata survive |
+| P3 downgrade compatibility | `UPDATE-ROLLBACK.md` explains older single-file releases cannot display dormant split history; manual and automatic rollback explicitly distinguish executable recovery from historical-data compatibility | REAL temporary stores: downgrade writes leave history and its backup byte-identical; a later upgrade retains live state and both generations of history. No conversion or destructive data migration was added |
+| P3 installed launcher completeness | Install renderer as 0755 and unit template as 0644; service installation renders from the installed library | MOCKED systemd/build, REAL installed scripts: remove installer-source copy, then render unit, stage an update from a separate configured Git fixture, activate through installed helper, and retrieve authenticated URL through installed control script |
+
+The original synthetic crash fixture with an invented newer timestamp was replaced. Before the fixes,
+the new tests failed on missing runtime timestamps and the tie reconciliation. With only the runtime
+timestamp fix applied, the equal-timestamp test still reproduced resurrection; both production fixes are
+therefore covered independently. Rapid changes deliberately share a frozen millisecond.
+
+The existing updater reboot fixture also needed a narrow correction during full verification: kill its
+disposable helper process group, including children that can inherit flock descriptors, to simulate an
+actual reboot. Killing only the helper could leave a child briefly holding the lock and fail the next
+activation with "restart is already in progress". The corrected fixture passed focused and full runs.
+
+Final verification on the code commit (all commands exit 0):
+
+| Command | Result |
+|---|---|
+| `cd packages/server && corepack pnpm exec tsx --test $(rg --files src -g '*.test.ts' -g '!maw-systemd-acceptance.test.ts')` | **235/235 PASS**, 0 skipped; includes history 9, runtime 40, updater/installer 36, host 6 |
+| `cd packages/server && MAW_REAL_SYSTEMD=1 MAW_REAL_RELEASE=1 corepack pnpm exec tsx --test src/maw-systemd-acceptance.test.ts` | **2/2 PASS**, 0 skipped; crash-limit recovery 19,506 ms, rollback failure exits CRITICAL, real release `20261029132118-44524d5` ready in 2,916 ms and serves its own UI |
+| `corepack pnpm typecheck` (after real-systemd) | **PASS**, all three packages |
+| `corepack pnpm check` | **PASS**; `check-docs` explicitly skips because its internal guide is absent |
+| `corepack pnpm build` | **PASS**; main JS 723.78 kB / gzip 196.33 kB; existing >500 kB chunk warning remains |
+| Preservation checks | Live MAW PID/start identity and cwd unchanged; inode/size/mtime/mode unchanged for 28 application paths, including the running process's isolated config; no disposable `maw-test-*` units remain; review branch unchanged |
+
+Local command output is retained in `/tmp/maw-agy-final-evidence/` (`server-all-final.log`,
+`real-systemd-final.log`, `typecheck-final.log`, `check-final.log`, `build-final.log`,
+`preservation-final.json`). Earlier failed runs are retained separately; the table above describes the
+corrected final code. Browser, Neko and PTY benchmark results in §11 are earlier evidence and were not rerun
+for these storage/installer corrections.
+
+Hosted CI for the code commit: [run 40881478507](https://github.com/user/My-Amazing-Workspace/actions/runs/40881478507)
+was rejected before runner startup because recent account payments failed or the spending limit needs to
+be increased (GitHub check annotation, queried directly). This infrastructure issue remains unresolved;
+none of the three confirmed AGY findings remains open. Previous limitations in §10 still apply.
+
+Files changed by the AGY follow-up (including this reporting commit):
+
+- `packages/server/src/agency/agency-session-runtime.ts`
+- `packages/server/src/agency/agency-session-store.ts`
+- `packages/server/src/agency/session-history.test.ts`
+- `packages/server/src/maw-updater-acceptance.test.ts`
+- `scripts/maw/install.sh`
+- `scripts/maw/maw`
+- `scripts/maw/maw-restart-helper.sh`
+- `docs/maw/UPDATE-ROLLBACK.md`
+- `docs/maw/claude-review/REMEDIATION-FINAL.md`
+- `docs/maw/claude-review/REMEDIATION-MATRIX.md`
+- `docs/maw/claude-review/PR-BODY.md`
+
+PR #16 remains open and unmerged. No production installation, live MAW restart, historical-data edit,
+or change to the separate draggable-tabs/notifications feature branch was performed.
