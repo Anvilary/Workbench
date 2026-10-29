@@ -169,7 +169,8 @@ try {
 
   const portServer = createServer(); await new Promise(resolve => portServer.listen(0, '127.0.0.1', resolve));
   controllerPort = portServer.address().port; await new Promise(resolve => portServer.close(resolve));
-  context = await chromium.launchPersistentContext(path.join(root, 'chromium-profile'), { channel: 'chrome', headless: true,
+  context = await chromium.launchPersistentContext(path.join(root, 'chromium-profile'), {
+    ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : { channel: 'chrome' }), headless: true,
     args: ['--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0'] });
   await context.route('**/*', route => {
     if (new URL(route.request().url()).hostname !== 'chatgpt.com') return route.abort();
@@ -245,7 +246,7 @@ try {
   await stopController();
   await assert.rejects(select(a), /browser|engine|Neko/i);
   assert.equal((await tabs()).find(t => t.id === a.id).runtimeState, 'error');
-  assert.deepEqual((await savedTabs()).map(t => t.url), [A, B]);
+  assert.deepEqual((await savedTabs()).map(t => [t.id, t.url]).sort(), [[a.id, A], [b.id, B]].sort());
   socket.terminate(); await maw('restart'); await connect();
   assert.deepEqual((await tabs()).map(t => t.url), [B, A]);
   await startController(cdpPort);

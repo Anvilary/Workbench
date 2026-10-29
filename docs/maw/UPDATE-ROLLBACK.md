@@ -50,6 +50,8 @@ maw update --ref origin/feature/x --allow-unapproved-ref   # explicit, confirmed
 
 The helper (`maw-restart-helper.sh`) takes the restart lock and the update lock, then:
 
+For `maw start` on an already active service, it verifies `current` against the authenticated HTTP probe without restarting or activating `staged`. HTTP 404, stale readiness, and a mismatched release fail the command. A successful probe establishes `healthy` if needed; no pointer is manufactured to bypass verification.
+
 1. target = `staged` if present, else `current`.
 2. `current := target`, `systemctl --user reset-failed`, `systemctl --user restart`.
 3. Polls the authenticated readiness probe (`control.mjs status` with `MAW_EXPECT_RELEASE_ID`): the
