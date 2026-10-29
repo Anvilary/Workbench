@@ -76,3 +76,68 @@ test('control uses current private readiness, refuses stale PIDs and never print
     await assert.rejects(run(process.execPath,[control,'open'],{cwd:'/',env:environment}));
   } finally { await clear(); await new Promise<void>(resolve=>server.close(()=>resolve())); await rm(temp,{recursive:true,force:true}); }
 });
+
+test('control url outputs authenticated loopback URL and open launches specified browser', async () => {
+  const { createServer } = await import('node:http');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const { writeFile, readFile } = await import('node:fs/promises');
+  const { fileURLToPath } = await import('node:url');
+  const run = promisify(execFile);
+  const temp = await mkdtemp(path.join(tmpdir(), 'maw-url-open-'));
+  const bin = path.join(temp, 'bin'); await (await import('node:fs/promises')).mkdir(bin);
+  await writeFile(path.join(bin, 'systemctl'), '#!/bin/sh\nprintf "%s\\n" "$MAW_TEST_PID"\n', { mode: 0o700 });
+  const logFile = path.join(temp, 'browser.log');
+  await writeFile(path.join(bin, 'xdg-open'), `#!/bin/sh\nprintf "xdg:%s\\n" "$1" >> "${logFile}"\n`, { mode: 0o700 });
+  await writeFile(path.join(bin, 'brave-browser'), `#!/bin/sh\nprintf "brave:%s\\n" "$1" >> "${logFile}"\n`, { mode: 0o700 });
+
+  const server = createServer((request, response) => {
+    response.statusCode = request.url?.includes('token=disposable-secret') ? 200 : 401;
+    response.end();
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  const control = fileURLToPath(new URL('../../../scripts/maw/control.mjs', import.meta.url));
+  const maw = fileURLToPath(new URL('../../../scripts/maw/maw', import.meta.url));
+  const runtime = path.join(temp, 'maw');
+  const expectedUrl = `http://127.0.0.1:${address.port}/?token=disposable-secret`;
+  const clear = await publishReadiness(runtime, expectedUrl);
+  const environment = { ...process.env, XDG_RUNTIME_DIR: temp, PATH: bin + ':' + process.env.PATH, MAW_TEST_PID: String(process.pid) };
+  try {
+    const urlOut = await run(process.execPath, [control, 'url'], { cwd: '/', env: environment });
+    assert.equal(urlOut.stdout.trim(), expectedUrl);
+
+    await run(process.execPath, [control, 'open'], { cwd: '/', env: environment });
+    await run(process.execPath, [control, 'open', 'brave-browser'], { cwd: '/', env: environment });
+
+    const logs = (await readFile(logFile, 'utf8')).trim().split('\n');
+    assert.deepEqual(logs, [
+      `xdg:${expectedUrl}`,
+      `brave:${expectedUrl}`,
+    ]);
+
+    const mawUrlOut = await run(maw, ['url'], { cwd: '/', env: environment });
+    assert.equal(mawUrlOut.stdout.trim(), expectedUrl);
+
+    await run(maw, ['open'], { cwd: '/', env: environment });
+    await run(maw, ['open', 'brave-browser'], { cwd: '/', env: environment });
+
+    const allLogs = (await readFile(logFile, 'utf8')).trim().split('\n');
+    assert.deepEqual(allLogs, [
+      `xdg:${expectedUrl}`,
+      `brave:${expectedUrl}`,
+      `xdg:${expectedUrl}`,
+      `brave:${expectedUrl}`,
+    ]);
+
+    const helpOut = await run(maw, ['help'], { cwd: '/', env: environment });
+    assert.match(helpOut.stdout, /Usage: maw \{start\|stop\|restart\|status\|logs \[--follow\]\|url\|open \[browser\]\|update \[--no-restart\|--restart\]\|help\}/);
+
+    await assert.rejects(run(maw, ['url', 'extra'], { cwd: '/', env: environment }));
+    await assert.rejects(run(maw, ['open', 'b1', 'b2'], { cwd: '/', env: environment }));
+  } finally {
+    await clear();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    await rm(temp, { recursive: true, force: true });
+  }
+});
