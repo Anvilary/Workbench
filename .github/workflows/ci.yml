@@ -55,7 +55,7 @@ jobs:
       - name: MAW security, native lifecycle, browser ownership and activity regressions
         if: runner.os == 'Linux'
         working-directory: packages/server
-        run: pnpm exec tsx --test src/security.test.ts src/maw-host.test.ts src/agency/*.test.ts src/agency/browser-tabs/*.test.ts src/agency/runtime/*.test.ts
+        run: pnpm exec tsx --test src/security.test.ts src/maw-host.test.ts src/output-backpressure.test.ts src/agency/*.test.ts src/agency/browser-tabs/*.test.ts src/agency/runtime/*.test.ts
       - name: MAW updater, activation and rollback acceptance (mocked systemd)
         if: runner.os == 'Linux'
         working-directory: packages/server
