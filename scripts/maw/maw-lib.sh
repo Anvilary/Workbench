@@ -17,11 +17,62 @@ maw_init_paths() {
   releases_dir="${MAW_RELEASES_DIR:-$state_dir/releases}"
   log_file="${MAW_LOG_FILE:-$state_dir/update-log.jsonl}"
   update_lock="${MAW_UPDATE_LOCK:-$state_dir/update.lock}"
-  runtime_dir="${MAW_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/maw}"
+  _uid=$(id -u 2>/dev/null || true)
+  _user_rdir="${XDG_RUNTIME_DIR:-}"
+  if [ -z "$_user_rdir" ] && [ -n "$_uid" ] && [ -d "/run/user/$_uid" ]; then
+    _user_rdir="/run/user/$_uid"
+  fi
+  runtime_dir="${MAW_RUNTIME_DIR:-${_user_rdir:-/tmp}/maw}"
   restart_lock="${MAW_RESTART_LOCK:-$runtime_dir/restart.lock}"
   unit="${MAW_UNIT:-maw.service}"
   node_bin="${MAW_NODE_BIN:-$(command -v node 2>/dev/null || true)}"
 }
+
+# Run a systemd user command (systemctl, systemd-run, journalctl) scoped to the canonical systemd user bus.
+# Never modifies the global shell environment or provider authentication variables.
+maw_systemd_cmd() {
+  _cmd="$1"; shift
+  _uid=$(id -u 2>/dev/null || true)
+  _rdir="${MAW_SYSTEMD_RUNTIME_DIR:-}"
+  if [ -z "$_rdir" ]; then
+    if [ -n "$_uid" ] && [ -d "/run/user/$_uid" ] && { [ -S "/run/user/$_uid/systemd/private" ] || [ -S "/run/user/$_uid/bus" ]; }; then
+      _rdir="/run/user/$_uid"
+    elif [ -n "${XDG_RUNTIME_DIR:-}" ] && { [ -S "$XDG_RUNTIME_DIR/systemd/private" ] || [ -S "$XDG_RUNTIME_DIR/bus" ]; }; then
+      _rdir="$XDG_RUNTIME_DIR"
+    elif [ -n "$_uid" ] && [ -d "/run/user/$_uid" ]; then
+      _rdir="/run/user/$_uid"
+    else
+      _rdir="${XDG_RUNTIME_DIR:-}"
+    fi
+  fi
+
+  _bus="${MAW_SYSTEMD_BUS_ADDRESS:-}"
+  if [ -z "$_bus" ]; then
+    if [ -n "$_rdir" ] && [ -S "$_rdir/bus" ]; then
+      _bus="unix:path=$_rdir/bus"
+    elif [ -n "$_uid" ] && [ -S "/run/user/$_uid/bus" ]; then
+      _bus="unix:path=/run/user/$_uid/bus"
+    fi
+  fi
+
+  if [ -n "$_bus" ]; then
+    if [ -n "$_rdir" ]; then
+      env XDG_RUNTIME_DIR="$_rdir" DBUS_SESSION_BUS_ADDRESS="$_bus" "$_cmd" "$@"
+    else
+      env DBUS_SESSION_BUS_ADDRESS="$_bus" "$_cmd" "$@"
+    fi
+  else
+    if [ -n "$_rdir" ]; then
+      env -u DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR="$_rdir" "$_cmd" "$@"
+    else
+      env -u DBUS_SESSION_BUS_ADDRESS "$_cmd" "$@"
+    fi
+  fi
+}
+
+maw_sctl() { maw_systemd_cmd systemctl --user "$@"; }
+maw_systemd_run() { maw_systemd_cmd systemd-run --user "$@"; }
+maw_journalctl() { maw_systemd_cmd journalctl --user "$@"; }
 
 maw_now() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 
