@@ -79,13 +79,13 @@ export function AgencyProfileDialog({ profile, onSave, onClose }: {
           marginBottom: '16px',
         }}>
           <h3 style={{ margin: '0 0 6px 0', fontSize: '13px', fontWeight: 650, color: 'var(--agency-highlight)' }}>
-            First-time setup required
+            {t('agency.profile.firstTimeSetupRequired')}
           </h3>
           <p style={{ margin: '0 0 8px 0', fontSize: '12px', lineHeight: 1.45, color: 'var(--agency-text)' }}>
             {providerSetupDescription(profile.provider)}
           </p>
           <p style={{ margin: 0, fontSize: '11px', lineHeight: 1.4, color: 'var(--agency-dim)' }}>
-            Do not share executables between profiles — each wrapper maintains separate authentication.
+            {t('agency.profile.noShareNotice')}
           </p>
         </div>
       )}
@@ -101,7 +101,7 @@ export function AgencyProfileDialog({ profile, onSave, onClose }: {
           color: 'var(--agency-danger)',
           lineHeight: 1.4,
         }}>
-          Executable configured but not found on PATH. Check the command name and try again.
+          {t('agency.profile.executableNotFound')}
         </div>
       )}
 
