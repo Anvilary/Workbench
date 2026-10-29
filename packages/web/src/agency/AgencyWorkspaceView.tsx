@@ -282,7 +282,13 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
               onSave={async title => { await request(tab.kind === 'web'
                 ? { type: 'agency.webTab.rename', workspaceId: workspace.id, tabId: tab.id, title }
                 : { type: 'agency.tab.rename', workspaceId: workspace.id, tabId: tab.id, name: title }); setError(null); }}
-              onClose={restore => { setRenaming(null); if (restore) requestAnimationFrame(() => document.getElementById('tab-' + tab.id)?.focus()); }}
+              onClose={restore => { setRenaming(null); if (restore) requestAnimationFrame(() => {
+                // Restore focus only if it was lost with the input. If the user already moved on (e.g. F2 on
+                // another tab opened a new rename input), stealing focus would blur and cancel that edit.
+                const active = document.activeElement;
+                if (active && active !== document.body && active.isConnected) return;
+                document.getElementById('tab-' + tab.id)?.focus();
+              }); }}
             /> : <button type="button" role="tab" id={'tab-' + tab.id} aria-selected={selected?.id === tab.id} aria-controls={'pane-' + tab.id} tabIndex={selected?.id === tab.id || (!selected && index === 0) ? 0 : -1} disabled={!online} title={name(tab) + ' · ' + status} onKeyDown={event => { if (event.key === 'F2') { event.preventDefault(); event.stopPropagation(); setKeyboardTabs(true); setRenaming(tab.id); } }} onClick={() => { setKeyboardTabs(false); void action(tab, 'select').catch(() => undefined); }}>
               <span aria-hidden="true">{tab.kind === 'web' ? '◎' : session?.kind === 'agent' ? '◇' : '>_'}</span><span className="agency-truncate" onDoubleClick={() => { setKeyboardTabs(true); setRenaming(tab.id); }}>{name(tab)}</span><span className={'agency-status-dot ' + dotClass} aria-label={status} />
             </button>}
