@@ -44,7 +44,7 @@ export class AgencyTabCoordinator {
   snapshot(): void {
     // New/reconnecting sockets receive unconditional snapshots at connection
     // setup. Broadcast only changed domains here, including partial failures.
-    const sessions = this.native.list();
+    const sessions = this.native.liveList();
     const nativeSnapshot = JSON.stringify(sessions);
     if (nativeSnapshot !== this.lastNativeSnapshot) {
       this.publish({ type: 'agency.sessions.snapshot', requestId: '', sessions });

@@ -1185,7 +1185,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     send(socket, {
       type: 'agency.sessions.snapshot',
       requestId: '',
-      sessions: agencyRuntime.list(),
+      sessions: agencyRuntime.liveList(),
     });
     send(socket, {
       type: 'agency.notifications.snapshot',
@@ -3444,9 +3444,18 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         }
 
         case 'agency.sessions.list': {
-          const sessions = agencyRuntime.list(message.workspaceId);
+          const sessions = agencyRuntime.liveList(message.workspaceId);
           send(socket, { type: 'agency.sessions.snapshot', requestId: message.requestId, sessions,
             ...(message.workspaceId !== undefined ? { workspaceId: message.workspaceId } : {}) });
+          break;
+        }
+
+        case 'agency.sessions.history': {
+          const page = agencyRuntime.history({
+            ...(message.workspaceId !== undefined ? { workspaceId: message.workspaceId } : {}),
+            offset: message.offset ?? 0, limit: message.limit ?? 50,
+          });
+          send(socket, { type: 'agency.sessions.history', requestId: message.requestId, sessions: page.sessions, total: page.total, offset: message.offset ?? 0 });
           break;
         }
 
@@ -3476,7 +3485,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
             if (message.type === 'agency.tab.action' && message.action === 'close') {
               await agencyActivityManager.closeTab(message.workspaceId, message.tabId);
             }
-            send(socket, { type: 'agency.sessions.snapshot', requestId: message.requestId, sessions: agencyRuntime.list() });
+            send(socket, { type: 'agency.sessions.snapshot', requestId: message.requestId, sessions: agencyRuntime.liveList() });
           } catch (error) {
             send(socket, { type: 'agency.error', requestId: message.requestId, code: error instanceof AgencyRuntimeError ? error.code : 'internal-error', message: error instanceof Error ? error.message : String(error) });
           }
