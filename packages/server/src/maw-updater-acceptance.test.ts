@@ -708,3 +708,29 @@ test('34. linked Git worktree source (.git file) is supported', () => withFixtur
   const res = await update(f, ['--no-restart', '--source', worktreeDir]);
   assert.match(res.stdout, /MAW update staged successfully/);
 }));
+
+test('active start requires authenticated HTTP success and adopts the first healthy release without restarting', () => withFixture(async f => {
+  let status = 404;
+  const server = createServer((_req, res) => { res.statusCode = status; res.end('fixture'); });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const address = server.address(); assert.ok(address && typeof address !== 'string');
+    const url = `http://127.0.0.1:${address.port}/?token=readiness-fixture`;
+    await writeFile(path.join(f.runtimeDir, 'maw-ready.json'), JSON.stringify({ pid: process.pid, url, releaseId: f.initialId }), { mode: 0o600 });
+    await writeFile(path.join(f.root, 'mainpid'), `${process.pid}\n`);
+    await rm(path.join(f.stateDir, 'healthy'));
+    const env = { ...f.env, MAW_CONTROL_SCRIPT: '' };
+    await assert.rejects(exec(MAW_BIN, ['start'], { env }), (error: { code: number; stderr: string }) =>
+      error.code === 1 && /active but authenticated readiness failed/.test(error.stderr));
+    assert.equal(await pointer(f, 'healthy'), null, '404 never creates healthy');
+    status = 200;
+    await exec(MAW_BIN, ['start'], { env });
+    assert.equal(await pointer(f, 'healthy'), f.initialId, 'live authenticated success establishes healthy');
+    const wrong = { pid: process.pid, url, releaseId: '20260101000001-deadbee' };
+    await writeFile(path.join(f.runtimeDir, 'maw-ready.json'), JSON.stringify(wrong), { mode: 0o600 });
+    await assert.rejects(exec(MAW_BIN, ['start'], { env }), /Command failed/);
+    assert.equal(await pointer(f, 'healthy'), f.initialId, 'wrong release cannot alter healthy');
+    assert.ok(!existsSync(path.join(f.root, 'restarts')), 'active start never restarts the service');
+    assert.ok(existsSync(f.initialDir), 'first release remains installed');
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+}));

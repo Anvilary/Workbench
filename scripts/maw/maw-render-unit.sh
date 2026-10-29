@@ -10,10 +10,12 @@ node_bin="${MAW_NODE_BIN:-$(command -v node 2>/dev/null || true)}"
 state_dir="${MAW_STATE_DIR:-$HOME/.local/share/maw}"
 bin_dir="${MAW_BIN_DIR:-$HOME/.local/bin}"
 runtime_name="${MAW_RUNTIME_NAME:-maw}"
+env_file="${MAW_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/maw/environment}"
 # systemd treats '%' as a specifier: escape it; also escape sed replacement metacharacters.
 esc() { printf '%s' "$1" | sed 's/%/%%/g; s/[&|\\]/\\&/g'; }
 sed -e "s|@NODE_BIN@|$(esc "$node_bin")|g" \
     -e "s|@STATE_DIR@|$(esc "$state_dir")|g" \
     -e "s|@PATH@|$(esc "$(dirname "$node_bin"):$bin_dir:/usr/local/bin:/usr/bin:/bin")|g" \
     -e "s|@RUNTIME_NAME@|$(esc "$runtime_name")|g" \
+    -e "s|@ENV_FILE@|$(esc "$env_file")|g" \
     "$script_dir/maw.service"

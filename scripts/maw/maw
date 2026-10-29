@@ -82,8 +82,7 @@ case "$command_name" in
   start)
     [ "$#" -eq 1 ] || { usage >&2; exit 2; }
     if [ "$(systemctl --user show "$unit" --property=ActiveState --value 2>/dev/null || true)" = active ]; then
-      printf '%s\n' "$unit is already running. Use maw status or maw restart."
-      exit 0
+      exec /bin/sh "$restart_helper" --unit "$unit" --start
     fi
     run_activation --start
     ;;
