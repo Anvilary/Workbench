@@ -1,18 +1,43 @@
 # MAW Update and Rollback Guide
 
-This guide details the state boundaries, safety guarantees, automated fallbacks, and manual recovery procedures for the `maw update` command.
+This guide details the release-staging architecture, state boundaries, safety guarantees, automated fallbacks, and executable recovery procedures for the `maw update` command.
 
 Repository location: `/home/user/Projects/My-Amazing-Workspace`  
+Releases directory: `~/.local/share/maw/releases`  
+Active release pointer: `~/.local/share/maw/current` (symlink)  
+Previous release pointer: `~/.local/share/maw/previous` (symlink)  
 Update audit log: `~/.local/share/maw/update-log.jsonl`  
 Service name: `maw.service`
 
 ---
 
+## Verified Release-Staging Architecture
+
+`maw update` implements an isolated release-staging model that completely separates candidate release builds from both the live running service and the developer's source repository.
+
+### Key Architectural Principles
+1. **Developer Worktree Immutability**:
+   - `maw update` **never** executes destructive git commands (`git reset --hard`, `git checkout -- .`) against the developer's active source repository or worktree.
+   - Candidate releases are built in separate, immutable directories (`~/.local/share/maw/releases/<release-id>`) using detached Git worktrees.
+   - Even if concurrent modifications or uncommitted edits take place in the developer's checkout during update staging, those modifications survive completely untouched.
+2. **Zero In-Place Dependency or Asset Replacement**:
+   - The running server runs out of `~/.local/share/maw/current` (an atomic symlink pointing to an immutable release directory).
+   - Candidate releases install their dependencies (`pnpm install --frozen-lockfile`) and build frontend bundles (`pnpm build`) entirely inside the candidate directory.
+   - Assets and dependencies currently loaded or served by the live server are never overwritten or deleted while running.
+3. **Explicit and Verified Update Source**:
+   - Update target ref is explicitly determined (default: `origin/main` or verified tracking upstream; customizable via `--ref <ref>`).
+   - Arbitrary uncommitted branches or detached development states are never accidentally deployed.
+4. **Git Worktree Compatibility**:
+   - Both standard Git repositories (with `.git` directories) and linked Git worktrees (with `.git` files) are supported natively using Git inspection commands (`git rev-parse --is-inside-work-tree`, `--show-toplevel`, `--git-dir`).
+   - If an invalid repository path is detected, the updater refuses execution rather than silently falling back to an unexpected directory.
+
+---
+
 ## State Boundaries: What `maw update` Touches vs. Preserves
 
-`maw update` operates strictly within the application source tree and package build artifacts. It isolates runtime data, persistent configurations, and native provider authentication from the upgrade lifecycle.
-
 ### What `maw update` Preserves
+- **Developer Source Checkouts and Worktrees**:
+  - The working directory, staged index, stash, untracked files, and local branch pointers are never reset or cleaned up.
 - **Application Configuration**:
   - Main configuration root at `~/.config/agent-workbench/` (or designated `$XDG_CONFIG_HOME` path).
   - Profile settings and arguments in `agency-profiles.json`.
@@ -21,141 +46,92 @@ Service name: `maw.service`
   - `agency-workspaces.json`: All workspace configurations, project assignments, tab order, and active tab selections.
   - `agency-sessions.json`: Historical tab associations, session IDs, and persistent terminal/agent references.
 - **Native Authentication & Provider Storage**:
-  - Codex configuration and conversation state (`~/.codex`, `~/.codex-ar`, `~/.codex-3`, etc.).
+  - Codex configuration and conversation state (`~/.codex*`).
   - Antigravity / AGY profiles, conversation trees, and settings (`~/.gemini/antigravity-cli`, `~/.local/share/agy*-profile/`).
   - Claude Code state directories (`~/.claude/`).
   - System keyrings, GNOME Keyring daemon, and D-Bus session helpers.
-- **Runtime Environment**:
-  - Any environment variables configured in systemd unit overrides or shell profiles.
-
-### What `maw update` Does NOT Touch
-- **The Running Server (Until Explicitly Restarted)**:
-  - If executed with `--no-restart`, the running server process continues serving existing loaded in-memory JavaScript and PTY connections without disruption.
-  - Even if dependencies are re-installed or frontend bundles recompiled, the running Node.js process does not reload until `maw restart` is triggered.
-- **Provider Credentials**:
-  - MAW never copies, imports, decrypts, or writes provider authentication tokens, API keys, or keyring secrets during updates.
-- **Durable Provider History**:
-  - Provider session transcripts and conversation databases remain strictly in provider-native directories, outside the MAW git repository.
+- **Running Server State (with `--no-restart`)**:
+  - The active server process continues serving existing loaded modules and active PTYs without disruption until an explicit restart.
 
 ---
 
 ## Automated Safety and Rollback Behavior
 
-During execution, `maw update` guards against corruption at multiple stages:
+During execution, `maw update` enforces strict pre-flight and staging gates:
 
 | Stage | Safety Gate | Behavior on Failure |
 | --- | --- | --- |
-| Pre-flight | `git status --porcelain` | **Aborts immediately.** Update refuses to run if uncommitted, modified, or untracked files are detected. |
-| Divergence Check | Upstream comparison | **Aborts immediately.** Refuses if local commits exist that are not on upstream. |
-| Fetch & Merge | `git merge --ff-only` | **Aborts immediately.** Never creates merge commits or resolves merge conflicts. |
-| Dependency Install | `corepack pnpm install --frozen-lockfile` | Fails closed if `pnpm-lock.yaml` is out of sync or missing packages. |
-| Verification | `pnpm typecheck`, tests, `pnpm build` | **Automated Rollback Triggered.** |
-
-### The Automated Rollback Sequence
-If `pnpm typecheck`, profile tests, or `pnpm build` fail after git has merged new commits:
-1. The script immediately executes:
-   ```sh
-   git reset --hard "$prev_commit"
-   corepack pnpm install --frozen-lockfile
-   corepack pnpm build
-   ```
-2. The working directory and bundle artifacts are restored to the exact state corresponding to `$prev_commit`.
-3. An audit failure entry is recorded in `~/.local/share/maw/update-log.jsonl`.
-4. The running service is **not restarted**, allowing live sessions to continue operating without interruption.
+| Pre-flight | `git status --porcelain` | **Refuses execution.** Alerts developer to uncommitted changes. Developer worktree is untouched. |
+| Divergence Check | Upstream comparison | **Refuses execution.** Prevents orphaning local commits or pulling non-fast-forward diverged history. |
+| Runtime Check | Node version vs engines | **Refuses execution.** Validates runtime version compatibility before staging. |
+| Isolated Staging | `git worktree add --detach` | Builds candidate in `~/.local/share/maw/releases/<release-id>`. |
+| Dependencies & Build | `pnpm install`, `typecheck`, `build`, tests | **Candidate Discarded.** If any build/test step fails, the candidate directory is deleted. Developer worktree and running server remain untouched. |
+| Activation | Service readiness probe | **Automatic Rollback.** If replacement service fails readiness probe within timeout, symlink `current` reverts to `previous` and service restarts. |
 
 ---
 
-## Manual Rollback Procedure
+## Executable Rollback Procedures
 
-If an update succeeds in building, but unexpected regressions are discovered after restarting, or if an automated rollback was aborted externally, follow this manual rollback procedure:
+### Automated Rollback (Activation Failure)
+If `maw restart` (or `maw update --restart`) fails to achieve readiness on the replacement service:
+1. `maw-restart-helper.sh` detects failure during loopback token/readiness polling.
+2. It inspects `~/.local/share/maw/previous`.
+3. It atomically reverts `~/.local/share/maw/current` to point to the previous verified release.
+4. It restarts `maw.service` with the verified previous release and re-verifies readiness.
+5. Audit logs in `~/.local/share/maw/update-log.jsonl` record the activation failure and rollback result.
 
-### Step 1: Identify the Previous Good Commit
-Inspect the update log to find the previous commit hash (`prev_commit`):
+### Manual Rollback Procedure
+If regressions are discovered after a successful update and restart, rollback to the previous verified release immediately:
+
 ```sh
-tail -n 5 ~/.local/share/maw/update-log.jsonl
-```
-Example log entry:
-```json
-{"timestamp":"2026-10-29T00:30:00Z","event":"update","prev_commit":"be67f1b","target_commit":"a1c2d3e","status":"success","restarted":false}
-```
+# 1. Inspect active and previous release pointers
+ls -l ~/.local/share/maw/current ~/.local/share/maw/previous
 
-Alternatively, inspect git reflog:
-```sh
-git -C /home/user/Projects/My-Amazing-Workspace reflog -n 5
-```
+# 2. Atomically revert 'current' to the previous release
+ln -sfn "$(readlink -f ~/.local/share/maw/previous)" ~/.local/share/maw/current.tmp
+mv -Tf ~/.local/share/maw/current.tmp ~/.local/share/maw/current
 
-### Step 2: Roll Back the Git Working Tree
-Reset the repository to the identified previous commit:
-```sh
-git -C /home/user/Projects/My-Amazing-Workspace reset --hard <prev_commit>
-```
-
-### Step 3: Reinstall Dependencies and Rebuild
-Ensure package-lock alignment and build clean production bundles:
-```sh
-cd /home/user/Projects/My-Amazing-Workspace
-corepack pnpm install --frozen-lockfile
-corepack pnpm build
-```
-
-### Step 4: Restart the Service (If Needed)
-If the service was already running the newer code, restart it to load the rolled-back build:
-```sh
+# 3. Restart the service safely
 maw restart
+
+# 4. Verify healthy operation
+maw status
+maw url
 ```
 
-Verify that the service is running normally:
-```sh
-maw status
-```
+Notice that this manual rollback does not modify git or rebuild packages: it simply switches the release symlink pointer and restarts the service in milliseconds.
 
 ---
 
-## Recovery from a Failed Update that Left the Service Stopped
+## Recovery from a Service Failure or Crashed State
 
-If an update or restart failed mid-operation and left `maw.service` in an inactive or failed state, use the following recovery steps:
+If an update or service crash leaves `maw.service` in a failed state:
 
-### 1. Inspect Service Failure and Logs
-Check systemd unit status and recent logs to diagnose the failure:
-```sh
-systemctl --user status maw.service
-maw logs
-```
-
-### 2. Reset Systemd Failure Rate Limits
-If systemd has placed `maw.service` in a rate-limited backoff state (`start-limit-hit`):
-```sh
-systemctl --user reset-failed maw.service
-```
-
-### 3. Clear Stale Runtime Readiness Files
-If an unexpected server crash occurred, verify whether stale runtime files exist:
-```sh
-ls -la "$XDG_RUNTIME_DIR/maw/"
-```
-If `maw-ready.json` points to a dead PID (verified with `ps aux | grep node`), remove stale locks:
-```sh
-rm -f "$XDG_RUNTIME_DIR/maw/maw-ready.json"
-```
-
-### 4. Restore Stable Commit and Rebuild
-Execute the rollback steps:
-```sh
-cd /home/user/Projects/My-Amazing-Workspace
-git reset --hard <prev_commit>
-corepack pnpm install --frozen-lockfile
-corepack pnpm build
-```
-
-### 5. Start the Service and Verify Health
-```sh
-maw start
-maw status
-```
-Confirm the output indicates:
-```text
-ActiveState=active
-SubState=running
-Healthy; PID <pid>; loopback port <port>
-```
-Once healthy, re-open the UI using `maw open` or retrieve the loopback URL via `maw url`.
+1. **Check Failure State**:
+   ```sh
+   maw status
+   maw logs
+   ```
+2. **Clear Transient Rate Limits**:
+   If systemd applied start rate-limiting:
+   ```sh
+   systemctl --user reset-failed maw.service
+   ```
+3. **Clear Stale Runtime Locks**:
+   If a dead process left a stale readiness or restart lock:
+   ```sh
+   rm -f "${XDG_RUNTIME_DIR:-/tmp}/maw/maw-ready.json"
+   rm -f "${XDG_RUNTIME_DIR:-/tmp}/maw/restart.lock"
+   ```
+4. **Restore Previous Release Pointer**:
+   ```sh
+   if [ -L ~/.local/share/maw/previous ]; then
+     ln -sfn "$(readlink -f ~/.local/share/maw/previous)" ~/.local/share/maw/current.tmp
+     mv -Tf ~/.local/share/maw/current.tmp ~/.local/share/maw/current
+   fi
+   ```
+5. **Start and Verify**:
+   ```sh
+   maw start
+   maw status
+   ```

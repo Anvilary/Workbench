@@ -4,7 +4,9 @@ The `maw` launcher is the primary command-line interface for controlling, inspec
 
 Installed binary: `/home/user/.local/bin/maw`  
 Control helper: `/home/user/.local/lib/maw/control.mjs`  
-Repository source: `scripts/maw/maw` and `scripts/maw/control.mjs`  
+Update engine: `/home/user/.local/lib/maw/maw-update.sh`  
+Restart helper: `/home/user/.local/lib/maw/maw-restart-helper.sh`  
+Active release pointer: `~/.local/share/maw/current` (symlink)  
 Systemd unit: `maw.service` (managed as a systemd user service: `systemctl --user`)
 
 ---
@@ -14,20 +16,20 @@ Systemd unit: `maw.service` (managed as a systemd user service: `systemctl --use
 All subcommands run from any working directory and operate against the user's systemd daemon.
 
 ```sh
-maw {start|stop|restart|status|logs [--follow]|url|open [browser]|update [--restart|--no-restart]|help}
+maw {start|stop|restart|status|logs [--follow]|url|open [browser]|update [--no-restart|--restart]|help}
 ```
 
 | Subcommand | Description | Safety / Side-Effects |
 | --- | --- | --- |
-| `maw start` | Starts `maw.service` via `systemctl --user start maw.service` | Idempotent; waits for systemd start. |
+| `maw start` | Starts `maw.service` via `systemctl --user start maw.service` | Idempotent; waits for systemd start. Never auto-opens a browser. |
 | `maw stop` | Gracefully stops `maw.service` | Warns before stopping; server-owned live PTYs terminate; workspace metadata and native history remain intact. |
-| `maw restart` | Restarts `maw.service` | Warns about terminating PTYs; eligible verified native conversations resume via replacement PTYs on next boot/startup. |
-| `maw status` | Displays systemd unit state, MainPID, and runs an authenticated HTTP readiness probe | Token is never printed; queries `$XDG_RUNTIME_DIR/maw/maw-ready.json`. |
+| `maw restart` | Restarts `maw.service` safely from outside or inside MAW | Warns that live PTYs terminate; delegates via transient user unit when invoked inside MAW; verifies readiness and auto-rolls back if replacement fails. |
+| `maw status` | Displays systemd unit state, MainPID, and runs an authenticated loopback HTTP readiness probe | Token is never printed; queries `$XDG_RUNTIME_DIR/maw/maw-ready.json`. |
 | `maw logs` | Displays the last 80 journal lines for `maw.service` without pager | Safe, read-only. Rate-limited by unit policy. |
 | `maw logs --follow` | Follows live journal logs (`journalctl --user -u maw.service -n 80 --follow`) | Press `Ctrl+C` to exit. |
 | `maw url` | Prints the authenticated localhost URL with token to `stdout` | **Local terminal only.** Never logged to journal or system logs. |
-| `maw open [browser]` | Opens the authenticated web UI in the specified browser (or `xdg-open` by default) | Never opens automatically at service startup. |
-| `maw update` | Safely updates the codebase, installs frozen dependencies, runs tests, and builds | Guards against dirty worktrees, diverged branches, and protects nested developer shells. |
+| `maw open [browser]` | Opens the authenticated web UI in the specified browser (or `xdg-open` by default) | Never opens automatically at service startup. Supports e.g. `maw open brave`. |
+| `maw update` | Stages an update into an isolated candidate release directory | Never modifies the developer checkout; no destructive `git reset`; atomic pointer activation. |
 | `maw help` | Prints the usage summary | Read-only. |
 
 ---
@@ -52,19 +54,20 @@ maw stop
   Server-owned live PTYs will terminate. Metadata and native history remain.
   ```
 - Triggers `KillMode=control-group` teardown after allowing graceful store flush.
-- Persists user stop intent (`stoppedByUser`) so agents are not unintentionally resumed on subsequent startup.
 
 ### `maw restart`
-Restarts the MAW service.
+Restarts the MAW service safely from any shell, including from inside a MAW web terminal or CLI agent tab.
 ```sh
 maw restart
 ```
 - Emits notice:
   ```text
-  Server-owned live PTYs will terminate. Metadata and native history remain.
-  Eligible verified native conversations use replacement PTYs during recovery.
+  Warning: Active server-owned live PTYs will terminate. Original PTY will not survive.
+  Metadata and native history remain. Eligible verified native conversations use replacement PTYs during recovery.
   ```
-- Active sessions with verified native context and attestation resume with replacement PTYs following the single-flight sequential recovery model.
+- **Inside-MAW Protection**: Automatically detects when running inside the `maw.service` cgroup or process hierarchy.
+  Instead of killing the calling shell synchronously, it schedules a detached transient systemd user timer unit (`maw-restart-<timestamp>`), avoids duplicate restart requests via lock file, reports scheduling status, and hands off the restart cleanly.
+- **Readiness Verification**: Monitored by `maw-restart-helper.sh`, which verifies HTTP loopback readiness. If the new service fails to become healthy, it automatically rolls back `current` to `previous` and restarts the previous release.
 
 ### `maw status`
 Checks both service-manager state and HTTP loopback readiness:
@@ -79,205 +82,88 @@ MainPID=4173951
 ExecMainStatus=0
 Healthy; PID 4173951; loopback port 34187
 ```
-- If the service is stopped or unready, exits with code 1 and advice to check `maw logs`.
 
-### `maw logs` and `maw logs --follow`
-Inspects journalctl output filtered to `maw.service`:
-```sh
-# View recent 80 lines
-maw logs
-
-# Follow logs interactively
-maw logs --follow
-maw logs -f
-```
-
----
-
-## Security Model of `maw url`
-
-The `maw url` command outputs the full loopback URL, including the cryptographic session authentication token:
+### `maw url`
+Securely retrieves the authenticated loopback URL directly to `stdout`:
 ```sh
 maw url
 # Output:
 # http://127.0.0.1:34187/?token=a1b2c3d4e5f6...
 ```
+Conforms to strict loopback binding (127.0.0.1), file mode `0600`, directory mode `0700`, UID matching, and MainPID verification. Never recorded in systemd journals.
 
-### Confinement and Protections
-1. **Stdout Only**: The token is written strictly to standard output for the invoking user. It is never emitted to systemd logs, journalctl, or shared logging pipelines.
-2. **Strict Loopback Binding**: The URL is validated to ensure protocol `http:`, hostname `127.0.0.1`, a valid port, and that no credentials (`user:pass`) exist in authority.
-3. **Restricted Runtime Metadata**: Token and port data are read from `$XDG_RUNTIME_DIR/maw/maw-ready.json`. This file is constrained to:
-   - File mode `0600` (readable and writable only by the owner).
-   - Parent directory `$XDG_RUNTIME_DIR/maw` mode `0700`.
-   - File UID matches `process.getuid()`.
-4. **PID Verification**: The PID reported in `maw-ready.json` is verified against `systemctl --user show maw.service --property=MainPID --value`. If the PIDs do not match, the file is rejected as stale.
-5. **Local Authorized Use**: Useful for headless terminal sessions, remote SSH tunnels with local port forwarding, or pasting into specialized browsers without exposing the token to process tables or shell histories.
-
----
-
-## Browser Launching with `maw open [browser]`
-
-The `maw open` command opens the authenticated web application:
+### `maw open [browser]`
+Opens the authenticated session in the target browser:
 ```sh
-# Open using default system handler (xdg-open)
-maw open
-
-# Open using Brave browser specifically
+# Open in Brave specifically:
 maw open brave
 
-# Open using Google Chrome
-maw open google-chrome
-
-# Open using Firefox
-maw open firefox
+# Open in system default browser:
+maw open
 ```
-
-### Behavior & Rules
-- **No Auto-Launch on Service Start**: MAW never launches a browser tab unprompted when the systemd service starts or reboots.
-- **Readiness Verification**: Before launching any browser, `maw open` performs an authenticated loopback HTTP check (`fetch(url)`). If MAW is not ready or unhealthy, the command fails and warns without spawning the browser.
-- **Custom Browser Invocation**: When an argument (e.g., `brave`) is provided, `control.mjs` executes the binary with the authenticated URL passed as an argument directly, bypassing system default handler overrides.
 
 ---
 
-## The `maw update` Workflow
+## Verified Release-Staging (`maw update`)
 
-`maw update` provides an atomic, verified, and safe mechanism for upgrading MAW in place.
+The `maw update` command provides a safe, non-destructive update workflow for local checkouts:
 
 ```sh
-# Update and stage changes without restarting (recommended when actively working)
+# Stage update without restarting:
 maw update --no-restart
 
-# Update and restart the service immediately
+# Stage update and restart immediately:
 maw update --restart
 
-# Default (runs update and applies default restart policy)
-maw update
+# Update against specific ref:
+maw update --ref origin/main
 ```
 
-### Step-by-Step Update Execution & Safety Gates
+### Safety and Staging Pipeline
 
 ```mermaid
 flowchart TD
-    A["maw update"] --> B{"Working tree clean?<br>(git status --porcelain)"}
-    B -- "No (dirty)" --> ERR1["Abort: uncommitted changes exist"]
-    B -- "Yes" --> C{"Local branch diverged?<br>(local-only commits)"}
-    C -- "Yes" --> ERR2["Abort: local commits not pushed"]
-    C -- "No" --> D["git merge --ff-only"]
-    D -- "Merge failed" --> ERR3["Abort: fast-forward impossible"]
-    D -- "Success" --> E["corepack pnpm install --frozen-lockfile"]
-    E --> F["pnpm typecheck && profile tests && pnpm build"]
-    F -- "Failure" --> ROLLBACK["Automated Rollback:<br>git reset --hard $prev_commit<br>pnpm install --frozen-lockfile<br>pnpm build"]
-    ROLLBACK --> ERR4["Exit with error; running service unaffected"]
-    F -- "Success" --> LOG["Append ~/.local/share/maw/update-log.jsonl"]
-    LOG --> G{"--no-restart?"}
-    G -- "Yes" --> H["Stage complete; service unchanged"]
-    G -- "No" --> I{"Inside MAW Shell?<br>(Ancestor matches MainPID)"}
-    I -- "Yes (Inside MAW)" --> J["Schedule transient unit:<br>systemd-run --user maw-restart-$ts<br>--on-active=2"]
-    I -- "No (External Shell)" --> K["systemctl --user restart maw.service"]
-    J --> DONE["Exit 0; restart handed off cleanly"]
-    K --> DONE
-    H --> DONE
+    A["maw update"] --> B{"Worktree Clean?"}
+    B -- No --> C["Abort (Worktree dirty; developer changes preserved)"]
+    B -- Yes --> D{"Unpushed Commits?"}
+    D -- Yes --> E["Abort (Prevent orphaning local commits)"]
+    D -- No --> F{"Fast-Forward Upstream?"}
+    F -- No --> G["Abort (Diverged branches)"]
+    F -- Yes --> H["Create Isolated Staging Dir\ngit worktree add --detach ~/.local/share/maw/releases/..."]
+    H --> I["Build in Staging Dir:\npnpm install --frozen-lockfile\npnpm typecheck\npnpm build\nprofiles test"]
+    I -- Build Fails --> J["Delete Candidate Dir\nRunning release & source worktree untouched"]
+    I -- Success --> K["Atomically Update Pointers:\nprevious -> old current\ncurrent -> new candidate"]
+    K --> L{"--restart requested?"}
+    L -- No --> M["Done: Update staged. Service remains on old release until restart."]
+    L -- Yes --> N["maw restart (Safe transient unit handoff)"]
 ```
 
-1. **Worktree Cleanliness Check**:
-   - Executes `git status --porcelain`.
-   - Refuses to update if modified, unstaged, or untracked files are present in the repository, protecting working development states.
-2. **Divergence Prevention**:
-   - Compares the local branch head against the upstream tracking branch (`origin/<branch>`).
-   - Refuses if local-only commits exist to avoid silent merge collisions or overwritten history.
-3. **Fast-Forward Only Pull**:
-   - Runs `git merge --ff-only`.
-   - Guarantees a linear commit history; never generates merge conflict markers or unintended merge commits.
-4. **Frozen Dependency Installation**:
-   - Executes `corepack pnpm install --frozen-lockfile`.
-   - Enforces deterministic dependencies pinned by `pnpm-lock.yaml`. Never updates dependencies loosely.
-5. **Strict Build & Test Verification**:
-   - Runs `pnpm typecheck`.
-   - Runs focused profile and integration tests.
-   - Runs `pnpm build` (producing clean client and server bundles).
-6. **Update Log Recording**:
-   - Logs timestamp, previous commit, target commit, command options, and exit status to:
-     `~/.local/share/maw/update-log.jsonl`
-7. **Automated Rollback on Verification Failure**:
-   - If typecheck, tests, or build fail after `git merge --ff-only`, the update script executes:
-     ```sh
-     git reset --hard "$prev_commit"
-     corepack pnpm install --frozen-lockfile
-     corepack pnpm build
-     ```
-   - Restores the working tree and build artifacts to the exact pre-update state.
-   - The running `maw.service` is never restarted or interrupted if build verification fails.
+1. **Non-Destructive Staging**:
+   - The developer's source repository is **never modified, merged into, or reset**.
+   - Candidate releases are built in separate immutable directories (`~/.local/share/maw/releases/<timestamp>-<hash>`).
+   - Even if concurrent modifications occur in the developer checkout during update staging, they survive untouched.
+2. **Worktree Cleanliness & Upstream Verification**:
+   - Checks `git status --porcelain` and `git log @{u}..HEAD`.
+   - Native support for both `.git` directories and `.git` linked worktrees.
+3. **Atomic Pointer Switch**:
+   - On verification success, `~/.local/share/maw/previous` records the old release, and `~/.local/share/maw/current` is atomically updated via `mv -Tf`.
+4. **Automatic Rollback**:
+   - If the new release fails to achieve readiness on restart, `maw-restart-helper.sh` reverts `current` to `previous` and restores the healthy service.
 
 ---
 
-## Developing MAW inside MAW (Developer Protection)
+## Developing MAW Inside MAW
 
-MAW is frequently developed from within its own web-based workspace terminals and agent sessions. This introduces a recursive lifecycle challenge:
+Developing MAW from within MAW web terminals or CLI tabs is fully supported:
 
-### The Problem: Ancestor Cgroup Teardown
-- A developer runs `maw update --restart` inside a MAW terminal tab.
-- The terminal shell process is a descendant of `maw.service` (MainPID).
-- If the update script invokes `systemctl --user restart maw.service` directly:
-  1. Systemd signals the entire control group of `maw.service` (`KillMode=control-group`).
-  2. The shell running the update script is killed immediately.
-  3. The update process is aborted mid-flight before writing audit logs, completing cleanup, or exiting cleanly.
-
-### The Solution: Transient Systemd Unit Handoff
-`maw update` detects whether its ancestor process tree belongs to `maw.service`:
-1. It traverses ancestor process IDs (`PPID` chain) up to PID 1.
-2. It fetches `MainPID` of `maw.service` via `systemctl --user show maw.service --property=MainPID --value`.
-3. If any ancestor PID matches `MainPID`:
-   - It **does not** call synchronous `systemctl --user restart`.
-   - Instead, it launches an independent, out-of-cgroup transient timer unit:
-     ```sh
-     systemd-run --user \
-       --unit="maw-restart-$(date +%s)" \
-       --no-block \
-       --on-active=2 \
-       systemctl --user restart maw.service
-     ```
-   - The update process logs completion, writes `~/.local/share/maw/update-log.jsonl`, and exits with code 0.
-   - Two seconds later (`--on-active=2`), systemd executes the restart asynchronously outside the dying cgroup.
-   - MAW restarts cleanly, terminating the old session, and the user's browser reconnects to the refreshed server instance.
-
----
-
-## End-to-End Acceptance Workflow
-
-Follow this standard acceptance workflow to verify MAW and the launcher end-to-end:
-
-1. **Start the Service**:
-   ```sh
-   maw start
-   maw status
-   ```
-2. **Inspect and Verify Loopback URL**:
-   ```sh
-   maw url
-   ```
-   Confirm URL matches `http://127.0.0.1:<port>/?token=...`.
-3. **Open in Target Browser**:
-   ```sh
-   maw open brave
-   ```
-   Confirm Brave launches directly without certificate warnings or token prompts.
-4. **Create Project and Workspaces**:
-   - In the web interface, click **Create Project**.
-   - Create a workspace associated with `/home/user/Projects/My-Amazing-Workspace`.
-5. **Launch Tabs and Verify Operations**:
-   - Open a Terminal tab.
-   - Open a CLI Agent tab (e.g., Codex or AGY profile).
-   - Open a Web tab.
-6. **Perform In-Session Development**:
-   - Work on feature files directly inside the MAW terminal or agent tab.
-7. **Stage an Update Without Interrupting Work**:
-   ```sh
-   maw update --no-restart
-   ```
-   Confirm worktree cleanliness check passes, fast-forward pull completes, dependencies install, build succeeds, and the service remains active without disconnecting your tabs.
-8. **Explicitly Activate the Update**:
-   ```sh
-   maw restart
-   ```
-   (Or from within MAW, run `maw update --restart`).  
-   Confirm browser reconnects cleanly and workspace recovery resumes eligible sessions.
+- **Safe Staging**: You can run `maw update --no-restart` while working in multiple CLI tabs. The active running server continues serving existing modules without disconnecting tabs or invalidating loaded assets.
+- **Safe Restart**: When you are ready to activate the new version, running `maw restart` inside a MAW terminal schedules an independent transient unit outside the service control group:
+  ```sh
+  systemd-run --user \
+    --unit="maw-restart-$(date +%s)" \
+    --no-block \
+    --description="MAW safe restart helper" \
+    --on-active=1 \
+    /bin/sh maw-restart-helper.sh --unit maw.service
+  ```
+- Active server-owned live PTYs terminate when the server restarts, and eligible native sessions resume with replacement PTYs upon reconnection.
