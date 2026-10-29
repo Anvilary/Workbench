@@ -19,7 +19,6 @@
 import { useEffect, useRef } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { WebglAddon } from '@xterm/addon-webgl';
 import { Terminal } from '@xterm/xterm';
 import type { TerminalId } from '@agent-workbench/shared';
 import type { AgentConnection } from './connection.js';
@@ -165,17 +164,25 @@ export function TerminalView({
     terminal.open(container);
     onTerminalInstanceRef.current?.(terminal);
 
+    // WebGL is opt-in (?renderer=webgl): its addon (~100 KB) is fetched only then, never on the default path.
+    // The terminal may be disposed while the chunk loads; `terminalDisposed` keeps a late addon off it.
     let webglAttempted = false;
+    let terminalDisposed = false;
     const enableWebglRenderer = (): void => {
       if (webglAttempted || preferredRenderer() !== 'webgl') return;
       webglAttempted = true;
-      try {
+      void import('@xterm/addon-webgl').then((module) => {
+        if (terminalDisposed) return;
+        // The package is UMD/CommonJS: a dynamic import exposes it as `default` (bundler interop), not as a
+        // named export. Accept both shapes.
+        const WebglAddon = module.WebglAddon ?? (module as unknown as { default?: typeof module }).default?.WebglAddon;
+        if (typeof WebglAddon !== 'function') throw new Error('WebGL addon export not found');
         const webgl = new WebglAddon();
         webgl.onContextLoss(() => webgl.dispose());
         terminal.loadAddon(webgl);
-      } catch {
-        console.info('[terminal] WebGL no disponible; se usa el renderer por defecto.');
-      }
+      }).catch((error: unknown) => {
+        console.info('[terminal] WebGL no disponible; se usa el renderer por defecto.', String(error));
+      });
     };
 
     let lastSize = { cols: 0, rows: 0 };
@@ -543,6 +550,7 @@ export function TerminalView({
       offReopen();
       // Desenganchar no mata el proceso: la pty sigue viva en el servidor.
       connection.send({ type: 'terminal.detach', terminalId });
+      terminalDisposed = true;
       terminal.dispose();
       terminalRef.current = null;
       fitRef.current = null;
