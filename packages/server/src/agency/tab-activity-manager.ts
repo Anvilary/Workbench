@@ -356,6 +356,73 @@ export class TabActivityManager extends EventEmitter {
     return this.mutate(() => this.acknowledgeTabInner(workspaceId, tabId));
   }
 
+  /**
+   * Atomic compare-and-acknowledge for Done action:
+   * Only clears the 'finished' state on the tab if the tab's current completion matches
+   * the specified turn/task identity.
+   * When notifications lack identity (old/legacy), fails safely by completing only the inbox item,
+   * not guessing the current turn.
+   */
+  acknowledgeMatchingTurn(
+    workspaceId: WorkspaceId,
+    tabId: string,
+    match: { taskId?: string; turnSequence?: number },
+  ): Promise<TabActivityRecord | null> {
+    return this.mutate(() => this.acknowledgeMatchingTurnInner(workspaceId, tabId, match));
+  }
+
+  private async acknowledgeMatchingTurnInner(
+    workspaceId: WorkspaceId,
+    tabId: string,
+    match: { taskId?: string; turnSequence?: number },
+  ): Promise<TabActivityRecord | null> {
+    // When old/legacy notifications lack identity, fail safely by completing only the inbox item,
+    // not guessing the current turn.
+    if (!match.taskId && match.turnSequence === undefined) {
+      return null;
+    }
+
+    const key = this.makeKey(workspaceId, tabId);
+    const current = this.states.get(key);
+    if (!current || current.state !== 'finished') {
+      return current ?? null;
+    }
+
+    // Verify identity match: if taskId is provided, must match; if turnSequence is provided, must match.
+    const taskIdMatches = match.taskId !== undefined ? current.taskId === match.taskId : true;
+    const turnSeqMatches = match.turnSequence !== undefined ? current.turnSequence === match.turnSequence : true;
+
+    if (!taskIdMatches || !turnSeqMatches) {
+      // Current tab completion belongs to a different (e.g. newer) turn.
+      // Do not clear the completion!
+      return current;
+    }
+
+    const next: TabActivityRecord = {
+      ...current,
+      state: 'idle',
+      updatedAt: NOW(),
+      acknowledgedAt: NOW(),
+      reliableSignal: true,
+      detail: 'inspected-and-acknowledged',
+    };
+    this.states.set(key, next);
+
+    // Acknowledge shell parser if present
+    const parser = this.shellParsers.get(tabId);
+    parser?.acknowledge();
+
+    // Acknowledge browser provider if present
+    for (const provider of this.browserProviders.values()) {
+      provider.acknowledgeTab(tabId);
+    }
+
+    try { await this.persist(); }
+    catch (error) { if (this.states.get(key) === next) this.states.set(key, current); throw error; }
+    this.emit('tabActivity', next);
+    return next;
+  }
+
   private async acknowledgeTabInner(workspaceId: WorkspaceId, tabId: string): Promise<TabActivityRecord | null> {
     const key = this.makeKey(workspaceId, tabId);
     const current = this.states.get(key);

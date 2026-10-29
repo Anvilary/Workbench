@@ -3,7 +3,7 @@
 **Repository:** `user/My-Amazing-Workspace`  
 **Worktree:** `~/Projects/My-Amazing-Workspace-tab-ux`  
 **Branch:** `feat/maw-tab-drag-notification-done`  
-**Base Commit:** `25a59c0d786fcabbae712570eed9d518f6f50e9f` on `fix/maw-claude-audit-remediation` (stacked PR target)  
+**Base Commit:** `df5790a` on `main` (PR #17 target; retargeted to main after PR #16 merge)  
 
 ---
 
@@ -69,18 +69,12 @@ While MAW supported notification reading and tab inspection, there was no granul
 - **Protocol Extension:** Added client message `{ type: 'agency.notification.done', requestId, notificationId }`.
 - **Durable Done State:** In `AgencyNotificationStore.acknowledge()`, marked items set `acknowledgedAt: now`, `read: true`, `readAt: item.readAt ?? now`, and `dismissedAt: item.dismissedAt ?? now`. Unread counts filter out `!item.read && !item.acknowledgedAt`.
 - **UI Done Button:** Each notification row in [`NotificationInbox.tsx`](file:///home/user/Projects/My-Amazing-Workspace-tab-ux/packages/web/src/agency/NotificationInbox.tsx) includes an accessible button (`.maw-done-button`) displaying a checkmark (`✓`) with localized tooltip `t('agency.notifications.done')`. Unread items retain the separate mark-read action (`●`), keeping Read and Done distinct.
-- **Race Condition Prevention:** When `agency.notification.done` is received, the server checks whether the notification matches the tab's current outstanding turn:
-  ```typescript
-  const isCurrentTurn = !item.metadata?.taskId || (
-    activityRecord &&
-    activityRecord.taskId === item.metadata.taskId &&
-    (item.metadata.turnSequence === undefined || activityRecord.turnSequence === item.metadata.turnSequence)
-  );
-  if (isCurrentTurn) {
-    await agencyActivityManager.acknowledgeTab(item.workspaceId, item.tabId);
-  }
-  ```
-  If a new agent turn completed while the user was marking an old notification Done, the newer turn's `finished` badge is preserved and never cleared.
+- **Atomic Turn-Specific Acknowledgement & Race Prevention:** Handled in [`packages/server/src/agency/tab-activity-manager.ts`](file:///home/user/Projects/My-Amazing-Workspace-tab-ux/packages/server/src/agency/tab-activity-manager.ts) via `acknowledgeMatchingTurn` and [`packages/server/src/terminal-socket.ts`](file:///home/user/Projects/My-Amazing-Workspace-tab-ux/packages/server/src/terminal-socket.ts) via `handleAgencyNotificationDone`.
+  - The turn/task comparison executes inside `TabActivityManager`'s serialized mutation lock (`this.mutate(...)`), eliminating interleaving between checking identity and acknowledging the completion.
+  - If a new turn completes while an older turn's Done action is processed, the newer turn's completion badge is preserved.
+  - Success (`agency.notification.changed`) is sent to the client **only after** both the notification store and tab activity manager have durably committed their updates.
+  - When old or legacy notifications lack identity, the handler completes only the inbox item, failing safely without guessing or clearing the current tab completion.
+- **Client Failure Rollback & Snapshot Reconciliation:** In [`useNotificationStore.ts`](file:///home/user/Projects/My-Amazing-Workspace-tab-ux/packages/web/src/agency/useNotificationStore.ts), `markDone` optimistically removes the item from the visible inbox and active toasts. Permanent suppression (`completedNotificationIds`) is committed **only on confirmed success**. If persistence or transport rejects, `completedNotificationIds` is rolled back, the notification and toasts are restored, and subsequent snapshots reconcile and preserve the active alert.
 - **Cache Invalidation & Snapshot Safety:** Completed notifications are tracked in `completedNotificationIds` and stripped from `localStorage` cached items and incoming snapshots, preventing closed alerts from flickering or reappearing.
 - **Distinction from Workspace "Mark Done":** The workspace-level "Mark Done" action is strictly preserved and remains untouched.
 
@@ -110,9 +104,12 @@ Created [`packages/server/src/agency/tab-ux-notifications.test.ts`](file:///home
 1. **10 ordinary shell commands:** Confirmed 10 commands (e.g. `ls`, `pwd`, `git status`, `echo`, nonzero exit codes) generate 0 inbox notifications and 0 completion badges.
 2. **Native agent completions:** Verified native CLI turn completion properly creates inbox notifications and triggers the `finished` status dot.
 3. **Done action isolation:** Verified Done removes exactly one notification, clears only its matching tab completion, and decrements the unread count.
-4. **Race condition safety:** Verified that marking an older turn Done does not clear a newer turn's tab completion badge.
-5. **Persistence across restart:** Verified that completed notifications remain completed after reload from disk.
-6. **Mixed tab drag reordering:** Verified that reordering mixed native CLI, shell, and ChatGPT web tabs persists across restarts, rejects malformed payloads, and handles concurrent reorder requests.
+4. **Race condition safety via production handler:** Invokes `handleAgencyNotificationDone` directly to verify that marking an older turn Done does not clear a newer turn's tab completion badge.
+5. **Injected persistence failures:** Verified injected failures in `store.acknowledge` or `manager.acknowledgeMatchingTurn` report `agency.error` to the client without false success.
+6. **Idempotent retry:** Verified calling Done multiple times for the same alert returns success without duplicate side-effects.
+7. **Legacy alerts without identity:** Verified completing a legacy alert without turn identity marks the inbox item Done while safely leaving the tab completion badge untouched.
+8. **Persistence across restart:** Verified that completed notifications remain completed after reload from disk.
+9. **Mixed tab drag reordering:** Verified that reordering mixed native CLI, shell, and ChatGPT web tabs persists across restarts, rejects malformed payloads, and handles concurrent reorder requests.
 
 ### Browser End-to-End Suite
 Created [`packages/web/src/agency/tab-ux-browser.test.mjs`](file:///home/user/Projects/My-Amazing-Workspace-tab-ux/packages/web/src/agency/tab-ux-browser.test.mjs) verifying interactive Playwright browser behavior:
@@ -123,13 +120,13 @@ Created [`packages/web/src/agency/tab-ux-browser.test.mjs`](file:///home/user/Pr
 - Notification inbox Done button interaction and immediate inbox item removal.
 - Tab completion clearing on matching Done.
 - Tab completion badge preservation when a newer turn completes.
+- Injected Done failure: error banner appears, alert remains in inbox, and incoming snapshots reconcile without suppressing the alert.
 
 ### Full Suite Run Results
 - `pnpm typecheck`: Passed (all packages clean).
-- `pnpm build`: Passed (production Vite bundle built in 4.50s).
+- `pnpm build`: Passed (production Vite bundle built in 5.19s).
 - `pnpm --filter @agent-workbench/server exec tsx scripts/check-i18n.mjs`: Passed (all 9 locales valid).
-- `pnpm --filter @agent-workbench/server exec tsx --test "src/agency/*.test.ts"`: 79/79 tests passed.
-- `node --test packages/web/src/agency/tab-ux-browser.test.mjs`: Passed.
-- `node --test packages/web/src/agency/browser-tabs.test.mjs`: Passed.
+- `pnpm --filter @agent-workbench/server exec tsx --test "src/agency/*.test.ts"`: 85/85 tests passed.
+- `node --test packages/web/src/agency/*.test.mjs`: 23/23 tests passed.
 - `pnpm --filter @agent-workbench/server exec tsx scripts/check-agency-remediation.mjs`: 6/6 groups passed.
 - `pnpm --filter @agent-workbench/server exec tsx scripts/check-maw-integration.mjs`: 7/7 checks passed.
