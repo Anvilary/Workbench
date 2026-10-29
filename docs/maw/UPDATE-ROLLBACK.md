@@ -75,6 +75,25 @@ environment passed explicitly. The terminal is interrupted; the outcome is in th
 
 `maw rollback` stages `previous` and activates it like any other release.
 
+## Historical data when rolling back
+
+Rollback restores executable releases and verifies service readiness. It does **not** guarantee that the
+older release can read every historical record written by the newer release. This applies to both manual
+rollback and automatic recovery after failed activation; readiness does not check historical-data compatibility.
+
+The split-history release keeps live sessions in `agency-sessions.json` and closed tabs and superseded
+conversation attempts in `agency-sessions-history.json`, in the application config directory (normally
+`~/.config/agent-workbench`, separate from `MAW_STATE_DIR`). The previous single-file release reads only
+`agency-sessions.json`. After a downgrade, active sessions remain available through that file, but history
+in the split file is invisible to the older UI. The older release leaves that file dormant on disk.
+Restoring a split-history release loads both files again, including history retained before the downgrade
+and records saved by the single-file release while it was running.
+
+The updater and rollback helper do not delete, overwrite, merge or migrate session history. Do not copy
+the history file over the live file or attempt a silent conversion for downgrade compatibility: that can
+replace active-session metadata. Before a planned downgrade, stop the service and make a consistent backup
+of both session files and their `.bak` companions. Keep the original files available for a later upgrade.
+
 ## Installation and migration
 
 - `install.sh --service` builds the first release with the same pipeline (`maw-update.sh --initial`) and

@@ -37,6 +37,8 @@ install -m 644 "$script_dir/maw-lib.sh" "$lib_dir/maw-lib.sh"
 install -m 644 "$script_dir/control.mjs" "$lib_dir/control.mjs"
 install -m 755 "$script_dir/maw-update.sh" "$lib_dir/maw-update.sh"
 install -m 755 "$script_dir/maw-restart-helper.sh" "$lib_dir/maw-restart-helper.sh"
+install -m 755 "$script_dir/maw-render-unit.sh" "$lib_dir/maw-render-unit.sh"
+install -m 644 "$script_dir/maw.service" "$lib_dir/maw.service"
 install -m 755 "$script_dir/maw" "$lib_dir/maw"
 install -m 755 "$script_dir/maw" "$bin_dir/maw"
 
@@ -65,7 +67,7 @@ if [ "$mode" = --service ]; then
       /bin/sh "$lib_dir/maw-update.sh" --initial --source "$repo_dir"
   fi
   MAW_NODE_BIN="$node_bin" MAW_STATE_DIR="$state_dir" MAW_BIN_DIR="$bin_dir" MAW_RUNTIME_NAME="$runtime_name" \
-    /bin/sh "$script_dir/maw-render-unit.sh" > "$unit_dir/$unit_name.tmp" && mv -f "$unit_dir/$unit_name.tmp" "$unit_dir/$unit_name"
+    /bin/sh "$lib_dir/maw-render-unit.sh" > "$unit_dir/$unit_name.tmp" && mv -f "$unit_dir/$unit_name.tmp" "$unit_dir/$unit_name"
   chmod 644 "$unit_dir/$unit_name"
   systemctl --user daemon-reload
   printf '%s\n' 'Service installed but not enabled or started. Start and verify it with: maw start'

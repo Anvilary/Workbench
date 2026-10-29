@@ -628,15 +628,16 @@ export class AgencySessionRuntime extends EventEmitter {
       const wasSelected = rows.find(s => s.tab?.id === tabId && s.tab.current)?.tab?.selected;
       const next = rows.filter(s => s.tab?.current && !s.tab.closedAt && s.tab.id !== tabId).sort((a,b) => a.tab!.order - b.tab!.order)[0];
       const changed: AgencyRuntimeSession[] = [];
+      const updatedAt = NOW();
       for (const row of rows) {
         if (!row.tab) continue;
         const tab = { ...row.tab };
         if (action === 'select') tab.selected = tab.current && !tab.closedAt && tab.id === tabId;
-        else if (tab.id === tabId) { tab.closedAt = NOW(); tab.selected = false; }
+        else if (tab.id === tabId) { tab.closedAt = updatedAt; tab.selected = false; }
         else if (wasSelected) tab.selected = tab.current && tab.id === next?.tab?.id;
         if (tab.selected === row.tab.selected && tab.closedAt === row.tab.closedAt) continue;
         changed.push(row);
-        this.sessions.set(row.id, { ...row, tab });
+        this.sessions.set(row.id, { ...row, tab, updatedAt });
       }
       if (!changed.length) return;
       try { await this.persist(); }

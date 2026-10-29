@@ -159,6 +159,7 @@ phase=rollback
 if [ -n "$healthy" ] && [ "$healthy" != "$target" ]; then
   healthy_name=$(basename "$healthy")
   printf '%s\n' "Rolling back to last verified healthy release $healthy_name..." >&2
+  printf '%s\n' 'Executable rollback does not guarantee historical-data compatibility; older releases cannot display split session history.' >&2
   if maw_set_pointer current "$healthy" && start_and_verify "$healthy"; then
     maw_log rollback-success release "$healthy_name" failed "$target_name"
     printf '%s\n' "UPDATE FAILED, SERVICE RECOVERED: $healthy_name is active and verified healthy." \
