@@ -43,7 +43,7 @@ function loadCachedNotifications(): MawNotificationItem[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      return parsed.filter(isMawNotificationItem);
+      return parsed.filter(isMawNotificationItem).filter(item => !item.acknowledgedAt);
     }
   } catch {}
   return [];
@@ -51,7 +51,7 @@ function loadCachedNotifications(): MawNotificationItem[] {
 
 function saveCachedNotifications(items: readonly MawNotificationItem[]): void {
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(items.slice(0, 100)));
+    localStorage.setItem(CACHE_KEY, JSON.stringify(items.filter(item => !item.acknowledgedAt).slice(0, 100)));
   } catch {}
 }
 
@@ -63,6 +63,7 @@ export function useNotificationStore(
   const [activityStates, setActivityStates] = useState<Map<string, TabActivityRecord>>(new Map());
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const seenNotificationIds = useRef(new Set(notifications.map(item => item.id)));
+  const completedNotificationIds = useRef(new Set<string>());
   const toastTimeouts = useRef(new Map<string, number>());
 
   useEffect(() => () => {
@@ -112,7 +113,9 @@ export function useNotificationStore(
   useEffect(() => {
     return transport.onMessage((message) => {
       if (message.type === 'agency.notifications.snapshot') {
-        const incoming = [...message.notifications];
+        const incoming = message.notifications.filter(
+          item => !item.acknowledgedAt && !completedNotificationIds.current.has(item.id),
+        );
         setNotifications(incoming);
 
         for (const item of incoming) {
@@ -126,7 +129,7 @@ export function useNotificationStore(
         }
       } else if (message.type === 'agency.notification.created') {
         const item: MawNotificationItem = message.notification;
-        if (!item || seenNotificationIds.current.has(item.id)) return;
+        if (!item || seenNotificationIds.current.has(item.id) || item.acknowledgedAt || completedNotificationIds.current.has(item.id)) return;
         seenNotificationIds.current.add(item.id);
 
         setNotifications((prev) => {
@@ -139,9 +142,15 @@ export function useNotificationStore(
         const item: MawNotificationItem = message.notification;
         if (!item) return;
 
-        setNotifications((prev) =>
-          prev.map((existing) => (existing.id === item.id ? item : existing)),
-        );
+        if (item.acknowledgedAt) {
+          completedNotificationIds.current.add(item.id);
+          setToasts((prev) => prev.filter((t) => t.notificationId !== item.id));
+          setNotifications((prev) => prev.filter((existing) => existing.id !== item.id));
+        } else {
+          setNotifications((prev) =>
+            prev.map((existing) => (existing.id === item.id ? item : existing)),
+          );
+        }
       } else if (message.type === 'agency.tab.activity') {
         const record: TabActivityRecord = message.activity;
         if (!record) return;
@@ -164,6 +173,13 @@ export function useNotificationStore(
     await request({ type: 'agency.notification.markAllRead' });
   }, [request]);
 
+  const markDone = useCallback(async (notificationId: string) => {
+    completedNotificationIds.current.add(notificationId);
+    setToasts((prev) => prev.filter((t) => t.notificationId !== notificationId));
+    await request({ type: 'agency.notification.done', notificationId });
+    setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
+  }, [request]);
+
   const acknowledgeTab = useCallback(async (workspaceId: WorkspaceId, tabId: string) => {
     await request({ type: 'agency.tab.acknowledge', workspaceId, tabId });
   }, [request]);
@@ -173,7 +189,7 @@ export function useNotificationStore(
     return activityStates.get(key)?.state ?? 'unknown';
   }, [activityStates]);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const unreadCount = notifications.filter((n) => !n.read && !n.acknowledgedAt).length;
 
   return {
     notifications,
@@ -182,6 +198,7 @@ export function useNotificationStore(
     activityStates,
     markRead,
     markAllRead,
+    markDone,
     dismissToast,
     acknowledgeTab,
     getTabActivity,

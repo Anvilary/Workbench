@@ -13,6 +13,7 @@
   "agency.notifications.commandFailedCode": "Befehl mit Exitcode {{code}} fehlgeschlagen",
   "agency.notifications.commandFinished": "Befehl abgeschlossen",
   "agency.notifications.dismissToast": "Benachrichtigung schließen",
+  "agency.notifications.done": "Erledigt",
   "agency.notifications.empty": "Keine Benachrichtigungen",
   "agency.notifications.markAllRead": "Alle als gelesen markieren",
   "agency.notifications.markRead": "Als gelesen markieren",

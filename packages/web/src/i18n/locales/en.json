@@ -13,6 +13,7 @@
   "agency.notifications.commandFailedCode": "Command failed with exit code {{code}}",
   "agency.notifications.commandFinished": "Command finished",
   "agency.notifications.dismissToast": "Dismiss notification",
+  "agency.notifications.done": "Done",
   "agency.notifications.empty": "No notifications",
   "agency.notifications.markAllRead": "Mark all as read",
   "agency.notifications.markRead": "Mark as read",

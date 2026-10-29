@@ -3579,6 +3579,36 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           break;
         }
 
+        case 'agency.notification.done': {
+          const item = agencyNotificationStore.get(message.notificationId);
+          if (!item) {
+            send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Notification not found' });
+            break;
+          }
+          const workspace = agencyWorkspaceStore.getWorkspace(item.workspaceId);
+          if (!workspace) {
+            send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Workspace not found' });
+            break;
+          }
+          const updated = await agencyNotificationStore.acknowledge(message.notificationId);
+          if (updated) {
+            send(socket, { type: 'agency.notification.changed', requestId: message.requestId, notification: updated });
+            const record = agencyActivityManager.getRecord(item.workspaceId, item.tabId);
+            if (record && record.state === 'finished') {
+              const notifTaskId = (item.metadata?.taskId as string | undefined) ?? item.deduplicationKey?.split(':').slice(3).join(':');
+              const notifTurnSeq = item.metadata?.turnSequence as number | undefined;
+              const isCurrentTurn = (!record.taskId || !notifTaskId || record.taskId === notifTaskId) &&
+                (notifTurnSeq === undefined || record.turnSequence === undefined || record.turnSequence === notifTurnSeq);
+              if (isCurrentTurn) {
+                await agencyActivityManager.acknowledgeTab(item.workspaceId, item.tabId);
+              }
+            }
+          } else {
+            send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Notification not found' });
+          }
+          break;
+        }
+
         case 'agency.tab.acknowledge': {
           if (!tabCoordinator.canInspect(message.workspaceId, message.tabId)) {
             send(socket, { type: 'agency.error', requestId: message.requestId, code: 'session-unavailable', message: 'Tab must be open and selected in an active workspace before inspection' });
