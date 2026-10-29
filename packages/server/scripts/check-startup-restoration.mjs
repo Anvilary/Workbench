@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -53,6 +53,7 @@ const history = { ...native, id: randomUUID(), nativeSessionId: randomUUID(), li
   tab: { ...native.tab, id: randomUUID(), name: 'Saved native history', closedAt: now } };
 const A = 'https://chatgpt.com/c/11111111-2222-4333-8444-555555555555';
 const B = 'https://chatgpt.com/g/g-fixture/c/66666666-7777-4888-8999-000000000000';
+const nativeHistoryFile = path.join(home, '.codex/sessions/2026/10/29', `rollout-2026-10-29T00-00-00-${nativeId}.jsonl`);
 let context, controller, socket;
 let ready;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -142,7 +143,7 @@ async function assertDurable(expectedShell, expectedWeb) {
   assert.deepEqual(notifications.find(n => n.id === doneNotification.id), doneNotification);
   const histories = await new SplitAgencySessionStore(path.join(config, 'agency-sessions.json')).load();
   assert.deepEqual(histories.find(s => s.id === history.id), history);
-  assert.equal(await readFile(path.join(home, 'native-history-fixture.jsonl'), 'utf8'), nativeHistory);
+  assert.equal(await readFile(nativeHistoryFile, 'utf8'), nativeHistory);
   return shell;
 }
 let profileContents, nativeHistory, readNotification, doneNotification;
@@ -155,8 +156,10 @@ try {
   profileContents = JSON.stringify({ schemaVersion: 1, profiles: definitions });
   await writeFile(path.join(config, 'agency-profiles.json'), profileContents);
   await new SplitAgencySessionStore(path.join(config, 'agency-sessions.json')).save([native, history]);
-  nativeHistory = JSON.stringify({ fixture: true, conversationId: nativeId, text: 'Synthetic saved native history' }) + '\n';
-  await writeFile(path.join(home, 'native-history-fixture.jsonl'), nativeHistory);
+  nativeHistory = JSON.stringify({ type: 'session_meta', payload: { id: nativeId, cwd: root } }) + '\n' +
+    JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Synthetic saved native history' }] } }) + '\n';
+  await mkdir(path.dirname(nativeHistoryFile), { recursive: true });
+  await writeFile(nativeHistoryFile, nativeHistory);
   const notifications = new AgencyNotificationStore(path.join(config, 'agency-notifications.json'));
   await notifications.initialize();
   const item = await notifications.create({ workspaceId: workspace.id, tabId: native.tab.id, title: 'Read fixture', body: 'synthetic', state: 'finished' });
@@ -192,6 +195,11 @@ try {
   assert.equal((await fetch(new URL('/', ready.url))).status, 401);
   assert.equal((await fetch(ready.url, { headers: { Origin: 'https://foreign.example' } })).status, 403);
   assert.equal(await realpath(path.join(stateDir, 'healthy')), await realpath(path.join(stateDir, 'current')));
+  const opener = path.join(root, 'open-browser-fixture');
+  const openUrlFile = path.join(root, 'opened-url');
+  await writeFile(opener, '#!/bin/sh\nprintf "%s" "$1" > "$MAW_OPEN_TEST_URL"\n', { mode: 0o700 });
+  await run(path.join(scripts, 'maw'), ['open', opener], { env: { ...env, MAW_OPEN_TEST_URL: openUrlFile } });
+  assert.equal(await readFile(openUrlFile, 'utf8'), ready.url, 'maw open transparently supplies internal authentication');
   const originalPid = ready.pid;
   await maw('start'); assert.match((await maw('status')).stdout, /Healthy/);
   assert.equal(Number((await run('systemctl', ['--user', 'show', unit, '--property=MainPID', '--value'])).stdout), originalPid);
@@ -203,6 +211,9 @@ try {
   const a = (await request({ type: 'agency.webTab.create', workspaceId: workspace.id, title: 'Conversation A', url: 'https://chatgpt.com/' })).tab;
   const b = (await request({ type: 'agency.webTab.create', workspaceId: workspace.id, title: 'Conversation B', url: 'https://chatgpt.com/' })).tab;
   const pageA = await pageFor(a.targetRef); const pageB = await pageFor(b.targetRef);
+  // CDP-created targets can start their first request before Playwright attaches.
+  // Load the locally fulfilled fixture after attachment before exercising its UI.
+  await Promise.all([pageA.goto('https://chatgpt.com/'), pageB.goto('https://chatgpt.com/')]);
   await pageA.getByRole('button', { name: 'Conversation A', exact: true }).click();
   await pageB.getByRole('button', { name: 'Conversation B', exact: true }).click();
   await select(a);
@@ -224,6 +235,8 @@ try {
   await select(a); await select(b); await select(a);
   assert.equal((await tabs()).find(t => t.id === a.id).targetRef, a.targetRef);
   assert.equal((await tabs()).find(t => t.id === b.id).targetRef, b.targetRef);
+  assert.equal((await pageFor(a.targetRef)).url(), A);
+  assert.equal((await pageFor(b.targetRef)).url(), B);
   assert.equal(context.pages().filter(p => p.url().startsWith('https://chatgpt.com/')).length, 2);
   check('real update preserves projects, workspaces, profiles, native IDs/manual recovery, tab metadata, notification read/Done, histories and owned browser targets');
 
