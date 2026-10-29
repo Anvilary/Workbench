@@ -38,13 +38,13 @@ export class NekoBrowserControllerDriver implements BrowserControllerDriver {
     }
   }
 
-  private async request(method: string, path: string, body?: unknown): Promise<Record<string, unknown>> {
+  private async request(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<Record<string, unknown>> {
     try {
       const response = await fetch(`${this.baseUrl}${path}`, {
         method,
         headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: AbortSignal.any([AbortSignal.timeout(this.timeoutMs), ...(signal ? [signal] : [])]),
         redirect: 'error',
       });
       // Do not include arbitrary upstream bodies, URLs or credentials in errors.
@@ -102,10 +102,10 @@ export class NekoBrowserControllerDriver implements BrowserControllerDriver {
     return { targetRef: response.id };
   }
 
-  async verifyTargetOwnership(targetRef: string, expected: TargetMetadata): Promise<boolean> {
+  async verifyTargetOwnership(targetRef: string, expected: TargetMetadata, signal?: AbortSignal): Promise<boolean> {
     const owner = this.metadata(expected);
     const query = new URLSearchParams({ tabId: owner.tabId, workspaceId: owner.workspaceId });
-    const response = await this.request('GET', `${this.targetPath(targetRef)}?${query}`);
+    const response = await this.request('GET', `${this.targetPath(targetRef)}?${query}`, undefined, signal);
     if (response.id !== targetRef || typeof response.verified !== 'boolean') {
       throw new BrowserEngineUnavailableError('Neko controller did not confirm target ownership');
     }
@@ -121,10 +121,10 @@ export class NekoBrowserControllerDriver implements BrowserControllerDriver {
     }
   }
 
-  async getTargetUrl(targetRef: string): Promise<string | null> {
+  async getTargetUrl(targetRef: string, signal?: AbortSignal): Promise<string | null> {
     const owner = this.owner(targetRef);
     const query = new URLSearchParams({ tabId: owner.tabId, workspaceId: owner.workspaceId });
-    const response = await this.request('GET', `${this.targetPath(targetRef)}?${query}`);
+    const response = await this.request('GET', `${this.targetPath(targetRef)}?${query}`, undefined, signal);
     if (response.id !== targetRef || response.verified !== true) {
       throw new BrowserEngineUnavailableError('Neko controller could not verify the observed target');
     }
@@ -133,10 +133,10 @@ export class NekoBrowserControllerDriver implements BrowserControllerDriver {
     return validation.valid ? validation.normalizedUrl! : null;
   }
 
-  async findOwnedTarget(expected: TargetMetadata): Promise<string | null> {
+  async findOwnedTarget(expected: TargetMetadata, signal?: AbortSignal): Promise<string | null> {
     const owner = this.metadata(expected);
     const query = new URLSearchParams({ tabId: owner.tabId, workspaceId: owner.workspaceId });
-    const response = await this.request('GET', `/managed/tabs?${query}`);
+    const response = await this.request('GET', `/managed/tabs?${query}`, undefined, signal);
     if (response.found === false && response.id === null) return null;
     if (response.found !== true || typeof response.id !== 'string') {
       throw new BrowserEngineUnavailableError('Neko controller did not confirm the ownership receipt');
@@ -156,8 +156,8 @@ export class NekoBrowserControllerDriver implements BrowserControllerDriver {
     }
   }
 
-  async closeTarget(targetRef: string): Promise<void> {
-    const response = await this.request('DELETE', this.targetPath(targetRef), { metadata: this.owner(targetRef) });
+  async closeTarget(targetRef: string, signal?: AbortSignal): Promise<void> {
+    const response = await this.request('DELETE', this.targetPath(targetRef), { metadata: this.owner(targetRef) }, signal);
     if (response.id !== targetRef || response.closed !== true) {
       throw new BrowserEngineUnavailableError('Neko controller did not confirm target destruction');
     }

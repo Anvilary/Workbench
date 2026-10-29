@@ -523,15 +523,17 @@ export class BrowserTabAdapter {
    * Reconcile tabs with cleanupRequired === true, safely destroying orphaned browser targets.
    * Never touches or closes any other tabs.
    */
-  async reconcileCleanup(workspaceId?: WorkspaceId): Promise<void> {
+  async reconcileCleanup(workspaceId?: WorkspaceId, signal?: AbortSignal): Promise<void> {
     const workspaceIds = new Set(this.listTabs(workspaceId, { includeClosed: true })
       .filter((tab) => tab.cleanupRequired).map((tab) => tab.workspaceId));
     for (const id of workspaceIds) {
       await this.withWorkspaceLock(id, async () => {
+        if (signal?.aborted) return;
         const tabs = this.listTabs(id, { includeClosed: true }).filter((tab) => tab.cleanupRequired);
         for (const tab of tabs) {
+          if (signal?.aborted) break;
           try {
-            await this.cleanupTarget(tab);
+            await this.cleanupTarget(tab, signal);
           } catch {
             // An unavailable registry is not evidence of absent ownership.
             // Retain the tombstone and receipt for a safe subsequent retry.
@@ -564,31 +566,32 @@ export class BrowserTabAdapter {
   }
 
   /** Observe user navigation without creating, selecting or navigating pages. */
-  async refreshLiveTabs(workspaceId?: WorkspaceId): Promise<readonly WebTab[]> {
+  async refreshLiveTabs(workspaceId?: WorkspaceId, signal?: AbortSignal): Promise<readonly WebTab[]> {
     if (!this.driver.getTargetUrl) return this.listTabs(workspaceId).map((tab) => ({ ...tab }));
     const workspaces = new Set(this.listTabs(workspaceId).map((tab) => tab.workspaceId));
     for (const id of workspaces) {
       await this.withWorkspaceLock(id, async () => {
+        if (signal?.aborted) return;
         let changed = false;
         for (const tab of this.listTabs(id)) {
-          if (!tab.targetRef) continue;
+          if (signal?.aborted) break;
           const previousUrl = tab.url;
           const previousState = tab.runtimeState;
           const previousRef = tab.targetRef;
           try {
-            if (!await this.driver.verifyTargetOwnership(tab.targetRef, this.owner(tab))) {
+            if (!tab.targetRef && this.driver.findOwnedTarget) {
+              tab.targetRef = await this.driver.findOwnedTarget(this.owner(tab), signal);
+            }
+            if (!tab.targetRef) continue;
+            if (!await this.driver.verifyTargetOwnership(tab.targetRef, this.owner(tab), signal)) {
               tab.targetRef = null;
               tab.runtimeState = 'detached';
             } else {
-              const url = await this.driver.getTargetUrl!(tab.targetRef);
-              if (url) {
-                const validated = validateChatGptUrl(url);
-                if (validated.valid) tab.url = validated.normalizedUrl!;
-              }
-              if (tab.runtimeState === 'detached') tab.runtimeState = 'attached';
+              await this.observeUrl(tab, signal);
+              if (tab.runtimeState === 'detached' || tab.runtimeState === 'error') tab.runtimeState = 'attached';
             }
           } catch {
-            tab.runtimeState = 'error';
+            if (!signal?.aborted) tab.runtimeState = 'error';
           }
           if (tab.url !== previousUrl || tab.runtimeState !== previousState || tab.targetRef !== previousRef) {
             tab.updatedAt = new Date().toISOString();
@@ -605,20 +608,20 @@ export class BrowserTabAdapter {
     return { tabId: tab.id, workspaceId: tab.workspaceId, url: tab.url };
   }
 
-  private async cleanupTarget(tab: WebTab): Promise<void> {
+  private async cleanupTarget(tab: WebTab, signal?: AbortSignal): Promise<void> {
     let target = tab.targetRef;
-    if (target && !await this.driver.verifyTargetOwnership(target, this.owner(tab))) target = null;
+    if (target && !await this.driver.verifyTargetOwnership(target, this.owner(tab), signal)) target = null;
     if (!target && this.driver.findOwnedTarget) {
-      target = await this.driver.findOwnedTarget(this.owner(tab));
+      target = await this.driver.findOwnedTarget(this.owner(tab), signal);
       if (target) {
         tab.targetRef = target;
         await this.persist();
-        if (!await this.driver.verifyTargetOwnership(target, this.owner(tab))) {
+        if (!await this.driver.verifyTargetOwnership(target, this.owner(tab), signal)) {
           throw new BrowserTabStoreError('session-unavailable', 'Ownership receipt changed during cleanup');
         }
       }
     }
-    if (target) await this.driver.closeTarget(target);
+    if (target) await this.driver.closeTarget(target, signal);
     tab.targetRef = null;
     tab.cleanupRequired = false;
     tab.runtimeState = 'closed';
@@ -633,15 +636,54 @@ export class BrowserTabAdapter {
       // Transport/auth failures propagate. Treating them as false could create
       // duplicate pages while the original is still running.
       const verified = await this.driver.verifyTargetOwnership(tab.targetRef, this.owner(tab));
-      if (verified) return;
+      if (verified) {
+        await this.observeUrl(tab);
+        await this.persist();
+        return;
+      }
       tab.targetRef = null;
       tab.runtimeState = 'detached';
       await this.persist();
+    }
+    // A receipt can outlive a missing/stale MAW target hint. Resolve it before
+    // requesting a page; transport/uncertain-ownership errors must propagate.
+    const owned = await this.driver.findOwnedTarget?.(this.owner(tab));
+    if (owned) {
+      if (!await this.driver.verifyTargetOwnership(owned, this.owner(tab))) {
+        throw new BrowserTabStoreError('session-unavailable', 'Browser ownership changed during recovery');
+      }
+      tab.targetRef = owned;
+      tab.runtimeState = 'attached';
+      await this.observeUrl(tab);
+      await this.persist();
+      return;
     }
     const result = await this.driver.openTarget(tab.url, this.owner(tab));
     tab.targetRef = result.targetRef;
     tab.runtimeState = 'attached';
     await this.persist();
+  }
+
+  private async observeUrl(tab: WebTab, signal?: AbortSignal): Promise<void> {
+    const url = await this.driver.getTargetUrl?.(tab.targetRef!, signal);
+    if (!url || signal?.aborted) return;
+    const validated = validateChatGptUrl(url);
+    if (!validated.valid) return;
+    const observed = new URL(validated.normalizedUrl!);
+    // ChatGPT may redirect to its landing page while reconnecting or signing in.
+    // Retain the last conversation until another full URL is observed. Explicit
+    // MAW navigation can still deliberately commit the homepage.
+    if (observed.pathname === '/' && new URL(tab.url).pathname !== '/') return;
+    tab.url = observed.href;
+  }
+
+  /** Bounded observation, then drain writes before releasing store ownership. */
+  async captureFinalUrls(timeoutMs = 3_000): Promise<void> {
+    try {
+      await this.refreshLiveTabs(undefined, AbortSignal.timeout(timeoutMs));
+    } finally {
+      await this.flush();
+    }
   }
 
   private async persist(): Promise<void> {
