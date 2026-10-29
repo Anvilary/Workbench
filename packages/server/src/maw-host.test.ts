@@ -131,7 +131,7 @@ test('control url outputs authenticated loopback URL and open launches specified
     ]);
 
     const helpOut = await run(maw, ['help'], { cwd: '/', env: environment });
-    assert.match(helpOut.stdout, /Usage: maw \{start\|stop\|restart\|status\|logs \[--follow\]\|url\|open \[browser\]\|help\}/);
+    assert.match(helpOut.stdout, /Usage: maw \{start\|stop\|restart\|status\|logs \[--follow\]\|url\|open \[browser\]\|update \[--no-restart\|--restart\]\|help\}/);
 
     await assert.rejects(run(maw, ['url', 'extra'], { cwd: '/', env: environment }));
     await assert.rejects(run(maw, ['open', 'b1', 'b2'], { cwd: '/', env: environment }));

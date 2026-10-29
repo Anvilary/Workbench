@@ -1,49 +1,129 @@
 #!/bin/sh
 set -eu
-unit=maw.service
+
+unit="${MAW_UNIT:-maw.service}"
 node_bin=$(command -v node 2>/dev/null || printf '%s' '/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/node')
 [ -n "$node_bin" ] || node_bin='/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/node'
+
 self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-if [ -f "$self_dir/control.mjs" ]; then
+if [ -n "${MAW_CONTROL_SCRIPT:-}" ]; then
+  control_script="$MAW_CONTROL_SCRIPT"
+elif [ -f "$self_dir/control.mjs" ]; then
   control_script="$self_dir/control.mjs"
 else
   control_script=/home/alteixeira20/.local/lib/maw/control.mjs
 fi
-if [ -f "$self_dir/maw-update.sh" ]; then
+if [ -n "${MAW_UPDATE_SCRIPT:-}" ]; then
+  update_script="$MAW_UPDATE_SCRIPT"
+elif [ -f "$self_dir/maw-update.sh" ]; then
   update_script="$self_dir/maw-update.sh"
 else
   update_script=/home/alteixeira20/.local/lib/maw/maw-update.sh
 fi
+if [ -n "${MAW_RESTART_HELPER:-}" ]; then
+  restart_helper="$MAW_RESTART_HELPER"
+elif [ -f "$self_dir/maw-restart-helper.sh" ]; then
+  restart_helper="$self_dir/maw-restart-helper.sh"
+else
+  restart_helper=/home/alteixeira20/.local/lib/maw/maw-restart-helper.sh
+fi
+
 usage() { printf '%s\n' 'Usage: maw {start|stop|restart|status|logs [--follow]|url|open [browser]|update [--no-restart|--restart]|help}'; }
+
+is_inside_maw() {
+  # 1. Cgroup inspection
+  if [ -r /proc/self/cgroup ] && grep -q "${unit}" /proc/self/cgroup 2>/dev/null; then
+    return 0
+  fi
+  # 2. Ancestor PID chain inspection
+  local maw_pid check_pid
+  maw_pid=$(systemctl --user show "$unit" --property=MainPID --value 2>/dev/null || true)
+  if [ -n "$maw_pid" ] && [ "$maw_pid" -gt 0 ] 2>/dev/null; then
+    check_pid=$$
+    while [ -n "$check_pid" ] && [ "$check_pid" -gt 1 ] 2>/dev/null; do
+      check_pid=$(ps -o ppid= -p "$check_pid" 2>/dev/null | tr -d ' ') || break
+      case "$check_pid" in ''|*[!0-9]*) break ;; esac
+      [ "$check_pid" = "$maw_pid" ] && return 0
+    done
+  fi
+  return 1
+}
+
 command_name=${1:-help}
 case "$command_name" in
-  start) [ "$#" -eq 1 ] || { usage >&2; exit 2; }; exec systemctl --user start "$unit" ;;
-  stop|restart)
+  start)
+    [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+    exec systemctl --user start "$unit"
+    ;;
+  stop)
     [ "$#" -eq 1 ] || { usage >&2; exit 2; }
     printf '%s\n' 'Server-owned live PTYs will terminate. Metadata and native history remain.' >&2
-    if [ "$command_name" = restart ]; then
-      printf '%s\n' 'Eligible verified native conversations use replacement PTYs during recovery.' >&2
+    exec systemctl --user stop "$unit"
+    ;;
+  restart)
+    [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+    printf '%s\n' 'Warning: Active server-owned live PTYs will terminate. Original PTY will not survive.' >&2
+    printf '%s\n' 'Metadata and native history remain. Eligible verified native conversations use replacement PTYs during recovery.' >&2
+    if is_inside_maw; then
+      runtime_dir="${MAW_RUNTIME_DIR:-${XDG_RUNTIME_DIR:-/tmp}/maw}"
+      lock_file="${MAW_RESTART_LOCK:-$runtime_dir/restart.lock}"
+      if [ -f "$lock_file" ]; then
+        lpid=$(cat "$lock_file" 2>/dev/null || true)
+        if [ -n "$lpid" ] && kill -0 "$lpid" 2>/dev/null; then
+          printf '%s\n' 'A restart is already in progress or scheduled. Duplicate restart avoided.' >&2
+          exit 1
+        fi
+      fi
+      ts=$(date +%s)
+      unit_name="maw-restart-$ts"
+      printf '%s\n' 'Restarting MAW from inside MAW. Delegating restart outside service control group...' >&2
+      if systemd-run --user \
+          --unit="$unit_name" \
+          --no-block \
+          --description="MAW safe restart helper" \
+          --on-active=1 \
+          /bin/sh "$restart_helper" --unit "$unit"; then
+        printf '%s\n' "Safe restart scheduled successfully (transient unit: $unit_name)."
+        printf '%s\n' "Your terminal session will be interrupted shortly. Use 'maw status' to verify."
+        exit 0
+      else
+        printf '%s\n' 'Error: Failed to schedule safe restart transient unit.' >&2
+        exit 1
+      fi
+    else
+      exec /bin/sh "$restart_helper" --unit "$unit"
     fi
-    exec systemctl --user "$command_name" "$unit" ;;
+    ;;
   status)
     systemctl --user show "$unit" --property=ActiveState,SubState,MainPID,ExecMainStatus
-    exec "$node_bin" "$control_script" status ;;
+    exec "$node_bin" "$control_script" status
+    ;;
   logs)
     case "${2:-}" in
       '') exec journalctl --user -u "$unit" -n 80 --no-pager ;;
       --follow|-f) exec journalctl --user -u "$unit" -n 80 --follow ;;
       *) usage >&2; exit 2 ;;
-    esac ;;
+    esac
+    ;;
   url)
     [ "$#" -eq 1 ] || { usage >&2; exit 2; }
-    exec "$node_bin" "$control_script" url ;;
+    exec "$node_bin" "$control_script" url
+    ;;
   open)
     case "$#" in
       1) exec "$node_bin" "$control_script" open ;;
       2) exec "$node_bin" "$control_script" open "$2" ;;
       *) usage >&2; exit 2 ;;
-    esac ;;
-  update) exec /bin/sh "$update_script" "$@" ;;
-  help|--help|-h) usage ;;
-  *) usage >&2; exit 2 ;;
+    esac
+    ;;
+  update)
+    exec /bin/sh "$update_script" "$@"
+    ;;
+  help|--help|-h)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
 esac
