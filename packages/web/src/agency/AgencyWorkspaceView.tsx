@@ -11,6 +11,7 @@ import { AgencyBrowserViewer } from './AgencyBrowserViewer.js';
 import { validateChatGptUrl, validateWebTabTitle } from '@agent-workbench/shared';
 import type { AgencyTransport } from './model.js';
 import type { useAgencyStore } from './useAgencyStore.js';
+import { AgencyProfileDialog } from './AgencyProfileDialog.js';
 
 interface Props {
   workspace: AgencyWorkspace;
@@ -97,6 +98,9 @@ function SessionPane({ session, active, focusTerminal, connection, online, reque
         {session.recovery?.message && <p role="status">{session.recovery.message}</p>}
         <p>{t('agency.tabs.historyKept')}</p>
         {(session.kind === 'terminal' || session.nativeSessionId) && <button type="button" className="agency-secondary-button" disabled={!online || resuming || live} onClick={() => void resume()}>{session.kind === 'terminal' ? t('agency.tabs.restartShell') : t('agency.ui.resumeNative')}</button>}
+        {session.kind === 'agent' && !session.nativeSessionId && (session.lifecycle === 'failed' || session.lifecycle === 'exited') && session.tab && (
+          <button type="button" className="agency-secondary-button" disabled={!online} onClick={() => void request({ type: 'agency.tab.action', workspaceId: session.workspaceId, tabId: session.tab!.id, action: 'close' })}>{t('agency.tabs.closeSession')}</button>
+        )}
       </div>}
     </div>
   </div>;
@@ -113,6 +117,10 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
   const [webUrl, setWebUrl] = useState('https://chatgpt.com/');
   const [webTitle, setWebTitle] = useState('');
   const [profileId, setProfileId] = useState<CliProfileId | ''>(profiles[0]?.id ?? '');
+  const [configuringProfile, setConfiguringProfile] = useState<AgencyCliProfile | null>(null);
+  const selectedProfile = profiles.find(profile => profile.id === profileId);
+  const isUnconfigured = selectedProfile?.configurationStatus === 'error' &&
+    (selectedProfile.configurationMessage?.includes('Configure an executable') ?? false);
   const [error, setError] = useState<string | null>(null);
   const [closing, setClosing] = useState<WorkspaceTab | null>(null);
   const [busy, setBusy] = useState(false);
@@ -156,7 +164,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
     return () => { resize.disconnect(); element.removeEventListener('wheel', wheel); };
   }, []);
   useEffect(() => {
-    if (!picker && !closing && !webDialog) return;
+    if ((!picker && !closing && !webDialog) || configuringProfile) return;
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !flight.current) { setPicker(false); setClosing(null); setWebDialog(null); }
       if (event.key === 'Tab' && dialog.current) {
@@ -167,7 +175,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
       }
     };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
-  }, [picker, closing, webDialog]);
+  }, [picker, closing, webDialog, configuringProfile]);
   async function add(kind: 'agent' | 'terminal') {
     if (flight.current || !online || (kind === 'agent' && !profileId)) return;
     setKeyboardTabs(false);
@@ -294,15 +302,74 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
     </div>
     {(picker || closing || webDialog) && <div className="agency-modal-backdrop"><div ref={dialog} className="agency-dialog" role="dialog" aria-modal="true" aria-labelledby="maw-session-dialog">
       <h2 id="maw-session-dialog">{closing ? t('agency.tabs.confirmClose', { name: name(closing) }) : webDialog ? webHeading : t('agency.tabs.newCLI')}</h2>
-      {!closing && !webDialog && !canLaunchAgent(profiles.find(profile => profile.id === profileId)) && <p role="status">{profiles.find(profile => profile.id === profileId)?.configurationMessage}</p>}
+      {!closing && !webDialog && isUnconfigured && (
+        <div className="agency-callout" role="alert" style={{
+          background: 'rgba(234, 179, 8, 0.12)',
+          border: '1px solid rgba(234, 179, 8, 0.35)',
+          borderRadius: '8px',
+          padding: '10px 14px',
+          margin: '12px 0',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          fontSize: '12px',
+          color: '#fef08a',
+        }}>
+          <span>⚙ {t('agency.profile.notConfiguredBanner')}</span>
+          <button
+            type="button"
+            className="agency-primary-button"
+            style={{ padding: '6px 14px', fontSize: '12px', whiteSpace: 'nowrap' }}
+            onClick={() => setConfiguringProfile(selectedProfile ?? null)}
+          >
+            {t('agency.profile.configureAction')}
+          </button>
+        </div>
+      )}
+      {!closing && !webDialog && !isUnconfigured && !canLaunchAgent(selectedProfile) && (
+        <p role="status">{selectedProfile?.configurationStatus === 'not-installed'
+          ? t('agency.profile.executableNotFound')
+          : selectedProfile?.configurationMessage}
+        </p>
+      )}
       {closing ? <p>{t('agency.tabs.closeExplanation')}</p> : webDialog ? <form id="maw-web-tab-form" onSubmit={event => { event.preventDefault(); void saveWeb(); }}>
         {webDialog !== 'navigate' && <label className="agency-field"><span>{t('agency.web.title')}</span><input autoFocus value={webTitle} maxLength={120} required onChange={event => setWebTitle(event.target.value)} /></label>}
         {<label className="agency-field"><span>{t('agency.web.url')}</span><input autoFocus={webDialog === 'navigate'} type="url" value={webUrl} maxLength={2048} required onChange={event => setWebUrl(event.target.value)} /></label>}
-      </form> : <label className="agency-field"><span>{t('agency.ui.cliProfile')}</span><select autoFocus value={profileId} onChange={event => setProfileId(event.target.value as CliProfileId)}>{profiles.map(profile => <option value={profile.id} key={profile.id}>{profile.label}</option>)}</select></label>}
+      </form> : <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', marginBottom: '16px' }}>
+        <label className="agency-field" style={{ flex: 1, marginBottom: 0 }}>
+          <span>{t('agency.ui.cliProfile')}</span>
+          <select autoFocus value={profileId} onChange={event => setProfileId(event.target.value as CliProfileId)}>
+            {profiles.map(profile => <option value={profile.id} key={profile.id}>{profile.label}</option>)}
+          </select>
+        </label>
+        {selectedProfile && (
+          <button
+            type="button"
+            className={isUnconfigured ? "agency-primary-button" : "agency-secondary-button"}
+            style={{ height: '40px', padding: '0 14px', whiteSpace: 'nowrap', fontWeight: 600 }}
+            onClick={() => setConfiguringProfile(selectedProfile)}
+          >
+            {t('agency.profile.configureAction')}
+          </button>
+        )}
+      </div>}
       {error && <p role="alert" className="agency-error">{error}</p>}
       <div className="agency-dialog-actions"><button type="button" autoFocus={!!closing} disabled={busy} onClick={() => { setPicker(false); setClosing(null); setWebDialog(null); }}>{t('common.cancel')}</button>
-        {webDialog ? <button type="submit" form="maw-web-tab-form" className="agency-primary-button" disabled={busy || !online}>{webHeading}</button> : <button type="button" className="agency-primary-button" disabled={busy || !online || (!closing && !canLaunchAgent(profiles.find(profile => profile.id === profileId)))} onClick={() => closing ? void close(closing) : void add('agent')}>{closing ? t('agency.tabs.closeSession') : t('agency.ui.startCLI')}</button>}
+        {webDialog ? <button type="submit" form="maw-web-tab-form" className="agency-primary-button" disabled={busy || !online}>{webHeading}</button> : <button type="button" className="agency-primary-button" disabled={busy || !online || (!closing && !canLaunchAgent(selectedProfile))} onClick={() => closing ? void close(closing) : void add('agent')}>{closing ? t('agency.tabs.closeSession') : t('agency.ui.startCLI')}</button>}
       </div>
     </div></div>}
+    {configuringProfile && <AgencyProfileDialog
+      profile={configuringProfile}
+      onClose={() => setConfiguringProfile(null)}
+      onSave={async (executablePath, argv) => {
+        await request({
+          type: 'agency.profile.configure',
+          profileId: configuringProfile.id,
+          executable: executablePath,
+          args: argv,
+        });
+      }}
+    />}
   </section>;
 }

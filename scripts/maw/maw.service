@@ -6,9 +6,9 @@ StartLimitBurst=3
 
 [Service]
 Type=exec
-WorkingDirectory=/home/alteixeira20/Projects/My-Amazing-Workspace
-ExecStartPre=/usr/bin/test -f /home/alteixeira20/Projects/My-Amazing-Workspace/packages/server/src/maw-host.ts
-ExecStart=/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/node --import /home/alteixeira20/Projects/My-Amazing-Workspace/packages/server/node_modules/tsx/dist/loader.mjs /home/alteixeira20/Projects/My-Amazing-Workspace/packages/server/src/index.ts --prod
+WorkingDirectory=/home/alteixeira20/.local/share/maw/current
+ExecStartPre=/usr/bin/test -f /home/alteixeira20/.local/share/maw/current/packages/server/src/maw-host.ts
+ExecStart=/home/alteixeira20/.nvm/versions/node/v24.22.0/bin/node --import /home/alteixeira20/.local/share/maw/current/packages/server/node_modules/tsx/dist/loader.mjs /home/alteixeira20/.local/share/maw/current/packages/server/src/index.ts --prod
 Environment=PATH=/home/alteixeira20/.nvm/versions/node/v24.22.0/bin:/home/alteixeira20/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=AGENT_WORKBENCH_NO_OPEN=1
 Environment=MAW_RUNTIME_DIR=%t/maw

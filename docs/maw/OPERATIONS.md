@@ -63,3 +63,32 @@ Logical tab count and process count differ: historical/exited/closed attempts re
 Back up agency-sessions.json and its validated backup privately before deployment. Schema 1 migrates to schema 2 at startup/next save; all old runtime/native references remain. The prior PR #8 reader rejects schema 2 rather than silently downgrading it. Before rollback, preserve the complete newer schema 2 files under private backup names. Returning to the older reader requires an explicitly reviewed schema 1 snapshot and will not display newer logical tabs; never overwrite or discard the schema 2 history to make an older build start. Native provider history remains outside MAW and must not be removed.
 
 Manual acceptance: create each preset; add mixed/repeated profiles and three shells; verify exact native auth contexts; switch/scroll/reorder/refresh without process creation; cancel and confirm closing only one running session; close an exited tab; restart the managed server only in an approved isolated/deployed environment and inspect shell replacement/native-resume identities; verify Done/Archived and closed tabs stay stopped. Check real native TUI bottom rows, keyboard/clipboard behavior, keyring cgroup prerequisites and reboot with the original profiles. No paid/native authentication smoke was performed automatically.
+
+## feat/maw-launcher-update-onboarding additions (2026-10-29)
+
+### Launcher Enhancements
+
+1. **`maw url`**: Prints the authenticated localhost URL (e.g. `http://127.0.0.1:<port>/?token=<token>`) strictly to standard output for the invoking authorized user. The session token is never emitted into systemd logs or journalctl, preserving loopback credential confinement.
+2. **Improved `maw open [browser]`**: Accepts an optional browser binary parameter (e.g., `maw open brave`, `maw open google-chrome`, `maw open firefox`). When omitted, defaults to `xdg-open`. Pre-validates service readiness and URL validity before spawning. Browsers are never automatically spawned on service startup.
+3. **`maw update`**: Automated, guarded repository updates supporting `--no-restart` (default for staging without interrupting active work) and `--restart` (immediate reload). It verifies worktree cleanliness (`git status --porcelain`) and branch convergence before attempting a fast-forward merge (`git merge --ff-only`), executes frozen dependency installation (`corepack pnpm install --frozen-lockfile`), validates build artifacts (`pnpm typecheck`, profile tests, `pnpm build`), and records operational history to `~/.local/share/maw/update-log.jsonl`. If build verification fails, it rolls back git and dependency state automatically to leave the running server unaffected.
+
+### Developer-Safe Restart Mechanism
+
+When `maw update --restart` (or `maw restart`) is executed inside a MAW-hosted shell or agent tab, issuing a synchronous `systemctl --user restart maw.service` would trigger `KillMode=control-group` and terminate the invoking shell before completion. 
+
+The launcher detects whether any ancestor process belongs to `maw.service`'s `MainPID`. If detected inside a MAW shell, it hands off the restart to a transient systemd user timer unit:
+```sh
+systemd-run --user --unit=maw-restart-$ts --no-block --on-active=2 systemctl --user restart maw.service
+```
+This enables the update process to finish writing audit logs and exit code 0 cleanly, while the transient unit restarts the service out-of-cgroup 2 seconds later.
+
+### Profile Onboarding Improvements
+
+1. **Profile Suggestions (`profile-suggestions.ts`)**: Introduces `suggestedExecutable()` and `providerSetupNote()` helpers to provide provider-specific wrapper recommendations and contextual setup guidance.
+2. **First-Time Guidance in `AgencyProfileDialog`**: When a profile's executable field is empty, the dialog displays provider-specific onboarding notes explaining the wrapper requirement (e.g., distinct wrappers `codex00`, `codex01`, `agy00`–`agy05`, `claude`) and placeholder suggestions, without auto-filling or persisting unreviewed executables.
+3. **Unconfigured Profile Banners (`AgencyWorkspaceView`)**: Displays a clear, prominent "Profile not configured" banner with an inline "Configure" button whenever an unconfigured profile is viewed or selected in a workspace.
+
+For complete operational details, safety procedures, and onboarding guides, refer to:
+- [LAUNCHER.md](file:///home/alteixeira20/Projects/My-Amazing-Workspace/docs/maw/LAUNCHER.md): Complete command reference, security model, and acceptance workflow.
+- [UPDATE-ROLLBACK.md](file:///home/alteixeira20/Projects/My-Amazing-Workspace/docs/maw/UPDATE-ROLLBACK.md): Detailed update lifecycle, rollback boundaries, and manual recovery steps.
+- [PROFILE-ONBOARDING.md](file:///home/alteixeira20/Projects/My-Amazing-Workspace/docs/maw/PROFILE-ONBOARDING.md): First-run setup, wrapper naming rules, and provider-specific configurations.
