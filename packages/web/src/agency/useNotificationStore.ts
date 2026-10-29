@@ -174,10 +174,37 @@ export function useNotificationStore(
   }, [request]);
 
   const markDone = useCallback(async (notificationId: string) => {
-    completedNotificationIds.current.add(notificationId);
-    setToasts((prev) => prev.filter((t) => t.notificationId !== notificationId));
-    await request({ type: 'agency.notification.done', notificationId });
-    setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
+    let removedNotification: MawNotificationItem | undefined;
+    let removedToasts: ToastItem[] = [];
+
+    // Optimistically remove from visible lists
+    setNotifications((prev) => {
+      removedNotification = prev.find((n) => n.id === notificationId);
+      return prev.filter((n) => n.id !== notificationId);
+    });
+    setToasts((prev) => {
+      removedToasts = prev.filter((t) => t.notificationId === notificationId);
+      return prev.filter((t) => t.notificationId !== notificationId);
+    });
+
+    try {
+      await request({ type: 'agency.notification.done', notificationId });
+      // Only commit permanent suppression against snapshots on confirmed success
+      completedNotificationIds.current.add(notificationId);
+    } catch (error) {
+      // Explicit rollback on failure: restore state and ensure ID is never suppressed
+      completedNotificationIds.current.delete(notificationId);
+      if (removedNotification) {
+        setNotifications((prev) => {
+          if (prev.some((n) => n.id === notificationId)) return prev;
+          return [removedNotification!, ...prev];
+        });
+      }
+      if (removedToasts.length > 0) {
+        setToasts((prev) => [...prev, ...removedToasts]);
+      }
+      throw error;
+    }
   }, [request]);
 
   const acknowledgeTab = useCallback(async (workspaceId: WorkspaceId, tabId: string) => {

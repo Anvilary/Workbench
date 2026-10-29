@@ -123,6 +123,10 @@ const connection = {
           break;
         }
         case 'agency.notification.done': {
+          if (window.agencyTest && window.agencyTest.failDone) {
+            reply('agency.error', { message: 'Injected persistence failure', code: 'internal-error' });
+            break;
+          }
           const item = notifications.find(n => n.id === m.notificationId);
           if (item) {
             item.acknowledgedAt = new Date().toISOString();
@@ -151,8 +155,10 @@ const connection = {
 
 window.agencyTest = {
   requests,
+  failDone: false,
   getNotifications: () => notifications,
   getActivities: () => activities,
+  emitSnapshot: () => emit({ type: 'agency.notifications.snapshot', notifications: structuredClone(notifications), activityStates: structuredClone(activities) }),
   addTurn2ToAgentB: () => {
     activities = activities.map(a => a.tabId === native2 ? { ...a, state: 'finished', taskId: 'turn-2', turnSequence: 2, updatedAt: new Date().toISOString() } : a);
     emit({ type: 'agency.tab.activity', activity: activities.find(a => a.tabId === native2) });
@@ -294,6 +300,31 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   // Simulate stale Done for Turn 1
   // Tab completion must remain finished because Turn 2 is active!
   await agentTab.locator('.agency-status-dot.finished').waitFor();
+
+  // Test 7: Rejected Done request failure & snapshot reconciliation
+  // Simulate transport/persistence failure on Done for the remaining item (Terminal A)
+  await page.evaluate(() => { window.agencyTest.failDone = true; });
+  const remainingDoneBtn = page.locator('.maw-done-button').first();
+  await remainingDoneBtn.click();
+
+  // Error bar appears showing failure
+  await page.locator('.agency-error-bar').waitFor();
+
+  // Item remains visible in inbox (not permanently suppressed)
+  assert.equal(await page.locator('.maw-inbox-item').count(), 1);
+
+  // Subsequent snapshot from server reconciles without suppressing the alert
+  await page.evaluate(() => window.agencyTest.emitSnapshot());
+  assert.equal(await page.locator('.maw-inbox-item').count(), 1);
+
+  // Clear failure, retry Done -> succeeds, commits suppression
+  await page.evaluate(() => { window.agencyTest.failDone = false; });
+  await page.locator('.maw-done-button').first().click();
+  await page.waitForFunction(() => document.querySelectorAll('.maw-inbox-item').length === 0);
+
+  // Subsequent snapshot filters out confirmed Done alert
+  await page.evaluate(() => window.agencyTest.emitSnapshot());
+  assert.equal(await page.locator('.maw-inbox-item').count(), 0);
 
   assert.deepEqual(errors, []);
 });

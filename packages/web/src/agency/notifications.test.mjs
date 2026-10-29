@@ -189,3 +189,77 @@ test('State model mapping for tab dots and indicators', () => {
   assert.equal(computeTabDotClass('unknown', 'running', 'unknown'), 'unknown');
   assert.equal(computeTabDotClass('idle', 'running', 'idle'), 'idle');
 });
+
+test('Done request failure rolls back local suppression and reconciles with incoming snapshots', async () => {
+  const completedNotificationIds = new Set();
+  let notifications = [
+    { id: 'notif-1', title: 'Task A', state: 'finished', read: false },
+    { id: 'notif-2', title: 'Task B', state: 'finished', read: false },
+  ];
+  let toasts = [
+    { id: 'toast-1', notificationId: 'notif-1' },
+  ];
+
+  async function markDoneWithRollback(notificationId, simulateServerError = false) {
+    let removedNotification;
+    let removedToasts = [];
+
+    // Optimistic removal
+    notifications = notifications.filter(n => {
+      if (n.id === notificationId) {
+        removedNotification = n;
+        return false;
+      }
+      return true;
+    });
+    toasts = toasts.filter(t => {
+      if (t.notificationId === notificationId) {
+        removedToasts.push(t);
+        return false;
+      }
+      return true;
+    });
+
+    try {
+      if (simulateServerError) {
+        throw new Error('Transport rejected Done request');
+      }
+      completedNotificationIds.add(notificationId);
+    } catch (err) {
+      // Rollback
+      completedNotificationIds.delete(notificationId);
+      if (removedNotification) notifications = [removedNotification, ...notifications];
+      if (removedToasts.length) toasts = [...toasts, ...removedToasts];
+      throw err;
+    }
+  }
+
+  // 1. Done request fails: rolls back local visible state and does not suppress ID
+  await assert.rejects(
+    () => markDoneWithRollback('notif-1', true),
+    /Transport rejected Done request/,
+  );
+  assert.equal(completedNotificationIds.has('notif-1'), false);
+  assert.equal(notifications.some(n => n.id === 'notif-1'), true);
+  assert.equal(toasts.some(t => t.notificationId === 'notif-1'), true);
+
+  // 2. Incoming snapshot arriving after failure reconciles properly (not filtered out)
+  const snapshot = [
+    { id: 'notif-1', title: 'Task A', state: 'finished', read: false },
+    { id: 'notif-2', title: 'Task B', state: 'finished', read: false },
+  ];
+  const incomingAfterFail = snapshot.filter(item => !item.acknowledgedAt && !completedNotificationIds.has(item.id));
+  assert.equal(incomingAfterFail.length, 2);
+  assert.equal(incomingAfterFail.some(n => n.id === 'notif-1'), true);
+
+  // 3. Retry succeeds: commits client suppression and removes alert
+  await markDoneWithRollback('notif-1', false);
+  assert.equal(completedNotificationIds.has('notif-1'), true);
+  assert.equal(notifications.some(n => n.id === 'notif-1'), false);
+  assert.equal(toasts.some(t => t.notificationId === 'notif-1'), false);
+
+  // 4. Subsequent snapshot filters out confirmed Done alert
+  const incomingAfterSuccess = snapshot.filter(item => !item.acknowledgedAt && !completedNotificationIds.has(item.id));
+  assert.equal(incomingAfterSuccess.length, 1);
+  assert.equal(incomingAfterSuccess[0].id, 'notif-2');
+});

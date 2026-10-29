@@ -8,6 +8,7 @@ import type { RuntimeSessionId, WorkspaceId } from '@agent-workbench/shared';
 import { AgencyNotificationStore } from './agency-notification-store.js';
 import { TabActivityManager } from './tab-activity-manager.js';
 import { ShellSequences } from './shell-integration.js';
+import { handleAgencyNotificationDone } from '../terminal-socket.js';
 
 test('Acceptance 1: Ten ordinary shell commands produce zero inbox notifications and zero completion badges', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'maw-test-shell-10-'));
@@ -105,7 +106,7 @@ test('Acceptance 2: Native agent completion produces expected notification and f
   }
 });
 
-test('Acceptance 3 & 4: Done removes exactly one notification, clears matching tab completion, and preserves newer turns', async () => {
+test('Acceptance 3 & 4: Done removes exactly one notification, clears matching tab completion, and preserves newer turns via production handler', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'maw-test-done-race-'));
   try {
     const store = new AgencyNotificationStore(path.join(root, 'notifications.json'));
@@ -118,6 +119,18 @@ test('Acceptance 3 & 4: Done removes exactly one notification, clears matching t
     const tabB = randomUUID();
     const sessionA = randomUUID() as RuntimeSessionId;
     const sessionB = randomUUID() as RuntimeSessionId;
+
+    const mockWorkspaceStore = {
+      getWorkspace: (id: WorkspaceId) => (id === workspaceId ? { id, name: 'Workspace' } as any : null),
+    };
+
+    function createMockSocket() {
+      const messages: any[] = [];
+      return {
+        messages,
+        send: (msg: any) => messages.push(msg),
+      };
+    }
 
     // Turn 1 on Tab A completes
     await manager.handleCliActivity({
@@ -172,15 +185,27 @@ test('Acceptance 3 & 4: Done removes exactly one notification, clears matching t
     const notifA1 = store.list().find(n => n.tabId === tabA)!;
     const notifB1 = store.list().find(n => n.tabId === tabB)!;
 
-    // Simulate Done on notifA1:
-    const doneA = await store.acknowledge(notifA1.id);
-    assert.ok(doneA?.acknowledgedAt);
-    assert.equal(doneA.read, true);
+    // Invoke production Done handler on notifA1
+    const socket1 = createMockSocket();
+    await handleAgencyNotificationDone(
+      { type: 'agency.notification.done', requestId: 'req-a1', notificationId: notifA1.id },
+      socket1 as any,
+      {
+        agencyNotificationStore: store,
+        agencyActivityManager: manager,
+        agencyWorkspaceStore: mockWorkspaceStore,
+        send: (s, m) => (s as any).send(m),
+      },
+    );
+
+    // Verify response sent to socket
+    assert.equal(socket1.messages.length, 1);
+    assert.equal(socket1.messages[0].type, 'agency.notification.changed');
+    assert.equal(socket1.messages[0].requestId, 'req-a1');
+    assert.equal(socket1.messages[0].notification.id, notifA1.id);
+    assert.ok(socket1.messages[0].notification.acknowledgedAt);
 
     // Verify Tab A completion clears because notifA1 matches current turn
-    const recordA = manager.getRecord(workspaceId, tabA);
-    assert.equal(recordA?.taskId, 'turn-a1');
-    await manager.acknowledgeTab(workspaceId, tabA);
     assert.equal(manager.getTabState(workspaceId, tabA), 'idle');
 
     // Tab B's completion and notification remain untouched
@@ -216,17 +241,296 @@ test('Acceptance 3 & 4: Done removes exactly one notification, clears matching t
     const currentRec = manager.getRecord(workspaceId, tabA);
     assert.equal(currentRec?.taskId, 'turn-a2');
 
-    // Now a stale Done request arrives for notifA1 (turn-a1)!
-    // Because currentRec.taskId ('turn-a2') !== notifA1.metadata.taskId ('turn-a1'),
-    // the tab completion for turn-a2 MUST NOT be cleared!
-    const notifTaskId = (notifA1.metadata?.taskId as string) ?? 'turn-a1';
-    const isCurrentTurn = currentRec.taskId === notifTaskId;
-    assert.equal(isCurrentTurn, false, 'Stale notification turn must not match current turn');
-    if (isCurrentTurn) {
-      await manager.acknowledgeTab(workspaceId, tabA);
-    }
-    // Verify Tab A REMAINS finished!
+    // Stale Done request arrives via production handler for notifA1 (turn-a1)
+    const socketStale = createMockSocket();
+    await handleAgencyNotificationDone(
+      { type: 'agency.notification.done', requestId: 'req-stale-a1', notificationId: notifA1.id },
+      socketStale as any,
+      {
+        agencyNotificationStore: store,
+        agencyActivityManager: manager,
+        agencyWorkspaceStore: mockWorkspaceStore,
+        send: (s, m) => (s as any).send(m),
+      },
+    );
+
+    // Response acknowledges the request
+    assert.equal(socketStale.messages.length, 1);
+    assert.equal(socketStale.messages[0].type, 'agency.notification.changed');
+
+    // Tab A REMAINS finished because Turn A2 is active! Stale Done did not clear Turn A2!
     assert.equal(manager.getTabState(workspaceId, tabA), 'finished', 'Newer completion must NOT be lost through a stale Done request');
+    assert.equal(manager.getRecord(workspaceId, tabA)?.taskId, 'turn-a2');
+
+    // Now send Done for Turn A2:
+    const notifA2 = store.list().find(n => n.tabId === tabA && (n.metadata?.taskId === 'turn-a2' || n.deduplicationKey?.includes('turn-a2')))!;
+    assert.ok(notifA2, 'Notification for turn A2 must exist');
+    const socketA2 = createMockSocket();
+    await handleAgencyNotificationDone(
+      { type: 'agency.notification.done', requestId: 'req-a2', notificationId: notifA2.id },
+      socketA2 as any,
+      {
+        agencyNotificationStore: store,
+        agencyActivityManager: manager,
+        agencyWorkspaceStore: mockWorkspaceStore,
+        send: (s, m) => (s as any).send(m),
+      },
+    );
+
+    assert.equal(manager.getTabState(workspaceId, tabA), 'idle', 'Tab A returns to idle when current turn is completed');
+
+    manager.dispose();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Injected persistence failure in notification store or activity manager reports error without false success', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'maw-test-done-failure-'));
+  try {
+    const store = new AgencyNotificationStore(path.join(root, 'notifications.json'));
+    await store.initialize();
+    const manager = new TabActivityManager({ notificationStore: store, storageDir: root });
+    await manager.initialize();
+
+    const workspaceId = randomUUID() as WorkspaceId;
+    const tabId = randomUUID();
+    const sessionId = randomUUID() as RuntimeSessionId;
+    const mockWorkspaceStore = {
+      getWorkspace: (id: WorkspaceId) => (id === workspaceId ? { id, name: 'Workspace' } as any : null),
+    };
+
+    function createMockSocket() {
+      const messages: any[] = [];
+      return {
+        messages,
+        send: (msg: any) => messages.push(msg),
+      };
+    }
+
+    await manager.handleCliActivity({
+      workspaceId,
+      tabId,
+      sessionId,
+      provider: 'codex',
+      nextActivity: 'finished',
+      lifecycle: 'running',
+      taskId: 'turn-fail-1',
+      completionEvidence: 'native-turn',
+    });
+    await manager.flush();
+    await store.flush();
+
+    const notif = store.list().find(n => n.tabId === tabId)!;
+    assert.ok(notif);
+
+    // Scenario A: Injected failure in store.acknowledge
+    const originalAcknowledge = store.acknowledge.bind(store);
+    store.acknowledge = async () => { throw new Error('Disk full in notification store'); };
+
+    const socketA = createMockSocket();
+    await handleAgencyNotificationDone(
+      { type: 'agency.notification.done', requestId: 'req-err-1', notificationId: notif.id },
+      socketA as any,
+      {
+        agencyNotificationStore: store,
+        agencyActivityManager: manager,
+        agencyWorkspaceStore: mockWorkspaceStore,
+        send: (s, m) => (s as any).send(m),
+      },
+    );
+
+    assert.equal(socketA.messages.length, 1);
+    assert.equal(socketA.messages[0].type, 'agency.error');
+    assert.equal(socketA.messages[0].requestId, 'req-err-1');
+    assert.match(socketA.messages[0].message, /Disk full in notification store/);
+    // Tab remains finished and notification unacknowledged
+    assert.equal(manager.getTabState(workspaceId, tabId), 'finished');
+    assert.equal(store.get(notif.id)?.acknowledgedAt, null);
+
+    // Restore store.acknowledge
+    store.acknowledge = originalAcknowledge;
+
+    // Scenario B: Injected failure in manager.acknowledgeMatchingTurn
+    manager.acknowledgeMatchingTurn = async () => { throw new Error('Disk full in activity manager'); };
+
+    const socketB = createMockSocket();
+    await handleAgencyNotificationDone(
+      { type: 'agency.notification.done', requestId: 'req-err-2', notificationId: notif.id },
+      socketB as any,
+      {
+        agencyNotificationStore: store,
+        agencyActivityManager: manager,
+        agencyWorkspaceStore: mockWorkspaceStore,
+        send: (s, m) => (s as any).send(m),
+      },
+    );
+
+    assert.equal(socketB.messages.length, 1);
+    assert.equal(socketB.messages[0].type, 'agency.error');
+    assert.equal(socketB.messages[0].requestId, 'req-err-2');
+    assert.match(socketB.messages[0].message, /Disk full in activity manager/);
+
+    manager.dispose();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Idempotent retry of Done request returns success without duplicate side-effects', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'maw-test-done-idempotent-'));
+  try {
+    const store = new AgencyNotificationStore(path.join(root, 'notifications.json'));
+    await store.initialize();
+    const manager = new TabActivityManager({ notificationStore: store, storageDir: root });
+    await manager.initialize();
+
+    const workspaceId = randomUUID() as WorkspaceId;
+    const tabId = randomUUID();
+    const sessionId = randomUUID() as RuntimeSessionId;
+    const mockWorkspaceStore = {
+      getWorkspace: (id: WorkspaceId) => (id === workspaceId ? { id, name: 'Workspace' } as any : null),
+    };
+
+    function createMockSocket() {
+      const messages: any[] = [];
+      return {
+        messages,
+        send: (msg: any) => messages.push(msg),
+      };
+    }
+
+    await manager.handleCliActivity({
+      workspaceId,
+      tabId,
+      sessionId,
+      provider: 'claude-code',
+      nextActivity: 'finished',
+      lifecycle: 'running',
+      taskId: 'turn-idempotent',
+      completionEvidence: 'native-turn',
+    });
+    await manager.flush();
+    await store.flush();
+
+    const notif = store.list().find(n => n.tabId === tabId)!;
+
+    // First Done request
+    const socket1 = createMockSocket();
+    await handleAgencyNotificationDone(
+      { type: 'agency.notification.done', requestId: 'req-idem-1', notificationId: notif.id },
+      socket1 as any,
+      {
+        agencyNotificationStore: store,
+        agencyActivityManager: manager,
+        agencyWorkspaceStore: mockWorkspaceStore,
+        send: (s, m) => (s as any).send(m),
+      },
+    );
+
+    assert.equal(socket1.messages.length, 1);
+    assert.equal(socket1.messages[0].type, 'agency.notification.changed');
+    const firstAckTime = socket1.messages[0].notification.acknowledgedAt;
+    assert.ok(firstAckTime);
+    assert.equal(manager.getTabState(workspaceId, tabId), 'idle');
+
+    // Second Done request (idempotent retry)
+    const socket2 = createMockSocket();
+    await handleAgencyNotificationDone(
+      { type: 'agency.notification.done', requestId: 'req-idem-2', notificationId: notif.id },
+      socket2 as any,
+      {
+        agencyNotificationStore: store,
+        agencyActivityManager: manager,
+        agencyWorkspaceStore: mockWorkspaceStore,
+        send: (s, m) => (s as any).send(m),
+      },
+    );
+
+    assert.equal(socket2.messages.length, 1);
+    assert.equal(socket2.messages[0].type, 'agency.notification.changed');
+    assert.equal(socket2.messages[0].requestId, 'req-idem-2');
+    assert.equal(socket2.messages[0].notification.acknowledgedAt, firstAckTime);
+    assert.equal(manager.getTabState(workspaceId, tabId), 'idle');
+
+    manager.dispose();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Legacy notifications lacking turn identity complete inbox item without guessing or clearing current tab completion', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'maw-test-done-legacy-'));
+  try {
+    const store = new AgencyNotificationStore(path.join(root, 'notifications.json'));
+    await store.initialize();
+    const manager = new TabActivityManager({ notificationStore: store, storageDir: root });
+    await manager.initialize();
+
+    const workspaceId = randomUUID() as WorkspaceId;
+    const tabId = randomUUID();
+    const sessionId = randomUUID() as RuntimeSessionId;
+    const mockWorkspaceStore = {
+      getWorkspace: (id: WorkspaceId) => (id === workspaceId ? { id, name: 'Workspace' } as any : null),
+    };
+
+    function createMockSocket() {
+      const messages: any[] = [];
+      return {
+        messages,
+        send: (msg: any) => messages.push(msg),
+      };
+    }
+
+    // Tab is finished with an active turn
+    await manager.handleCliActivity({
+      workspaceId,
+      tabId,
+      sessionId,
+      provider: 'codex',
+      nextActivity: 'finished',
+      lifecycle: 'running',
+      taskId: 'active-turn',
+      completionEvidence: 'native-turn',
+    });
+    await manager.flush();
+
+    // Create a legacy notification that lacks taskId and turnSequence in metadata and deduplicationKey
+    const legacyNotif = await store.create({
+      workspaceId,
+      tabId,
+      title: 'Legacy Alert',
+      body: 'Old notification lacking identity',
+      state: 'finished',
+      deduplicationKey: 'legacy-alert-key',
+      metadata: { kind: 'legacy' },
+    });
+    assert.ok(legacyNotif);
+    await store.flush();
+
+    assert.equal(manager.getTabState(workspaceId, tabId), 'finished');
+
+    // Run Done on legacy notification
+    const socket = createMockSocket();
+    await handleAgencyNotificationDone(
+      { type: 'agency.notification.done', requestId: 'req-legacy', notificationId: legacyNotif.id },
+      socket as any,
+      {
+        agencyNotificationStore: store,
+        agencyActivityManager: manager,
+        agencyWorkspaceStore: mockWorkspaceStore,
+        send: (s, m) => (s as any).send(m),
+      },
+    );
+
+    // Verify inbox item is completed
+    assert.equal(socket.messages.length, 1);
+    assert.equal(socket.messages[0].type, 'agency.notification.changed');
+    assert.ok(store.get(legacyNotif.id)?.acknowledgedAt);
+
+    // Tab completion badge MUST NOT be cleared (fails safely without guessing current turn)
+    assert.equal(manager.getTabState(workspaceId, tabId), 'finished');
+    assert.equal(manager.getRecord(workspaceId, tabId)?.taskId, 'active-turn');
 
     manager.dispose();
   } finally {
