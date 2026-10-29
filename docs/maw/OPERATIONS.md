@@ -4,7 +4,7 @@
 
 Commands installed at /home/user/.local/bin/maw and /home/user/.local/lib/maw/control.mjs. Source: scripts/maw/. Tested from arbitrary cwd. No live maw.service installed, enabled or started. The original main checkout and existing providers remain untouched.
 
-The verified service template uses the original repository WorkingDirectory and Node /home/user/.nvm/versions/node/v24.22.0/bin/node with the package-local tsx loader. It needs installed workspace dependencies and a production web build. PATH explicitly includes the verified NVM directory, ~/.local/bin, and system binary directories; systemd does not load interactive shell files. An ExecStartPre guard rejects the pre-feature checkout.
+The service template (`scripts/maw/maw.service`) is rendered at install time by `scripts/maw/maw-render-unit.sh`: the Node binary found on PATH, the state directory (`~/.local/share/maw`) and PATH are substituted; nothing user-specific is hard-coded. `WorkingDirectory` and `ExecStart` go through `<state>/current`, an isolated release built by `maw update` (never the developer checkout); `ExecStartPre` guards refuse anything without release metadata. systemd does not load interactive shell files. Optional command removal also covers ~/.local/lib/maw/maw-lib.sh, maw-update.sh and maw-restart-helper.sh.
 
 pnpm: 12.16.1. Corepack 0.36.0 verified; Node 24.22.0 verified. Use the repository pin via `corepack pnpm install --frozen-lockfile`. No global pnpm changes needed. Future removal of this NVM version requires updating the unit and wrapper paths.
 
