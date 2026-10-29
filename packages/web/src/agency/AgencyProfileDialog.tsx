@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as Reac
 import type { AgencyCliProfile } from '@agent-workbench/shared';
 import { t } from '../i18n/index.js';
 import { parseProfileArgv } from './model.js';
+import { providerSetupDescription, suggestedExecutable } from './profile-suggestions.js';
 
 export function AgencyProfileDialog({ profile, onSave, onClose }: {
   profile: AgencyCliProfile;
@@ -14,6 +15,11 @@ export function AgencyProfileDialog({ profile, onSave, onClose }: {
   const [error, setError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLFormElement>(null);
   const previousFocus = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+
+  const isUnconfigured = profile.executable === '' ||
+    (profile.configurationStatus === 'error' && (profile.configurationMessage?.includes('Configure an executable') ?? false));
+  const suggested = suggestedExecutable(profile.id, profile.provider);
+  const placeholder = suggested || t('agency.profile.executablePlaceholder');
 
   useEffect(() => {
     return () => { previousFocus.current?.focus(); };
@@ -63,11 +69,47 @@ export function AgencyProfileDialog({ profile, onSave, onClose }: {
         <button className="agency-icon-button" type="button" onClick={onClose} disabled={saving}
           aria-label={t('common.close')}>×</button>
       </div>
+
+      {isUnconfigured && (
+        <div className="agency-setup-guide" style={{
+          background: 'rgba(131, 184, 172, 0.1)',
+          border: '1px solid rgba(131, 184, 172, 0.3)',
+          borderRadius: '10px',
+          padding: '12px 14px',
+          marginBottom: '16px',
+        }}>
+          <h3 style={{ margin: '0 0 6px 0', fontSize: '13px', fontWeight: 650, color: 'var(--agency-highlight)' }}>
+            First-time setup required
+          </h3>
+          <p style={{ margin: '0 0 8px 0', fontSize: '12px', lineHeight: 1.45, color: 'var(--agency-text)' }}>
+            {providerSetupDescription(profile.provider)}
+          </p>
+          <p style={{ margin: 0, fontSize: '11px', lineHeight: 1.4, color: 'var(--agency-dim)' }}>
+            Do not share executables between profiles — each wrapper maintains separate authentication.
+          </p>
+        </div>
+      )}
+
+      {profile.configurationStatus === 'not-installed' && (
+        <div className="agency-setup-warning" role="alert" style={{
+          background: 'rgba(232, 138, 138, 0.12)',
+          border: '1px solid rgba(232, 138, 138, 0.35)',
+          borderRadius: '8px',
+          padding: '10px 12px',
+          marginBottom: '16px',
+          fontSize: '12px',
+          color: 'var(--agency-danger)',
+          lineHeight: 1.4,
+        }}>
+          Executable configured but not found on PATH. Check the command name and try again.
+        </div>
+      )}
+
       <p className="agency-muted">{t('agency.profile.help', { name: profile.label })}</p>
       <label className="agency-field">
         <span>{t('agency.profile.executable')}</span>
         <input autoFocus value={executable} onChange={(event) => setExecutable(event.target.value)}
-          spellCheck={false} autoComplete="off" placeholder={t('agency.profile.executablePlaceholder')}
+          spellCheck={false} autoComplete="off" placeholder={placeholder}
           disabled={saving} />
       </label>
       <label className="agency-field">
