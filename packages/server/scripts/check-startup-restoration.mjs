@@ -110,7 +110,7 @@ async function startController(cdpPort) {
   }, 'controller startup');
 }
 async function stopController() {
-  if (!controller || controller.exitCode !== null) return;
+  if (!controller || controller.exitCode !== null || controller.signalCode !== null) return;
   const ended = new Promise(resolve => controller.once('exit', resolve)); controller.kill('SIGTERM'); await ended;
 }
 async function pageFor(ref) {
@@ -281,6 +281,9 @@ try {
   assert.equal((await tabs()).find(t => t.id === a.id).url, finalUrl);
   assert.equal(await readFile(path.join(config, 'agency-profiles.json'), 'utf8'), profileContents);
   check('verified executable rollback preserves persistent app stores');
+} catch (error) {
+  console.error(error);
+  process.exitCode = 1;
 } finally {
   socket?.terminate();
   await ctl('stop').catch(() => undefined); await ctl('reset-failed').catch(() => undefined);
