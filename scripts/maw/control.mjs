@@ -16,8 +16,10 @@ try {
   const response = await fetch(url, { signal: AbortSignal.timeout(3000), redirect: 'error' });
   if (!response.ok) throw new Error('Service is not ready');
   if (process.argv[2] === 'status') console.log(`Healthy; PID ${pid}; loopback port ${url.port}`);
+  else if (process.argv[2] === 'url') console.log(url.href);
   else if (process.argv[2] === 'open') {
-    const child = spawn('xdg-open', [url.href], { stdio: 'ignore' });
+    const browser = process.argv[3] || 'xdg-open';
+    const child = spawn(browser, [url.href], { stdio: 'ignore' });
     child.on('error', () => { console.error('Could not open browser'); process.exitCode = 1; });
     child.on('exit', code => { process.exitCode = code === 0 ? 0 : 1; });
   } else throw new Error('Unknown control command');
