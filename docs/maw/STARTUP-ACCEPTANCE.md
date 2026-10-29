@@ -48,6 +48,7 @@ Run from a clean committed checkout. Real-systemd tests use uniquely named `maw-
 ```sh
 pnpm typecheck
 pnpm build
+node --import ./packages/server/node_modules/tsx/dist/loader.mjs --test packages/web/src/maw-root.test.mjs packages/web/src/terminal-webgl.test.mjs packages/web/src/agency/*.test.mjs
 cd packages/server
 pnpm exec tsx --test src/maw-host.test.ts src/maw-updater-acceptance.test.ts src/agency/*.test.ts src/agency/browser-tabs/*.test.ts src/agency/runtime/*.test.ts src/agents/profiles/profiles.test.ts
 MAW_REAL_SYSTEMD=1 MAW_REAL_RELEASE=1 pnpm exec tsx --test src/maw-systemd-acceptance.test.ts
@@ -56,3 +57,22 @@ pnpm exec tsx scripts/check-startup-restoration.mjs
 ```
 
 The last check builds two real releases through the production updater, renders the production unit under a hidden `.local/share/maw` layout, exercises the public launcher and real Chromium through the production ownership controller, and tests update/restart/outage/final-capture/rollback/source-removal behavior. ChatGPT content is locally fulfilled synthetic fixture HTML; providers are disabled. It requires a user systemd manager, Python 3 and Chrome (`PLAYWRIGHT_CHROMIUM_EXECUTABLE` can override the browser path). It does not establish real authenticated provider resume, ChatGPT account validity, or live Neko video availability. Those remain production acceptance checks.
+
+Verified locally on 2026-10-29 with Node 24.22.0:
+
+| Check | Result |
+| --- | --- |
+| Full workspace typecheck and production build | Passed |
+| Agency/profile tests | 104 passed |
+| Session runtime tests | 40 passed |
+| Browser adapter/controller/persistence/shutdown tests | 57 passed |
+| Host ownership/readiness tests | 6 passed |
+| Mocked updater/activation tests, including active HTTP 404 rejection | 37 passed |
+| Frontend model and Chromium tests | 25 passed |
+| Security/backpressure tests | 3 passed |
+| Python restricted controller/ownership tests | 19 passed |
+| Disposable native profile/context suite under systemd | 5 passed |
+| Real-systemd crash/rollback and production-release tests | 2 passed, no skips |
+| Full two-release restoration integration | All 7 scenario groups passed |
+
+The real-release test first became healthy about 1.8 seconds after activation began, with the unchanged 20-second readiness budget. The production service remained on its original PID `1343212` and release `20261029170028-8ddc280`; its 404 is expected to remain until an approved deployment. All disposable test units were removed.
