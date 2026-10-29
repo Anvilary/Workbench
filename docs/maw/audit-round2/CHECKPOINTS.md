@@ -111,3 +111,24 @@ removing only that container. See evidence/cleanup.json.
 
 Next: finish reload/GC diagnosis and responsive/release limitations, push draft
 PR and verify its CI startup status. No merge or deployment authorized.
+
+## Delivery — 2026-10-29
+
+Implementation commit `510fe0873fec312916f5107ef5e6014a285075dc` pushed to
+`origin/audit/maw-deep-soak`; draft PR #14 created against main:
+https://github.com/user/My-Amazing-Workspace/pull/14.
+CI draft run 40790978936 confirmed billing/spending-limit rejection, zero steps;
+not a passing code check. Evidence in evidence/draft-ci.json.
+
+GC diagnosis completed: 30 reloads, 7,014 listeners / 83 documents → 362 / one
+document after diagnostic GC, supporting deferred collection rather than a
+persistent leak in this fixture. No forced GC in before/after latency runs.
+Numeric results in evidence/reload-gc.json. All audit-owned fixture servers,
+Chromium and PTYs exited; Neko ownership-verified cleanup completed. No user
+state or production service touched. Local final server total 179 PASS.
+
+Release CONDITIONAL; checkpoints 1–5 and 7–8 have explicit incomplete coverage.
+See FINAL-REPORT.md for the completion matrix and exact continuation commands,
+RESPONSIVE.md for screenshots/coverage, RELIABILITY.md for provider/security
+matrix. Current next action for a replacement: sustained active WebRTC and
+controlled real-switch tail-latency follow-up, using new disposable fixtures.
