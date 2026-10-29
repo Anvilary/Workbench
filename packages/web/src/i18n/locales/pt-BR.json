@@ -397,6 +397,8 @@
   "common.copyCode": "Copiar o código",
   "common.dismissNotice": "Dispensar o aviso",
   "common.gotIt": "Entendi",
+  "common.moduleLoadFailed": "Não foi possível carregar esta visualização. Verifique se o MAW está em execução e recarregue a página.",
+  "common.reloadPage": "Recarregar a página",
   "common.save": "Salvar",
   "composer.attach": "Anexar um arquivo",
   "composer.attachTitle": "Anexar um arquivo: um log, um PDF, um documento ou uma imagem",

@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import { App } from './App.js';
+import { ClassicRoot, MawRoot, isClassicView } from './MawRoot.js';
 import { initLocale } from './i18n/useLocale.js';
 import './styles.css';
 import '@xterm/xterm/css/xterm.css';
@@ -15,4 +15,8 @@ const root = createRoot(container);
 // A proposito sin StrictMode: en desarrollo duplica los efectos, y cada montaje
 // del terminal abre un proceso de la CLI. Un doble arranque por cada recarga no
 // vale lo que aporta.
-void initLocale().then(() => root.render(<App />));
+//
+// La interfaz MAW no carga el Workbench clasico: ese codigo (y sus hooks, que escuchan el socket) llega en un
+// fragmento aparte solo con `?view=workbench`.
+const classic = isClassicView(window.location.search);
+void initLocale().then(() => root.render(classic ? <ClassicRoot /> : <MawRoot />));

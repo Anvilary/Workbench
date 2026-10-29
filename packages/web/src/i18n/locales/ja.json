@@ -391,6 +391,8 @@
   "common.copyCode": "コードをコピー",
   "common.dismissNotice": "通知を閉じる",
   "common.gotIt": "了解",
+  "common.moduleLoadFailed": "この画面を読み込めませんでした。MAW が動作していることを確認して、ページを再読み込みしてください。",
+  "common.reloadPage": "ページを再読み込み",
   "common.save": "保存",
   "composer.attach": "ファイルを添付",
   "composer.attachTitle": "ファイルを添付：ログ、PDF、ドキュメント、画像など",
