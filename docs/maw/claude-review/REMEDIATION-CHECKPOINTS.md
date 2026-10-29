@@ -80,3 +80,16 @@ interleaving), so not a MAW defect. New defect N-3 (unbounded buffering for stal
 Not measured: browser-side render cost of floods (xterm paint) and input latency in a real browser under flood.
 
 Next: Neko reconnection (disposable fixture container), then Checkpoint 6.
+
+## Checkpoint 5 — completed
+
+Neko (REAL disposable fixture, removed by verified ID): Round 2 integration 11/11 PASS; new
+`packages/server/scripts/check-neko-reconnect.mjs` 2/2 runs PASS (`1b85b54`). Real release of this repository
+built and activated under a disposable unit (`8882947`). Limitations recorded in REMEDIATION-FINAL.md §7/§10.
+
+## Checkpoint 6 — full regression (DONE) and delivery
+
+All local gates PASS (REMEDIATION-FINAL.md §11): typecheck; server 231/231; real systemd 2/2; web model 12/12;
+real-Chromium UI 11/11; Python 19/19; `pnpm check` PASS (check-docs SKIP); build PASS.
+Branch pushed. Draft PR NOT created: `gh` unauthenticated (BLOCKED); body in PR-BODY.md. CI UNVERIFIED.
+Next step for a successor: create the PR (REMEDIATION-FINAL.md §1), check CI, review.
