@@ -59,6 +59,7 @@
   "agency.tabs.restartShell": "Terminal neu starten",
   "agency.tabs.sessionCount": "{{count}} Sitzungen",
   "agency.tabs.shellRestarted": "Terminal neu gestartet (neuer Prozess)",
+  "agency.tabs.startAgain": "Neu starten",
   "agency.tabs.tabList": "Sitzungstabs; Pfeile wählen, Alt+Pfeile sortieren",
   "agency.tabs.terminalNamed": "Terminal {{number}}",
   "agency.ui.actionNeededInTheNativeCLI": "Action needed in the native CLI",
