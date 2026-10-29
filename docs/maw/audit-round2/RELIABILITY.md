@@ -28,7 +28,13 @@ MiB sampled workload, 78.5 MiB cleanup, 69.6 MiB after restart. DOM 384–410.
 No evidence of progressive unrecovered resource growth in this bounded run.
 JS heap varied 11.6–20.2 MiB, across fresh page reloads without forced GC;
 this is not evidence of a frontend leak or its absence over long uptime.
-After-run data and limits are recorded in BENCHMARKS.md and evidence/soak-after.json.
+After run also completes 34 cycles and recovers FDs 24→39 warm→42 churn→24
+cleaned, PTYs 0→15→0 and PSS 66.2→73.9→63.6 cleaned / 68.9 restarted MiB.
+Different per-process baseline memory/FD counts are not an optimization gain.
+Thirty extra frontend reloads left 7,014 listeners / 83 documents before GC;
+a diagnostic collection returned to 362 listeners / one document. No persistent
+subscription leak is demonstrated. Data and limits are in BENCHMARKS.md,
+evidence/soak-after.json and evidence/reload-gc.json.
 
 Neko resources: real guest ChatGPT pages, **no active viewer/encoding** during
 resource sampling. Settled Chromium PSS MiB at 1/5/10/15/30 targets:
@@ -108,5 +114,6 @@ local-network/metadata egress tests remain UNVERIFIED.
 No production process, shell dotfile, native authentication directory, workspace
 or history was changed. The fresh audit-labelled Neko uses a writable container
 layer and no reused or named volumes. Its loopback TCP/UDP publications are
-separate from production. Cleanup ownership must be verified by unique name,
-`maw.audit=true` and the generated fixture config before removal.
+separate from production. The fixture was removed after verifying unique name and container ID,
+`maw.audit=true`, read-only repo mounts, no volumes and loopback ports.
+See evidence/cleanup.json. No production resource was stopped or removed.

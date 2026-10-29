@@ -1,0 +1,146 @@
+{
+  "fixture": "real server, disposable Bash PTYs, production UI; shared host; double-rAF paint opportunity, not hardware paint",
+  "node": "v24.22.0",
+  "durationSeconds": 0,
+  "samples": [
+    {
+      "activePtys": 0,
+      "knownClients": 1,
+      "phase": "baseline",
+      "at": 648.699123,
+      "rssKiB": 117304,
+      "pssKiB": 69739,
+      "fds": 24,
+      "cpuTicks": 45,
+      "childProcesses": 0,
+      "sessions": 0
+    },
+    {
+      "activePtys": 15,
+      "knownClients": 1,
+      "phase": "warm",
+      "at": 1237.982448,
+      "rssKiB": 127616,
+      "pssKiB": 79392,
+      "fds": 39,
+      "cpuTicks": 57,
+      "childProcesses": 15,
+      "sessions": 15
+    },
+    {
+      "activePtys": 15,
+      "knownClients": 2,
+      "phase": "ui-warm",
+      "at": 44117.318718,
+      "rssKiB": 130836,
+      "pssKiB": 82608,
+      "fds": 40,
+      "cpuTicks": 99,
+      "childProcesses": 15,
+      "sessions": 15,
+      "domNodes": 417,
+      "heapBytes": 10045735,
+      "documents": 1,
+      "nodes": 1599,
+      "jsEventListeners": 390
+    },
+    {
+      "activePtys": 0,
+      "knownClients": 1,
+      "phase": "cleanup",
+      "at": 94061.881215,
+      "rssKiB": 132048,
+      "pssKiB": 83790,
+      "fds": 24,
+      "cpuTicks": 171,
+      "childProcesses": 0,
+      "sessions": 15
+    },
+    {
+      "activePtys": 0,
+      "knownClients": 1,
+      "phase": "settled",
+      "at": 97071.306226,
+      "rssKiB": 132052,
+      "pssKiB": 83794,
+      "fds": 24,
+      "cpuTicks": 171,
+      "childProcesses": 0,
+      "sessions": 15
+    },
+    {
+      "activePtys": 0,
+      "knownClients": 1,
+      "phase": "recovery",
+      "at": 97798.467391,
+      "rssKiB": 117728,
+      "pssKiB": 67919,
+      "fds": 24,
+      "cpuTicks": 63,
+      "childProcesses": 0,
+      "sessions": 15
+    }
+  ],
+  "errors": [],
+  "startupMs": 421.570442,
+  "repeat": {
+    "wsResponseMs": {
+      "n": 100,
+      "p50": 0.1997870000000148,
+      "p95": 0.3609189999999671,
+      "p99": 0.7612029999997958
+    },
+    "messages": 100,
+    "bytes": 963500
+  },
+  "alternate": {
+    "wsResponseMs": {
+      "n": 100,
+      "p50": 0.567649000000074,
+      "p95": 1.0302100000001246,
+      "p99": 2.1570819999999458
+    },
+    "messages": 397,
+    "bytes": 2058242
+  },
+  "visibleTabSwitchMs": {
+    "n": 100,
+    "p50": 50,
+    "p95": 50.20000000298023,
+    "p99": 50.70000000298023
+  },
+  "inboxToggleMs": {
+    "n": 100,
+    "p50": 33.29999999701977,
+    "p95": 33.5,
+    "p99": 33.6000000089407
+  },
+  "interactionUi": {
+    "longTasksMs": [
+      52
+    ],
+    "layoutShift": 0.000014072740505849729
+  },
+  "cycles": 0,
+  "reconnects": 0,
+  "ui": {
+    "longTasksMs": [
+      52
+    ],
+    "layoutShift": 0.000014072740505849729
+  },
+  "reloadDiagnostic": {
+    "reloads": 30,
+    "beforeGC": {
+      "documents": 83,
+      "nodes": 43715,
+      "jsEventListeners": 7014
+    },
+    "afterGC": {
+      "documents": 1,
+      "nodes": 1190,
+      "jsEventListeners": 362
+    }
+  },
+  "restartMs": 693.839473
+}

@@ -47,8 +47,11 @@ Both runs complete 34 reconnects plus repeated frontend reloads, 680 workload
 selections and 34 temporary PTY create/close cycles, then close all 15 initial
 PTYs. Each retains 49 historical session rows by design. DOM stays 384–419 nodes.
 After-run CDP listener counts are 381, 362, 368, 867, 861 across successive
-samples. Counts include garbage awaiting collection across reloads; diagnostic
-GC results are recorded separately when available. Server listener/timer counts,
+samples. A separate 30-reload diagnostic measured 83 documents / 43,715 nodes /
+7,014 listeners before collection and 1 document / 1,190 nodes / 362 listeners
+after explicit CDP GC. This supports unreclaimed documents, not a confirmed
+subscription leak. GC was confined to the diagnostic after interaction timings;
+see evidence/reload-gc.json. Server listener/timer counts,
 React commit counts/durations, and actual terminal input-to-output paint
 throughput were not instrumented. Known fixture WS client count and active PTYs
 are recorded in after samples; no kernel-level socket inventory was captured.
@@ -69,3 +72,9 @@ Screenshots are committed under screenshots/. No production auth or user
 conversation was used. Raw sample arrays/std deviation, independent repeated
 trials, React durations, frontend PSS and WebRTC update distributions remain
 unmeasured. A new fixture run can be extended via MAW_ROUND2_SECONDS (up to 3600).
+
+Server sampled workload CPU averaged 2.02% before /
+1.95% after of one core over
+106.7 / 106.6 s.
+This includes churn/IO waits and host scheduling, not a controlled optimization
+comparison; calculation in evidence/server-cpu.json. PTY child CPU is excluded.

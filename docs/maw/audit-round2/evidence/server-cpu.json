@@ -1,0 +1,14 @@
+{
+  "before": {
+    "clockTicksPerSecond": 100,
+    "windowSeconds": 106.670968784,
+    "cpuSeconds": 2.16,
+    "averageCpuPercentOneCore": 2.024918330285182
+  },
+  "after": {
+    "clockTicksPerSecond": 100,
+    "windowSeconds": 106.64360306699999,
+    "cpuSeconds": 2.08,
+    "averageCpuPercentOneCore": 1.9504217226167968
+  }
+}
