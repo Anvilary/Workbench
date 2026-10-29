@@ -9,7 +9,12 @@ if [ -f "$self_dir/control.mjs" ]; then
 else
   control_script=/home/user/.local/lib/maw/control.mjs
 fi
-usage() { printf '%s\n' 'Usage: maw {start|stop|restart|status|logs [--follow]|url|open [browser]|help}'; }
+if [ -f "$self_dir/maw-update.sh" ]; then
+  update_script="$self_dir/maw-update.sh"
+else
+  update_script=/home/user/.local/lib/maw/maw-update.sh
+fi
+usage() { printf '%s\n' 'Usage: maw {start|stop|restart|status|logs [--follow]|url|open [browser]|update [--no-restart|--restart]|help}'; }
 command_name=${1:-help}
 case "$command_name" in
   start) [ "$#" -eq 1 ] || { usage >&2; exit 2; }; exec systemctl --user start "$unit" ;;
@@ -38,7 +43,7 @@ case "$command_name" in
       2) exec "$node_bin" "$control_script" open "$2" ;;
       *) usage >&2; exit 2 ;;
     esac ;;
-  update) exec /bin/sh /home/user/.local/lib/maw/maw-update.sh "$@" ;;
+  update) exec /bin/sh "$update_script" "$@" ;;
   help|--help|-h) usage ;;
   *) usage >&2; exit 2 ;;
 esac
