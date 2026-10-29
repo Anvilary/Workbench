@@ -11,7 +11,7 @@ import type {
 import type { LaunchSession } from '../agents/adapter.js';
 import type { AgentRegistry } from '../agents/registry.js';
 import {
-  isolatedEnvironment, type ProfileDefinition,
+  identicalLaunchMessage, identicalLaunchPeer, isolatedEnvironment, type ProfileDefinition,
 } from '../agents/profiles/definition.js';
 import { resolveConfiguredExecutable } from '../agents/profiles/executable.js';
 import type { NativeIdentities, NativeIdentity } from './native-identity.js';
@@ -36,6 +36,8 @@ export interface CapabilityContext {
   readonly environment?: NodeJS.ProcessEnv;
   readonly identities?: NativeIdentities;
   readonly catalog?: VerifiedNativeCatalog | null;
+  /** All configured profiles, to refuse two profiles with an identical launch plan (same account). */
+  readonly peers?: readonly ProfileDefinition[];
 }
 
 export async function inspectAgencyProfile(
@@ -54,9 +56,12 @@ export async function inspectAgencyProfile(
   let configurationMessage: string | null = null;
   let capabilities = empty;
 
+  const peer = definition.disabled ? null : await identicalLaunchPeer(definition, context.peers ?? [], base);
   if (definition.disabled) {
     configurationStatus = 'disabled';
     configurationMessage = 'Profile disabled.';
+  } else if (peer !== null) {
+    configurationMessage = identicalLaunchMessage(peer);
   } else if (registered === null) {
     configurationMessage = 'Workbench native adapter unavailable.';
   } else {
@@ -106,7 +111,7 @@ export async function listAgencyProfiles(
   store: AgencyProfileStore, registry: AgentRegistry, context: CapabilityContext = {},
 ): Promise<readonly AgencyCliProfile[]> {
   const definitions = await store.listDefinitions();
-  return Promise.all(definitions.map((definition) => inspectAgencyProfile(definition, registry, context)));
+  return Promise.all(definitions.map((definition) => inspectAgencyProfile(definition, registry, { ...context, peers: definitions })));
 }
 
 export interface ProfileLaunchRequest {
@@ -164,6 +169,8 @@ export async function buildAgencyProfileLaunch(
   const entry = registry.get(definition.provider as AgentId);
   if (entry === null) throw new Error('Native Workbench adapter unavailable.');
   const base = request.environment ?? process.env;
+  const peer = await identicalLaunchPeer(definition, await store.listDefinitions(), base);
+  if (peer !== null) throw new Error(identicalLaunchMessage(peer));
   const executable = await resolveConfiguredExecutable(definition.executable, base);
   if (executable.status !== 'available') throw new Error(executable.reason);
 

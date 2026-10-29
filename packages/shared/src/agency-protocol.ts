@@ -249,7 +249,8 @@ export type AgencyServerMessage =
   | { type: 'agency.profiles.snapshot'; requestId: RequestId; profiles: readonly AgencyCliProfile[] }
   | { type: 'agency.profile.configured'; requestId: RequestId; profile: AgencyCliProfile }
   | { type: 'agency.profile.capabilities'; requestId: RequestId; profileId: CliProfileId; capabilities: AgencyProfileCapabilities }
-  | { type: 'agency.sessions.snapshot'; requestId: RequestId; sessions: readonly AgencyRuntimeSession[] }
+  /** `workspaceId` is present only when the snapshot is scoped to one workspace (a scoped list request). */
+  | { type: 'agency.sessions.snapshot'; requestId: RequestId; sessions: readonly AgencyRuntimeSession[]; workspaceId?: WorkspaceId }
   | { type: 'agency.session.created'; requestId: RequestId; session: AgencyRuntimeSession }
   | { type: 'agency.session.selection'; requestId: RequestId; session: AgencyAgentSession }
   | { type: 'agency.error'; requestId: RequestId; code: AgencyErrorCode; message: string }
@@ -641,7 +642,9 @@ export function parseAgencyServerMessage(raw: unknown): AgencyServerMessage | nu
     }
     case 'agency.sessions.snapshot': {
       if (typeof raw['requestId'] !== 'string' || !Array.isArray(raw['sessions']) || !raw['sessions'].every(isAgencyRuntimeSession)) return null;
-      return { type: 'agency.sessions.snapshot', requestId: raw['requestId'], sessions: raw['sessions'] };
+      if (raw['workspaceId'] !== undefined && typeof raw['workspaceId'] !== 'string') return null;
+      return { type: 'agency.sessions.snapshot', requestId: raw['requestId'], sessions: raw['sessions'],
+        ...(typeof raw['workspaceId'] === 'string' ? { workspaceId: raw['workspaceId'] as WorkspaceId } : {}) };
     }
     case 'agency.session.created': {
       if (typeof raw['requestId'] !== 'string' || !isAgencyRuntimeSession(raw['session'])) return null;

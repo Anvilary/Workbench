@@ -7,7 +7,7 @@ import { copyFile, mkdir, readFile, rename, rm, writeFile, chmod } from 'node:fs
 import path from 'node:path';
 import type { CliProfileId } from '@agent-workbench/shared';
 import {
-  applyProfileChanges, defaultDefinitions, validateDefinition,
+  applyProfileChanges, defaultDefinitions, identicalLaunchMessage, identicalLaunchPeer, validateDefinition,
   type ProfileChanges, type ProfileDefinition,
 } from '../agents/profiles/definition.js';
 
@@ -159,6 +159,8 @@ export class AgencyProfileStore {
       const changed = applyProfileChanges(all[index]!, changes);
       const next = [...all];
       next[index] = changed;
+      const peer = await identicalLaunchPeer(changed, next, process.env);
+      if (peer !== null) throw new Error(identicalLaunchMessage(peer));
       await this.write(next, true);
       return changed;
     });
