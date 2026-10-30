@@ -2,7 +2,7 @@ import { t } from '../i18n/index.js';
 import { agencySessionText } from './agency-labels.js';
 import { useState } from 'react';
 import type {
-  AgencyProject, AgencyRuntimeSession, AgencyWorkspace, ProjectId, WorkspaceId,
+  AgencyProject, AgencyRuntimeSession, AgencyWorkspace, ProjectId, WorkspaceId, WebTab,
 } from '@agent-workbench/shared';
 import { activeByProject, isAttention, workspaceTabs } from './model.js';
 
@@ -10,6 +10,7 @@ export interface AgencySidebarProps {
   projects: readonly AgencyProject[];
   workspaces: readonly AgencyWorkspace[];
   sessions: readonly AgencyRuntimeSession[];
+  webTabs?: readonly WebTab[];
   selected: WorkspaceId | null;
   showingDone?: boolean;
   onSelect: (id: WorkspaceId) => void;
@@ -19,7 +20,7 @@ export interface AgencySidebarProps {
   onCollapse: () => void;
   onDone: (workspace: AgencyWorkspace) => void;
   onArchiveWorkspace: (workspace: AgencyWorkspace) => void;
-  onDeleteWorkspace: (workspace: AgencyWorkspace) => void;
+  onDeleteWorkspace: (workspace: AgencyWorkspace) => Promise<void> | void;
   onRenameProject: (project: AgencyProject, newName: string) => void;
   onArchiveProject: (project: AgencyProject) => void;
   onDeleteProject: (project: AgencyProject) => void;
@@ -47,7 +48,7 @@ export function SidebarToggleIcon(): JSX.Element {
 }
 
 export function AgencySidebar({
-  projects, workspaces, sessions, selected, showingDone = false,
+  projects, workspaces, sessions, webTabs = [], selected, showingDone = false,
   onSelect, onCreate, onCreateProject, onDone, onArchiveWorkspace, onDeleteWorkspace,
   onRenameProject, onArchiveProject, onDeleteProject, onCollapse,
 }: AgencySidebarProps): JSX.Element {
@@ -399,54 +400,141 @@ export function AgencySidebar({
       })()}
 
       {/* Delete Workspace Confirmation */}
-      {deletingWorkspace && (() => {
-        const hasRunning = sessions.some(
-          (s) => s.workspaceId === deletingWorkspace.id && (s.lifecycle === 'running' || s.lifecycle === 'starting')
-        );
-        return (
-          <div className="agency-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setDeletingWorkspace(null); }}>
-            <div className="agency-dialog" role="dialog" aria-modal="true" aria-labelledby="agency-del-ws-title">
-              <div className="agency-dialog-head">
-                <h2 id="agency-del-ws-title">{t('agency.ui.confirmDeleteWorkspace', { name: deletingWorkspace.name })}</h2>
-                <button type="button" className="agency-icon-button" onClick={() => setDeletingWorkspace(null)}>×</button>
-              </div>
-              <p className="agency-muted">{t('agency.ui.deleteWorkspaceWarning')}</p>
-              {hasRunning && <p className="agency-error" role="alert">{t('agency.ui.activeProcessesWarning')}</p>}
-              <div className="agency-dialog-actions">
-                <button type="button" className="agency-secondary-button" onClick={() => setDeletingWorkspace(null)}>
-                  {t('common.cancel')}
-                </button>
-                <button
-                  type="button"
-                  className="agency-primary-button agency-text-danger"
-                  onClick={() => {
-                    onDeleteWorkspace(deletingWorkspace);
-                    setDeletingWorkspace(null);
-                  }}
-                >
-                  {t('agency.ui.deleteWorkspace')}
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {deletingWorkspace && (
+        <DeleteWorkspaceDialog
+          workspace={deletingWorkspace}
+          sessions={sessions}
+          webTabs={webTabs}
+          onConfirm={onDeleteWorkspace}
+          onClose={() => setDeletingWorkspace(null)}
+        />
+      )}
     </>
+  );
+}
+
+export function DeleteWorkspaceDialog({
+  workspace,
+  sessions,
+  webTabs = [],
+  onConfirm,
+  onClose,
+}: {
+  workspace: AgencyWorkspace;
+  sessions: readonly AgencyRuntimeSession[];
+  webTabs?: readonly WebTab[];
+  onConfirm: (workspace: AgencyWorkspace) => Promise<void> | void;
+  onClose: () => void;
+}): JSX.Element {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const wsSessions = sessions.filter((s) => s.workspaceId === workspace.id);
+  const runningClis = wsSessions.filter(
+    (s) => s.kind === 'agent' && (s.lifecycle === 'running' || s.lifecycle === 'starting')
+  ).length;
+  const runningTerminals = wsSessions.filter(
+    (s) => s.kind === 'terminal' && (s.lifecycle === 'running' || s.lifecycle === 'starting')
+  ).length;
+  const stoppingSessions = wsSessions.filter((s) => s.lifecycle === 'stopping').length;
+  const chatGptTabs = webTabs.filter((t) => t.workspaceId === workspace.id && !t.closedAt).length;
+  const exitedTabs = wsSessions.filter(
+    (s) => s.lifecycle === 'exited' && s.tab?.current && !s.tab.closedAt
+  ).length;
+
+  const totalActive = runningClis + runningTerminals + stoppingSessions + chatGptTabs;
+  const totalResources = totalActive + exitedTabs;
+
+  async function handleDelete() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onConfirm(workspace);
+      onClose();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className="agency-modal-backdrop"
+      onMouseDown={(e) => {
+        if (!busy && e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="agency-dialog" role="dialog" aria-modal="true" aria-labelledby="agency-del-ws-title">
+        <div className="agency-dialog-head">
+          <h2 id="agency-del-ws-title">{t('agency.ui.confirmDeleteWorkspace', { name: workspace.name })}</h2>
+          <button type="button" className="agency-icon-button" disabled={busy} onClick={onClose} aria-label={t('common.close')}>
+            ×
+          </button>
+        </div>
+        <p className="agency-muted">{t('agency.ui.deleteWorkspaceWarning')}</p>
+
+        <div className="agency-resource-summary" style={{ margin: '12px 0', padding: '10px 14px', background: 'rgba(255, 255, 255, 0.04)', borderRadius: '6px', fontSize: '13px' }}>
+          {totalResources === 0 ? (
+            <p className="agency-muted" style={{ margin: 0 }}>{t('agency.ui.deleteNoActiveResources')}</p>
+          ) : (
+            <ul style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {runningClis > 0 && <li>{t('agency.ui.deleteResourcesActiveClis', { count: runningClis })}</li>}
+              {runningTerminals > 0 && <li>{t('agency.ui.deleteResourcesActiveTerminals', { count: runningTerminals })}</li>}
+              {stoppingSessions > 0 && <li>{t('agency.ui.deleteResourcesUnresolvedSessions', { count: stoppingSessions })}</li>}
+              {chatGptTabs > 0 && <li>{t('agency.ui.deleteResourcesChatGptTabs', { count: chatGptTabs })}</li>}
+              {exitedTabs > 0 && <li>{t('agency.ui.deleteResourcesExitedTabs', { count: exitedTabs })}</li>}
+            </ul>
+          )}
+        </div>
+
+        {totalActive > 0 && (
+          <p className="agency-error" role="alert" style={{ margin: '8px 0' }}>
+            {t('agency.ui.deleteInterruptionWarning')}
+          </p>
+        )}
+
+        {error && (
+          <p className="agency-error" role="alert" style={{ margin: '8px 0' }}>
+            {error}
+          </p>
+        )}
+
+        <div className="agency-dialog-actions">
+          <button type="button" className="agency-secondary-button" disabled={busy} onClick={onClose}>
+            {t('common.cancel')}
+          </button>
+          <button
+            type="button"
+            className="agency-primary-button agency-text-danger"
+            disabled={busy}
+            onClick={() => void handleDelete()}
+          >
+            {busy ? t('agency.ui.deletingWorkspace') : t('agency.ui.deleteWorkspace')}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
 export function AgencyDoneView({
   workspaces,
   projects,
+  sessions = [],
+  webTabs = [],
   onRestore,
   onArchiveWorkspace,
   onDeleteWorkspace,
 }: {
   workspaces: readonly AgencyWorkspace[];
   projects: readonly AgencyProject[];
+  sessions?: readonly AgencyRuntimeSession[];
+  webTabs?: readonly WebTab[];
   onRestore: (workspace: AgencyWorkspace) => void;
   onArchiveWorkspace?: (workspace: AgencyWorkspace) => void;
-  onDeleteWorkspace?: (workspace: AgencyWorkspace) => void;
+  onDeleteWorkspace?: (workspace: AgencyWorkspace) => Promise<void> | void;
 }): JSX.Element {
   const [tab, setTab] = useState<'done' | 'archived'>('done');
   const [confirmDelete, setConfirmDelete] = useState<AgencyWorkspace | null>(null);
@@ -511,31 +599,14 @@ export function AgencyDoneView({
         </article>
       ))}
 
-      {confirmDelete && (
-        <div className="agency-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setConfirmDelete(null); }}>
-          <div className="agency-dialog" role="dialog" aria-modal="true" aria-labelledby="agency-confirm-del-done">
-            <div className="agency-dialog-head">
-              <h2 id="agency-confirm-del-done">{t('agency.ui.confirmDeleteWorkspace', { name: confirmDelete.name })}</h2>
-              <button type="button" className="agency-icon-button" onClick={() => setConfirmDelete(null)}>×</button>
-            </div>
-            <p className="agency-muted">{t('agency.ui.deleteWorkspaceWarning')}</p>
-            <div className="agency-dialog-actions">
-              <button type="button" className="agency-secondary-button" onClick={() => setConfirmDelete(null)}>
-                {t('common.cancel')}
-              </button>
-              <button
-                type="button"
-                className="agency-primary-button agency-text-danger"
-                onClick={() => {
-                  onDeleteWorkspace?.(confirmDelete);
-                  setConfirmDelete(null);
-                }}
-              >
-                {t('agency.ui.deleteWorkspace')}
-              </button>
-            </div>
-          </div>
-        </div>
+      {confirmDelete && onDeleteWorkspace && (
+        <DeleteWorkspaceDialog
+          workspace={confirmDelete}
+          sessions={sessions}
+          webTabs={webTabs}
+          onConfirm={onDeleteWorkspace}
+          onClose={() => setConfirmDelete(null)}
+        />
       )}
     </section>
   );

@@ -16,11 +16,22 @@ const ids = ['8e4fefc1-e565-40cc-b85b-f7d43a16b1df', 'f52e047f-d947-426c-a0fa-c3
 const fixture = `import React, {useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {NativeChatGptView} from './src/agency/NativeChatGptView.tsx';
-function App(){const [id,setId]=useState(null),[overlay,setOverlay]=useState(false);return <>
-<nav><button onClick={()=>setId(null)}>CLI</button>${ids.map((id,i)=>`<button onClick={()=>setId('${id}')}>ChatGPT ${i+1}</button>`).join('')}
-<button onClick={()=>setOverlay(!overlay)}>Menu</button></nav>
-{overlay&&<div role="menu"><button onClick={()=>setOverlay(false)}>Dismiss</button></div>}
-<main>{id?<NativeChatGptView tab={{id,url:'https://chatgpt.com/'}} onDisplayed={()=>{}}/>:<input aria-label="CLI fixture"/>}</main></>};
+function App(){
+  const [id,setId]=useState(null),[overlay,setOverlay]=useState(false),[sidebarMenu,setSidebarMenu]=useState(false);
+  return <>
+    <nav>
+      <button onClick={()=>setId(null)}>CLI</button>
+      ${ids.map((id,i)=>`<button onClick={()=>setId('${id}')}>ChatGPT ${i+1}</button>`).join('')}
+      <button onClick={()=>setOverlay(!overlay)}>Menu</button>
+    </nav>
+    <aside>
+      <button onClick={()=>setSidebarMenu(!sidebarMenu)}>SidebarActions</button>
+      {sidebarMenu&&<div className="agency-dropdown-menu" role="menu"><button onClick={()=>setSidebarMenu(false)}>SidebarAction1</button></div>}
+    </aside>
+    {overlay&&<div role="menu"><button onClick={()=>setOverlay(false)}>Dismiss</button></div>}
+    <main>{id?<NativeChatGptView tab={{id,url:'https://chatgpt.com/'}} onDisplayed={()=>{}}/>:<input aria-label="CLI fixture"/>}</main>
+  </>;
+};
 createRoot(document.getElementById('root')).render(<App/>);`;
 async function eventually(check) {
   for (let attempt = 0; attempt < 100; attempt++) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 50)); }
@@ -30,7 +41,7 @@ test('native attachment, retention, overlay safety, security and cold cookie sto
   const bundle = await build({ stdin: { contents: fixture, resolveDir: path.join(here, '../web'), loader: 'tsx' }, bundle: true, write: false, format: 'esm', jsx: 'automatic', logLevel: 'silent' });
   const server = createServer((request, response) => {
     if (request.url === '/bundle.js') { response.setHeader('Content-Type', 'text/javascript'); response.end(bundle.outputFiles[0].text); }
-    else response.end('<!doctype html><html><style>body{margin:0}nav{height:60px}main{position:absolute;top:60px;left:210px;right:0;bottom:0}.maw-browser-viewer{height:100%;width:100%}[role=menu]{position:absolute;z-index:2;top:60px;left:220px;background:white}</style><div id="root"></div><script type="module" src="/bundle.js"></script></html>');
+    else response.end('<!doctype html><html><style>body{margin:0}nav{height:60px}aside{position:absolute;top:60px;left:0;width:200px;bottom:0}.agency-dropdown-menu{position:absolute;z-index:2;top:30px;left:10px;width:150px;background:white}main{position:absolute;top:60px;left:210px;right:0;bottom:0}.maw-browser-viewer{height:100%;width:100%}[role=menu]:not(.agency-dropdown-menu){position:absolute;z-index:2;top:60px;left:220px;background:white}</style><div id="root"></div><script type="module" src="/bundle.js"></script></html>');
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const data = await mkdtemp(path.join(tmpdir(), 'maw-electron-smoke-'));
@@ -59,6 +70,14 @@ test('native attachment, retention, overlay safety, security and cold cookie sto
     await page.getByText('ChatGPT 1', { exact: true }).click();
     await eventually(async () => await attached() === 1);
     assert.deepEqual(await chatIds(), both, 'switching does not duplicate views');
+    // Non-overlapping sidebar menu must keep the native ChatGPT view visible
+    await page.getByText('SidebarActions', { exact: true }).click();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(await attached(), 1, 'sidebar menu opening does not detach the ChatGPT view');
+    await page.getByText('SidebarAction1', { exact: true }).click();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(await attached(), 1, 'normal click keeps ChatGPT attached');
+    // Overlapping menu detaches native view so overlay remains interactive
     await page.getByText('Menu', { exact: true }).click();
     await eventually(async () => await attached() === 0);
     await page.getByText('Dismiss', { exact: true }).click();

@@ -3439,6 +3439,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
             withSessionReservationLock: (id, op) => workspaceLock.runExclusive(id, op),
             hasBlockingSessions: async (id) => agencyRuntime.hasWorkspaceReferences(id) || tabCoordinator.hasBrowserReferences(id),
             publish: (broadcastMsg) => broadcast(broadcastMsg),
+            shutdownWorkspace: (id) => tabCoordinator.shutdownWorkspace(id),
           };
           const domainResponse = 'workspaceId' in message
             ? await tabCoordinator.mutations.runExclusive(message.workspaceId, () => handleAgencyDomainRequest(message, domainContext))
