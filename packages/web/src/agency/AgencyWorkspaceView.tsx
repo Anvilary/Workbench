@@ -210,7 +210,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
     try {
       await request({ type: 'agency.session.create', workspaceId: workspace.id, kind, launchId: crypto.randomUUID(), cols: 100, rows: 30, ...(kind === 'agent' ? { profileId: profileId as CliProfileId } : {}) } as Parameters<Props['request']>[0]);
       setPicker(false);
-    } catch (reason) { setError(String(reason)); }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { flight.current = false; setBusy(false); }
   }
   // A failed/exited agent tab without a native conversation has nothing to resume: replace it with a fresh
@@ -221,7 +221,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
     try {
       await request({ type: 'agency.tab.action', workspaceId: workspace.id, tabId: session.tab.id, action: 'close' });
       await request({ type: 'agency.session.create', workspaceId: workspace.id, kind: 'agent', launchId: crypto.randomUUID(), cols: 100, rows: 30, profileId: session.profileId } as Parameters<Props['request']>[0]);
-    } catch (reason) { setError(String(reason)); }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { flight.current = false; setBusy(false); }
   }
   async function action(tab: WorkspaceTab, action: 'select' | 'close') {
@@ -230,7 +230,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
       await request(tab.kind === 'web'
         ? { type: action === 'select' ? 'agency.webTab.select' : 'agency.webTab.close', workspaceId: workspace.id, tabId: tab.id }
         : { type: 'agency.tab.action', workspaceId: workspace.id, tabId: tab.id, action });
-    } catch (reason) { setError(String(reason)); throw reason; }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); throw reason; }
   }
   async function close(tab: WorkspaceTab) {
     setKeyboardTabs(false);
@@ -253,7 +253,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length;
     if (event.altKey && event.key.startsWith('Arrow')) {
       const ids = tabs.map(tab => tab.id); [ids[current],ids[next]] = [ids[next]!,ids[current]!];
-      try { await request({ type: 'agency.tabs.order', workspaceId: workspace.id, tabIds: ids }); } catch (reason) { setError(String(reason)); }
+      try { await request({ type: 'agency.tabs.order', workspaceId: workspace.id, tabIds: ids }); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     } else {
       void action(tabs[next]!, 'select').catch(() => undefined);
       document.getElementById('tab-' + tabs[next]!.id)?.focus();
@@ -279,7 +279,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
       if (webDialog === 'create') await request({ type: 'agency.webTab.create', workspaceId: workspace.id, url: url.normalizedUrl!, title: webTitle.trim(), select: true, launchId: crypto.randomUUID() });
       else if (selected?.kind === 'web') await request({ type: 'agency.webTab.navigate', workspaceId: workspace.id, tabId: selected.id, url: url.normalizedUrl! });
       setWebDialog(null);
-    } catch (reason) { setError(String(reason)); }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { flight.current = false; setBusy(false); }
   }
   const webHeading = webDialog === 'create' ? t('agency.web.newTab') : t('agency.web.navigate');

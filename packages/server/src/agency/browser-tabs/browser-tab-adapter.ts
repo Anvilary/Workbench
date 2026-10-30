@@ -336,7 +336,7 @@ export class BrowserTabAdapter {
 
       for (const openTab of openTabs) {
         const isTarget = openTab.id === tabId;
-        if (openTab.selected !== isTarget) {
+        if (openTab.selected !== isTarget || isTarget) {
           openTab.selected = isTarget;
           openTab.updatedAt = now;
         }
