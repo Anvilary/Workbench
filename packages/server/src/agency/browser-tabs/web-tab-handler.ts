@@ -60,7 +60,7 @@ export async function handleWebTabMessage(
           tab = await context.adapter.selectTab(message.workspaceId, message.tabId);
         } catch (error) {
           const current = context.adapter.getTabState(message.tabId);
-          if (current) {
+          if (current && current.workspaceId === message.workspaceId && current.closedAt === null) {
             context.publish?.({
               type: 'agency.webTab.changed',
               change: 'updated',

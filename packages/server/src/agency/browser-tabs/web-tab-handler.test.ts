@@ -30,6 +30,7 @@ async function createFixture(t: import('node:test').TestContext) {
 }
 
 const WS1 = '00000000-0000-4000-8000-000000000001' as WorkspaceId;
+const WS2 = '00000000-0000-4000-8000-000000000002' as WorkspaceId;
 
 test('web-tab-handler: creates, selects, renames, reorders, navigates, and closes tabs via protocol messages', async (t) => {
   const { adapter, published, publish } = await createFixture(t);
@@ -240,4 +241,86 @@ test('web-tab-handler: failed select broadcasts updated error state while preser
   // Saved URL MUST be preserved
   assert.equal(changedMsg.tab.url, 'https://chatgpt.com/c/chat-error-test');
 });
+
+test('web-tab-handler: cross-workspace select fails and never broadcasts tab under foreign workspace', async (t) => {
+  const { adapter, published, publish } = await createFixture(t);
+
+  // 1. Create Tab A in Workspace A (WS1)
+  const createA = await handleWebTabMessage(
+    {
+      type: 'agency.webTab.create',
+      requestId: 'req-ca',
+      workspaceId: WS1,
+      url: 'https://chatgpt.com/c/chat-ws1',
+      title: 'Tab WS1',
+    },
+    { adapter, publish },
+  );
+  assert.ok(createA && createA.type === 'agency.webTab.created');
+  const tabA = createA.tab;
+
+  // 2. Create Tab B in Workspace B (WS2)
+  const createB = await handleWebTabMessage(
+    {
+      type: 'agency.webTab.create',
+      requestId: 'req-cb',
+      workspaceId: WS2,
+      url: 'https://chatgpt.com/c/chat-ws2',
+      title: 'Tab WS2',
+    },
+    { adapter, publish },
+  );
+  assert.ok(createB && createB.type === 'agency.webTab.created');
+  const tabB = createB.tab;
+
+  // Clear published messages
+  published.length = 0;
+
+  // 3. Attempt to select Tab B using Workspace A (cross-workspace request)
+  const crossSelectRes = await handleWebTabMessage(
+    {
+      type: 'agency.webTab.select',
+      requestId: 'req-cross',
+      workspaceId: WS1,
+      tabId: tabB.id,
+    },
+    { adapter, publish },
+  );
+
+  // The request must fail with not-found error
+  assert.ok(crossSelectRes);
+  assert.equal(crossSelectRes.type, 'agency.error');
+  assert.equal(crossSelectRes.code, 'not-found');
+
+  // The handler must not broadcast Tab B under Workspace A
+  assert.equal(published.length, 0, 'No broadcast should occur for cross-workspace selection failure');
+
+  // 4. Also verify closed tab selection does not broadcast failure state
+  const closeRes = await handleWebTabMessage(
+    {
+      type: 'agency.webTab.close',
+      requestId: 'req-close-a',
+      workspaceId: WS1,
+      tabId: tabA.id,
+    },
+    { adapter, publish },
+  );
+  assert.ok(closeRes && closeRes.type === 'agency.webTab.closed');
+  published.length = 0;
+
+  const selectClosedRes = await handleWebTabMessage(
+    {
+      type: 'agency.webTab.select',
+      requestId: 'req-select-closed',
+      workspaceId: WS1,
+      tabId: tabA.id,
+    },
+    { adapter, publish },
+  );
+  assert.ok(selectClosedRes);
+  assert.equal(selectClosedRes.type, 'agency.error');
+  assert.equal(selectClosedRes.code, 'not-found');
+  assert.equal(published.length, 0, 'No broadcast should occur for closed tab selection failure');
+});
+
 
