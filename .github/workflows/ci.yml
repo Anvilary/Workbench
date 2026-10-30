@@ -71,6 +71,17 @@ jobs:
       - name: MAW real browser and notification UI regressions
         if: runner.os == 'Linux'
         run: node --test packages/web/src/agency/browser-tabs.test.mjs packages/web/src/agency/notifications.test.mjs packages/web/src/maw-root.test.mjs packages/web/src/terminal-webgl.test.mjs
+      - name: Ubuntu desktop package and production integration fixtures
+        if: runner.os == 'Linux'
+        run: |
+          node scripts/maw/build-desktop-deb.mjs
+          node --test packages/desktop/production.test.mjs
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: ubuntu-desktop-runtime
+          path: dist-desktop/*.deb
+          if-no-files-found: error
       - name: Sandboxed native Electron lifecycle on a separate display
         if: runner.os == 'Linux'
         working-directory: packages/desktop

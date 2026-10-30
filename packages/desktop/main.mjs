@@ -7,11 +7,12 @@ import { PARTITION, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBoun
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Deliberately distinct from both production MAW and any Brave/Neko profile.
 app.setPath('userData', path.resolve(process.env.MAW_DESKTOP_DATA_DIR || path.join(app.getPath('appData'), 'maw-desktop-prototype')));
-app.setName('MAW ChatGPT Prototype');
+app.setName(process.env.MAW_DESKTOP_PRODUCTION === '1' ? 'My Amazing Workspace' : 'MAW ChatGPT Prototype');
 if (app.commandLine.hasSwitch('no-sandbox')) throw new Error('MAW desktop requires Chromium sandboxing');
 app.enableSandbox();
-const local = serviceUrl(process.env.MAW_DESKTOP_URL || '');
-if (!app.requestSingleInstanceLock()) app.exit(0);
+let local = serviceUrl(process.env.MAW_DESKTOP_URL || '');
+delete process.env.MAW_DESKTOP_URL;
+if (!app.requestSingleInstanceLock({ serviceUrl: local.href })) app.exit(0);
 // Do not await app.whenReady() at module scope: Electron waits for ESM
 // evaluation before emitting ready, which would deadlock initialization.
 async function start() {
@@ -176,7 +177,13 @@ async function start() {
   win.webContents.on('render-process-gone', hide);
   for (const event of ['resize', 'minimize', 'restore', 'enter-full-screen', 'leave-full-screen']) win.on(event, invalidate);
   win.webContents.on('before-input-event', desktopShortcut);
-  app.on('second-instance', () => { if (win.isMinimized()) win.restore(); win.show(); win.focus(); });
+  app.on('second-instance', (_event, _argv, _cwd, data) => {
+    try {
+      const next = serviceUrl(data.serviceUrl);
+      if (next.href !== local.href) { hide(); local = next; void win.loadURL(local.href).catch(() => {}); }
+    } catch { return; }
+    if (win.isMinimized()) win.restore(); win.show(); win.focus();
+  });
   win.on('close', event => {
     if (shuttingDown) return;
     event.preventDefault();
@@ -191,4 +198,4 @@ async function start() {
   app.on('window-all-closed', () => app.quit());
   await win.loadURL(local.href);
 }
-void start().catch(error => { console.error('MAW desktop failed:', error.message); app.exit(1); });
+void start().catch(() => { console.error('MAW desktop could not start. Check service readiness and the desktop runtime installation.'); app.exit(1); });
