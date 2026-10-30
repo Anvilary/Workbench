@@ -26,6 +26,8 @@ import { RemoteDevicesStore } from './remote-devices-store.js';
 import {
   LOOPBACK_HOST,
   authorizeRequest,
+  authorizeRequestNoAuth,
+  isLocalNoAuthEnabled,
   buildDeviceCookie,
   buildTokenCookie,
   createSessionToken,
@@ -198,6 +200,23 @@ function createAuthMiddleware(port: number, token: string, remote: RemoteAccessS
   };
 }
 
+/**
+ * Middleware for MAW_UNSAFE_LOCAL_NO_AUTH=1 mode.
+ *
+ * Host and Origin are still checked. Token is never required.
+ * Remote access must have been rejected at startup before this middleware runs.
+ */
+function createNoAuthMiddleware(port: number) {
+  return (request: Request, response: Response, next: NextFunction): void => {
+    const authorization = authorizeRequestNoAuth(request, port);
+    if (authorization.ok) {
+      next();
+      return;
+    }
+    response.status(403).type('text/plain').send(ORIGIN_REFUSED_TEXT);
+  };
+}
+
 /** El puerto estaba tomado, o no se puede abrir: el servidor cae a uno efimero y lo dice. */
 function isPortUnavailable(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | null)?.code;
@@ -329,6 +348,7 @@ function describeStartup(
 async function main(): Promise<void> {
   const ownership = await acquireStoreOwnership(appConfigDir());
   const token = createSessionToken();
+  const noAuth = isLocalNoAuthEnabled();
   const defaultCwd = resolveDefaultCwd();
   // Antes de que nadie lea la configuracion: si quedo en el directorio del
   // nombre viejo, se mueve al nuevo (ver `config-dir-migration.ts`).
@@ -465,6 +485,12 @@ async function main(): Promise<void> {
   const remoteSettings = settings.get().remote;
   let listeningFixed = false;
   let fixedPortBusy = false;
+  if (noAuth && remoteSettings.enabled) {
+    throw new Error(
+      'MAW_UNSAFE_LOCAL_NO_AUTH=1 cannot be used with remote access enabled.\n' +
+      'Disable remote access in settings before starting in token-free mode.',
+    );
+  }
   if (remoteSettings.enabled) {
     try {
       await listenOnLoopback(httpServer, remoteSettings.port);
@@ -481,6 +507,11 @@ async function main(): Promise<void> {
     throw new Error("Couldn't determine the assigned port.");
   }
   const { port } = address;
+  if (noAuth && address.address !== LOOPBACK_HOST) {
+    throw new Error(
+      `MAW_UNSAFE_LOCAL_NO_AUTH=1 requires binding exclusively to ${LOOPBACK_HOST}, got ${address.address}`,
+    );
+  }
 
   const remote = new RemoteAccessService({
     settings,
@@ -489,7 +520,7 @@ async function main(): Promise<void> {
   });
   await remote.load();
 
-  app.use(createAuthMiddleware(port, token, remote));
+  app.use(noAuth ? createNoAuthMiddleware(port) : createAuthMiddleware(port, token, remote));
 
   // Durable Agency stores and session runtime (Phase 2 & Phase 3)
   const agencyWorkspaceStore = new AgencyWorkspaceStore(path.join(appConfigDir(), 'agency-state.json'));
@@ -542,7 +573,7 @@ async function main(): Promise<void> {
   await agencyNotificationStore.initialize();
   await agencyActivityManager.initialize();
 
-  const nekoViewer = mountNekoViewer({ app, httpServer, port, token, remote,
+  const nekoViewer = mountNekoViewer({ app, httpServer, port, token, remote, noAuth,
     validateSelectedTab: (workspaceId, tabId) => {
       const tab = agencyBrowserTabs.getTabState(tabId);
       const workspace = agencyWorkspaceStore.listWorkspaces().find(item => item.id === workspaceId);
@@ -580,6 +611,7 @@ async function main(): Promise<void> {
     vault,
     remote,
     worktrees,
+    noAuth,
   });
 
   // El indice arranca en segundo plano: 3,2 s en frio no pueden demorar la URL.
@@ -621,7 +653,9 @@ async function main(): Promise<void> {
     });
   }
 
-  const url = `http://${LOOPBACK_HOST}:${port}/?${TOKEN_QUERY_PARAM}=${token}`;
+  const url = noAuth
+    ? `http://${LOOPBACK_HOST}:${port}/`
+    : `http://${LOOPBACK_HOST}:${port}/?${TOKEN_QUERY_PARAM}=${token}`;
   void agencyRuntime.recoverActive(workspace => agencyWorkspaceStore.listProjects().some(project => project.id === workspace.projectId && project.status !== 'archived'), nativeRecoveryCapacity).catch(error => console.error('[maw] recovery stopped:', String(error)));
   const remoteStatus = remote.status();
   describeStartup(
@@ -631,6 +665,13 @@ async function main(): Promise<void> {
     shell,
     remoteAccessStartupLine(remoteStatus.state, remoteStatus.port, remote.pairedDevices),
   );
+  if (noAuth) {
+    console.warn(
+      '\n  ⚠  TOKEN-FREE LOCAL MODE (MAW_UNSAFE_LOCAL_NO_AUTH=1)\n' +
+      '  Any process on this machine that can reach 127.0.0.1 can access MAW.\n' +
+      '  MAW executes shell commands. Loopback-only binding does not eliminate all risks.\n'
+    );
+  }
   const clearReadiness = process.env['MAW_RUNTIME_DIR'] ? await publishReadiness(process.env['MAW_RUNTIME_DIR'], url, await readReleaseIdentity(repoRoot)) : async () => {};
   // Escape para desarrollo y pruebas automatizadas: arrancar sin abrir nada.
   if (process.env['AGENT_WORKBENCH_NO_OPEN'] !== '1') openBrowser(url);

@@ -149,10 +149,11 @@ export function buildDeviceCookie(credential: string): string {
   return `${DEVICE_COOKIE}=${encodeURIComponent(credential)}; Path=/; Max-Age=${DEVICE_COOKIE_MAX_AGE_S}; SameSite=Strict; HttpOnly`;
 }
 
-/** Con que entro una peticion: el token de este arranque, o la credencial de un equipo emparejado. */
+/** Con que entro una peticion: el token de este arranque, la credencial de un equipo emparejado, o acceso local sin token. */
 export type Credential =
   | { kind: 'session'; source: TokenSource }
-  | { kind: 'device'; deviceId: string; credential: string };
+  | { kind: 'device'; deviceId: string; credential: string }
+  | { kind: 'local' };
 
 /**
  * La credencial de una peticion, o null.
@@ -227,6 +228,9 @@ export function hasValidOrigin(request: IncomingMessage, port: number): boolean 
 
 export type RejectionReason = 'bad-host' | 'bad-origin' | 'bad-token';
 
+/** Whether the current request is in authenticated mode or local-no-auth mode. */
+export type AuthPolicy = 'authenticated' | 'local-no-auth';
+
 export type Authorization =
   | { ok: true; credential: Credential }
   | { ok: false; reason: RejectionReason };
@@ -249,4 +253,27 @@ export function authorizeRequest(
   if (!hasValidOrigin(request, port)) return { ok: false, reason: 'bad-origin' };
   const credential = matchCredential(request, token, devices);
   return credential === null ? { ok: false, reason: 'bad-token' } : { ok: true, credential };
+}
+
+/**
+ * Token-free authorization for MAW_UNSAFE_LOCAL_NO_AUTH=1 mode.
+ *
+ * Host and Origin checks are still mandatory — they block DNS-rebinding attacks
+ * and cross-origin requests from malicious pages running in the browser.
+ * Only the session-token / device-credential check is omitted.
+ *
+ * Never call this function unless isLocalNoAuthEnabled() returned true at startup.
+ */
+export function authorizeRequestNoAuth(
+  request: IncomingMessage,
+  port: number,
+): Authorization {
+  if (!hasValidHost(request, port)) return { ok: false, reason: 'bad-host' };
+  if (!hasValidOrigin(request, port)) return { ok: false, reason: 'bad-origin' };
+  return { ok: true, credential: { kind: 'local' } };
+}
+
+/** True when MAW_UNSAFE_LOCAL_NO_AUTH=1 is set in the environment. */
+export function isLocalNoAuthEnabled(): boolean {
+  return process.env['MAW_UNSAFE_LOCAL_NO_AUTH'] === '1';
 }
