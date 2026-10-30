@@ -124,7 +124,7 @@ import { GitMissingError } from './git-repo.js';
 import { WorktreeError, WorktreeInUseError, type WorktreeService } from './worktrees/service.js';
 import { remoteRefusal } from './remote-access.js';
 import type { RemoteAccessService } from './remote-access-service.js';
-import { authorizeRequest, type Credential } from './security.js';
+import { authorizeRequest, authorizeRequestNoAuth, type Credential } from './security.js';
 
 /**
  * Cuanto se espera a que arranque la CLI de una pestana recien abierta antes de
@@ -181,6 +181,8 @@ export interface TerminalSocketOptions {
   httpServer: HttpServer;
   port: number;
   token: string;
+  /** When true, MAW_UNSAFE_LOCAL_NO_AUTH=1 is active; skip token check on WS upgrade. */
+  noAuth?: boolean;
   /** La consola de las nuevas y las CLIs apagadas (`settings.*`, Hito 41, §6.32). */
   appSettings: AppSettingsService;
   registry: TerminalRegistry;
@@ -1077,7 +1079,9 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     // Cualquier otra ruta es de Vite. Si destruimos el socket aca, rompemos el HMR.
     if (pathname !== WS_PATH) return;
 
-    const authorization = authorizeRequest(request, port, token, remote.verifier());
+    const authorization = options.noAuth
+      ? authorizeRequestNoAuth(request, port)
+      : authorizeRequest(request, port, token, remote.verifier());
     if (!authorization.ok) {
       socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
       socket.destroy();
@@ -3362,11 +3366,19 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           const patch: { enabled?: boolean; port?: number } = {};
           if (message.enabled !== undefined) patch.enabled = message.enabled;
           if (message.port !== undefined) patch.port = message.port;
+          if (options.noAuth && patch.enabled === true) {
+            sendRemoteError(socket, new ServerTextError(serverText('raw', { text: 'Remote access cannot be enabled in token-free mode.' })));
+            break;
+          }
           void remote.configure(patch).catch((error: unknown) => sendRemoteError(socket, error));
           break;
         }
 
         case 'remote.pairing.start':
+          if (options.noAuth) {
+            sendRemoteError(socket, new ServerTextError(serverText('raw', { text: 'Remote access cannot be enabled in token-free mode.' })));
+            break;
+          }
           try {
             send(socket, { type: 'remote.pairing.code', pairing: remote.startPairing() });
           } catch (error) {

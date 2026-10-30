@@ -104,6 +104,27 @@ maw open
 
 ---
 
+## Token-Free Local Mode (`MAW_UNSAFE_LOCAL_NO_AUTH=1`)
+
+MAW supports an opt-in token-free local mode configured via `MAW_UNSAFE_LOCAL_NO_AUTH=1`:
+
+```sh
+# Run MAW in token-free local mode
+MAW_UNSAFE_LOCAL_NO_AUTH=1 maw start
+```
+
+### Security Considerations:
+> **Warning**: Token-free mode grants local clients access to a command-execution service.
+> Loopback-only binding to `127.0.0.1` prevents access over the local network, but does **not** eliminate all risks on multi-user systems or against malicious local processes.
+>
+> Requirements:
+> - Startup fails if remote access is enabled or if the server cannot bind strictly to `127.0.0.1`.
+> - Strict `Host` and `Origin` headers remain enforced to block DNS-rebinding and cross-site requests.
+> - Browser viewer ownership and independent Neko controller authentication are preserved.
+> - `maw status` reports the directly usable URL without requiring token passing.
+
+---
+
 ## Verified Release-Staging (`maw update`)
 
 ```sh
