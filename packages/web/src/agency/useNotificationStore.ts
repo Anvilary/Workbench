@@ -58,6 +58,7 @@ function saveCachedNotifications(items: readonly MawNotificationItem[]): void {
 export function useNotificationStore(
   transport: AgencyTransport,
   request: ReturnType<typeof useAgencyStore>['request'],
+  enabled: boolean = true,
 ) {
   const [notifications, setNotifications] = useState<MawNotificationItem[]>(loadCachedNotifications);
   const [activityStates, setActivityStates] = useState<Map<string, TabActivityRecord>>(new Map());
@@ -65,6 +66,16 @@ export function useNotificationStore(
   const seenNotificationIds = useRef(new Set(notifications.map(item => item.id)));
   const completedNotificationIds = useRef(new Set<string>());
   const toastTimeouts = useRef(new Map<string, number>());
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+
+  useEffect(() => {
+    if (!enabled) {
+      for (const timer of toastTimeouts.current.values()) window.clearTimeout(timer);
+      toastTimeouts.current.clear();
+      setToasts([]);
+    }
+  }, [enabled]);
 
   useEffect(() => () => {
     for (const timer of toastTimeouts.current.values()) window.clearTimeout(timer);
@@ -137,7 +148,9 @@ export function useNotificationStore(
           return [item, ...prev];
         });
 
-        pushToast(item);
+        if (enabledRef.current) {
+          pushToast(item);
+        }
       } else if (message.type === 'agency.notification.changed') {
         const item: MawNotificationItem = message.notification;
         if (!item) return;

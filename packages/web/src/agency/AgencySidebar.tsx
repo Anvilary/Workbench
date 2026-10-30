@@ -11,9 +11,9 @@ export interface AgencySidebarProps {
   workspaces: readonly AgencyWorkspace[];
   sessions: readonly AgencyRuntimeSession[];
   selected: WorkspaceId | null;
-  showingDone: boolean;
+  showingDone?: boolean;
   onSelect: (id: WorkspaceId) => void;
-  onDoneView: () => void;
+  onDoneView?: () => void;
   onCreate: (project?: ProjectId) => void;
   onCreateProject: () => void;
   onCollapse: () => void;
@@ -26,13 +26,32 @@ export interface AgencySidebarProps {
   onRestore: (workspace: AgencyWorkspace) => void;
 }
 
+export function SidebarToggleIcon(): JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+      <path d="M6 2.5v11" />
+    </svg>
+  );
+}
+
 export function AgencySidebar({
-  projects, workspaces, sessions, selected, showingDone,
-  onSelect, onDoneView, onCreate, onCreateProject, onDone, onArchiveWorkspace, onDeleteWorkspace,
-  onRenameProject, onArchiveProject, onDeleteProject, onRestore, onCollapse,
+  projects, workspaces, sessions, selected, showingDone = false,
+  onSelect, onCreate, onCreateProject, onDone, onArchiveWorkspace, onDeleteWorkspace,
+  onRenameProject, onArchiveProject, onDeleteProject, onCollapse,
 }: AgencySidebarProps): JSX.Element {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState<{ type: 'project' | 'workspace'; id: string } | null>(null);
 
   // Modals state
@@ -44,7 +63,6 @@ export function AgencySidebar({
   const [archivingWorkspace, setArchivingWorkspace] = useState<AgencyWorkspace | null>(null);
   const [deletingWorkspace, setDeletingWorkspace] = useState<AgencyWorkspace | null>(null);
 
-  const doneCount = workspaces.filter((ws) => ws.status === 'done' || ws.status === 'archived').length;
   const groups = activeByProject(projects, workspaces);
 
   function toggle(id: string) {
@@ -68,7 +86,9 @@ export function AgencySidebar({
     <>
       <nav className="agency-sidebar-nav" aria-label={t('agency.ui.projectsAndWorkspaces')}>
         <header className="agency-nav-head">
-          <button className="agency-icon-button" type="button" onClick={onCollapse} aria-label={t('agency.ui.collapseSidebar')} aria-expanded={true}>☰</button>
+          <button className="agency-icon-button" type="button" onClick={onCollapse} aria-label={t('agency.ui.collapseSidebar')} aria-expanded={true}>
+            <SidebarToggleIcon />
+          </button>
           <strong>{t('agency.ui.agency')}</strong>
         </header>
         <div className="agency-side-section">
@@ -218,27 +238,6 @@ export function AgencySidebar({
               </section>
             );
           })}
-        </div>
-        <div className="agency-nav-bottom">
-          <button className={'agency-history-toggle' + (showingDone ? ' selected' : '')} type="button"
-            onClick={() => { setHistoryOpen(!historyOpen); onDoneView(); }} aria-expanded={historyOpen}>
-            <span aria-hidden="true">▤</span>{t('agency.ui.done')}<span className="agency-count">{doneCount}</span>
-          </button>
-          {historyOpen && (
-            <div className="agency-history-mini">
-              {doneCount === 0 && <p className="agency-muted">{t('agency.ui.nothingCompletedYet')}</p>}
-              {workspaces.filter((w) => w.status === 'done' || w.status === 'archived').slice(0, 8).map((ws) => (
-                <div className="agency-workspace-nav-row" key={ws.id}>
-                  <button type="button" className="agency-workspace-nav-button" onClick={onDoneView}>
-                    <span className="agency-status-dot muted" />
-                    <span className="agency-truncate">{ws.name}</span>
-                  </button>
-                  <button type="button" className="agency-row-action" aria-label={t('agency.ui.restoreNamed', { name: ws.name })}
-                    title={t('agency.ui.restoreNamed', { name: ws.name })} onClick={() => onRestore(ws)}>↺</button>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </nav>
 
