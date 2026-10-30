@@ -28,9 +28,35 @@ export function AgencyBrowserViewer({ tab, online, onDisplayed, onReconnect }: P
     let cancelled = false;
     setActivated(false);
     callback.current(tab.id, false);
-    if (online) void activate.current().then(() => {
-      if (!cancelled) setActivated(true);
-    }).catch(() => { if (!cancelled) setState('unavailable'); });
+    if (online) {
+      void fetch(NEKO_STATUS_PATH, { credentials: 'same-origin', cache: 'no-store' })
+        .then(async res => {
+          if (cancelled || !res.ok) return;
+          const status = await res.json().catch(() => null);
+          if (cancelled || !status || typeof status !== 'object') return;
+          if ((status as Record<string, unknown>).configured === false) {
+            setState('not-configured');
+          }
+        })
+        .catch(() => undefined);
+      void activate.current().then(() => {
+        if (!cancelled) setActivated(true);
+      }).catch(() => {
+        if (!cancelled) {
+          void fetch(NEKO_STATUS_PATH, { credentials: 'same-origin', cache: 'no-store' })
+            .then(async res => {
+              if (cancelled) return;
+              const status = res.ok ? await res.json().catch(() => null) : null;
+              if (status && typeof status === 'object' && (status as Record<string, unknown>).configured === false) {
+                setState('not-configured');
+              } else {
+                setState('unavailable');
+              }
+            })
+            .catch(() => { if (!cancelled) setState('unavailable'); });
+        }
+      });
+    }
     return () => { cancelled = true; };
   }, [tab.id, online]);
 
@@ -38,12 +64,12 @@ export function AgencyBrowserViewer({ tab, online, onDisplayed, onReconnect }: P
     const controller = new AbortController();
     const timeout = window.setTimeout(() => { setState('unavailable'); controller.abort(); }, 10000);
     setUrl(null);
-    setState('loading');
     callback.current(tab.id, false);
     if (!online || !targetReady || !activated) {
       window.clearTimeout(timeout);
       return () => controller.abort();
     }
+    setState('loading');
     void fetch(NEKO_STATUS_PATH, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
       .then(async response => {
         if (!response.ok) throw new Error('unavailable');
@@ -103,12 +129,34 @@ export function AgencyBrowserViewer({ tab, online, onDisplayed, onReconnect }: P
     return () => { window.clearInterval(timer); window.removeEventListener('message', onMessage); document.removeEventListener('visibilitychange', inspect); callback.current(tab.id, false); };
   }, [url, online, activated, targetReady, tab.id, tab.workspaceId, attempt]);
 
-  const message = !online ? t('agency.web.disconnected') : !targetReady ? t('agency.web.targetUnavailable') :
-    state === 'not-configured' ? t('agency.web.notConfigured') : state === 'unavailable' ? t('agency.web.unavailable') :
-    state === 'loading' ? t('agency.web.loading') : state === 'ready' ? t('agency.web.connected') : t('agency.web.connecting');
+  const handleReconnect = () => {
+    setState('loading');
+    void onReconnect().then(() => {
+      setActivated(true);
+      setAttempt(value => value + 1);
+    }).catch(() => {
+      void fetch(NEKO_STATUS_PATH, { credentials: 'same-origin', cache: 'no-store' })
+        .then(async res => {
+          const status = res.ok ? await res.json().catch(() => null) : null;
+          if (status && typeof status === 'object' && (status as Record<string, unknown>).configured === false) {
+            setState('not-configured');
+          } else {
+            setState('unavailable');
+          }
+        })
+        .catch(() => setState('unavailable'));
+    });
+  };
+
+  const message = !online ? t('agency.web.disconnected') :
+    state === 'not-configured' ? t('agency.web.notConfigured') :
+    state === 'unavailable' ? t('agency.web.unavailable') :
+    state === 'loading' ? t('agency.web.loading') :
+    !targetReady ? t('agency.web.targetUnavailable') :
+    state === 'ready' ? t('agency.web.connected') : t('agency.web.connecting');
   return <div className="maw-browser-viewer">
     <div className="agency-pane-bar"><span role="status">{message}</span><span className="agency-flex-spacer" />
-      <button type="button" className="agency-text-button" disabled={!online} onClick={() => { void onReconnect().then(() => { setActivated(true); setAttempt(value => value + 1); }).catch(() => setState('unavailable')); }}>{t('agency.web.reconnect')}</button>
+      <button type="button" className="agency-text-button" disabled={!online} onClick={handleReconnect}>{t('agency.web.reconnect')}</button>
     </div>
     {url && online && targetReady && activated ? <iframe key={attempt} ref={iframe} className="maw-neko-frame" src={url} title={t('agency.web.viewerTitle', { name: tab.title })} allow="autoplay; fullscreen" referrerPolicy="same-origin" onError={() => { setState('unavailable'); callback.current(tab.id, false); }} /> : <div className="agency-shell-placeholder"><p>{message}</p></div>}
   </div>;
