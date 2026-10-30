@@ -7,7 +7,7 @@ import { AgencyWorkspaceView } from './AgencyWorkspaceView.js';
 import { useAgencyStore } from './useAgencyStore.js';
 import { useNotificationStore } from './useNotificationStore.js';
 import { NotificationBell } from './NotificationBell.js';
-import { NotificationInbox } from './NotificationInbox.js';
+import { NotificationInbox, type DesktopPermission } from './NotificationInbox.js';
 import { NotificationToastContainer } from './NotificationToast.js';
 import { acknowledgeWorkspaceDraft, createAgencyTransport, putWorkspaceDraft, allWorkspaceTabs } from './model.js';
 import { t } from '../i18n/index.js';
@@ -28,6 +28,11 @@ function readNotificationsEnabled(): boolean {
     if (legacy === 'on') return true;
   } catch {}
   return true;
+}
+
+function readDesktopPermission(): DesktopPermission {
+  if (typeof window === 'undefined' || !('Notification' in window) || !window.isSecureContext) return 'unsupported';
+  return Notification.permission;
 }
 
 export function SettingsMenuIcon(): JSX.Element {
@@ -72,10 +77,11 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   const agencyTransport = useMemo(() => createAgencyTransport(connection), [connection]);
   const store = useAgencyStore(agencyTransport, connection);
   const { data, loaded, online, synchronized, notice } = store;
-  const notificationStore = useNotificationStore(agencyTransport, store.request);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(readNotificationsEnabled);
+  const [desktopPermission, setDesktopPermission] = useState<DesktopPermission>(readDesktopPermission);
+  const notificationStore = useNotificationStore(agencyTransport, store.request, notificationsEnabled);
   const [selectedId, setSelectedId] = useState<WorkspaceId | null>(() => { try { return localStorage.getItem('agency-ui.selected-workspace.v1') as WorkspaceId | null; } catch { return null; } });
   const [showingDone, setShowingDone] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => { try { return localStorage.getItem('agency-ui.sidebar-open.v1') !== 'false'; } catch { return true; } });
@@ -97,8 +103,6 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   const [error, setError] = useState<string | null>(null);
   const [statusToast, setStatusToast] = useState<string | null>(null);
   const [launchErrors, setLaunchErrors] = useState<Record<string, string>>({});
-  const [, setNotificationPermission] = useState(() =>
-    typeof Notification === 'undefined' ? 'unavailable' : Notification.permission);
   const navigationSerial = useRef(0);
   const [pendingNavigation, setPendingNavigation] = useState<{ workspaceId: WorkspaceId; tabId: string; notificationId?: string } | null>(null);
   const seenNotice = useRef(new Set<number>());
@@ -120,11 +124,24 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
       try {
         localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, String(next));
       } catch {}
-      if (next && typeof Notification !== 'undefined' && Notification.permission === 'default') {
-        void Notification.requestPermission().then(setNotificationPermission);
+      if (!next) {
+        setStatusToast(null);
       }
       return next;
     });
+  }, []);
+
+  const requestDesktopPermission = useCallback(async () => {
+    if (typeof window === 'undefined' || !('Notification' in window) || !window.isSecureContext) {
+      setDesktopPermission('unsupported');
+      return;
+    }
+    try {
+      const perm = await Notification.requestPermission();
+      setDesktopPermission(perm);
+    } catch {
+      setDesktopPermission(readDesktopPermission());
+    }
   }, []);
 
   useEffect(() => {
@@ -135,7 +152,9 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
     const sessionName = noticeSession?.tab?.name ?? (noticeSession?.kind === 'terminal' ? t('agency.tabs.terminalNamed', { number: noticeSession.tab?.terminalNumber ?? 1 }) : data.profiles.find(profile => profile.id === noticeSession?.profileId)?.label ?? '');
     const label = (ws?.name ?? t('agency.ui.workspace')) + (sessionName ? ' / ' + sessionName : '');
     const message = notice.kind === 'attention' ? t('agency.ui.needsAttentionNamed', { name: label }) : t('agency.ui.completedTurnNamed', { name: label });
-    setStatusToast(message);
+    if (notificationsEnabled) {
+      setStatusToast(message);
+    }
     if (notificationsEnabled && typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) {
       // Only confirmed server transitions, never snapshots or local send clicks.
       new Notification(t('agency.ui.agency'), { body: message, tag: 'agency-' + notice.sessionId + '-' + notice.kind });
@@ -368,10 +387,10 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
             <button
               type="button"
               className={`agency-icon-button maw-menu-button ${menuOpen ? 'active' : ''}`}
-              aria-label={t('settings.open')}
+              aria-label={t('agency.ui.workspaceMenu')}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
-              title={t('settings.open')}
+              title={t('agency.ui.workspaceMenu')}
               onClick={() => {
                 if (!menuOpen) setInboxOpen(false);
                 setMenuOpen(!menuOpen);
@@ -437,7 +456,9 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
             notifications={notificationStore.notifications}
             unreadCount={notificationStore.unreadCount}
             notificationsEnabled={notificationsEnabled}
+            desktopPermission={desktopPermission}
             onToggleNotifications={toggleNotifications}
+            onRequestDesktopPermission={requestDesktopPermission}
             onClose={() => setInboxOpen(false)}
             onSelect={handleNotificationNavigate}
             onMarkRead={id => { void notificationStore.markRead(id).catch(reason => setError(String(reason))); }}
@@ -447,7 +468,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
         )}
         {error && <div role="alert" className="agency-error-bar">{error}
           <button type="button" onClick={() => setError(null)} aria-label={t('agency.ui.dismissError')}>×</button></div>}
-        {statusToast && <div className="agency-notice-bar" role="status">{statusToast}
+        {notificationsEnabled && statusToast && <div className="agency-notice-bar" role="status">{statusToast}
           <button type="button" aria-label={t('agency.ui.dismissNotification')} onClick={() => setStatusToast(null)}>×</button>
         </div>}
         {!loaded ? (
@@ -529,11 +550,13 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
           if (options.mode === 'terminal' || options.mode === 'combined') await launch('terminal');
           if (failures.length) setLaunchErrors(prev => ({ ...prev, [newWorkspace.id]: failures.join(' · ') }));
         }} />}
-      <NotificationToastContainer
-        toasts={notificationStore.toasts}
-        onDismiss={notificationStore.dismissToast}
-        onNavigate={handleNotificationNavigate}
-      />
+      {notificationsEnabled && (
+        <NotificationToastContainer
+          toasts={notificationStore.toasts}
+          onDismiss={notificationStore.dismissToast}
+          onNavigate={handleNotificationNavigate}
+        />
+      )}
     </div>
   );
 }

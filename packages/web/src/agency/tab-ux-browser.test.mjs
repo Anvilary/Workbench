@@ -162,6 +162,10 @@ window.agencyTest = {
   addTurn2ToAgentB: () => {
     activities = activities.map(a => a.tabId === native2 ? { ...a, state: 'finished', taskId: 'turn-2', turnSequence: 2, updatedAt: new Date().toISOString() } : a);
     emit({ type: 'agency.tab.activity', activity: activities.find(a => a.tabId === native2) });
+  },
+  emitNotificationCreated: (item) => {
+    notifications = [item, ...notifications];
+    emit({ type: 'agency.notification.created', notification: item });
   }
 };
 
@@ -352,15 +356,71 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   assert.equal(await notifToggleBtn.textContent(), 'Disable notifications');
   assert.equal(await page.evaluate(() => localStorage.getItem('agency-ui.notifications-enabled.v1')), null);
 
+  // Desktop notification permission in dropdown footer (fresh browser defaults to 'default')
+  const desktopPermBtn = page.locator('.maw-desktop-perm-button');
+  assert.equal(await desktopPermBtn.count(), 1);
+  assert.equal(await desktopPermBtn.textContent(), 'Allow desktop alerts');
+
+  // Explicit user-initiated click triggers Notification.requestPermission()
+  await page.evaluate(() => {
+    window.__permRequested = false;
+    if (window.Notification) {
+      window.Notification.requestPermission = async () => {
+        window.__permRequested = true;
+        Object.defineProperty(window.Notification, 'permission', { value: 'granted', configurable: true });
+        return 'granted';
+      };
+    }
+  });
+  await desktopPermBtn.click();
+  assert.equal(await page.evaluate(() => window.__permRequested), true);
+  await page.locator('.maw-desktop-perm-status.granted').waitFor();
+  assert.equal(await page.locator('.maw-desktop-perm-status.granted').textContent(), 'Desktop alerts on');
+
   // Click toggle button -> disables notifications
   await notifToggleBtn.click();
   assert.equal(await notifToggleBtn.textContent(), 'Enable notifications');
   assert.equal(await page.evaluate(() => localStorage.getItem('agency-ui.notifications-enabled.v1')), 'false');
 
+  // FINDING 1 Verification:
+  // Disabling notifications suppresses nonessential in-app popups (toast) while preserving inbox item
+  await page.evaluate(() => {
+    window.agencyTest.emitNotificationCreated({
+      id: 'suppressed-notif-1',
+      workspaceId: '11111111-1111-4111-8111-111111111111',
+      tabId: '33333333-3333-4333-8333-333333333333',
+      title: 'Suppressed Alert',
+      body: 'Should not create toast popup',
+      state: 'finished',
+      read: false,
+      createdAt: new Date().toISOString()
+    });
+  });
+  // Item arrives in inbox
+  await page.waitForFunction(() => document.querySelectorAll('.maw-inbox-item').length === 1);
+  // But toast popup is NOT rendered
+  assert.equal(await page.locator('.maw-toast-item').count(), 0);
+
   // Click toggle button again -> re-enables notifications
   await notifToggleBtn.click();
   assert.equal(await notifToggleBtn.textContent(), 'Disable notifications');
   assert.equal(await page.evaluate(() => localStorage.getItem('agency-ui.notifications-enabled.v1')), 'true');
+
+  // Subsequent notification while enabled restores toast popup delivery!
+  await page.evaluate(() => {
+    window.agencyTest.emitNotificationCreated({
+      id: 'restored-notif-2',
+      workspaceId: '11111111-1111-4111-8111-111111111111',
+      tabId: '33333333-3333-4333-8333-333333333333',
+      title: 'Restored Alert',
+      body: 'Should show toast popup',
+      state: 'finished',
+      read: false,
+      createdAt: new Date().toISOString()
+    });
+  });
+  await page.locator('.maw-toast-item').waitFor();
+  assert.ok((await page.locator('.maw-toast-item').textContent() || '').includes('Restored Alert'));
 
   // Close notifications inbox
   await page.locator('.maw-bell-button').click();
@@ -369,6 +429,8 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   // 6. Central shell dropdown next to notifications
   const shellMenuBtn = page.locator('.maw-menu-button');
   assert.equal(await shellMenuBtn.count(), 1);
+  assert.equal(await shellMenuBtn.getAttribute('aria-label'), 'Workspace menu');
+  assert.equal(await shellMenuBtn.getAttribute('title'), 'Workspace menu');
   await shellMenuBtn.click();
   await page.locator('.maw-shell-menu').waitFor();
 
@@ -388,6 +450,35 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   assert.equal(await expandBtn.locator('svg').count(), 1);
   await expandBtn.click();
   await page.waitForFunction(() => document.querySelector('.agency-sidebar.agency-sidebar-collapsed') === null);
+
+  // 8. Viewport and layout verification at 1366x768 and 1920x1080
+  for (const [w, h] of [[1366, 768], [1920, 1080]]) {
+    await page.setViewportSize({ width: w, height: h });
+    const topbarBox = await page.locator('.agency-topbar').boundingBox();
+    assert.ok(topbarBox, `topbar should exist at ${w}x${h}`);
+    assert.equal(topbarBox.x >= 0, true);
+    assert.equal(topbarBox.width <= w, true);
+
+    // Open notifications dropdown and verify it fits on screen without horizontal clipping
+    await page.locator('.maw-bell-button').click();
+    await page.locator('.maw-notification-inbox').waitFor();
+    const inboxBox = await page.locator('.maw-notification-inbox').boundingBox();
+    assert.ok(inboxBox);
+    assert.ok(inboxBox.x >= 0, `inbox left edge ${inboxBox.x} should be >= 0 at ${w}x${h}`);
+    assert.ok(inboxBox.x + inboxBox.width <= w, `inbox right edge ${inboxBox.x + inboxBox.width} should fit within width ${w}`);
+    await page.locator('.maw-bell-button').click();
+    await page.waitForFunction(() => document.querySelectorAll('.maw-notification-inbox').length === 0);
+
+    // Open workspace menu and verify it fits on screen without clipping
+    await shellMenuBtn.click();
+    await page.locator('.maw-shell-menu').waitFor();
+    const menuBox = await page.locator('.maw-shell-menu').boundingBox();
+    assert.ok(menuBox);
+    assert.ok(menuBox.x >= 0, `menu left edge ${menuBox.x} should be >= 0 at ${w}x${h}`);
+    assert.ok(menuBox.x + menuBox.width <= w, `menu right edge ${menuBox.x + menuBox.width} should fit within width ${w}`);
+    await shellMenuBtn.click();
+    await page.waitForFunction(() => document.querySelectorAll('.maw-shell-menu').length === 0);
+  }
 
   assert.deepEqual(errors, []);
 });

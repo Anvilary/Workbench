@@ -555,10 +555,55 @@
 .maw-inbox-footer {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 12px;
   padding: 8px 12px;
   border-top: 1px solid #2e3444;
   background: #151821;
+}
+
+.maw-inbox-footer-desktop {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.maw-desktop-perm-button {
+  background: transparent;
+  border: 1px solid #38bdf8;
+  border-radius: 6px;
+  color: #38bdf8;
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.maw-desktop-perm-button:hover:not(:disabled) {
+  background: #38bdf81a;
+  color: #7dd3fc;
+}
+
+.maw-desktop-perm-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: #333a4d;
+  color: #64748b;
+}
+
+.maw-desktop-perm-status {
+  font-size: 11px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.maw-desktop-perm-status.granted {
+  color: #76b899;
+}
+
+.maw-desktop-perm-status.denied {
+  color: #f87171;
 }
 
 .maw-notification-toggle-button {
@@ -570,6 +615,7 @@
   padding: 4px 10px;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .maw-notification-toggle-button:hover {
