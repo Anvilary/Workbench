@@ -431,6 +431,9 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   assert.equal(await shellMenuBtn.count(), 1);
   assert.equal(await shellMenuBtn.getAttribute('aria-label'), 'Workspace menu');
   assert.equal(await shellMenuBtn.getAttribute('title'), 'Workspace menu');
+  assert.equal(await shellMenuBtn.locator('svg').count(), 1);
+  const menuIconPath = await shellMenuBtn.locator('svg path').getAttribute('d');
+  assert.ok(menuIconPath?.includes('M2.75 4.5h10.5'));
   await shellMenuBtn.click();
   await page.locator('.maw-shell-menu').waitFor();
 

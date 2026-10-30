@@ -49,8 +49,7 @@ export function SettingsMenuIcon(): JSX.Element {
       aria-hidden="true"
       focusable="false"
     >
-      <circle cx="8" cy="8" r="2.3" />
-      <path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" />
+      <path d="M2.75 4.5h10.5M2.75 8h10.5M2.75 11.5h10.5" />
     </svg>
   );
 }
