@@ -1,5 +1,7 @@
 # Native ChatGPT desktop experiment
 
+For installation against the existing service, use [the production Ubuntu guide](PRODUCTION.md). The production command is `maw desktop`; `pnpm desktop` below is development only.
+
 A desktop-first Ubuntu MAW prototype using the existing local Node service and
 React frontend. Neko source and infrastructure are retired in this branch; no
 installed service, container, volume, profile or credentials have been removed. See [validation](VALIDATION.md)
