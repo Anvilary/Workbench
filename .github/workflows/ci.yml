@@ -9,8 +9,8 @@ on:
   # publish.yml runs this whole workflow as its gate before uploading anything.
   workflow_call:
 
-# Playwright is only used by the demo screenshots, with the Chrome already on
-# the machine: there is nothing to download here.
+# Download fixture browsers explicitly in the Linux UI job. Electron has its
+# own pinned Chromium runtime and a separately sandboxed lifecycle check.
 env:
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
 
@@ -62,15 +62,23 @@ jobs:
         run: pnpm exec tsx --test src/maw-updater-acceptance.test.ts
       # Real-systemd activation/rollback (src/maw-systemd-acceptance.test.ts) needs a user systemd manager,
       # which hosted runners do not provide; it runs locally with MAW_REAL_SYSTEMD=1 and skips here.
-      - name: Restricted Neko controller regressions
+      - name: Native desktop boundary policy
         if: runner.os == 'Linux'
-        run: python3 -m unittest discover -s infra/neko/controller -p 'test_*.py'
+        run: pnpm --filter @agent-workbench/desktop test
       - name: Browser for MAW UI regressions
         if: runner.os == 'Linux'
         run: pnpm exec playwright install chromium --with-deps
       - name: MAW real browser and notification UI regressions
         if: runner.os == 'Linux'
         run: node --test packages/web/src/agency/browser-tabs.test.mjs packages/web/src/agency/notifications.test.mjs packages/web/src/maw-root.test.mjs packages/web/src/terminal-webgl.test.mjs
+      - name: Sandboxed native Electron lifecycle on a separate display
+        if: runner.os == 'Linux'
+        working-directory: packages/desktop
+        run: |
+          maw_sandbox_helper="$(node -p "require('path').join(require('path').dirname(require.resolve('electron')), 'dist/chrome-sandbox')")"
+          sudo install -o root -g root -m 4755 "$maw_sandbox_helper" "$maw_sandbox_helper.maw-ci"
+          mv "$maw_sandbox_helper.maw-ci" "$maw_sandbox_helper"
+          xvfb-run -a pnpm test:electron
       - run: pnpm build
 
   package:

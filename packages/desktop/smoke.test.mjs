@@ -40,6 +40,11 @@ test('native attachment, retention, overlay safety, security and cold cookie sto
   const chatIds = () => desktop.evaluate(({ webContents, session }) => webContents.getAllWebContents().filter(contents => contents.session === session.fromPartition('persist:maw-chatgpt')).map(contents => contents.id).sort((a,b) => a-b));
   try {
     desktop = await launch();
+    // Entirely synthetic native page: keep lifecycle/security regressions
+    // independent of provider/network availability. This is not a login test.
+    await desktop.evaluate(({ session }) => {
+      session.fromPartition('persist:maw-chatgpt').protocol.handle('https', () => new Response('<!doctype html><title>Native fixture</title><input aria-label="fixture input">', { headers: { 'Content-Type': 'text/html' } }));
+    });
     const page = await desktop.firstWindow();
     await page.getByText('ChatGPT 1', { exact: true }).click();
     await eventually(async () => await attached() === 1);
