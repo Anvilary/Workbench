@@ -71,7 +71,10 @@ try {
   const response = await fetch(url, { signal: AbortSignal.timeout(3000), redirect: 'error' });
   if (!response.ok) throw new Error('Service is not ready');
   const release = typeof state.releaseId === 'string' ? `; release ${state.releaseId}` : '';
-  if (process.argv[2] === 'status') console.log(`Healthy; PID ${pid}; loopback port ${url.port}${release}`);
+  if (process.argv[2] === 'status') {
+    console.log(`Healthy; PID ${pid}; loopback port ${url.port}${release}`);
+    console.log(`URL: ${url.origin}/`);
+  }
   else if (process.argv[2] === 'url') console.log(url.href);
   else if (process.argv[2] === 'open') {
     const browser = process.argv[3] || 'xdg-open';
