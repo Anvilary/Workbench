@@ -23,7 +23,7 @@ const workspaces = Array.from({ length: 4 }, (_, i) => ({ id: randomUUID(), proj
 await writeFile(path.join(config, 'agency-state.json'), JSON.stringify({ version: 1, projects, workspaces }), { mode: 0o600 });
 await writeFile(path.join(home, '.bashrc'), '# isolated shell\n');
 const env = { ...process.env, HOME: home, USERPROFILE: home, SHELL: '/bin/bash', XDG_CONFIG_HOME: path.dirname(config), XDG_DATA_HOME: path.join(root, 'data'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_STATE_HOME: path.join(root, 'state'), CODEX_HOME: path.join(home, '.codex'), APPDATA: path.join(root, 'appdata'), PI_CODING_AGENT_DIR: path.join(home, '.pi/agent'), PI_CODING_AGENT_SESSION_DIR: path.join(home, '.pi/sessions'), AGENT_WORKBENCH_NO_OPEN: '1', AGENT_WORKBENCH_NO_RESTORE: '1' };
-for (const key of Object.keys(env)) if (/^(NEKO_|CONTROLLER_|AGENT_WORKBENCH_PORT)/.test(key)) delete env[key];
+for (const key of Object.keys(env)) if (/^(AGENT_WORKBENCH_PORT)/.test(key)) delete env[key];
 let child, socket, browser, address, log = '', messages = 0, bytes = 0, reconnects = 0;
 const pending = new Map(), samples = [], errors = [];
 let cdp;

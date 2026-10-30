@@ -1,5 +1,12 @@
 # Agent Workbench
 
+This experimental branch adds **My Amazing Workspace for Ubuntu desktop**. Run
+`pnpm desktop` from the development worktree for one native MAW window with CLI,
+terminal and official ChatGPT tabs. See the [desktop prototype guide](packages/desktop/README.md)
+for setup, security, validation and retained-data migration. Browser access remains
+a compatibility mode. The desktop loads ChatGPT directly over HTTPS; the legacy
+Workbench documentation below describes the existing CLI/browser interface.
+
 [![npm](https://img.shields.io/npm/v/agent-workbench)](https://www.npmjs.com/package/agent-workbench)
 [![CI](https://github.com/cvelasquez/agent-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/cvelasquez/agent-workbench/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/npm/l/agent-workbench)](LICENSE)

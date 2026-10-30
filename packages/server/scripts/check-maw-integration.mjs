@@ -1,4 +1,4 @@
-/** Real isolated MAW/PTY/UI acceptance; optional disposable Neko config JSON.
+/** Real isolated MAW/PTY/UI acceptance; native tabs with browser compatibility.
  * pnpm --filter @agent-workbench/server exec tsx scripts/check-maw-integration.mjs
  * Never supplies a provider prompt or reuses an installed application's store.
  */
@@ -24,15 +24,12 @@ const workspaces = ['Alpha', 'Beta'].map(name => ({ id: randomUUID(), projectId:
   status: 'active', createdAt: now, updatedAt: now, doneAt: null, archivedAt: null }));
 await writeFile(path.join(config, 'agency-state.json'), JSON.stringify({ version: 1, projects: [project], workspaces }));
 await writeFile(path.join(home, '.bashrc'), '# disposable integration fixture\n');
-const neko = process.env.MAW_INTEGRATION_NEKO_ENV ? JSON.parse(await readFile(process.env.MAW_INTEGRATION_NEKO_ENV, 'utf8')) : {};
-const env = { ...process.env, ...neko, HOME: home, USERPROFILE: home, SHELL: '/bin/bash',
+const env = { ...process.env, HOME: home, USERPROFILE: home, SHELL: '/bin/bash',
   XDG_CONFIG_HOME: path.dirname(config), XDG_DATA_HOME: path.join(root, 'data'), XDG_CACHE_HOME: path.join(root, 'cache'),
   XDG_STATE_HOME: path.join(root, 'state'), CODEX_HOME: path.join(home, '.codex'), APPDATA: path.join(root, 'appdata'),
   PI_CODING_AGENT_DIR: path.join(home, '.pi', 'agent'), PI_CODING_AGENT_SESSION_DIR: path.join(home, '.pi', 'sessions'),
   AGENT_WORKBENCH_NO_OPEN: '1', AGENT_WORKBENCH_NO_RESTORE: '1' };
-if (!process.env.MAW_INTEGRATION_NEKO_ENV) {
-  for (const name of ['CONTROLLER_AUTH_TOKEN', 'NEKO_CONTROLLER_TOKEN', 'NEKO_PASSWORD', 'NEKO_MEMBER_MULTIUSER_USER_PASSWORD']) delete env[name];
-}
+
 let child, socket, browser, page;
 let log = '';
 let address;
@@ -142,131 +139,14 @@ try {
   for(let i=0;i<40;i++){const began=performance.now();await selectNative(i%2?shellA:shellB);measurements.switchMs.push(performance.now()-began);}
   measurements.selectionEvents=traffic.slice(trafficStart).length;
   measurements.serverSmaps=await readFile('/proc/'+child.pid+'/smaps_rollup','utf8').then(text=>text.split('\n').filter(line=>/^(Rss|Pss):/.test(line))).catch(()=>[]);
-  let webA, webB, webC;
-  if (process.env.MAW_INTEGRATION_NEKO_ENV) {
-    const createA = { type: 'agency.webTab.create', workspaceId: alpha.id, title: 'ChatGPT A', url: 'https://chatgpt.com/', launchId: randomUUID() };
-    const repeated = await Promise.all([request(createA), request(createA)]);
-    assert.equal(repeated[0].tab.id, repeated[1].tab.id);
-    webA = repeated[0].tab;
-    webB = (await request({ type: 'agency.webTab.create', workspaceId: alpha.id, title: 'ChatGPT B', url: 'https://chatgpt.com/', launchId: randomUUID() })).tab;
-    webC = (await request({ type: 'agency.webTab.create', workspaceId: beta.id, title: 'ChatGPT C', url: 'https://chatgpt.com/', launchId: randomUUID() })).tab;
-    await selectWeb(webA);
-    await page.reload();
-    // This fixture's persisted navigation preference is Beta; select Alpha explicitly.
-    await page.evaluate(id => localStorage.setItem('agency-ui.selected-workspace.v1', id), alpha.id);
-    await page.reload();
-    await page.locator('.maw-neko-frame').waitFor({ timeout: 30_000 });
-    const frame = page.frameLocator('.maw-neko-frame');
-    await frame.locator('video').waitFor({ timeout: 30_000 });
-    await eventually(() => frame.locator('video').evaluate(video => video.readyState >= 2 && video.videoWidth > 0 &&
-      video.srcObject?.getVideoTracks().some(track => track.readyState === 'live')), 'genuine Neko WebRTC media', 45_000);
-    assert.equal(await page.locator('iframe').count(), 1);
-    assert.match(await page.locator('iframe').getAttribute('src'), /^\/api\/agency\/browser\/viewer\//);
-    assert.ok((await notifications()).activityStates.filter(record => [webA.id, webB.id, webC.id].includes(record.tabId)).every(record => record.state === 'unknown'));
-    check('genuine authenticated Neko Chromium stream displayed in single MAW surface');
-    await delay(1500);
-    const overlay = frame.getByTestId('player-overlay');
-    if (await overlay.count()) await overlay.click();
-    const control = frame.getByTestId('control-request');
-    if (!/release/i.test(await control.getAttribute('aria-label') ?? '')) await control.click();
-    await eventually(async () => /release/i.test(await control.getAttribute('aria-label') ?? ''), 'ordinary Neko keyboard/mouse control');
-    const input = frame.getByTestId('player').locator('textarea').first();
-    await input.click({ force: true });
-    await delay(300);
-    const marker = 'maw-keyboard-' + randomUUID();
-    const typedUrl = 'https://chatgpt.com/?maw-test=' + marker;
-    await page.keyboard.press('Control+l');
-    await delay(300);
-    await page.keyboard.type(typedUrl, { delay: 20 });
-    await delay(200);
-    await page.keyboard.press('Enter');
-    await page.screenshot({ path: path.join(out, 'neko-keyboard-after.png'), fullPage: true });
-    await eventually(async () => {
-      const response = await fetch(neko.NEKO_CONTROLLER_URL + '/tabs', { headers: { Authorization: 'Bearer ' + neko.CONTROLLER_AUTH_TOKEN } });
-      return (await response.json()).tabs.some(tab => tab.id === webA.targetRef && tab.url.includes(marker));
-    }, 'keyboard input through WebRTC reaches intended Chromium target');
-    await eventually(async () => {
-      const response=await fetch(neko.NEKO_CONTROLLER_URL+'/tabs',{headers:{Authorization:'Bearer '+neko.CONTROLLER_AUTH_TOKEN}});
-      const live=(await response.json()).tabs.find(tab=>tab.id===webA.targetRef);
-      return live?.url?.startsWith('https://chatgpt.com/') && (await webSnapshot()).tabs.find(tab=>tab.id===webA.id)?.url===live.url;
-    }, 'live URL persistence including guest authentication redirects', 20_000);
-    check('real Neko keyboard input controls Chromium and live navigation is persisted');
-
-    if (process.env.MAW_TRY_CHATGPT_GUEST === '1') {
-      await delay(1500);
-      const videoBox = await frame.locator('video').boundingBox();
-      assert.ok(videoBox);
-      await page.mouse.click(videoBox.x + videoBox.width * 0.60, videoBox.y + videoBox.height * 0.57);
-      await page.keyboard.type('For a browser background continuity test, write a numbered list from 1 to 200, with one short sentence explaining a different basic arithmetic fact on each line. Continue through all 200 without asking follow-up questions.', { delay: 8 });
-      await page.keyboard.press('Enter');
-      await delay(700);
-      await page.screenshot({ path: path.join(out, 'chatgpt-before-switch.png'), fullPage: true });
-      await selectWeb(webB);
-      await selectNative(shellA);
-      await page.locator('.agency-workspace-nav-button').filter({ hasText: 'Beta' }).click();
-      await selectWeb(webC);
-      await selectNative(shellB);
-      await delay(12_000);
-      await page.locator('.agency-workspace-nav-button').filter({ hasText: 'Alpha' }).click();
-      await selectWeb(webA);
-      await page.locator('.maw-neko-frame').waitFor();
-      await eventually(() => page.frameLocator('.maw-neko-frame').locator('video').evaluate(video => video.readyState >= 2 && video.videoWidth > 0), 'guest return live stream', 30_000);
-      await delay(1500);
-      await page.screenshot({ path: path.join(out, 'chatgpt-after-background.png'), fullPage: true });
-      results.push({ label: 'guest ChatGPT response attempted only through streamed UI', status: 'REQUIRES_VISUAL_REVIEW', targetRefPreserved: (await webSnapshot()).tabs.find(tab => tab.id === webA.id)?.targetRef === webA.targetRef });
-    }
-    for (const [width, height] of [[390, 844], [768, 1024], [1280, 720], [1366, 768], [1920, 1080], [2560, 1440]]) {
-      await page.setViewportSize({ width, height });
-      try {
-        await eventually(()=>page.frameLocator('.maw-neko-frame').locator('video').evaluate(v=>v.readyState>=2 && !v.paused && v.videoWidth>0),'viewport live media',8000);
-        results.push({label:`live viewer ${width}x${height}`,status:'PASS'});
-      } catch { results.push({label:`live viewer ${width}x${height}`,status:'UNVERIFIED',reason:'media not ready within 8 seconds after switching'}); }
-      if (await page.getByRole('button',{name:'Expand sidebar',exact:true}).count()) await page.getByRole('button',{name:'Expand sidebar',exact:true}).click();
-      await page.getByRole('separator').press('ArrowRight'); await page.getByRole('separator').press('Home');
-      await page.screenshot({path:path.join(out,`sidebar-${width}x${height}.png`),fullPage:true});
-      if (await page.getByRole('button',{name:'Collapse sidebar',exact:true}).count()) await page.getByRole('button',{name:'Collapse sidebar',exact:true}).click();
-      if (width === 390 && await page.getByRole('button',{name:'Collapse sidebar',exact:true}).count()) await page.getByRole('button',{name:'Collapse sidebar',exact:true}).click();
-      await page.getByRole('tab',{name:'ChatGPT A'}).press('F2');
-      await page.getByLabel('Tab title',{exact:true}).fill('Research '+width);
-      await page.screenshot({path:path.join(out,`rename-${width}x${height}.png`),fullPage:true});
-      await page.getByLabel('Tab title',{exact:true}).press('Enter');
-      await page.getByRole('tab',{name:'Research '+width}).waitFor();
-      await request({type:'agency.webTab.rename',workspaceId:alpha.id,tabId:webA.id,title:'ChatGPT A'});
-      await page.getByRole('tab',{name:'ChatGPT A'}).waitFor();
-      await page.locator('.maw-bell-button').click(); await page.locator('.maw-notification-inbox').waitFor();
-      await page.screenshot({path:path.join(out,`inbox-${width}x${height}.png`),fullPage:true});
-      await page.keyboard.press('Escape');
-      await page.screenshot({ path: path.join(out, `neko-${width}x${height}.png`), fullPage: true });
-      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `overflow at ${width}`);
-      if (width === 390) {
-        if (await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).count()) await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click();
-        await page.getByRole('button', { name: 'Add tab' }).click();
-        await page.getByRole('menuitem', { name: /ChatGPT/ }).waitFor();
-        await page.screenshot({ path: path.join(out, 'neko-narrow-controls.png'), fullPage: true });
-        await page.getByRole('button', { name: 'Add tab' }).click();
-        await page.getByRole('tab', { name: /ChatGPT B/ }).click();
-        await page.getByRole('tab', { name: /ChatGPT A/ }).click();
-        check('narrow layout sidebar collapse, add menu and browser tab controls accessible');
-      }
-    }
-    await selectWeb(webB); await selectNative(shellA); await selectWeb(webC); await selectWeb(webA);
-    const targets = (await webSnapshot()).tabs;
-    for (const tab of [webA, webB, webC]) assert.equal(targets.find(item => item.id === tab.id).targetRef, tab.targetRef);
-    assert.equal((await snapshot()).sessions.find(session => session.id === shellA.id).terminalId, shellA.terminalId);
-    await selectNative(shellA);
-    await eventually(async () => await page.locator('.maw-neko-frame').count() === 0, 'browser surface hides for terminal');
-    check('switch A/B/native/across workspaces retains all real targets and PTY identity');
-    await selectWeb(webA);
-    await request({ type: 'agency.webTab.close', workspaceId: alpha.id, tabId: webB.id });
-    assert.ok((await webSnapshot()).tabs.some(tab => tab.id === webA.id && tab.targetRef === webA.targetRef));
-    assert.ok(!(await webSnapshot()).tabs.some(tab => tab.id === webB.id));
-    check('closing a browser tab preserves sibling browser target');
-  } else {
-    await assert.rejects(request({ type: 'agency.webTab.create', workspaceId: alpha.id, title: 'Offline ChatGPT', url: 'https://chatgpt.com/', launchId: randomUUID() }), /Browser|browser|engine|configured|unavailable/);
-    const saved = (await webSnapshot()).tabs;
-    assert.equal(saved.length, 1); assert.equal(saved[0].runtimeState, 'error');
-    check('unconfigured browser persists logical tab and fails explicitly');
-  }
+  const webA = (await request({ type: 'agency.webTab.create', workspaceId: alpha.id, title: 'ChatGPT A', url: 'https://chatgpt.com/', launchId: randomUUID() })).tab;
+  assert.equal(webA.runtimeState, 'client-managed');
+  await selectWeb(webA);
+  await page.evaluate(id => localStorage.setItem('agency-ui.selected-workspace.v1', id), alpha.id);
+  await page.reload();
+  await page.getByRole('link', { name: 'Open ChatGPT', exact: true }).waitFor();
+  assert.equal(await page.locator('iframe').count(), 0);
+  check('logical ChatGPT tab uses external fallback in an ordinary browser');
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.screenshot({ path: path.join(out, 'integrated-workspace.png'), fullPage: true });
   await request({type:'agency.tab.rename',workspaceId:alpha.id,tabId:shellA.tab.id,name:'Audit shell'});
@@ -285,9 +165,9 @@ try {
   if (webA) {
     const restored = (await selectWeb(webA)).tab;
     assert.equal(restored.targetRef, targetBeforeRestart);
-    assert.equal(restored.runtimeState, 'ready');
+    assert.equal(restored.runtimeState, 'client-managed');
   }
-  check(webA ? 'MAW restart retains notification IDs/read state and verified live browser target' : 'MAW restart retains notification IDs and independent read state');
+  check(webA ? 'MAW restart retains notification IDs/read state and stable logical browser tab' : 'MAW restart retains notification IDs and independent read state');
   assert.deepEqual(errors, []);
   await writeFile(path.join(out, 'results.json'), JSON.stringify({ results, measurements, pageErrors: errors,
     realChatGPTResponse: 'UNVERIFIED: disposable browser has no user authentication; no completion claim',

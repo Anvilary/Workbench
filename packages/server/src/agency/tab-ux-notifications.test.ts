@@ -607,7 +607,7 @@ test('Acceptance 6 & 7: Mixed tab ordering persists across restart, rejects inva
     });
     const { AgencySessionRuntime } = await import('./agency-session-runtime.js');
     const { AgencySessionStore } = await import('./agency-session-store.js');
-    const { BrowserTabAdapter, BrowserTabStore, MemoryBrowserControllerDriver } = await import('./browser-tabs/index.js');
+    const { BrowserTabAdapter, BrowserTabStore } = await import('./browser-tabs/index.js');
     const { AgencyTabCoordinator } = await import('./tab-coordinator.js');
 
     const native = new AgencySessionRuntime({
@@ -618,8 +618,7 @@ test('Acceptance 6 & 7: Mixed tab ordering persists across restart, rejects inva
     });
     await native.initialize();
 
-    const driver = new MemoryBrowserControllerDriver();
-    const browser = new BrowserTabAdapter({ store: new BrowserTabStore(path.join(root, 'web.json')), driver, workspaceStore });
+    const browser = new BrowserTabAdapter({ store: new BrowserTabStore(path.join(root, 'web.json')), workspaceStore });
     await browser.restore();
 
     const coordinator = new AgencyTabCoordinator(native, browser, workspaceStore, () => {});

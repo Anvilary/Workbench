@@ -70,10 +70,9 @@ import {
 } from './agency/agency-session-runtime.js';
 import { buildAgencyProfileLaunch } from './agency/agency-profile-capabilities.js';
 import { WorkspaceMutex } from './agency/workspace-lock.js';
-import { BrowserTabAdapter, BrowserTabStore, NekoBrowserControllerDriver, NullBrowserControllerDriver } from './agency/browser-tabs/index.js';
+import { BrowserTabAdapter, BrowserTabStore } from './agency/browser-tabs/index.js';
 import { AgencyNotificationStore } from './agency/agency-notification-store.js';
 import { TabActivityManager } from './agency/tab-activity-manager.js';
-import { mountNekoViewer } from './agency/neko-viewer.js';
 
 const serverDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -563,25 +562,13 @@ async function main(): Promise<void> {
   });
   await agencyRuntime.initialize();
 
-  const browserDriver = process.env['CONTROLLER_AUTH_TOKEN'] || process.env['NEKO_CONTROLLER_TOKEN']
-    ? new NekoBrowserControllerDriver() : new NullBrowserControllerDriver();
-  const agencyBrowserTabs = new BrowserTabAdapter({ store: new BrowserTabStore(), driver: browserDriver,
-    workspaceStore: agencyWorkspaceStore });
+  const agencyBrowserTabs = new BrowserTabAdapter({ store: new BrowserTabStore(), workspaceStore: agencyWorkspaceStore });
   await agencyBrowserTabs.restore();
   const agencyNotificationStore = new AgencyNotificationStore();
   const agencyActivityManager = new TabActivityManager({ notificationStore: agencyNotificationStore });
   await agencyNotificationStore.initialize();
   await agencyActivityManager.initialize();
 
-  const nekoViewer = mountNekoViewer({ app, httpServer, port, token, remote, noAuth,
-    validateSelectedTab: (workspaceId, tabId) => {
-      const tab = agencyBrowserTabs.getTabState(tabId);
-      const workspace = agencyWorkspaceStore.listWorkspaces().find(item => item.id === workspaceId);
-      return !!tab && tab.workspaceId === workspaceId && !tab.closedAt && tab.selected && tab.runtimeState === 'ready' &&
-        !!tab.targetRef && workspace?.status === 'active' &&
-        agencyWorkspaceStore.listProjects().some(project => project.id === workspace.projectId && project.status !== 'archived');
-    },
-  });
   const closeUi = isProduction ? mountBuiltUi(app) : await mountDevUi(app, httpServer);
 
   const detachSocket = attachTerminalSocket({
@@ -684,7 +671,6 @@ async function main(): Promise<void> {
 
     stopWatching();
     detachSocket();
-    nekoViewer.dispose();
     // Cancela los temporizadores de la copia; lo pendiente se copia en el proximo arranque.
     vault.dispose();
     conversations.disposeAll();
@@ -702,7 +688,7 @@ async function main(): Promise<void> {
     remote.dispose();
 
     void Promise.allSettled([
-      agencyBrowserTabs.captureFinalUrls(),
+      agencyBrowserTabs.flush(),
       store.flush(),
       agencySessionStore.flush(),
       agencyWorkspaceStore.flush(),

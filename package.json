@@ -29,6 +29,8 @@
     "node": ">=20"
   },
   "scripts": {
+    "desktop": "node scripts/desktop-prototype.mjs",
+    "desktop:prototype": "node scripts/desktop-prototype.mjs",
     "dev": "pnpm --filter @agent-workbench/server dev",
     "build": "pnpm --filter @agent-workbench/web build",
     "start": "pnpm --filter @agent-workbench/server start",

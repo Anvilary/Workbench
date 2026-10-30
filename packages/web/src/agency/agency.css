@@ -887,6 +887,3 @@
 }
 
 .maw-browser-viewer { display:flex; flex:1; flex-direction:column; min-width:0; min-height:0; }
-.maw-neko-frame { display:block; flex:1; width:100%; min-height:0; border:0; background:#12141a; }
-.maw-browser-toolbar { display:flex; gap:10px; min-width:0; }
-.maw-browser-toolbar > .agency-truncate { min-width:0; flex:1; }

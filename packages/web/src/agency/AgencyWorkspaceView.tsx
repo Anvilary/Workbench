@@ -7,11 +7,11 @@ import { t } from '../i18n/index.js';
 import { agencySessionText, agencyTabActivityText } from './agency-labels.js';
 import { allWorkspaceTabs, canLaunchAgent, selectedWorkspaceTab, type WorkspaceTab } from './model.js';
 import { TabNameInput } from './TabNameInput.js';
-import { AgencyBrowserViewer } from './AgencyBrowserViewer.js';
 import { validateChatGptUrl, validateWebTabTitle } from '@agent-workbench/shared';
 import type { AgencyTransport } from './model.js';
 import type { useAgencyStore } from './useAgencyStore.js';
 import { AgencyProfileDialog } from './AgencyProfileDialog.js';
+import { NativeChatGptView } from './NativeChatGptView.js';
 
 interface Props {
   workspace: AgencyWorkspace;
@@ -446,6 +446,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
           <button type="button" role="menuitem" onClick={() => { setMenu(false); setPicker(true); }}>{t('agency.tabs.newCLI')}</button>
           <button type="button" role="menuitem" onClick={() => void add('terminal')}>{t('agency.tabs.newTerminal')}</button>
           <button type="button" role="menuitem" onClick={() => webEditor('create')}>{t('agency.web.newTab')}</button>
+          {selected?.kind === 'web' && <button type="button" role="menuitem" onClick={() => webEditor('navigate')}>{t('agency.web.navigate')}</button>}
           {selected && <button type="button" role="menuitem" onClick={() => { setMenu(false); setKeyboardTabs(true); setRenaming(selected.id); }}>{t('agency.web.rename')}</button>}
         </div>}
       </div>
@@ -455,11 +456,7 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
     <div className="maw-session-content">
       {tabs.filter(tab => tab.kind === 'native').map(tab => tab.kind === 'native' && <SessionPane focusTerminal={!keyboardTabs} key={tab.id} session={tab.session} active={selected?.id === tab.id} connection={connection} online={online} request={request} sendImmediate={sendImmediate} report={setError} onDisplayed={reportDisplayed} profile={tab.session.kind === 'agent' ? profiles.find(profile => profile.id === tab.session.profileId) : undefined} busy={busy} onConfigure={setConfiguringProfile} onStartAgain={session => void startAgain(session)} />)}
       {selected?.kind === 'web' && <div className="maw-session-pane" role="tabpanel" id={'pane-' + selected.id} aria-labelledby={'tab-' + selected.id}>
-        <div className="agency-pane-bar maw-browser-toolbar"><span className="agency-truncate" title={selected.web.url}>{selected.web.url}</span><span className="agency-flex-spacer" />
-          <button type="button" className="agency-text-button" disabled={!online || busy} onClick={() => webEditor('navigate')}>{t('agency.web.navigate')}</button>
-          <button type="button" className="agency-text-button" disabled={!online || busy} onClick={() => { setKeyboardTabs(true); setRenaming(selected.id); }}>{t('agency.web.rename')}</button>
-        </div>
-        <AgencyBrowserViewer key={selected.id + ':' + selected.web.targetRef} tab={selected.web} online={online} onDisplayed={reportDisplayed} onReconnect={() => action(selected, 'select')} />
+        <NativeChatGptView tab={selected.web} onDisplayed={reportDisplayed} />
       </div>}
       {!selected && <div className="agency-shell-placeholder"><p>{tabs.length ? t('agency.web.selectTab') : t('agency.tabs.empty')}</p>
         {!tabs.length && <><button type="button" className="agency-secondary-button" disabled={!online} onClick={() => setPicker(true)}>{t('agency.tabs.newCLI')}</button><button type="button" className="agency-secondary-button" disabled={!online || busy} onClick={() => void add('terminal')}>{t('agency.tabs.newTerminal')}</button><button type="button" className="agency-secondary-button" disabled={!online || busy} onClick={() => webEditor('create')}>{t('agency.web.newTab')}</button></>}
