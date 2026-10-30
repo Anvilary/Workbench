@@ -58,6 +58,7 @@ import {
   type RandomBytes,
 } from './remote-access.js';
 import type { RemoteDevicesStore } from './remote-devices-store.js';
+import { isLocalNoAuthEnabled } from './security.js';
 import type { SettingsStore } from './settings-store.js';
 
 /** Cada cuánto, como mucho, se guarda la "última vez visto". */
@@ -275,6 +276,9 @@ export class RemoteAccessService {
 
   /** Lanza un `ServerTextError` si el puerto no sirve; los ajustes quedan como estaban. */
   async configure(patch: { enabled?: boolean; port?: number }): Promise<void> {
+    if (patch.enabled === true && isLocalNoAuthEnabled()) {
+      throw new ServerTextError(serverText('raw', { text: 'Remote access cannot be enabled in token-free mode.' }));
+    }
     if (patch.port !== undefined && !isRemotePort(patch.port)) {
       throw new ServerTextError(serverText('remotePortInvalid', { max: REMOTE_MAX_PORT, min: REMOTE_MIN_PORT }));
     }
@@ -288,6 +292,9 @@ export class RemoteAccessService {
   }
 
   startPairing(): RemotePairingCode {
+    if (isLocalNoAuthEnabled()) {
+      throw new ServerTextError(serverText('raw', { text: 'Remote access cannot be enabled in token-free mode.' }));
+    }
     if (!this.accepting()) throw new ServerTextError(serverText('remoteNotActive'));
     if (this.book.size >= REMOTE_MAX_DEVICES) {
       throw new ServerTextError(serverText('remoteTooManyDevices', { max: REMOTE_MAX_DEVICES }));

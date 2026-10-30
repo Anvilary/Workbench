@@ -14,7 +14,7 @@ import { request as httpsRequest } from 'node:https';
 import type { Duplex } from 'node:stream';
 import type { Express, Request, Response } from 'express';
 import type { DeviceVerifier } from '../remote-access.js';
-import { authorizeRequest } from '../security.js';
+import { authorizeRequest, authorizeRequestNoAuth } from '../security.js';
 
 export const NEKO_VIEWER_PATH = '/api/agency/browser/viewer';
 const VIEWER_COOKIE = 'maw_neko_viewer';
@@ -29,6 +29,8 @@ export interface NekoViewerOptions {
   port: number;
   token: string;
   remote: { verifier(): DeviceVerifier | null };
+  /** When true, MAW_UNSAFE_LOCAL_NO_AUTH=1 is active; token check is skipped. */
+  noAuth?: boolean;
   env?: NodeJS.ProcessEnv;
   validateSelectedTab?: (workspaceId: string, tabId: string) => boolean | Promise<boolean>;
 }
@@ -63,11 +65,15 @@ function selectionFrom(url: URL): Selection | null {
 
 function ownerFor(request: IncomingMessage, options: NekoViewerOptions): string | number {
   try {
-    const result = authorizeRequest(request, options.port, options.token, options.remote.verifier());
+    const result = options.noAuth
+      ? authorizeRequestNoAuth(request, options.port)
+      : authorizeRequest(request, options.port, options.token, options.remote.verifier());
     if (!result.ok) return result.reason === 'bad-token' ? 401 : 403;
     return result.credential.kind === 'device'
       ? `device:${result.credential.deviceId}`
-      : createHash('sha256').update(options.token).digest('hex');
+      : result.credential.kind === 'local'
+        ? 'local'
+        : createHash('sha256').update(options.token).digest('hex');
   } catch { return 401; }
 }
 

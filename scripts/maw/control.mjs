@@ -67,15 +67,20 @@ try {
     }
   }
   const url = new URL(state.url);
-  if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port || !url.searchParams.get('token') || url.username || url.password) throw new Error('Invalid authenticated loopback URL');
+  // Loopback only. Either authenticated (?token=...) or token-free local mode.
+  if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port || url.username || url.password) {
+    throw new Error('Invalid loopback URL');
+  }
+  const noAuth = !url.searchParams.get('token');
   const response = await fetch(url, { signal: AbortSignal.timeout(3000), redirect: 'error' });
   if (!response.ok) throw new Error('Service is not ready');
   const release = typeof state.releaseId === 'string' ? `; release ${state.releaseId}` : '';
+  const modeLabel = noAuth ? '; token-free local mode (MAW_UNSAFE_LOCAL_NO_AUTH=1)' : '';
   if (process.argv[2] === 'status') {
-    console.log(`Healthy; PID ${pid}; loopback port ${url.port}${release}`);
+    console.log(`Healthy; PID ${pid}; loopback port ${url.port}${release}${modeLabel}`);
     console.log(`URL: ${url.origin}/`);
   }
-  else if (process.argv[2] === 'url') console.log(url.href);
+  else if (process.argv[2] === 'url') console.log(noAuth ? url.origin + '/' : url.href);
   else if (process.argv[2] === 'open') {
     const browser = process.argv[3] || 'xdg-open';
     const child = spawn(browser, [url.href], { stdio: 'ignore' });
