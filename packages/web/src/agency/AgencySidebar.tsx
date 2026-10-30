@@ -86,10 +86,15 @@ export function AgencySidebar({
     <>
       <nav className="agency-sidebar-nav" aria-label={t('agency.ui.projectsAndWorkspaces')}>
         <header className="agency-nav-head">
+          <div className="agency-nav-brand">
+            <svg className="agency-nav-diamond" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 2.5 21.5 12 12 21.5 2.5 12Z" />
+            </svg>
+            <strong>{t('agency.ui.agency')}</strong>
+          </div>
           <button className="agency-icon-button" type="button" onClick={onCollapse} aria-label={t('agency.ui.collapseSidebar')} aria-expanded={true}>
             <SidebarToggleIcon />
           </button>
-          <strong>{t('agency.ui.agency')}</strong>
         </header>
         <div className="agency-side-section">
           <div className="agency-side-heading">
