@@ -169,7 +169,9 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
       window.clearTimeout(waiting.timeout);
       pending.current.delete(message.requestId);
       if (message.type === 'agency.error') {
-        waiting.reject(new Error(agencyErrorText(message.code), { cause: message.message }));
+        const text = agencyErrorText(message.code);
+        const detailed = message.message && message.message !== text ? `${text}: ${message.message}` : text;
+        waiting.reject(new Error(detailed, { cause: message.message }));
       } else {
         waiting.resolve(message);
       }

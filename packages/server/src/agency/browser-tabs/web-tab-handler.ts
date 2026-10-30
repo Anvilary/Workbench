@@ -55,7 +55,21 @@ export async function handleWebTabMessage(
       }
 
       case 'agency.webTab.select': {
-        const tab = await context.adapter.selectTab(message.workspaceId, message.tabId);
+        let tab: import('@agent-workbench/shared').WebTab;
+        try {
+          tab = await context.adapter.selectTab(message.workspaceId, message.tabId);
+        } catch (error) {
+          const current = context.adapter.getTabState(message.tabId);
+          if (current && current.workspaceId === message.workspaceId && current.closedAt === null) {
+            context.publish?.({
+              type: 'agency.webTab.changed',
+              change: 'updated',
+              workspaceId: message.workspaceId,
+              tab: current,
+            });
+          }
+          throw error;
+        }
         context.publish?.({
           type: 'agency.webTab.changed',
           change: 'updated',
