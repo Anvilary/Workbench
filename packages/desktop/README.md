@@ -141,6 +141,7 @@ policy and OS credential storage can require login again.
 * `packages/web/src/agency/{NativeChatGptView.tsx,useNativeChatGptTabs.ts,AgencyApp.tsx,AgencyWorkspaceView.tsx}`: native surface, checkpoints and existing tab integration.
 * Fallback strings and removal of obsolete streaming strings in each existing `packages/web/src/i18n/locales/*.json` catalog.
 * `scripts/desktop-prototype.mjs`, root `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `.gitignore`: isolated launcher and pinned dependency.
+* `.github/workflows/ci.yml`: native policy and sandboxed Electron checks replace the retired controller test.
 * This document, validation report, migration plan and `evidence/`: review evidence.
 
 Neko source, controller/viewer adapters, Docker Compose configuration, fixture scripts and obsolete stream tests are removed from the repository in this PR. No running container, volume, profile or credentials are removed. No merge, deployment or production service modification is included.

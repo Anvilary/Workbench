@@ -51,7 +51,7 @@ attachment/detachment before capturing the second tab and terminal. Two retained
 ChatGPT WebContents identities were observed across tab switches. The automated
 Electron fixture also checks exact resized bounds and fullscreen, view retention,
 background closure/pruning, sandbox preferences, no website preload, shared session
-storage and invalid IPC rejection. Browser regressions retain mixed ordering,
+storage and invalid IPC rejection. The automated native page is a synthetic protocol fixture, independent of provider/network availability. Browser regressions retain mixed ordering,
 rename, CLI input, notification safety, reconnect and independent web closure.
 
 Actual typing, scrolling, selection, shared login and clipboard were confirmed by
