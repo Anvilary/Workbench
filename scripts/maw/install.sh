@@ -54,6 +54,7 @@ install -m 755 "$script_dir/maw-render-unit.sh" "$lib_dir/maw-render-unit.sh"
 install -m 644 "$script_dir/maw.service" "$lib_dir/maw.service"
 install -m 755 "$script_dir/maw" "$lib_dir/maw"
 install -m 755 "$script_dir/maw" "$bin_dir/maw"
+printf '1\n' > "$lib_dir/desktop-launcher-api"
 
 if [ "$mode" = --service ]; then
   install -d "$unit_dir"
