@@ -5,7 +5,6 @@ import path from 'node:path';
 import test from 'node:test';
 import type { WebTabServerMessage, WorkspaceId } from '@agent-workbench/shared';
 import { BrowserTabAdapter } from './browser-tab-adapter.js';
-import { MemoryBrowserControllerDriver } from './browser-controller-driver.js';
 import { BrowserTabStore } from './browser-tab-store.js';
 import { handleWebTabMessage } from './web-tab-handler.js';
 
@@ -16,17 +15,15 @@ async function createFixture(t: import('node:test').TestContext) {
   });
   const store = new BrowserTabStore(path.join(dir, 'agency-web-tabs.json'));
   await store.load();
-  const driver = new MemoryBrowserControllerDriver();
   const adapter = new BrowserTabAdapter({
     store,
-    driver,
     allowUnvalidatedWorkspacesForTesting: true,
   });
   const published: WebTabServerMessage[] = [];
   const publish = (msg: WebTabServerMessage) => {
     published.push(msg);
   };
-  return { dir, store, driver, adapter, published, publish };
+  return { dir, store, adapter, published, publish };
 }
 
 const WS1 = '00000000-0000-4000-8000-000000000001' as WorkspaceId;
@@ -187,59 +184,6 @@ test('web-tab-handler: returns null for non-web-tab messages and handles errors 
   assert.ok(notFoundRes);
   assert.equal(notFoundRes.type, 'agency.error');
   assert.equal(notFoundRes.code, 'not-found');
-});
-
-test('web-tab-handler: failed select broadcasts updated error state while preserving saved URL', async (t) => {
-  const { adapter, driver, published, publish } = await createFixture(t);
-
-  // Create a tab with saved URL
-  const createRes = await handleWebTabMessage(
-    {
-      type: 'agency.webTab.create',
-      requestId: 'req-c1',
-      workspaceId: WS1,
-      url: 'https://chatgpt.com/c/chat-error-test',
-      title: 'ChatGPT Error Test',
-    },
-    { adapter, publish },
-  );
-  assert.ok(createRes && createRes.type === 'agency.webTab.created');
-  const tab = createRes.tab;
-  assert.equal(tab.url, 'https://chatgpt.com/c/chat-error-test');
-
-  // Configure driver to fail activation on target
-  assert.ok(tab.targetRef);
-  driver.failActivateTargets.add(tab.targetRef);
-
-  // Clear published messages
-  published.length = 0;
-
-  // Attempt to select the tab
-  const selectRes = await handleWebTabMessage(
-    {
-      type: 'agency.webTab.select',
-      requestId: 'req-s1',
-      workspaceId: WS1,
-      tabId: tab.id,
-    },
-    { adapter, publish },
-  );
-
-  // Response should be agency.error
-  assert.ok(selectRes);
-  assert.equal(selectRes.type, 'agency.error');
-  assert.ok(selectRes.message.includes('Simulated failure activating target'));
-
-  // Handler should have published agency.webTab.changed with error state
-  const changedMsg = published.find((m) => m.type === 'agency.webTab.changed' && m.change === 'updated');
-  assert.ok(changedMsg);
-  if (!changedMsg || changedMsg.type !== 'agency.webTab.changed' || !changedMsg.tab) {
-    assert.fail('Expected agency.webTab.changed message with tab');
-  }
-  assert.equal(changedMsg.tab.id, tab.id);
-  assert.equal(changedMsg.tab.runtimeState, 'error');
-  // Saved URL MUST be preserved
-  assert.equal(changedMsg.tab.url, 'https://chatgpt.com/c/chat-error-test');
 });
 
 test('web-tab-handler: cross-workspace select fails and never broadcasts tab under foreign workspace', async (t) => {

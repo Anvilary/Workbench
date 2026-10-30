@@ -6,7 +6,7 @@
  *  2. Foreign Origin and Host requests remain rejected even in no-auth mode.
  *  3. Default authenticated mode still rejects requests with missing credentials.
  *  4. Remote access cannot be enabled in token-free mode (startup rejection).
- *  5. Browser viewer ownership restrictions remain enforced.
+ *  5. WebSocket ownership restrictions remain enforced.
  *  6. Readiness URL is a plain loopback URL in no-auth mode (no token appended).
  *  7. Authenticated mode behavior is unchanged when no-auth is not enabled.
  */
@@ -322,48 +322,6 @@ test('readiness and control script work with token-free localhost URL', async ()
     await clear();
     await new Promise<void>(resolve => server.close(() => resolve()));
     await rm(temp, { recursive: true, force: true });
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Browser viewer access in token-free mode
-// ---------------------------------------------------------------------------
-
-test('browser viewer: loopback request is authorized with local owner in no-auth mode', async () => {
-  const { createServer } = await import('node:http');
-  const express = (await import('express')).default;
-  const { mountNekoViewer, NEKO_VIEWER_PATH } = await import('./agency/neko-viewer.js');
-
-  const app = express();
-  const httpServer = createServer(app);
-  await new Promise<void>(resolve => httpServer.listen(0, '127.0.0.1', resolve));
-  const address = httpServer.address();
-  assert.ok(address && typeof address !== 'string');
-  const port = address.port;
-
-  const viewer = mountNekoViewer({
-    app,
-    httpServer,
-    port,
-    token: TOKEN,
-    remote: { verifier: () => null },
-    noAuth: true,
-  });
-
-  try {
-    // A loopback GET to the viewer status endpoint without token
-    const res = await fetch(`http://127.0.0.1:${port}${NEKO_VIEWER_PATH}/status`);
-    // Status endpoint returns 200 (disabled/available) because no-auth loopback request is authorized
-    assert.equal(res.status, 200);
-
-    // Foreign Origin request is rejected with 403
-    const foreignRes = await fetch(`http://127.0.0.1:${port}${NEKO_VIEWER_PATH}/status`, {
-      headers: { Origin: 'https://evil.example.com' },
-    });
-    assert.equal(foreignRes.status, 403);
-  } finally {
-    viewer.dispose();
-    await new Promise<void>(resolve => httpServer.close(() => resolve()));
   }
 });
 

@@ -11,6 +11,7 @@ import type { WorkspaceId, IsoTimestamp, RequestId } from './agency-protocol.js'
 export type WebTabKind = 'web';
 
 export type WebTabRuntimeState =
+  | 'client-managed'
   | 'unloaded'
   | 'detached'
   | 'attaching'
@@ -45,11 +46,11 @@ export interface WebTab {
   updatedAt: IsoTimestamp;
   /** Timestamp when the tab was intentionally closed, or null if open. */
   closedAt: IsoTimestamp | null;
-  /** Ephemeral browser runtime target reference (e.g. Chromium targetId / pageId). Null on restart. */
+  /** Legacy receipt retained for migration compatibility; never used to control a renderer. */
   targetRef?: string | null;
   /** Ephemeral runtime state in the browser controller. */
   runtimeState?: WebTabRuntimeState;
-  /** Set to true if Chromium target destruction failed during close and requires subsequent cleanup. */
+  /** Legacy cleanup ledger retained as inert data; no runtime cleanup is performed. */
   cleanupRequired?: boolean;
   /** Optional client-supplied idempotent launch identifier. */
   launchId?: string;
@@ -167,6 +168,7 @@ export function validateWebTabTitle(title: unknown): boolean {
 }
 
 const VALID_RUNTIME_STATES = new Set<string>([
+  'client-managed',
   'unloaded',
   'detached',
   'attaching',
