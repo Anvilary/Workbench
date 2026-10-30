@@ -10,6 +10,7 @@ import type {
 } from '@agent-workbench/shared';
 import { DirectoryPickers, DirectoryPickerError } from '../directory-picker.js';
 import { AgencyWorkspaceStore, AgencyStoreError, type HasBlockingWorkspaceSessions } from './store.js';
+import { AgencyRuntimeError } from './agency-session-runtime.js';
 
 type DomainType =
   | 'agency.projects.list' | 'agency.project.create' | 'agency.project.update' | 'agency.project.delete'
@@ -88,6 +89,8 @@ export interface AgencyDomainContext {
   withSessionReservationLock?: (workspaceId: WorkspaceId, action: () => Promise<void>) => Promise<void>;
   /** Broadcast after a committed write, never to implement the write itself. */
   publish?: (message: DomainBroadcast) => void;
+  /** Explicit coordinated shutdown of active workspace sessions and tabs before deletion. */
+  shutdownWorkspace?: (workspaceId: WorkspaceId) => Promise<void>;
 }
 
 function publishSafely(context: AgencyDomainContext, message: DomainBroadcast): void {
@@ -173,6 +176,12 @@ export async function handleAgencyDomainRequest(
             typeof context.withSessionReservationLock !== 'function') {
           throw new AgencyStoreError('session-unavailable', 'Session guard and shared reservation lock are required');
         }
+        if (!context.store.getWorkspace(request.workspaceId)) {
+          return { type: 'agency.workspace.deleted', requestId, workspaceId: request.workspaceId };
+        }
+        if (typeof context.shutdownWorkspace === 'function') {
+          await context.shutdownWorkspace(request.workspaceId);
+        }
         // Use the same critical section as Lane C's reservation path.
         // The guard and committed metadata deletion must not be interleaved
         // with a session launch, including an in-flight launch.
@@ -186,6 +195,9 @@ export async function handleAgencyDomainRequest(
     let code: AgencyErrorCode = 'internal-error';
     let message = 'Agency operation failed';
     if (error instanceof AgencyStoreError) {
+      code = error.code;
+      message = error.message;
+    } else if (error instanceof AgencyRuntimeError) {
       code = error.code;
       message = error.message;
     } else if (error instanceof DirectoryPickerError) {
