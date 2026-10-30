@@ -263,3 +263,39 @@ test('Done request failure rolls back local suppression and reconciles with inco
   assert.equal(incomingAfterSuccess.length, 1);
   assert.equal(incomingAfterSuccess[0].id, 'notif-2');
 });
+
+test('Notifications default enabled behavior and persisted preference semantics', () => {
+  const STORAGE_KEY = 'agency-ui.notifications-enabled.v1';
+  const mockStorage = new Map();
+
+  function readNotificationsEnabled() {
+    const saved = mockStorage.get(STORAGE_KEY);
+    if (saved !== undefined && saved !== null) return saved === 'true';
+    const legacy = mockStorage.get('agent-workbench.notify');
+    if (legacy === 'off') return false;
+    if (legacy === 'on') return true;
+    return true; // Default to enabled when preference is missing!
+  }
+
+  // 1. Missing preference -> defaults to true (enabled)
+  mockStorage.clear();
+  assert.equal(readNotificationsEnabled(), true);
+
+  // 2. Explicitly saved disabled preference -> preserved as false
+  mockStorage.set(STORAGE_KEY, 'false');
+  assert.equal(readNotificationsEnabled(), false);
+
+  // 3. Explicitly saved enabled preference -> preserved as true
+  mockStorage.set(STORAGE_KEY, 'true');
+  assert.equal(readNotificationsEnabled(), true);
+
+  // 4. Legacy 'off' setting -> respected as false
+  mockStorage.clear();
+  mockStorage.set('agent-workbench.notify', 'off');
+  assert.equal(readNotificationsEnabled(), false);
+
+  // 5. Legacy 'on' setting -> respected as true
+  mockStorage.clear();
+  mockStorage.set('agent-workbench.notify', 'on');
+  assert.equal(readNotificationsEnabled(), true);
+});

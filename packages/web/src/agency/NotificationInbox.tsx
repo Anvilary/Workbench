@@ -7,6 +7,8 @@ import { formatWhen } from '../i18n/format.js';
 interface Props {
   notifications: readonly MawNotificationItem[];
   unreadCount: number;
+  notificationsEnabled: boolean;
+  onToggleNotifications: () => void;
   onClose: () => void;
   onSelect: (item: MawNotificationItem) => void;
   onMarkRead: (notificationId: string) => void;
@@ -17,6 +19,8 @@ interface Props {
 export function NotificationInbox({
   notifications,
   unreadCount,
+  notificationsEnabled,
+  onToggleNotifications,
   onClose,
   onSelect,
   onMarkRead,
@@ -165,6 +169,18 @@ export function NotificationInbox({
             </div>
           ))
         )}
+      </div>
+
+      <div className="maw-inbox-footer">
+        <button
+          type="button"
+          className="maw-notification-toggle-button"
+          onClick={onToggleNotifications}
+        >
+          {notificationsEnabled
+            ? t('agency.ui.disableNotifications')
+            : t('agency.ui.enableNotifications')}
+        </button>
       </div>
     </div>
   );
