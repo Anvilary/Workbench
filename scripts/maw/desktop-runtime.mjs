@@ -1,5 +1,6 @@
 import { readFile, lstat, realpath } from 'node:fs/promises';
 import path from 'node:path';
+import { homedir } from 'node:os';
 export async function runtimeFor(release) {
   const pkg = JSON.parse(await readFile(path.join(release, 'packages/desktop/package.json'), 'utf8'));
   const version = pkg.devDependencies.electron;
@@ -14,4 +15,12 @@ export async function assertRuntime(release) {
     if (file.endsWith('/chrome-sandbox') && (info.mode & 0o4777) !== 0o4755) throw new Error('Desktop sandbox is not installed correctly');
   }
   return runtime;
+}
+
+export async function assertLauncher() {
+  const lib = process.env.MAW_LIB_DIR || path.join(homedir(), '.local/lib/maw');
+  if ((await readFile(path.join(lib, 'desktop-launcher-api'), 'utf8')).trim() !== '1') throw new Error('Desktop launcher is not installed');
+  for (const file of ['maw', 'desktop-launch.mjs', 'service-readiness.mjs', 'desktop-runtime.mjs']) {
+    if (!(await lstat(path.join(lib, file))).isFile()) throw new Error('Desktop launcher installation is incomplete');
+  }
 }

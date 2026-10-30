@@ -70,7 +70,7 @@ MAW while retaining native ChatGPT pages/session. Only one window owns the profi
 The target release's `pnpm build` checks the production runtime whenever the
 existing updater's `.maw-candidate` marker is present. Thus even an **older installed
 updater** fails its build stage before staging a desktop-requiring release if the
-matching root-owned runtime/sandbox is absent or unsafe. No automatic sudo/install
+matching root-owned runtime/sandbox is absent or unsafe, or the production launcher installation is incomplete. Installing only a runtime artifact is insufficient. No automatic sudo/install
 occurs during update. Install the prerequisite, then retry. Normal development
 builds are unaffected.
 
@@ -115,3 +115,8 @@ checks, Electron lifecycle suite, 154 focused backend/security tests, 26 fronten
 tests, typecheck, build and repository checks passed. The existing internal-guide
 check remains skipped. CI dispatch/results are tracked on PR #23 rather than inferred
 from local checks.
+
+Hosted CI was enabled and dispatched for this follow-up, but GitHub refused to
+start jobs because account payments failed or its spending limit needs adjustment.
+This is an external CI blocker; no hosted CI pass is claimed. The workflow remains
+enabled. No billing/account changes were made.
