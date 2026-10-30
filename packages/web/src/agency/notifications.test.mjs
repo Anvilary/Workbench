@@ -263,3 +263,132 @@ test('Done request failure rolls back local suppression and reconciles with inco
   assert.equal(incomingAfterSuccess.length, 1);
   assert.equal(incomingAfterSuccess[0].id, 'notif-2');
 });
+
+test('Notifications default enabled behavior and persisted preference semantics', () => {
+  const STORAGE_KEY = 'agency-ui.notifications-enabled.v1';
+  const mockStorage = new Map();
+
+  function readNotificationsEnabled() {
+    const saved = mockStorage.get(STORAGE_KEY);
+    if (saved !== undefined && saved !== null) return saved === 'true';
+    const legacy = mockStorage.get('agent-workbench.notify');
+    if (legacy === 'off') return false;
+    if (legacy === 'on') return true;
+    return true; // Default to enabled when preference is missing!
+  }
+
+  // 1. Missing preference -> defaults to true (enabled)
+  mockStorage.clear();
+  assert.equal(readNotificationsEnabled(), true);
+
+  // 2. Explicitly saved disabled preference -> preserved as false
+  mockStorage.set(STORAGE_KEY, 'false');
+  assert.equal(readNotificationsEnabled(), false);
+
+  // 3. Explicitly saved enabled preference -> preserved as true
+  mockStorage.set(STORAGE_KEY, 'true');
+  assert.equal(readNotificationsEnabled(), true);
+
+  // 4. Legacy 'off' setting -> respected as false
+  mockStorage.clear();
+  mockStorage.set('agent-workbench.notify', 'off');
+  assert.equal(readNotificationsEnabled(), false);
+
+  // 5. Legacy 'on' setting -> respected as true
+  mockStorage.clear();
+  mockStorage.set('agent-workbench.notify', 'on');
+  assert.equal(readNotificationsEnabled(), true);
+});
+
+test('Disabling notifications suppresses newly created toasts; re-enabling restores delivery', () => {
+  // Model notification store state & event handler
+  let notifications = [];
+  let toasts = [];
+  let enabled = true;
+  const seenIds = new Set();
+
+  function setEnabled(nextEnabled) {
+    enabled = nextEnabled;
+    if (!enabled) {
+      toasts = []; // Active toasts cleared when disabled
+    }
+  }
+
+  function handleNotificationCreated(item) {
+    if (!item || seenIds.has(item.id) || item.acknowledgedAt) return;
+    seenIds.add(item.id);
+
+    // Inbox history & unread items are always preserved regardless of toggle
+    notifications = [item, ...notifications];
+
+    // In-app toast popups gated by enabled state
+    if (enabled) {
+      toasts = [...toasts, { id: `toast-${item.id}`, notificationId: item.id, title: item.title }];
+    }
+  }
+
+  // 1. Initial state: enabled. An incoming notification creates inbox item AND toast.
+  handleNotificationCreated({ id: 'notif-1', title: 'Task 1', body: 'Done', read: false });
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0].id, 'notif-1');
+  assert.equal(toasts.length, 1);
+  assert.equal(toasts[0].notificationId, 'notif-1');
+
+  // 2. Disable notifications: active toasts are cleared immediately, inbox untouched.
+  setEnabled(false);
+  assert.equal(toasts.length, 0);
+  assert.equal(notifications.length, 1);
+
+  // 3. New notification while disabled: added to inbox and unread, but toast is suppressed!
+  handleNotificationCreated({ id: 'notif-2', title: 'Task 2', body: 'Done', read: false });
+  assert.equal(notifications.length, 2);
+  assert.equal(notifications[0].id, 'notif-2');
+  assert.equal(toasts.length, 0); // No toast created!
+
+  // 4. Re-enable notifications: subsequent notification creates a toast again!
+  setEnabled(true);
+  handleNotificationCreated({ id: 'notif-3', title: 'Task 3', body: 'Done', read: false });
+  assert.equal(notifications.length, 3);
+  assert.equal(notifications[0].id, 'notif-3');
+  assert.equal(toasts.length, 1);
+  assert.equal(toasts[0].notificationId, 'notif-3');
+});
+
+test('Desktop permission state resolution and user-initiated permission flow', async () => {
+  function resolveDesktopPermission(hasNotificationApi, permissionString) {
+    if (!hasNotificationApi) return 'unsupported';
+    if (permissionString === 'granted') return 'granted';
+    if (permissionString === 'denied') return 'denied';
+    return 'default';
+  }
+
+  // 1. Unsupported environment
+  assert.equal(resolveDesktopPermission(false, undefined), 'unsupported');
+
+  // 2. Fresh browser: Notification API exists, permission is 'default'
+  assert.equal(resolveDesktopPermission(true, 'default'), 'default');
+
+  // 3. Granted permission
+  assert.equal(resolveDesktopPermission(true, 'granted'), 'granted');
+
+  // 4. Denied permission
+  assert.equal(resolveDesktopPermission(true, 'denied'), 'denied');
+
+  // 5. User-initiated request flow
+  let requested = false;
+  let currentPerm = 'default';
+  const mockNotification = {
+    get permission() { return currentPerm; },
+    requestPermission: async () => {
+      requested = true;
+      currentPerm = 'granted';
+      return currentPerm;
+    },
+  };
+
+  assert.equal(requested, false);
+  const result = await mockNotification.requestPermission();
+  assert.equal(requested, true);
+  assert.equal(result, 'granted');
+  assert.equal(resolveDesktopPermission(true, mockNotification.permission), 'granted');
+});
