@@ -64,6 +64,24 @@ Only the latest published version is supported.
 The full list of what is read and what is never opened, per CLI, is in
 [`ARCHITECTURE.md`](ARCHITECTURE.md#4-what-is-read-from-each-cli).
 
+## Optional Token-Free Local Mode (`MAW_UNSAFE_LOCAL_NO_AUTH=1`)
+
+MAW supports an explicit, opt-in token-free mode designed for local developer workflows:
+
+> [!WARNING]
+> **Token-free mode grants local clients full access to a command-execution service.**
+> Running with `MAW_UNSAFE_LOCAL_NO_AUTH=1` permits any local process on the machine to send requests to MAW and execute arbitrary commands in your shell. Binding exclusively to `127.0.0.1` prevents external network exposure, but **loopback-only binding does not eliminate all risks**:
+> - Any local unprivileged user or process running on the same machine can connect to `127.0.0.1:<port>`.
+> - Local software or scripts running under your user account can invoke MAW endpoints without credentials.
+> - While strict `Host` and `Origin` validation prevents cross-origin browser attacks (DNS rebinding and malicious websites), any non-browser local tool (e.g. `curl`, local daemons) can issue requests freely.
+
+### Requirements and Safeguards:
+- **Default is authenticated**: The existing authenticated mode is always the default. Token-free mode is only activated when `MAW_UNSAFE_LOCAL_NO_AUTH=1` is explicitly set in the environment.
+- **Strict loopback-only binding**: Server startup is immediately rejected if the server does not bind strictly and exclusively to `127.0.0.1`. It is never exposed to `0.0.0.0`.
+- **Remote access prohibited**: Startup is rejected if remote access is enabled, and remote access cannot be configured or paired while token-free mode is active.
+- **Strict Host and Origin verification**: Host and Origin checks remain strictly enforced. Foreign Origin headers and non-loopback Host headers are rejected with 403 Forbidden.
+- **Browser target ownership preserved**: Browser target ownership and independent Neko controller authentication checks are never bypassed.
+
 ## What counts
 
 Anything that breaks one of the statements above: a way to reach the server
