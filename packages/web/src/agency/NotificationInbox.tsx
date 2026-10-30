@@ -4,11 +4,15 @@ import { t } from '../i18n/index.js';
 import { notificationText } from './notification-labels.js';
 import { formatWhen } from '../i18n/format.js';
 
+export type DesktopPermission = 'granted' | 'denied' | 'default' | 'unsupported';
+
 interface Props {
   notifications: readonly MawNotificationItem[];
   unreadCount: number;
   notificationsEnabled: boolean;
+  desktopPermission: DesktopPermission;
   onToggleNotifications: () => void;
+  onRequestDesktopPermission: () => void;
   onClose: () => void;
   onSelect: (item: MawNotificationItem) => void;
   onMarkRead: (notificationId: string) => void;
@@ -20,7 +24,9 @@ export function NotificationInbox({
   notifications,
   unreadCount,
   notificationsEnabled,
+  desktopPermission,
   onToggleNotifications,
+  onRequestDesktopPermission,
   onClose,
   onSelect,
   onMarkRead,
@@ -172,6 +178,26 @@ export function NotificationInbox({
       </div>
 
       <div className="maw-inbox-footer">
+        <div className="maw-inbox-footer-desktop">
+          {desktopPermission === 'default' ? (
+            <button
+              type="button"
+              className="maw-desktop-perm-button"
+              onClick={onRequestDesktopPermission}
+              disabled={!notificationsEnabled}
+            >
+              {t('agency.notifications.enableDesktop')}
+            </button>
+          ) : (
+            <span className={`maw-desktop-perm-status ${desktopPermission}`}>
+              {desktopPermission === 'granted'
+                ? t('agency.notifications.desktopAllowed')
+                : desktopPermission === 'denied'
+                ? t('agency.notifications.desktopBlocked')
+                : t('agency.notifications.desktopUnavailable')}
+            </span>
+          )}
+        </div>
         <button
           type="button"
           className="maw-notification-toggle-button"
