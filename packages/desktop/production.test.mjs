@@ -76,6 +76,9 @@ test('commands installation preserves existing user state and is repeatable', as
   assert.equal(await readFile(path.join(state,'sentinel'),'utf8'),'existing history');
   assert.equal(await readFile(path.join(dir,'lib/desktop-runtime-version'),'utf8'),'45.2.0');
   assert.match(await readFile(path.join(dir,'lib/desktop-launch.mjs'),'utf8'),/readyService/);
+  await writeFile(path.join(dir,'lib/desktop-runtime-version'),'44.0.0');
+  await exec('/bin/sh',[path.join(root,'scripts/maw/install.sh'),'--commands-only'],{env});
+  assert.equal(await readFile(path.join(dir,'lib/desktop-runtime-version'),'utf8'),'44.0.0');
 });
 
 test('desktop installer creates a graphical entry without service activation (apt fixture)', async t => {

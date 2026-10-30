@@ -43,7 +43,9 @@ for desktop_file in service-readiness.mjs desktop-runtime.mjs desktop-launch.mjs
   install -m 644 "$script_dir/$desktop_file" "$lib_dir/$desktop_file"
 done
 if [ -f "$repo_dir/packages/desktop/package.json" ]; then
-  "$node_bin" -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1])).devDependencies.electron)' "$repo_dir/packages/desktop/package.json" > "$lib_dir/desktop-runtime-version"
+  desktop_target_version=$("$node_bin" -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1])).devDependencies.electron)' "$repo_dir/packages/desktop/package.json")
+  # Preserve a working bootstrap until the replacement package is installed.
+  [ -f "$lib_dir/desktop-runtime-version" ] || printf '%s' "$desktop_target_version" > "$lib_dir/desktop-runtime-version"
 fi
 
 install -m 755 "$script_dir/maw-update.sh" "$lib_dir/maw-update.sh"
@@ -88,9 +90,11 @@ fi
 
 if [ "$mode" = --desktop ]; then
   "$node_bin" "$script_dir/build-desktop-deb.mjs"
-  desktop_version=$(cat "$lib_dir/desktop-runtime-version")
+  desktop_version="$desktop_target_version"
   desktop_arch=$(dpkg --print-architecture)
   sudo apt-get install "$repo_dir/dist-desktop/maw-electron-${desktop_version}_${desktop_arch}.deb"
+  printf '%s' "$desktop_target_version" > "$lib_dir/desktop-runtime-version.tmp"
+  mv -f "$lib_dir/desktop-runtime-version.tmp" "$lib_dir/desktop-runtime-version"
   desktop_apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
   install -d "$desktop_apps"
   # Desktop Exec uses quoted absolute paths, independent of the graphical PATH.
