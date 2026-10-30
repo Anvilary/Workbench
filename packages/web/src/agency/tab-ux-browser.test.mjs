@@ -326,5 +326,68 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   await page.evaluate(() => window.agencyTest.emitSnapshot());
   assert.equal(await page.locator('.maw-inbox-item').count(), 0);
 
+  // Test 8: MAW UI Shell Polish: branding, sidebar toggle, shell dropdown, notifications enable toggle
+  // 1. Branding: sidebar header displays 'MaW'
+  const brand = page.locator('.agency-nav-head strong');
+  assert.equal(await brand.textContent(), 'MaW');
+
+  // 2. Sidebar toggle button uses SVG panel toggle icon (not hamburger '☰')
+  const sidebarCollapseBtn = page.locator('.agency-nav-head button.agency-icon-button');
+  assert.equal(await sidebarCollapseBtn.locator('svg').count(), 1);
+  assert.ok(!((await sidebarCollapseBtn.textContent()) || '').includes('☰'));
+
+  // 3. Sidebar bottom no longer has done toggle section
+  assert.equal(await page.locator('.agency-nav-bottom').count(), 0);
+
+  // 4. Header does not have Refresh button or prominent Enable notifications button
+  assert.equal(await page.locator('.agency-topbar button').filter({ hasText: 'Refresh' }).count(), 0);
+  assert.equal(await page.locator('.agency-topbar button').filter({ hasText: 'Enable notifications' }).count(), 0);
+
+  // 5. Notifications dropdown has enable/disable toggle at bottom right
+  // Bell button has neutral gray SVG bell
+  assert.equal(await page.locator('.maw-bell-button svg').count(), 1);
+  const notifToggleBtn = page.locator('.maw-inbox-footer .maw-notification-toggle-button');
+  assert.equal(await notifToggleBtn.count(), 1);
+  // Defaults to enabled -> button says 'Disable notifications'
+  assert.equal(await notifToggleBtn.textContent(), 'Disable notifications');
+  assert.equal(await page.evaluate(() => localStorage.getItem('agency-ui.notifications-enabled.v1')), null);
+
+  // Click toggle button -> disables notifications
+  await notifToggleBtn.click();
+  assert.equal(await notifToggleBtn.textContent(), 'Enable notifications');
+  assert.equal(await page.evaluate(() => localStorage.getItem('agency-ui.notifications-enabled.v1')), 'false');
+
+  // Click toggle button again -> re-enables notifications
+  await notifToggleBtn.click();
+  assert.equal(await notifToggleBtn.textContent(), 'Disable notifications');
+  assert.equal(await page.evaluate(() => localStorage.getItem('agency-ui.notifications-enabled.v1')), 'true');
+
+  // Close notifications inbox
+  await page.locator('.maw-bell-button').click();
+  await page.waitForFunction(() => document.querySelectorAll('.maw-notification-inbox').length === 0);
+
+  // 6. Central shell dropdown next to notifications
+  const shellMenuBtn = page.locator('.maw-menu-button');
+  assert.equal(await shellMenuBtn.count(), 1);
+  await shellMenuBtn.click();
+  await page.locator('.maw-shell-menu').waitFor();
+
+  // Contains Done workspaces action
+  const doneMenuItem = page.locator('.maw-shell-menu .maw-menu-item').filter({ hasText: 'Done workspaces' });
+  assert.equal(await doneMenuItem.count(), 1);
+
+  // Clicking Done workspaces opens Done view
+  await doneMenuItem.click();
+  await page.locator('.agency-done-view').waitFor();
+  assert.equal(await page.locator('#agency-done-title').textContent(), 'Done workspaces');
+
+  // 7. Sidebar collapse and expand
+  await sidebarCollapseBtn.click();
+  await page.waitForFunction(() => document.querySelector('.agency-sidebar.agency-sidebar-collapsed') !== null);
+  const expandBtn = page.locator('.agency-topbar button.agency-icon-button').first();
+  assert.equal(await expandBtn.locator('svg').count(), 1);
+  await expandBtn.click();
+  await page.waitForFunction(() => document.querySelector('.agency-sidebar.agency-sidebar-collapsed') === null);
+
   assert.deepEqual(errors, []);
 });
