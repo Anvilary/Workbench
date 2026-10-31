@@ -1,5 +1,5 @@
 import { assignCreatedTab, reconcileLayout } from '@agent-workbench/shared';
-import type { AgencyClientMessage, AgencyServerMessage, WebTabClientMessage, WorkspaceId } from '@agent-workbench/shared';
+import type { AgencyClientMessage, AgencyServerMessage, WebTabClientMessage, WorkspaceId, WorkspacePaneLayout } from '@agent-workbench/shared';
 import { AgencyRuntimeError, type AgencySessionRuntime } from './agency-session-runtime.js';
 import type { AgencyWorkspaceStore } from './store.js';
 import { WorkspaceMutex } from './workspace-lock.js';
@@ -101,12 +101,28 @@ export class AgencyTabCoordinator {
     if (web.length) await this.browser.orderTabs(workspaceId, ids.filter(id => web.includes(id)), positions);
   }
 
+  reconcileLayout(workspaceId: WorkspaceId): WorkspacePaneLayout | undefined {
+    if (!this.layouts) return undefined;
+    const open = [...this.openNative(workspaceId).map(session => session.tab!.id), ...this.browser.listTabs(workspaceId).map(tab => tab.id)];
+    return reconcileLayout(this.layouts.get(workspaceId), workspaceId, open);
+  }
+
   private async placeCreatedTab(workspaceId: WorkspaceId, targetPaneId: string | undefined, tabId: string): Promise<void> {
     if (!targetPaneId || !this.layouts) return;
     const open = [...this.openNative(workspaceId).map(session => session.tab!.id), ...this.browser.listTabs(workspaceId).map(tab => tab.id)];
-    const layout = await this.layouts.update(workspaceId, current =>
-      assignCreatedTab(reconcileLayout(current, workspaceId, open), targetPaneId, tabId));
-    this.publish({ type: 'agency.layout.changed', workspaceId, layout });
+    try {
+      const layout = await this.layouts.update(workspaceId, current =>
+        assignCreatedTab(reconcileLayout(current, workspaceId, open), targetPaneId, tabId));
+      this.publish({ type: 'agency.layout.changed', workspaceId, layout });
+    } catch (error) {
+      console.error('[tab-coordinator] Failed to persist tab layout placement:', error);
+      this.publish({
+        type: 'agency.error',
+        requestId: '',
+        code: 'internal-error',
+        message: error instanceof Error ? error.message : 'Layout placement failed',
+      });
+    }
   }
 
   async createNative(message: Extract<AgencyClientMessage, { type: 'agency.session.create' }>) {
