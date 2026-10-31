@@ -13,8 +13,10 @@ import { AgencyWorkspaceStore } from './store.js';
 import { WorkspaceMutex } from './workspace-lock.js';
 import { BrowserTabAdapter, BrowserTabStore } from './browser-tabs/index.js';
 import { AgencyTabCoordinator } from './tab-coordinator.js';
+import { AgencyNotificationStore } from './agency-notification-store.js';
+import { TabActivityManager } from './tab-activity-manager.js';
 
-test('real domain coordinator serializes mixed selection and order without closing browser targets', async t => {
+async function fixture(t: test.TestContext) {
   const root = await mkdtemp(path.join(tmpdir(), 'maw-coordination-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const workspaceStore = new AgencyWorkspaceStore(path.join(root, 'workspaces.json'));
@@ -44,6 +46,11 @@ test('real domain coordinator serializes mixed selection and order without closi
   await browser.restore();
   const messages: AgencyServerMessage[] = [];
   const coordinator = new AgencyTabCoordinator(native, browser, workspaceStore, message => messages.push(message));
+  return { root, workspaceStore, workspace, terminals, native, browser, messages, coordinator };
+}
+
+test('real domain coordinator serializes mixed selection and order without closing browser targets', async t => {
+  const { workspaceStore, workspace, terminals, native, browser, messages, coordinator } = await fixture(t);
   const shell = await coordinator.createNative({ type: 'agency.session.create', requestId: 'shell', workspaceId: workspace.id,
     kind: 'terminal', cols: 80, rows: 24, launchId: randomUUID() });
   assert.ok(shell.tab);
@@ -85,6 +92,63 @@ test('real domain coordinator serializes mixed selection and order without closi
   messages.length = 0;
   await workspaceStore.markDone(workspace.id);
   assert.equal(coordinator.canInspect(workspace.id, shell.tab.id), false);
+});
+
+test('inspection requires selected ownership, serializes with focus selection and persists only the inspected completion', async t => {
+  const { root, workspaceStore, workspace, native, coordinator, terminals } = await fixture(t);
+  const first = await coordinator.createNative({ type: 'agency.session.create', requestId: 'a', workspaceId: workspace.id,
+    kind: 'terminal', cols: 80, rows: 24, launchId: randomUUID() });
+  const second = await coordinator.createNative({ type: 'agency.session.create', requestId: 'b', workspaceId: workspace.id,
+    kind: 'terminal', cols: 80, rows: 24, launchId: randomUUID() });
+  const notificationsFile = path.join(root, 'notifications.json');
+  const notifications = new AgencyNotificationStore(notificationsFile);
+  await notifications.initialize();
+  const activity = new TabActivityManager({ notificationStore: notifications, storageDir: root });
+  await activity.initialize(); t.after(() => activity.dispose());
+  for (const session of [first, second]) {
+    const turn = { workspaceId: workspace.id, tabId: session.tab!.id, sessionId: session.id,
+      provider: 'codex', lifecycle: 'running', taskId: session.id + ':turn', completionEvidence: 'native-turn' as const };
+    await activity.handleCliActivity({ ...turn, nextActivity: 'working' });
+    await activity.handleCliActivity({ ...turn, nextActivity: 'finished' });
+  }
+  let inspected = 0;
+  await assert.rejects(coordinator.inspect(workspace.id, first.tab!.id, async () => { inspected++; }), /open and selected/);
+  await assert.rejects(coordinator.inspect(randomUUID() as typeof workspace.id, second.tab!.id, async () => { inspected++; }), /open and selected/);
+  assert.equal(inspected, 0);
+  assert.equal(activity.getTabState(workspace.id, first.tab!.id), 'finished');
+  assert.equal(activity.getTabState(workspace.id, second.tab!.id), 'finished');
+
+  await coordinator.nativeAction({ type: 'agency.tab.action', requestId: 'focus-a', workspaceId: workspace.id, tabId: first.tab!.id, action: 'select' });
+  let release!: () => void;
+  let started!: () => void;
+  const start = new Promise<void>(resolve => { started = resolve; });
+  const delay = new Promise<void>(resolve => { release = resolve; });
+  const inspection = coordinator.inspect(workspace.id, first.tab!.id, async () => {
+    started(); await delay;
+    assert.equal(coordinator.canInspect(workspace.id, first.tab!.id), true, 'selection cannot overtake the pending acknowledgement');
+    return activity.acknowledgeTab(workspace.id, first.tab!.id);
+  });
+  await start;
+  const select = coordinator.nativeAction({ type: 'agency.tab.action', requestId: 'focus-b', workspaceId: workspace.id, tabId: second.tab!.id, action: 'select' });
+  assert.equal(native.get(first.id)?.tab?.selected, true);
+  release(); await Promise.all([inspection, select]);
+  assert.equal(coordinator.canInspect(workspace.id, second.tab!.id), true);
+  assert.equal(activity.getTabState(workspace.id, first.tab!.id), 'idle');
+  assert.equal(activity.getTabState(workspace.id, second.tab!.id), 'finished');
+  assert.equal(terminals.size, 2, 'focus and inspection keep the same live terminals');
+  const originalNotifications = notifications.list();
+  assert.ok(originalNotifications.every(item => !item.read), 'inspection does not mark inbox items read');
+  await activity.flush(); await notifications.flush();
+  const restoredNotifications = new AgencyNotificationStore(notificationsFile);
+  await restoredNotifications.initialize();
+  const restored = new TabActivityManager({ notificationStore: restoredNotifications, storageDir: root });
+  await restored.initialize(); t.after(() => restored.dispose());
+  assert.equal(restored.getTabState(workspace.id, first.tab!.id), 'idle');
+  assert.equal(restored.getTabState(workspace.id, second.tab!.id), 'finished');
+  assert.deepEqual(restoredNotifications.list(), originalNotifications);
+  await workspaceStore.markDone(workspace.id);
+  await assert.rejects(coordinator.inspect(workspace.id, second.tab!.id, async () => { inspected++; }), /open and selected/);
+  assert.equal(inspected, 0);
 });
 
 test('main authenticated protocol validates browser contracts and rejects foreign fields and malformed snapshots', () => {

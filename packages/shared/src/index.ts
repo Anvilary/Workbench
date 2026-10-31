@@ -24,3 +24,4 @@ export * from './worktrees.js';
 export * from './agency-protocol.js';
 export * from './browser-tabs.js';
 export * from './notification-protocol.js';
+export * from './split-layout.js';

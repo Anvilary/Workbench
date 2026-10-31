@@ -56,11 +56,19 @@ import type {
   AgencyErrorCode,
   RequestId,
 } from '@agent-workbench/shared';
-import { asRecord, parseJson } from '@agent-workbench/shared';
+import {
+  asRecord,
+  isWorkspacePaneLayout,
+  layoutOwnershipError,
+  parseJson,
+  type WorkspaceId,
+  type WorkspacePaneLayout,
+} from '@agent-workbench/shared';
 import { AgencyWorkspaceStore } from './agency/store.js';
 import { AgencyProfileStore } from './agency/agency-profile-store.js';
 import { AgencySessionRuntime, AgencyRuntimeError } from './agency/agency-session-runtime.js';
 import { AgencyNotificationStore } from './agency/agency-notification-store.js';
+import { AgencyLayoutStore } from './agency/agency-layout-store.js';
 import { TabActivityManager } from './agency/tab-activity-manager.js';
 import { ChatGPTActivityProvider } from './agency/browser-activity-provider.js';
 import { BrowserTabAdapter, BrowserTabStore, BrowserTabStoreError } from './agency/browser-tabs/index.js';
@@ -218,6 +226,7 @@ export interface TerminalSocketOptions {
   agencyNotificationStore?: AgencyNotificationStore;
   agencyActivityManager?: TabActivityManager;
   agencyBrowserTabs?: BrowserTabAdapter;
+  agencyLayoutStore?: AgencyLayoutStore;
 }
 
 export interface DoneHandlerContext {
@@ -276,6 +285,24 @@ export async function handleAgencyNotificationDone(
   }
 }
 
+/**
+ * Accept a layout only when it belongs to the requested workspace and only
+ * references that workspace's existing open tabs. The saved object is the
+ * caller's layout unchanged: this does not mint session ids or retarget ownership.
+ */
+export function evaluateLayoutSave(
+  workspaceId: WorkspaceId,
+  layout: unknown,
+  openTabIds: readonly string[],
+): { ok: true; layout: WorkspacePaneLayout } | { ok: false; message: string } {
+  if (!isWorkspacePaneLayout(layout)) {
+    return { ok: false, message: 'Invalid workspace layout' };
+  }
+  const ownership = layoutOwnershipError(layout, workspaceId, openTabIds);
+  if (ownership) return { ok: false, message: ownership };
+  return { ok: true, layout };
+}
+
 export function attachTerminalSocket(options: TerminalSocketOptions): () => void {
   const {
     httpServer,
@@ -303,12 +330,14 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
 
   const agencyNotificationStore = options.agencyNotificationStore ?? new AgencyNotificationStore();
   const agencyActivityManager = options.agencyActivityManager ?? new TabActivityManager({ notificationStore: agencyNotificationStore });
+  const agencyLayoutStore = options.agencyLayoutStore ?? new AgencyLayoutStore();
   const chatgptProvider = new ChatGPTActivityProvider();
   agencyActivityManager.registerBrowserProvider(chatgptProvider);
   const agencyBrowserTabs = options.agencyBrowserTabs ?? new BrowserTabAdapter({ store: new BrowserTabStore(), workspaceStore: agencyWorkspaceStore });
   const agencyReady = Promise.all([
     agencyNotificationStore.initialize(),
     agencyActivityManager.initialize(),
+    agencyLayoutStore.initialize(),
     options.agencyBrowserTabs ? Promise.resolve() : agencyBrowserTabs.restore(),
   ]);
 
@@ -344,7 +373,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     }
   };
 
-  const tabCoordinator = new AgencyTabCoordinator(agencyRuntime, agencyBrowserTabs, agencyWorkspaceStore, broadcast);
+  const tabCoordinator = new AgencyTabCoordinator(agencyRuntime, agencyBrowserTabs, agencyWorkspaceStore, broadcast, agencyLayoutStore);
   const hasOpenActivityTab = (workspaceId: import('@agent-workbench/shared').WorkspaceId, tabId: string): boolean => {
     if (!agencyWorkspaceStore.getWorkspace(workspaceId)) return false;
     return agencyRuntime.list(workspaceId).some(session => session.tab?.id === tabId && session.tab.current && !session.tab.closedAt) ||
@@ -1247,6 +1276,11 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
       requestId: '',
       notifications: agencyNotificationStore.list(),
       activityStates: agencyActivityManager.snapshot(),
+    });
+    send(socket, {
+      type: 'agency.layouts.snapshot',
+      requestId: '',
+      layouts: agencyLayoutStore.list(),
     });
     void tabReady.then(() => {
       send(socket, { type: 'agency.webTabs.snapshot', requestId: '', tabs: agencyBrowserTabs.listTabs() });
@@ -3645,16 +3679,45 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         }
 
         case 'agency.tab.acknowledge': {
-          if (!tabCoordinator.canInspect(message.workspaceId, message.tabId)) {
-            send(socket, { type: 'agency.error', requestId: message.requestId, code: 'session-unavailable', message: 'Tab must be open and selected in an active workspace before inspection' });
-            break;
-          }
-          const record = await agencyActivityManager.acknowledgeTab(message.workspaceId, message.tabId);
+          const record = await tabCoordinator.inspect(message.workspaceId, message.tabId,
+            () => agencyActivityManager.acknowledgeTab(message.workspaceId, message.tabId));
           if (record) {
             send(socket, { type: 'agency.tab.activity', requestId: message.requestId, activity: record });
             broadcast({ type: 'agency.tab.activity', activity: record });
           } else {
             send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Tab activity not found or already acknowledged' });
+          }
+          break;
+        }
+
+        case 'agency.layout.save': {
+          const ws = agencyWorkspaceStore.getWorkspace(message.workspaceId);
+          if (!ws) {
+            send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Workspace not found' });
+            break;
+          }
+          const openTabIds = [
+            ...agencyRuntime.list(message.workspaceId)
+              .filter((session) => session.tab?.current && !session.tab.closedAt)
+              .map((session) => session.tab!.id),
+            ...agencyBrowserTabs.listTabs(message.workspaceId).map((tab) => tab.id),
+          ];
+          const decision = evaluateLayoutSave(message.workspaceId, message.layout, openTabIds);
+          if (!decision.ok) {
+            send(socket, { type: 'agency.error', requestId: message.requestId, code: 'invalid-request', message: decision.message });
+            break;
+          }
+          // Persist the validated layout only. Session records and their ids stay as they are.
+          await agencyLayoutStore.save(decision.layout);
+          send(socket, { type: 'agency.layout.saved', requestId: message.requestId, workspaceId: message.workspaceId });
+          broadcast({ type: 'agency.layout.changed', workspaceId: message.workspaceId, layout: decision.layout });
+          break;
+        }
+
+        case 'agency.layout.get': {
+          const layout = agencyLayoutStore.get(message.workspaceId);
+          if (layout) {
+            send(socket, { type: 'agency.layout.changed', workspaceId: message.workspaceId, layout });
           }
           break;
         }

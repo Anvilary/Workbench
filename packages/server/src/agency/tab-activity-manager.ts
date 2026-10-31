@@ -64,6 +64,9 @@ export class TabActivityManager extends EventEmitter {
   private readonly shellCommandCounters = new Map<string, number>();
   private readonly browserProviders = new Map<string, BrowserActivityProvider>();
   private readonly notificationStore: AgencyNotificationStore;
+  private readonly longRunningTimers = new Map<string, { timer: NodeJS.Timeout; taskId: string }>();
+  private readonly tabNames = new Map<string, string>();
+  readonly longRunningThresholdMs: number;
   readonly file: string;
   private initialized = false;
 
@@ -71,10 +74,12 @@ export class TabActivityManager extends EventEmitter {
     notificationStore: AgencyNotificationStore;
     storageDir?: string;
     filePath?: string;
+    longRunningThresholdMs?: number;
   }) {
     super();
     this.notificationStore = options.notificationStore;
     this.file = options.filePath ?? path.join(options.storageDir ?? appConfigDir(), 'agency-tab-activity.json');
+    this.longRunningThresholdMs = options.longRunningThresholdMs ?? 30_000;
   }
 
   private makeKey(workspaceId: string, tabId: string): string {
@@ -231,8 +236,9 @@ export class TabActivityManager extends EventEmitter {
     }
   }
 
-  private async saveActivity(record: TabActivityRecord, notification?: CreateNotificationInput): Promise<void> {
+  private async saveActivity(record: TabActivityRecord, notification?: CreateNotificationInput, tabName?: string): Promise<void> {
     const key = this.makeKey(record.workspaceId, record.tabId);
+    if (tabName) this.tabNames.set(key, tabName);
     const previous = this.states.get(key);
     const dedup = notification?.deduplicationKey;
     const previousReceipt = dedup ? this.pendingNotifications.get(dedup) : undefined;
@@ -250,6 +256,49 @@ export class TabActivityManager extends EventEmitter {
     }
     if (!this.disposed) this.emit('tabActivity', record);
     await this.deliverPendingNotifications();
+
+    // Manage 30-second long-running continuous work timer
+    const timerKey = key;
+    if (record.state === 'working' && record.reliableSignal && !record.closed) {
+      const existingTimer = this.longRunningTimers.get(timerKey);
+      const taskId = record.taskId ?? 'task';
+      if (!existingTimer || existingTimer.taskId !== taskId) {
+        if (existingTimer) {
+          clearTimeout(existingTimer.timer);
+          this.longRunningTimers.delete(timerKey);
+        }
+        const dedupKey = `long-running:${record.workspaceId}:${record.tabId}:${taskId}`;
+        if (!this.notificationStore.hasDeduplicationKey(dedupKey)) {
+          const timer = setTimeout(() => {
+            this.longRunningTimers.delete(timerKey);
+            if (this.disposed) return;
+            const current = this.states.get(timerKey);
+            if (current && !current.closed && current.state === 'working' && current.taskId === taskId) {
+              if (!this.notificationStore.hasDeduplicationKey(dedupKey)) {
+                const tabLabel = tabName || this.tabNames.get(timerKey) || (notification?.metadata?.tabName as string | undefined) || notification?.title || 'Task';
+                void this.notificationStore.create({
+                  workspaceId: record.workspaceId,
+                  tabId: record.tabId,
+                  ...(record.sessionId ? { sessionId: record.sessionId } : {}),
+                  title: tabLabel,
+                  body: `Task running for 30s (${tabLabel})`,
+                  state: 'working',
+                  deduplicationKey: dedupKey,
+                  metadata: { kind: 'long-running', tabName: tabLabel, taskId, elapsedSeconds: 30 },
+                }).catch((err) => console.warn('[agency] failed creating long-running notification:', err));
+              }
+            }
+          }, this.longRunningThresholdMs);
+          this.longRunningTimers.set(timerKey, { timer, taskId });
+        }
+      }
+    } else {
+      const existingTimer = this.longRunningTimers.get(timerKey);
+      if (existingTimer) {
+        clearTimeout(existingTimer.timer);
+        this.longRunningTimers.delete(timerKey);
+      }
+    }
   }
 
   /**
@@ -346,6 +395,11 @@ export class TabActivityManager extends EventEmitter {
       this.shellParsers.delete(tabId);
     }
     this.shellCommandCounters.delete(tabId);
+    const existingTimer = this.longRunningTimers.get(key);
+    if (existingTimer) {
+      clearTimeout(existingTimer.timer);
+      this.longRunningTimers.delete(key);
+    }
   }
 
   /**
@@ -612,7 +666,7 @@ export class TabActivityManager extends EventEmitter {
         metadata: { kind: 'cli', tabName: input.tabName ?? '', exitCode: input.exitCode ?? null, taskId: currentTaskId, turnSequence: currentSeq > 0 ? currentSeq : undefined },
       };
     }
-    await this.saveActivity(record, notification);
+    await this.saveActivity(record, notification, input.tabName ?? undefined);
   }
 
   /**
@@ -674,7 +728,7 @@ export class TabActivityManager extends EventEmitter {
           };
           // Commands such as ls, pwd, git status, echo, cd and ordinary failed shell commands must not create
           // individual inbox notifications, desktop notifications or toast messages.
-          await this.saveActivity(record, undefined);
+          await this.saveActivity(record, undefined, options?.tabName ?? undefined);
         }).catch(error => console.warn('[agency] failed persisting shell activity/outbox: ' + String(error)));
       });
     }
@@ -697,6 +751,10 @@ export class TabActivityManager extends EventEmitter {
 
   dispose(): void {
     this.disposed = true;
+    for (const entry of this.longRunningTimers.values()) {
+      clearTimeout(entry.timer);
+    }
+    this.longRunningTimers.clear();
     for (const parser of this.shellParsers.values()) {
       parser.dispose();
     }
