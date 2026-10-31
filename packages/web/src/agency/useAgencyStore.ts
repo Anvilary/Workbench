@@ -4,11 +4,11 @@ import { serverTextMessage } from '../i18n/server-text.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AgencyClientMessage, AgencyProject, AgencyRuntimeSession, AgencyServerMessage, AgencyWorkspace,
-  WorkspacePaneLayout, WorkspaceId,
+  WorkspacePaneLayout, WorkspaceId, WebTab,
 } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import {
-  EMPTY_AGENCY_SNAPSHOT, applySessionActivity, applySessionsSnapshot, replaceById, transitionNotice,
+  EMPTY_AGENCY_SNAPSHOT, retainUnconfirmedCreations, applySessionActivity, applySessionsSnapshot, replaceById, transitionNotice,
   type AgencySnapshot, type AgencyTransport, type AgencyNoticeKind,
 } from './model.js';
 
@@ -36,6 +36,8 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
   const snapshots = useRef(new Set<string>());
   const [notice, setNotice] = useState<VerifiedNotice | null>(null);
   const pending = useRef(new Map<string, Pending>());
+  const unconfirmedSessions = useRef(new Map<string, AgencyRuntimeSession>());
+  const unconfirmedWebTabs = useRef(new Map<string, WebTab>());
   const lastSessions = useRef(new Map<string, AgencyRuntimeSession>());
   const serial = useRef(0);
 
@@ -108,18 +110,35 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
         setData((old) => ({ ...old, profiles: message.profiles }));
       } else if (message.type === 'agency.webTabs.snapshot') {
         const workspaceId = pending.current.get(message.requestId)?.workspaceId;
+        const tabs = retainUnconfirmedCreations(message.tabs, new Map([...unconfirmedWebTabs.current].filter(([, tab]) => !workspaceId || tab.workspaceId === workspaceId)));
+        for (const tab of message.tabs) {
+          const created = unconfirmedWebTabs.current.get(tab.id);
+          if (created && created.updatedAt <= tab.updatedAt) unconfirmedWebTabs.current.delete(tab.id);
+        }
         setData((old) => ({ ...old, webTabs: workspaceId
-          ? [...old.webTabs.filter(tab => tab.workspaceId !== workspaceId), ...message.tabs]
-          : message.tabs }));
+          ? [...old.webTabs.filter(tab => tab.workspaceId !== workspaceId), ...tabs]
+          : tabs }));
       } else if (message.type === 'agency.webTab.created' || message.type === 'agency.webTab.updated' || message.type === 'agency.webTab.closed') {
+        if (message.type === 'agency.webTab.created' || unconfirmedWebTabs.current.has(message.tab.id)) unconfirmedWebTabs.current.set(message.tab.id, message.tab);
+        if (message.tab.closedAt) unconfirmedWebTabs.current.delete(message.tab.id);
         setData((old) => ({ ...old, webTabs: replaceById(old.webTabs, message.tab) }));
       } else if (message.type === 'agency.webTab.changed') {
+        if (message.tab && unconfirmedWebTabs.current.has(message.tab.id)) {
+          if (message.tab.closedAt) unconfirmedWebTabs.current.delete(message.tab.id);
+          else unconfirmedWebTabs.current.set(message.tab.id, message.tab);
+        }
         setData((old) => ({ ...old, webTabs: message.tabs
           ? [...old.webTabs.filter(tab => tab.workspaceId !== message.workspaceId), ...message.tabs]
           : message.tab ? replaceById(old.webTabs, message.tab) : old.webTabs }));
       } else if (message.type === 'agency.sessions.snapshot') {
-        message.sessions.forEach((session) => record(session, false));
-        setData((old) => ({ ...old, sessions: applySessionsSnapshot(old.sessions, message.sessions, message.workspaceId) }));
+        const retained = new Map([...unconfirmedSessions.current].filter(([, session]) => !message.workspaceId || session.workspaceId === message.workspaceId));
+        const sessions = retainUnconfirmedCreations(message.sessions, retained);
+        for (const session of message.sessions) {
+          const created = unconfirmedSessions.current.get(session.id);
+          if (created && created.updatedAt <= session.updatedAt) unconfirmedSessions.current.delete(session.id);
+        }
+        sessions.forEach((session) => record(session, false));
+        setData((old) => ({ ...old, sessions: applySessionsSnapshot(old.sessions, sessions, message.workspaceId) }));
       } else if (message.type === 'agency.layouts.snapshot') {
         const layoutsMap: Record<string, WorkspacePaneLayout> = {};
         for (const l of message.layouts) layoutsMap[l.workspaceId] = l;
@@ -164,13 +183,19 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
           profile.id === message.profileId ? { ...profile, capabilities: message.capabilities } : profile) }));
       } else if (message.type === 'agency.session.created' || message.type === 'agency.session.selection' ||
                  message.type === 'agency.session.changed') {
+        if (message.type === 'agency.session.created' || unconfirmedSessions.current.has(message.session.id)) unconfirmedSessions.current.set(message.session.id, message.session);
+        if (message.session.tab?.closedAt) unconfirmedSessions.current.delete(message.session.id);
         record(message.session, true);
         setData((old) => ({ ...old, sessions: replaceById(old.sessions, message.session) }));
       } else if (message.type === 'agency.session.activity') {
         // Side effects (notice, last-session bookkeeping) happen once here, never inside the state updater,
         // which React may invoke again. lastSessions mirrors every session message, so it is current.
         const previous = lastSessions.current.get(message.sessionId);
-        if (previous) record({ ...previous, activity: message.activity, lifecycle: message.lifecycle }, true);
+        if (previous) {
+          const next = { ...previous, activity: message.activity, lifecycle: message.lifecycle };
+          record(next, true);
+          if (unconfirmedSessions.current.has(next.id)) unconfirmedSessions.current.set(next.id, next);
+        }
         setData((old) => ({ ...old, sessions: applySessionActivity(old.sessions, previous, message) }));
       }
       if (!('requestId' in message) || !message.requestId) return;

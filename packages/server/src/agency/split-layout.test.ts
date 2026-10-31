@@ -175,3 +175,49 @@ test('split layout: reconcile handles deleted tabs, missing tabs, and malformed 
   assert.equal(countLeaves(fallback.tree), 1);
   assert.deepEqual(getPaneNodes(fallback.tree)[0]!.tabIds, ['t1']);
 });
+
+test('pane swaps exchange leaf references without changing splits for every supported shape', async () => {
+  const { swapPanes } = await import('@agent-workbench/shared');
+  const pane = (id: string) => ({ type: 'pane' as const, id, tabIds: [id + '-tab'], selectedTabId: id + '-tab' });
+  const split = (first: import('@agent-workbench/shared').LayoutNode, second: import('@agent-workbench/shared').LayoutNode, direction: 'row' | 'column' = 'row') =>
+    ({ type: 'split' as const, id: `${first.id}-${second.id}`, first, second, direction, ratio: .37 });
+  const a = pane('a'), b = pane('b'), c = pane('c'), d = pane('d');
+  const shapes = [split(a, b), split(a, b, 'column'), split(a, split(b, c, 'column')), split(split(a, b, 'column'), split(c, d, 'column')), split(a, split(b, split(c, d, 'column')))];
+  const skeleton = (node: import('@agent-workbench/shared').LayoutNode): unknown => node.type === 'pane' ? 'leaf' : ({ id: node.id, ratio: node.ratio, direction: node.direction, first: skeleton(node.first), second: skeleton(node.second) });
+  for (const tree of shapes) {
+    const before = structuredClone(tree);
+    for (const source of getPaneNodes(tree)) for (const target of getPaneNodes(tree)) {
+      const swapped = swapPanes(tree, source.id, target.id);
+      if (source === target) { assert.equal(swapped, null); continue; }
+      assert.ok(swapped);
+      const original = getPaneNodes(tree), next = getPaneNodes(swapped);
+      assert.equal(next[original.indexOf(source)], target);
+      assert.equal(next[original.indexOf(target)], source);
+      assert.deepEqual(skeleton(swapped), skeleton(tree));
+      assert.deepEqual(swapPanes(swapped, source.id, target.id), tree);
+      assert.equal(countLeaves(swapped), countLeaves(tree));
+    }
+    assert.equal(swapPanes(tree, 'a', 'foreign-pane'), null);
+    assert.equal(swapPanes(tree, 'missing', 'b'), null);
+    assert.deepEqual(tree, before, 'input stays immutable');
+  }
+});
+
+test('created tabs retain their destination or use a live fallback without duplicate assignments', async () => {
+  const { assignCreatedTab } = await import('@agent-workbench/shared');
+  const ws = '11111111-1111-4111-8111-111111111111' as WorkspaceId;
+  const initial = createDefaultLayout(ws, ['existing', 'neighbor']);
+  const tree = splitPane(initial.tree, 'pane-1', 'row', 'pane-2', 'neighbor')!;
+  const current = { ...initial, tree, focusedPaneId: 'pane-1' };
+  const created = assignCreatedTab(current, 'pane-2', 'new');
+  assert.equal(created.focusedPaneId, 'pane-2');
+  assert.deepEqual(findPaneNode(created.tree, 'pane-1'), findPaneNode(current.tree, 'pane-1'));
+  assert.deepEqual(findPaneNode(created.tree, 'pane-2')?.tabIds, ['neighbor', 'new']);
+  const repeated = assignCreatedTab(created, 'pane-2', 'new');
+  assert.deepEqual(getPaneNodes(repeated.tree).flatMap(p => p.tabIds).sort(), ['existing', 'neighbor', 'new'].sort());
+  const closed = closePane(created.tree, 'pane-2')!;
+  const fallback = assignCreatedTab({ ...created, tree: closed.tree }, 'pane-2', 'late');
+  assert.equal(fallback.focusedPaneId, 'pane-1');
+  assert.equal(findPaneNode(fallback.tree, 'pane-1')?.selectedTabId, 'late');
+  assert.equal(layoutOwnershipError(fallback, ws, ['existing', 'neighbor', 'new', 'late']), null);
+});

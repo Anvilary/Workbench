@@ -12,6 +12,8 @@ import { AgencySessionStore } from './agency-session-store.js';
 import { AgencyWorkspaceStore } from './store.js';
 import { WorkspaceMutex } from './workspace-lock.js';
 import { BrowserTabAdapter, BrowserTabStore } from './browser-tabs/index.js';
+import { AgencyLayoutStore } from './agency-layout-store.js';
+import { createDefaultLayout, splitPane, findPaneNode, closePane, swapPanes } from '@agent-workbench/shared';
 import { AgencyTabCoordinator } from './tab-coordinator.js';
 import { AgencyNotificationStore } from './agency-notification-store.js';
 import { TabActivityManager } from './tab-activity-manager.js';
@@ -45,8 +47,10 @@ async function fixture(t: test.TestContext) {
   const browser = new BrowserTabAdapter({ store: new BrowserTabStore(path.join(root, 'web.json')), workspaceStore });
   await browser.restore();
   const messages: AgencyServerMessage[] = [];
-  const coordinator = new AgencyTabCoordinator(native, browser, workspaceStore, message => messages.push(message));
-  return { root, workspaceStore, workspace, terminals, native, browser, messages, coordinator };
+  const layouts = new AgencyLayoutStore(path.join(root, 'layouts.json'));
+  await layouts.initialize();
+  const coordinator = new AgencyTabCoordinator(native, browser, workspaceStore, message => messages.push(message), layouts);
+  return { root, workspaceStore, workspace, terminals, native, browser, messages, coordinator, layouts, registry };
 }
 
 test('real domain coordinator serializes mixed selection and order without closing browser targets', async t => {
@@ -159,4 +163,63 @@ test('main authenticated protocol validates browser contracts and rejects foreig
   assert.equal(parseClientMessage(JSON.stringify({ ...input, cdp: 'http://localhost:9222' })), null);
   assert.equal(parseClientMessage(JSON.stringify({ ...input, url: 'http://127.0.0.1/' })), null);
   assert.equal(parseServerMessage(JSON.stringify({ type: 'agency.webTabs.snapshot', requestId: '', tabs: [{ id: 'fake' }] })), null);
+});
+
+
+test('creation commits a stable pane destination and swapped layout survives store restart', async t => {
+  const { root, workspace, coordinator, layouts, terminals } = await fixture(t);
+  let initial = createDefaultLayout(workspace.id, []);
+  initial = { ...initial, tree: splitPane(initial.tree, 'pane-1', 'row', 'pane-2')! };
+  await layouts.save(initial);
+  for (const kind of ['terminal', 'web'] as const) {
+    const result = kind === 'terminal'
+      ? await coordinator.createNative({ type: 'agency.session.create', requestId: 'create-native', workspaceId: workspace.id, kind, cols: 80, rows: 24, launchId: randomUUID(), targetPaneId: 'pane-2' })
+      : await coordinator.webRequest({ type: 'agency.webTab.create', requestId: 'create-web', workspaceId: workspace.id, url: 'https://chatgpt.com/', launchId: randomUUID(), targetPaneId: 'pane-2' });
+    assert.ok(result);
+    const saved = layouts.get(workspace.id)!;
+    assert.equal(saved.focusedPaneId, 'pane-2');
+    assert.equal(findPaneNode(saved.tree, 'pane-1')!.tabIds.length, 0);
+    assert.equal(findPaneNode(saved.tree, 'pane-2')!.tabIds.length, kind === 'terminal' ? 1 : 2);
+  }
+  const before = layouts.get(workspace.id)!;
+  const swapped = { ...before, tree: swapPanes(before.tree, 'pane-1', 'pane-2')! };
+  await layouts.save(swapped);
+  const restarted = new AgencyLayoutStore(path.join(root, 'layouts.json'));
+  await restarted.initialize();
+  assert.deepEqual(restarted.get(workspace.id), swapped);
+  assert.equal(terminals.size, 1);
+  assert.ok([...terminals.values()].every(terminal => terminal.alive));
+  // A late completion reads the current tree inside the store's mutation queue.
+  await layouts.save({ ...swapped, tree: closePane(swapped.tree, 'pane-2')!.tree, focusedPaneId: 'pane-1' });
+  await coordinator.createNative({ type: 'agency.session.create', requestId: 'late', workspaceId: workspace.id, kind: 'terminal', cols: 80, rows: 24, launchId: randomUUID(), targetPaneId: 'pane-2' });
+  assert.equal(findPaneNode(layouts.get(workspace.id)!.tree, 'pane-1')!.tabIds.length, 3);
+});
+
+
+test('in-flight creation keeps its destination through focus changes and deletion', async t => {
+  for (const removeTarget of [false, true]) {
+    const { workspace, coordinator, layouts, registry, terminals } = await fixture(t);
+    const initial = createDefaultLayout(workspace.id, []);
+    const split = { ...initial, tree: splitPane(initial.tree, 'pane-1', 'row', 'pane-2')! };
+    await layouts.save(split);
+    const open = registry.open;
+    let release!: () => void;
+    let started!: () => void;
+    const entered = new Promise<void>(resolve => { started = resolve; });
+    registry.open = async () => {
+      started();
+      await new Promise<void>(resolve => { release = resolve; });
+      return open();
+    };
+    const creating = coordinator.createNative({ type: 'agency.session.create', requestId: 'delayed', workspaceId: workspace.id, kind: 'terminal', cols: 80, rows: 24, launchId: randomUUID(), targetPaneId: 'pane-2' });
+    await entered;
+    await layouts.save({ ...split, focusedPaneId: 'pane-1', ...(removeTarget ? { tree: closePane(split.tree, 'pane-2')!.tree } : {}) });
+    release();
+    const created = await creating;
+    const saved = layouts.get(workspace.id)!;
+    const expected = removeTarget ? 'pane-1' : 'pane-2';
+    assert.equal(saved.focusedPaneId, expected);
+    assert.deepEqual(findPaneNode(saved.tree, expected)!.tabIds, [created.tab!.id]);
+    assert.equal(terminals.size, 1);
+  }
 });

@@ -1,3 +1,4 @@
+import { assignCreatedTab, reconcileLayout } from '@agent-workbench/shared';
 import type { AgencyClientMessage, AgencyServerMessage, WebTabClientMessage, WorkspaceId } from '@agent-workbench/shared';
 import { AgencyRuntimeError, type AgencySessionRuntime } from './agency-session-runtime.js';
 import type { AgencyWorkspaceStore } from './store.js';
@@ -100,6 +101,14 @@ export class AgencyTabCoordinator {
     if (web.length) await this.browser.orderTabs(workspaceId, ids.filter(id => web.includes(id)), positions);
   }
 
+  private async placeCreatedTab(workspaceId: WorkspaceId, targetPaneId: string | undefined, tabId: string): Promise<void> {
+    if (!targetPaneId || !this.layouts) return;
+    const open = [...this.openNative(workspaceId).map(session => session.tab!.id), ...this.browser.listTabs(workspaceId).map(tab => tab.id)];
+    const layout = await this.layouts.update(workspaceId, current =>
+      assignCreatedTab(reconcileLayout(current, workspaceId, open), targetPaneId, tabId));
+    this.publish({ type: 'agency.layout.changed', workspaceId, layout });
+  }
+
   async createNative(message: Extract<AgencyClientMessage, { type: 'agency.session.create' }>) {
     return this.mutations.runExclusive(message.workspaceId, async () => {
       try {
@@ -112,6 +121,7 @@ export class AgencyTabCoordinator {
         if (session.tab && !before.some(tab => tab.id === session.tab!.id)) {
           await this.order(message.workspaceId, [...before.map(tab => tab.id), session.tab.id]);
         }
+        if (session.tab) await this.placeCreatedTab(message.workspaceId, message.targetPaneId, session.tab.id);
         return this.native.get(session.id) ?? session;
       } finally { this.snapshot(); }
     });
@@ -139,6 +149,9 @@ export class AgencyTabCoordinator {
               ...this.browser.listTabs(message.workspaceId).map(tab => tab.order)) + 1 }
           : message;
         const response = await handleWebTabMessage(request, { adapter: this.browser, publish: this.publish });
+        if (message.type === 'agency.webTab.create' && response?.type === 'agency.webTab.created') {
+          await this.placeCreatedTab(message.workspaceId, message.targetPaneId, response.tab.id);
+        }
         if (message.type === 'agency.webTab.close' && response?.type !== 'agency.error') {
           await this.selectFallback(message.workspaceId);
         }

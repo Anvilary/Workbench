@@ -205,7 +205,7 @@ export function isWebTab(value: unknown): value is WebTab {
 // ---------------------------------------------------------------------------
 
 export type WebTabClientMessage =
-  | { type: 'agency.webTab.create'; requestId: RequestId; workspaceId: WorkspaceId; url: string; title?: string; order?: number; select?: boolean; launchId?: string; unloaded?: boolean }
+  | { type: 'agency.webTab.create'; requestId: RequestId; workspaceId: WorkspaceId; url: string; title?: string; order?: number; select?: boolean; launchId?: string; targetPaneId?: string; unloaded?: boolean }
   | { type: 'agency.webTab.select'; requestId: RequestId; workspaceId: WorkspaceId; tabId: string }
   | { type: 'agency.webTab.navigate'; requestId: RequestId; workspaceId: WorkspaceId; tabId: string; url: string }
   | { type: 'agency.webTab.rename'; requestId: RequestId; workspaceId: WorkspaceId; tabId: string; title: string }
@@ -231,7 +231,7 @@ function isValidRequestId(v: unknown): v is RequestId {
 export function parseWebTabClientMessage(raw: unknown): WebTabClientMessage | null {
   if (!isRecord(raw) || typeof raw.type !== 'string') return null;
   const fields: Record<string, readonly string[]> = {
-    'agency.webTab.create': ['workspaceId', 'url', 'title', 'order', 'select', 'launchId', 'unloaded'],
+    'agency.webTab.create': ['workspaceId', 'url', 'title', 'order', 'select', 'launchId', 'targetPaneId', 'unloaded'],
     'agency.webTab.select': ['workspaceId', 'tabId'],
     'agency.webTab.navigate': ['workspaceId', 'tabId', 'url'],
     'agency.webTab.rename': ['workspaceId', 'tabId', 'title'],
@@ -270,6 +270,7 @@ export function parseWebTabClientMessage(raw: unknown): WebTabClientMessage | nu
         if (typeof raw.launchId !== 'string' || raw.launchId.length < 1 || raw.launchId.length > 128) return null;
         launchId = raw.launchId;
       }
+      if (raw.targetPaneId !== undefined && (typeof raw.targetPaneId !== 'string' || raw.targetPaneId.length < 1 || raw.targetPaneId.length > 128 || /[\u0000-\u001f\u007f]/.test(raw.targetPaneId))) return null;
       let unloaded: boolean | undefined;
       if (raw.unloaded !== undefined) {
         if (typeof raw.unloaded !== 'boolean') return null;
@@ -284,6 +285,7 @@ export function parseWebTabClientMessage(raw: unknown): WebTabClientMessage | nu
         ...(order !== undefined ? { order } : {}),
         ...(select !== undefined ? { select } : {}),
         ...(launchId !== undefined ? { launchId } : {}),
+        ...(raw.targetPaneId !== undefined ? { targetPaneId: raw.targetPaneId as string } : {}),
         ...(unloaded !== undefined ? { unloaded } : {}),
       };
     }

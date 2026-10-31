@@ -7,7 +7,9 @@ export function useDropdownDismissal(): void {
     const pointer = (event: PointerEvent) => {
       const target = event.target instanceof Element ? event.target.closest('.agency-dropdown') : null;
       for (const trigger of opened()) {
-        if (trigger.parentElement !== target) trigger.click();
+        const popupId = trigger.getAttribute('aria-controls');
+        const inPortal = popupId && document.getElementById(popupId)?.contains(event.target as Node);
+        if (trigger.parentElement !== target && !inPortal) trigger.click();
       }
     };
     const key = (event: KeyboardEvent) => {

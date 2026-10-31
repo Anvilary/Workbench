@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import type { AgencyCliProfile, MawActivityState, SplitDirection } from '@agent-workbench/shared';
-import { countLeaves, type LayoutNode, type WorkspacePaneLayout } from '@agent-workbench/shared';
+import { countLeaves, getPaneNodes, type LayoutPaneNode, type LayoutNode, type WorkspacePaneLayout } from '@agent-workbench/shared';
+import { createPortal } from 'react-dom';
+import { useDroppable, useDragOperation } from '@dnd-kit/react';
+import { pointerIntersection } from '@dnd-kit/collision';
 import { t } from '../../i18n/index.js';
 import type { WorkspaceTab } from '../model.js';
 import { NativeChatGptView } from '../NativeChatGptView.js';
@@ -45,6 +48,7 @@ interface Props {
   onClosePane: (paneId: string) => void;
   onToggleMaximize: (paneId: string) => void;
   onUpdateRatio: (splitId: string, ratio: number) => void;
+  onSwapPane: (sourcePaneId: string, targetPaneId: string) => void;
   onMoveTabToPane: (tabId: string, targetPaneId: string, targetIndex?: number) => void;
   onAddCliClick: (paneId: string) => void;
   onAddTerminalClick: (paneId: string) => void;
@@ -55,7 +59,10 @@ interface Props {
   onPaneHost: (paneId: string, element: HTMLElement | null) => void;
 }
 
-export function SplitPaneTree(props: Props): JSX.Element {
+function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
+  const operation = useDragOperation();
+  const isDragSource = operation.source?.data.workspaceId === props.layout.workspaceId && operation.source?.data.paneId === props.node.id;
+  const drop = useDroppable({ collisionDetector: pointerIntersection, id: `pane:${props.layout.workspaceId}:${props.node.id}`, type: 'pane', accept: 'pane', data: { workspaceId: props.layout.workspaceId, paneId: props.node.id }, disabled: !!props.layout.maximizedPaneId || !props.online });
   const pointerFocus = useRef(false);
   useEffect(() => {
     const release = () => { pointerFocus.current = false; };
@@ -68,63 +75,11 @@ export function SplitPaneTree(props: Props): JSX.Element {
       window.removeEventListener('pointercancel', release, true);
     };
   }, []);
-  const { node, layout, tabs, profiles, online, busy, request, reportError, getTabActivity, onSelectTab, onCloseTab, onSplit, onClosePane, onToggleMaximize, onUpdateRatio, onMoveTabToPane, onAddCliClick, onAddTerminalClick, onAddWebTabClick, onRenameTab, onFocusPane, onTabDisplayed, onPaneHost } = props;
+  const { node, layout, tabs, profiles, online, busy, request, reportError, getTabActivity, onSelectTab, onCloseTab, onSplit, onClosePane, onToggleMaximize, onMoveTabToPane, onAddCliClick, onAddTerminalClick, onAddWebTabClick, onRenameTab, onFocusPane, onTabDisplayed, onPaneHost } = props;
 
   const totalLeaves = countLeaves(layout.tree);
   const canSplit = totalLeaves < 4;
   const canClose = totalLeaves > 1;
-
-  if (node.type === 'split') {
-    const isRow = node.direction === 'row';
-    return (
-      <div
-        className={`maw-split-container maw-split-${node.direction}`}
-        data-split-id={node.id}
-        style={{
-          display: 'flex',
-          flexDirection: isRow ? 'row' : 'column',
-          flex: 1,
-          width: '100%',
-          height: '100%',
-          minWidth: 0,
-          minHeight: 0,
-        }}
-      >
-        <div
-          className="maw-split-child"
-          style={{
-            flex: `${node.ratio} 1 0px`,
-            display: 'flex',
-            minWidth: 0,
-            minHeight: 0,
-            overflow: 'hidden',
-          }}
-        >
-          <SplitPaneTree {...props} node={node.first} />
-        </div>
-
-        <SplitDivider
-          splitId={node.id}
-          direction={node.direction}
-          ratio={node.ratio}
-          onRatioChange={(r) => onUpdateRatio(node.id, r)}
-        />
-
-        <div
-          className="maw-split-child"
-          style={{
-            flex: `${1 - node.ratio} 1 0px`,
-            display: 'flex',
-            minWidth: 0,
-            minHeight: 0,
-            overflow: 'hidden',
-          }}
-        >
-          <SplitPaneTree {...props} node={node.second} />
-        </div>
-      </div>
-    );
-  }
 
   // Node is a leaf Pane
   const isFocused = layout.focusedPaneId === node.id;
@@ -133,11 +88,13 @@ export function SplitPaneTree(props: Props): JSX.Element {
 
   return (
     <div
-      className={`maw-split-pane${isFocused ? ' is-focused' : ''}`}
+      ref={drop.ref}
+      className={`maw-split-pane${isFocused ? ' is-focused' : ''}${drop.isDropTarget && !isDragSource ? ' is-pane-drop-target' : ''}${isDragSource ? ' is-pane-drag-source' : ''}`}
       id={`pane-container-${node.id}`}
       tabIndex={-1}
-      onFocus={() => { if (!pointerFocus.current) onFocusPane(node.id); }}
-      onPointerDown={() => {
+      onFocus={(event) => { if ((event.target as Element).closest('.maw-pane-grip, .maw-add-tab, [role=menu]')) return; if (!pointerFocus.current) onFocusPane(node.id); }}
+      onPointerDown={(event) => {
+        if ((event.target as Element).closest('.maw-pane-grip, .maw-add-tab, [role=menu]')) return;
         pointerFocus.current = true;
         onFocusPane(node.id);
       }}
@@ -151,6 +108,12 @@ export function SplitPaneTree(props: Props): JSX.Element {
         workspaceId={layout.workspaceId}
         isFocused={isFocused}
         canSplit={canSplit}
+        moveDisabled={!!layout.maximizedPaneId || totalLeaves < 2 || !online || busy}
+        destinations={getPaneNodes(layout.tree).filter(p => p.id !== node.id).map((p) => {
+          const tab = tabs.find(tab => tab.id === p.selectedTabId);
+          return { id: p.id, title: t('agency.splits.swapWith', { number: getPaneNodes(layout.tree).findIndex(item => item.id === p.id) + 1, title: tab?.kind === 'web' ? tab.web.title : tab?.session.tab?.name ?? t('agency.tabs.empty') }) };
+        })}
+        onSwapPane={props.onSwapPane}
         canClose={canClose}
         isMaximized={isMaximized}
         online={online}
@@ -232,4 +195,94 @@ export function SplitPaneTree(props: Props): JSX.Element {
       )}
     </div>
   );
+}
+
+
+function PaneSlot({ holder }: { holder: HTMLDivElement }): JSX.Element {
+  const ref = useCallback((element: HTMLDivElement | null) => {
+    if (element && holder.parentElement !== element) element.appendChild(holder);
+  }, [holder]);
+  return <div className="maw-pane-slot" ref={ref} style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0 }} />;
+}
+
+function SplitStructure(props: Props & { holders: Map<string, HTMLDivElement> }): JSX.Element {
+  const { node, onUpdateRatio } = props;
+  if (node.type === 'split') {
+    const isRow = node.direction === 'row';
+    return (
+      <div
+        className={`maw-split-container maw-split-${node.direction}`}
+        data-split-id={node.id}
+        style={{
+          display: 'flex',
+          flexDirection: isRow ? 'row' : 'column',
+          flex: 1,
+          width: '100%',
+          height: '100%',
+          minWidth: 0,
+          minHeight: 0,
+        }}
+      >
+        <div
+          className="maw-split-child"
+          style={{
+            flex: `${node.ratio} 1 0px`,
+            display: 'flex',
+            minWidth: 0,
+            minHeight: 0,
+            overflow: 'hidden',
+          }}
+        >
+          <SplitStructure {...props} node={node.first} />
+        </div>
+
+        <SplitDivider
+          splitId={node.id}
+          direction={node.direction}
+          ratio={node.ratio}
+          onRatioChange={(r) => onUpdateRatio(node.id, r)}
+        />
+
+        <div
+          className="maw-split-child"
+          style={{
+            flex: `${1 - node.ratio} 1 0px`,
+            display: 'flex',
+            minWidth: 0,
+            minHeight: 0,
+            overflow: 'hidden',
+          }}
+        >
+          <SplitStructure {...props} node={node.second} />
+        </div>
+      </div>
+    );
+  }
+
+
+  return <PaneSlot holder={props.holders.get(node.id)!} />;
+}
+
+/** Stable portal containers keep pane contents mounted when leaves exchange tree positions. */
+export function SplitPaneTree(props: Props): JSX.Element {
+  const holders = useRef(new Map<string, HTMLDivElement>());
+  const panes = getPaneNodes(props.node);
+  for (const pane of panes) {
+    if (!holders.current.has(pane.id)) {
+      const holder = document.createElement('div');
+      holder.className = 'maw-pane-mount';
+      Object.assign(holder.style, { display: 'flex', flex: '1', minWidth: '0', minHeight: '0' });
+      holders.current.set(pane.id, holder);
+    }
+  }
+  useEffect(() => {
+    const live = new Set(panes.map(p => p.id));
+    for (const [id, holder] of holders.current) {
+      if (!live.has(id)) { holder.remove(); holders.current.delete(id); }
+    }
+  });
+  return <>
+    <SplitStructure {...props} holders={holders.current} />
+    {panes.map(pane => createPortal(<PaneLeaf {...props} node={pane} />, holders.current.get(pane.id)!, pane.id))}
+  </>;
 }

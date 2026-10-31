@@ -5,7 +5,7 @@ import {
   activeByProject, acknowledgeWorkspaceDraft, canLaunchAgent, workspaceTabs,
   putWorkspaceDraft, selectableEfforts, selectableModels, transitionNotice,
   createAgencyTransport, parseProfileArgv, allWorkspaceTabs, selectedWorkspaceTab,
-  applySessionsSnapshot, applySessionActivity,
+  applySessionsSnapshot, applySessionActivity, retainUnconfirmedCreations,
 } from './model.ts';
 
 const emptyCapabilities = {
@@ -159,4 +159,15 @@ test('F-2: session activity is applied purely to the latest state (idempotent on
   // The latest state wins over an older fallback (e.g. a rename that arrived in between).
   const renamed = [{ ...s1, tab: { id: 't', name: 'new' } }];
   assert.equal(applySessionActivity(renamed, s1, update)[0].tab.name, 'new');
+});
+
+test('creation replies survive older snapshots until an authoritative snapshot includes them', async () => {
+  const created = { id: 'new', updatedAt: '2026-10-31T12:00:01Z' };
+  const pending = new Map([['new', created]]);
+  assert.deepEqual(retainUnconfirmedCreations([], pending), [created]);
+  assert.deepEqual(retainUnconfirmedCreations([{ id: 'new', updatedAt: '2026-10-31T12:00:00Z' }], pending), [created]);
+  assert.equal(pending.size, 1);
+  assert.deepEqual(retainUnconfirmedCreations([created], pending), [created]);
+  assert.equal(pending.size, 0);
+  assert.deepEqual(retainUnconfirmedCreations([], pending), [], 'later authoritative closure can remove the tab');
 });

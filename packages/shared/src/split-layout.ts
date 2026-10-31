@@ -443,3 +443,47 @@ export function reconcileLayout(
     updatedAt: saved.updatedAt,
   };
 }
+
+/** Exchange leaf positions, retaining the actual pane nodes and every split property. */
+export function swapPanes(tree: LayoutNode, sourcePaneId: string, targetPaneId: string): LayoutNode | null {
+  if (!sourcePaneId || sourcePaneId === targetPaneId || !isLayoutNode(tree) || countLeaves(tree) > MAX_LEAVES) return null;
+  const panes = getPaneNodes(tree);
+  const source = panes.find(pane => pane.id === sourcePaneId);
+  const target = panes.find(pane => pane.id === targetPaneId);
+  // Both IDs must be members of this tree; IDs from another workspace are never imported.
+  if (!source || !target) return null;
+  const nodeIds = new Set<string>(), tabIds = new Set<string>();
+  const valid = (node: LayoutNode): boolean => {
+    if (nodeIds.has(node.id)) return false;
+    nodeIds.add(node.id);
+    if (node.type === 'split') {
+      return node.ratio >= MIN_SPLIT_RATIO && node.ratio <= MAX_SPLIT_RATIO && valid(node.first) && valid(node.second);
+    }
+    if (node.selectedTabId !== null && !node.tabIds.includes(node.selectedTabId)) return false;
+    for (const id of node.tabIds) {
+      if (tabIds.has(id)) return false;
+      tabIds.add(id);
+    }
+    return true;
+  };
+  if (!valid(tree)) return null;
+  const replace = (node: LayoutNode): LayoutNode => {
+    if (node === source) return target;
+    if (node === target) return source;
+    if (node.type === 'pane') return node;
+    const first = replace(node.first), second = replace(node.second);
+    return first === node.first && second === node.second ? node : { ...node, first, second };
+  };
+  return replace(tree);
+}
+
+/** Complete a creation against the latest tree, even if its requested pane was closed. */
+export function assignCreatedTab(layout: WorkspacePaneLayout, targetPaneId: string, tabId: string): WorkspacePaneLayout {
+  const target = findPaneNode(layout.tree, targetPaneId) ?? getPaneNodes(layout.tree)[0]!;
+  return {
+    ...layout,
+    tree: moveTabBetweenPanes(layout.tree, tabId, target.id),
+    focusedPaneId: target.id,
+    updatedAt: new Date(Math.max(Date.now(), Date.parse(layout.updatedAt) + 1)).toISOString(),
+  };
+}
