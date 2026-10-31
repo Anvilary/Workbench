@@ -80,7 +80,7 @@ MAW supports an explicit, opt-in token-free mode designed for local developer wo
 - **Strict loopback-only binding**: Server startup is immediately rejected if the server does not bind strictly and exclusively to `127.0.0.1`. It is never exposed to `0.0.0.0`.
 - **Remote access prohibited**: Startup is rejected if remote access is enabled, and remote access cannot be configured or paired while token-free mode is active.
 - **Strict Host and Origin verification**: Host and Origin checks remain strictly enforced. Foreign Origin headers and non-loopback Host headers are rejected with 403 Forbidden.
-- **Browser target ownership preserved**: Browser target ownership and independent Neko controller authentication checks are never bypassed.
+- **Desktop renderer isolation**: ChatGPT pages use a separate sandboxed Chromium session with no MAW preload or privileged IPC access. Logical web-tab mutations retain workspace ownership checks.
 
 ## What counts
 

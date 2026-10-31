@@ -32,7 +32,7 @@ await writeFile(path.join(home, '.bashrc'), 'PS1="$ "\n');
 const env = { ...process.env, HOME: home, SHELL: '/bin/bash', XDG_CONFIG_HOME: path.dirname(config), XDG_DATA_HOME: path.join(root, 'data'),
   XDG_CACHE_HOME: path.join(root, 'cache'), XDG_STATE_HOME: path.join(root, 'state'), CODEX_HOME: path.join(home, '.codex'),
   AGENT_WORKBENCH_NO_OPEN: '1', AGENT_WORKBENCH_NO_RESTORE: '1' };
-for (const key of Object.keys(env)) if (/^(NEKO_|CONTROLLER_|AGENT_WORKBENCH_PORT|MAW_)/.test(key)) delete env[key];
+for (const key of Object.keys(env)) if (/^(AGENT_WORKBENCH_PORT|MAW_)/.test(key)) delete env[key];
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(work, label, timeout = 30000) { const end = Date.now() + timeout; while (Date.now() < end) { const v = await work(); if (v) return v; await delay(20); } throw Error('Timeout: ' + label); }

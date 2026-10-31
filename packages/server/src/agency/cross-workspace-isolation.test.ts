@@ -1,6 +1,6 @@
 /**
  * Checkpoint 5 — cross-workspace isolation under concurrent load (real runtime, real tab coordinator, real
- * browser adapter with the in-memory controller driver). Activity in workspace A must never select or close
+ * logical browser adapter). Activity in workspace A must never select or close
  * B's tabs, close B's browser targets, close a sibling PTY, or let a forged (workspace, tab) pair through.
  */
 import assert from 'node:assert/strict';
@@ -15,7 +15,7 @@ import { AgencySessionRuntime } from './agency-session-runtime.js';
 import { SplitAgencySessionStore } from './agency-session-store.js';
 import { AgencyWorkspaceStore } from './store.js';
 import { WorkspaceMutex } from './workspace-lock.js';
-import { BrowserTabAdapter, BrowserTabStore, MemoryBrowserControllerDriver } from './browser-tabs/index.js';
+import { BrowserTabAdapter, BrowserTabStore } from './browser-tabs/index.js';
 import { AgencyTabCoordinator } from './tab-coordinator.js';
 
 test('concurrent operations in one workspace never touch another workspace, its browser targets or sibling PTYs', async t => {
@@ -48,8 +48,8 @@ test('concurrent operations in one workspace never touch another workspace, its 
     workspaces: { protectedDirectories: () => [], withSessionReservation: (id, work) => lock.runExclusive(id, () => work(workspaceStore.getWorkspace(id))) },
   });
   await native.initialize(); t.after(() => native.dispose());
-  const driver = new MemoryBrowserControllerDriver();
-  const browser = new BrowserTabAdapter({ store: new BrowserTabStore(path.join(root, 'web.json')), driver, workspaceStore });
+
+  const browser = new BrowserTabAdapter({ store: new BrowserTabStore(path.join(root, 'web.json')), workspaceStore });
   await browser.restore();
   const messages: AgencyServerMessage[] = [];
   const coordinator = new AgencyTabCoordinator(native, browser, workspaceStore, message => messages.push(message));
@@ -62,7 +62,7 @@ test('concurrent operations in one workspace never touch another workspace, its 
   const webA = browser.listTabs(A.id), webB = browser.listTabs(B.id);
   // B's state before the storm: select a specific B shell.
   await coordinator.nativeAction({ type: 'agency.tab.action', requestId: 'b-sel', workspaceId: B.id, tabId: shellsB[1]!.tab!.id, action: 'select' });
-  const targetsB = webB.map(tab => tab.targetRef);
+  const targetsB = webB.map(tab => tab.id);
   const ptysB = shellsB.map(s => native.get(s.id)!.terminalId);
   const beforeB = JSON.stringify({ sessions: native.liveList(B.id).map(s => [s.id, s.tab?.selected, s.tab?.order, s.tab?.name, s.lifecycle]), web: browser.listTabs(B.id).map(w => [w.id, w.selected, w.order, w.title, w.closedAt]) });
 
@@ -86,7 +86,6 @@ test('concurrent operations in one workspace never touch another workspace, its 
   const afterB = JSON.stringify({ sessions: native.liveList(B.id).map(s => [s.id, s.tab?.selected, s.tab?.order, s.tab?.name, s.lifecycle]), web: browser.listTabs(B.id).map(w => [w.id, w.selected, w.order, w.title, w.closedAt]) });
   assert.equal(afterB, beforeB, 'workspace B state is byte-identical after 240 concurrent operations in A');
   assert.equal(targetsB.every(Boolean), true);
-  assert.equal(driver.getTargetCount(), 3, 'only the browser target A closed itself is gone (4 - 1)');
   assert.equal(browser.listTabs(B.id).filter(tab => !tab.closedAt).length, 2);
   for (const pty of ptysB) assert.ok(!closed.includes(pty!), 'no sibling PTY of B was closed');
   assert.ok(closed.includes(native.get(shellsA[2]!.id)!.terminalId!) || native.get(shellsA[2]!.id)!.tab!.closedAt, 'A closed its own tab');

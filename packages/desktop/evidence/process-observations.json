@@ -1,0 +1,56 @@
+{
+  "one": [
+    {
+      "id": 2,
+      "title": "ChatGPT: Chat, Work, Create & Code with AI",
+      "origin": "https://chatgpt.com",
+      "loading": false
+    }
+  ],
+  "metrics": [
+    {
+      "type": "Browser",
+      "workingSetKB": 183940,
+      "cpu": 0
+    },
+    {
+      "type": "GPU",
+      "workingSetKB": 166296,
+      "cpu": 0
+    },
+    {
+      "type": "Utility",
+      "workingSetKB": 94932,
+      "cpu": 0
+    },
+    {
+      "type": "Tab",
+      "workingSetKB": 177008,
+      "cpu": 0
+    },
+    {
+      "type": "Tab",
+      "workingSetKB": 198788,
+      "cpu": 0
+    },
+    {
+      "type": "Tab",
+      "workingSetKB": 196908,
+      "cpu": 0
+    }
+  ],
+  "pages": [
+    {
+      "id": 3,
+      "title": "ChatGPT: Chat, Work, Create & Code with AI",
+      "origin": "https://chatgpt.com",
+      "loading": false
+    },
+    {
+      "id": 2,
+      "title": "ChatGPT: Chat, Work, Create & Code with AI",
+      "origin": "https://chatgpt.com",
+      "loading": false
+    }
+  ]
+}

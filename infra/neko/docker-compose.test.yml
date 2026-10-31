@@ -1,9 +1,0 @@
-# Test Compose Override for Synthetic Benchmarks
-# Merged with docker-compose.yml only during automated test runs.
-# Production deployments MUST NOT use this file.
-services:
-  neko:
-    environment:
-      PERMITTED_ORIGINS: "172.17.0.1,172.18.0.1,172.19.0.1,172.20.0.1,172.21.0.1,172.22.0.1,172.23.0.1,172.24.0.1,172.25.0.1"
-    volumes:
-      - ./config/policies.test.json:/etc/chromium/policies/managed/policies.json:ro

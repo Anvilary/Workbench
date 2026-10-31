@@ -364,28 +364,11 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     await agencyActivityManager.flushPendingNotifications(hasOpenActivityTab);
   });
   void tabReady.catch(error => console.error('[agency] state initialization failed:', String(error)));
-  let reconcilingBrowser = false;
-  const browserObservation = new AbortController();
-  const browserReconciliation = setInterval(() => {
-    if (reconcilingBrowser) return;
-    reconcilingBrowser = true;
-    void tabReady.then(async () => {
-      await agencyActivityManager.flushPendingNotifications(hasOpenActivityTab);
-      const before = JSON.stringify(agencyBrowserTabs.listTabs());
-      for (const workspace of agencyWorkspaceStore.listWorkspaces()) {
-        if (browserObservation.signal.aborted) return;
-        await tabCoordinator.mutations.runExclusive(workspace.id, async () => {
-          await agencyBrowserTabs.refreshLiveTabs(workspace.id, browserObservation.signal);
-          await agencyBrowserTabs.reconcileCleanup(workspace.id, browserObservation.signal);
-        });
-      }
-      if (JSON.stringify(agencyBrowserTabs.listTabs()) !== before) tabCoordinator.snapshot();
-    }).catch(() => {
-      // The adapter retains detached/error state and ownership hints on outages.
-      // Recovery is explicit selection; polling never creates browser pages.
-    }).finally(() => { reconcilingBrowser = false; });
+  // Notification delivery retries are independent of any browser renderer.
+  const notificationRetry = setInterval(() => {
+    void tabReady.then(() => agencyActivityManager.flushPendingNotifications(hasOpenActivityTab)).catch(() => {});
   }, 5000);
-  browserReconciliation.unref();
+  notificationRetry.unref();
 
   /**
     Las ventanas que entraron como **equipo remoto** (hito 37), con el id de su
@@ -3456,6 +3439,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
             withSessionReservationLock: (id, op) => workspaceLock.runExclusive(id, op),
             hasBlockingSessions: async (id) => agencyRuntime.hasWorkspaceReferences(id) || tabCoordinator.hasBrowserReferences(id),
             publish: (broadcastMsg) => broadcast(broadcastMsg),
+            shutdownWorkspace: (id) => tabCoordinator.shutdownWorkspace(id),
           };
           const domainResponse = 'workspaceId' in message
             ? await tabCoordinator.mutations.runExclusive(message.workspaceId, () => handleAgencyDomainRequest(message, domainContext))
@@ -3716,8 +3700,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
   });
 
   return () => {
-    clearInterval(browserReconciliation);
-    browserObservation.abort();
+    clearInterval(notificationRetry);
     httpServer.off('upgrade', onUpgrade);
     registry.off('changed', onRegistryChanged);
     registry.off('activity', onRegistryActivity);
