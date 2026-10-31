@@ -3715,7 +3715,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         }
 
         case 'agency.layout.get': {
-          const layout = agencyLayoutStore.get(message.workspaceId);
+          const layout = tabCoordinator.reconcileLayout(message.workspaceId) ?? agencyLayoutStore.get(message.workspaceId);
           if (layout) {
             send(socket, { type: 'agency.layout.changed', workspaceId: message.workspaceId, layout });
           }

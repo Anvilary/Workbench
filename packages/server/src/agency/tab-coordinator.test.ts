@@ -5,7 +5,7 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
-import type { AgencyServerMessage, TerminalId } from '@agent-workbench/shared';
+import type { AgencyServerMessage, CliProfileId, TerminalId } from '@agent-workbench/shared';
 import { parseClientMessage, parseServerMessage } from '@agent-workbench/shared';
 import { AgencySessionRuntime } from './agency-session-runtime.js';
 import { AgencySessionStore } from './agency-session-store.js';
@@ -13,12 +13,19 @@ import { AgencyWorkspaceStore } from './store.js';
 import { WorkspaceMutex } from './workspace-lock.js';
 import { BrowserTabAdapter, BrowserTabStore } from './browser-tabs/index.js';
 import { AgencyLayoutStore } from './agency-layout-store.js';
-import { createDefaultLayout, splitPane, findPaneNode, closePane, swapPanes } from '@agent-workbench/shared';
+import { createDefaultLayout, splitPane, findPaneNode, closePane, swapPanes, isWorkspacePaneLayout, getPaneNodes } from '@agent-workbench/shared';
 import { AgencyTabCoordinator } from './tab-coordinator.js';
 import { AgencyNotificationStore } from './agency-notification-store.js';
 import { TabActivityManager } from './tab-activity-manager.js';
+import { writeAtomically } from '../atomic-write.js';
 
-async function fixture(t: test.TestContext) {
+async function fixture(
+  t: test.TestContext,
+  options?: {
+    writeLayout?: typeof writeAtomically;
+    resolveLaunch?: ConstructorParameters<typeof AgencySessionRuntime>[0]['profiles']['resolveLaunch'];
+  },
+) {
   const root = await mkdtemp(path.join(tmpdir(), 'maw-coordination-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const workspaceStore = new AgencyWorkspaceStore(path.join(root, 'workspaces.json'));
@@ -39,7 +46,19 @@ async function fixture(t: test.TestContext) {
   });
   const native = new AgencySessionRuntime({ registry: registry as unknown as ConstructorParameters<typeof AgencySessionRuntime>[0]['registry'],
     store: new AgencySessionStore(path.join(root, 'sessions.json')),
-    profiles: { resolveLaunch: async () => { throw new Error('No CLI launch requested'); } },
+    profiles: {
+      resolveLaunch: options?.resolveLaunch ?? (async (input) => ({
+        profileId: input.profileId,
+        provider: 'claude-code',
+        file: '/bin/echo',
+        args: ['hello'],
+        env: { PATH: '/usr/bin' },
+        session: { kind: 'discover' },
+        launchToken: input.launchToken,
+        proposedSessionId: input.proposedSessionId,
+        cwd: input.cwd,
+      })),
+    },
     workspaces: { protectedDirectories: () => [], withSessionReservation: (id, work) => lock.runExclusive(id, () => work(workspaceStore.getWorkspace(id))) },
   });
   await native.initialize(); t.after(() => native.dispose());
@@ -47,7 +66,7 @@ async function fixture(t: test.TestContext) {
   const browser = new BrowserTabAdapter({ store: new BrowserTabStore(path.join(root, 'web.json')), workspaceStore });
   await browser.restore();
   const messages: AgencyServerMessage[] = [];
-  const layouts = new AgencyLayoutStore(path.join(root, 'layouts.json'));
+  const layouts = new AgencyLayoutStore(path.join(root, 'layouts.json'), options?.writeLayout);
   await layouts.initialize();
   const coordinator = new AgencyTabCoordinator(native, browser, workspaceStore, message => messages.push(message), layouts);
   return { root, workspaceStore, workspace, terminals, native, browser, messages, coordinator, layouts, registry };
@@ -223,3 +242,258 @@ test('in-flight creation keeps its destination through focus changes and deletio
     assert.equal(terminals.size, 1);
   }
 });
+
+for (const caseType of ['terminal', 'agent', 'webTab'] as const) {
+  test(`creation failure recovery: ${caseType} creation preserves resource when layout persistence fails, reports error, safely reconciles, and recovers on later save or retry`, async t => {
+    let shouldFailWrite = true;
+    const writeLayout: typeof writeAtomically = async (target, content, options) => {
+      if (shouldFailWrite) {
+        throw new Error('Simulated AgencyLayoutStore disk persistence failure');
+      }
+      return writeAtomically(target, content, options);
+    };
+
+    const { workspace, coordinator, layouts, terminals, native, browser, messages } = await fixture(t, { writeLayout });
+    let initial = createDefaultLayout(workspace.id, []);
+    initial = { ...initial, tree: splitPane(initial.tree, 'pane-1', 'row', 'pane-2')! };
+    shouldFailWrite = false;
+    await layouts.save(initial);
+    shouldFailWrite = true;
+    messages.length = 0;
+
+    const launchId = randomUUID();
+    let resultTabId = '';
+    let resultId = '';
+
+    if (caseType === 'terminal') {
+      const result = await coordinator.createNative({
+        type: 'agency.session.create',
+        requestId: 'create-terminal',
+        workspaceId: workspace.id,
+        kind: 'terminal',
+        cols: 80,
+        rows: 24,
+        launchId,
+        targetPaneId: 'pane-2',
+      });
+      assert.ok(result);
+      assert.equal(result.kind, 'terminal');
+      assert.equal(result.launchId, launchId);
+      assert.ok(result.id);
+      assert.ok(result.tab?.id);
+      resultId = result.id;
+      resultTabId = result.tab!.id;
+
+      // Exactly one authoritative session exists
+      const live = native.list(workspace.id).filter(s => s.tab?.current && !s.tab.closedAt);
+      assert.equal(live.length, 1);
+      assert.equal(live[0]!.id, result.id);
+      assert.equal(live[0]!.tab!.id, resultTabId);
+
+      // No duplicate PTY is created
+      assert.equal(terminals.size, 1);
+      assert.ok(terminals.has(result.terminalId!));
+    } else if (caseType === 'agent') {
+      const result = await coordinator.createNative({
+        type: 'agency.session.create',
+        requestId: 'create-agent',
+        workspaceId: workspace.id,
+        kind: 'agent',
+        profileId: 'claude-code' as CliProfileId,
+        cols: 80,
+        rows: 24,
+        launchId,
+        targetPaneId: 'pane-2',
+      });
+      assert.ok(result);
+      assert.equal(result.kind, 'agent');
+      assert.equal(result.profileId, 'claude-code');
+      assert.equal(result.launchId, launchId);
+      assert.ok(result.id);
+      assert.ok(result.tab?.id);
+      resultId = result.id;
+      resultTabId = result.tab!.id;
+
+      // Exactly one authoritative session exists
+      const live = native.list(workspace.id).filter(s => s.tab?.current && !s.tab.closedAt);
+      assert.equal(live.length, 1);
+      assert.equal(live[0]!.id, result.id);
+      assert.equal(live[0]!.tab!.id, resultTabId);
+
+      // No duplicate PTY is created
+      assert.equal(terminals.size, 1);
+    } else {
+      const result = await coordinator.webRequest({
+        type: 'agency.webTab.create',
+        requestId: 'create-web',
+        workspaceId: workspace.id,
+        url: 'https://chatgpt.com/',
+        launchId,
+        targetPaneId: 'pane-2',
+      });
+      assert.ok(result);
+      assert.equal(result.type, 'agency.webTab.created');
+      assert.equal(result.tab.url, 'https://chatgpt.com/');
+      assert.equal(result.tab.launchId, launchId);
+      resultId = result.tab.id;
+      resultTabId = result.tab.id;
+
+      // Exactly one authoritative tab exists
+      const live = browser.listTabs(workspace.id);
+      assert.equal(live.length, 1);
+      assert.equal(live[0]!.id, resultTabId);
+    }
+
+    // Layout failure is reported separately and explicitly
+    const err = messages.find(m => m.type === 'agency.error');
+    assert.ok(err, 'layout failure must be reported via agency.error');
+    assert.equal(err.code, 'internal-error');
+    assert.match(err.message, /persistence failure/i);
+
+    // Persisted layout in store still reflects the state before failure (target pane doesn't have the tab yet)
+    const storedBeforeRecovery = layouts.get(workspace.id)!;
+    assert.ok(storedBeforeRecovery);
+    assert.equal(findPaneNode(storedBeforeRecovery.tree, 'pane-2')!.tabIds.includes(resultTabId), false);
+
+    // Safe layout reconciliation assigns the unassigned tab to an existing pane
+    const reconciled = coordinator.reconcileLayout(workspace.id)!;
+    assert.ok(reconciled);
+    assert.equal(isWorkspacePaneLayout(reconciled), true);
+    const assignedPane = getPaneNodes(reconciled.tree).find(p => p.tabIds.includes(resultTabId));
+    assert.ok(assignedPane, 'reconciliation must place the created resource into an existing pane');
+    assert.ok(['pane-1', 'pane-2'].includes(assignedPane!.id));
+
+    // Idempotent retry using the original launchId while persistence still fails
+    messages.length = 0;
+    if (caseType === 'terminal') {
+      const retry = await coordinator.createNative({
+        type: 'agency.session.create',
+        requestId: 'retry-terminal-1',
+        workspaceId: workspace.id,
+        kind: 'terminal',
+        cols: 80,
+        rows: 24,
+        launchId,
+        targetPaneId: 'pane-2',
+      });
+      assert.equal(retry.id, resultId);
+      assert.equal(retry.tab!.id, resultTabId);
+      assert.equal(native.list(workspace.id).filter(s => s.tab?.current && !s.tab.closedAt).length, 1);
+      assert.equal(terminals.size, 1, 'idempotent retry must not spawn duplicate PTY');
+    } else if (caseType === 'agent') {
+      const retry = await coordinator.createNative({
+        type: 'agency.session.create',
+        requestId: 'retry-agent-1',
+        workspaceId: workspace.id,
+        kind: 'agent',
+        profileId: 'claude-code' as CliProfileId,
+        cols: 80,
+        rows: 24,
+        launchId,
+        targetPaneId: 'pane-2',
+      });
+      assert.equal(retry.id, resultId);
+      assert.equal(retry.tab!.id, resultTabId);
+      assert.equal(native.list(workspace.id).filter(s => s.tab?.current && !s.tab.closedAt).length, 1);
+      assert.equal(terminals.size, 1, 'idempotent retry must not spawn duplicate PTY');
+    } else {
+      const retry = await coordinator.webRequest({
+        type: 'agency.webTab.create',
+        requestId: 'retry-web-1',
+        workspaceId: workspace.id,
+        url: 'https://chatgpt.com/',
+        launchId,
+        targetPaneId: 'pane-2',
+      });
+      assert.equal(retry?.type, 'agency.webTab.created');
+      assert.equal((retry as any).tab.id, resultId);
+      assert.equal(browser.listTabs(workspace.id).length, 1, 'idempotent retry must not duplicate browser tab');
+    }
+
+    // A later successful layout save restores correct placement
+    shouldFailWrite = false;
+    messages.length = 0;
+    if (caseType === 'webTab') {
+      const retryAfterFix = await coordinator.webRequest({
+        type: 'agency.webTab.create',
+        requestId: 'retry-web-recovered',
+        workspaceId: workspace.id,
+        url: 'https://chatgpt.com/',
+        launchId,
+        targetPaneId: 'pane-2',
+      });
+      assert.equal(retryAfterFix?.type, 'agency.webTab.created');
+    } else if (caseType === 'agent') {
+      const retryAfterFix = await coordinator.createNative({
+        type: 'agency.session.create',
+        requestId: 'retry-native-recovered',
+        workspaceId: workspace.id,
+        kind: 'agent',
+        profileId: 'claude-code' as CliProfileId,
+        cols: 80,
+        rows: 24,
+        launchId,
+        targetPaneId: 'pane-2',
+      });
+      assert.equal(retryAfterFix.id, resultId);
+    } else {
+      const retryAfterFix = await coordinator.createNative({
+        type: 'agency.session.create',
+        requestId: 'retry-native-recovered',
+        workspaceId: workspace.id,
+        kind: 'terminal',
+        cols: 80,
+        rows: 24,
+        launchId,
+        targetPaneId: 'pane-2',
+      });
+      assert.equal(retryAfterFix.id, resultId);
+    }
+    const savedAfterRecovery = layouts.get(workspace.id)!;
+    assert.ok(savedAfterRecovery);
+    assert.ok(findPaneNode(savedAfterRecovery.tree, 'pane-2')!.tabIds.includes(resultTabId), 'correct placement restored in pane-2');
+    assert.ok(messages.some(m => m.type === 'agency.layout.changed'));
+
+    // Reconnect preserves the original session ID (or tab ID) and valid layout
+    if (caseType === 'terminal' || caseType === 'agent') {
+      const liveSessions = native.liveList();
+      assert.ok(liveSessions.some(s => s.id === resultId && s.tab?.id === resultTabId));
+      assert.equal(liveSessions.filter(s => s.workspaceId === workspace.id && s.tab?.current && !s.tab.closedAt).length, 1);
+    } else {
+      const liveTabs = browser.listTabs(workspace.id);
+      assert.ok(liveTabs.some(t => t.id === resultTabId));
+      assert.equal(liveTabs.length, 1);
+    }
+    const reconnectedLayout = coordinator.reconcileLayout(workspace.id)!;
+    assert.ok(reconnectedLayout);
+    assert.ok(findPaneNode(reconnectedLayout.tree, 'pane-2')!.tabIds.includes(resultTabId));
+
+    // Ordinary creation and pane swapping remain unaffected
+    messages.length = 0;
+    const ordinaryLaunchId = randomUUID();
+    const ordinary = await coordinator.createNative({
+      type: 'agency.session.create',
+      requestId: 'ordinary-create',
+      workspaceId: workspace.id,
+      kind: 'terminal',
+      cols: 80,
+      rows: 24,
+      launchId: ordinaryLaunchId,
+      targetPaneId: 'pane-1',
+    });
+    assert.ok(ordinary);
+    assert.ok(findPaneNode(layouts.get(workspace.id)!.tree, 'pane-1')!.tabIds.includes(ordinary.tab!.id));
+    if (caseType === 'terminal' || caseType === 'agent') {
+      assert.equal(terminals.size, 2);
+    } else {
+      assert.equal(terminals.size, 1);
+    }
+
+    const currentLayout = layouts.get(workspace.id)!;
+    const swapped = swapPanes(currentLayout.tree, 'pane-1', 'pane-2')!;
+    assert.ok(swapped);
+    await layouts.save({ ...currentLayout, tree: swapped });
+    const storedSwapped = layouts.get(workspace.id)!;
+    assert.deepEqual(storedSwapped.tree, swapped);
+  });
+}
