@@ -1,4 +1,4 @@
-import { useCallback, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import type { AgencyCliProfile, MawActivityState, SplitDirection } from '@agent-workbench/shared';
 import { countLeaves, type LayoutNode, type WorkspacePaneLayout } from '@agent-workbench/shared';
 import { t } from '../../i18n/index.js';
@@ -56,6 +56,18 @@ interface Props {
 }
 
 export function SplitPaneTree(props: Props): JSX.Element {
+  const pointerFocus = useRef(false);
+  useEffect(() => {
+    const release = () => { pointerFocus.current = false; };
+    // A rejected pointer selection can roll back before the same click emits focus.
+    // Release outside the pane must still restore keyboard focus handling.
+    window.addEventListener('pointerup', release, true);
+    window.addEventListener('pointercancel', release, true);
+    return () => {
+      window.removeEventListener('pointerup', release, true);
+      window.removeEventListener('pointercancel', release, true);
+    };
+  }, []);
   const { node, layout, tabs, profiles, online, busy, request, reportError, getTabActivity, onSelectTab, onCloseTab, onSplit, onClosePane, onToggleMaximize, onUpdateRatio, onMoveTabToPane, onAddCliClick, onAddTerminalClick, onAddWebTabClick, onRenameTab, onFocusPane, onTabDisplayed, onPaneHost } = props;
 
   const totalLeaves = countLeaves(layout.tree);
@@ -124,8 +136,11 @@ export function SplitPaneTree(props: Props): JSX.Element {
       className={`maw-split-pane${isFocused ? ' is-focused' : ''}`}
       id={`pane-container-${node.id}`}
       tabIndex={-1}
-      onFocus={() => onFocusPane(node.id)}
-      onPointerDown={() => onFocusPane(node.id)}
+      onFocus={() => { if (!pointerFocus.current) onFocusPane(node.id); }}
+      onPointerDown={() => {
+        pointerFocus.current = true;
+        onFocusPane(node.id);
+      }}
     >
       <PaneHeader
         paneId={node.id}

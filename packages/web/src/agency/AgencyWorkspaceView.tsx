@@ -15,6 +15,7 @@ import { allWorkspaceTabs, canLaunchAgent, selectedWorkspaceTab, type AgencyTran
 import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
 import { PersistentSessionPanes } from './split/PersistentSessionPanes.js';
 import { SplitPaneTree } from './split/SplitPaneTree.js';
+import { usePaneInspection } from './split/usePaneInspection.js';
 import type { useAgencyStore } from './useAgencyStore.js';
 
 interface Props {
@@ -80,7 +81,8 @@ export function AgencyWorkspaceView({
   const [error, setError] = useState<string | null>(null);
   const [closing, setClosing] = useState<WorkspaceTab | null>(null);
   const [busy, setBusy] = useState(false);
-  const [displayed, setDisplayed] = useState<string | null>(null);
+  const [displayed, setDisplayed] = useState<ReadonlySet<string>>(() => new Set());
+  const selecting = useRef(0);
   const flight = useRef(false);
   const paneHosts = useRef(new Map<string, HTMLElement>());
   const [hostVersion, setHostVersion] = useState(0);
@@ -91,7 +93,6 @@ export function AgencyWorkspaceView({
     else paneHosts.current.delete(paneId);
     setHostVersion((version) => version + 1);
   }, []);
-  const acknowledged = useRef(new Set<string>());
   const dialog = useRef<HTMLDivElement | null>(null);
   const saveTimer = useRef<number | null>(null);
 
@@ -108,10 +109,10 @@ export function AgencyWorkspaceView({
   const [prevServerSelected, setPrevServerSelected] = useState(serverSelectedId);
   if (serverSelectedId !== prevServerSelected) {
     setPrevServerSelected(serverSelectedId);
-    if (serverSelectedId) {
+    if (serverSelectedId && !selecting.current) {
       const panes = getPaneNodes(layout.tree);
       const ownerPane = panes.find((p) => p.tabIds.includes(serverSelectedId));
-      if (ownerPane && ownerPane.selectedTabId !== serverSelectedId) {
+      if (ownerPane) {
         const nextTree = updatePaneNode(layout.tree, ownerPane.id, (p) => ({
           ...p,
           selectedTabId: serverSelectedId,
@@ -261,30 +262,27 @@ export function AgencyWorkspaceView({
         },
         true,
       );
-      nativeLayoutCoordinator.setFocusedTabId(tabId);
-      const targetTab = tabs.find((t) => t.id === tabId);
-      if (targetTab) {
-        void action(targetTab, 'select').catch(() => undefined);
-      }
     },
-    [layout, save, tabs, online, request],
+    [layout, save],
   );
 
   const handleFocusPane = useCallback(
     (paneId: string) => {
       if (layout.focusedPaneId !== paneId) {
-        setLayout((prev) => ({ ...prev, focusedPaneId: paneId }));
-        const paneNode = findPaneNode(layout.tree, paneId);
-        if (paneNode?.selectedTabId) {
-          nativeLayoutCoordinator.setFocusedTabId(paneNode.selectedTabId);
-        }
+        save({ ...layout, focusedPaneId: paneId, updatedAt: new Date().toISOString() }, true);
       }
     },
-    [layout],
+    [layout, save],
   );
 
   const reportDisplayed = useCallback((id: string, ready: boolean) => {
-    setDisplayed((previous) => (ready ? id : previous === id ? null : previous));
+    setDisplayed((previous) => {
+      if (previous.has(id) === ready) return previous;
+      const next = new Set(previous);
+      if (ready) next.add(id);
+      else next.delete(id);
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -292,27 +290,34 @@ export function AgencyWorkspaceView({
   }, [profileId, profiles]);
 
   const focusedPane = findPaneNode(layout.tree, layout.focusedPaneId);
-  const activeTabId = focusedPane?.selectedTabId ?? defaultSelected;
+  const activeTabId = focusedPane?.selectedTabId;
   const activity = activeTabId ? getTabActivity?.(workspace.id, activeTabId) : undefined;
   const activityVersion = activeTabId
     ? getTabActivityVersion?.(workspace.id, activeTabId) ?? ''
     : '';
 
   useEffect(() => {
-    if (!online || !activeTabId || displayed !== activeTabId || document.hidden) return;
-    onTabDisplayed?.(workspace.id, activeTabId);
-    const key = activeTabId + ':' + activityVersion;
-    if (activity !== 'finished') {
-      acknowledged.current.delete(key);
-      return;
-    }
-    if (!onAcknowledgeTab || acknowledged.current.has(key)) return;
-    acknowledged.current.add(key);
-    void Promise.resolve(onAcknowledgeTab(workspace.id, activeTabId)).catch((reason) => {
-      acknowledged.current.delete(key);
-      setError(String(reason));
-    });
-  }, [activeTabId, displayed, activity, activityVersion, workspace.id, online, onAcknowledgeTab, onTabDisplayed]);
+    nativeLayoutCoordinator.setFocusedTabId(activeTabId ?? null);
+  }, [activeTabId]);
+
+  usePaneInspection({
+    workspaceId: workspace.id,
+    tab: tabs.find((tab) => tab.id === activeTabId),
+    serverSelectedId, online, displayed, activity, activityVersion, request,
+    onDisplayed: onTabDisplayed,
+    onAcknowledge: onAcknowledgeTab,
+    onError: setError,
+    onSelectionFailed: () => {
+      const owner = getPaneNodes(layout.tree).find((pane) => pane.tabIds.includes(serverSelectedId ?? ''));
+      if (!owner || !serverSelectedId) return;
+      save({
+        ...layout,
+        tree: updatePaneNode(layout.tree, owner.id, (pane) => ({ ...pane, selectedTabId: serverSelectedId })),
+        focusedPaneId: owner.id,
+        updatedAt: new Date().toISOString(),
+      }, true);
+    },
+  }, selecting);
 
   useEffect(() => {
     if ((!picker && !closing && !webDialog) || configuringProfile) return;
