@@ -384,24 +384,29 @@ export function reconcileLayout(
 
   const openSet = new Set(openTabIds);
   const assignedTabs = new Set<string>();
+  let modified = false;
 
   // 1. Prune closed/stale tabs from each pane
   function cleanNode(node: LayoutNode): LayoutNode {
     if (node.type === 'pane') {
       const validTabs = node.tabIds.filter((id) => openSet.has(id));
+      if (validTabs.length !== node.tabIds.length) modified = true;
       for (const t of validTabs) assignedTabs.add(t);
       const selected = validTabs.includes(node.selectedTabId ?? '')
         ? node.selectedTabId
         : (validTabs[0] ?? null);
+      if (selected !== node.selectedTabId) modified = true;
       return {
         ...node,
         tabIds: validTabs,
         selectedTabId: selected,
       };
     }
+    const ratio = clampRatio(node.ratio);
+    if (ratio !== node.ratio) modified = true;
     return {
       ...node,
-      ratio: clampRatio(node.ratio),
+      ratio,
       first: cleanNode(node.first),
       second: cleanNode(node.second),
     };
@@ -419,6 +424,7 @@ export function reconcileLayout(
   // 3. Find any open tabs that are not assigned to any pane, and assign them
   const unassignedTabs = openTabIds.filter((id) => !assignedTabs.has(id));
   if (unassignedTabs.length > 0) {
+    modified = true;
     tree = updatePaneNode(tree, focusedPane.id, (p) => {
       const combined = [...p.tabIds, ...unassignedTabs];
       return {
@@ -433,6 +439,7 @@ export function reconcileLayout(
   const maximizedPaneId = saved.maximizedPaneId && panes.some((p) => p.id === saved.maximizedPaneId)
     ? saved.maximizedPaneId
     : null;
+  if (maximizedPaneId !== saved.maximizedPaneId) modified = true;
 
   return {
     version: 1,
@@ -440,6 +447,52 @@ export function reconcileLayout(
     tree,
     focusedPaneId: focusedPane.id,
     maximizedPaneId,
-    updatedAt: saved.updatedAt,
+    updatedAt: modified
+      ? new Date(Math.max(Date.now(), (Number.isFinite(Date.parse(saved.updatedAt)) ? Date.parse(saved.updatedAt) : 0) + 1)).toISOString()
+      : saved.updatedAt,
+  };
+}
+
+/** Exchange leaf positions, retaining the actual pane nodes and every split property. */
+export function swapPanes(tree: LayoutNode, sourcePaneId: string, targetPaneId: string): LayoutNode | null {
+  if (!sourcePaneId || sourcePaneId === targetPaneId || !isLayoutNode(tree) || countLeaves(tree) > MAX_LEAVES) return null;
+  const panes = getPaneNodes(tree);
+  const source = panes.find(pane => pane.id === sourcePaneId);
+  const target = panes.find(pane => pane.id === targetPaneId);
+  // Both IDs must be members of this tree; IDs from another workspace are never imported.
+  if (!source || !target) return null;
+  const nodeIds = new Set<string>(), tabIds = new Set<string>();
+  const valid = (node: LayoutNode): boolean => {
+    if (nodeIds.has(node.id)) return false;
+    nodeIds.add(node.id);
+    if (node.type === 'split') {
+      return node.ratio >= MIN_SPLIT_RATIO && node.ratio <= MAX_SPLIT_RATIO && valid(node.first) && valid(node.second);
+    }
+    if (node.selectedTabId !== null && !node.tabIds.includes(node.selectedTabId)) return false;
+    for (const id of node.tabIds) {
+      if (tabIds.has(id)) return false;
+      tabIds.add(id);
+    }
+    return true;
+  };
+  if (!valid(tree)) return null;
+  const replace = (node: LayoutNode): LayoutNode => {
+    if (node === source) return target;
+    if (node === target) return source;
+    if (node.type === 'pane') return node;
+    const first = replace(node.first), second = replace(node.second);
+    return first === node.first && second === node.second ? node : { ...node, first, second };
+  };
+  return replace(tree);
+}
+
+/** Complete a creation against the latest tree, even if its requested pane was closed. */
+export function assignCreatedTab(layout: WorkspacePaneLayout, targetPaneId: string, tabId: string): WorkspacePaneLayout {
+  const target = findPaneNode(layout.tree, targetPaneId) ?? getPaneNodes(layout.tree)[0]!;
+  return {
+    ...layout,
+    tree: moveTabBetweenPanes(layout.tree, tabId, target.id),
+    focusedPaneId: target.id,
+    updatedAt: new Date(Math.max(Date.now(), Date.parse(layout.updatedAt) + 1)).toISOString(),
   };
 }

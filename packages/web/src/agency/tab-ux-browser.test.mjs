@@ -198,8 +198,8 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   .agency-app{display:flex;height:100%}
   .agency-main{flex:1;min-width:0}
   .agency-sidebar{width:240px}
-  .maw-tabs-header{display:flex;height:42px}
-  .maw-tabs-strip{display:flex;overflow-x:auto}
+  .maw-pane-header{display:flex;height:42px}
+  .maw-pane-tabs{display:flex;flex:1;min-width:0;overflow-x:auto}
   .maw-session-tab{display:flex;min-width:120px;height:40px;position:relative}
   .maw-session-tab.dragging{opacity:0.5}
   .maw-session-tab.maw-drop-target-before{box-shadow:inset 3px 0 0 blue}
@@ -259,10 +259,12 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   // Verify order request was dispatched
   await page.waitForFunction(() => window.agencyTest.requests.filter(m => m.type === 'agency.tabs.order').length >= 2);
 
-  // Test 4: Escape key cancels dragging safely
-  await page.mouse.move(boxA.x + boxA.width / 2, boxA.y + boxA.height / 2);
+  // Test 4: Re-read the moved tab bounds before testing cancellation.
+  const movedBoxA = await tabA.boundingBox();
+  assert.ok(movedBoxA);
+  await page.mouse.move(movedBoxA.x + movedBoxA.width / 2, movedBoxA.y + movedBoxA.height / 2);
   await page.mouse.down();
-  await page.mouse.move(boxA.x + 30, boxA.y + boxA.height / 2);
+  await page.mouse.move(movedBoxA.x + movedBoxA.width / 2 + 12, movedBoxA.y + movedBoxA.height / 2);
   await page.keyboard.press('Escape');
   await page.mouse.up();
 

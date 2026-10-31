@@ -1280,11 +1280,12 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     send(socket, {
       type: 'agency.layouts.snapshot',
       requestId: '',
-      layouts: agencyLayoutStore.list(),
+      layouts: tabCoordinator.reconcileAllLayouts(),
     });
     void tabReady.then(() => {
       send(socket, { type: 'agency.webTabs.snapshot', requestId: '', tabs: agencyBrowserTabs.listTabs() });
       send(socket, { type: 'agency.notifications.snapshot', requestId: '', notifications: agencyNotificationStore.list(), activityStates: agencyActivityManager.snapshot() });
+      send(socket, { type: 'agency.layouts.snapshot', requestId: '', layouts: tabCoordinator.reconcileAllLayouts() });
     }).catch(() => undefined);
     // Lo que ya se sabe del plan de cada CLI; lo que llegue despues va por `onChange`.
     planLimits.retain();
@@ -3715,7 +3716,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         }
 
         case 'agency.layout.get': {
-          const layout = agencyLayoutStore.get(message.workspaceId);
+          const layout = tabCoordinator.reconcileLayout(message.workspaceId) ?? agencyLayoutStore.get(message.workspaceId);
           if (layout) {
             send(socket, { type: 'agency.layout.changed', workspaceId: message.workspaceId, layout });
           }

@@ -1,4 +1,5 @@
-import type { AgencyClientMessage, AgencyServerMessage, WebTabClientMessage, WorkspaceId } from '@agent-workbench/shared';
+import { assignCreatedTab, reconcileLayout } from '@agent-workbench/shared';
+import type { AgencyClientMessage, AgencyServerMessage, WebTabClientMessage, WorkspaceId, WorkspacePaneLayout } from '@agent-workbench/shared';
 import { AgencyRuntimeError, type AgencySessionRuntime } from './agency-session-runtime.js';
 import type { AgencyWorkspaceStore } from './store.js';
 import { WorkspaceMutex } from './workspace-lock.js';
@@ -25,7 +26,7 @@ export class AgencyTabCoordinator {
     browser.setSelectionCoordinator({ unselectNativeTabs: workspaceId => native.clearWorkspaceSelection(workspaceId) });
   }
 
-  private openNative(workspaceId: WorkspaceId) {
+  private openNative(workspaceId?: WorkspaceId) {
     return this.native.list(workspaceId).filter(session => session.tab?.current && !session.tab.closedAt);
   }
 
@@ -100,6 +101,64 @@ export class AgencyTabCoordinator {
     if (web.length) await this.browser.orderTabs(workspaceId, ids.filter(id => web.includes(id)), positions);
   }
 
+  reconcileLayout(workspaceId: WorkspaceId): WorkspacePaneLayout | undefined {
+    if (!this.layouts) return undefined;
+    const open = [...this.openNative(workspaceId).map(session => session.tab!.id), ...this.browser.listTabs(workspaceId).map(tab => tab.id)];
+    return reconcileLayout(this.layouts.get(workspaceId), workspaceId, open);
+  }
+
+  reconcileAllLayouts(): WorkspacePaneLayout[] {
+    if (!this.layouts) return [];
+    const workspaceIds = new Set<WorkspaceId>();
+    for (const ws of this.workspaces.listWorkspaces()) workspaceIds.add(ws.id);
+    for (const l of this.layouts.list()) workspaceIds.add(l.workspaceId);
+    for (const session of this.openNative()) workspaceIds.add(session.workspaceId);
+    for (const tab of this.browser.listTabs()) workspaceIds.add(tab.workspaceId);
+
+    const reconciled: WorkspacePaneLayout[] = [];
+    for (const wsId of workspaceIds) {
+      const open = [...this.openNative(wsId).map(session => session.tab!.id), ...this.browser.listTabs(wsId).map(tab => tab.id)];
+      const saved = this.layouts.get(wsId);
+      if (saved || open.length > 0) {
+        reconciled.push(reconcileLayout(saved, wsId, open));
+      }
+    }
+    return reconciled;
+  }
+
+  private resolveTabLabel(workspaceId: WorkspaceId, tabId: string): string {
+    const webTab = this.browser.listTabs(workspaceId).find(t => t.id === tabId);
+    if (webTab) return webTab.title || 'ChatGPT';
+    const session = this.native.list(workspaceId).find(s => s.tab?.id === tabId);
+    if (session?.tab?.name) return session.tab.name;
+    if (session?.kind === 'terminal') {
+      return session.tab?.terminalNumber ? `Terminal ${session.tab.terminalNumber}` : 'Terminal';
+    }
+    if (session?.profileId) return session.profileId;
+    return tabId;
+  }
+
+  private async placeCreatedTab(workspaceId: WorkspaceId, targetPaneId: string | undefined, tabId: string): Promise<void> {
+    if (!targetPaneId || !this.layouts) return;
+    const open = [...this.openNative(workspaceId).map(session => session.tab!.id), ...this.browser.listTabs(workspaceId).map(tab => tab.id)];
+    try {
+      const layout = await this.layouts.update(workspaceId, current =>
+        assignCreatedTab(reconcileLayout(current, workspaceId, open), targetPaneId, tabId));
+      this.publish({ type: 'agency.layout.changed', workspaceId, layout });
+    } catch (error) {
+      console.error('[tab-coordinator] Failed to persist tab layout placement:', error);
+      const tabLabel = this.resolveTabLabel(workspaceId, tabId);
+      this.publish({
+        type: 'agency.error',
+        requestId: '',
+        workspaceId,
+        tabId,
+        code: 'internal-error',
+        message: `Layout placement persistence failure for tab "${tabLabel}". Safe layout reconciliation will restore placement on reconnect or refresh.`,
+      });
+    }
+  }
+
   async createNative(message: Extract<AgencyClientMessage, { type: 'agency.session.create' }>) {
     return this.mutations.runExclusive(message.workspaceId, async () => {
       try {
@@ -112,6 +171,7 @@ export class AgencyTabCoordinator {
         if (session.tab && !before.some(tab => tab.id === session.tab!.id)) {
           await this.order(message.workspaceId, [...before.map(tab => tab.id), session.tab.id]);
         }
+        if (session.tab) await this.placeCreatedTab(message.workspaceId, message.targetPaneId, session.tab.id);
         return this.native.get(session.id) ?? session;
       } finally { this.snapshot(); }
     });
@@ -139,6 +199,9 @@ export class AgencyTabCoordinator {
               ...this.browser.listTabs(message.workspaceId).map(tab => tab.order)) + 1 }
           : message;
         const response = await handleWebTabMessage(request, { adapter: this.browser, publish: this.publish });
+        if (message.type === 'agency.webTab.create' && response?.type === 'agency.webTab.created') {
+          await this.placeCreatedTab(message.workspaceId, message.targetPaneId, response.tab.id);
+        }
         if (message.type === 'agency.webTab.close' && response?.type !== 'agency.error') {
           await this.selectFallback(message.workspaceId);
         }

@@ -85,7 +85,7 @@ test('pane inspection selects the correct ChatGPT tab while two native view iden
   assert.deepEqual(await page.evaluate(() => window.inspection.requests.filter(m => m.type === 'agency.tab.acknowledge')), []);
   for (let n = 0; n < 5; n++) {
     for (const side of ['right', 'left']) {
-      await page.locator('#pane-container-' + side + ' .maw-pane-header').click({ position: { x: 4, y: 4 } });
+      await page.locator('#pane-container-' + side + ' .maw-pane-header').click({ position: { x: 30, y: 4 } });
       await eventually(async () => await page.evaluate(({ side, ws, id }) =>
         document.querySelector('.maw-split-pane.is-focused')?.id === 'pane-container-' + side && window.inspection.state.selected[ws] === id,
       { side, ws: workspaceId, id: side === 'right' ? tabB : '33333333-3333-4333-8333-333333333333' }));

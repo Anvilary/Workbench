@@ -3,6 +3,8 @@ import type { AgencyCliProfile, MawActivityState, WorkspaceId } from '@agent-wor
 import { t } from '../../i18n/index.js';
 import { agencySessionText, agencyTabActivityText } from '../agency-labels.js';
 import type { WorkspaceTab } from '../model.js';
+import { PaneMenu } from './PaneMenu.js';
+import { PaneGrip } from './PaneMovement.js';
 import { TabNameInput } from '../TabNameInput.js';
 import type { useAgencyStore } from '../useAgencyStore.js';
 
@@ -15,6 +17,9 @@ interface Props {
   workspaceId: WorkspaceId;
   isFocused: boolean;
   canSplit: boolean;
+  moveDisabled: boolean;
+  destinations: { id: string; title: string }[];
+  onSwapPane: (source: string, target: string) => void;
   canClose: boolean;
   isMaximized: boolean;
   online: boolean;
@@ -44,6 +49,9 @@ export function PaneHeader({
   workspaceId,
   isFocused,
   canSplit,
+  moveDisabled,
+  destinations,
+  onSwapPane,
   canClose,
   isMaximized,
   online,
@@ -66,8 +74,10 @@ export function PaneHeader({
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const addButton = useRef<HTMLButtonElement>(null);
   const strip = useRef<HTMLDivElement | null>(null);
   const [dragState, setDragState] = useState<{ tabId: string; targetIndex: number } | null>(null);
+  const suppressTabClickUntil = useRef(0);
   const tabDrag = useRef<{
     tabId: string;
     pointerId: number;
@@ -110,6 +120,7 @@ export function PaneHeader({
       const nextGlobal = ids.indexOf(paneTabs[next]!.id);
       if (curGlobal !== -1 && nextGlobal !== -1) {
         [ids[curGlobal], ids[nextGlobal]] = [ids[nextGlobal]!, ids[curGlobal]!];
+        onMoveTabToPane(paneTabs[current]!.id, paneId, next);
         try {
           await request({ type: 'agency.tabs.order', workspaceId, tabIds: ids });
         } catch (reason) {
@@ -157,6 +168,7 @@ export function PaneHeader({
         }
       }}
     >
+      <PaneGrip paneId={paneId} workspaceId={workspaceId} disabled={moveDisabled} destinations={destinations} onSwap={onSwapPane} />
       <div
         className={'maw-pane-tabs' + (dragState ? ' is-dragging' : '')}
         ref={strip}
@@ -215,6 +227,19 @@ export function PaneHeader({
               event.currentTarget.releasePointerCapture(event.pointerId);
             }
             if (dragInfo.isDragging) {
+              suppressTabClickUntil.current = Date.now() + 200;
+              const header = document.elementFromPoint(event.clientX, event.clientY)?.closest('.maw-pane-header');
+              const destination = header?.closest('.maw-split-pane')?.id.replace('pane-container-', '');
+              if (!destination) return;
+              const targetElements = [...header!.querySelectorAll<HTMLElement>('.maw-session-tab')];
+              const targetIndex = targetElements.findIndex(element => {
+                const rect = element.getBoundingClientRect();
+                return event.clientX < rect.left + rect.width / 2;
+              });
+              const insertion = targetIndex < 0 ? targetElements.length : targetIndex;
+              const sourceIndex = paneTabs.findIndex(tab => tab.id === dragInfo.tabId);
+              onMoveTabToPane(dragInfo.tabId, destination, destination === paneId && insertion > sourceIndex ? insertion - 1 : insertion);
+              if (destination !== paneId) return;
               const currentIdx = tabs.findIndex((t) => t.id === dragInfo.tabId);
               const targetPaneTab = paneTabs[dragInfo.targetIndex];
               const targetIdx = targetPaneTab ? tabs.findIndex((t) => t.id === targetPaneTab.id) : tabs.length;
@@ -311,7 +336,10 @@ export function PaneHeader({
                   tabIndex={isSelected ? 0 : -1}
                   disabled={!online}
                   title={`${tabName(tab)} · ${status}`}
-                  onClick={() => onSelectTab(tab.id)}
+                  onClick={(event) => {
+                    if (Date.now() < suppressTabClickUntil.current) { event.preventDefault(); return; }
+                    onSelectTab(tab.id);
+                  }}
                   onDoubleClick={() => setRenamingTabId(tab.id)}
                   onKeyDown={(e) => {
                     if (e.key === 'F2') {
@@ -347,9 +375,11 @@ export function PaneHeader({
             </div>
           );
         })}
-        <div className="agency-dropdown maw-add-tab" onClick={(e) => e.stopPropagation()}>
+      </div>
+        <div className="agency-dropdown maw-add-tab" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
+            ref={addButton}
             className="maw-pane-add-tab"
             aria-label={t('agency.tabs.add')}
             aria-haspopup="menu"
@@ -360,7 +390,7 @@ export function PaneHeader({
             +
           </button>
           {menuOpen && (
-            <div className="agency-dropdown-menu" role="menu">
+            <PaneMenu anchor={addButton} label={t('agency.tabs.add')} onClose={() => setMenuOpen(false)}>
               <button
                 type="button"
                 role="menuitem"
@@ -403,10 +433,9 @@ export function PaneHeader({
                   {t('agency.web.rename')}
                 </button>
               )}
-            </div>
+            </PaneMenu>
           )}
         </div>
-      </div>
 
       <div className="maw-pane-actions">
         <button

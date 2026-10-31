@@ -975,7 +975,7 @@
 
 .maw-pane-tabs {
   display: flex;
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   height: 100%;
   overflow-x: auto;
@@ -1203,4 +1203,39 @@
   object-fit: cover;
   pointer-events: none;
   z-index: 1;
+}
+
+.maw-pane-slot, .maw-pane-mount { display:flex; flex:1; min-width:0; min-height:0; }
+.maw-add-tab { flex-shrink:0; }
+.maw-pane-menu {
+  background:var(--agency-raised, #1d2028); color:var(--agency-text, #e6e8ee); border:1px solid var(--agency-line, #292d37);
+  position:fixed; z-index:150; margin:0; right:auto; bottom:auto;
+  min-width:150px; max-width:calc(100vw - 16px); max-height:calc(100vh - 16px);
+  overflow:auto;
+}
+.maw-pane-menu button {
+  display:block; width:100%; padding:8px 12px; text-align:left;
+  background:transparent; border:0; color:inherit; cursor:pointer;
+}
+.maw-pane-menu button:hover, .maw-pane-menu button:focus-visible { background:#ffffff12; outline:1px solid #64748b; outline-offset:-2px; }
+.maw-pane-grip { flex-shrink:0; cursor:grab; touch-action:none; }
+.maw-pane-grip.is-dragging { cursor:grabbing; opacity:.5; }
+.maw-pane-header { transition:opacity 180ms ease-out; }
+.maw-pane-header:has(.maw-pane-grip.is-dragging), .is-pane-drag-source .maw-pane-header { opacity:.55; }
+.maw-pane-dragging, .maw-pane-dragging * { cursor:grabbing!important; user-select:none!important; }
+.maw-pane-drag-shield { position:fixed; inset:0; z-index:125; }
+.maw-pane-drag-overlay { z-index:160; pointer-events:none; }
+.maw-pane-drag-preview {
+  display:flex; flex-direction:column; gap:6px; padding:12px 16px; width:220px;
+  border:1px solid #64748b; border-radius:6px; background:#181b24; color:#e2e8f0;
+  box-shadow:0 6px 18px #0005; font-size:12px;
+}
+.maw-pane-drag-preview span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#94a3b8; }
+.maw-split-pane::after {
+  content:''; position:absolute; inset:2px; border:2px solid transparent; border-radius:3px;
+  pointer-events:none; z-index:126; transition:border-color 180ms ease-out, background-color 180ms ease-out;
+}
+.maw-pane-dragging .maw-split-pane.is-pane-drop-target::after { border-color:#60a5fa; background:#3b82f612; }
+@media (prefers-reduced-motion:reduce) {
+  .maw-pane-header, .maw-split-pane::after { transition:none; }
 }
