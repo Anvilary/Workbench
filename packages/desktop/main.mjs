@@ -21,8 +21,29 @@ async function start() {
   Menu.setApplicationMenu(null);
   const secure = { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: false, allowRunningInsecureContent: false };
   const chatSession = session.fromPartition(PARTITION);
-  chatSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
-  chatSession.setPermissionCheckHandler(() => false);
+  // Permit clipboard writing only from the official ChatGPT origin.
+  // Clipboard reading and all unrelated permissions remain denied.
+  const canWriteClipboard = (contents, requestingUrl) => {
+    try {
+      return !!contents &&
+        new URL(contents.getURL()).origin === 'https://chatgpt.com' &&
+        new URL(requestingUrl).origin === 'https://chatgpt.com';
+    } catch {
+      return false;
+    }
+  };
+
+  chatSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback(
+      permission === 'clipboard-sanitized-write' &&
+      canWriteClipboard(contents, details?.requestingUrl)
+    );
+  });
+
+  chatSession.setPermissionCheckHandler((contents, permission, requestingOrigin) =>
+    permission === 'clipboard-sanitized-write' &&
+    canWriteClipboard(contents, requestingOrigin)
+  );
   chatSession.on('will-download', event => event.preventDefault());
   const win = new BrowserWindow({ width: 1280, height: 860, title: 'MAW · ChatGPT feasibility prototype', autoHideMenuBar: true,
     webPreferences: { ...secure, partition: 'persist:maw-shell-prototype', preload: path.join(here, 'preload.cjs') } });
