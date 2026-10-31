@@ -34,13 +34,36 @@ function hasIntersectingOverlay(viewBounds: { left: number; top: number; right: 
   return false;
 }
 
+type TrackedView = NativeViewRegistration & {
+  isReady: boolean;
+  hasBackdrop: boolean;
+  /** Bumped to invalidate an in-flight capturePage result. */
+  captureEpoch: number;
+  capturePending: boolean;
+  backdropApplied: boolean;
+  nativeVisible: boolean;
+  captureBounds: string;
+};
+
 class NativeLayoutCoordinator {
-  private readonly views = new Map<string, NativeViewRegistration & { isReady: boolean; hasBackdrop: boolean }>();
+  private readonly views = new Map<string, TrackedView>();
   private frame = 0;
   private lastSerialized = '';
   private observer: MutationObserver | null = null;
   private unsubscribeBridge: (() => void) | null = null;
   private focusedId: string | null = null;
+
+  /** Drop a capture that must not land on a visible view, and release its bitmap. */
+  private cancelCapture(entry: TrackedView): void {
+    if (!entry.capturePending && !entry.hasBackdrop && !entry.backdropApplied) return;
+    entry.captureEpoch += 1;
+    entry.capturePending = false;
+    entry.hasBackdrop = false;
+    if (entry.backdropApplied) {
+      entry.backdropApplied = false;
+      entry.setCaptureBackdrop(null);
+    }
+  }
 
   setFocusedTabId(id: string | null) {
     if (this.focusedId !== id) {
@@ -51,7 +74,16 @@ class NativeLayoutCoordinator {
   }
 
   register(reg: NativeViewRegistration): () => void {
-    this.views.set(reg.id, { ...reg, isReady: false, hasBackdrop: false });
+    this.views.set(reg.id, {
+      ...reg,
+      isReady: false,
+      hasBackdrop: false,
+      captureEpoch: 0,
+      capturePending: false,
+      backdropApplied: false,
+      nativeVisible: false,
+      captureBounds: '',
+    });
     this.lastSerialized = '';
 
     if (this.views.size === 1) {
@@ -62,6 +94,10 @@ class NativeLayoutCoordinator {
     return () => {
       const existing = this.views.get(reg.id);
       if (existing) {
+        existing.captureEpoch += 1;
+        existing.capturePending = false;
+        existing.hasBackdrop = false;
+        existing.backdropApplied = false;
         existing.onDisplayed(false);
       }
       this.views.delete(reg.id);
@@ -151,11 +187,17 @@ class NativeLayoutCoordinator {
     for (const [id, reg] of this.views) {
       const el = reg.element;
       if (!el || !el.isConnected || document.hidden || window.getComputedStyle(el).visibility !== 'visible') {
+        reg.nativeVisible = false;
+        this.cancelCapture(reg);
         continue;
       }
 
       const rect = el.getBoundingClientRect();
-      if (!rect || rect.width <= 0 || rect.height <= 0) continue;
+      if (!rect || rect.width <= 0 || rect.height <= 0) {
+        reg.nativeVisible = false;
+        this.cancelCapture(reg);
+        continue;
+      }
 
       let left = Math.max(0, rect.left);
       let top = Math.max(0, rect.top);
@@ -180,27 +222,52 @@ class NativeLayoutCoordinator {
       const width = Math.max(0, Math.floor(right) - x);
       const height = Math.max(0, Math.floor(bottom) - y);
 
+      if (width <= 0 || height <= 0) {
+        reg.nativeVisible = false;
+        this.cancelCapture(reg);
+        continue;
+      }
+
       const viewBounds = { left: x, top: y, right: x + width, bottom: y + height };
       const isIntersecting = hasIntersectingOverlay(viewBounds);
+      const boundsKey = `${x},${y},${width},${height}`;
 
-      if (width > 0 && height > 0 && !isIntersecting) {
-        // Content visible without overlay: clear in-memory capture backdrop and add to native layout
-        if (reg.hasBackdrop) {
-          reg.hasBackdrop = false;
-          reg.setCaptureBackdrop(null);
-        }
+      if (!isIntersecting) {
+        reg.nativeVisible = true;
+        reg.captureBounds = boundsKey;
+        this.cancelCapture(reg);
         visibleViews.push({ id, bounds: { x, y, width, height } });
-      } else if (width > 0 && height > 0 && isIntersecting) {
-        // Overlapping overlay: capture in-memory visual fallback so pane doesn't turn blank or grey!
-        if (!reg.hasBackdrop && reg.isReady) {
-          reg.hasBackdrop = true;
-          void bridge.command({ type: 'capture', id }).then((res: unknown) => {
-            const r = res as { ok: boolean; dataUrl?: string } | undefined;
-            if (r && r.ok && r.dataUrl) {
-              reg.setCaptureBackdrop(r.dataUrl);
-            }
-          }).catch(() => {});
-        }
+        continue;
+      }
+
+      reg.nativeVisible = false;
+      if (reg.captureBounds !== boundsKey) this.cancelCapture(reg);
+      reg.captureBounds = boundsKey;
+      if (!reg.hasBackdrop && !reg.capturePending && reg.isReady) {
+        const epoch = ++reg.captureEpoch;
+        reg.capturePending = true;
+        reg.hasBackdrop = true;
+        void bridge.command({ type: 'capture', id }).then((res: unknown) => {
+          const current = this.views.get(id);
+          if (!current || current !== reg || current.captureEpoch !== epoch || current.nativeVisible) return;
+          current.capturePending = false;
+          const result = res as { ok?: boolean; dataUrl?: string } | undefined;
+          if (result?.ok && result.dataUrl && current.hasBackdrop) {
+            current.backdropApplied = true;
+            current.setCaptureBackdrop(result.dataUrl);
+            return;
+          }
+          current.hasBackdrop = false;
+          if (current.backdropApplied) {
+            current.backdropApplied = false;
+            current.setCaptureBackdrop(null);
+          }
+        }).catch(() => {
+          const current = this.views.get(id);
+          if (!current || current !== reg || current.captureEpoch !== epoch) return;
+          current.capturePending = false;
+          current.hasBackdrop = false;
+        });
       }
     }
 

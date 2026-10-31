@@ -17,7 +17,10 @@ export class AgencyLayoutStore {
   private readonly layouts = new Map<WorkspaceId, WorkspacePaneLayout>();
   private initialized = false;
 
-  constructor(readonly file: string = path.join(appConfigDir(), 'agency-layouts.json')) {}
+  constructor(
+    readonly file: string = path.join(appConfigDir(), 'agency-layouts.json'),
+    private readonly write: typeof writeAtomically = writeAtomically,
+  ) {}
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
@@ -85,20 +88,25 @@ export class AgencyLayoutStore {
     return next;
   }
 
-  private async persist(): Promise<void> {
+  /**
+   * Write `layouts` without publishing them into memory first.
+   * A rejected write leaves the queue usable so the next save can persist.
+   */
+  private async persist(layouts: Iterable<WorkspacePaneLayout>): Promise<void> {
     const payload = JSON.stringify({
       version: VERSION,
-      layouts: [...this.layouts.values()],
+      layouts: [...layouts],
     }, null, 2);
 
-    this.queue = this.queue.then(async () => {
+    const write = this.queue.then(async () => {
       await mkdir(path.dirname(this.file), { recursive: true });
       await copyFile(this.file, this.file + '.bak').catch((err) => {
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
       });
-      await writeAtomically(this.file, Buffer.from(payload, 'utf8'), { mode: 0o600 });
+      await this.write(this.file, Buffer.from(payload, 'utf8'), { mode: 0o600 });
     });
-    return this.queue;
+    this.queue = write.then(() => undefined, () => undefined);
+    return write;
   }
 
   get(workspaceId: WorkspaceId): WorkspacePaneLayout | undefined {
@@ -114,16 +122,20 @@ export class AgencyLayoutStore {
       throw new Error('Invalid WorkspacePaneLayout payload');
     }
     return this.mutate(async () => {
+      const next = new Map(this.layouts);
+      next.set(layout.workspaceId, layout);
+      await this.persist(next.values());
       this.layouts.set(layout.workspaceId, layout);
-      await this.persist();
     });
   }
 
   async delete(workspaceId: WorkspaceId): Promise<void> {
     return this.mutate(async () => {
-      if (this.layouts.delete(workspaceId)) {
-        await this.persist();
-      }
+      if (!this.layouts.has(workspaceId)) return;
+      const next = new Map(this.layouts);
+      next.delete(workspaceId);
+      await this.persist(next.values());
+      this.layouts.delete(workspaceId);
     });
   }
 

@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { AgencyLayoutStore } from './agency-layout-store.js';
+import { writeAtomically } from '../atomic-write.js';
 import { createDefaultLayout, splitPane, type WorkspaceId } from '@agent-workbench/shared';
 
 test('AgencyLayoutStore: saves, loads, survives restart, recovers from backup', async () => {
@@ -47,6 +48,57 @@ test('AgencyLayoutStore: saves, loads, survives restart, recovers from backup', 
     const store4 = new AgencyLayoutStore(file);
     await store4.initialize();
     assert.equal(store4.get(ws1), undefined);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('AgencyLayoutStore: one disk failure is not authoritative and a later save persists', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'agency-layouts-fail-'));
+  const file = path.join(dir, 'agency-layouts.json');
+  let failNext = false;
+  const store = new AgencyLayoutStore(file, async (target, content, options) => {
+    if (failNext) {
+      failNext = false;
+      throw new Error('injected disk write failure');
+    }
+    await writeAtomically(target, content, options);
+  });
+
+  try {
+    const wsA = '11111111-1111-4111-8111-111111111111' as WorkspaceId;
+    const wsB = '22222222-2222-4222-8222-222222222222' as WorkspaceId;
+    const layoutA = createDefaultLayout(wsA, ['tab-a']);
+    layoutA.updatedAt = '2026-01-01T00:00:00.000Z';
+    const layoutB = createDefaultLayout(wsB, ['tab-b']);
+    layoutB.updatedAt = '2026-01-02T00:00:00.000Z';
+    const failed = { ...layoutA, updatedAt: '2026-03-03T00:00:00.000Z' };
+    const retried = { ...layoutA, updatedAt: '2026-04-04T00:00:00.000Z' };
+
+    await store.initialize();
+    await store.save(layoutA);
+    await store.save(layoutB);
+
+    failNext = true;
+    await assert.rejects(store.save(failed), /injected disk write failure/);
+    assert.equal(store.get(wsA)?.updatedAt, layoutA.updatedAt);
+    assert.equal(store.get(wsB)?.updatedAt, layoutB.updatedAt);
+
+    const reread = new AgencyLayoutStore(file);
+    await reread.initialize();
+    assert.equal(reread.get(wsA)?.updatedAt, layoutA.updatedAt);
+    assert.equal(reread.get(wsB)?.updatedAt, layoutB.updatedAt);
+    assert.equal(reread.list().some((layout) => layout.updatedAt === failed.updatedAt), false);
+
+    await store.save(retried);
+    assert.equal(store.get(wsA)?.updatedAt, retried.updatedAt);
+    assert.equal(store.get(wsB)?.updatedAt, layoutB.updatedAt);
+
+    const persisted = new AgencyLayoutStore(file);
+    await persisted.initialize();
+    assert.equal(persisted.get(wsA)?.updatedAt, retried.updatedAt);
+    assert.equal(persisted.get(wsB)?.updatedAt, layoutB.updatedAt);
+    assert.equal(persisted.get(wsB)?.workspaceId, wsB);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

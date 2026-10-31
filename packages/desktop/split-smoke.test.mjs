@@ -144,10 +144,14 @@ test('multi-ChatGPT views: 2 and 4 simultaneous attached views with atomic recon
     await eventually(async () => (await attached()) === 2);
     assert.equal(await attached(), 2, 'Reducing panes safely detaches unused native views');
 
-    // 4. In-memory capture test
-    const captureResult = await page.evaluate(id => window.mawChatGpt.command({ type: 'capture', id }), testIds[0]);
-    assert.ok(captureResult && captureResult.ok, 'Capture command succeeds in-memory');
-    assert.ok(typeof captureResult.dataUrl === 'string' && captureResult.dataUrl.startsWith('data:image/'), 'Returns valid data URL for in-memory backdrop');
+    // 4. In-memory capture test. capturePage can reject until the view has painted.
+    let captureResult;
+    await eventually(async () => {
+      captureResult = await page.evaluate((id) => window.mawChatGpt.command({ type: 'capture', id }), testIds[0]);
+      return !!(captureResult && captureResult.ok && typeof captureResult.dataUrl === 'string' && captureResult.dataUrl.startsWith('data:image/'));
+    });
+    assert.equal(captureResult.ok, true, 'Capture command succeeds in-memory');
+    assert.equal(captureResult.dataUrl.startsWith('data:image/'), true, 'Returns valid data URL for in-memory backdrop');
 
     // 5. Overlay on Pane 1 detaches only Pane 1's view; Pane 2 remains attached!
     await page.click('#btn-overlay');
