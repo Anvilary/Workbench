@@ -72,6 +72,7 @@ import { buildAgencyProfileLaunch } from './agency/agency-profile-capabilities.j
 import { WorkspaceMutex } from './agency/workspace-lock.js';
 import { BrowserTabAdapter, BrowserTabStore } from './agency/browser-tabs/index.js';
 import { AgencyNotificationStore } from './agency/agency-notification-store.js';
+import { AgencyLayoutStore } from './agency/agency-layout-store.js';
 import { TabActivityManager } from './agency/tab-activity-manager.js';
 
 const serverDir = path.dirname(fileURLToPath(import.meta.url));
@@ -566,8 +567,10 @@ async function main(): Promise<void> {
   await agencyBrowserTabs.restore();
   const agencyNotificationStore = new AgencyNotificationStore();
   const agencyActivityManager = new TabActivityManager({ notificationStore: agencyNotificationStore });
+  const agencyLayoutStore = new AgencyLayoutStore();
   await agencyNotificationStore.initialize();
   await agencyActivityManager.initialize();
+  await agencyLayoutStore.initialize();
 
   const closeUi = isProduction ? mountBuiltUi(app) : await mountDevUi(app, httpServer);
 
@@ -579,6 +582,7 @@ async function main(): Promise<void> {
     agencyBrowserTabs,
     agencyNotificationStore,
     agencyActivityManager,
+    agencyLayoutStore,
     workspaceLock,
     pasteStore,
     httpServer,
@@ -695,6 +699,7 @@ async function main(): Promise<void> {
       agencyProfileStore.flush(),
       agencyActivityManager.flush(),
       agencyNotificationStore.flush(),
+      agencyLayoutStore.flush(),
       clearReadiness(),
       archived.flush(),
       notes.flush(),

@@ -536,6 +536,8 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
             getTabActivity={notificationStore.getTabActivity}
             getTabActivityVersion={(workspaceId, tabId) => notificationStore.activityStates.get(workspaceId + '::' + tabId)?.updatedAt ?? ''}
             onAcknowledgeTab={notificationStore.acknowledgeTab}
+            savedLayout={data.layouts?.[selected.id]}
+            onSaveLayout={store.saveLayout}
             onClearLaunchError={() => {
               setLaunchErrors((prev) => {
                 const next = { ...prev };

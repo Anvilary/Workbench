@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AgencyCliProfile, AgencyRuntimeSession, AgencyWorkspace, CliProfileId, MawActivityState, WebTab, WorkspaceId } from '@agent-workbench/shared';
-import type { Terminal } from '@xterm/xterm';
+import type {
+  AgencyCliProfile, AgencyRuntimeSession, AgencyWorkspace, CliProfileId,
+  MawActivityState, SplitDirection, WebTab, WorkspaceId, WorkspacePaneLayout,
+} from '@agent-workbench/shared';
+import {
+  countLeaves, createDefaultLayout, findPaneNode, getPaneNodes, moveTabBetweenPanes,
+  reconcileLayout, splitPane, closePane, updatePaneNode, updateSplitRatio,
+  validateChatGptUrl, validateWebTabTitle,
+} from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
-import { TerminalView } from '../TerminalView.js';
 import { t } from '../i18n/index.js';
-import { agencySessionText, agencyTabActivityText } from './agency-labels.js';
-import { allWorkspaceTabs, canLaunchAgent, selectedWorkspaceTab, type WorkspaceTab } from './model.js';
-import { TabNameInput } from './TabNameInput.js';
-import { validateChatGptUrl, validateWebTabTitle } from '@agent-workbench/shared';
-import type { AgencyTransport } from './model.js';
-import type { useAgencyStore } from './useAgencyStore.js';
 import { AgencyProfileDialog } from './AgencyProfileDialog.js';
-import { NativeChatGptView } from './NativeChatGptView.js';
+import { allWorkspaceTabs, canLaunchAgent, selectedWorkspaceTab, type AgencyTransport, type WorkspaceTab } from './model.js';
+import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
+import { SplitPaneTree } from './split/SplitPaneTree.js';
+import type { useAgencyStore } from './useAgencyStore.js';
 
 interface Props {
   workspace: AgencyWorkspace;
@@ -32,98 +35,46 @@ interface Props {
   onClearLaunchError?: () => void;
   getTabActivity?: (workspaceId: WorkspaceId, tabId: string) => MawActivityState;
   onAcknowledgeTab?: (workspaceId: WorkspaceId, tabId: string) => Promise<void> | void;
+  savedLayout?: WorkspacePaneLayout;
+  onSaveLayout?: (workspaceId: WorkspaceId, layout: WorkspacePaneLayout) => Promise<unknown>;
 }
 
-function SessionPane({ session, active, focusTerminal, connection, online, request, sendImmediate, report, onDisplayed, profile, busy, onConfigure, onStartAgain }: {
-  session: AgencyRuntimeSession; active: boolean; focusTerminal: boolean; connection: AgentConnection; online: boolean;
-  request: Props['request']; sendImmediate: Props['sendImmediate']; report: (error: string) => void; onDisplayed: (tabId: string, ready: boolean) => void;
-  /** Recovery for an agent tab that failed or exited without a native conversation (nothing to resume). */
-  profile?: AgencyCliProfile; busy?: boolean; onConfigure?: (profile: AgencyCliProfile) => void; onStartAgain?: (session: AgencyRuntimeSession) => void;
-}) {
-  const terminal = useRef<Terminal | null>(null);
-  const [rendered, setRendered] = useState(false);
-  const [copyOpen, setCopyOpen] = useState(false);
-  const [resuming, setResuming] = useState(false);
-  const live = ['starting', 'running', 'stopping'].includes(session.lifecycle);
-  useEffect(() => { if (!active) setCopyOpen(false); }, [active]);
-  useEffect(() => {
-    if (!session.tab) return;
-    const id = session.tab.id;
-    let frame = 0;
-    const check = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => onDisplayed(id, active && online && !document.hidden && (!live || rendered)));
-    };
-    check();
-    document.addEventListener('visibilitychange', check);
-    return () => { cancelAnimationFrame(frame); document.removeEventListener('visibilitychange', check); onDisplayed(id, false); };
-  }, [active, online, live, rendered, session.tab?.id, onDisplayed]);
-  async function copy(kind: 'selection' | 'all' | 'last') {
-    setCopyOpen(false);
-    const term = terminal.current;
-    if (!term) return;
-    let text = term.getSelection();
-    if (kind !== 'selection') {
-      const buffer = term.buffer.active;
-      const lines = Array.from({ length: buffer.length }, (_, index) => buffer.getLine(index)?.translateToString(true) ?? '');
-      while (lines.length && !lines.at(-1)?.trim()) lines.pop();
-      text = (kind === 'last' ? lines.slice(-60) : lines).join('\n');
-    }
-    try { if (text) await navigator.clipboard.writeText(text); } catch (reason) { report(String(reason)); }
-  }
-  async function resume() {
-    if (resuming || !session.tab) return;
-    setResuming(true);
-    try { await request({ type: 'agency.tab.action', workspaceId: session.workspaceId, tabId: session.tab.id, action: 'resume' }); }
-    catch (reason) { report(String(reason)); }
-    finally { setResuming(false); }
-  }
-  return <div className="maw-session-pane" hidden={!active} role="tabpanel" id={'pane-' + session.tab?.id} aria-labelledby={'tab-' + session.tab?.id}>
-    <div className="agency-pane-bar">
-      <span className="agency-muted" role="status">{session.kind === 'terminal' && session.recovery?.status === 'resumed' && live ? t('agency.tabs.shellRestarted') : agencySessionText(session)}</span>
-      <span className="agency-flex-spacer" />
-      {live && session.terminalId && <>
-        <div className="agency-dropdown" onClick={event => event.stopPropagation()}>
-          <button type="button" className="agency-text-button" aria-haspopup="menu" aria-expanded={copyOpen} onClick={() => setCopyOpen(!copyOpen)}>{t('agency.ui.copy')} ▾</button>
-          {copyOpen && <div className="agency-dropdown-menu" role="menu">
-            <button type="button" role="menuitem" onClick={() => void copy('selection')}>{t('agency.ui.copySelection')}</button>
-            <button type="button" role="menuitem" onClick={() => void copy('all')}>{t('agency.ui.copyAll')}</button>
-            <button type="button" role="menuitem" onClick={() => void copy('last')}>{t('agency.ui.copyLastOutput')}</button>
-          </div>}
-        </div>
-        <button type="button" className="agency-text-button" disabled={!online} onClick={() => sendImmediate({ type: 'input', terminalId: session.terminalId!, data: '\x03' })}>{t('agency.ui.interrupt')}</button>
-      </>}
-    </div>
-    <div className="agency-agent-body">
-      {live && session.terminalId ? <div className="agency-xterm-host"><TerminalView key={session.terminalId} terminalId={session.terminalId} connection={connection} theme="dark" active={active} autoFocus={focusTerminal} enableAgencyShortcuts onTerminalInstance={instance => { terminal.current = instance; if (instance) instance.onRender(() => setRendered(true)); else setRendered(false); }} onClipboardError={error => report(error.message)} /></div> : <div className="agency-shell-placeholder">
-        <p>{session.lifecycle === 'starting' ? t('agency.ui.starting') : session.exitCode === null ? t('agency.ui.previousAgentExited') : t('agency.ui.previousAgentExitedCode', { code: session.exitCode })}</p>
-        {session.recovery?.message && <p role="status">{session.recovery.message}</p>}
-        <p>{t('agency.tabs.historyKept')}</p>
-        {(session.kind === 'terminal' || session.nativeSessionId) && <button type="button" className="agency-secondary-button" disabled={!online || resuming || live} onClick={() => void resume()}>{session.kind === 'terminal' ? t('agency.tabs.restartShell') : t('agency.ui.resumeNative')}</button>}
-        {session.kind === 'agent' && !session.nativeSessionId && (session.lifecycle === 'failed' || session.lifecycle === 'exited') && session.tab && (<div className="agency-dialog-actions">
-          {onStartAgain && <button type="button" className="agency-secondary-button" disabled={!online || busy || !canLaunchAgent(profile)} onClick={() => onStartAgain(session)}>{t('agency.tabs.startAgain')}</button>}
-          {onConfigure && profile && !(connection.isRemoteClient ? connection.isRemoteClient() : false) && <button type="button" className="agency-secondary-button" disabled={!online} onClick={() => onConfigure(profile)}>{t('agency.profile.configure')}</button>}
-          <button type="button" className="agency-secondary-button" disabled={!online} onClick={() => void request({ type: 'agency.tab.action', workspaceId: session.workspaceId, tabId: session.tab!.id, action: 'close' })}>{t('agency.tabs.closeSession')}</button>
-        </div>)}
-      </div>}
-    </div>
-  </div>;
-}
-
-export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, connection, request, sendImmediate, online, onDone, launchError, onClearLaunchError, getTabActivity, onAcknowledgeTab, onTabDisplayed, getTabActivityVersion }: Props): JSX.Element {
+export function AgencyWorkspaceView({
+  workspace,
+  profiles,
+  sessions,
+  webTabs,
+  connection,
+  request,
+  sendImmediate,
+  online,
+  onDone,
+  launchError,
+  onClearLaunchError,
+  getTabActivity,
+  onAcknowledgeTab,
+  onTabDisplayed,
+  getTabActivityVersion,
+  savedLayout,
+  onSaveLayout,
+}: Props): JSX.Element {
   const tabs = allWorkspaceTabs(sessions, webTabs, workspace.id);
-  const selected = selectedWorkspaceTab(tabs);
-  const [keyboardTabs, setKeyboardTabs] = useState(false);
-  const [menu, setMenu] = useState(false);
+  const openTabIds = tabs.map((t) => t.id);
+  const defaultSelected = selectedWorkspaceTab(tabs)?.id;
+
+  const [layout, setLayout] = useState<WorkspacePaneLayout>(() =>
+    reconcileLayout(savedLayout, workspace.id, openTabIds, defaultSelected),
+  );
+
   const [picker, setPicker] = useState(false);
   const [webDialog, setWebDialog] = useState<'create' | 'navigate' | null>(null);
-  const [renaming, setRenaming] = useState<string | null>(null);
   const [webUrl, setWebUrl] = useState('https://chatgpt.com/');
   const [webTitle, setWebTitle] = useState('');
   const [profileId, setProfileId] = useState<CliProfileId | ''>(profiles[0]?.id ?? '');
   const [configuringProfile, setConfiguringProfile] = useState<AgencyCliProfile | null>(null);
-  const selectedProfile = profiles.find(profile => profile.id === profileId);
-  const isUnconfigured = selectedProfile?.configurationStatus === 'error' &&
+  const selectedProfile = profiles.find((profile) => profile.id === profileId);
+  const isUnconfigured =
+    selectedProfile?.configurationStatus === 'error' &&
     (selectedProfile.configurationMessage?.includes('Configure an executable') ?? false);
   const [error, setError] = useState<string | null>(null);
   const [closing, setClosing] = useState<WorkspaceTab | null>(null);
@@ -131,407 +82,675 @@ export function AgencyWorkspaceView({ workspace, profiles, sessions, webTabs, co
   const [displayed, setDisplayed] = useState<string | null>(null);
   const flight = useRef(false);
   const acknowledged = useRef(new Set<string>());
-  const [dragState, setDragState] = useState<{ tabId: string; targetIndex: number } | null>(null);
-  const tabDrag = useRef<{ tabId: string; pointerId: number; startX: number; startY: number; isDragging: boolean; targetIndex: number } | null>(null);
-  const autoScrollRef = useRef<number | null>(null);
-  const stopAutoScroll = useCallback(() => {
-    if (autoScrollRef.current !== null) {
-      cancelAnimationFrame(autoScrollRef.current);
-      autoScrollRef.current = null;
-    }
-  }, []);
-  const strip = useRef<HTMLDivElement | null>(null);
-  const drag = useRef<{ id: number; x: number; scroll: number; moved: boolean } | null>(null);
-  const dragged = useRef(false);
   const dialog = useRef<HTMLDivElement | null>(null);
-  const reportDisplayed = useCallback((id: string, ready: boolean) => {
-    setDisplayed(previous => ready ? id : previous === id ? null : previous);
-  }, []);
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && tabDrag.current) {
-        tabDrag.current = null;
-        setDragState(null);
-        stopAutoScroll();
+  const saveTimer = useRef<number | null>(null);
+
+  const serverSelectedId = selectedWorkspaceTab(tabs)?.id;
+
+  const currentTabKey = openTabIds.join(',');
+  const [prevTabKey, setPrevTabKey] = useState(currentTabKey);
+  if (currentTabKey !== prevTabKey) {
+    setPrevTabKey(currentTabKey);
+    const reconciled = reconcileLayout(layout, workspace.id, openTabIds, defaultSelected);
+    setLayout(reconciled);
+  }
+
+  const [prevServerSelected, setPrevServerSelected] = useState(serverSelectedId);
+  if (serverSelectedId !== prevServerSelected) {
+    setPrevServerSelected(serverSelectedId);
+    if (serverSelectedId) {
+      const panes = getPaneNodes(layout.tree);
+      const ownerPane = panes.find((p) => p.tabIds.includes(serverSelectedId));
+      if (ownerPane && ownerPane.selectedTabId !== serverSelectedId) {
+        const nextTree = updatePaneNode(layout.tree, ownerPane.id, (p) => ({
+          ...p,
+          selectedTabId: serverSelectedId,
+        }));
+        setLayout({
+          ...layout,
+          tree: nextTree,
+          focusedPaneId: ownerPane.id,
+        });
       }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      stopAutoScroll();
-    };
-  }, [stopAutoScroll]);
-  useEffect(() => { if (!profileId && profiles.length) setProfileId(profiles[0]!.id); }, [profileId, profiles]);
+    }
+  }
+
+  // Sync with incoming server layout when available
   useEffect(() => {
-    strip.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.parentElement?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
-  }, [selected?.id, tabs.length]);
-  const activity = selected ? getTabActivity?.(workspace.id, selected.id) : undefined;
-  const activityVersion = selected ? getTabActivityVersion?.(workspace.id, selected.id) ?? '' : '';
+    if (savedLayout && savedLayout.workspaceId === workspace.id) {
+      setLayout((prev) => {
+        if (savedLayout.updatedAt > prev.updatedAt) {
+          return reconcileLayout(savedLayout, workspace.id, openTabIds, defaultSelected);
+        }
+        return prev;
+      });
+    }
+  }, [savedLayout, workspace.id]);
+
+  const save = useCallback(
+    (nextLayout: WorkspacePaneLayout, immediate = false) => {
+      setLayout(nextLayout);
+      if (saveTimer.current !== null) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      if (immediate) {
+        void onSaveLayout?.(workspace.id, nextLayout);
+      } else {
+        saveTimer.current = window.setTimeout(() => {
+          void onSaveLayout?.(workspace.id, nextLayout);
+          saveTimer.current = null;
+        }, 200);
+      }
+    },
+    [workspace.id, onSaveLayout],
+  );
+
+  const handleSplit = useCallback(
+    (targetPaneId: string, direction: SplitDirection, tabIdToMove?: string) => {
+      const newPaneId = `pane-${crypto.randomUUID().slice(0, 8)}`;
+      const nextTree = splitPane(layout.tree, targetPaneId, direction, newPaneId, tabIdToMove);
+      if (nextTree) {
+        save(
+          {
+            ...layout,
+            tree: nextTree,
+            focusedPaneId: newPaneId,
+            updatedAt: new Date().toISOString(),
+          },
+          true,
+        );
+      }
+    },
+    [layout, save],
+  );
+
+  const handleClosePane = useCallback(
+    (paneId: string) => {
+      const res = closePane(layout.tree, paneId);
+      if (res) {
+        save(
+          {
+            ...layout,
+            tree: res.tree,
+            focusedPaneId:
+              layout.focusedPaneId === paneId ? res.remainingPaneId : layout.focusedPaneId,
+            maximizedPaneId:
+              layout.maximizedPaneId === paneId ? null : layout.maximizedPaneId,
+            updatedAt: new Date().toISOString(),
+          },
+          true,
+        );
+      }
+    },
+    [layout, save],
+  );
+
+  const handleToggleMaximize = useCallback(
+    (paneId: string) => {
+      save(
+        {
+          ...layout,
+          maximizedPaneId: layout.maximizedPaneId === paneId ? null : paneId,
+          updatedAt: new Date().toISOString(),
+        },
+        true,
+      );
+    },
+    [layout, save],
+  );
+
+  const handleSinglePane = useCallback(() => {
+    const single = createDefaultLayout(workspace.id, openTabIds, defaultSelected);
+    save(single, true);
+  }, [workspace.id, openTabIds, defaultSelected, save]);
+
+  const handleUpdateRatio = useCallback(
+    (splitId: string, ratio: number) => {
+      const nextTree = updateSplitRatio(layout.tree, splitId, ratio);
+      save(
+        {
+          ...layout,
+          tree: nextTree,
+          updatedAt: new Date().toISOString(),
+        },
+        false,
+      );
+    },
+    [layout, save],
+  );
+
+  const handleMoveTab = useCallback(
+    (tabId: string, targetPaneId: string, targetIndex?: number) => {
+      const nextTree = moveTabBetweenPanes(layout.tree, tabId, targetPaneId, targetIndex);
+      save(
+        {
+          ...layout,
+          tree: nextTree,
+          focusedPaneId: targetPaneId,
+          updatedAt: new Date().toISOString(),
+        },
+        true,
+      );
+    },
+    [layout, save],
+  );
+
+  const handleSelectTab = useCallback(
+    (paneId: string, tabId: string) => {
+      const nextTree = updatePaneNode(layout.tree, paneId, (pane) => ({
+        ...pane,
+        selectedTabId: tabId,
+      }));
+      save(
+        {
+          ...layout,
+          tree: nextTree,
+          focusedPaneId: paneId,
+          updatedAt: new Date().toISOString(),
+        },
+        true,
+      );
+      nativeLayoutCoordinator.setFocusedTabId(tabId);
+      const targetTab = tabs.find((t) => t.id === tabId);
+      if (targetTab) {
+        void action(targetTab, 'select').catch(() => undefined);
+      }
+    },
+    [layout, save, tabs, online, request],
+  );
+
+  const handleFocusPane = useCallback(
+    (paneId: string) => {
+      if (layout.focusedPaneId !== paneId) {
+        setLayout((prev) => ({ ...prev, focusedPaneId: paneId }));
+        const paneNode = findPaneNode(layout.tree, paneId);
+        if (paneNode?.selectedTabId) {
+          nativeLayoutCoordinator.setFocusedTabId(paneNode.selectedTabId);
+        }
+      }
+    },
+    [layout],
+  );
+
+  const reportDisplayed = useCallback((id: string, ready: boolean) => {
+    setDisplayed((previous) => (ready ? id : previous === id ? null : previous));
+  }, []);
+
   useEffect(() => {
-    if (!online || !selected || displayed !== selected.id || document.hidden) return;
-    onTabDisplayed?.(workspace.id, selected.id);
-    const key = selected.id + ':' + activityVersion;
-    if (activity !== 'finished') { acknowledged.current.delete(key); return; }
+    if (!profileId && profiles.length) setProfileId(profiles[0]!.id);
+  }, [profileId, profiles]);
+
+  const focusedPane = findPaneNode(layout.tree, layout.focusedPaneId);
+  const activeTabId = focusedPane?.selectedTabId ?? defaultSelected;
+  const activity = activeTabId ? getTabActivity?.(workspace.id, activeTabId) : undefined;
+  const activityVersion = activeTabId
+    ? getTabActivityVersion?.(workspace.id, activeTabId) ?? ''
+    : '';
+
+  useEffect(() => {
+    if (!online || !activeTabId || displayed !== activeTabId || document.hidden) return;
+    onTabDisplayed?.(workspace.id, activeTabId);
+    const key = activeTabId + ':' + activityVersion;
+    if (activity !== 'finished') {
+      acknowledged.current.delete(key);
+      return;
+    }
     if (!onAcknowledgeTab || acknowledged.current.has(key)) return;
     acknowledged.current.add(key);
-    void Promise.resolve(onAcknowledgeTab(workspace.id, selected.id)).catch(reason => {
-      acknowledged.current.delete(key); setError(String(reason));
+    void Promise.resolve(onAcknowledgeTab(workspace.id, activeTabId)).catch((reason) => {
+      acknowledged.current.delete(key);
+      setError(String(reason));
     });
-  }, [selected?.id, displayed, activity, activityVersion, workspace.id, online, onAcknowledgeTab, onTabDisplayed]);
-  useEffect(() => {
-    const element = strip.current;
-    if (!element) return;
-    const wheel = (event: WheelEvent) => {
-      if (element.scrollWidth <= element.clientWidth || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
-      event.preventDefault(); element.scrollLeft += event.deltaY;
-    };
-    const resize = new ResizeObserver(() => element.querySelector<HTMLElement>('[aria-selected="true"]')?.parentElement?.scrollIntoView({ inline: 'nearest', block: 'nearest' }));
-    resize.observe(element);
-    element.addEventListener('wheel', wheel, { passive: false });
-    return () => { resize.disconnect(); element.removeEventListener('wheel', wheel); };
-  }, []);
+  }, [activeTabId, displayed, activity, activityVersion, workspace.id, online, onAcknowledgeTab, onTabDisplayed]);
+
   useEffect(() => {
     if ((!picker && !closing && !webDialog) || configuringProfile) return;
     const key = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !flight.current) { setPicker(false); setClosing(null); setWebDialog(null); }
+      if (event.key === 'Escape' && !flight.current) {
+        setPicker(false);
+        setClosing(null);
+        setWebDialog(null);
+      }
       if (event.key === 'Tab' && dialog.current) {
-        const elements = [...dialog.current.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), input:not(:disabled)')];
-        const first = elements[0], last = elements.at(-1);
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+        const elements = [
+          ...dialog.current.querySelectorAll<HTMLElement>(
+            'button:not(:disabled), select:not(:disabled), input:not(:disabled)',
+          ),
+        ];
+        const first = elements[0];
+        const last = elements.at(-1);
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
       }
     };
-    window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
   }, [picker, closing, webDialog, configuringProfile]);
+
   async function add(kind: 'agent' | 'terminal') {
     if (flight.current || !online || (kind === 'agent' && !profileId)) return;
-    setKeyboardTabs(false);
-    flight.current = true; setBusy(true); setError(null); setMenu(false);
+    flight.current = true;
+    setBusy(true);
+    setError(null);
     try {
-      await request({ type: 'agency.session.create', workspaceId: workspace.id, kind, launchId: crypto.randomUUID(), cols: 100, rows: 30, ...(kind === 'agent' ? { profileId: profileId as CliProfileId } : {}) } as Parameters<Props['request']>[0]);
+      await request({
+        type: 'agency.session.create',
+        workspaceId: workspace.id,
+        kind,
+        launchId: crypto.randomUUID(),
+        cols: 100,
+        rows: 30,
+        ...(kind === 'agent' ? { profileId: profileId as CliProfileId } : {}),
+      } as Parameters<Props['request']>[0]);
       setPicker(false);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
-    finally { flight.current = false; setBusy(false); }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      flight.current = false;
+      setBusy(false);
+    }
   }
-  // A failed/exited agent tab without a native conversation has nothing to resume: replace it with a fresh
-  // launch of the same profile (after the user optionally fixed the profile configuration).
+
   async function startAgain(session: AgencyRuntimeSession) {
     if (flight.current || !online || session.kind !== 'agent' || !session.tab) return;
-    flight.current = true; setBusy(true); setError(null);
+    flight.current = true;
+    setBusy(true);
+    setError(null);
     try {
-      await request({ type: 'agency.tab.action', workspaceId: workspace.id, tabId: session.tab.id, action: 'close' });
-      await request({ type: 'agency.session.create', workspaceId: workspace.id, kind: 'agent', launchId: crypto.randomUUID(), cols: 100, rows: 30, profileId: session.profileId } as Parameters<Props['request']>[0]);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
-    finally { flight.current = false; setBusy(false); }
+      await request({
+        type: 'agency.tab.action',
+        workspaceId: workspace.id,
+        tabId: session.tab.id,
+        action: 'close',
+      });
+      await request({
+        type: 'agency.session.create',
+        workspaceId: workspace.id,
+        kind: 'agent',
+        launchId: crypto.randomUUID(),
+        cols: 100,
+        rows: 30,
+        profileId: session.profileId,
+      } as Parameters<Props['request']>[0]);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      flight.current = false;
+      setBusy(false);
+    }
   }
-  async function action(tab: WorkspaceTab, action: 'select' | 'close') {
+
+  async function action(tab: WorkspaceTab, act: 'select' | 'close') {
     if (!online) throw new Error(t('agency.web.disconnected'));
     try {
-      await request(tab.kind === 'web'
-        ? { type: action === 'select' ? 'agency.webTab.select' : 'agency.webTab.close', workspaceId: workspace.id, tabId: tab.id }
-        : { type: 'agency.tab.action', workspaceId: workspace.id, tabId: tab.id, action });
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); throw reason; }
+      await request(
+        tab.kind === 'web'
+          ? {
+              type: act === 'select' ? 'agency.webTab.select' : 'agency.webTab.close',
+              workspaceId: workspace.id,
+              tabId: tab.id,
+            }
+          : {
+              type: 'agency.tab.action',
+              workspaceId: workspace.id,
+              tabId: tab.id,
+              action: act,
+            },
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      throw reason;
+    }
   }
+
   async function close(tab: WorkspaceTab) {
-    setKeyboardTabs(false);
     if (flight.current) return;
-    flight.current = true; setBusy(true);
-    try { await action(tab, 'close'); setClosing(null); }
-    catch { /* Keep confirmation and error visible until the server confirms close. */ }
-    finally {
-      flight.current = false; setBusy(false);
-      requestAnimationFrame(() => {
-        if (!document.activeElement?.closest('input, [role=tab]')) document.querySelector<HTMLTextAreaElement>('.maw-session-pane:not([hidden]) .xterm-helper-textarea')?.focus();
-      });
+    flight.current = true;
+    setBusy(true);
+    try {
+      await action(tab, 'close');
+      setClosing(null);
+    } catch {
+      // Keep confirmation and error visible until the server confirms close
+    } finally {
+      flight.current = false;
+      setBusy(false);
     }
   }
-  async function navigate(event: React.KeyboardEvent) {
-    if (!tabs.length || !['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
-    event.preventDefault(); setKeyboardTabs(true);
-    const focusedId = (event.target as Element).closest('[data-tab-id]')?.getAttribute('data-tab-id');
-    const current = Math.max(0, tabs.findIndex(tab => tab.id === (focusedId ?? selected?.id)));
-    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length;
-    if (event.altKey && event.key.startsWith('Arrow')) {
-      const ids = tabs.map(tab => tab.id); [ids[current],ids[next]] = [ids[next]!,ids[current]!];
-      try { await request({ type: 'agency.tabs.order', workspaceId: workspace.id, tabIds: ids }); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
-    } else {
-      void action(tabs[next]!, 'select').catch(() => undefined);
-      document.getElementById('tab-' + tabs[next]!.id)?.focus();
-    }
-  }
-  function name(tab: WorkspaceTab) {
-    if (tab.kind === 'web') return tab.web.title;
-    const session = tab.session;
-    return session.tab?.name ?? (session.kind === 'terminal' ? t('agency.tabs.terminalNamed', { number: session.tab?.terminalNumber ?? 1 }) : profiles.find(profile => profile.id === session.profileId)?.label ?? t('agency.ui.agentLabel'));
-  }
+
   function webEditor(mode: 'create' | 'navigate') {
-    setMenu(false); setError(null); setWebDialog(mode);
-    setWebUrl(selected?.kind === 'web' && mode !== 'create' ? selected.web.url : 'https://chatgpt.com/');
-    setWebTitle(selected?.kind === 'web' && mode !== 'create' ? selected.web.title : t('agency.web.defaultTitle'));
+    setError(null);
+    setWebDialog(mode);
+    const activeTab = tabs.find((t) => t.id === activeTabId);
+    setWebUrl(activeTab?.kind === 'web' && mode !== 'create' ? activeTab.web.url : 'https://chatgpt.com/');
+    setWebTitle(activeTab?.kind === 'web' && mode !== 'create' ? activeTab.web.title : t('agency.web.defaultTitle'));
   }
+
   async function saveWeb() {
     if (flight.current || !online || !webDialog) return;
     const url = validateChatGptUrl(webUrl);
-    if (!url.valid) { setError(t('agency.web.invalidUrl')); return; }
-    if (webDialog !== 'navigate' && !validateWebTabTitle(webTitle)) { setError(t('agency.web.invalidTitle')); return; }
-    flight.current = true; setBusy(true); setError(null);
+    if (!url.valid) {
+      setError(t('agency.web.invalidUrl'));
+      return;
+    }
+    if (webDialog !== 'navigate' && !validateWebTabTitle(webTitle)) {
+      setError(t('agency.web.invalidTitle'));
+      return;
+    }
+    flight.current = true;
+    setBusy(true);
+    setError(null);
     try {
-      if (webDialog === 'create') await request({ type: 'agency.webTab.create', workspaceId: workspace.id, url: url.normalizedUrl!, title: webTitle.trim(), select: true, launchId: crypto.randomUUID() });
-      else if (selected?.kind === 'web') await request({ type: 'agency.webTab.navigate', workspaceId: workspace.id, tabId: selected.id, url: url.normalizedUrl! });
+      if (webDialog === 'create') {
+        await request({
+          type: 'agency.webTab.create',
+          workspaceId: workspace.id,
+          url: url.normalizedUrl!,
+          title: webTitle.trim(),
+          select: true,
+          launchId: crypto.randomUUID(),
+        });
+      } else if (activeTabId) {
+        const activeTab = tabs.find((t) => t.id === activeTabId);
+        if (activeTab?.kind === 'web') {
+          await request({
+            type: 'agency.webTab.navigate',
+            workspaceId: workspace.id,
+            tabId: activeTab.id,
+            url: url.normalizedUrl!,
+          });
+        }
+      }
       setWebDialog(null);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
-    finally { flight.current = false; setBusy(false); }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      flight.current = false;
+      setBusy(false);
+    }
   }
-  const webHeading = webDialog === 'create' ? t('agency.web.newTab') : t('agency.web.navigate');
-  return <section className="agency-workspace-view" aria-label={t('agency.ui.workspaceNamed', { name: workspace.name })}>
-    <header className="maw-tabs-header">
-      <div className={'maw-tabs-strip' + (dragState ? ' is-dragging' : '')} ref={strip} role="tablist" aria-label={t('agency.tabs.tabList')} onKeyDown={event => void navigate(event)}
-        onPointerDown={event => {
-          if (event.button !== 0 || (event.target as Element).closest('[data-close], input')) return;
-          const tabEl = (event.target as Element).closest<HTMLElement>('.maw-session-tab');
-          if (tabEl) {
-            const tabId = tabEl.getAttribute('data-tab-id');
-            if (tabId) {
-              const idx = tabs.findIndex(t => t.id === tabId);
-              tabDrag.current = { tabId, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, isDragging: false, targetIndex: idx };
-              return;
-            }
-          }
-          drag.current = { id: event.pointerId, x: event.clientX, scroll: event.currentTarget.scrollLeft, moved: false };
-        }}
-        onPointerMove={event => {
-          if (tabDrag.current && tabDrag.current.pointerId === event.pointerId) {
-            if (!tabDrag.current.isDragging) {
-              if (Math.hypot(event.clientX - tabDrag.current.startX, event.clientY - tabDrag.current.startY) > 6) {
-                tabDrag.current.isDragging = true;
-                event.currentTarget.setPointerCapture(event.pointerId);
-              }
-            }
-            if (tabDrag.current.isDragging && strip.current) {
-              event.preventDefault();
-              const tabElements = Array.from(strip.current.querySelectorAll<HTMLElement>('.maw-session-tab'));
-              let target = tabs.length;
-              for (let i = 0; i < tabElements.length; i++) {
-                const rect = tabElements[i]!.getBoundingClientRect();
-                const mid = rect.left + rect.width / 2;
-                if (event.clientX < mid) {
-                  target = i;
-                  break;
-                }
-              }
-              tabDrag.current.targetIndex = target;
-              setDragState({ tabId: tabDrag.current.tabId, targetIndex: target });
 
-              // Edge autoscroll
-              const stripRect = strip.current.getBoundingClientRect();
-              const leftZone = stripRect.left + 40;
-              const rightZone = stripRect.right - 40;
-              stopAutoScroll();
-              if (event.clientX < leftZone) {
-                const speed = Math.max(2, Math.min(15, (leftZone - event.clientX) * 0.4));
-                const scroll = () => {
-                  if (!tabDrag.current?.isDragging || !strip.current) return;
-                  strip.current.scrollLeft -= speed;
-                  autoScrollRef.current = requestAnimationFrame(scroll);
-                };
-                autoScrollRef.current = requestAnimationFrame(scroll);
-              } else if (event.clientX > rightZone) {
-                const speed = Math.max(2, Math.min(15, (event.clientX - rightZone) * 0.4));
-                const scroll = () => {
-                  if (!tabDrag.current?.isDragging || !strip.current) return;
-                  strip.current.scrollLeft += speed;
-                  autoScrollRef.current = requestAnimationFrame(scroll);
-                };
-                autoScrollRef.current = requestAnimationFrame(scroll);
-              }
-            }
-            return;
-          }
-          const start = drag.current;
-          if (!start) return;
-          if (Math.abs(event.clientX - start.x) > 6) {
-            start.moved = true;
-            event.currentTarget.setPointerCapture(event.pointerId);
-          }
-          if (start.moved) {
-            event.preventDefault();
-            event.currentTarget.scrollLeft = start.scroll - (event.clientX - start.x);
-          }
-        }}
-        onPointerUp={async event => {
-          stopAutoScroll();
-          if (tabDrag.current && tabDrag.current.pointerId === event.pointerId) {
-            const dragInfo = tabDrag.current;
-            tabDrag.current = null;
-            setDragState(null);
-            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-              event.currentTarget.releasePointerCapture(event.pointerId);
-            }
-            if (dragInfo.isDragging) {
-              dragged.current = true;
-              setTimeout(() => { dragged.current = false; }, 50);
-              const currentIdx = tabs.findIndex(t => t.id === dragInfo.tabId);
-              const targetIdx = dragInfo.targetIndex;
-              if (currentIdx !== -1 && targetIdx !== currentIdx && targetIdx !== currentIdx + 1) {
-                const ids = tabs.map(t => t.id);
-                const [draggedId] = ids.splice(currentIdx, 1);
-                const insertIdx = targetIdx > currentIdx ? targetIdx - 1 : targetIdx;
-                ids.splice(insertIdx, 0, draggedId!);
-                try {
-                  await request({ type: 'agency.tabs.order', workspaceId: workspace.id, tabIds: ids });
-                } catch (reason) {
-                  setError(String(reason));
-                }
-              }
-            }
-            return;
-          }
-          dragged.current = !!drag.current?.moved;
-          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-          drag.current = null;
-          setTimeout(() => { dragged.current = false; }, 0);
-        }}
-        onPointerCancel={event => {
-          stopAutoScroll();
-          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-            event.currentTarget.releasePointerCapture(event.pointerId);
-          }
-          tabDrag.current = null;
-          setDragState(null);
-          drag.current = null;
-          dragged.current = false;
-        }}
-        onClickCapture={event => { if (dragged.current) { event.preventDefault(); event.stopPropagation(); } }}>
-        {tabs.map((tab, index) => {
-          const tabState = getTabActivity?.(workspace.id, tab.id);
-          const session = tab.kind === 'native' ? tab.session : undefined;
-          const status = tabState ? agencyTabActivityText(tabState) : session ? agencySessionText(session) : t('agency.web.tabKind');
-          const dotClass = tabState === 'finished' ? 'finished' :
-            tabState === 'failed' || session?.lifecycle === 'failed' || session?.recovery?.status === 'manual' || (tab.kind === 'web' && ['error','crashed'].includes(tab.web.runtimeState ?? '')) ? 'failed' :
-            session?.lifecycle === 'exited' ? 'muted' :
-            session && ['awaiting-user','awaiting-permission'].includes(session.activity) ? 'attention' :
-            tabState ?? (session?.activity === 'working' ? 'working' : session?.activity === 'idle' ? 'idle' : 'unknown');
-          const isBeingDragged = dragState?.tabId === tab.id;
-          const isTargetBefore = dragState !== null && dragState.tabId !== tab.id && dragState.targetIndex === index;
-          const isTargetAfter = dragState !== null && dragState.tabId !== tab.id && dragState.targetIndex === tabs.length && index === tabs.length - 1;
-          const tabClassName = [
-            'maw-session-tab',
-            selected?.id === tab.id ? 'active' : '',
-            isBeingDragged ? 'dragging' : '',
-            isTargetBefore ? 'maw-drop-target-before' : '',
-            isTargetAfter ? 'maw-drop-target-after' : '',
-          ].filter(Boolean).join(' ');
-          return <div className={tabClassName} key={tab.id} data-tab-id={tab.id}>
-            {renaming === tab.id ? <TabNameInput name={name(tab)} report={setError}
-              onSave={async title => { await request(tab.kind === 'web'
-                ? { type: 'agency.webTab.rename', workspaceId: workspace.id, tabId: tab.id, title }
-                : { type: 'agency.tab.rename', workspaceId: workspace.id, tabId: tab.id, name: title }); setError(null); }}
-              onClose={restore => { setRenaming(null); if (restore) requestAnimationFrame(() => {
-                // Restore focus only if it was lost with the input. If the user already moved on (e.g. F2 on
-                // another tab opened a new rename input), stealing focus would blur and cancel that edit.
-                const active = document.activeElement;
-                if (active && active !== document.body && active.isConnected) return;
-                document.getElementById('tab-' + tab.id)?.focus();
-              }); }}
-            /> : <button type="button" role="tab" id={'tab-' + tab.id} aria-selected={selected?.id === tab.id} aria-controls={'pane-' + tab.id} tabIndex={selected?.id === tab.id || (!selected && index === 0) ? 0 : -1} disabled={!online} title={name(tab) + ' · ' + status} onKeyDown={event => { if (event.key === 'F2') { event.preventDefault(); event.stopPropagation(); setKeyboardTabs(true); setRenaming(tab.id); } }} onClick={() => { setKeyboardTabs(false); void action(tab, 'select').catch(() => undefined); }}>
-              <span aria-hidden="true">{tab.kind === 'web' ? '◎' : session?.kind === 'agent' ? '◇' : '>_'}</span><span className="agency-truncate" onDoubleClick={() => { setKeyboardTabs(true); setRenaming(tab.id); }}>{name(tab)}</span><span className={'agency-status-dot ' + dotClass} aria-label={status} />
-            </button>}
-            <button type="button" data-close aria-label={t('agency.tabs.closeNamed', { name: name(tab) })} disabled={!online || busy} onClick={() => { if (session && ['starting','running','stopping'].includes(session.lifecycle)) setClosing(tab); else void close(tab); }}>×</button>
-          </div>;
-        })}
-      </div>
-      <div className="agency-dropdown maw-add-tab" onClick={event => event.stopPropagation()}>
-        <button type="button" className="agency-icon-button" aria-label={t('agency.tabs.add')} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)} disabled={!online || busy}>+</button>
-        {menu && <div className="agency-dropdown-menu" role="menu">
-          <button type="button" role="menuitem" onClick={() => { setMenu(false); setPicker(true); }}>{t('agency.tabs.newCLI')}</button>
-          <button type="button" role="menuitem" onClick={() => void add('terminal')}>{t('agency.tabs.newTerminal')}</button>
-          <button type="button" role="menuitem" onClick={() => webEditor('create')}>{t('agency.web.newTab')}</button>
-          {selected?.kind === 'web' && <button type="button" role="menuitem" onClick={() => webEditor('navigate')}>{t('agency.web.navigate')}</button>}
-          {selected && <button type="button" role="menuitem" onClick={() => { setMenu(false); setKeyboardTabs(true); setRenaming(selected.id); }}>{t('agency.web.rename')}</button>}
-        </div>}
-      </div>
-      <button type="button" className="agency-text-button" onClick={onDone}>{t('agency.ui.markDone')}</button>
-    </header>
-    {(error || launchError) && <div className="agency-error-bar" role="alert"><span>{error || launchError}</span><button type="button" aria-label={t('agency.ui.dismissError')} onClick={() => { setError(null); onClearLaunchError?.(); }}>×</button></div>}
-    <div className="maw-session-content">
-      {tabs.filter(tab => tab.kind === 'native').map(tab => tab.kind === 'native' && <SessionPane focusTerminal={!keyboardTabs} key={tab.id} session={tab.session} active={selected?.id === tab.id} connection={connection} online={online} request={request} sendImmediate={sendImmediate} report={setError} onDisplayed={reportDisplayed} profile={tab.session.kind === 'agent' ? profiles.find(profile => profile.id === tab.session.profileId) : undefined} busy={busy} onConfigure={setConfiguringProfile} onStartAgain={session => void startAgain(session)} />)}
-      {selected?.kind === 'web' && <div className="maw-session-pane" role="tabpanel" id={'pane-' + selected.id} aria-labelledby={'tab-' + selected.id}>
-        <NativeChatGptView tab={selected.web} onDisplayed={reportDisplayed} />
-      </div>}
-      {!selected && <div className="agency-shell-placeholder"><p>{tabs.length ? t('agency.web.selectTab') : t('agency.tabs.empty')}</p>
-        {!tabs.length && <><button type="button" className="agency-secondary-button" disabled={!online} onClick={() => setPicker(true)}>{t('agency.tabs.newCLI')}</button><button type="button" className="agency-secondary-button" disabled={!online || busy} onClick={() => void add('terminal')}>{t('agency.tabs.newTerminal')}</button><button type="button" className="agency-secondary-button" disabled={!online || busy} onClick={() => webEditor('create')}>{t('agency.web.newTab')}</button></>}
-      </div>}
-    </div>
-    {(picker || closing || webDialog) && <div className="agency-modal-backdrop"><div ref={dialog} className="agency-dialog" role="dialog" aria-modal="true" aria-labelledby="maw-session-dialog">
-      <h2 id="maw-session-dialog">{closing ? t('agency.tabs.confirmClose', { name: name(closing) }) : webDialog ? webHeading : t('agency.tabs.newCLI')}</h2>
-      {!closing && !webDialog && isUnconfigured && (
-        <div className="agency-callout" role="alert" style={{
-          background: 'rgba(234, 179, 8, 0.12)',
-          border: '1px solid rgba(234, 179, 8, 0.35)',
-          borderRadius: '8px',
-          padding: '10px 14px',
-          margin: '12px 0',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '12px',
-          fontSize: '12px',
-          color: '#fef08a',
-        }}>
-          <span>⚙ {t('agency.profile.notConfiguredBanner')}</span>
+  function tabDisplayName(tab: WorkspaceTab) {
+    if (tab.kind === 'web') return tab.web.title;
+    const session = tab.session;
+    return (
+      session.tab?.name ??
+      (session.kind === 'terminal'
+        ? t('agency.tabs.terminalNamed', { number: session.tab?.terminalNumber ?? 1 })
+        : profiles.find((p) => p.id === session.profileId)?.label ?? t('agency.ui.agentLabel'))
+    );
+  }
+
+  const leafCount = countLeaves(layout.tree);
+  const maximizedNode = layout.maximizedPaneId ? findPaneNode(layout.tree, layout.maximizedPaneId) : null;
+  const visibleTree = maximizedNode ?? layout.tree;
+  const webHeading = webDialog === 'create' ? t('agency.web.newTab') : t('agency.web.navigate');
+
+  return (
+    <section className="agency-workspace-view" aria-label={t('agency.ui.workspaceNamed', { name: workspace.name })}>
+      <header className="maw-workspace-topbar">
+        <div className="maw-workspace-topbar-left">
+          <span className="maw-workspace-title">{workspace.name}</span>
+          {leafCount > 1 && (
+            <button
+              type="button"
+              className="agency-text-button maw-single-pane-btn"
+              onClick={handleSinglePane}
+              title={t('agency.splits.singlePane')}
+            >
+              {t('agency.splits.singlePane')}
+            </button>
+          )}
+        </div>
+
+        <div className="agency-flex-spacer" />
+
+        <button type="button" className="agency-text-button" onClick={onDone}>
+          {t('agency.ui.markDone')}
+        </button>
+      </header>
+
+      {(error || launchError) && (
+        <div className="agency-error-bar" role="alert">
+          <span>{error || launchError}</span>
           <button
             type="button"
-            className="agency-primary-button"
-            style={{ padding: '6px 14px', fontSize: '12px', whiteSpace: 'nowrap' }}
-            onClick={() => setConfiguringProfile(selectedProfile ?? null)}
+            aria-label={t('agency.ui.dismissError')}
+            onClick={() => {
+              setError(null);
+              onClearLaunchError?.();
+            }}
           >
-            {t('agency.profile.configureAction')}
+            ×
           </button>
         </div>
       )}
-      {!closing && !webDialog && !isUnconfigured && !canLaunchAgent(selectedProfile) && (
-        <p role="status">{selectedProfile?.configurationStatus === 'not-installed'
-          ? t('agency.profile.executableNotFound')
-          : selectedProfile?.configurationMessage}
-        </p>
-      )}
-      {closing ? <p>{t('agency.tabs.closeExplanation')}</p> : webDialog ? <form id="maw-web-tab-form" onSubmit={event => { event.preventDefault(); void saveWeb(); }}>
-        {webDialog !== 'navigate' && <label className="agency-field"><span>{t('agency.web.title')}</span><input autoFocus value={webTitle} maxLength={120} required onChange={event => setWebTitle(event.target.value)} /></label>}
-        {<label className="agency-field"><span>{t('agency.web.url')}</span><input autoFocus={webDialog === 'navigate'} type="url" value={webUrl} maxLength={2048} required onChange={event => setWebUrl(event.target.value)} /></label>}
-      </form> : <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', marginBottom: '16px' }}>
-        <label className="agency-field" style={{ flex: 1, marginBottom: 0 }}>
-          <span>{t('agency.ui.cliProfile')}</span>
-          <select autoFocus value={profileId} onChange={event => setProfileId(event.target.value as CliProfileId)}>
-            {profiles.map(profile => <option value={profile.id} key={profile.id}>{profile.label}</option>)}
-          </select>
-        </label>
-        {selectedProfile && (
-          <button
-            type="button"
-            className={isUnconfigured ? "agency-primary-button" : "agency-secondary-button"}
-            style={{ height: '40px', padding: '0 14px', whiteSpace: 'nowrap', fontWeight: 600 }}
-            onClick={() => setConfiguringProfile(selectedProfile)}
-          >
-            {t('agency.profile.configureAction')}
-          </button>
-        )}
-      </div>}
-      {error && <p role="alert" className="agency-error">{error}</p>}
-      <div className="agency-dialog-actions"><button type="button" autoFocus={!!closing} disabled={busy} onClick={() => { setPicker(false); setClosing(null); setWebDialog(null); }}>{t('common.cancel')}</button>
-        {webDialog ? <button type="submit" form="maw-web-tab-form" className="agency-primary-button" disabled={busy || !online}>{webHeading}</button> : <button type="button" className="agency-primary-button" disabled={busy || !online || (!closing && !canLaunchAgent(selectedProfile))} onClick={() => closing ? void close(closing) : void add('agent')}>{closing ? t('agency.tabs.closeSession') : t('agency.ui.startCLI')}</button>}
+
+      <div className="maw-split-workspace-content">
+        <SplitPaneTree
+          node={visibleTree}
+          layout={layout}
+          tabs={tabs}
+          profiles={profiles}
+          connection={connection}
+          online={online}
+          busy={busy}
+          request={request}
+          sendImmediate={sendImmediate}
+          reportError={setError}
+          getTabActivity={getTabActivity}
+          onSelectTab={handleSelectTab}
+          onCloseTab={(tab) => {
+            const session = tab.kind === 'native' ? tab.session : undefined;
+            if (session && ['starting', 'running', 'stopping'].includes(session.lifecycle)) {
+              setClosing(tab);
+            } else {
+              void close(tab);
+            }
+          }}
+          onSplit={handleSplit}
+          onClosePane={handleClosePane}
+          onToggleMaximize={handleToggleMaximize}
+          onUpdateRatio={handleUpdateRatio}
+          onMoveTabToPane={handleMoveTab}
+          onAddCliClick={(paneId) => {
+            handleFocusPane(paneId);
+            setPicker(true);
+          }}
+          onAddTerminalClick={(paneId) => {
+            handleFocusPane(paneId);
+            void add('terminal');
+          }}
+          onAddWebTabClick={(paneId) => {
+            handleFocusPane(paneId);
+            webEditor('create');
+          }}
+          onRenameTab={async (tab, title) => {
+            await request(
+              tab.kind === 'web'
+                ? { type: 'agency.webTab.rename', workspaceId: workspace.id, tabId: tab.id, title }
+                : { type: 'agency.tab.rename', workspaceId: workspace.id, tabId: tab.id, name: title },
+            );
+          }}
+          onStartAgain={(session) => void startAgain(session)}
+          onConfigure={setConfiguringProfile}
+          onFocusPane={handleFocusPane}
+          onTabDisplayed={reportDisplayed}
+        />
       </div>
-    </div></div>}
-    {configuringProfile && <AgencyProfileDialog
-      profile={configuringProfile}
-      onClose={() => setConfiguringProfile(null)}
-      onSave={async (executablePath, argv) => {
-        await request({
-          type: 'agency.profile.configure',
-          profileId: configuringProfile.id,
-          executable: executablePath,
-          args: argv,
-        });
-      }}
-    />}
-  </section>;
+
+      {(picker || closing || webDialog) && (
+        <div className="agency-modal-backdrop">
+          <div
+            ref={dialog}
+            className="agency-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="maw-session-dialog"
+          >
+            <h2 id="maw-session-dialog">
+              {closing
+                ? t('agency.tabs.confirmClose', { name: tabDisplayName(closing) })
+                : webDialog
+                  ? webHeading
+                  : t('agency.tabs.newCLI')}
+            </h2>
+
+            {!closing && !webDialog && isUnconfigured && (
+              <div
+                className="agency-callout"
+                role="alert"
+                style={{
+                  background: 'rgba(234, 179, 8, 0.12)',
+                  border: '1px solid rgba(234, 179, 8, 0.35)',
+                  borderRadius: '8px',
+                  padding: '10px 14px',
+                  margin: '12px 0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  fontSize: '12px',
+                  color: '#fef08a',
+                }}
+              >
+                <span>⚙ {t('agency.profile.notConfiguredBanner')}</span>
+                <button
+                  type="button"
+                  className="agency-primary-button"
+                  style={{ padding: '6px 14px', fontSize: '12px', whiteSpace: 'nowrap' }}
+                  onClick={() => setConfiguringProfile(selectedProfile ?? null)}
+                >
+                  {t('agency.profile.configureAction')}
+                </button>
+              </div>
+            )}
+
+            {!closing && !webDialog && !isUnconfigured && !canLaunchAgent(selectedProfile) && (
+              <p role="status">
+                {selectedProfile?.configurationStatus === 'not-installed'
+                  ? t('agency.profile.executableNotFound')
+                  : selectedProfile?.configurationMessage}
+              </p>
+            )}
+
+            {closing ? (
+              <p>{t('agency.tabs.closeExplanation')}</p>
+            ) : webDialog ? (
+              <form
+                id="maw-web-tab-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void saveWeb();
+                }}
+              >
+                {webDialog !== 'navigate' && (
+                  <label className="agency-field">
+                    <span>{t('agency.web.title')}</span>
+                    <input
+                      autoFocus
+                      value={webTitle}
+                      maxLength={120}
+                      required
+                      onChange={(event) => setWebTitle(event.target.value)}
+                    />
+                  </label>
+                )}
+                <label className="agency-field">
+                  <span>{t('agency.web.url')}</span>
+                  <input
+                    autoFocus={webDialog === 'navigate'}
+                    type="url"
+                    value={webUrl}
+                    maxLength={2048}
+                    required
+                    onChange={(event) => setWebUrl(event.target.value)}
+                  />
+                </label>
+              </form>
+            ) : (
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', marginBottom: '16px' }}>
+                <label className="agency-field" style={{ flex: 1, marginBottom: 0 }}>
+                  <span>{t('agency.ui.cliProfile')}</span>
+                  <select
+                    autoFocus
+                    value={profileId}
+                    onChange={(event) => setProfileId(event.target.value as CliProfileId)}
+                  >
+                    {profiles.map((profile) => (
+                      <option value={profile.id} key={profile.id}>
+                        {profile.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {selectedProfile && (
+                  <button
+                    type="button"
+                    className={isUnconfigured ? 'agency-primary-button' : 'agency-secondary-button'}
+                    style={{ height: '40px', padding: '0 14px', whiteSpace: 'nowrap', fontWeight: 600 }}
+                    onClick={() => setConfiguringProfile(selectedProfile)}
+                  >
+                    {t('agency.profile.configureAction')}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {error && <p role="alert" className="agency-error">{error}</p>}
+
+            <div className="agency-dialog-actions">
+              <button
+                type="button"
+                autoFocus={!!closing}
+                disabled={busy}
+                onClick={() => {
+                  setPicker(false);
+                  setClosing(null);
+                  setWebDialog(null);
+                }}
+              >
+                {t('common.cancel')}
+              </button>
+              {webDialog ? (
+                <button type="submit" form="maw-web-tab-form" className="agency-primary-button" disabled={busy || !online}>
+                  {webHeading}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="agency-primary-button"
+                  disabled={busy || !online || (!closing && !canLaunchAgent(selectedProfile))}
+                  onClick={() => (closing ? void close(closing) : void add('agent'))}
+                >
+                  {closing ? t('agency.tabs.closeSession') : t('agency.ui.startCLI')}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {configuringProfile && (
+        <AgencyProfileDialog
+          profile={configuringProfile}
+          onClose={() => setConfiguringProfile(null)}
+          onSave={async (executablePath, argv) => {
+            await request({
+              type: 'agency.profile.configure',
+              profileId: configuringProfile.id,
+              executable: executablePath,
+              args: argv,
+            });
+          }}
+        />
+      )}
+    </section>
+  );
 }

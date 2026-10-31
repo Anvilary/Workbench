@@ -4,6 +4,7 @@ import { serverTextMessage } from '../i18n/server-text.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AgencyClientMessage, AgencyProject, AgencyRuntimeSession, AgencyServerMessage, AgencyWorkspace,
+  WorkspacePaneLayout, WorkspaceId,
 } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import {
@@ -119,6 +120,15 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
       } else if (message.type === 'agency.sessions.snapshot') {
         message.sessions.forEach((session) => record(session, false));
         setData((old) => ({ ...old, sessions: applySessionsSnapshot(old.sessions, message.sessions, message.workspaceId) }));
+      } else if (message.type === 'agency.layouts.snapshot') {
+        const layoutsMap: Record<string, WorkspacePaneLayout> = {};
+        for (const l of message.layouts) layoutsMap[l.workspaceId] = l;
+        setData((old) => ({ ...old, layouts: { ...old.layouts, ...layoutsMap } }));
+      } else if (message.type === 'agency.layout.changed') {
+        setData((old) => ({
+          ...old,
+          layouts: { ...old.layouts, [message.workspaceId]: message.layout },
+        }));
       } else if (
         message.type === 'agency.project.created' || message.type === 'agency.project.updated' ||
         message.type === 'agency.project.archived' || message.type === 'agency.project.unarchived'
@@ -214,10 +224,12 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
     request({ type: 'agency.workspace.restore', workspaceId });
   const deleteWorkspace = (workspaceId: AgencyWorkspace['id']) =>
     request({ type: 'agency.workspace.delete', workspaceId });
+  const saveLayout = useCallback((workspaceId: WorkspaceId, layout: WorkspacePaneLayout) =>
+    request({ type: 'agency.layout.save', workspaceId, layout }), [request]);
 
   return {
     data, online, loaded, synchronized, notice, request, refresh,
     createProject, renameProject, archiveProject, unarchiveProject, deleteProject,
-    createWorkspace, archiveWorkspace, markDone, restore, deleteWorkspace,
+    createWorkspace, archiveWorkspace, markDone, restore, deleteWorkspace, saveLayout,
   };
 }

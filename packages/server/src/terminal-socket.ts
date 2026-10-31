@@ -61,6 +61,7 @@ import { AgencyWorkspaceStore } from './agency/store.js';
 import { AgencyProfileStore } from './agency/agency-profile-store.js';
 import { AgencySessionRuntime, AgencyRuntimeError } from './agency/agency-session-runtime.js';
 import { AgencyNotificationStore } from './agency/agency-notification-store.js';
+import { AgencyLayoutStore } from './agency/agency-layout-store.js';
 import { TabActivityManager } from './agency/tab-activity-manager.js';
 import { ChatGPTActivityProvider } from './agency/browser-activity-provider.js';
 import { BrowserTabAdapter, BrowserTabStore, BrowserTabStoreError } from './agency/browser-tabs/index.js';
@@ -218,6 +219,7 @@ export interface TerminalSocketOptions {
   agencyNotificationStore?: AgencyNotificationStore;
   agencyActivityManager?: TabActivityManager;
   agencyBrowserTabs?: BrowserTabAdapter;
+  agencyLayoutStore?: AgencyLayoutStore;
 }
 
 export interface DoneHandlerContext {
@@ -303,12 +305,14 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
 
   const agencyNotificationStore = options.agencyNotificationStore ?? new AgencyNotificationStore();
   const agencyActivityManager = options.agencyActivityManager ?? new TabActivityManager({ notificationStore: agencyNotificationStore });
+  const agencyLayoutStore = options.agencyLayoutStore ?? new AgencyLayoutStore();
   const chatgptProvider = new ChatGPTActivityProvider();
   agencyActivityManager.registerBrowserProvider(chatgptProvider);
   const agencyBrowserTabs = options.agencyBrowserTabs ?? new BrowserTabAdapter({ store: new BrowserTabStore(), workspaceStore: agencyWorkspaceStore });
   const agencyReady = Promise.all([
     agencyNotificationStore.initialize(),
     agencyActivityManager.initialize(),
+    agencyLayoutStore.initialize(),
     options.agencyBrowserTabs ? Promise.resolve() : agencyBrowserTabs.restore(),
   ]);
 
@@ -344,7 +348,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     }
   };
 
-  const tabCoordinator = new AgencyTabCoordinator(agencyRuntime, agencyBrowserTabs, agencyWorkspaceStore, broadcast);
+  const tabCoordinator = new AgencyTabCoordinator(agencyRuntime, agencyBrowserTabs, agencyWorkspaceStore, broadcast, agencyLayoutStore);
   const hasOpenActivityTab = (workspaceId: import('@agent-workbench/shared').WorkspaceId, tabId: string): boolean => {
     if (!agencyWorkspaceStore.getWorkspace(workspaceId)) return false;
     return agencyRuntime.list(workspaceId).some(session => session.tab?.id === tabId && session.tab.current && !session.tab.closedAt) ||
@@ -1247,6 +1251,11 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
       requestId: '',
       notifications: agencyNotificationStore.list(),
       activityStates: agencyActivityManager.snapshot(),
+    });
+    send(socket, {
+      type: 'agency.layouts.snapshot',
+      requestId: '',
+      layouts: agencyLayoutStore.list(),
     });
     void tabReady.then(() => {
       send(socket, { type: 'agency.webTabs.snapshot', requestId: '', tabs: agencyBrowserTabs.listTabs() });
@@ -3655,6 +3664,26 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
             broadcast({ type: 'agency.tab.activity', activity: record });
           } else {
             send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Tab activity not found or already acknowledged' });
+          }
+          break;
+        }
+
+        case 'agency.layout.save': {
+          const ws = agencyWorkspaceStore.getWorkspace(message.workspaceId);
+          if (!ws) {
+            send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Workspace not found' });
+            break;
+          }
+          await agencyLayoutStore.save(message.layout);
+          send(socket, { type: 'agency.layout.saved', requestId: message.requestId, workspaceId: message.workspaceId });
+          broadcast({ type: 'agency.layout.changed', workspaceId: message.workspaceId, layout: message.layout });
+          break;
+        }
+
+        case 'agency.layout.get': {
+          const layout = agencyLayoutStore.get(message.workspaceId);
+          if (layout) {
+            send(socket, { type: 'agency.layout.changed', workspaceId: message.workspaceId, layout });
           }
           break;
         }
