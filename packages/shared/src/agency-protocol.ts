@@ -20,6 +20,12 @@ import {
   isTabActivityRecord,
 } from './notification-protocol.js';
 
+import {
+  type LayoutClientMessage,
+  type LayoutServerMessage,
+  isWorkspacePaneLayout,
+} from './split-layout.js';
+
 /** IDs are deliberately distinct from native CLI sessions and Workbench terminal IDs. */
 export type ProjectId = string & { readonly __agencyProjectId: unique symbol };
 export type WorkspaceId = string & { readonly __agencyWorkspaceId: unique symbol };
@@ -220,7 +226,8 @@ export type AgencyClientMessage =
       effort: string | null;
     })
   | NotificationClientMessage
-  | WebTabClientMessage;
+  | WebTabClientMessage
+  | LayoutClientMessage;
 
 export type AgencyErrorCode =
   | 'invalid-request'
@@ -264,7 +271,8 @@ export type AgencyServerMessage =
   | { type: 'agency.session.changed'; sessionId: RuntimeSessionId; session: AgencyRuntimeSession }
   | { type: 'agency.session.activity'; sessionId: RuntimeSessionId; workspaceId: WorkspaceId; activity: SessionActivity; lifecycle: SessionLifecycle }
   | NotificationServerMessage
-  | WebTabServerMessage;
+  | WebTabServerMessage
+  | LayoutServerMessage;
 
 /**
  * Existing upstream PTY messages are NOT redefined here:
@@ -544,6 +552,14 @@ export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | nu
       if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'tabId']) || !isValidId(raw['workspaceId']) || !isValidId(raw['tabId'])) return null;
       return { type: 'agency.tab.acknowledge', requestId, workspaceId: raw['workspaceId'] as WorkspaceId, tabId: raw['tabId'] as string };
     }
+    case 'agency.layout.save': {
+      if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'layout']) || !isValidId(raw['workspaceId']) || !isWorkspacePaneLayout(raw['layout'])) return null;
+      return { type: 'agency.layout.save', requestId, workspaceId: raw['workspaceId'] as WorkspaceId, layout: raw['layout'] };
+    }
+    case 'agency.layout.get': {
+      if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId']) || !isValidId(raw['workspaceId'])) return null;
+      return { type: 'agency.layout.get', requestId, workspaceId: raw['workspaceId'] as WorkspaceId };
+    }
     default:
       return null;
   }
@@ -750,6 +766,30 @@ export function parseAgencyServerMessage(raw: unknown): AgencyServerMessage | nu
         type: 'agency.tab.activity',
         activity: raw['activity'],
         ...(isValidRequestId(raw['requestId']) ? { requestId: raw['requestId'] } : {}),
+      };
+    }
+    case 'agency.layout.saved': {
+      if (!isValidRequestId(raw['requestId']) || !isValidId(raw['workspaceId'])) return null;
+      return {
+        type: 'agency.layout.saved',
+        requestId: raw['requestId'],
+        workspaceId: raw['workspaceId'] as WorkspaceId,
+      };
+    }
+    case 'agency.layouts.snapshot': {
+      if (typeof raw['requestId'] !== 'string' || !Array.isArray(raw['layouts']) || !raw['layouts'].every(isWorkspacePaneLayout)) return null;
+      return {
+        type: 'agency.layouts.snapshot',
+        requestId: raw['requestId'],
+        layouts: raw['layouts'],
+      };
+    }
+    case 'agency.layout.changed': {
+      if (!isValidId(raw['workspaceId']) || !isWorkspacePaneLayout(raw['layout'])) return null;
+      return {
+        type: 'agency.layout.changed',
+        workspaceId: raw['workspaceId'] as WorkspaceId,
+        layout: raw['layout'],
       };
     }
     default:
