@@ -42,6 +42,16 @@ export class AgencyTabCoordinator {
     return this.openNative(workspaceId).some(session => session.tab?.id === tabId && session.tab.selected);
   }
 
+  /** Keep a concurrent selection from invalidating eligibility during acknowledgement. */
+  async inspect<T>(workspaceId: WorkspaceId, tabId: string, inspection: () => Promise<T>): Promise<T> {
+    return this.mutations.runExclusive(workspaceId, async () => {
+      if (!this.canInspect(workspaceId, tabId)) {
+        throw new AgencyRuntimeError('session-unavailable', 'Tab must be open and selected in an active workspace before inspection');
+      }
+      return inspection();
+    });
+  }
+
   snapshot(): void {
     // New/reconnecting sockets receive unconditional snapshots at connection
     // setup. Broadcast only changed domains here, including partial failures.

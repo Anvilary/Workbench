@@ -3679,11 +3679,8 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         }
 
         case 'agency.tab.acknowledge': {
-          if (!tabCoordinator.canInspect(message.workspaceId, message.tabId)) {
-            send(socket, { type: 'agency.error', requestId: message.requestId, code: 'session-unavailable', message: 'Tab must be open and selected in an active workspace before inspection' });
-            break;
-          }
-          const record = await agencyActivityManager.acknowledgeTab(message.workspaceId, message.tabId);
+          const record = await tabCoordinator.inspect(message.workspaceId, message.tabId,
+            () => agencyActivityManager.acknowledgeTab(message.workspaceId, message.tabId));
           if (record) {
             send(socket, { type: 'agency.tab.activity', requestId: message.requestId, activity: record });
             broadcast({ type: 'agency.tab.activity', activity: record });
