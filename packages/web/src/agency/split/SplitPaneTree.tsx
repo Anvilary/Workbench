@@ -177,6 +177,7 @@ export function SplitPaneTree(props: Props): JSX.Element {
             key={selectedTab.id}
             tab={selectedTab.web}
             onDisplayed={onTabDisplayed}
+            onFocused={() => onFocusPane(node.id)}
           />
         ) : selectedTab ? null : (
           <div className="agency-shell-placeholder">

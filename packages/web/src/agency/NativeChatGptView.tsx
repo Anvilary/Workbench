@@ -26,14 +26,18 @@ export function nativeChatGptUrl(value: string): boolean {
 export function NativeChatGptView({
   tab,
   onDisplayed,
+  onFocused,
 }: {
   tab: WebTab;
   onDisplayed: (id: string, ready: boolean) => void;
+  onFocused?: () => void;
 }): JSX.Element {
   const { id } = tab;
   const supported = nativeChatGptUrl(tab.url);
   const callback = useRef(onDisplayed);
   callback.current = onDisplayed;
+  const focusCallback = useRef(onFocused);
+  focusCallback.current = onFocused;
   const url = useRef(tab.url);
   url.current = tab.url;
   const host = useRef<HTMLDivElement>(null);
@@ -53,6 +57,7 @@ export function NativeChatGptView({
       id,
       element: host.current,
       onDisplayed: (ready) => callback.current(id, ready),
+      onFocused: () => focusCallback.current?.(),
       setCaptureBackdrop,
       onError: (msg) => setError(msg),
       onDownloadEvent: (evt) => {

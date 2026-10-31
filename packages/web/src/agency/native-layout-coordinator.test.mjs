@@ -12,6 +12,7 @@ import { nativeLayoutCoordinator } from './src/agency/native-layout-coordinator.
 window.commands = [];
 window.pending = [];
 window.backdrops = [];
+window.focused = [];
 window.mawChatGpt = {
   command(cmd) {
     window.commands.push(cmd.type);
@@ -30,6 +31,7 @@ nativeLayoutCoordinator.register({
   id: 'view-1',
   element: view,
   onDisplayed() {},
+  onFocused() { window.focused.push('view-1'); },
   setCaptureBackdrop(url) {
     window.backdrops.push({ url, overlayOpen: !document.getElementById('overlay').hidden });
   },
@@ -97,8 +99,17 @@ test('native capture fallback ignores results that arrive after the overlay clos
   }, count);
   const appliedWhileHidden = () => page.evaluate(() => window.backdrops.filter((entry) => typeof entry.url === 'string' && entry.url.startsWith('data:') && !entry.overlayOpen));
 
+  await frames(3);
+  await page.evaluate(() => {
+    window.onState({ type: 'focused', id: 'another-workspace' });
+    window.onState({ type: 'focused', id: 'view-1' });
+  });
+  assert.deepEqual(await page.evaluate(() => window.focused), ['view-1'], 'only registered visible views can report focus');
+
   await page.evaluate(() => window.overlay(true));
   await page.waitForFunction(() => window.pending.length === 1);
+  await page.evaluate(() => window.onState({ type: 'focused', id: 'view-1' }));
+  assert.deepEqual(await page.evaluate(() => window.focused), ['view-1'], 'covered native views cannot steal dialog focus');
   await page.evaluate(() => window.overlay(false));
   await frames(3);
   await page.evaluate(() => window.pending.splice(0).forEach((resolve) => resolve({ ok: true, dataUrl: 'data:image/png;base64,STALE' })));

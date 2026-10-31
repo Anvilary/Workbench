@@ -2,6 +2,7 @@ export interface NativeViewRegistration {
   id: string;
   element: HTMLElement;
   onDisplayed: (ready: boolean) => void;
+  onFocused?: () => void;
   setCaptureBackdrop: (dataUrl: string | null) => void;
   onError?: (message: string) => void;
   onDownloadEvent?: (event: { type: string; filename?: string; percent?: number | null; message?: string }) => void;
@@ -135,7 +136,9 @@ class NativeLayoutCoordinator {
 
     this.unsubscribeBridge = bridge.subscribe((state) => {
       const entry = this.views.get(state.id ?? '');
-      if (state.type === 'ready' && entry) {
+      if (state.type === 'focused' && entry) {
+        if (entry.nativeVisible && entry.element.isConnected && !document.hidden) entry.onFocused?.();
+      } else if (state.type === 'ready' && entry) {
         entry.isReady = true;
         this.lastSerialized = '';
         this.measure();

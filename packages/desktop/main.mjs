@@ -51,7 +51,9 @@ async function start() {
   const urls = new Map();
   const requestedUrls = new Map();
   const failures = new Map();
-  const focusPending = new Set();
+  let layoutFocusedId = null;
+  // Native clicks must not make an unchanged renderer layout look like a new focus request.
+  let reportedFocusedId = null;
   const popups = new Set();
   const attachedViews = new Map(); // id -> WebContentsView (up to 4 simultaneously visible)
   let shuttingDown = false;
@@ -233,6 +235,17 @@ async function start() {
     urls.set(id, url);
     requestedUrls.set(id, url);
     guard(view.webContents);
+    const reportFocus = () => {
+      if (views.get(id) !== view || attachedViews.get(id) !== view ||
+          view.webContents.isDestroyed() || reportedFocusedId === id) return;
+      reportedFocusedId = id;
+      send({ type: 'focused', id });
+    };
+    // Observe native pointer activation without cancelling page input. Bare focus events
+    // also occur during attachment and programmatic focus, so they are not user intent.
+    view.webContents.on('before-mouse-event', (_event, mouse) => {
+      if (mouse.type === 'mouseDown') reportFocus();
+    });
     const committed = (_event, url, isMainFrame = true) => {
       if (!isMainFrame || !chatUrlForPersistence(url)) return;
       urls.set(id, url);
@@ -262,12 +275,12 @@ async function start() {
     if (!view) return;
     hide(id);
     if (!view.webContents.isDestroyed()) view.webContents.close();
-    views.delete(id); urls.delete(id); requestedUrls.delete(id); failures.delete(id); focusPending.delete(id);
+    views.delete(id); urls.delete(id); requestedUrls.delete(id); failures.delete(id);
   }
 
   ipcMain.handle(CHANNEL, async (event, command) => {
     if (!trustedSender(event, win.webContents, local.origin) || !validCommand(command)) throw new Error('Invalid desktop request');
-    if (command.type === 'open') { focusPending.add(command.id); open(command.id, command.url); }
+    if (command.type === 'open') open(command.id, command.url);
     if (command.type === 'update' && views.has(command.id)) open(command.id, command.url);
     if (command.type === 'close') closeView(command.id);
     if (command.type === 'retain') for (const id of views.keys()) if (!command.ids.includes(id)) closeView(id);
@@ -288,6 +301,10 @@ async function start() {
 
     // FEATURE 3: Centralized Multi-WebContentsView layout coordinator (atomic reconciliation)
     if (command.type === 'layout') {
+      const focusedId = 'focusedId' in command ? command.focusedId : command.id ?? null;
+      const focusChanged = focusedId !== layoutFocusedId;
+      layoutFocusedId = focusedId;
+      if (focusChanged) reportedFocusedId = focusedId;
       const targetViews = Array.isArray(command.views)
         ? command.views
         : (command.id && command.bounds ? [{ id: command.id, bounds: command.bounds }] : []);
@@ -325,16 +342,12 @@ async function start() {
 
         view.setBounds(bounds);
         view.setVisible(true);
-
-        if (focusPending.delete(item.id)) {
-          view.webContents.focus();
-        }
       }
 
-      // 3. Focus ownership
-      if (command.focusedId && attachedViews.has(command.focusedId)) {
-        const focusedView = attachedViews.get(command.focusedId);
-        if (focusedView && !focusedView.webContents.isDestroyed()) {
+      // Geometry updates and overlay restoration must preserve focus in MAW controls.
+      if (focusChanged && focusedId && attachedViews.has(focusedId)) {
+        const focusedView = attachedViews.get(focusedId);
+        if (focusedView && !focusedView.webContents.isDestroyed() && !focusedView.webContents.isFocused()) {
           focusedView.webContents.focus();
         }
       }

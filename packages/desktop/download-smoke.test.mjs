@@ -124,6 +124,10 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron', { timeout: 
       BrowserWindow.getAllWindows()[0].contentView.children.filter(view => view.webContents).length
     );
     await eventually(async () => (await attached()) === 1);
+    await eventually(() => desktop.evaluate(({ BrowserWindow }) => {
+      const contents = BrowserWindow.getAllWindows()[0].contentView.children.find(v => v.webContents)?.webContents;
+      return contents?.getURL() === 'https://chatgpt.com/' && !contents.isLoading();
+    }));
 
     // Trigger download in the native view
     await desktop.evaluate(({ BrowserWindow }) => {
