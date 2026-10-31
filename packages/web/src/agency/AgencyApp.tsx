@@ -533,6 +533,8 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
             onDelivered={(value) => clearDelivered(selected.id, value)}
             onDone={() => { void markDone(selected); }}
             launchError={launchErrors[selected.id]}
+            placementWarning={data.layoutWarnings?.[selected.id] ?? null}
+            onClearPlacementWarning={() => store.clearLayoutWarning(selected.id)}
             getTabActivity={notificationStore.getTabActivity}
             getTabActivityVersion={(workspaceId, tabId) => notificationStore.activityStates.get(workspaceId + '::' + tabId)?.updatedAt ?? ''}
             onAcknowledgeTab={notificationStore.acknowledgeTab}

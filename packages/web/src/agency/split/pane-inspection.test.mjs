@@ -45,7 +45,7 @@ async function setup(t, web = false) {
 const frames = (page, count = 4) => page.evaluate(async (count) => {
   for (let i = 0; i < count; i++) await new Promise(resolve => requestAnimationFrame(resolve));
 }, count);
-const focus = (page, side) => page.locator('#pane-container-' + side + ' .maw-pane-header').click({ position: { x: 4, y: 4 } });
+const focus = (page, side) => page.locator('#pane-container-' + side + ' .maw-pane-header').click({ position: { x: 30, y: 4 } });
 const ackIds = page => page.evaluate(() => window.inspection.requests.filter(m => m.type === 'agency.tab.acknowledge').map(m => m.tabId));
 const consistent = async (page, side, id) => {
   try {

@@ -4,7 +4,7 @@ import type {
   MawActivityState, SplitDirection, WebTab, WorkspaceId, WorkspacePaneLayout,
 } from '@agent-workbench/shared';
 import {
-  countLeaves, createDefaultLayout, findPaneNode, getPaneNodes, moveTabBetweenPanes,
+  assignCreatedTab, swapPanes, countLeaves, createDefaultLayout, findPaneNode, getPaneNodes, moveTabBetweenPanes,
   reconcileLayout, splitPane, closePane, updatePaneNode, updateSplitRatio,
   validateChatGptUrl, validateWebTabTitle,
 } from '@agent-workbench/shared';
@@ -13,6 +13,7 @@ import { t } from '../i18n/index.js';
 import { AgencyProfileDialog } from './AgencyProfileDialog.js';
 import { allWorkspaceTabs, canLaunchAgent, selectedWorkspaceTab, type AgencyTransport, type WorkspaceTab } from './model.js';
 import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
+import { PaneMovement } from './split/PaneMovement.js';
 import { PersistentSessionPanes } from './split/PersistentSessionPanes.js';
 import { SplitPaneTree } from './split/SplitPaneTree.js';
 import { usePaneInspection } from './split/usePaneInspection.js';
@@ -35,6 +36,8 @@ interface Props {
   onDone: () => void;
   launchError?: string | null;
   onClearLaunchError?: () => void;
+  placementWarning?: string | null;
+  onClearPlacementWarning?: () => void;
   getTabActivity?: (workspaceId: WorkspaceId, tabId: string) => MawActivityState;
   onAcknowledgeTab?: (workspaceId: WorkspaceId, tabId: string) => Promise<void> | void;
   savedLayout?: WorkspacePaneLayout;
@@ -53,6 +56,8 @@ export function AgencyWorkspaceView({
   onDone,
   launchError,
   onClearLaunchError,
+  placementWarning,
+  onClearPlacementWarning,
   getTabActivity,
   onAcknowledgeTab,
   onTabDisplayed,
@@ -60,13 +65,26 @@ export function AgencyWorkspaceView({
   savedLayout,
   onSaveLayout,
 }: Props): JSX.Element {
-  const tabs = allWorkspaceTabs(sessions, webTabs, workspace.id);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const creatingLaunch = useRef<string | null>(null);
+  const creationTarget = useRef<string | null>(null);
+  const [createdTabs, setCreatedTabs] = useState<WorkspaceTab[]>([]);
+  const serverTabs = allWorkspaceTabs(sessions, webTabs, workspace.id);
+  const tabs = [...serverTabs.filter(tab => (tab.kind === 'web' ? tab.web.launchId : tab.session.launchId) !== creatingLaunch.current || !creatingLaunch.current),
+    ...createdTabs.filter(tab => !serverTabs.some(current => current.id === tab.id))];
+  useEffect(() => {
+    setCreatedTabs(current => current.filter(tab => !serverTabs.some(row => row.id === tab.id)));
+  }, [sessions, webTabs]);
   const openTabIds = tabs.map((t) => t.id);
   const defaultSelected = selectedWorkspaceTab(tabs)?.id;
 
   const [layout, setLayout] = useState<WorkspacePaneLayout>(() =>
     reconcileLayout(savedLayout, workspace.id, openTabIds, defaultSelected),
   );
+
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
 
   const [picker, setPicker] = useState(false);
   const [webDialog, setWebDialog] = useState<'create' | 'navigate' | null>(null);
@@ -95,6 +113,16 @@ export function AgencyWorkspaceView({
   }, []);
   const dialog = useRef<HTMLDivElement | null>(null);
   const saveTimer = useRef<number | null>(null);
+  const persistence = useRef(onSaveLayout);
+  persistence.current = onSaveLayout;
+  useEffect(() => () => {
+    if (saveTimer.current === null) return;
+    clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    // Flush a divider edit before leaving this workspace, rather than allowing an
+    // old timer to overwrite a creation that finishes after the switch.
+    void persistence.current?.(workspace.id, layoutRef.current).catch(reason => console.warn('[maw-layout] save failed:', reason));
+  }, [workspace.id]);
 
   const serverSelectedId = selectedWorkspaceTab(tabs)?.id;
 
@@ -109,7 +137,7 @@ export function AgencyWorkspaceView({
   const [prevServerSelected, setPrevServerSelected] = useState(serverSelectedId);
   if (serverSelectedId !== prevServerSelected) {
     setPrevServerSelected(serverSelectedId);
-    if (serverSelectedId && !selecting.current) {
+    if (serverSelectedId && !selecting.current && !flight.current) {
       const panes = getPaneNodes(layout.tree);
       const ownerPane = panes.find((p) => p.tabIds.includes(serverSelectedId));
       if (ownerPane) {
@@ -127,10 +155,12 @@ export function AgencyWorkspaceView({
   }
 
   // Sync with incoming server layout when available
+  const initialSavedLayoutApplied = useRef(Boolean(savedLayout));
   useEffect(() => {
     if (savedLayout && savedLayout.workspaceId === workspace.id) {
       setLayout((prev) => {
-        if (savedLayout.updatedAt > prev.updatedAt) {
+        if (!initialSavedLayoutApplied.current || savedLayout.updatedAt > prev.updatedAt) {
+          initialSavedLayoutApplied.current = true;
           return reconcileLayout(savedLayout, workspace.id, openTabIds, defaultSelected);
         }
         return prev;
@@ -140,16 +170,17 @@ export function AgencyWorkspaceView({
 
   const save = useCallback(
     (nextLayout: WorkspacePaneLayout, immediate = false) => {
+      layoutRef.current = nextLayout;
       setLayout(nextLayout);
       if (saveTimer.current !== null) {
         clearTimeout(saveTimer.current);
         saveTimer.current = null;
       }
       if (immediate) {
-        void onSaveLayout?.(workspace.id, nextLayout);
+        void onSaveLayout?.(workspace.id, nextLayout).catch(reason => setError(t('agency.splits.saveFailed', { error: String(reason) })));
       } else {
         saveTimer.current = window.setTimeout(() => {
-          void onSaveLayout?.(workspace.id, nextLayout);
+          void onSaveLayout?.(workspace.id, nextLayout).catch(reason => setError(t('agency.splits.saveFailed', { error: String(reason) })));
           saveTimer.current = null;
         }, 200);
       }
@@ -233,6 +264,7 @@ export function AgencyWorkspaceView({
 
   const handleMoveTab = useCallback(
     (tabId: string, targetPaneId: string, targetIndex?: number) => {
+      if (!tabs.some(tab => tab.id === tabId) || !findPaneNode(layout.tree, targetPaneId)) return;
       const nextTree = moveTabBetweenPanes(layout.tree, tabId, targetPaneId, targetIndex);
       save(
         {
@@ -244,11 +276,12 @@ export function AgencyWorkspaceView({
         true,
       );
     },
-    [layout, save],
+    [layout, save, tabs],
   );
 
   const handleSelectTab = useCallback(
     (paneId: string, tabId: string) => {
+      if (!findPaneNode(layout.tree, paneId)?.tabIds.includes(tabId)) return;
       const nextTree = updatePaneNode(layout.tree, paneId, (pane) => ({
         ...pane,
         selectedTabId: tabId,
@@ -348,25 +381,49 @@ export function AgencyWorkspaceView({
     return () => window.removeEventListener('keydown', key);
   }, [picker, closing, webDialog, configuringProfile]);
 
-  async function add(kind: 'agent' | 'terminal') {
+  function completeCreation(response: Awaited<ReturnType<Props['request']>>, targetPaneId: string) {
+    // The server commits the destination even if this workspace was switched away.
+    if (!mounted.current) return;
+    const created = response.type === 'agency.session.created'
+      ? allWorkspaceTabs([response.session], [], workspace.id)[0]
+      : response.type === 'agency.webTab.created' ? allWorkspaceTabs([], [response.tab], workspace.id)[0] : undefined;
+    if (!created) throw new Error(t('agency.errors.internalError'));
+    setCreatedTabs(current => [...current.filter(tab => tab.id !== created.id), created]);
+    save(assignCreatedTab(layoutRef.current, targetPaneId, created.id), true);
+  }
+
+  function handleSwapPane(source: string, target: string) {
+    const current = layoutRef.current;
+    if (!online || current.workspaceId !== workspace.id || current.maximizedPaneId) return;
+    const tree = swapPanes(current.tree, source, target);
+    if (!tree) return;
+    save({ ...current, tree, focusedPaneId: source, updatedAt: new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1)).toISOString() }, true);
+  }
+
+  async function add(kind: 'agent' | 'terminal', targetPaneId = creationTarget.current ?? layoutRef.current.focusedPaneId) {
     if (flight.current || !online || (kind === 'agent' && !profileId)) return;
     flight.current = true;
+    const launchId = crypto.randomUUID();
+    creatingLaunch.current = launchId;
     setBusy(true);
     setError(null);
     try {
-      await request({
+      const response = await request({
         type: 'agency.session.create',
         workspaceId: workspace.id,
         kind,
-        launchId: crypto.randomUUID(),
+        targetPaneId,
+        launchId,
         cols: 100,
         rows: 30,
         ...(kind === 'agent' ? { profileId: profileId as CliProfileId } : {}),
       } as Parameters<Props['request']>[0]);
+      completeCreation(response, targetPaneId);
       setPicker(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
+      creatingLaunch.current = null;
       flight.current = false;
       setBusy(false);
     }
@@ -463,14 +520,19 @@ export function AgencyWorkspaceView({
     setError(null);
     try {
       if (webDialog === 'create') {
-        await request({
+        const targetPaneId = creationTarget.current ?? layoutRef.current.focusedPaneId;
+        const launchId = crypto.randomUUID();
+        creatingLaunch.current = launchId;
+        const response = await request({
           type: 'agency.webTab.create',
           workspaceId: workspace.id,
           url: url.normalizedUrl!,
           title: webTitle.trim(),
           select: true,
-          launchId: crypto.randomUUID(),
+          targetPaneId,
+          launchId,
         });
+        completeCreation(response, targetPaneId);
       } else if (activeTabId) {
         const activeTab = tabs.find((t) => t.id === activeTabId);
         if (activeTab?.kind === 'web') {
@@ -486,6 +548,7 @@ export function AgencyWorkspaceView({
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
+      creatingLaunch.current = null;
       flight.current = false;
       setBusy(false);
     }
@@ -531,6 +594,19 @@ export function AgencyWorkspaceView({
         </button>
       </header>
 
+      {placementWarning && (
+        <div className="agency-notice-bar" role="status">
+          <span>{placementWarning}</span>
+          <button
+            type="button"
+            aria-label={t('agency.ui.dismissNotification')}
+            onClick={() => onClearPlacementWarning?.()}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {(error || launchError) && (
         <div className="agency-error-bar" role="alert">
           <span>{error || launchError}</span>
@@ -547,6 +623,7 @@ export function AgencyWorkspaceView({
         </div>
       )}
 
+      <PaneMovement key={workspace.id} workspaceId={workspace.id} onSwap={handleSwapPane}>
       <div className="maw-split-workspace-content">
         <SplitPaneTree
           node={visibleTree}
@@ -571,17 +648,18 @@ export function AgencyWorkspaceView({
           onClosePane={handleClosePane}
           onToggleMaximize={handleToggleMaximize}
           onUpdateRatio={handleUpdateRatio}
+          onSwapPane={handleSwapPane}
           onMoveTabToPane={handleMoveTab}
           onAddCliClick={(paneId) => {
-            handleFocusPane(paneId);
+            creationTarget.current = paneId;
+            setError(null);
             setPicker(true);
           }}
           onAddTerminalClick={(paneId) => {
-            handleFocusPane(paneId);
-            void add('terminal');
+            void add('terminal', paneId);
           }}
           onAddWebTabClick={(paneId) => {
-            handleFocusPane(paneId);
+            creationTarget.current = paneId;
             webEditor('create');
           }}
           onRenameTab={async (tab, title) => {
@@ -612,6 +690,8 @@ export function AgencyWorkspaceView({
           onStartAgain={(session) => void startAgain(session)}
         />
       </div>
+
+      </PaneMovement>
 
       {(picker || closing || webDialog) && (
         <div className="agency-modal-backdrop">
@@ -732,7 +812,6 @@ export function AgencyWorkspaceView({
             )}
 
             {error && <p role="alert" className="agency-error">{error}</p>}
-
             <div className="agency-dialog-actions">
               <button
                 type="button"

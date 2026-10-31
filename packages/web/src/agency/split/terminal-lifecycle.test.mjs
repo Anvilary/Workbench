@@ -177,6 +177,9 @@ test('live terminals keep scrollback, selection and the PTY attachment across sw
   assert.deepEqual(initial.detaches, []);
   assert.equal(initial.disposed, 0);
 
+  // Let the initial 60ms ResizeObserver fit settle before simulating a user scroll.
+  // During that fit TerminalView intentionally ignores transient scroll events.
+  await page.waitForTimeout(100);
   const before = await page.evaluate(async (id) => {
     const term = window.terminals.find((item) => item.element?.closest('#pane-' + id));
     const lines = Array.from({ length: 40 }, (_, index) => 'LINE-' + String(index).padStart(2, '0')).join('\r\n') + '\r\n';
