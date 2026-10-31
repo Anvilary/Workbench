@@ -13,6 +13,7 @@ import { t } from '../i18n/index.js';
 import { AgencyProfileDialog } from './AgencyProfileDialog.js';
 import { allWorkspaceTabs, canLaunchAgent, selectedWorkspaceTab, type AgencyTransport, type WorkspaceTab } from './model.js';
 import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
+import { PersistentSessionPanes } from './split/PersistentSessionPanes.js';
 import { SplitPaneTree } from './split/SplitPaneTree.js';
 import type { useAgencyStore } from './useAgencyStore.js';
 
@@ -81,6 +82,15 @@ export function AgencyWorkspaceView({
   const [busy, setBusy] = useState(false);
   const [displayed, setDisplayed] = useState<string | null>(null);
   const flight = useRef(false);
+  const paneHosts = useRef(new Map<string, HTMLElement>());
+  const [hostVersion, setHostVersion] = useState(0);
+  const registerPaneHost = useCallback((paneId: string, element: HTMLElement | null) => {
+    const current = paneHosts.current.get(paneId) ?? null;
+    if (current === element) return;
+    if (element) paneHosts.current.set(paneId, element);
+    else paneHosts.current.delete(paneId);
+    setHostVersion((version) => version + 1);
+  }, []);
   const acknowledged = useRef(new Set<string>());
   const dialog = useRef<HTMLDivElement | null>(null);
   const saveTimer = useRef<number | null>(null);
@@ -538,11 +548,9 @@ export function AgencyWorkspaceView({
           layout={layout}
           tabs={tabs}
           profiles={profiles}
-          connection={connection}
           online={online}
           busy={busy}
           request={request}
-          sendImmediate={sendImmediate}
           reportError={setError}
           getTabActivity={getTabActivity}
           onSelectTab={handleSelectTab}
@@ -578,10 +586,25 @@ export function AgencyWorkspaceView({
                 : { type: 'agency.tab.rename', workspaceId: workspace.id, tabId: tab.id, name: title },
             );
           }}
-          onStartAgain={(session) => void startAgain(session)}
-          onConfigure={setConfiguringProfile}
           onFocusPane={handleFocusPane}
           onTabDisplayed={reportDisplayed}
+          onPaneHost={registerPaneHost}
+        />
+        <PersistentSessionPanes
+          tabs={tabs}
+          layout={layout}
+          paneHosts={paneHosts}
+          hostVersion={hostVersion}
+          profiles={profiles}
+          connection={connection}
+          online={online}
+          busy={busy}
+          request={request}
+          sendImmediate={sendImmediate}
+          report={setError}
+          onDisplayed={reportDisplayed}
+          onConfigure={setConfiguringProfile}
+          onStartAgain={(session) => void startAgain(session)}
         />
       </div>
 

@@ -1042,6 +1042,21 @@
   display: flex;
 }
 
+/* Stable terminal holders. Hidden ones stay mounted so xterm is not disposed. */
+.maw-session-holder {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+.maw-session-holder[hidden] {
+  display: none !important;
+}
+.maw-terminal-park {
+  display: none !important;
+}
+
 /* Split Dividers */
 .maw-split-divider {
   position: relative;

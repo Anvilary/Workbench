@@ -157,6 +157,7 @@ export function SessionPane({
   return (
     <div
       className="maw-session-pane"
+      hidden={!active}
       role="tabpanel"
       id={'pane-' + session.tab?.id}
       aria-labelledby={'tab-' + session.tab?.id}

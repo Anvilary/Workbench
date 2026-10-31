@@ -10,8 +10,10 @@ import {
   reconcileLayout,
   createDefaultLayout,
   isWorkspacePaneLayout,
+  layoutOwnershipError,
   updateSplitRatio,
   type WorkspaceId,
+  type WorkspacePaneLayout,
 } from '@agent-workbench/shared';
 
 test('split layout: default single pane', () => {
@@ -97,6 +99,54 @@ test('split layout: update ratio clamps between 0.1 and 0.9', () => {
 
   const updatedValid = updateSplitRatio(tree2, splitId, 0.65);
   assert.equal((updatedValid as { ratio: number }).ratio, 0.65);
+});
+
+test('split layout: ownership rejects mismatched workspace, foreign tabs and duplicates', () => {
+  const ws = '11111111-1111-4111-8111-111111111111' as WorkspaceId;
+  const other = '22222222-2222-4222-8222-222222222222' as WorkspaceId;
+  const owned = createDefaultLayout(ws, ['tab-1', 'tab-2'], 'tab-1');
+  assert.equal(layoutOwnershipError(owned, ws, ['tab-1', 'tab-2']), null);
+
+  const mismatched = createDefaultLayout(other, ['tab-1'], 'tab-1');
+  assert.equal(
+    layoutOwnershipError(mismatched, ws, ['tab-1']),
+    'Layout workspace does not match the requested workspace',
+  );
+
+  const foreign = createDefaultLayout(ws, ['tab-from-other-workspace']);
+  assert.equal(
+    layoutOwnershipError(foreign, ws, ['tab-1']),
+    'Layout tab does not belong to the requested workspace',
+  );
+
+  const duplicatedTabs: WorkspacePaneLayout = {
+    ...owned,
+    tree: {
+      type: 'split',
+      id: 'split-1',
+      direction: 'row',
+      ratio: 0.5,
+      first: { type: 'pane', id: 'pane-1', tabIds: ['tab-1'], selectedTabId: 'tab-1' },
+      second: { type: 'pane', id: 'pane-2', tabIds: ['tab-1'], selectedTabId: 'tab-1' },
+    },
+  };
+  assert.equal(layoutOwnershipError(duplicatedTabs, ws, ['tab-1', 'tab-2']), 'Duplicate tab assignment');
+
+  const duplicatedPanes: WorkspacePaneLayout = {
+    ...owned,
+    tree: {
+      type: 'split',
+      id: 'split-1',
+      direction: 'row',
+      ratio: 0.5,
+      first: { type: 'pane', id: 'pane-1', tabIds: ['tab-1'], selectedTabId: 'tab-1' },
+      second: { type: 'pane', id: 'pane-1', tabIds: ['tab-2'], selectedTabId: 'tab-2' },
+    },
+  };
+  assert.equal(layoutOwnershipError(duplicatedPanes, ws, ['tab-1', 'tab-2']), 'Duplicate pane id');
+
+  const repeatedInPane = createDefaultLayout(ws, ['tab-1', 'tab-1']);
+  assert.equal(layoutOwnershipError(repeatedInPane, ws, ['tab-1']), 'Duplicate tab assignment');
 });
 
 test('split layout: reconcile handles deleted tabs, missing tabs, and malformed layouts', () => {

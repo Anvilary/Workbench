@@ -304,6 +304,54 @@ export function isLayoutNode(value: unknown): value is LayoutNode {
   return false;
 }
 
+/**
+ * Why a layout must not be stored for `openTabIds`' workspace.
+ * Returns null when the tree keeps this workspace's panes and existing tab ids.
+ * Does not allocate session ids or rewrite the layout.
+ */
+export function layoutOwnershipError(
+  layout: WorkspacePaneLayout,
+  workspaceId: WorkspaceId,
+  openTabIds: readonly string[],
+): string | null {
+  if (layout.workspaceId !== workspaceId) {
+    return 'Layout workspace does not match the requested workspace';
+  }
+  const open = new Set(openTabIds);
+  const seenNodeIds = new Set<string>();
+  const seenTabs = new Set<string>();
+  const paneIds = new Set<string>();
+
+  const walk = (node: LayoutNode): string | null => {
+    if (seenNodeIds.has(node.id)) return 'Duplicate pane id';
+    seenNodeIds.add(node.id);
+    if (node.type === 'split') {
+      return walk(node.first) ?? walk(node.second);
+    }
+    paneIds.add(node.id);
+    const local = new Set<string>();
+    for (const tabId of node.tabIds) {
+      if (local.has(tabId) || seenTabs.has(tabId)) return 'Duplicate tab assignment';
+      if (!open.has(tabId)) return 'Layout tab does not belong to the requested workspace';
+      local.add(tabId);
+      seenTabs.add(tabId);
+    }
+    if (node.selectedTabId !== null && !local.has(node.selectedTabId)) {
+      if (!open.has(node.selectedTabId)) return 'Layout tab does not belong to the requested workspace';
+      return 'Selected tab is not assigned to its pane';
+    }
+    return null;
+  };
+
+  const treeError = walk(layout.tree);
+  if (treeError) return treeError;
+  if (!paneIds.has(layout.focusedPaneId)) return 'Focused pane is not part of this layout';
+  if (layout.maximizedPaneId && !paneIds.has(layout.maximizedPaneId)) {
+    return 'Maximized pane is not part of this layout';
+  }
+  return null;
+}
+
 export function isWorkspacePaneLayout(value: unknown): value is WorkspacePaneLayout {
   if (!value || typeof value !== 'object') return false;
   const layout = value as Record<string, unknown>;

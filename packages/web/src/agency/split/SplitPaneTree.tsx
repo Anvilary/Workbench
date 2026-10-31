@@ -1,24 +1,42 @@
-import type { AgencyCliProfile, AgencyRuntimeSession, MawActivityState, SplitDirection } from '@agent-workbench/shared';
+import { useCallback, useRef, type ReactNode } from 'react';
+import type { AgencyCliProfile, MawActivityState, SplitDirection } from '@agent-workbench/shared';
 import { countLeaves, type LayoutNode, type WorkspacePaneLayout } from '@agent-workbench/shared';
-import type { AgentConnection } from '../../connection.js';
 import { t } from '../../i18n/index.js';
-import type { AgencyTransport, WorkspaceTab } from '../model.js';
+import type { WorkspaceTab } from '../model.js';
 import { NativeChatGptView } from '../NativeChatGptView.js';
 import type { useAgencyStore } from '../useAgencyStore.js';
 import { PaneHeader } from './PaneHeader.js';
-import { SessionPane } from './SessionPane.js';
 import { SplitDivider } from './SplitDivider.js';
+
+function PaneBody({
+  paneId,
+  onPaneHost,
+  children,
+}: {
+  paneId: string;
+  onPaneHost: (paneId: string, element: HTMLElement | null) => void;
+  children: ReactNode;
+}): JSX.Element {
+  const onPaneHostRef = useRef(onPaneHost);
+  onPaneHostRef.current = onPaneHost;
+  const ref = useCallback((element: HTMLDivElement | null) => {
+    onPaneHostRef.current(paneId, element);
+  }, [paneId]);
+  return (
+    <div className="maw-pane-body" ref={ref}>
+      {children}
+    </div>
+  );
+}
 
 interface Props {
   node: LayoutNode;
   layout: WorkspacePaneLayout;
   tabs: WorkspaceTab[];
   profiles: readonly AgencyCliProfile[];
-  connection: AgentConnection;
   online: boolean;
   busy: boolean;
   request: ReturnType<typeof useAgencyStore>['request'];
-  sendImmediate: AgencyTransport['sendImmediate'];
   reportError: (err: string) => void;
   getTabActivity?: (workspaceId: import('@agent-workbench/shared').WorkspaceId, tabId: string) => MawActivityState;
   onSelectTab: (paneId: string, tabId: string) => void;
@@ -32,14 +50,13 @@ interface Props {
   onAddTerminalClick: (paneId: string) => void;
   onAddWebTabClick: (paneId: string) => void;
   onRenameTab: (tab: WorkspaceTab, title: string) => Promise<void>;
-  onStartAgain: (session: AgencyRuntimeSession) => void;
-  onConfigure: (profile: AgencyCliProfile) => void;
   onFocusPane: (paneId: string) => void;
   onTabDisplayed: (id: string, ready: boolean) => void;
+  onPaneHost: (paneId: string, element: HTMLElement | null) => void;
 }
 
 export function SplitPaneTree(props: Props): JSX.Element {
-  const { node, layout, tabs, profiles, connection, online, busy, request, sendImmediate, reportError, getTabActivity, onSelectTab, onCloseTab, onSplit, onClosePane, onToggleMaximize, onUpdateRatio, onMoveTabToPane, onAddCliClick, onAddTerminalClick, onAddWebTabClick, onRenameTab, onStartAgain, onConfigure, onFocusPane, onTabDisplayed } = props;
+  const { node, layout, tabs, profiles, online, busy, request, reportError, getTabActivity, onSelectTab, onCloseTab, onSplit, onClosePane, onToggleMaximize, onUpdateRatio, onMoveTabToPane, onAddCliClick, onAddTerminalClick, onAddWebTabClick, onRenameTab, onFocusPane, onTabDisplayed, onPaneHost } = props;
 
   const totalLeaves = countLeaves(layout.tree);
   const canSplit = totalLeaves < 4;
@@ -139,32 +156,14 @@ export function SplitPaneTree(props: Props): JSX.Element {
         reportError={reportError}
       />
 
-      <div className="maw-pane-body">
-        {selectedTab ? (
-          selectedTab.kind === 'native' ? (
-            <SessionPane
-              session={selectedTab.session}
-              active={true}
-              focusTerminal={isFocused}
-              connection={connection}
-              online={online}
-              request={request}
-              sendImmediate={sendImmediate}
-              report={reportError}
-              onDisplayed={onTabDisplayed}
-              profile={selectedTab.session.kind === 'agent' ? profiles.find((p) => p.id === selectedTab.session.profileId) : undefined}
-              busy={busy}
-              onConfigure={onConfigure}
-              onStartAgain={onStartAgain}
-            />
-          ) : (
-            <NativeChatGptView
-              key={selectedTab.id}
-              tab={selectedTab.web}
-              onDisplayed={onTabDisplayed}
-            />
-          )
-        ) : (
+      <PaneBody paneId={node.id} onPaneHost={onPaneHost}>
+        {selectedTab?.kind === 'web' ? (
+          <NativeChatGptView
+            key={selectedTab.id}
+            tab={selectedTab.web}
+            onDisplayed={onTabDisplayed}
+          />
+        ) : selectedTab ? null : (
           <div className="agency-shell-placeholder">
             <p>{tabs.length ? t('agency.web.selectTab') : t('agency.tabs.empty')}</p>
             <button
@@ -177,7 +176,7 @@ export function SplitPaneTree(props: Props): JSX.Element {
             </button>
           </div>
         )}
-      </div>
+      </PaneBody>
 
       {canSplit && (
         <>
