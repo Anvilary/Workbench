@@ -11,6 +11,7 @@ import type {
 import { DirectoryPickers, DirectoryPickerError } from '../directory-picker.js';
 import { AgencyWorkspaceStore, AgencyStoreError, type HasBlockingWorkspaceSessions } from './store.js';
 import { AgencyRuntimeError } from './agency-session-runtime.js';
+import { BrowserTabStoreError } from './browser-tabs/browser-tab-store.js';
 
 type DomainType =
   | 'agency.projects.list' | 'agency.project.create' | 'agency.project.update' | 'agency.project.delete'
@@ -198,6 +199,9 @@ export async function handleAgencyDomainRequest(
       code = error.code;
       message = error.message;
     } else if (error instanceof AgencyRuntimeError) {
+      code = error.code;
+      message = error.message;
+    } else if (error instanceof BrowserTabStoreError) {
       code = error.code;
       message = error.message;
     } else if (error instanceof DirectoryPickerError) {

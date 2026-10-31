@@ -34,7 +34,7 @@ export class BrowserTabAdapter {
   }
   setWorkspaceValidator(validator: WorkspaceValidator): void { this.workspaceValidator = validator; }
   setSelectionCoordinator(coordinator: SelectionCoordinator): void { this.selectionCoordinator = coordinator; }
-  private async assertWorkspaceValid(workspaceId: WorkspaceId): Promise<void> {
+  private async assertWorkspaceValid(workspaceId: WorkspaceId, options?: { allowInactiveWorkspace?: boolean }): Promise<void> {
     if (typeof workspaceId !== 'string' || !UUID_RE.test(workspaceId)) {
       throw new BrowserTabStoreError('invalid-request', 'Invalid workspace ID format');
     }
@@ -44,18 +44,22 @@ export class BrowserTabAdapter {
       if (!ws) {
         throw new BrowserTabStoreError('not-found', `Workspace ${workspaceId} does not exist`);
       }
-      if (ws.status === 'archived' || ws.archivedAt != null) {
-        throw new BrowserTabStoreError('conflict', `Workspace ${workspaceId} is archived`);
-      }
-      if (ws.status === 'done' || ws.doneAt != null) {
-        throw new BrowserTabStoreError('conflict', `Workspace ${workspaceId} is marked done`);
+      if (!options?.allowInactiveWorkspace) {
+        if (ws.status === 'archived' || ws.archivedAt != null) {
+          throw new BrowserTabStoreError('conflict', `Workspace ${workspaceId} is archived`);
+        }
+        if (ws.status === 'done' || ws.doneAt != null) {
+          throw new BrowserTabStoreError('conflict', `Workspace ${workspaceId} is marked done`);
+        }
       }
       const proj = this.workspaceStore.listProjects().find((p) => p.id === ws.projectId);
       if (!proj) {
         throw new BrowserTabStoreError('not-found', `Owning project for workspace ${workspaceId} not found`);
       }
-      if (proj.status === 'archived' || proj.archivedAt != null) {
-        throw new BrowserTabStoreError('conflict', `Owning project for workspace ${workspaceId} is archived`);
+      if (!options?.allowInactiveWorkspace) {
+        if (proj.status === 'archived' || proj.archivedAt != null) {
+          throw new BrowserTabStoreError('conflict', `Owning project for workspace ${workspaceId} is archived`);
+        }
       }
     } else if (this.workspaceValidator) {
       const res = await this.workspaceValidator(workspaceId);
@@ -63,10 +67,12 @@ export class BrowserTabAdapter {
         const isConflict =
           res.error?.toLowerCase().includes('archived') ||
           res.error?.toLowerCase().includes('done');
-        throw new BrowserTabStoreError(
-          isConflict ? 'conflict' : 'not-found',
-          res.error ?? `Workspace ${workspaceId} is not valid`,
-        );
+        if (!options?.allowInactiveWorkspace || !isConflict) {
+          throw new BrowserTabStoreError(
+            isConflict ? 'conflict' : 'not-found',
+            res.error ?? `Workspace ${workspaceId} is not valid`,
+          );
+        }
       }
     } else if (!this.allowUnvalidatedWorkspacesForTesting) {
       throw new BrowserTabStoreError(
@@ -91,9 +97,9 @@ export class BrowserTabAdapter {
     if (!tab || tab.workspaceId !== workspaceId || tab.closedAt) throw new BrowserTabStoreError('not-found', 'Open tab does not belong to this workspace');
     return tab;
   }
-  private async change<T>(workspaceId: WorkspaceId, action: () => T | Promise<T>): Promise<T> {
+  private async change<T>(workspaceId: WorkspaceId, action: () => T | Promise<T>, options?: { allowInactiveWorkspace?: boolean }): Promise<T> {
     return this.mutations.runExclusive(workspaceId, async () => {
-      await this.assertWorkspaceValid(workspaceId);
+      await this.assertWorkspaceValid(workspaceId, options);
       const before = this.listTabs(workspaceId, { includeClosed: true });
       try {
         const result = await action();
@@ -161,7 +167,7 @@ export class BrowserTabAdapter {
       return this.listTabs(workspaceId);
     });
   }
-  async closeTab(workspaceId: WorkspaceId, tabId: string): Promise<WebTab> {
+  async closeTab(workspaceId: WorkspaceId, tabId: string, options?: { allowInactiveWorkspace?: boolean }): Promise<WebTab> {
     return this.change(workspaceId, () => {
       const tab = this.tab(workspaceId, tabId), selected = tab.selected;
       tab.closedAt = tab.updatedAt = new Date().toISOString(); tab.selected = false; tab.runtimeState = 'closed';
@@ -172,10 +178,10 @@ export class BrowserTabAdapter {
         if (next) this.tabs.get(next.id)!.selected = true;
       }
       return { ...tab };
-    });
+    }, options);
   }
-  async clearWorkspaceSelection(workspaceId: WorkspaceId): Promise<void> {
-    await this.change(workspaceId, () => { for (const tab of this.tabs.values()) if (tab.workspaceId === workspaceId && tab.selected) { tab.selected = false; tab.updatedAt = new Date().toISOString(); } });
+  async clearWorkspaceSelection(workspaceId: WorkspaceId, options?: { allowInactiveWorkspace?: boolean }): Promise<void> {
+    await this.change(workspaceId, () => { for (const tab of this.tabs.values()) if (tab.workspaceId === workspaceId && tab.selected) { tab.selected = false; tab.updatedAt = new Date().toISOString(); } }, options);
   }
   async flush(): Promise<void> { await this.store.flush(); }
 }
