@@ -7,3 +7,7 @@ packages:
 allowBuilds:
   node-pty: true
   esbuild: true
+  electron: true
+
+minimumReleaseAgeExclude:
+  - electron@45.2.0

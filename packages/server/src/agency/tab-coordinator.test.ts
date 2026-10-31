@@ -11,7 +11,7 @@ import { AgencySessionRuntime } from './agency-session-runtime.js';
 import { AgencySessionStore } from './agency-session-store.js';
 import { AgencyWorkspaceStore } from './store.js';
 import { WorkspaceMutex } from './workspace-lock.js';
-import { BrowserTabAdapter, BrowserTabStore, MemoryBrowserControllerDriver } from './browser-tabs/index.js';
+import { BrowserTabAdapter, BrowserTabStore } from './browser-tabs/index.js';
 import { AgencyTabCoordinator } from './tab-coordinator.js';
 
 test('real domain coordinator serializes mixed selection and order without closing browser targets', async t => {
@@ -39,8 +39,8 @@ test('real domain coordinator serializes mixed selection and order without closi
     workspaces: { protectedDirectories: () => [], withSessionReservation: (id, work) => lock.runExclusive(id, () => work(workspaceStore.getWorkspace(id))) },
   });
   await native.initialize(); t.after(() => native.dispose());
-  const driver = new MemoryBrowserControllerDriver();
-  const browser = new BrowserTabAdapter({ store: new BrowserTabStore(path.join(root, 'web.json')), driver, workspaceStore });
+
+  const browser = new BrowserTabAdapter({ store: new BrowserTabStore(path.join(root, 'web.json')), workspaceStore });
   await browser.restore();
   const messages: AgencyServerMessage[] = [];
   const coordinator = new AgencyTabCoordinator(native, browser, workspaceStore, message => messages.push(message));
@@ -51,7 +51,6 @@ test('real domain coordinator serializes mixed selection and order without closi
     url: 'https://chatgpt.com/', launchId: 'web-once' };
   const results = await Promise.all([coordinator.webRequest(create), coordinator.webRequest(create)]);
   assert.equal(browser.listTabs().length, 1);
-  assert.equal(driver.getTargetCount(), 1);
   assert.equal(results[0]?.type, 'agency.webTab.created');
   const web = browser.listTabs()[0]!;
   assert.equal(native.get(shell.id)?.tab?.selected, false);
@@ -59,7 +58,6 @@ test('real domain coordinator serializes mixed selection and order without closi
   await coordinator.nativeAction({ type: 'agency.tab.action', requestId: 'select', workspaceId: workspace.id, tabId: shell.tab.id, action: 'select' });
   assert.equal(browser.getTabState(web.id)?.selected, false);
   assert.equal(native.get(shell.id)?.tab?.selected, true);
-  assert.equal(driver.getTargetCount(), 1);
   await coordinator.nativeAction({ type: 'agency.tabs.order', requestId: 'order', workspaceId: workspace.id, tabIds: [web.id, shell.tab.id] });
   assert.equal(browser.getTabState(web.id)?.order, 0);
   assert.equal(native.get(shell.id)?.tab?.order, 1);
@@ -85,10 +83,6 @@ test('real domain coordinator serializes mixed selection and order without closi
   assert.ok(messages.some(m => m.type === 'agency.sessions.snapshot'));
   assert.ok(messages.some(m => m.type === 'agency.webTabs.snapshot'), 'mixed selection still synchronizes both domains');
   messages.length = 0;
-  driver.failActivateTargets.add(web.targetRef!);
-  const failed = await coordinator.webRequest({ type: 'agency.webTab.select', requestId: 'failed-web', workspaceId: workspace.id, tabId: web.id });
-  assert.equal(failed?.type, 'agency.error');
-  assert.ok(messages.some(m => m.type === 'agency.webTabs.snapshot'), 'failed activation publishes its changed error state');
   await workspaceStore.markDone(workspace.id);
   assert.equal(coordinator.canInspect(workspace.id, shell.tab.id), false);
 });

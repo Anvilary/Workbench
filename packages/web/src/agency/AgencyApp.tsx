@@ -14,6 +14,7 @@ import { t } from '../i18n/index.js';
 import { useLocale } from '../i18n/useLocale.js';
 import './agency.css';
 import { useDropdownDismissal } from './useDropdownDismissal.js';
+import { useNativeChatGptTabs } from './useNativeChatGptTabs.js';
 
 const DRAFT_KEY = 'agency-ui.workspace-drafts.v1';
 const SIDEBAR_WIDTH_KEY = 'agency-ui.sidebar-width.v1';
@@ -76,6 +77,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   const agencyTransport = useMemo(() => createAgencyTransport(connection), [connection]);
   const store = useAgencyStore(agencyTransport, connection);
   const { data, loaded, online, synchronized, notice } = store;
+  useNativeChatGptTabs(data.webTabs, online && synchronized, store.request);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(readNotificationsEnabled);
@@ -213,24 +215,48 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   }
 
   function startSidebarResize(event: React.PointerEvent) {
+    if (event.button !== 0) return;
     event.preventDefault();
+    const resizerEl = event.currentTarget as HTMLElement;
+    const pointerId = event.pointerId;
+    try {
+      resizerEl.setPointerCapture(pointerId);
+    } catch {}
     setResizingSidebar(true);
+    let latestWidth = sidebarWidth;
+
     const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerId !== pointerId) return;
       const clamped = Math.max(180, Math.min(500, e.clientX));
+      latestWidth = clamped;
       setSidebarWidth(clamped);
     };
-    const onPointerUp = (e: PointerEvent) => {
+
+    const cleanup = () => {
       window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-      setResizingSidebar(false);
-      const clamped = Math.max(180, Math.min(500, e.clientX));
-      setSidebarWidth(clamped);
+      window.removeEventListener('pointerup', onPointerEnd);
+      window.removeEventListener('pointercancel', onPointerEnd);
+      window.removeEventListener('blur', onPointerEnd);
       try {
-        localStorage.setItem(SIDEBAR_WIDTH_KEY, clamped.toString());
+        if (resizerEl.hasPointerCapture(pointerId)) {
+          resizerEl.releasePointerCapture(pointerId);
+        }
+      } catch {}
+      setResizingSidebar(false);
+      try {
+        localStorage.setItem(SIDEBAR_WIDTH_KEY, latestWidth.toString());
       } catch {}
     };
+
+    const onPointerEnd = (e: Event) => {
+      if ('pointerId' in e && (e as PointerEvent).pointerId !== pointerId) return;
+      cleanup();
+    };
+
     window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointerup', onPointerEnd);
+    window.addEventListener('pointercancel', onPointerEnd);
+    window.addEventListener('blur', onPointerEnd);
   }
 
   async function markDone(workspace: AgencyWorkspace) {
@@ -255,9 +281,16 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
     setError(null);
     try {
       const answer = await store.deleteWorkspace(workspace.id);
-      if (answer.type !== 'agency.workspace.deleted') throw new Error(t('agency.errors.internalError'));
+      if (answer.type !== 'agency.workspace.deleted') {
+        const msg = answer.type === 'agency.error' ? answer.message : t('agency.errors.internalError');
+        throw new Error(msg);
+      }
       if (selectedId === workspace.id) setSelectedId(null);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.errors.internalError')); }
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : t('agency.errors.internalError');
+      setError(message);
+      throw reason;
+    }
   }
 
   async function renameProject(project: AgencyProject, newName: string) {
@@ -313,6 +346,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
               projects={data.projects}
               workspaces={data.workspaces}
               sessions={data.sessions}
+              webTabs={data.webTabs}
               selected={selectedId}
               showingDone={showingDone}
               onSelect={(id) => { setSelectedId(id); setShowingDone(false); }}
@@ -320,7 +354,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
               onCreateProject={() => setCreatingProject(true)}
               onDone={(ws) => { void markDone(ws); }}
               onArchiveWorkspace={(ws) => { void archiveWorkspace(ws); }}
-              onDeleteWorkspace={(ws) => { void deleteWorkspace(ws); }}
+              onDeleteWorkspace={deleteWorkspace}
               onRenameProject={(p, n) => { void renameProject(p, n); }}
               onArchiveProject={(p) => { void archiveProject(p); }}
               onDeleteProject={(p) => { void deleteProject(p); }}
@@ -476,9 +510,11 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
           <AgencyDoneView
             workspaces={data.workspaces}
             projects={data.projects}
+            sessions={data.sessions}
+            webTabs={data.webTabs}
             onRestore={(ws) => { void restore(ws); }}
             onArchiveWorkspace={(ws) => { void archiveWorkspace(ws); }}
-            onDeleteWorkspace={(ws) => { void deleteWorkspace(ws); }}
+            onDeleteWorkspace={deleteWorkspace}
           />
         ) : selected ? (
           <AgencyWorkspaceView

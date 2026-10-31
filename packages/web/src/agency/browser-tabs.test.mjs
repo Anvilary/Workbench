@@ -6,19 +6,6 @@ import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
-import { hasLiveVideo, isNekoViewerUrl } from './viewer-model.ts';
-
-const origin = 'http://127.0.0.1:3000';
-test('Only the authenticated Neko entry with exact tab identity can be embedded', () => {
-  assert.equal(isNekoViewerUrl('/api/agency/browser/viewer/', origin), true);
-  assert.equal(isNekoViewerUrl('/api/agency/browser/viewer/?workspaceId=w&tabId=t', origin, 'w', 't'), true);
-  for (const value of ['https://chatgpt.com/', '//other.test/api/agency/browser/viewer/', '/api/agency/browser/viewer/?token=secret', '/api/agency/browser/viewer/?workspaceId=w&tabId=other', '/api/agency/browser/viewer/?workspaceId=w&tabId=t&password=secret']) {
-    assert.equal(isNekoViewerUrl(value, origin, 'w', 't'), false, value);
-  }
-  const video = { readyState: 2, videoWidth: 640, videoHeight: 480, paused: false, ended: false };
-  assert.equal(hasLiveVideo(video), true);
-  for (const change of [{ readyState: 1 }, { paused: true }, { ended: true }, { videoWidth: 0 }, { videoHeight: 0 }]) assert.equal(hasLiveVideo({ ...video, ...change }), false);
-});
 
 const fixture = `
 import React from 'react';
@@ -75,10 +62,6 @@ localStorage.setItem('agency-ui.selected-workspace.v1',ws);
 createRoot(document.getElementById('root')).render(<AgencyApp connection={connection}/>);
 `;
 
-const mediaPage = `<!doctype html><video autoplay muted playsinline></video><script>
-window.startMedia=async()=>{const canvas=document.createElement('canvas');canvas.width=640;canvas.height=480;const context=canvas.getContext('2d');let i=0;setInterval(()=>{context.fillStyle=i++%2?'blue':'red';context.fillRect(0,0,640,480)},80);const video=document.querySelector('video');video.srcObject=canvas.captureStream(10);await video.play();const params=new URLSearchParams(location.search);parent.postMessage({type:'agency.browser.viewer.ready',workspaceId:params.get('workspaceId'),tabId:params.get('tabId')},location.origin);};
-</script>`;
-
 function browserExecutable() {
   if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE) return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
   if (existsSync(chromium.executablePath())) return chromium.executablePath();
@@ -93,7 +76,7 @@ function browserExecutable() {
   return undefined;
 }
 
-test('Actual Agency UI preserves native input and delays web inspection until selected live media', { timeout: 60000 }, async t => {
+test('Browser compatibility preserves CLI input, mixed tabs and external ChatGPT fallback', { timeout: 60000 }, async t => {
   const executablePath = browserExecutable();
   if (!executablePath) { t.skip('Chromium is not installed; set PLAYWRIGHT_CHROMIUM_EXECUTABLE'); return; }
   const bundle = await build({ stdin: { contents: fixture, loader: 'tsx', resolveDir: process.cwd() + '/packages/web' }, bundle: true, write: false, format: 'esm', jsx: 'automatic', loader: { '.css': 'empty' }, logLevel: 'silent' });
@@ -101,10 +84,7 @@ test('Actual Agency UI preserves native input and delays web inspection until se
     const url = new URL(req.url, 'http://localhost');
     res.setHeader('Cache-Control', 'no-store');
     if (url.pathname === '/bundle.js') { res.setHeader('Content-Type', 'text/javascript'); res.end(bundle.outputFiles[0].text); }
-    else if (url.pathname === '/api/agency/browser/viewer/status') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ configured:true, ready:true, url:'/api/agency/browser/viewer/' })); }
-    else if (url.pathname === '/api/agency/browser/viewer') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ url:'/api/agency/browser/viewer/' + url.search, workspaceId:url.searchParams.get('workspaceId'), tabId:url.searchParams.get('tabId') })); }
-    else if (url.pathname === '/api/agency/browser/viewer/') { res.setHeader('Content-Type', 'text/html'); res.end(mediaPage); }
-    else { res.setHeader('Content-Type', 'text/html'); res.end('<html lang="en"><style>html,body,#root{height:100%;margin:0}.agency-app{display:flex;height:100%}.agency-main{flex:1;min-width:0}.agency-sidebar{width:240px}.maw-session-content{height:600px}.maw-session-pane{height:100%}.maw-session-pane[hidden]{display:none}.agency-agent-body,.agency-xterm-host,.terminal{height:500px}.maw-neko-frame{height:400px;width:100%}.maw-browser-viewer{height:450px}</style><div id="root"></div><script type="module" src="/bundle.js"></script></html>'); }
+    else { res.setHeader('Content-Type', 'text/html'); res.end('<html lang="en"><style>html,body,#root{height:100%;margin:0}.agency-app{display:flex;height:100%}.agency-main{flex:1;min-width:0}.agency-sidebar{width:240px}.maw-session-content{height:600px}.maw-session-pane{height:100%}.maw-session-pane[hidden]{display:none}.agency-agent-body,.agency-xterm-host,.terminal{height:500px}.maw-browser-viewer{height:450px}</style><div id="root"></div><script type="module" src="/bundle.js"></script></html>'); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ headless:true, executablePath });
@@ -121,29 +101,13 @@ test('Actual Agency UI preserves native input and delays web inspection until se
   await page.getByRole('article').filter({hasText:'Research'}).click();
   await page.getByRole('alert').filter({hasText:'Session is unavailable'}).waitFor();
   assert.equal(await page.evaluate(() => window.agencyTest.requests.filter(m=>m.type==='agency.tab.acknowledge'||m.type==='agency.notification.markRead').length),0);
-  await page.evaluate(() => {window.agencyTest.failSelect=false;window.agencyTest.failActivationOnce=true;});
+  await page.evaluate(() => {window.agencyTest.failSelect=false;});
   await page.getByRole('article').filter({hasText:'Research'}).click();
-  await page.getByText('Browser viewer is unavailable. Try reconnecting.',{exact:true}).first().waitFor();
-  assert.equal(await page.locator('iframe').count(),0,'failed target reactivation gates the shared display');
-  await page.getByRole('button',{name:'Reconnect viewer',exact:true}).click();
-  await page.locator('iframe').waitFor();
-  assert.equal(await page.locator('iframe').count(),1);
-  assert.equal(await page.getByRole('tab', {name:'Research'}).getAttribute('aria-selected'),'true');
-  await page.waitForTimeout(650);
-  assert.equal(await page.evaluate(() => window.agencyTest.requests.filter(m=>m.type==='agency.tab.acknowledge'||m.type==='agency.notification.markRead').length),0,'iframe load is not inspection');
-  await page.evaluate(() => window.postMessage({type:'agency.browser.viewer.ready',workspaceId:'11111111-1111-4111-8111-111111111111',tabId:'44444444-4444-4444-8444-444444444444'},location.origin));
-  await page.waitForTimeout(300);
-  assert.equal(await page.evaluate(() => window.agencyTest.requests.filter(m=>m.type==='agency.tab.acknowledge').length),0,'parent message cannot spoof iframe source');
-  const frame = page.frames().find(frame => frame.url().includes('/api/agency/browser/viewer/'));
-  await frame.waitForFunction(() => typeof window.startMedia==='function');
-  await frame.evaluate(() => window.startMedia());
-  await page.waitForFunction(() => window.agencyTest.requests.some(m=>m.type==='agency.tab.acknowledge') && window.agencyTest.requests.some(m=>m.type==='agency.notification.markRead'));
-  const reads=await page.evaluate(()=>window.agencyTest.requests.filter(m=>m.type==='agency.notification.markRead'));
-  assert.equal(reads[0].notificationId,'55555555-5555-4555-8555-555555555555');
-  await page.getByRole('button',{name:'Rename tab',exact:true}).click();
+  await page.getByRole('link',{name:'Open ChatGPT',exact:true}).waitFor();
+  assert.equal(await page.locator('iframe').count(),0);
+  assert.equal(await page.evaluate(() => window.agencyTest.requests.filter(m=>m.type==='agency.tab.acknowledge'||m.type==='agency.notification.markRead').length),0,'an external link is not evidence of viewing a conversation');
+  await page.getByRole('tab',{name:'Research'}).press('F2');
   await page.getByLabel('Tab title',{exact:true}).fill('Renamed research');
-  await frame.evaluate(()=>{const input=document.createElement('input');document.body.append(input);input.focus();});
-  await page.waitForFunction(()=>document.activeElement?.classList.contains('maw-tab-name-input'));
   await page.getByLabel('Tab title',{exact:true}).press('Enter');
   await page.getByRole('tab',{name:'Renamed research'}).waitFor();
   await page.getByRole('tab',{name:'Renamed research'}).press('Alt+ArrowLeft');

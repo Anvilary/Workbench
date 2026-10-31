@@ -29,3 +29,6 @@ Thumbs.db
 /agent-workbench-brief.md
 /docs/
 /.worktreeinclude
+/.native-chatgpt-local/
+
+/dist-desktop/

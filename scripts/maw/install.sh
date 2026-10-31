@@ -19,6 +19,10 @@ node_bin="${MAW_NODE_BIN:-$(command -v node 2>/dev/null || true)}"
 mode="${1:---commands-only}"
 case "$mode" in
   --commands-only) ;;
+  --desktop)
+    [ -n "$node_bin" ] && [ -x "$node_bin" ] || { printf '%s\n' 'Node is required to build the desktop package.' >&2; exit 1; }
+    test -f "$repo_dir/packages/desktop/package.json" || { printf '%s\n' 'Desktop source is missing.' >&2; exit 1; }
+    ;;
   --service)
     test -f "$repo_dir/packages/server/src/maw-host.ts" || {
       printf '%s\n' 'Deploy the verified feature to the original repository before installing its service.' >&2
@@ -26,7 +30,7 @@ case "$mode" in
     }
     [ -n "$node_bin" ] && [ -x "$node_bin" ] || { printf '%s\n' 'node not found; set MAW_NODE_BIN.' >&2; exit 1; }
     ;;
-  *) printf '%s\n' 'Usage: install.sh [--commands-only|--service]' >&2; exit 2 ;;
+  *) printf '%s\n' 'Usage: install.sh [--commands-only|--service|--desktop]' >&2; exit 2 ;;
 esac
 
 install -d -m 700 "$lib_dir" "$state_dir" "$state_dir/releases"
@@ -35,12 +39,22 @@ install -d "$bin_dir"
 
 install -m 644 "$script_dir/maw-lib.sh" "$lib_dir/maw-lib.sh"
 install -m 644 "$script_dir/control.mjs" "$lib_dir/control.mjs"
+for desktop_file in service-readiness.mjs desktop-runtime.mjs desktop-launch.mjs; do
+  install -m 644 "$script_dir/$desktop_file" "$lib_dir/$desktop_file"
+done
+if [ -f "$repo_dir/packages/desktop/package.json" ]; then
+  desktop_target_version=$("$node_bin" -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1])).devDependencies.electron)' "$repo_dir/packages/desktop/package.json")
+  # Preserve a working bootstrap until the replacement package is installed.
+  [ -f "$lib_dir/desktop-runtime-version" ] || printf '%s' "$desktop_target_version" > "$lib_dir/desktop-runtime-version"
+fi
+
 install -m 755 "$script_dir/maw-update.sh" "$lib_dir/maw-update.sh"
 install -m 755 "$script_dir/maw-restart-helper.sh" "$lib_dir/maw-restart-helper.sh"
 install -m 755 "$script_dir/maw-render-unit.sh" "$lib_dir/maw-render-unit.sh"
 install -m 644 "$script_dir/maw.service" "$lib_dir/maw.service"
 install -m 755 "$script_dir/maw" "$lib_dir/maw"
 install -m 755 "$script_dir/maw" "$bin_dir/maw"
+printf '1\n' > "$lib_dir/desktop-launcher-api"
 
 if [ "$mode" = --service ]; then
   install -d "$unit_dir"
@@ -73,4 +87,23 @@ if [ "$mode" = --service ]; then
   . "$script_dir/maw-lib.sh"
   maw_sctl daemon-reload
   printf '%s\n' 'Service installed but not enabled or started. Start and verify it with: maw start'
+fi
+
+if [ "$mode" = --desktop ]; then
+  "$node_bin" "$script_dir/build-desktop-deb.mjs"
+  desktop_version="$desktop_target_version"
+  desktop_arch=$(dpkg --print-architecture)
+  sudo apt-get install "$repo_dir/dist-desktop/maw-electron-${desktop_version}_${desktop_arch}.deb"
+  printf '%s' "$desktop_target_version" > "$lib_dir/desktop-runtime-version.tmp"
+  mv -f "$lib_dir/desktop-runtime-version.tmp" "$lib_dir/desktop-runtime-version"
+  desktop_apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+  install -d "$desktop_apps"
+  # Desktop Exec uses quoted absolute paths, independent of the graphical PATH.
+  "$node_bin" -e '
+    const fs=require("fs"); const command=process.argv[1];
+    if (/[\n\r]/.test(command)) throw Error("Invalid launcher path");
+    const escaped=command.replace(/([\\"`$])/g,"\\$1").replace(/%/g,"%%");
+    fs.writeFileSync(process.argv[2], `[Desktop Entry]\nType=Application\nName=My Amazing Workspace\nExec="${escaped}" desktop\nTerminal=false\nCategories=Development;\n`);
+  ' "$bin_dir/maw" "$desktop_apps/maw.desktop"
+  printf '%s\n' 'Desktop installed. Start the existing service with maw start if needed, then launch: maw desktop'
 fi

@@ -11,7 +11,6 @@ import { handleWebTabMessage } from './browser-tabs/web-tab-handler.js';
  */
 export class AgencyTabCoordinator {
   readonly mutations = new WorkspaceMutex();
-  private readonly browserSurface = new WorkspaceMutex();
   private lastNativeSnapshot: string | undefined;
   private lastBrowserSnapshot: string | undefined;
 
@@ -29,7 +28,7 @@ export class AgencyTabCoordinator {
   }
 
   hasBrowserReferences(workspaceId: WorkspaceId): boolean {
-    return this.browser.listTabs(workspaceId, { includeClosed: true }).some(tab => !tab.closedAt || tab.cleanupRequired);
+    return this.browser.listTabs(workspaceId, { includeClosed: true }).some(tab => !tab.closedAt);
   }
 
   canInspect(workspaceId: WorkspaceId, tabId: string): boolean {
@@ -37,7 +36,7 @@ export class AgencyTabCoordinator {
     if (!workspace || workspace.status !== 'active' ||
         !this.workspaces.listProjects().some(project => project.id === workspace.projectId && project.status !== 'archived')) return false;
     const web = this.browser.getTabState(tabId);
-    if (web) return web.workspaceId === workspaceId && !web.closedAt && web.selected && web.runtimeState === 'ready' && !!web.targetRef;
+    if (web) return web.workspaceId === workspaceId && !web.closedAt && web.selected && web.runtimeState === 'client-managed';
     return this.openNative(workspaceId).some(session => session.tab?.id === tabId && session.tab.selected);
   }
 
@@ -135,6 +134,57 @@ export class AgencyTabCoordinator {
       } finally { if (message.type !== 'agency.webTabs.list') this.snapshot(); }
     };
     return 'workspaceId' in message && message.workspaceId
-      ? this.mutations.runExclusive(message.workspaceId, () => this.browserSurface.runExclusive('display', execute)) : execute();
+      ? this.mutations.runExclusive(message.workspaceId, execute) : execute();
+  }
+
+  /**
+   * Controlled, authenticated shutdown of all native processes, session tabs, and
+   * ChatGPT web tabs for a workspace prior to deleting the workspace record.
+   */
+  async shutdownWorkspace(workspaceId: WorkspaceId, terminationDeadlineMs = 5000): Promise<void> {
+    const ws = this.workspaces.getWorkspace(workspaceId);
+    if (!ws) return;
+
+    // 1. Request graceful shutdown of all active processes belonging to this workspace.
+    const sessions = this.native.list(workspaceId);
+    for (const session of sessions) {
+      if (['starting', 'running', 'stopping'].includes(session.lifecycle)) {
+        await this.native.stop(session.id).catch(() => undefined);
+      }
+    }
+
+    // 2. Bounded wait for process termination verification.
+    const deadline = Date.now() + terminationDeadlineMs;
+    while (this.native.list(workspaceId).some(s => ['starting', 'running', 'stopping'].includes(s.lifecycle))) {
+      if (Date.now() >= deadline) {
+        throw new AgencyRuntimeError('session-unavailable', 'Process termination could not be verified within deadline; workspace deletion aborted');
+      }
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+
+    // 3. Close each workspace-owned logical session tab through existing supported lifecycle.
+    for (const session of this.native.list(workspaceId)) {
+      if (session.tab?.current && !session.tab.closedAt) {
+        await this.native.tabAction(workspaceId, session.tab.id, 'close');
+      }
+    }
+
+    // 4. Close all workspace-owned ChatGPT tabs through the browser-tab adapter.
+    // Authorized closure during workspace deletion permits inactive (done/archived) workspaces.
+    const webTabs = this.browser.listTabs(workspaceId, { includeClosed: false });
+    for (const tab of webTabs) {
+      await this.browser.closeTab(workspaceId, tab.id, { allowInactiveWorkspace: true });
+    }
+
+    // 5. Broadcast snapshots so clients and Electron reconcile/destroy native views.
+    this.snapshot();
+
+    // 6. Recheck blocking resources before final deletion.
+    if (this.native.hasWorkspaceReferences(workspaceId)) {
+      throw new AgencyRuntimeError('conflict', 'Native session references remain; workspace deletion aborted');
+    }
+    if (this.hasBrowserReferences(workspaceId)) {
+      throw new AgencyRuntimeError('conflict', 'Browser tab references remain; workspace deletion aborted');
+    }
   }
 }
