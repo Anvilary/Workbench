@@ -1,0 +1,766 @@
+{
+  "measuredOn": "2026-10-31",
+  "evidenceWrittenUtc": "2026-10-31T04:12:43Z",
+  "host": "Linux x86_64",
+  "electron": "45.2.0",
+  "chromiumSandbox": true,
+  "node": "v24.22.0",
+  "window": {
+    "contentWidth": 1440,
+    "contentHeight": 900,
+    "ozonePlatform": "x11"
+  },
+  "isolation": "Temporary HOME, XDG_* and MAW_DESKTOP_DATA_DIR under /tmp. Production userData and ~/.config/agent-workbench were not written. Config directory mtime stayed 1793411051.",
+  "server": "pnpm exec tsx src/index.ts --prod. The served UI is the compiled web build. Vite is not in this process tree.",
+  "pages": "Real https://chatgpt.com loads. Recorded hostname chatgpt.com, loading false, on a fresh profile (signed-out page). Query strings were not recorded.",
+  "method": "Three samples, one second apart, after each view count reported loading false. RSS is the sum of VmRSS from /proc/pid/status for every descendant, including processes whose smaps_rollup is unreadable. PSS is the sum of Pss from smaps_rollup only for processes where that file was readable. Electron main heap is process.memoryUsage() inside the Electron main process, sampled once after the three RSS samples. Backend V8 heap was not instrumented.",
+  "accounting": "Summed RSS counts a shared page in every process that maps it. It is a resident-set total, and it is larger than unique memory. Partial PSS covers only processes with a readable smaps_rollup. That partial PSS stays near 216 MiB as ChatGPT views are added, while the unreadable sandboxed children hold the added resident memory. Publish RSS for the full tree. Publish PSS only with the count of excluded processes. Keep the Electron tree and the backend tree separate.",
+  "classification": "Every Electron descendant is in the RSS sum. The chrome-sandbox child exposed --type=zygote. Other sandboxed children had a readable command line with no --type, so renderer, GPU, and utility roles are not assigned to individual PIDs. Processes with a null PSS are those sandboxed children. Their RSS is in smapsUnreadableRssKib.",
+  "views": {
+    "one-view": {
+      "visibleChatGptViews": 1,
+      "hosts": [
+        "chatgpt.com"
+      ],
+      "loading": [
+        false
+      ],
+      "electronTree": {
+        "samples": [
+          {
+            "processes": 9,
+            "rssKib": 947768,
+            "rssMissing": 0,
+            "pssKib": 221297,
+            "pssMissing": 4,
+            "swapKib": 0
+          },
+          {
+            "processes": 9,
+            "rssKib": 949624,
+            "rssMissing": 0,
+            "pssKib": 221773,
+            "pssMissing": 4,
+            "swapKib": 0
+          },
+          {
+            "processes": 9,
+            "rssKib": 951076,
+            "rssMissing": 0,
+            "pssKib": 221781,
+            "pssMissing": 4,
+            "swapKib": 0
+          }
+        ],
+        "rssKib": [
+          947768,
+          949624,
+          951076
+        ],
+        "rssMiB": [
+          925.555,
+          927.367,
+          928.785
+        ],
+        "pssKibPartial": [
+          221297,
+          221773,
+          221781
+        ],
+        "pssMiBPartial": [
+          216.11,
+          216.575,
+          216.583
+        ],
+        "pssMissing": 4,
+        "processes": 9,
+        "rssMissing": 0,
+        "swapKib": 0,
+        "smapsReadable": [
+          {
+            "comm": "electron",
+            "rssKib": 186132,
+            "pssKib": 87770,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 58380,
+            "pssKib": 13256,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 59328,
+            "pssKib": 10634,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 174568,
+            "pssKib": 74747,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 96596,
+            "pssKib": 35374,
+            "swapKib": 0
+          }
+        ],
+        "smapsUnreadable": [
+          {
+            "comm": "chrome-sandbox",
+            "rssKib": 1972,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 15240,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 171420,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 187440,
+            "swapKib": 0
+          }
+        ],
+        "smapsUnreadableRssKib": 376072,
+        "smapsReadableRssKib": 575004,
+        "smapsReadablePssKib": 221781
+      },
+      "backendTree": {
+        "samples": [
+          {
+            "processes": 8,
+            "rssKib": 385916,
+            "rssMissing": 0,
+            "pssKib": 227287,
+            "pssMissing": 0,
+            "swapKib": 0
+          },
+          {
+            "processes": 8,
+            "rssKib": 385960,
+            "rssMissing": 0,
+            "pssKib": 227337,
+            "pssMissing": 0,
+            "swapKib": 0
+          },
+          {
+            "processes": 8,
+            "rssKib": 386016,
+            "rssMissing": 0,
+            "pssKib": 227393,
+            "pssMissing": 0,
+            "swapKib": 0
+          }
+        ],
+        "rssKib": [
+          385916,
+          385960,
+          386016
+        ],
+        "rssMiB": [
+          376.871,
+          376.914,
+          376.969
+        ],
+        "pssKibPartial": [
+          227287,
+          227337,
+          227393
+        ],
+        "pssMiBPartial": [
+          221.96,
+          222.009,
+          222.063
+        ],
+        "pssMissing": 0,
+        "processes": 8,
+        "rssMissing": 0,
+        "swapKib": 0,
+        "smapsReadable": [
+          {
+            "comm": "MainThread",
+            "rssKib": 127888,
+            "pssKib": 77539,
+            "swapKib": 0
+          },
+          {
+            "comm": "pnpm-native",
+            "rssKib": 54900,
+            "pssKib": 52385,
+            "swapKib": 0
+          },
+          {
+            "comm": "MainThread",
+            "rssKib": 58228,
+            "pssKib": 17774,
+            "swapKib": 0
+          },
+          {
+            "comm": "sh",
+            "rssKib": 2060,
+            "pssKib": 157,
+            "swapKib": 0
+          },
+          {
+            "comm": "MainThread",
+            "rssKib": 120768,
+            "pssKib": 70569,
+            "swapKib": 0
+          },
+          {
+            "comm": "bash",
+            "rssKib": 4956,
+            "pssKib": 1419,
+            "swapKib": 0
+          },
+          {
+            "comm": "python3",
+            "rssKib": 12264,
+            "pssKib": 6135,
+            "swapKib": 0
+          },
+          {
+            "comm": "bash",
+            "rssKib": 4952,
+            "pssKib": 1415,
+            "swapKib": 0
+          }
+        ],
+        "smapsUnreadable": [],
+        "smapsUnreadableRssKib": 0,
+        "smapsReadableRssKib": 386016,
+        "smapsReadablePssKib": 227393
+      },
+      "electronMain": {
+        "rssBytes": 189677568,
+        "rssMiB": 180.891,
+        "heapUsedBytes": 4162984,
+        "heapUsedMiB": 3.97,
+        "heapTotalBytes": 7340032,
+        "heapTotalMiB": 7.0,
+        "externalBytes": 2763101,
+        "externalMiB": 2.635
+      }
+    },
+    "two-views": {
+      "visibleChatGptViews": 2,
+      "hosts": [
+        "chatgpt.com",
+        "chatgpt.com"
+      ],
+      "loading": [
+        false,
+        false
+      ],
+      "electronTree": {
+        "samples": [
+          {
+            "processes": 10,
+            "rssKib": 1162168,
+            "rssMissing": 0,
+            "pssKib": 219103,
+            "pssMissing": 5,
+            "swapKib": 0
+          },
+          {
+            "processes": 10,
+            "rssKib": 1163984,
+            "rssMissing": 0,
+            "pssKib": 219135,
+            "pssMissing": 5,
+            "swapKib": 0
+          },
+          {
+            "processes": 10,
+            "rssKib": 1165836,
+            "rssMissing": 0,
+            "pssKib": 219131,
+            "pssMissing": 5,
+            "swapKib": 0
+          }
+        ],
+        "rssKib": [
+          1162168,
+          1163984,
+          1165836
+        ],
+        "rssMiB": [
+          1134.93,
+          1136.703,
+          1138.512
+        ],
+        "pssKibPartial": [
+          219103,
+          219135,
+          219131
+        ],
+        "pssMiBPartial": [
+          213.968,
+          213.999,
+          213.995
+        ],
+        "pssMissing": 5,
+        "processes": 10,
+        "rssMissing": 0,
+        "swapKib": 0,
+        "smapsReadable": [
+          {
+            "comm": "electron",
+            "rssKib": 189488,
+            "pssKib": 87654,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 58380,
+            "pssKib": 12921,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 59328,
+            "pssKib": 9771,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 176168,
+            "pssKib": 74525,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 96932,
+            "pssKib": 34260,
+            "swapKib": 0
+          }
+        ],
+        "smapsUnreadable": [
+          {
+            "comm": "chrome-sandbox",
+            "rssKib": 1972,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 15240,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 189244,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 188008,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 191076,
+            "swapKib": 0
+          }
+        ],
+        "smapsUnreadableRssKib": 585540,
+        "smapsReadableRssKib": 580296,
+        "smapsReadablePssKib": 219131
+      },
+      "backendTree": {
+        "samples": [
+          {
+            "processes": 8,
+            "rssKib": 386600,
+            "rssMissing": 0,
+            "pssKib": 227971,
+            "pssMissing": 0,
+            "swapKib": 0
+          },
+          {
+            "processes": 8,
+            "rssKib": 386660,
+            "rssMissing": 0,
+            "pssKib": 228031,
+            "pssMissing": 0,
+            "swapKib": 0
+          },
+          {
+            "processes": 8,
+            "rssKib": 386692,
+            "rssMissing": 0,
+            "pssKib": 228068,
+            "pssMissing": 0,
+            "swapKib": 0
+          }
+        ],
+        "rssKib": [
+          386600,
+          386660,
+          386692
+        ],
+        "rssMiB": [
+          377.539,
+          377.598,
+          377.629
+        ],
+        "pssKibPartial": [
+          227971,
+          228031,
+          228068
+        ],
+        "pssMiBPartial": [
+          222.628,
+          222.687,
+          222.723
+        ],
+        "pssMissing": 0,
+        "processes": 8,
+        "rssMissing": 0,
+        "swapKib": 0,
+        "smapsReadable": [
+          {
+            "comm": "MainThread",
+            "rssKib": 127888,
+            "pssKib": 77539,
+            "swapKib": 0
+          },
+          {
+            "comm": "pnpm-native",
+            "rssKib": 54900,
+            "pssKib": 52385,
+            "swapKib": 0
+          },
+          {
+            "comm": "MainThread",
+            "rssKib": 58228,
+            "pssKib": 17773,
+            "swapKib": 0
+          },
+          {
+            "comm": "sh",
+            "rssKib": 2060,
+            "pssKib": 157,
+            "swapKib": 0
+          },
+          {
+            "comm": "MainThread",
+            "rssKib": 121444,
+            "pssKib": 71245,
+            "swapKib": 0
+          },
+          {
+            "comm": "bash",
+            "rssKib": 4956,
+            "pssKib": 1419,
+            "swapKib": 0
+          },
+          {
+            "comm": "python3",
+            "rssKib": 12264,
+            "pssKib": 6135,
+            "swapKib": 0
+          },
+          {
+            "comm": "bash",
+            "rssKib": 4952,
+            "pssKib": 1415,
+            "swapKib": 0
+          }
+        ],
+        "smapsUnreadable": [],
+        "smapsUnreadableRssKib": 0,
+        "smapsReadableRssKib": 386692,
+        "smapsReadablePssKib": 228068
+      },
+      "electronMain": {
+        "rssBytes": 193695744,
+        "rssMiB": 184.723,
+        "heapUsedBytes": 4751684,
+        "heapUsedMiB": 4.532,
+        "heapTotalBytes": 7340032,
+        "heapTotalMiB": 7.0,
+        "externalBytes": 2763141,
+        "externalMiB": 2.635
+      }
+    },
+    "four-views": {
+      "visibleChatGptViews": 4,
+      "hosts": [
+        "chatgpt.com",
+        "chatgpt.com",
+        "chatgpt.com",
+        "chatgpt.com"
+      ],
+      "loading": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "electronTree": {
+        "samples": [
+          {
+            "processes": 12,
+            "rssKib": 1607332,
+            "rssMissing": 0,
+            "pssKib": 221401,
+            "pssMissing": 7,
+            "swapKib": 0
+          },
+          {
+            "processes": 12,
+            "rssKib": 1603960,
+            "rssMissing": 0,
+            "pssKib": 221226,
+            "pssMissing": 7,
+            "swapKib": 0
+          },
+          {
+            "processes": 12,
+            "rssKib": 1604124,
+            "rssMissing": 0,
+            "pssKib": 221246,
+            "pssMissing": 7,
+            "swapKib": 0
+          }
+        ],
+        "rssKib": [
+          1607332,
+          1603960,
+          1604124
+        ],
+        "rssMiB": [
+          1569.66,
+          1566.367,
+          1566.527
+        ],
+        "pssKibPartial": [
+          221401,
+          221226,
+          221246
+        ],
+        "pssMiBPartial": [
+          216.212,
+          216.041,
+          216.061
+        ],
+        "pssMissing": 7,
+        "processes": 12,
+        "rssMissing": 0,
+        "swapKib": 0,
+        "smapsReadable": [
+          {
+            "comm": "electron",
+            "rssKib": 197220,
+            "pssKib": 91321,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 58380,
+            "pssKib": 12468,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 59328,
+            "pssKib": 8712,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 180192,
+            "pssKib": 75615,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 97424,
+            "pssKib": 33130,
+            "swapKib": 0
+          }
+        ],
+        "smapsUnreadable": [
+          {
+            "comm": "chrome-sandbox",
+            "rssKib": 1972,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 15496,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 211248,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 188012,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 193840,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 199860,
+            "swapKib": 0
+          },
+          {
+            "comm": "electron",
+            "rssKib": 201152,
+            "swapKib": 0
+          }
+        ],
+        "smapsUnreadableRssKib": 1011580,
+        "smapsReadableRssKib": 592544,
+        "smapsReadablePssKib": 221246
+      },
+      "backendTree": {
+        "samples": [
+          {
+            "processes": 8,
+            "rssKib": 387520,
+            "rssMissing": 0,
+            "pssKib": 228895,
+            "pssMissing": 0,
+            "swapKib": 0
+          },
+          {
+            "processes": 8,
+            "rssKib": 387600,
+            "rssMissing": 0,
+            "pssKib": 228975,
+            "pssMissing": 0,
+            "swapKib": 0
+          },
+          {
+            "processes": 8,
+            "rssKib": 387660,
+            "rssMissing": 0,
+            "pssKib": 229035,
+            "pssMissing": 0,
+            "swapKib": 0
+          }
+        ],
+        "rssKib": [
+          387520,
+          387600,
+          387660
+        ],
+        "rssMiB": [
+          378.438,
+          378.516,
+          378.574
+        ],
+        "pssKibPartial": [
+          228895,
+          228975,
+          229035
+        ],
+        "pssMiBPartial": [
+          223.53,
+          223.608,
+          223.667
+        ],
+        "pssMissing": 0,
+        "processes": 8,
+        "rssMissing": 0,
+        "swapKib": 0,
+        "smapsReadable": [
+          {
+            "comm": "MainThread",
+            "rssKib": 127888,
+            "pssKib": 77538,
+            "swapKib": 0
+          },
+          {
+            "comm": "pnpm-native",
+            "rssKib": 54900,
+            "pssKib": 52385,
+            "swapKib": 0
+          },
+          {
+            "comm": "MainThread",
+            "rssKib": 58228,
+            "pssKib": 17773,
+            "swapKib": 0
+          },
+          {
+            "comm": "sh",
+            "rssKib": 2060,
+            "pssKib": 157,
+            "swapKib": 0
+          },
+          {
+            "comm": "MainThread",
+            "rssKib": 122412,
+            "pssKib": 72213,
+            "swapKib": 0
+          },
+          {
+            "comm": "bash",
+            "rssKib": 4956,
+            "pssKib": 1419,
+            "swapKib": 0
+          },
+          {
+            "comm": "python3",
+            "rssKib": 12264,
+            "pssKib": 6135,
+            "swapKib": 0
+          },
+          {
+            "comm": "bash",
+            "rssKib": 4952,
+            "pssKib": 1415,
+            "swapKib": 0
+          }
+        ],
+        "smapsUnreadable": [],
+        "smapsUnreadableRssKib": 0,
+        "smapsReadableRssKib": 387660,
+        "smapsReadablePssKib": 229035
+      },
+      "electronMain": {
+        "rssBytes": 201543680,
+        "rssMiB": 192.207,
+        "heapUsedBytes": 4198400,
+        "heapUsedMiB": 4.004,
+        "heapTotalBytes": 6553600,
+        "heapTotalMiB": 6.25,
+        "externalBytes": 2763141,
+        "externalMiB": 2.635
+      }
+    }
+  },
+  "backendComposition": "The backend tree RSS includes three Node processes (comm MainThread), one pnpm-native process, sh, two bash processes, and the idle python3 hold.py workload used to keep the PTY alive (about 12.0 MiB RSS / 6.0 MiB PSS).",
+  "terminalContinuity": {
+    "sameHoldPid": true,
+    "pidUnchangedAcrossSwitchSplitAndRestore": true,
+    "restoredVisible": {
+      "height": 779,
+      "cols": 34,
+      "rows": 48,
+      "viewportY": 0,
+      "textHasStart": true,
+      "textHasEnd": true,
+      "hidden": false
+    },
+    "pageErrors": []
+  }
+}

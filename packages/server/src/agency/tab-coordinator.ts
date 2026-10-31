@@ -4,6 +4,7 @@ import type { AgencyWorkspaceStore } from './store.js';
 import { WorkspaceMutex } from './workspace-lock.js';
 import type { BrowserTabAdapter } from './browser-tabs/browser-tab-adapter.js';
 import { handleWebTabMessage } from './browser-tabs/web-tab-handler.js';
+import type { AgencyLayoutStore } from './agency-layout-store.js';
 
 /** One serialized authority for selection across native sessions and browser tabs.
  * The reservation mutex inside the native runtime remains independent: browser
@@ -19,6 +20,7 @@ export class AgencyTabCoordinator {
     readonly browser: BrowserTabAdapter,
     readonly workspaces: AgencyWorkspaceStore,
     private readonly publish: (message: AgencyServerMessage) => void,
+    readonly layouts?: AgencyLayoutStore,
   ) {
     browser.setSelectionCoordinator({ unselectNativeTabs: workspaceId => native.clearWorkspaceSelection(workspaceId) });
   }
@@ -38,6 +40,16 @@ export class AgencyTabCoordinator {
     const web = this.browser.getTabState(tabId);
     if (web) return web.workspaceId === workspaceId && !web.closedAt && web.selected && web.runtimeState === 'client-managed';
     return this.openNative(workspaceId).some(session => session.tab?.id === tabId && session.tab.selected);
+  }
+
+  /** Keep a concurrent selection from invalidating eligibility during acknowledgement. */
+  async inspect<T>(workspaceId: WorkspaceId, tabId: string, inspection: () => Promise<T>): Promise<T> {
+    return this.mutations.runExclusive(workspaceId, async () => {
+      if (!this.canInspect(workspaceId, tabId)) {
+        throw new AgencyRuntimeError('session-unavailable', 'Tab must be open and selected in an active workspace before inspection');
+      }
+      return inspection();
+    });
   }
 
   snapshot(): void {
@@ -179,7 +191,10 @@ export class AgencyTabCoordinator {
     // 5. Broadcast snapshots so clients and Electron reconcile/destroy native views.
     this.snapshot();
 
-    // 6. Recheck blocking resources before final deletion.
+    // 6. Delete layout for deleted workspace if present.
+    await this.layouts?.delete(workspaceId);
+
+    // 7. Recheck blocking resources before final deletion.
     if (this.native.hasWorkspaceReferences(workspaceId)) {
       throw new AgencyRuntimeError('conflict', 'Native session references remain; workspace deletion aborted');
     }

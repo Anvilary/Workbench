@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { embeddedUrl, externalUrl, serviceUrl, trustedSender, validCommand, nativeBounds } from './policy.mjs';
+import { embeddedUrl, externalUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl } from './policy.mjs';
 const id = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
 test('exact HTTPS navigation and initial ChatGPT URL allowlist', () => {
   for (const url of ['https://chatgpt.com/', 'https://auth.openai.com/log-in', 'https://accounts.google.com/o/oauth2/auth', 'https://appleid.apple.com/auth/authorize']) assert.equal(embeddedUrl(url), true, url);
@@ -32,4 +32,70 @@ test('bounds fail closed for invalid payloads, stale viewport, clipping and zoom
   assert.equal(nativeBounds({ ...command, bounds: { ...command.bounds, x: 300 } }, [1000, 700], 1), null);
   for (const patch of [{ id: '../../etc' }, { id: {} }, { bounds: { ...command.bounds, x: -1 } }, { bounds: { ...command.bounds, width: NaN } }, { viewport: { width: Infinity, height: 700 } }, { action: 'exec' }]) assert.equal(validCommand({ ...command, ...patch }), false);
   assert.equal(nativeBounds({ ...command, id: null }, [1000, 700], 1), null);
+});
+
+test('multi-view layout validation enforces maximum 4 views and non-overlapping bounds', () => {
+  const id1 = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
+  const id2 = 'f52e047f-d947-426c-a0fa-c349d035d338';
+  const id3 = '11111111-1111-4111-8111-111111111111';
+  const id4 = '22222222-2222-4222-8222-222222222222';
+  const id5 = '33333333-3333-4333-8333-333333333333';
+
+  // Valid 2-pane side-by-side
+  const valid2Pane = {
+    type: 'layout',
+    views: [
+      { id: id1, bounds: { x: 0, y: 0, width: 500, height: 600 } },
+      { id: id2, bounds: { x: 500, y: 0, width: 500, height: 600 } },
+    ],
+    viewport: { width: 1000, height: 600 },
+    focusedId: id1,
+  };
+  assert.equal(validCommand(valid2Pane), true);
+
+  // Valid 4-pane 2x2 grid
+  const valid4Pane = {
+    type: 'layout',
+    views: [
+      { id: id1, bounds: { x: 0, y: 0, width: 500, height: 300 } },
+      { id: id2, bounds: { x: 500, y: 0, width: 500, height: 300 } },
+      { id: id3, bounds: { x: 0, y: 300, width: 500, height: 300 } },
+      { id: id4, bounds: { x: 500, y: 300, width: 500, height: 300 } },
+    ],
+    viewport: { width: 1000, height: 600 },
+  };
+  assert.equal(validCommand(valid4Pane), true);
+
+  // Reject 5 panes (max 4 leaves invariant)
+  const reject5Pane = {
+    type: 'layout',
+    views: [
+      ...valid4Pane.views,
+      { id: id5, bounds: { x: 0, y: 0, width: 100, height: 100 } },
+    ],
+    viewport: { width: 1000, height: 600 },
+  };
+  assert.equal(validCommand(reject5Pane), false);
+
+  // Reject overlapping rectangles
+  const overlapping = {
+    type: 'layout',
+    views: [
+      { id: id1, bounds: { x: 0, y: 0, width: 600, height: 600 } },
+      { id: id2, bounds: { x: 500, y: 0, width: 500, height: 600 } }, // Overlaps from x=500 to x=600!
+    ],
+    viewport: { width: 1000, height: 600 },
+  };
+  assert.equal(validCommand(overlapping), false);
+});
+
+test('FEATURE 10: file delivery and download URL policy', () => {
+  assert.equal(isDownloadOrFileDeliveryUrl('https://files.oaiusercontent.com/file-123'), true);
+  assert.equal(isDownloadOrFileDeliveryUrl('https://sub.oaiusercontent.com/asset'), true);
+  assert.equal(isDownloadOrFileDeliveryUrl('https://oaistatic.com/script.js'), true);
+  assert.equal(isDownloadOrFileDeliveryUrl('blob:https://chatgpt.com/some-uuid'), true);
+  assert.equal(isDownloadOrFileDeliveryUrl('blob:https://chat.openai.com/some-uuid'), true);
+  assert.equal(isDownloadOrFileDeliveryUrl('https://evil.com/fake.pdf'), false);
+  assert.equal(isDownloadOrFileDeliveryUrl('blob:https://evil.com/fake'), false);
+  assert.equal(isDownloadOrFileDeliveryUrl('http://files.oaiusercontent.com/file'), false);
 });
