@@ -464,3 +464,211 @@ test('16. Done and archived workspace deletion succeeds with lifecycle-safe clea
   assert.equal(resArchived?.type, 'agency.workspace.deleted');
   assert.equal(ctx.workspaceStore.getWorkspace(wsArchived.id), null);
 });
+
+test('17. Done workspace containing an open ChatGPT tab shuts down web tab and deletes successfully', async (t) => {
+  const ctx = await setupTest(t);
+  const wsDone = await ctx.createWorkspace('done-ws-web');
+  const web = await ctx.coordinator.webRequest({
+    type: 'agency.webTab.create', requestId: 'web-done-17', workspaceId: wsDone.id, url: 'https://chatgpt.com/', launchId: randomUUID(),
+  });
+  assert.ok(web && web.type === 'agency.webTab.created');
+  assert.equal(ctx.coordinator.hasBrowserReferences(wsDone.id), true);
+
+  await ctx.workspaceStore.markDone(wsDone.id);
+  assert.equal(ctx.workspaceStore.getWorkspace(wsDone.id)?.status, 'done');
+
+  // Deleting the Done workspace with open ChatGPT tab must succeed through authorized shutdown
+  const res = await ctx.coordinator.mutations.runExclusive(wsDone.id, () =>
+    handleAgencyDomainRequest({ type: 'agency.workspace.delete', requestId: 'del-17', workspaceId: wsDone.id }, ctx.domainContext())
+  );
+  assert.equal(res?.type, 'agency.workspace.deleted');
+  assert.equal(ctx.workspaceStore.getWorkspace(wsDone.id), null);
+  assert.equal(ctx.coordinator.hasBrowserReferences(wsDone.id), false);
+  assert.equal(ctx.browser.listTabs(wsDone.id, { includeClosed: false }).length, 0);
+});
+
+test('18. Archived workspace containing an open ChatGPT tab shuts down web tab and deletes successfully', async (t) => {
+  const ctx = await setupTest(t);
+  const wsArchived = await ctx.createWorkspace('archived-ws-web');
+  const web = await ctx.coordinator.webRequest({
+    type: 'agency.webTab.create', requestId: 'web-arch-18', workspaceId: wsArchived.id, url: 'https://chatgpt.com/', launchId: randomUUID(),
+  });
+  assert.ok(web && web.type === 'agency.webTab.created');
+  assert.equal(ctx.coordinator.hasBrowserReferences(wsArchived.id), true);
+
+  await ctx.workspaceStore.archiveWorkspace(wsArchived.id);
+  assert.equal(ctx.workspaceStore.getWorkspace(wsArchived.id)?.status, 'archived');
+
+  // Deleting the Archived workspace with open ChatGPT tab must succeed through authorized shutdown
+  const res = await ctx.coordinator.mutations.runExclusive(wsArchived.id, () =>
+    handleAgencyDomainRequest({ type: 'agency.workspace.delete', requestId: 'del-18', workspaceId: wsArchived.id }, ctx.domainContext())
+  );
+  assert.equal(res?.type, 'agency.workspace.deleted');
+  assert.equal(ctx.workspaceStore.getWorkspace(wsArchived.id), null);
+  assert.equal(ctx.coordinator.hasBrowserReferences(wsArchived.id), false);
+  assert.equal(ctx.browser.listTabs(wsArchived.id, { includeClosed: false }).length, 0);
+});
+
+test('19. Archived project containing a workspace with a web tab shuts down web tab and deletes successfully', async (t) => {
+  const ctx = await setupTest(t);
+  const projArchived = await ctx.workspaceStore.createProject('Archived Project');
+  const dir = path.join(ctx.root, 'ws-arch-proj');
+  await mkdir(dir, { recursive: true });
+  const real = await realpath(dir);
+  const ws = await ctx.workspaceStore.createWorkspace(projArchived.id, 'ws-arch-proj', real);
+
+  const web = await ctx.coordinator.webRequest({
+    type: 'agency.webTab.create', requestId: 'web-arch-proj-19', workspaceId: ws.id, url: 'https://chatgpt.com/', launchId: randomUUID(),
+  });
+  assert.ok(web && web.type === 'agency.webTab.created');
+  assert.equal(ctx.coordinator.hasBrowserReferences(ws.id), true);
+
+  // Archive owning project
+  await ctx.workspaceStore.archiveProject(projArchived.id);
+  assert.equal(ctx.workspaceStore.listProjects().find((p) => p.id === projArchived.id)?.status, 'archived');
+
+  // Ordinary tab creation on this workspace must now be rejected because project is archived
+  await assert.rejects(
+    ctx.browser.createTab({ workspaceId: ws.id, url: 'https://chatgpt.com/' }),
+    (err: any) => err.code === 'conflict'
+  );
+
+  // Deleting the workspace in an archived project must succeed through authorized shutdown
+  const res = await ctx.coordinator.mutations.runExclusive(ws.id, () =>
+    handleAgencyDomainRequest({ type: 'agency.workspace.delete', requestId: 'del-19', workspaceId: ws.id }, ctx.domainContext())
+  );
+  assert.equal(res?.type, 'agency.workspace.deleted');
+  assert.equal(ctx.workspaceStore.getWorkspace(ws.id), null);
+  assert.equal(ctx.coordinator.hasBrowserReferences(ws.id), false);
+});
+
+test('20. Cross-workspace closure refusal: closing a tab with a foreign workspace ID is rejected', async (t) => {
+  const ctx = await setupTest(t);
+  const wsA = await ctx.createWorkspace('ws-closure-A');
+  const wsB = await ctx.createWorkspace('ws-closure-B');
+
+  const createA = await ctx.coordinator.webRequest({
+    type: 'agency.webTab.create', requestId: 'web-A20', workspaceId: wsA.id, url: 'https://chatgpt.com/', launchId: randomUUID(),
+  });
+  assert.ok(createA && createA.type === 'agency.webTab.created');
+  const tabAId = createA.tab.id;
+
+  // Attempting to close Tab A using Workspace B must be rejected without altering Tab A
+  await assert.rejects(
+    ctx.browser.closeTab(wsB.id, tabAId),
+    (err: any) => err.code === 'not-found'
+  );
+  await assert.rejects(
+    ctx.browser.closeTab(wsB.id, tabAId, { allowInactiveWorkspace: true }),
+    (err: any) => err.code === 'not-found'
+  );
+
+  // Verify Tab A remains open and intact in Workspace A
+  const tabAState = ctx.browser.getTabState(tabAId);
+  assert.ok(tabAState);
+  assert.equal(tabAState.closedAt, null);
+  assert.equal(tabAState.workspaceId, wsA.id);
+  assert.equal(ctx.coordinator.hasBrowserReferences(wsA.id), true);
+  assert.equal(ctx.coordinator.hasBrowserReferences(wsB.id), false);
+});
+
+test('21. Failure during browser-tab persistence rolls back in-memory tabs, aborts shutdown, and preserves workspace', async (t) => {
+  const ctx = await setupTest(t);
+  const ws = await ctx.createWorkspace('persistence-fail-ws');
+  const web = await ctx.coordinator.webRequest({
+    type: 'agency.webTab.create', requestId: 'web-fail-21', workspaceId: ws.id, url: 'https://chatgpt.com/', launchId: randomUUID(),
+  });
+  assert.ok(web && web.type === 'agency.webTab.created');
+  assert.equal(ctx.coordinator.hasBrowserReferences(ws.id), true);
+
+  // Inject failure into browser tab store.save to simulate I/O or disk error
+  const originalSave = ctx.browser.store.save.bind(ctx.browser.store);
+  ctx.browser.store.save = async () => {
+    throw new Error('Simulated disk/IO failure during browser tab persistence');
+  };
+
+  const res = await ctx.coordinator.mutations.runExclusive(ws.id, () =>
+    handleAgencyDomainRequest({ type: 'agency.workspace.delete', requestId: 'del-21', workspaceId: ws.id }, ctx.domainContext())
+  );
+  assert.equal(res?.type, 'agency.error');
+
+  // Restore save method
+  ctx.browser.store.save = originalSave;
+
+  // Workspace must survive
+  assert.ok(ctx.workspaceStore.getWorkspace(ws.id), 'Workspace record must be preserved on persistence failure');
+
+  // In-memory tab state must be rolled back: tab is still open
+  const tabState = ctx.browser.getTabState(web.tab.id);
+  assert.ok(tabState);
+  assert.equal(tabState.closedAt, null, 'Tab closedAt must be rolled back to null');
+  assert.equal(ctx.coordinator.hasBrowserReferences(ws.id), true);
+});
+
+test('22. Workspace validation on mutations remains unweakened for Done and Archived workspaces', async (t) => {
+  const ctx = await setupTest(t);
+  const ws = await ctx.createWorkspace('validation-strict-ws');
+  const createRes = await ctx.coordinator.webRequest({
+    type: 'agency.webTab.create', requestId: 'web-init', workspaceId: ws.id, url: 'https://chatgpt.com/', launchId: randomUUID(),
+  });
+  assert.ok(createRes && createRes.type === 'agency.webTab.created');
+  const tabId = createRes.tab.id;
+
+  // 1. Mark done: mutations must be refused
+  await ctx.workspaceStore.markDone(ws.id);
+
+  await assert.rejects(
+    ctx.browser.createTab({ workspaceId: ws.id, url: 'https://chatgpt.com/' }),
+    (err: any) => err.code === 'conflict'
+  );
+  await assert.rejects(
+    ctx.browser.navigateTab(ws.id, tabId, 'https://chatgpt.com/c/test'),
+    (err: any) => err.code === 'conflict'
+  );
+  await assert.rejects(
+    ctx.browser.selectTab(ws.id, tabId),
+    (err: any) => err.code === 'conflict'
+  );
+  await assert.rejects(
+    ctx.browser.renameTab(ws.id, tabId, 'Renamed'),
+    (err: any) => err.code === 'conflict'
+  );
+  await assert.rejects(
+    ctx.browser.orderTabs(ws.id, [tabId]),
+    (err: any) => err.code === 'conflict'
+  );
+  // Unprivileged closure (without allowInactiveWorkspace) must also be rejected
+  await assert.rejects(
+    ctx.browser.closeTab(ws.id, tabId),
+    (err: any) => err.code === 'conflict'
+  );
+
+  // 2. Archive workspace: mutations must still be refused
+  await ctx.workspaceStore.restore(ws.id);
+  await ctx.workspaceStore.archiveWorkspace(ws.id);
+
+  await assert.rejects(
+    ctx.browser.createTab({ workspaceId: ws.id, url: 'https://chatgpt.com/' }),
+    (err: any) => err.code === 'conflict'
+  );
+  await assert.rejects(
+    ctx.browser.navigateTab(ws.id, tabId, 'https://chatgpt.com/c/test'),
+    (err: any) => err.code === 'conflict'
+  );
+  await assert.rejects(
+    ctx.browser.selectTab(ws.id, tabId),
+    (err: any) => err.code === 'conflict'
+  );
+  await assert.rejects(
+    ctx.browser.renameTab(ws.id, tabId, 'Renamed'),
+    (err: any) => err.code === 'conflict'
+  );
+  await assert.rejects(
+    ctx.browser.orderTabs(ws.id, [tabId]),
+    (err: any) => err.code === 'conflict'
+  );
+  await assert.rejects(
+    ctx.browser.closeTab(ws.id, tabId),
+    (err: any) => err.code === 'conflict'
+  );
+});

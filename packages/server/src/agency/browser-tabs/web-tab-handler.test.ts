@@ -267,4 +267,100 @@ test('web-tab-handler: cross-workspace select fails and never broadcasts tab und
   assert.equal(published.length, 0, 'No broadcast should occur for closed tab selection failure');
 });
 
+test('web-tab-handler: cross-workspace close fails and does not close tab in foreign workspace', async (t) => {
+  const { adapter, published, publish } = await createFixture(t);
+
+  const createA = await handleWebTabMessage(
+    {
+      type: 'agency.webTab.create',
+      requestId: 'req-ca-cross',
+      workspaceId: WS1,
+      url: 'https://chatgpt.com/c/chat-cross',
+      title: 'Tab WS1',
+    },
+    { adapter, publish },
+  );
+  assert.ok(createA && createA.type === 'agency.webTab.created');
+  const tabA = createA.tab;
+  published.length = 0;
+
+  // Attempt to close Tab A using Workspace 2 (WS2)
+  const crossCloseRes = await handleWebTabMessage(
+    {
+      type: 'agency.webTab.close',
+      requestId: 'req-cross-close',
+      workspaceId: WS2,
+      tabId: tabA.id,
+    },
+    { adapter, publish },
+  );
+
+  assert.ok(crossCloseRes && crossCloseRes.type === 'agency.error');
+  assert.equal(crossCloseRes.code, 'not-found');
+  assert.equal(published.length, 0, 'No broadcast should occur for cross-workspace close failure');
+
+  // Verify Tab A remains open and valid in Workspace 1
+  const tabAState = adapter.getTabState(tabA.id);
+  assert.ok(tabAState);
+  assert.equal(tabAState.closedAt, null);
+  assert.equal(tabAState.workspaceId, WS1);
+});
+
+test('browser-tab-adapter: authorized closure allows Done and Archived workspaces while mutations remain forbidden', async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'maw-validator-test-'));
+  t.after(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+  const store = new BrowserTabStore(path.join(dir, 'agency-web-tabs.json'));
+  await store.load();
+
+  let workspaceStatus: 'active' | 'done' | 'archived' = 'active';
+  const adapter = new BrowserTabAdapter({
+    store,
+    workspaceValidator: async (wsId) => {
+      if (wsId !== WS1) return { valid: false, error: 'not-found' };
+      if (workspaceStatus === 'archived') return { valid: false, error: 'Workspace is archived' };
+      if (workspaceStatus === 'done') return { valid: false, error: 'Workspace is marked done' };
+      return { valid: true };
+    },
+  });
+
+  const tab = await adapter.createTab({
+    workspaceId: WS1,
+    url: 'https://chatgpt.com/',
+    title: 'Test Tab',
+  });
+  assert.ok(tab && !tab.closedAt);
+
+  // 1. Mark done
+  workspaceStatus = 'done';
+
+  // Mutations must fail
+  await assert.rejects(adapter.createTab({ workspaceId: WS1, url: 'https://chatgpt.com/' }), (err: any) => err.code === 'conflict');
+  await assert.rejects(adapter.navigateTab(WS1, tab.id, 'https://chatgpt.com/c/nav'), (err: any) => err.code === 'conflict');
+  await assert.rejects(adapter.selectTab(WS1, tab.id), (err: any) => err.code === 'conflict');
+  await assert.rejects(adapter.renameTab(WS1, tab.id, 'New Name'), (err: any) => err.code === 'conflict');
+  await assert.rejects(adapter.orderTabs(WS1, [tab.id]), (err: any) => err.code === 'conflict');
+  // Unauthorized closure must fail
+  await assert.rejects(adapter.closeTab(WS1, tab.id), (err: any) => err.code === 'conflict');
+
+  // 2. Mark archived
+  workspaceStatus = 'archived';
+
+  // Mutations must still fail
+  await assert.rejects(adapter.createTab({ workspaceId: WS1, url: 'https://chatgpt.com/' }), (err: any) => err.code === 'conflict');
+  await assert.rejects(adapter.navigateTab(WS1, tab.id, 'https://chatgpt.com/c/nav'), (err: any) => err.code === 'conflict');
+  await assert.rejects(adapter.selectTab(WS1, tab.id), (err: any) => err.code === 'conflict');
+  await assert.rejects(adapter.renameTab(WS1, tab.id, 'New Name'), (err: any) => err.code === 'conflict');
+  await assert.rejects(adapter.orderTabs(WS1, [tab.id]), (err: any) => err.code === 'conflict');
+  // Unauthorized closure must fail
+  await assert.rejects(adapter.closeTab(WS1, tab.id), (err: any) => err.code === 'conflict');
+
+  // 3. Authorized closure with allowInactiveWorkspace must succeed
+  const closed = await adapter.closeTab(WS1, tab.id, { allowInactiveWorkspace: true });
+  assert.ok(closed.closedAt);
+  assert.equal(closed.runtimeState, 'closed');
+  assert.equal(adapter.listTabs(WS1, { includeClosed: false }).length, 0);
+});
+
 

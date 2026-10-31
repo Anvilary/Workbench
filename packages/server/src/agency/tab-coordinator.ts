@@ -170,9 +170,10 @@ export class AgencyTabCoordinator {
     }
 
     // 4. Close all workspace-owned ChatGPT tabs through the browser-tab adapter.
+    // Authorized closure during workspace deletion permits inactive (done/archived) workspaces.
     const webTabs = this.browser.listTabs(workspaceId, { includeClosed: false });
     for (const tab of webTabs) {
-      await this.browser.closeTab(workspaceId, tab.id);
+      await this.browser.closeTab(workspaceId, tab.id, { allowInactiveWorkspace: true });
     }
 
     // 5. Broadcast snapshots so clients and Electron reconcile/destroy native views.
