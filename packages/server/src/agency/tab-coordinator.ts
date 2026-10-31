@@ -26,7 +26,7 @@ export class AgencyTabCoordinator {
     browser.setSelectionCoordinator({ unselectNativeTabs: workspaceId => native.clearWorkspaceSelection(workspaceId) });
   }
 
-  private openNative(workspaceId: WorkspaceId) {
+  private openNative(workspaceId?: WorkspaceId) {
     return this.native.list(workspaceId).filter(session => session.tab?.current && !session.tab.closedAt);
   }
 
@@ -107,6 +107,37 @@ export class AgencyTabCoordinator {
     return reconcileLayout(this.layouts.get(workspaceId), workspaceId, open);
   }
 
+  reconcileAllLayouts(): WorkspacePaneLayout[] {
+    if (!this.layouts) return [];
+    const workspaceIds = new Set<WorkspaceId>();
+    for (const ws of this.workspaces.listWorkspaces()) workspaceIds.add(ws.id);
+    for (const l of this.layouts.list()) workspaceIds.add(l.workspaceId);
+    for (const session of this.openNative()) workspaceIds.add(session.workspaceId);
+    for (const tab of this.browser.listTabs()) workspaceIds.add(tab.workspaceId);
+
+    const reconciled: WorkspacePaneLayout[] = [];
+    for (const wsId of workspaceIds) {
+      const open = [...this.openNative(wsId).map(session => session.tab!.id), ...this.browser.listTabs(wsId).map(tab => tab.id)];
+      const saved = this.layouts.get(wsId);
+      if (saved || open.length > 0) {
+        reconciled.push(reconcileLayout(saved, wsId, open));
+      }
+    }
+    return reconciled;
+  }
+
+  private resolveTabLabel(workspaceId: WorkspaceId, tabId: string): string {
+    const webTab = this.browser.listTabs(workspaceId).find(t => t.id === tabId);
+    if (webTab) return webTab.title || 'ChatGPT';
+    const session = this.native.list(workspaceId).find(s => s.tab?.id === tabId);
+    if (session?.tab?.name) return session.tab.name;
+    if (session?.kind === 'terminal') {
+      return session.tab?.terminalNumber ? `Terminal ${session.tab.terminalNumber}` : 'Terminal';
+    }
+    if (session?.profileId) return session.profileId;
+    return tabId;
+  }
+
   private async placeCreatedTab(workspaceId: WorkspaceId, targetPaneId: string | undefined, tabId: string): Promise<void> {
     if (!targetPaneId || !this.layouts) return;
     const open = [...this.openNative(workspaceId).map(session => session.tab!.id), ...this.browser.listTabs(workspaceId).map(tab => tab.id)];
@@ -116,11 +147,14 @@ export class AgencyTabCoordinator {
       this.publish({ type: 'agency.layout.changed', workspaceId, layout });
     } catch (error) {
       console.error('[tab-coordinator] Failed to persist tab layout placement:', error);
+      const tabLabel = this.resolveTabLabel(workspaceId, tabId);
       this.publish({
         type: 'agency.error',
         requestId: '',
+        workspaceId,
+        tabId,
         code: 'internal-error',
-        message: error instanceof Error ? error.message : 'Layout placement failed',
+        message: `Layout placement persistence failure for tab "${tabLabel}". Safe layout reconciliation will restore placement on reconnect or refresh.`,
       });
     }
   }

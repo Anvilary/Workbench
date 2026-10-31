@@ -146,3 +146,43 @@ test('each pane exposes the creation menu in single, two and three-pane layouts'
   });
  }
 });
+
+test('placement failure surfaces notice banner with tab context without failing creation; dismissal works',async t=>{
+ const page=await setup(t,'shape=row');
+ const notice=page.locator('.agency-notice-bar[role="status"]');
+
+ // 1. Create a terminal successfully, then fail layout persistence
+ const initSessions=await page.evaluate(()=>window.fixture.state.sessions.length);
+ const initWeb=await page.evaluate(()=>window.fixture.state.webTabs.length);
+ await page.evaluate(()=>window.fixture.failPlacement());
+ await create(page,2,'terminal');
+ // 2. Confirm the creation response indicates success
+ await page.waitForFunction(cnt=>window.fixture.state.sessions.length===cnt+1,initSessions);
+ // 3. Confirm the correct workspace displays a placement warning
+ await notice.waitFor();
+ const termText=await notice.textContent();
+ assert.match(termText,/Layout placement persistence failure for tab "Terminal/i);
+ assert.ok(!termText.includes('/'),'sensitive filesystem details must not be exposed');
+ assert.equal(await page.locator('.agency-error-bar[role="alert"]').count(),0,'must keep warning separate from launch failures');
+ await notice.getByRole('button',{name:'Dismiss notification'}).click();
+ assert.equal(await page.locator('.agency-notice-bar[role="status"]').count(),0);
+
+ // 4. Repeat with a CLI
+ await page.evaluate(()=>window.fixture.failPlacement());
+ await create(page,2,'agent');
+ await page.waitForFunction(cnt=>window.fixture.state.sessions.length===cnt+2,initSessions);
+ await notice.waitFor();
+ const cliText=await notice.textContent();
+ assert.match(cliText,/Layout placement persistence failure for tab "CLI/i);
+ await notice.getByRole('button',{name:'Dismiss notification'}).click();
+
+ // Repeat with a ChatGPT tab
+ await page.evaluate(()=>window.fixture.failPlacement());
+ await create(page,2,'web');
+ await page.waitForFunction(cnt=>window.fixture.state.webTabs.length===cnt+1,initWeb);
+ await notice.waitFor();
+ const webText=await notice.textContent();
+ assert.match(webText,/Layout placement persistence failure for tab "ChatGPT/i);
+ await notice.getByRole('button',{name:'Dismiss notification'}).click();
+ assert.equal(await page.locator('.agency-notice-bar[role="status"]').count(),0);
+});

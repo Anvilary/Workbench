@@ -28,7 +28,7 @@ const initial={workspaceId:ws,version:1,updatedAt:now,focusedPaneId:'pane-1',tre
 const state=JSON.parse(localStorage.getItem('pane-interactions')||'null')||{layout:initial,sessions:initialSessions,webTabs:initialWeb};
 const persist=()=>localStorage.setItem('pane-interactions',JSON.stringify(state));
 const requests=[],listeners=new Set(),pending=[],snapshots=[];
-let fail=false, delay=false, lag=false, render=()=>{};
+let fail=false, failPlacement=false, delay=false, lag=false, render=()=>{};
 const emit=m=>listeners.forEach(fn=>fn(m));
 const connection={getStatus:()=> 'open',onStatus:()=>()=>{},onReopen:()=>()=>{},onMessage(fn){listeners.add(fn);return()=>listeners.delete(fn)},send(m){requests.push(m);window.terminalSend?.(m);return true},sendImmediate(m){requests.push(m);window.terminalSend?.(m);return true}};
 const open=Terminal.prototype.open,dispose=Terminal.prototype.dispose;
@@ -45,6 +45,13 @@ async function request(m){
   const row=m.type==='agency.session.create'?session(n,m.kind,m.launchId):web(n,m.launchId,m.title);
   const response=m.type==='agency.session.create'?{type:'agency.session.created',session:row}:{type:'agency.webTab.created',tab:row};
   const publish=()=>{(m.type==='agency.session.create'?state.sessions:state.webTabs).push(row);persist();render()};
+  if(failPlacement){
+    failPlacement=false;
+    const label=m.type==='agency.webTab.create'?(m.title||'ChatGPT '+n):(m.kind==='agent'?'CLI '+n:'Terminal '+n);
+    state.placementWarning='Layout placement persistence failure for tab "' + label + '". Safe layout reconciliation will restore placement on reconnect or refresh.';
+    persist();
+    render();
+  }
   if(lag)snapshots.push(publish);else publish();
   return response;
  }
@@ -59,7 +66,7 @@ function Harness(){
  useDropdownDismissal();
  const [,update]=useState(0);const [mounted,setMounted]=useState(false);const [away,setAway]=useState(false);
  render=()=>update(n=>n+1);
- window.fixture={state,requests,pending,snapshots,emit,delay:v=>delay=v,lag:v=>lag=v,fail:()=>fail=true,resolve:()=>pending.shift()?.(),snapshot:()=>snapshots.shift()?.(),listeners:()=>listeners.size,
+ window.fixture={state,requests,pending,snapshots,emit,delay:v=>delay=v,lag:v=>lag=v,fail:()=>fail=true,failPlacement:()=>failPlacement=true,clearWarning:()=>{state.placementWarning=null;persist();render();},resolve:()=>pending.shift()?.(),snapshot:()=>snapshots.shift()?.(),listeners:()=>listeners.size,
  switchWorkspace:()=>setAway(v=>!v),setLayout(value){state.layout=value;persist();render()},
  finish(tabId){window.finished=tabId;render()},
  };
@@ -68,6 +75,7 @@ function Harness(){
  {mounted&&!away&&<AgencyWorkspaceView workspace={{id:ws,projectId:other,name:'Pane interactions · synthetic data',status:'active',cwd:'/fixture',createdAt:now,updatedAt:now}}
  profiles={[profile]} sessions={state.sessions} webTabs={state.webTabs} connection={connection} request={request} sendImmediate={connection.sendImmediate} online={true} onDone={()=>{}}
  savedLayout={state.layout} onSaveLayout={async(id,value)=>{state.layout=value;persist()}}
+ placementWarning={state.placementWarning} onClearPlacementWarning={()=>{state.placementWarning=null;persist();render();}}
  getTabActivity={(ws,tab)=>tab===window.finished?'finished':'working'} getTabActivityVersion={()=>'turn-1'} onAcknowledgeTab={(ws,tab)=>request({type:'agency.tab.acknowledge',tabId:tab})}/>}</>;
 }
 createRoot(document.getElementById('root')).render(<Harness/>);

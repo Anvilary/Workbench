@@ -182,6 +182,17 @@ test('main authenticated protocol validates browser contracts and rejects foreig
   assert.equal(parseClientMessage(JSON.stringify({ ...input, cdp: 'http://localhost:9222' })), null);
   assert.equal(parseClientMessage(JSON.stringify({ ...input, url: 'http://127.0.0.1/' })), null);
   assert.equal(parseServerMessage(JSON.stringify({ type: 'agency.webTabs.snapshot', requestId: '', tabs: [{ id: 'fake' }] })), null);
+  const parsedErr = parseServerMessage(JSON.stringify({
+    type: 'agency.error',
+    requestId: '',
+    workspaceId: '11111111-1111-4111-8111-111111111111',
+    tabId: '22222222-2222-4222-8222-222222222222',
+    code: 'internal-error',
+    message: 'Layout placement persistence failure for tab "Terminal 1"',
+  }));
+  assert.ok(parsedErr && parsedErr.type === 'agency.error');
+  assert.equal(parsedErr.workspaceId, '11111111-1111-4111-8111-111111111111');
+  assert.equal(parsedErr.tabId, '22222222-2222-4222-8222-222222222222');
 });
 
 
@@ -349,6 +360,10 @@ for (const caseType of ['terminal', 'agent', 'webTab'] as const) {
     assert.ok(err, 'layout failure must be reported via agency.error');
     assert.equal(err.code, 'internal-error');
     assert.match(err.message, /persistence failure/i);
+    assert.equal(err.workspaceId, workspace.id);
+    assert.equal(err.tabId, resultTabId);
+    assert.ok(!err.message.includes('/'), 'sensitive filesystem paths must not be exposed');
+    assert.ok(err.message.includes('for tab'), 'tab context must be identified in error message');
 
     // Persisted layout in store still reflects the state before failure (target pane doesn't have the tab yet)
     const storedBeforeRecovery = layouts.get(workspace.id)!;
@@ -467,6 +482,12 @@ for (const caseType of ['terminal', 'agent', 'webTab'] as const) {
     const reconnectedLayout = coordinator.reconcileLayout(workspace.id)!;
     assert.ok(reconnectedLayout);
     assert.ok(findPaneNode(reconnectedLayout.tree, 'pane-2')!.tabIds.includes(resultTabId));
+
+    // Normal reconnect receives agency.layouts.snapshot with reconcileAllLayouts without manual layout.get
+    const allReconciled = coordinator.reconcileAllLayouts();
+    const wsLayout = allReconciled.find(l => l.workspaceId === workspace.id);
+    assert.ok(wsLayout, 'reconcileAllLayouts must recover workspace layout');
+    assert.ok(findPaneNode(wsLayout.tree, 'pane-2')!.tabIds.includes(resultTabId));
 
     // Ordinary creation and pane swapping remain unaffected
     messages.length = 0;

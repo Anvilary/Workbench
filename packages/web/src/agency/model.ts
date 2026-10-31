@@ -25,10 +25,11 @@ export interface AgencySnapshot {
   sessions: readonly AgencyRuntimeSession[];
   webTabs: readonly WebTab[];
   layouts: Record<WorkspaceId, import('@agent-workbench/shared').WorkspacePaneLayout>;
+  layoutWarnings?: Record<WorkspaceId, string>;
 }
 
 export const EMPTY_AGENCY_SNAPSHOT: AgencySnapshot = {
-  projects: [], workspaces: [], profiles: [], sessions: [], webTabs: [], layouts: {},
+  projects: [], workspaces: [], profiles: [], sessions: [], webTabs: [], layouts: {}, layoutWarnings: {},
 };
 
 export function workspaceTabs(sessions: readonly AgencyRuntimeSession[], workspaceId: WorkspaceId): AgencyRuntimeSession[] {

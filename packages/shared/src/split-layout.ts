@@ -384,24 +384,29 @@ export function reconcileLayout(
 
   const openSet = new Set(openTabIds);
   const assignedTabs = new Set<string>();
+  let modified = false;
 
   // 1. Prune closed/stale tabs from each pane
   function cleanNode(node: LayoutNode): LayoutNode {
     if (node.type === 'pane') {
       const validTabs = node.tabIds.filter((id) => openSet.has(id));
+      if (validTabs.length !== node.tabIds.length) modified = true;
       for (const t of validTabs) assignedTabs.add(t);
       const selected = validTabs.includes(node.selectedTabId ?? '')
         ? node.selectedTabId
         : (validTabs[0] ?? null);
+      if (selected !== node.selectedTabId) modified = true;
       return {
         ...node,
         tabIds: validTabs,
         selectedTabId: selected,
       };
     }
+    const ratio = clampRatio(node.ratio);
+    if (ratio !== node.ratio) modified = true;
     return {
       ...node,
-      ratio: clampRatio(node.ratio),
+      ratio,
       first: cleanNode(node.first),
       second: cleanNode(node.second),
     };
@@ -419,6 +424,7 @@ export function reconcileLayout(
   // 3. Find any open tabs that are not assigned to any pane, and assign them
   const unassignedTabs = openTabIds.filter((id) => !assignedTabs.has(id));
   if (unassignedTabs.length > 0) {
+    modified = true;
     tree = updatePaneNode(tree, focusedPane.id, (p) => {
       const combined = [...p.tabIds, ...unassignedTabs];
       return {
@@ -433,6 +439,7 @@ export function reconcileLayout(
   const maximizedPaneId = saved.maximizedPaneId && panes.some((p) => p.id === saved.maximizedPaneId)
     ? saved.maximizedPaneId
     : null;
+  if (maximizedPaneId !== saved.maximizedPaneId) modified = true;
 
   return {
     version: 1,
@@ -440,7 +447,9 @@ export function reconcileLayout(
     tree,
     focusedPaneId: focusedPane.id,
     maximizedPaneId,
-    updatedAt: saved.updatedAt,
+    updatedAt: modified
+      ? new Date(Math.max(Date.now(), (Number.isFinite(Date.parse(saved.updatedAt)) ? Date.parse(saved.updatedAt) : 0) + 1)).toISOString()
+      : saved.updatedAt,
   };
 }
 

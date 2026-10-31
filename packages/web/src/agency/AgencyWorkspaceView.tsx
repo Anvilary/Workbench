@@ -36,6 +36,8 @@ interface Props {
   onDone: () => void;
   launchError?: string | null;
   onClearLaunchError?: () => void;
+  placementWarning?: string | null;
+  onClearPlacementWarning?: () => void;
   getTabActivity?: (workspaceId: WorkspaceId, tabId: string) => MawActivityState;
   onAcknowledgeTab?: (workspaceId: WorkspaceId, tabId: string) => Promise<void> | void;
   savedLayout?: WorkspacePaneLayout;
@@ -54,6 +56,8 @@ export function AgencyWorkspaceView({
   onDone,
   launchError,
   onClearLaunchError,
+  placementWarning,
+  onClearPlacementWarning,
   getTabActivity,
   onAcknowledgeTab,
   onTabDisplayed,
@@ -151,10 +155,12 @@ export function AgencyWorkspaceView({
   }
 
   // Sync with incoming server layout when available
+  const initialSavedLayoutApplied = useRef(Boolean(savedLayout));
   useEffect(() => {
     if (savedLayout && savedLayout.workspaceId === workspace.id) {
       setLayout((prev) => {
-        if (savedLayout.updatedAt > prev.updatedAt) {
+        if (!initialSavedLayoutApplied.current || savedLayout.updatedAt > prev.updatedAt) {
+          initialSavedLayoutApplied.current = true;
           return reconcileLayout(savedLayout, workspace.id, openTabIds, defaultSelected);
         }
         return prev;
@@ -587,6 +593,19 @@ export function AgencyWorkspaceView({
           {t('agency.ui.markDone')}
         </button>
       </header>
+
+      {placementWarning && (
+        <div className="agency-notice-bar" role="status">
+          <span>{placementWarning}</span>
+          <button
+            type="button"
+            aria-label={t('agency.ui.dismissNotification')}
+            onClick={() => onClearPlacementWarning?.()}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {(error || launchError) && (
         <div className="agency-error-bar" role="alert">
