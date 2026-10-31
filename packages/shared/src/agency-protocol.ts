@@ -265,7 +265,7 @@ export type AgencyServerMessage =
   | { type: 'agency.sessions.history'; requestId: RequestId; sessions: readonly AgencyRuntimeSession[]; total: number; offset: number }
   | { type: 'agency.session.created'; requestId: RequestId; session: AgencyRuntimeSession }
   | { type: 'agency.session.selection'; requestId: RequestId; session: AgencyAgentSession }
-  | { type: 'agency.error'; requestId: RequestId; code: AgencyErrorCode; message: string }
+  | { type: 'agency.error'; requestId: RequestId; code: AgencyErrorCode; message: string; workspaceId?: WorkspaceId; tabId?: string }
   /** Broadcasts are emitted to every authorized connected browser, not only the caller. */
   | { type: 'agency.project.changed'; change: 'created' | 'updated' | 'archived' | 'unarchived' | 'deleted'; projectId: ProjectId; project?: AgencyProject }
   | { type: 'agency.workspace.changed'; change: 'created' | 'updated' | 'done' | 'restored' | 'archived' | 'deleted'; workspaceId: WorkspaceId; workspace?: AgencyWorkspace }
@@ -699,7 +699,14 @@ export function parseAgencyServerMessage(raw: unknown): AgencyServerMessage | nu
     }
     case 'agency.error': {
       if (typeof raw['requestId'] !== 'string' || !ERROR_CODES.has(raw['code'] as AgencyErrorCode) || typeof raw['message'] !== 'string') return null;
-      return { type: 'agency.error', requestId: raw['requestId'], code: raw['code'] as AgencyErrorCode, message: raw['message'] };
+      return {
+        type: 'agency.error',
+        requestId: raw['requestId'],
+        code: raw['code'] as AgencyErrorCode,
+        message: raw['message'],
+        ...(typeof raw['workspaceId'] === 'string' && isValidId(raw['workspaceId']) ? { workspaceId: raw['workspaceId'] as WorkspaceId } : {}),
+        ...(typeof raw['tabId'] === 'string' && isValidId(raw['tabId']) ? { tabId: raw['tabId'] } : {}),
+      };
     }
     case 'agency.project.changed': {
       if (!['created', 'updated', 'deleted'].includes(raw['change'] as string) || !isValidId(raw['projectId'])) return null;

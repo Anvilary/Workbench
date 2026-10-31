@@ -144,10 +144,17 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
         for (const l of message.layouts) layoutsMap[l.workspaceId] = l;
         setData((old) => ({ ...old, layouts: { ...old.layouts, ...layoutsMap } }));
       } else if (message.type === 'agency.layout.changed') {
-        setData((old) => ({
-          ...old,
-          layouts: { ...old.layouts, [message.workspaceId]: message.layout },
-        }));
+        setData((old) => {
+          const nextWarnings = old.layoutWarnings ? { ...old.layoutWarnings } : undefined;
+          if (nextWarnings && message.workspaceId in nextWarnings) {
+            delete nextWarnings[message.workspaceId];
+          }
+          return {
+            ...old,
+            layouts: { ...old.layouts, [message.workspaceId]: message.layout },
+            layoutWarnings: nextWarnings,
+          };
+        });
       } else if (
         message.type === 'agency.project.created' || message.type === 'agency.project.updated' ||
         message.type === 'agency.project.archived' || message.type === 'agency.project.unarchived'
@@ -169,7 +176,17 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
       ) {
         setData((old) => ({ ...old, workspaces: replaceById(old.workspaces, message.workspace) }));
       } else if (message.type === 'agency.workspace.deleted') {
-        setData((old) => ({ ...old, workspaces: old.workspaces.filter((w) => w.id !== message.workspaceId) }));
+        setData((old) => {
+          const nextWarnings = old.layoutWarnings ? { ...old.layoutWarnings } : undefined;
+          if (nextWarnings && message.workspaceId in nextWarnings) {
+            delete nextWarnings[message.workspaceId];
+          }
+          return {
+            ...old,
+            workspaces: old.workspaces.filter((w) => w.id !== message.workspaceId),
+            layoutWarnings: nextWarnings,
+          };
+        });
       } else if (message.type === 'agency.workspace.changed') {
         setData((old) => ({
           ...old, workspaces: message.change === 'deleted'
@@ -197,6 +214,15 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
           if (unconfirmedSessions.current.has(next.id)) unconfirmedSessions.current.set(next.id, next);
         }
         setData((old) => ({ ...old, sessions: applySessionActivity(old.sessions, previous, message) }));
+      } else if (message.type === 'agency.error') {
+        if (!message.requestId || !pending.current.has(message.requestId)) {
+          if (message.workspaceId) {
+            setData((old) => ({
+              ...old,
+              layoutWarnings: { ...(old.layoutWarnings ?? {}), [message.workspaceId!]: message.message },
+            }));
+          }
+        }
       }
       if (!('requestId' in message) || !message.requestId) return;
       const waiting = pending.current.get(message.requestId);
@@ -251,10 +277,19 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
     request({ type: 'agency.workspace.delete', workspaceId });
   const saveLayout = useCallback((workspaceId: WorkspaceId, layout: WorkspacePaneLayout) =>
     request({ type: 'agency.layout.save', workspaceId, layout }), [request]);
+  const clearLayoutWarning = useCallback((workspaceId: WorkspaceId) => {
+    setData((old) => {
+      if (!old.layoutWarnings || !(workspaceId in old.layoutWarnings)) return old;
+      const next = { ...old.layoutWarnings };
+      delete next[workspaceId];
+      return { ...old, layoutWarnings: next };
+    });
+  }, []);
 
   return {
     data, online, loaded, synchronized, notice, request, refresh,
     createProject, renameProject, archiveProject, unarchiveProject, deleteProject,
     createWorkspace, archiveWorkspace, markDone, restore, deleteWorkspace, saveLayout,
+    clearLayoutWarning,
   };
 }

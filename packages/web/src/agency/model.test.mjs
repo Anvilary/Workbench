@@ -6,6 +6,7 @@ import {
   putWorkspaceDraft, selectableEfforts, selectableModels, transitionNotice,
   createAgencyTransport, parseProfileArgv, allWorkspaceTabs, selectedWorkspaceTab,
   applySessionsSnapshot, applySessionActivity, retainUnconfirmedCreations,
+  EMPTY_AGENCY_SNAPSHOT,
 } from './model.ts';
 
 const emptyCapabilities = {
@@ -170,4 +171,8 @@ test('creation replies survive older snapshots until an authoritative snapshot i
   assert.deepEqual(retainUnconfirmedCreations([created], pending), [created]);
   assert.equal(pending.size, 0);
   assert.deepEqual(retainUnconfirmedCreations([], pending), [], 'later authoritative closure can remove the tab');
+});
+
+test('EMPTY_AGENCY_SNAPSHOT initializes layoutWarnings map', () => {
+  assert.deepEqual(EMPTY_AGENCY_SNAPSHOT.layoutWarnings, {});
 });

@@ -1280,11 +1280,12 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     send(socket, {
       type: 'agency.layouts.snapshot',
       requestId: '',
-      layouts: agencyLayoutStore.list(),
+      layouts: tabCoordinator.reconcileAllLayouts(),
     });
     void tabReady.then(() => {
       send(socket, { type: 'agency.webTabs.snapshot', requestId: '', tabs: agencyBrowserTabs.listTabs() });
       send(socket, { type: 'agency.notifications.snapshot', requestId: '', notifications: agencyNotificationStore.list(), activityStates: agencyActivityManager.snapshot() });
+      send(socket, { type: 'agency.layouts.snapshot', requestId: '', layouts: tabCoordinator.reconcileAllLayouts() });
     }).catch(() => undefined);
     // Lo que ya se sabe del plan de cada CLI; lo que llegue despues va por `onChange`.
     planLimits.retain();
