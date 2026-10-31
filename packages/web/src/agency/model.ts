@@ -206,3 +206,18 @@ export function parseProfileArgv(value: string): string[] | null {
     return null;
   }
 }
+
+/** A creation reply may overtake a list snapshot that was taken before the launch. */
+export function retainUnconfirmedCreations<T extends { id: string; updatedAt: string }>(
+  snapshot: readonly T[], unconfirmed: Map<string, T>,
+): T[] {
+  const next = [...snapshot];
+  for (const [id, created] of unconfirmed) {
+    const observed = next.find(row => row.id === id);
+    if (observed && observed.updatedAt >= created.updatedAt) {
+      unconfirmed.delete(id);
+    } else if (!observed) next.push(created);
+    else next[next.indexOf(observed)] = created;
+  }
+  return next;
+}

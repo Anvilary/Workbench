@@ -203,6 +203,7 @@ export type AgencyClientMessage =
       workspaceId: WorkspaceId;
       kind: 'agent';
       launchId?: string;
+      targetPaneId?: string;
       profileId: CliProfileId;
       resumeNativeSessionId?: string;
       cols: number;
@@ -214,6 +215,7 @@ export type AgencyClientMessage =
       workspaceId: WorkspaceId;
       kind: 'terminal';
       launchId?: string;
+      targetPaneId?: string;
       cols: number;
       rows: number;
     })
@@ -471,24 +473,26 @@ export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | nu
     case 'agency.session.create': {
       if (!isValidId(raw['workspaceId'])) return null;
       if (raw.launchId !== undefined && !isValidId(raw.launchId)) return null;
+      if (raw.targetPaneId !== undefined && !isValidId(raw.targetPaneId)) return null;
       const cols = raw['cols'];
       const rows = raw['rows'];
       if (typeof cols !== 'number' || !Number.isInteger(cols) || cols < 2 || cols > 500) return null;
       if (typeof rows !== 'number' || !Number.isInteger(rows) || rows < 1 || rows > 200) return null;
       if (raw['kind'] === 'terminal') {
-        if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'kind', 'cols', 'rows', 'launchId'])) return null;
+        if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'kind', 'cols', 'rows', 'launchId', 'targetPaneId'])) return null;
         return {
           type: 'agency.session.create',
           requestId,
           workspaceId: raw['workspaceId'] as WorkspaceId,
           kind: 'terminal',
           ...(raw.launchId !== undefined ? { launchId: raw.launchId as string } : {}),
+          ...(raw.targetPaneId !== undefined ? { targetPaneId: raw.targetPaneId as string } : {}),
           cols,
           rows,
         };
       }
       if (raw['kind'] === 'agent') {
-        if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'kind', 'profileId', 'cols', 'rows', 'resumeNativeSessionId', 'model', 'effort', 'launchId'])) return null;
+        if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'kind', 'profileId', 'cols', 'rows', 'resumeNativeSessionId', 'model', 'effort', 'launchId', 'targetPaneId'])) return null;
         if (typeof raw['profileId'] !== 'string' || raw['profileId'].trim().length === 0 || raw['profileId'].length > 64) return null;
         const result: AgencyClientMessage = {
           type: 'agency.session.create',
@@ -496,6 +500,7 @@ export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | nu
           workspaceId: raw['workspaceId'] as WorkspaceId,
           kind: 'agent',
           ...(raw.launchId !== undefined ? { launchId: raw.launchId as string } : {}),
+          ...(raw.targetPaneId !== undefined ? { targetPaneId: raw.targetPaneId as string } : {}),
           profileId: raw['profileId'] as CliProfileId,
           cols,
           rows,

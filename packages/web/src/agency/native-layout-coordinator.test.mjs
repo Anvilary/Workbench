@@ -36,7 +36,6 @@ nativeLayoutCoordinator.register({
     window.backdrops.push({ url, overlayOpen: !document.getElementById('overlay').hidden });
   },
 });
-window.onState({ type: 'ready', id: 'view-1' });
 window.overlay = (open) => { document.getElementById('overlay').hidden = !open; };
 window.resizeView = (width) => { view.style.width = width + 'px'; };
 `;
@@ -108,6 +107,8 @@ test('native capture fallback ignores results that arrive after the overlay clos
 
   await page.evaluate(() => window.overlay(true));
   await page.waitForFunction(() => window.pending.length === 1);
+  // Even a loading native page must yield to a menu/drag shield.
+  await page.evaluate(() => window.onState({ type: 'ready', id: 'view-1' }));
   await page.evaluate(() => window.onState({ type: 'focused', id: 'view-1' }));
   assert.deepEqual(await page.evaluate(() => window.focused), ['view-1'], 'covered native views cannot steal dialog focus');
   await page.evaluate(() => window.overlay(false));

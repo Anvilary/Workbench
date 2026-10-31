@@ -129,6 +129,19 @@ export class AgencyLayoutStore {
     });
   }
 
+  /** Read and change the latest layout within the persistence queue. */
+  async update(workspaceId: WorkspaceId, change: (current: WorkspacePaneLayout | undefined) => WorkspacePaneLayout): Promise<WorkspacePaneLayout> {
+    return this.mutate(async () => {
+      const layout = change(this.layouts.get(workspaceId));
+      if (layout.workspaceId !== workspaceId || !isWorkspacePaneLayout(layout)) throw new Error('Invalid layout update');
+      const next = new Map(this.layouts);
+      next.set(workspaceId, layout);
+      await this.persist(next.values());
+      this.layouts.set(workspaceId, layout);
+      return layout;
+    });
+  }
+
   async delete(workspaceId: WorkspaceId): Promise<void> {
     return this.mutate(async () => {
       if (!this.layouts.has(workspaceId)) return;

@@ -11,7 +11,7 @@ export interface NativeViewRegistration {
 function hasIntersectingOverlay(viewBounds: { left: number; top: number; right: number; bottom: number }): boolean {
   if (viewBounds.right <= viewBounds.left || viewBounds.bottom <= viewBounds.top) return false;
   const items = document.querySelectorAll<HTMLElement>(
-    '[role="dialog"], [role="menu"], .agency-modal-backdrop, .agency-dropdown-menu, .maw-toast-item, .context-menu, .agency-dialog, .maw-context-menu'
+    '[role="dialog"], [role="menu"], .agency-modal-backdrop, .agency-dropdown-menu, .maw-toast-item, .context-menu, .agency-dialog, .maw-context-menu, .maw-pane-drag-shield'
   );
   for (let i = 0; i < items.length; i++) {
     const item = items[i]!;
@@ -42,6 +42,7 @@ type TrackedView = NativeViewRegistration & {
   captureEpoch: number;
   capturePending: boolean;
   backdropApplied: boolean;
+  backdropReady: boolean;
   nativeVisible: boolean;
   captureBounds: string;
 };
@@ -57,6 +58,7 @@ class NativeLayoutCoordinator {
   /** Drop a capture that must not land on a visible view, and release its bitmap. */
   private cancelCapture(entry: TrackedView): void {
     if (!entry.capturePending && !entry.hasBackdrop && !entry.backdropApplied) return;
+    entry.backdropReady = false;
     entry.captureEpoch += 1;
     entry.capturePending = false;
     entry.hasBackdrop = false;
@@ -82,6 +84,7 @@ class NativeLayoutCoordinator {
       captureEpoch: 0,
       capturePending: false,
       backdropApplied: false,
+      backdropReady: false,
       nativeVisible: false,
       captureBounds: '',
     });
@@ -137,6 +140,7 @@ class NativeLayoutCoordinator {
     this.unsubscribeBridge = bridge.subscribe((state) => {
       const entry = this.views.get(state.id ?? '');
       if (state.type === 'focused' && entry) {
+        window.dispatchEvent(new Event('maw:dismiss-pane-menus'));
         if (entry.nativeVisible && entry.element.isConnected && !document.hidden) entry.onFocused?.();
       } else if (state.type === 'ready' && entry) {
         entry.isReady = true;
@@ -186,6 +190,7 @@ class NativeLayoutCoordinator {
     }> = [];
 
     const viewport = { width: window.innerWidth, height: window.innerHeight };
+    const paneDrag = document.querySelector('.maw-pane-drag-shield') !== null;
 
     for (const [id, reg] of this.views) {
       const el = reg.element;
@@ -244,20 +249,29 @@ class NativeLayoutCoordinator {
       }
 
       reg.nativeVisible = false;
-      if (reg.captureBounds !== boundsKey) this.cancelCapture(reg);
+      // A drop may exchange differently sized leaves. Keep the painted drag bitmap
+      // until the animation finishes; the existing native view receives final bounds once.
+      if (reg.captureBounds !== boundsKey && !(paneDrag && reg.backdropReady)) this.cancelCapture(reg);
       reg.captureBounds = boundsKey;
-      if (!reg.hasBackdrop && !reg.capturePending && reg.isReady) {
+      // Overlay input cannot wait for a remote page to finish loading.
+      if (!reg.hasBackdrop && !reg.capturePending) {
         const epoch = ++reg.captureEpoch;
         reg.capturePending = true;
         reg.hasBackdrop = true;
         void bridge.command({ type: 'capture', id }).then((res: unknown) => {
           const current = this.views.get(id);
-          if (!current || current !== reg || current.captureEpoch !== epoch || current.nativeVisible) return;
+          if (!current || current !== reg || current.captureEpoch !== epoch) return;
           current.capturePending = false;
           const result = res as { ok?: boolean; dataUrl?: string } | undefined;
           if (result?.ok && result.dataUrl && current.hasBackdrop) {
             current.backdropApplied = true;
             current.setCaptureBackdrop(result.dataUrl);
+            // Let React commit and paint the in-memory bitmap before concealing the native surface.
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              if (this.views.get(id) !== current || current.captureEpoch !== epoch) return;
+              current.backdropReady = true;
+              this.measure();
+            }));
             return;
           }
           current.hasBackdrop = false;
@@ -272,6 +286,7 @@ class NativeLayoutCoordinator {
           current.hasBackdrop = false;
         });
       }
+      if (!reg.backdropReady) visibleViews.push({ id, bounds: { x, y, width, height } });
     }
 
     const command = {
