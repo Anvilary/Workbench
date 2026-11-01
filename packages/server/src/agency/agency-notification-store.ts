@@ -110,6 +110,7 @@ export class AgencyNotificationStore extends EventEmitter {
       throw new Error('Invalid notification store format');
     }
     const root = raw as Record<string, unknown>;
+    if (!Number.isInteger(root['version'])) throw new Error('Invalid notification store version');
     if (root['version'] !== VERSION) throw new UnsupportedAgencyNotificationSchemaError(root['version']);
     if (!Array.isArray(root['notifications'])) throw new Error('Invalid notification store shape');
     const items: MawNotificationItem[] = [];
