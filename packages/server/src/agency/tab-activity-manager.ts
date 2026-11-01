@@ -43,6 +43,13 @@ import type { BrowserActivityProvider } from './browser-activity-provider.js';
 
 const NOW = (): string => new Date().toISOString();
 
+class UnsupportedTabActivitySchemaError extends Error {
+  constructor(version: unknown) {
+    super('Unsupported tab activity store version: ' + String(version));
+    this.name = 'UnsupportedTabActivitySchemaError';
+  }
+}
+
 /** Providers that actually emit verified turn-completion signals via real-time watchers or events. */
 const VERIFIED_TURN_PROVIDERS = new Set<string>(['claude-code', 'opencode']);
 
@@ -132,6 +139,7 @@ export class TabActivityManager extends EventEmitter {
       const contents = await readFile(this.file, 'utf8');
       return this.parse(contents);
     } catch (err) {
+      if (err instanceof UnsupportedTabActivitySchemaError) throw err;
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') primaryMissing = true;
       primaryFailure = err;
     }
@@ -141,6 +149,7 @@ export class TabActivityManager extends EventEmitter {
       const backupContents = await readFile(this.file + '.bak', 'utf8');
       recovered = this.parse(backupContents);
     } catch (backupError) {
+      if (backupError instanceof UnsupportedTabActivitySchemaError) throw backupError;
       const backupMissing = (backupError as NodeJS.ErrnoException).code === 'ENOENT';
       if (primaryMissing && backupMissing) {
         return [];
@@ -157,7 +166,8 @@ export class TabActivityManager extends EventEmitter {
     const raw: unknown = JSON.parse(contents);
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid tab activity file format');
     const root = raw as Record<string, unknown>;
-    if (root['version'] !== 1 || !Array.isArray(root['records'])) throw new Error('Unsupported tab activity format');
+    if (root['version'] !== 1) throw new UnsupportedTabActivitySchemaError(root['version']);
+    if (!Array.isArray(root['records'])) throw new Error('Invalid tab activity record list');
     const records: TabActivityRecord[] = [];
     for (const item of root['records']) {
       if (!isTabActivityRecord(item)) throw new Error('Invalid tab activity record');
