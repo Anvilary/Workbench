@@ -1,8 +1,9 @@
-import { app, BrowserWindow, WebContentsView, Menu, ipcMain, session, shell, dialog } from 'electron';
+import { app, BrowserWindow, WebContentsView, Menu, ipcMain, session, shell, dialog, clipboard } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir } from 'node:fs/promises';
-import { PARTITION, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl } from './policy.mjs';
+import { PARTITION, GITHUB_PARTITION, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, githubEmbeddedUrl } from './policy.mjs';
+import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Deliberately distinct from both production MAW and any Brave/Neko profile.
@@ -21,6 +22,7 @@ async function start() {
   Menu.setApplicationMenu(null);
   const secure = { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: false, allowRunningInsecureContent: false };
   const chatSession = session.fromPartition(PARTITION);
+  const githubSession = session.fromPartition(GITHUB_PARTITION);
   // Permit clipboard writing only from the official ChatGPT origin.
   // Clipboard reading and all unrelated permissions remain denied.
   const canWriteClipboard = (contents, requestingUrl) => {
@@ -44,11 +46,25 @@ async function start() {
     permission === 'clipboard-sanitized-write' &&
     canWriteClipboard(contents, requestingOrigin)
   );
+  const githubClipboard = (contents, requestingUrl) => {
+    try {
+      return !!contents &&
+        new URL(contents.getURL()).origin === 'https://github.com' &&
+        new URL(requestingUrl).origin === 'https://github.com';
+    } catch { return false; }
+  };
+  githubSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback(permission === 'clipboard-sanitized-write' && githubClipboard(contents, details?.requestingUrl));
+  });
+  githubSession.setPermissionCheckHandler((contents, permission, requestingOrigin) =>
+    permission === 'clipboard-sanitized-write' && githubClipboard(contents, requestingOrigin)
+  );
 
   const win = new BrowserWindow({ width: 1280, height: 860, title: 'MAW · ChatGPT feasibility prototype', autoHideMenuBar: true,
     webPreferences: { ...secure, partition: 'persist:maw-shell-prototype', preload: path.join(here, 'preload.cjs') } });
   const views = new Map();
   const urls = new Map();
+  const providers = new Map();
   const requestedUrls = new Map();
   const failures = new Map();
   let layoutFocusedId = null;
@@ -157,6 +173,28 @@ async function start() {
     }
   }
 
+  githubSession.on('will-download', (event, item, webContents) => {
+    const tabEntry = [...views.entries()].find(([, view]) => view.webContents === webContents);
+    if (!tabEntry || providers.get(tabEntry[0]) !== 'github') {
+      event.preventDefault();
+      return;
+    }
+    const initiator = typeof item.getInitiatorOrigin === 'function' ? item.getInitiatorOrigin() : null;
+    if (initiator) {
+      try {
+        const host = new URL(initiator).hostname;
+        const allowed = host === 'github.com' || host.endsWith('.github.com') || host.endsWith('.githubusercontent.com');
+        if (!allowed) {
+          event.preventDefault();
+          return;
+        }
+      } catch {
+        event.preventDefault();
+        return;
+      }
+    }
+  });
+
   function invalidate() { hideAll(); send({ type: 'layout-needed' }); }
 
   async function openExternal(url) {
@@ -167,9 +205,13 @@ async function start() {
     send({ type: 'layout-needed' });
   }
 
-  function guard(contents, allowPopup = true) {
+  function navigationAllowed(provider, url) {
+    return provider === 'github' ? githubEmbeddedUrl(url) : (embeddedUrl(url) || isDownloadOrFileDeliveryUrl(url));
+  }
+
+  function guard(contents, provider = 'chatgpt', allowPopup = true) {
     const navigation = (event, url) => {
-      if (embeddedUrl(url) || isDownloadOrFileDeliveryUrl(url)) return;
+      if (navigationAllowed(provider, url)) return;
       event.preventDefault();
       void openExternal(url).catch(() => send({ type: 'error', message: 'Could not open external browser.' }));
     };
@@ -177,9 +219,9 @@ async function start() {
     contents.on('will-redirect', navigation);
     contents.on('will-attach-webview', event => event.preventDefault());
     contents.setWindowOpenHandler(({ url }) => {
-      if (allowPopup && embeddedUrl(url) && popups.size < 1) return { action: 'allow', overrideBrowserWindowOptions: {
+      if (allowPopup && navigationAllowed(provider, url) && popups.size < 1) return { action: 'allow', overrideBrowserWindowOptions: {
         parent: win, autoHideMenuBar: true, width: 640, height: 760,
-        webPreferences: { ...secure, session: chatSession, preload: '' },
+        webPreferences: { ...secure, session: provider === 'github' ? githubSession : chatSession, preload: '' },
       } };
       void openExternal(url).catch(() => {});
       return { action: 'deny' };
@@ -187,10 +229,25 @@ async function start() {
     contents.on('did-create-window', popup => {
       popups.add(popup);
       popup.setMenu(null);
-      guard(popup.webContents, false);
+      guard(popup.webContents, provider, false);
       popup.on('closed', () => { popups.delete(popup); invalidate(); });
     });
     contents.on('before-input-event', desktopShortcut);
+    contents.on('context-menu', (event, params) => {
+      if (typeof event.preventDefault === 'function') event.preventDefault();
+      const id = [...views.entries()].find(([, view]) => view.webContents === contents)?.[0];
+      if (!id) return;
+      send({
+        type: 'browser-context',
+        id,
+        selection: typeof params.selectionText === 'string' && params.selectionText.length > 0,
+        linkURL: typeof params.linkURL === 'string' ? params.linkURL : '',
+        canGoBack: contents.canGoBack(),
+        canGoForward: contents.canGoForward(),
+        x: Number.isFinite(params.x) ? params.x : 0,
+        y: Number.isFinite(params.y) ? params.y : 0,
+      });
+    });
   }
 
   function desktopShortcut(event, input) {
@@ -210,8 +267,22 @@ async function start() {
     } catch { return false; }
   }
 
-  function open(id, url) {
+  function durablePage(provider, value) {
+    if (provider === 'github') {
+      try {
+        const url = new URL(value);
+        return url.origin === 'https://github.com' && ![...url.searchParams.keys()].some(key => /token|code|state|session/i.test(key));
+      } catch { return false; }
+    }
+    return chatUrlForPersistence(value);
+  }
+
+  function open(id, url, provider = 'chatgpt') {
     if (views.has(id)) {
+      if ((providers.get(id) ?? 'chatgpt') !== provider) {
+        send({ type: 'error', id, message: 'This tab cannot change browser provider.' });
+        return;
+      }
       const contents = views.get(id).webContents;
       if (contents.isDestroyed() || (failures.has(id) && requestedUrls.get(id) === url)) {
         send({ type: 'error', id, message: failures.get(id) || 'ChatGPT renderer stopped. Use Reload page to retry.' });
@@ -221,20 +292,21 @@ async function start() {
         requestedUrls.set(id, url);
         if (urls.get(id) !== url) { urls.set(id, url); void contents.loadURL(url).catch(() => {}); }
       }
-      if (!contents.isLoading() && chatUrlForPersistence(contents.getURL())) {
+      if (!contents.isLoading() && durablePage(provider, contents.getURL())) {
         send({ type: 'ready', id });
         if (urls.get(id) !== url) send({ type: 'committed', id, url: contents.getURL() });
       }
       return;
     }
     if (views.size >= 8) throw new Error('Prototype view limit reached');
-    const view = new WebContentsView({ webPreferences: { ...secure, session: chatSession, backgroundThrottling: true } });
+    const view = new WebContentsView({ webPreferences: { ...secure, session: provider === 'github' ? githubSession : chatSession, backgroundThrottling: true } });
     view.setVisible(false);
     view.setBackgroundColor('#212121');
     views.set(id, view);
+    providers.set(id, provider);
     urls.set(id, url);
     requestedUrls.set(id, url);
-    guard(view.webContents);
+    guard(view.webContents, provider);
     const reportFocus = () => {
       if (views.get(id) !== view || attachedViews.get(id) !== view ||
           view.webContents.isDestroyed() || reportedFocusedId === id) return;
@@ -247,14 +319,14 @@ async function start() {
       if (mouse.type === 'mouseDown') reportFocus();
     });
     const committed = (_event, url, isMainFrame = true) => {
-      if (!isMainFrame || !chatUrlForPersistence(url)) return;
+      if (!isMainFrame || !durablePage(provider, url)) return;
       urls.set(id, url);
       send({ type: 'committed', id, url });
     };
     view.webContents.on('did-navigate', committed);
     view.webContents.on('did-navigate-in-page', committed);
     view.webContents.on('did-start-loading', () => { failures.delete(id); send({ type: 'loading', id }); });
-    view.webContents.on('did-finish-load', () => { if (chatUrlForPersistence(view.webContents.getURL())) send({ type: 'ready', id }); });
+    view.webContents.on('did-finish-load', () => { if (durablePage(provider, view.webContents.getURL())) send({ type: 'ready', id }); });
     view.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => {
       if (mainFrame && code !== -3) {
         const message = `ChatGPT failed to load (${code}). Use Reload page to retry.`;
@@ -275,13 +347,42 @@ async function start() {
     if (!view) return;
     hide(id);
     if (!view.webContents.isDestroyed()) view.webContents.close();
-    views.delete(id); urls.delete(id); requestedUrls.delete(id); failures.delete(id);
+    views.delete(id); urls.delete(id); providers.delete(id); requestedUrls.delete(id); failures.delete(id);
   }
 
   ipcMain.handle(CHANNEL, async (event, command) => {
     if (!trustedSender(event, win.webContents, local.origin) || !validCommand(command)) throw new Error('Invalid desktop request');
-    if (command.type === 'open') open(command.id, command.url);
-    if (command.type === 'update' && views.has(command.id)) open(command.id, command.url);
+    if (command.type === 'open') open(command.id, command.url, command.provider ?? 'chatgpt');
+    if (command.type === 'update' && views.has(command.id)) open(command.id, command.url, command.provider ?? providers.get(command.id) ?? 'chatgpt');
+    if (command.type === 'browser-action') {
+      const view = views.get(command.id);
+      const contents = view?.webContents;
+      if (!contents || contents.isDestroyed()) return;
+      if (command.action === 'back' && contents.canGoBack()) contents.goBack();
+      if (command.action === 'forward' && contents.canGoForward()) contents.goForward();
+      if (command.action === 'reload') contents.reload();
+      if (command.action === 'copy-url') clipboard.writeText(contents.getURL());
+      if (command.action === 'copy-selection') contents.copy();
+      if (command.action === 'open-page') void openExternal(contents.getURL());
+      if (command.action === 'open-link') void openExternal(command.url);
+      if (command.action === 'zoom-in') contents.setZoomLevel(Math.min(3, contents.getZoomLevel() + 0.5));
+      if (command.action === 'zoom-out') contents.setZoomLevel(Math.max(-3, contents.getZoomLevel() - 0.5));
+      if (command.action === 'zoom-reset') contents.setZoomLevel(0);
+    }
+    if (command.type === 'copy-file') {
+      const resolved = await resolveClipboardTarget(command.cwd, command.relative);
+      if (!resolved.ok) return { ok: false, error: resolved.error };
+      try {
+        const payload = fileClipboardPayload(resolved.absolute);
+        clipboard.writeBuffer('text/uri-list', payload.uriList);
+        clipboard.writeBuffer('x-special/gnome-copied-files', payload.gnome);
+        const written = clipboard.readBuffer('x-special/gnome-copied-files');
+        if (!written.equals(payload.gnome)) return { ok: false, error: 'unavailable' };
+        return { ok: true, directory: resolved.directory };
+      } catch {
+        return { ok: false, error: 'unavailable' };
+      }
+    }
     if (command.type === 'close') closeView(command.id);
     if (command.type === 'retain') for (const id of views.keys()) if (!command.ids.includes(id)) closeView(id);
 

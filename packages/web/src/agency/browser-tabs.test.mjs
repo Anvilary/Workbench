@@ -126,7 +126,7 @@ test('Browser compatibility preserves CLI input, mixed tabs and external ChatGPT
   await input.fill('Cancelled'); await input.press('Escape');
   await shell.waitFor(); await page.waitForFunction(()=>document.activeElement?.id==='tab-33333333-3333-4333-8333-333333333333');
   await shell.locator('.agency-truncate').dblclick();
-  await input.fill('Blur cancels'); await page.getByRole('button',{name:'Mark Done',exact:true}).focus();
+  await input.fill('Blur cancels'); await page.getByRole('button',{name:'Workspace actions',exact:true}).focus();
   await shell.waitFor();
   await shell.press('F2'); await input.fill('   '); await input.press('Enter');
   assert.equal(await input.getAttribute('aria-invalid'),'true');

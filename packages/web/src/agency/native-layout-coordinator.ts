@@ -76,6 +76,10 @@ class NativeLayoutCoordinator {
     }
   }
 
+  isViewing(tabId: string): boolean {
+    return this.focusedId === tabId;
+  }
+
   register(reg: NativeViewRegistration): () => void {
     this.views.set(reg.id, {
       ...reg,

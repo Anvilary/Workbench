@@ -57,6 +57,7 @@ export function sanitizeForDurableStorage(tab: WebTab): WebTab {
     kind: 'web',
     title: tab.title,
     url: tab.url,
+    ...(tab.provider ? { provider: tab.provider } : {}),
     order: tab.order,
     selected: tab.selected,
     createdAt: tab.createdAt,

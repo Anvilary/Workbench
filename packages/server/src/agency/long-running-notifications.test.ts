@@ -9,7 +9,7 @@ import type { WorkspaceId, RuntimeSessionId } from '@agent-workbench/shared';
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-test('FEATURE 8: Long-running task notification after continuous work threshold', async () => {
+test('working and needs-input do not notify; a verified completion notifies once', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'long-running-test-'));
   const notifFile = path.join(dir, 'notifications.json');
   const activityFile = path.join(dir, 'activity.json');
@@ -61,7 +61,7 @@ test('FEATURE 8: Long-running task notification after continuous work threshold'
     const longRunningNotifs = notifications.filter(n => n.deduplicationKey?.startsWith('long-running:'));
     assert.equal(longRunningNotifs.length, 0, 'Short task must not produce long-running notification');
 
-    // Test 2: Task runs continuously across threshold -> Exactly ONE long-running notification
+    // Continuous work updates the tab and does not notify, including after the old threshold.
     const tab2 = '44444444-4444-4444-8444-444444444444';
     await manager.handleCliActivity({
       workspaceId: wsId,
@@ -73,23 +73,47 @@ test('FEATURE 8: Long-running task notification after continuous work threshold'
       nextActivity: 'working',
       lifecycle: 'running',
     });
-
-    // Wait past the 100ms threshold
     await pause(150);
-
+    assert.equal(manager.getTabState(wsId, tab2), 'working');
+    await manager.handleCliActivity({
+      workspaceId: wsId,
+      tabId: tab2,
+      sessionId: sessId,
+      provider: 'codex',
+      tabName: 'Long Codex Run',
+      taskId: 'codex-turn-1',
+      nextActivity: 'awaiting-user',
+      lifecycle: 'running',
+    });
+    assert.equal(manager.getTabState(wsId, tab2), 'needs-input');
     notifications = store.list();
-    const codexLongRunning = notifications.filter(n => n.deduplicationKey === `long-running:${wsId}:${tab2}:codex-turn-1`);
-    assert.equal(codexLongRunning.length, 1, 'Must create exactly one long-running notification');
-    assert.equal(codexLongRunning[0]!.workspaceId, wsId);
-    assert.equal(codexLongRunning[0]!.tabId, tab2);
-    assert.equal(codexLongRunning[0]!.state, 'working');
-    assert.ok(codexLongRunning[0]!.title.includes('Long Codex Run'));
-
-    // Test 3: Still working for another 150ms -> NO duplicate notifications
-    await pause(150);
+    assert.equal(notifications.filter(n => n.tabId === tab2).length, 0, 'Working and needs-input must not notify');
+    await manager.handleCliActivity({
+      workspaceId: wsId,
+      tabId: tab2,
+      sessionId: sessId,
+      provider: 'codex',
+      tabName: 'Long Codex Run',
+      taskId: 'codex-turn-1',
+      nextActivity: 'finished',
+      completionEvidence: 'native-turn',
+      lifecycle: 'running',
+    });
+    await manager.handleCliActivity({
+      workspaceId: wsId,
+      tabId: tab2,
+      sessionId: sessId,
+      provider: 'codex',
+      tabName: 'Long Codex Run',
+      taskId: 'codex-turn-1',
+      nextActivity: 'finished',
+      completionEvidence: 'native-turn',
+      lifecycle: 'running',
+    });
     notifications = store.list();
-    const codexLongRunningAfter = notifications.filter(n => n.deduplicationKey === `long-running:${wsId}:${tab2}:codex-turn-1`);
-    assert.equal(codexLongRunningAfter.length, 1, 'Must NOT create duplicate long-running notification');
+    const completed = notifications.filter(n => n.deduplicationKey === `cli-turn:${wsId}:${tab2}:codex-turn-1`);
+    assert.equal(completed.length, 1, 'Verified completion notifies once');
+    assert.equal(completed[0]!.state, 'finished');
 
     manager.dispose();
   } finally {

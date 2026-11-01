@@ -44,6 +44,7 @@ export function agencyErrorText(code: import('@agent-workbench/shared').AgencyEr
 export function agencyTabActivityText(state: MawActivityState): string {
   switch (state) {
     case 'finished': return t('agency.notifications.statusFinished');
+    case 'needs-input': return t('agency.ui.needsInput');
     case 'working': return t('agency.notifications.statusWorking');
     case 'failed': return t('agency.notifications.statusFailed');
     case 'idle': return t('agency.notifications.statusIdle');

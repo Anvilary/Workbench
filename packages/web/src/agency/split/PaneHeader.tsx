@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AgencyCliProfile, MawActivityState, WorkspaceId } from '@agent-workbench/shared';
+import type { AgencyCliProfile, MawActivityState, SplitDirection, WorkspaceId } from '@agent-workbench/shared';
 import { t } from '../../i18n/index.js';
 import { agencySessionText, agencyTabActivityText } from '../agency-labels.js';
-import type { WorkspaceTab } from '../model.js';
+import { canLaunchAgent, type WorkspaceTab } from '../model.js';
 import { PaneMenu } from './PaneMenu.js';
 import { PaneGrip } from './PaneMovement.js';
+import { setTabDragPreview, useTabDragPreview } from './tab-drag-store.js';
+import { insertionIndex, tabShift } from './tab-geometry.mjs';
 import { TabNameInput } from '../TabNameInput.js';
 import type { useAgencyStore } from '../useAgencyStore.js';
 
@@ -35,6 +37,9 @@ interface Props {
   onAddCliClick: () => void;
   onAddTerminalClick: () => void;
   onAddWebTabClick: () => void;
+  onAddGithubClick?: () => void;
+  onLaunchProfile?: (profileId: string) => void;
+  onSplitCreate?: (direction: SplitDirection, action: 'terminal' | 'agent' | 'web' | 'github', profileId?: string) => void;
   onMoveTabToPane: (tabId: string, targetPaneId: string, targetIndex?: number) => void;
   onRenameTab: (tab: WorkspaceTab, title: string) => Promise<void>;
   reportError: (error: string) => void;
@@ -67,6 +72,9 @@ export function PaneHeader({
   onAddCliClick,
   onAddTerminalClick,
   onAddWebTabClick,
+  onAddGithubClick,
+  onLaunchProfile,
+  onSplitCreate,
   onMoveTabToPane,
   onRenameTab,
   reportError,
@@ -74,8 +82,12 @@ export function PaneHeader({
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [splitIntent, setSplitIntent] = useState<SplitDirection | null>(null);
+  const [renameWidth, setRenameWidth] = useState<number | null>(null);
   const addButton = useRef<HTMLButtonElement>(null);
+  const menuAnchor = useRef<HTMLButtonElement | null>(null);
   const strip = useRef<HTMLDivElement | null>(null);
+  const dragPreview = useTabDragPreview();
   const [dragState, setDragState] = useState<{ tabId: string; targetIndex: number } | null>(null);
   const suppressTabClickUntil = useRef(0);
   const tabDrag = useRef<{
@@ -92,11 +104,37 @@ export function PaneHeader({
       if (e.key === 'Escape' && tabDrag.current) {
         tabDrag.current = null;
         setDragState(null);
+        setTabDragPreview(null);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
+
+  useEffect(() => {
+    const node = strip.current;
+    if (!node) return;
+    const onWheel = (event: WheelEvent) => {
+      if (node.scrollWidth <= node.clientWidth) return;
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (delta === 0) return;
+      event.preventDefault();
+      node.scrollLeft += delta;
+    };
+    node.addEventListener('wheel', onWheel, { passive: false });
+    return () => node.removeEventListener('wheel', onWheel);
+  }, [tabIds.length]);
+
+  useEffect(() => {
+    if (dragPreview) return;
+    const node = strip.current;
+    const selected = node?.querySelector<HTMLElement>('.maw-session-tab.active');
+    if (!node || !selected) return;
+    const left = selected.offsetLeft;
+    const right = left + selected.offsetWidth;
+    if (left < node.scrollLeft) node.scrollLeft = left;
+    else if (right > node.scrollLeft + node.clientWidth) node.scrollLeft = right - node.clientWidth;
+  }, [selectedTabId, dragPreview]);
 
   const paneTabs = tabIds
     .map((id) => tabs.find((t) => t.id === id))
@@ -134,6 +172,29 @@ export function PaneHeader({
     }
   }
 
+  function choose(action: 'terminal' | 'agent' | 'web' | 'github', profileId?: string) {
+    const direction = splitIntent;
+    setMenuOpen(false);
+    setSplitIntent(null);
+    if (direction) {
+      if (onSplitCreate) onSplitCreate(direction, action, profileId);
+      else if (direction === 'row') onSplitRight();
+      else onSplitDown();
+      return;
+    }
+    if (action === 'terminal') onAddTerminalClick();
+    else if (action === 'github') onAddGithubClick?.();
+    else if (action === 'web') onAddWebTabClick();
+    else if (profileId) onLaunchProfile?.(profileId);
+    else onAddCliClick();
+  }
+
+  function openMenu(button: HTMLButtonElement | null, direction: SplitDirection | null) {
+    menuAnchor.current = button;
+    setSplitIntent(direction);
+    setMenuOpen(true);
+  }
+
   function tabName(tab: WorkspaceTab) {
     if (tab.kind === 'web') return tab.web.title;
     const session = tab.session;
@@ -147,7 +208,7 @@ export function PaneHeader({
 
   return (
     <div
-      className={`maw-pane-header${isFocused ? ' is-focused' : ''}`}
+      className={`maw-pane-header${isFocused ? ' is-focused' : ''}${dragPreview?.overPaneId === paneId && dragPreview.sourcePaneId !== paneId ? ' is-tab-drop' : ''}`}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes('application/maw-tab-id')) {
           e.preventDefault();
@@ -168,7 +229,6 @@ export function PaneHeader({
         }
       }}
     >
-      <PaneGrip paneId={paneId} workspaceId={workspaceId} disabled={moveDisabled} destinations={destinations} onSwap={onSwapPane} />
       <div
         className={'maw-pane-tabs' + (dragState ? ' is-dragging' : '')}
         ref={strip}
@@ -201,20 +261,26 @@ export function PaneHeader({
                 event.currentTarget.setPointerCapture(event.pointerId);
               }
             }
-            if (tabDrag.current.isDragging && strip.current) {
+            if (tabDrag.current.isDragging) {
               event.preventDefault();
-              const tabElements = Array.from(strip.current.querySelectorAll<HTMLElement>('.maw-session-tab'));
-              let target = paneTabs.length;
-              for (let i = 0; i < tabElements.length; i++) {
-                const rect = tabElements[i]!.getBoundingClientRect();
-                const mid = rect.left + rect.width / 2;
-                if (event.clientX < mid) {
-                  target = i;
-                  break;
-                }
-              }
+              const header = document.elementFromPoint(event.clientX, event.clientY)?.closest('.maw-pane-header');
+              const overPaneId = header?.closest('.maw-split-pane')?.id.replace('pane-container-', '') ?? null;
+              const rects = header ? [...header.querySelectorAll<HTMLElement>('.maw-session-tab')].map((element) => {
+                const rect = element.getBoundingClientRect();
+                return { left: rect.left, width: rect.width };
+              }) : [];
+              const target = overPaneId ? insertionIndex(event.clientX, rects) : paneTabs.length;
               tabDrag.current.targetIndex = target;
+              const source = strip.current?.querySelector<HTMLElement>(`[data-tab-id="${tabDrag.current.tabId}"]`);
               setDragState({ tabId: tabDrag.current.tabId, targetIndex: target });
+              setTabDragPreview({
+                tabId: tabDrag.current.tabId,
+                sourcePaneId: paneId,
+                sourceIndex: paneTabs.findIndex((tab) => tab.id === tabDrag.current?.tabId),
+                width: source?.getBoundingClientRect().width ?? 0,
+                overPaneId,
+                overIndex: overPaneId ? target : null,
+              });
             }
           }
         }}
@@ -223,6 +289,7 @@ export function PaneHeader({
             const dragInfo = tabDrag.current;
             tabDrag.current = null;
             setDragState(null);
+            setTabDragPreview(null);
             if (event.currentTarget.hasPointerCapture(event.pointerId)) {
               event.currentTarget.releasePointerCapture(event.pointerId);
             }
@@ -263,6 +330,7 @@ export function PaneHeader({
           }
           tabDrag.current = null;
           setDragState(null);
+          setTabDragPreview(null);
         }}
       >
         {paneTabs.map((tab, idx) => {
@@ -287,13 +355,20 @@ export function PaneHeader({
                     ? 'attention'
                     : (tab.kind === 'web' && ['navigating', 'attaching'].includes(tab.web.runtimeState ?? ''))
                       ? 'working'
-                      : tabState ?? (session?.activity === 'working' ? 'working' : session?.activity === 'idle' ? 'idle' : 'unknown');
+                      : tabState === 'needs-input'
+                        ? 'attention'
+                        : tabState ?? (session?.activity === 'working' ? 'working' : session?.activity === 'idle' ? 'idle' : 'unknown');
 
           const isSelected = selectedTabId === tab.id;
+          const previewHere = dragPreview?.overPaneId === paneId ? dragPreview : null;
+          const samePane = previewHere?.sourcePaneId === paneId;
+          const shift = previewHere
+            ? tabShift(idx, previewHere.sourceIndex, previewHere.overIndex, previewHere.width, samePane)
+            : 0;
 
-          const isBeingDragged = dragState?.tabId === tab.id;
-          const isTargetBefore = (dragState !== null && dragState.tabId !== tab.id && dragState.targetIndex === idx) || dragOverIndex === idx;
-          const isTargetAfter = dragState !== null && dragState.tabId !== tab.id && dragState.targetIndex === paneTabs.length && idx === paneTabs.length - 1;
+          const isBeingDragged = dragPreview?.tabId === tab.id && dragPreview.sourcePaneId === paneId;
+          const isTargetBefore = (previewHere?.overIndex === idx && previewHere.tabId !== tab.id) || dragOverIndex === idx;
+          const isTargetAfter = previewHere?.overIndex === paneTabs.length && idx === paneTabs.length - 1 && previewHere.tabId !== tab.id;
           const tabClassName = [
             'maw-session-tab',
             isSelected ? 'active' : '',
@@ -307,6 +382,7 @@ export function PaneHeader({
               key={tab.id}
               className={tabClassName}
               data-tab-id={tab.id}
+              style={renamingTabId === tab.id && renameWidth ? { width: renameWidth, flexBasis: renameWidth } : shift ? { transform: `translateX(${shift}px)` } : undefined}
             >
               {renamingTabId === tab.id ? (
                 <TabNameInput
@@ -336,14 +412,21 @@ export function PaneHeader({
                   tabIndex={isSelected ? 0 : -1}
                   disabled={!online}
                   title={`${tabName(tab)} · ${status}`}
+                  aria-keyshortcuts="F2 Alt+ArrowLeft Alt+ArrowRight"
                   onClick={(event) => {
                     if (Date.now() < suppressTabClickUntil.current) { event.preventDefault(); return; }
                     onSelectTab(tab.id);
                   }}
-                  onDoubleClick={() => setRenamingTabId(tab.id)}
+                  onDoubleClick={(event) => {
+                    const host = (event.currentTarget as HTMLElement).closest<HTMLElement>('.maw-session-tab');
+                    setRenameWidth(host?.getBoundingClientRect().width ?? null);
+                    setRenamingTabId(tab.id);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'F2') {
                       e.preventDefault();
+                      const host = (e.currentTarget as HTMLElement).closest<HTMLElement>('.maw-session-tab');
+                      setRenameWidth(host?.getBoundingClientRect().width ?? null);
                       setRenamingTabId(tab.id);
                     }
                   }}
@@ -353,7 +436,11 @@ export function PaneHeader({
                   </span>
                   <span
                     className="agency-truncate"
-                    onDoubleClick={() => setRenamingTabId(tab.id)}
+                    onDoubleClick={(event) => {
+                      const host = (event.currentTarget as HTMLElement).closest<HTMLElement>('.maw-session-tab');
+                      setRenameWidth(host?.getBoundingClientRect().width ?? null);
+                      setRenamingTabId(tab.id);
+                    }}
                   >
                     {tabName(tab)}
                   </span>
@@ -385,42 +472,32 @@ export function PaneHeader({
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             disabled={!online || busy}
-            onClick={() => setMenuOpen(!menuOpen)}
+            onClick={() => {
+              menuAnchor.current = addButton.current;
+              setSplitIntent(null);
+              setMenuOpen(!menuOpen);
+            }}
           >
             +
           </button>
           {menuOpen && (
-            <PaneMenu anchor={addButton} label={t('agency.tabs.add')} onClose={() => setMenuOpen(false)}>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMenuOpen(false);
-                  onAddCliClick();
-                }}
-              >
-                {t('agency.tabs.newCLI')}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMenuOpen(false);
-                  onAddTerminalClick();
-                }}
-              >
-                {t('agency.tabs.newTerminal')}
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMenuOpen(false);
-                  onAddWebTabClick();
-                }}
-              >
-                {t('agency.web.newTab')}
-              </button>
+            <PaneMenu anchor={menuAnchor.current ? menuAnchor as React.RefObject<HTMLButtonElement> : addButton} label={t('agency.tabs.add')} onClose={() => { setMenuOpen(false); setSplitIntent(null); }}>
+              <button type="button" role="menuitem" onClick={() => choose('terminal')}>{t('agency.tabs.newTerminal')}</button>
+              <button type="button" role="menuitem" onClick={() => choose('agent')}>{t('agency.tabs.newCLI')}</button>
+              {profiles.map((profile) => (
+                <button
+                  type="button"
+                  role="menuitem"
+                  key={profile.id}
+                  disabled={!canLaunchAgent(profile)}
+                  title={profile.configurationMessage ?? profile.label}
+                  onClick={() => choose('agent', profile.id)}
+                >
+                  {profile.label}
+                </button>
+              ))}
+              <button type="button" role="menuitem" onClick={() => choose('web')}>{t('agency.web.newTab')}</button>
+              <button type="button" role="menuitem" onClick={() => choose('github')}>{t('agency.tabs.github')}</button>
               {selectedTabId && (
                 <button
                   type="button"
@@ -438,15 +515,19 @@ export function PaneHeader({
         </div>
 
       <div className="maw-pane-actions">
+        <PaneGrip paneId={paneId} workspaceId={workspaceId} disabled={moveDisabled} destinations={destinations} onSwap={onSwapPane} />
         <button
           type="button"
           className="maw-pane-action-button"
           title={t('agency.splits.splitRight')}
           aria-label={t('agency.splits.splitRight')}
           disabled={!canSplit || !online}
-          onClick={onSplitRight}
+          onClick={(event) => openMenu(event.currentTarget, 'row')}
         >
-          ◫
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="1.5" y="1.5" width="13" height="13" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
+            <line x1="8" y1="2.5" x2="8" y2="13.5" stroke="currentColor" strokeWidth="1.2" />
+          </svg>
         </button>
         <button
           type="button"
@@ -454,9 +535,12 @@ export function PaneHeader({
           title={t('agency.splits.splitDown')}
           aria-label={t('agency.splits.splitDown')}
           disabled={!canSplit || !online}
-          onClick={onSplitDown}
+          onClick={(event) => openMenu(event.currentTarget, 'column')}
         >
-          ⬒
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="1.5" y="1.5" width="13" height="13" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
+            <line x1="2.5" y1="8" x2="13.5" y2="8" stroke="currentColor" strokeWidth="1.2" />
+          </svg>
         </button>
         <button
           type="button"

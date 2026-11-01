@@ -6,11 +6,12 @@ import type {
 import {
   assignCreatedTab, swapPanes, countLeaves, createDefaultLayout, findPaneNode, getPaneNodes, moveTabBetweenPanes,
   reconcileLayout, splitPane, closePane, updatePaneNode, updateSplitRatio,
-  validateChatGptUrl, validateWebTabTitle,
+  validateChatGptUrl, validateWebTabTitle, classifyWebTabUrl,
 } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import { t } from '../i18n/index.js';
 import { AgencyProfileDialog } from './AgencyProfileDialog.js';
+import { BrowserContextMenu } from './BrowserContextMenu.js';
 import { allWorkspaceTabs, canLaunchAgent, selectedWorkspaceTab, type AgencyTransport, type WorkspaceTab } from './model.js';
 import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
 import { PaneMovement } from './split/PaneMovement.js';
@@ -69,6 +70,7 @@ export function AgencyWorkspaceView({
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const creatingLaunch = useRef<string | null>(null);
   const creationTarget = useRef<string | null>(null);
+  const pendingSplit = useRef<null | { paneId: string; direction: SplitDirection }>(null);
   const [createdTabs, setCreatedTabs] = useState<WorkspaceTab[]>([]);
   const serverTabs = allWorkspaceTabs(sessions, webTabs, workspace.id);
   const tabs = [...serverTabs.filter(tab => (tab.kind === 'web' ? tab.web.launchId : tab.session.launchId) !== creatingLaunch.current || !creatingLaunch.current),
@@ -87,6 +89,7 @@ export function AgencyWorkspaceView({
   layoutRef.current = layout;
 
   const [picker, setPicker] = useState(false);
+  const [workspaceMenu, setWorkspaceMenu] = useState(false);
   const [webDialog, setWebDialog] = useState<'create' | 'navigate' | null>(null);
   const [webUrl, setWebUrl] = useState('https://chatgpt.com/');
   const [webTitle, setWebTitle] = useState('');
@@ -356,6 +359,7 @@ export function AgencyWorkspaceView({
     if ((!picker && !closing && !webDialog) || configuringProfile) return;
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !flight.current) {
+        pendingSplit.current = null;
         setPicker(false);
         setClosing(null);
         setWebDialog(null);
@@ -400,8 +404,41 @@ export function AgencyWorkspaceView({
     save({ ...current, tree, focusedPaneId: source, updatedAt: new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1)).toISOString() }, true);
   }
 
-  async function add(kind: 'agent' | 'terminal', targetPaneId = creationTarget.current ?? layoutRef.current.focusedPaneId) {
-    if (flight.current || !online || (kind === 'agent' && !profileId)) return;
+  function takeSplitPane(fallback: string): { paneId: string; created: boolean } {
+    const pending = pendingSplit.current;
+    pendingSplit.current = null;
+    if (!pending) return { paneId: fallback, created: false };
+    if (countLeaves(layoutRef.current.tree) >= 4) return { paneId: fallback, created: false };
+    const newPaneId = `pane-${crypto.randomUUID().slice(0, 8)}`;
+    const nextTree = splitPane(layoutRef.current.tree, pending.paneId, pending.direction, newPaneId, undefined, true);
+    if (!nextTree) return { paneId: fallback, created: false };
+    save({
+      ...layoutRef.current,
+      tree: nextTree,
+      focusedPaneId: newPaneId,
+      updatedAt: new Date().toISOString(),
+    }, true);
+    return { paneId: newPaneId, created: true };
+  }
+
+  function rollbackPane(paneId: string) {
+    const closed = closePane(layoutRef.current.tree, paneId);
+    if (!closed) return;
+    save({
+      ...layoutRef.current,
+      tree: closed.tree,
+      focusedPaneId: closed.remainingPaneId || layoutRef.current.focusedPaneId,
+      updatedAt: new Date().toISOString(),
+    }, true);
+  }
+
+  async function add(kind: 'agent' | 'terminal', targetPaneId = creationTarget.current ?? layoutRef.current.focusedPaneId, profileOverride?: string) {
+    const profile = profileOverride ?? profileId;
+    if (flight.current || !online || (kind === 'agent' && !profile)) {
+      pendingSplit.current = null;
+      return;
+    }
+    const placed = takeSplitPane(targetPaneId);
     flight.current = true;
     const launchId = crypto.randomUUID();
     creatingLaunch.current = launchId;
@@ -412,15 +449,16 @@ export function AgencyWorkspaceView({
         type: 'agency.session.create',
         workspaceId: workspace.id,
         kind,
-        targetPaneId,
+        targetPaneId: placed.paneId,
         launchId,
         cols: 100,
         rows: 30,
-        ...(kind === 'agent' ? { profileId: profileId as CliProfileId } : {}),
+        ...(kind === 'agent' ? { profileId: profile as CliProfileId } : {}),
       } as Parameters<Props['request']>[0]);
-      completeCreation(response, targetPaneId);
+      completeCreation(response, placed.paneId);
       setPicker(false);
     } catch (reason) {
+      if (placed.created) rollbackPane(placed.paneId);
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       creatingLaunch.current = null;
@@ -515,12 +553,15 @@ export function AgencyWorkspaceView({
       setError(t('agency.web.invalidTitle'));
       return;
     }
+    const placed = webDialog === 'create'
+      ? takeSplitPane(creationTarget.current ?? layoutRef.current.focusedPaneId)
+      : { paneId: creationTarget.current ?? layoutRef.current.focusedPaneId, created: false };
     flight.current = true;
     setBusy(true);
     setError(null);
     try {
       if (webDialog === 'create') {
-        const targetPaneId = creationTarget.current ?? layoutRef.current.focusedPaneId;
+        const targetPaneId = placed.paneId;
         const launchId = crypto.randomUUID();
         creatingLaunch.current = launchId;
         const response = await request({
@@ -546,6 +587,45 @@ export function AgencyWorkspaceView({
       }
       setWebDialog(null);
     } catch (reason) {
+      if (placed.created) rollbackPane(placed.paneId);
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      creatingLaunch.current = null;
+      flight.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function createGithub() {
+    if (flight.current || !online) {
+      pendingSplit.current = null;
+      return;
+    }
+    const placed = takeSplitPane(creationTarget.current ?? layoutRef.current.focusedPaneId);
+    const url = classifyWebTabUrl('https://github.com/');
+    if (!url.valid || !url.normalizedUrl) {
+      if (placed.created) rollbackPane(placed.paneId);
+      setError(t('agency.web.invalidUrl'));
+      return;
+    }
+    flight.current = true;
+    const launchId = crypto.randomUUID();
+    creatingLaunch.current = launchId;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await request({
+        type: 'agency.webTab.create',
+        workspaceId: workspace.id,
+        url: url.normalizedUrl,
+        title: t('agency.tabs.github'),
+        select: true,
+        targetPaneId: placed.paneId,
+        launchId,
+      });
+      completeCreation(response, placed.paneId);
+    } catch (reason) {
+      if (placed.created) rollbackPane(placed.paneId);
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       creatingLaunch.current = null;
@@ -573,25 +653,32 @@ export function AgencyWorkspaceView({
   return (
     <section className="agency-workspace-view" aria-label={t('agency.ui.workspaceNamed', { name: workspace.name })}>
       <header className="maw-workspace-topbar">
-        <div className="maw-workspace-topbar-left">
-          <span className="maw-workspace-title">{workspace.name}</span>
-          {leafCount > 1 && (
-            <button
-              type="button"
-              className="agency-text-button maw-single-pane-btn"
-              onClick={handleSinglePane}
-              title={t('agency.splits.singlePane')}
-            >
-              {t('agency.splits.singlePane')}
-            </button>
+        <span className="maw-workspace-title">{workspace.name}</span>
+        <div className="agency-flex-spacer" />
+        <div className="agency-dropdown">
+          <button
+            type="button"
+            className="agency-icon-button"
+            aria-label={t('agency.ui.workspaceActions')}
+            aria-haspopup="menu"
+            aria-expanded={workspaceMenu}
+            onClick={() => setWorkspaceMenu((open) => !open)}
+          >
+            ···
+          </button>
+          {workspaceMenu && (
+            <div className="agency-dropdown-menu maw-shell-menu" role="menu">
+              {leafCount > 1 && (
+                <button type="button" role="menuitem" className="agency-dropdown-item" onClick={() => { setWorkspaceMenu(false); handleSinglePane(); }}>
+                  {t('agency.splits.singlePane')}
+                </button>
+              )}
+              <button type="button" role="menuitem" className="agency-dropdown-item" onClick={() => { setWorkspaceMenu(false); onDone(); }}>
+                {t('agency.ui.markDone')}
+              </button>
+            </div>
           )}
         </div>
-
-        <div className="agency-flex-spacer" />
-
-        <button type="button" className="agency-text-button" onClick={onDone}>
-          {t('agency.ui.markDone')}
-        </button>
       </header>
 
       {placementWarning && (
@@ -662,6 +749,29 @@ export function AgencyWorkspaceView({
             creationTarget.current = paneId;
             webEditor('create');
           }}
+          onAddGithubClick={(paneId) => {
+            creationTarget.current = paneId;
+            void createGithub();
+          }}
+          onLaunchProfile={(paneId, profile) => {
+            creationTarget.current = paneId;
+            setProfileId(profile);
+            void add('agent', paneId, profile);
+          }}
+          onSplitCreate={(paneId, direction, action, profile) => {
+            pendingSplit.current = { paneId, direction };
+            creationTarget.current = paneId;
+            if (action === 'terminal') void add('terminal', paneId);
+            else if (action === 'github') void createGithub();
+            else if (action === 'web') webEditor('create');
+            else if (profile) {
+              setProfileId(profile);
+              void add('agent', paneId, profile);
+            } else {
+              setError(null);
+              setPicker(true);
+            }
+          }}
           onRenameTab={async (tab, title) => {
             await request(
               tab.kind === 'web'
@@ -692,6 +802,35 @@ export function AgencyWorkspaceView({
       </div>
 
       </PaneMovement>
+      <BrowserContextMenu
+        tabs={webTabs}
+        request={request}
+        onCloseTab={(tab) => {
+          const match = tabs.find((item) => item.id === tab.id);
+          if (match) void close(match);
+        }}
+        onMoveNext={(tabId) => {
+          const panes = getPaneNodes(layoutRef.current.tree);
+          const index = panes.findIndex((pane) => pane.tabIds.includes(tabId));
+          const target = index >= 0 ? panes[(index + 1) % panes.length] : undefined;
+          if (target && panes.length > 1) handleMoveTab(tabId, target.id);
+        }}
+        onDuplicate={(tab) => {
+          pendingSplit.current = null;
+          creationTarget.current = layoutRef.current.focusedPaneId;
+          void request({
+            type: 'agency.webTab.create',
+            workspaceId: workspace.id,
+            url: tab.url,
+            title: tab.title,
+            select: true,
+            targetPaneId: layoutRef.current.focusedPaneId,
+            launchId: crypto.randomUUID(),
+          }).then((response) => completeCreation(response, layoutRef.current.focusedPaneId)).catch((reason) => {
+            setError(reason instanceof Error ? reason.message : String(reason));
+          });
+        }}
+      />
 
       {(picker || closing || webDialog) && (
         <div className="agency-modal-backdrop">
@@ -818,6 +957,7 @@ export function AgencyWorkspaceView({
                 autoFocus={!!closing}
                 disabled={busy}
                 onClick={() => {
+                  pendingSplit.current = null;
                   setPicker(false);
                   setClosing(null);
                   setWebDialog(null);
