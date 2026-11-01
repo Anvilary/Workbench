@@ -11,6 +11,13 @@ import { appConfigDir } from '../paths.js';
 
 const VERSION = 1;
 
+class UnsupportedAgencyLayoutSchemaError extends Error {
+  constructor(version: unknown) {
+    super('Unsupported Agency layout store version: ' + String(version));
+    this.name = 'UnsupportedAgencyLayoutSchemaError';
+  }
+}
+
 export class AgencyLayoutStore {
   private queue: Promise<void> = Promise.resolve();
   private mutations: Promise<void> = Promise.resolve();
@@ -39,6 +46,7 @@ export class AgencyLayoutStore {
       const contents = await readFile(this.file, 'utf8');
       return this.parse(contents);
     } catch (error) {
+      if (error instanceof UnsupportedAgencyLayoutSchemaError) throw error;
       primaryMissing = (error as NodeJS.ErrnoException).code === 'ENOENT';
       primaryFailure = error;
     }
@@ -48,6 +56,7 @@ export class AgencyLayoutStore {
       const backupContents = await readFile(this.file + '.bak', 'utf8');
       recovered = this.parse(backupContents);
     } catch (backupError) {
+      if (backupError instanceof UnsupportedAgencyLayoutSchemaError) throw backupError;
       const backupMissing = (backupError as NodeJS.ErrnoException).code === 'ENOENT';
       if (primaryMissing && backupMissing) {
         return [];
@@ -56,7 +65,9 @@ export class AgencyLayoutStore {
     }
 
     if (!primaryMissing) {
-      await rename(this.file, this.file + '.corrupt-' + randomUUID()).catch(() => {});
+      // Refuse recovery if quarantine fails, otherwise the next save could
+      // overwrite the valid backup with the corrupt primary.
+      await rename(this.file, this.file + '.corrupt-' + randomUUID());
     }
     return recovered;
   }
@@ -67,17 +78,22 @@ export class AgencyLayoutStore {
       throw new Error('Invalid Agency layout store: expected object');
     }
     const record = raw as Record<string, unknown>;
+    if (!Number.isInteger(record.version)) throw new Error('Invalid Agency layout store version');
     if (record.version !== VERSION) {
-      throw new Error(`Unsupported Agency layout store version: ${record.version}`);
+      throw new UnsupportedAgencyLayoutSchemaError(record.version);
     }
     if (!Array.isArray(record.layouts)) {
       throw new Error('Invalid Agency layout store: layouts must be an array');
     }
     const valid: WorkspacePaneLayout[] = [];
+    const seen = new Set<WorkspaceId>();
     for (const item of record.layouts) {
-      if (isWorkspacePaneLayout(item)) {
-        valid.push(item);
-      }
+      // Skipping malformed entries silently loses panes and can prevent backup
+      // recovery. Treat the primary as corrupt and restore its valid backup.
+      if (!isWorkspacePaneLayout(item)) throw new Error('Invalid Agency layout record');
+      if (seen.has(item.workspaceId)) throw new Error('Duplicate Agency layout workspace');
+      seen.add(item.workspaceId);
+      valid.push(item);
     }
     return valid;
   }
