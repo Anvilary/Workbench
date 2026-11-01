@@ -78,6 +78,7 @@ export class AgencyLayoutStore {
       throw new Error('Invalid Agency layout store: expected object');
     }
     const record = raw as Record<string, unknown>;
+    if (!Number.isInteger(record.version)) throw new Error('Invalid Agency layout store version');
     if (record.version !== VERSION) {
       throw new UnsupportedAgencyLayoutSchemaError(record.version);
     }
