@@ -116,11 +116,13 @@ test('Browser compatibility preserves CLI input, mixed tabs and external ChatGPT
   await page.evaluate(()=>{window.agencyTest.setStatus('closed');window.agencyTest.setStatus('open');});
   await page.waitForFunction(before=>window.agencyTest.requests.filter(m=>m.type==='agency.webTabs.list').length>before,before);
   await page.getByRole('button',{name:'Close Renamed research',exact:true}).click();
-  await page.getByRole('tab',{name:'Native shell'}).waitFor();
-  assert.equal(await page.locator('iframe').count(),0);
-  assert.equal(await page.getByRole('tab',{name:'Native shell'}).getAttribute('aria-selected'),'true');
-  assert.equal(await page.evaluate(()=>window.agencyTest.requests.filter(m=>m.type==='terminal.close').length),0);
+  await page.getByRole('tab',{name:'Renamed research'}).waitFor({state:'detached'});
   const shell = page.getByRole('tab', {name:'Native shell'});
+  await shell.waitFor();
+  assert.equal(await page.locator('iframe').count(),0);
+  assert.equal(await shell.getAttribute('aria-selected'),'true');
+  assert.equal(await page.evaluate(()=>window.agencyTest.requests.filter(m=>m.type==='terminal.close').length),0);
+  await shell.focus();
   await shell.press('F2');
   const input = page.getByLabel('Tab title',{exact:true});
   await input.fill('Cancelled'); await input.press('Escape');
