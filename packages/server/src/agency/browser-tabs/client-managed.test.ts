@@ -54,6 +54,53 @@ test('a failed disk commit rolls back logical changes and concurrent launch retr
   assert.equal(adapter.getTabState(one.id)?.title, 'Saved title');
 });
 
+
+test('cross-workspace browser-tab commits never persist a rolled-back concurrent change', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'maw-cross-workspace-browser-tabs-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'tabs.json');
+  const store = new BrowserTabStore(file);
+  const adapter = new BrowserTabAdapter({ store, allowUnvalidatedWorkspacesForTesting: true });
+  await adapter.restore();
+
+  const otherWorkspaceId = '00000000-0000-4000-8000-000000000002' as WorkspaceId;
+  const tabA = await adapter.createTab({ workspaceId, url: 'https://chatgpt.com/', title: 'Original A' });
+  const tabB = await adapter.createTab({ workspaceId: otherWorkspaceId, url: 'https://chatgpt.com/', title: 'Original B' });
+
+  const save = store.save.bind(store);
+  let failNext = true;
+  let releaseFailedSave!: () => void;
+  let failedSaveEntered!: () => void;
+  const entered = new Promise<void>(resolve => { failedSaveEntered = resolve; });
+  const released = new Promise<void>(resolve => { releaseFailedSave = resolve; });
+  store.save = async rows => {
+    if (failNext) {
+      failNext = false;
+      failedSaveEntered();
+      await released;
+      throw new Error('injected write failure in workspace A');
+    }
+    return save(rows);
+  };
+
+  const failedA = adapter.renameTab(workspaceId, tabA.id, 'Never committed A');
+  await entered;
+  const successfulB = adapter.renameTab(otherWorkspaceId, tabB.id, 'Committed B');
+  // Give the second workspace a turn. Previously, its global snapshot included
+  // the uncommitted A change while A's write was paused and then failed.
+  await new Promise<void>(resolve => setImmediate(resolve));
+  releaseFailedSave();
+  await assert.rejects(failedA, /injected write failure/);
+  await successfulB;
+
+  assert.equal(adapter.getTabState(tabA.id)?.title, 'Original A');
+  assert.equal(adapter.getTabState(tabB.id)?.title, 'Committed B');
+  const restored = new BrowserTabStore(file);
+  await restored.load();
+  assert.equal(restored.getTab(tabA.id)?.title, 'Original A');
+  assert.equal(restored.getTab(tabB.id)?.title, 'Committed B');
+});
+
 test('legacy ownership metadata remains inert and survives logical closure', async t => {
   const dir = await mkdtemp(path.join(tmpdir(), 'maw-legacy-tabs-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
