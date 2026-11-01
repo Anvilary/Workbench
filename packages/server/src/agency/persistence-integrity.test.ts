@@ -56,6 +56,39 @@ test('versioned Agency metadata refuses future schemas without overwriting a val
   assert.equal((await readdir(dir)).some(filename => filename.includes('.corrupt-')), false);
 });
 
+test('malformed metadata versions recover from valid backups instead of being treated as future schemas', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'maw-invalid-schema-recovery-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const scenarios = [
+    {
+      file: path.join(dir, 'layouts.json'),
+      good: { version: 1, layouts: [] },
+      load: (file: string) => new AgencyLayoutStore(file).load(),
+    },
+    {
+      file: path.join(dir, 'notifications.json'),
+      good: { version: 1, notifications: [] },
+      load: (file: string) => new AgencyNotificationStore(file).load(),
+    },
+    {
+      file: path.join(dir, 'activity.json'),
+      good: { version: 1, records: [] },
+      load: (file: string) => new TabActivityManager({
+        filePath: file,
+        notificationStore: new AgencyNotificationStore(path.join(dir, 'notifications-dependency.json')),
+      }).load(),
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    await writeFile(scenario.file, JSON.stringify({ records: [] }));
+    await writeFile(scenario.file + '.bak', JSON.stringify(scenario.good));
+    assert.deepEqual(await scenario.load(scenario.file), []);
+    assert.equal((await readdir(dir)).some(name => name.startsWith(path.basename(scenario.file) + '.corrupt-')), true);
+    assert.equal(await readFile(scenario.file + '.bak', 'utf8'), JSON.stringify(scenario.good));
+  }
+});
+
 test('layout metadata recovers from backup instead of silently omitting malformed records', async t => {
   const dir = await mkdtemp(path.join(tmpdir(), 'maw-layout-record-recovery-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
