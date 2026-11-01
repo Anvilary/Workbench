@@ -127,20 +127,28 @@ test('authoritative workspace copy-file rejects unauthorized paths and pastes in
 
     // Wait for Nautilus visible window to appear
     let wid = null;
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 100; i++) {
       await new Promise((resolve) => setTimeout(resolve, 200));
       try {
         const out = execSync(
-          'xdotool search --onlyvisible --class org.gnome.Nautilus',
+          'xdotool search --class org.gnome.Nautilus || xdotool search --class nautilus',
           { env: process.env },
         )
           .toString('utf8')
           .trim();
         const wids = out.split(/\s+/).filter(Boolean);
-        if (wids.length > 0) {
-          wid = wids[wids.length - 1];
-          break;
+        for (const candidate of wids) {
+          try {
+            const info = execSync(`xwininfo -id ${candidate}`, { env: process.env }).toString('utf8');
+            if (info.includes('Map State: IsViewable')) {
+              wid = candidate;
+              break;
+            }
+          } catch {
+            // Window not available yet
+          }
         }
+        if (wid) break;
       } catch {
         // xdotool returns non-zero when no window matches yet
       }
@@ -148,14 +156,7 @@ test('authoritative workspace copy-file rejects unauthorized paths and pastes in
     assert.ok(wid, 'Expected visible Nautilus window to be found');
 
     // Focus visible Nautilus window and simulate Ctrl+V paste
-    for (let i = 0; i < 20; i++) {
-      try {
-        execSync(`xdotool windowfocus --sync ${wid}`, { env: process.env, stdio: 'ignore' });
-        break;
-      } catch {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-    }
+    execSync(`xdotool windowfocus --sync ${wid}`, { env: process.env });
     await new Promise((resolve) => setTimeout(resolve, 400));
     execSync(`xdotool key --window ${wid} ctrl+v`, { env: process.env });
 
