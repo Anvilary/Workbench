@@ -121,6 +121,16 @@ export function AgencyWorkspaceView({
     };
     return editorDraftStore.subscribe(sync);
   }, []);
+
+  useEffect(() => {
+    return editorDraftStore.attachConnection(connection);
+  }, [connection]);
+
+  useEffect(() => {
+    if (!online) {
+      editorDraftStore.handleDisconnect();
+    }
+  }, [online]);
   const handleDirtyChange = useCallback((tabId: string, dirty: boolean) => {
     setUnsavedTabIds((prev) => {
       if (prev.has(tabId) === dirty) return prev;

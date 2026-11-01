@@ -167,3 +167,265 @@ test('editorDraftStore preserves unsaved drafts across tab switching, pane movem
 
   unsubscribe();
 });
+
+function createMockConnection() {
+  const messageListeners = new Set();
+  const reopenListeners = new Set();
+  return {
+    send: () => {},
+    onMessage: (fn) => {
+      messageListeners.add(fn);
+      return () => messageListeners.delete(fn);
+    },
+    onReopen: (fn) => {
+      reopenListeners.add(fn);
+      return () => reopenListeners.delete(fn);
+    },
+    emitMessage: (msg) => {
+      for (const fn of messageListeners) fn(msg);
+    },
+    emitReopen: () => {
+      for (const fn of reopenListeners) fn();
+    },
+  };
+}
+
+test('P2 in-flight save: save succeeds while unmounted', () => {
+  editorDraftStore.clearAll();
+  const conn = createMockConnection();
+  const detach = editorDraftStore.attachConnection(conn);
+
+  const tabId = 'save-unmounted-success';
+  editorDraftStore.setDraft(tabId, {
+    edit: {
+      opened: 'original text',
+      baseHash: 'hash-orig',
+      text: 'updated text to save',
+      saving: true,
+      failure: null,
+      conflict: null,
+      pending: null,
+      closing: false,
+    },
+    pendingSaveRequestId: 'req-save-1',
+    mode: 'raw',
+    scrollTop: 10,
+  });
+
+  assert.equal(editorDraftStore.getPendingSave(tabId), 'req-save-1');
+  assert.equal(editorDraftStore.isDirty(tabId), true);
+
+  // While unmounted, files.saved arrives with outcome: 'saved'
+  conn.emitMessage({
+    type: 'files.saved',
+    requestId: 'req-save-1',
+    outcome: 'saved',
+    preview: {
+      path: 'test.txt',
+      text: 'updated text to save',
+      hash: 'hash-saved-1',
+      editable: true,
+      binary: false,
+      truncated: false,
+      size: 20,
+    },
+  });
+
+  const resolvedDraft = editorDraftStore.getDraft(tabId);
+  assert.ok(resolvedDraft);
+  assert.equal(resolvedDraft.edit, null);
+  assert.equal(resolvedDraft.pendingSaveRequestId, null);
+  assert.equal(editorDraftStore.getPendingSave(tabId), null);
+  assert.equal(resolvedDraft.content?.loaded?.preview?.text, 'updated text to save');
+  assert.equal(editorDraftStore.isDirty(tabId), false);
+
+  detach();
+});
+
+test('P2 in-flight save: conflict while unmounted preserves user text and conflict protection', () => {
+  editorDraftStore.clearAll();
+  const conn = createMockConnection();
+  const detach = editorDraftStore.attachConnection(conn);
+
+  const tabId = 'save-unmounted-conflict';
+  const userText = 'user modifications';
+  editorDraftStore.setDraft(tabId, {
+    edit: {
+      opened: 'base text',
+      baseHash: 'hash-base',
+      text: userText,
+      saving: true,
+      failure: null,
+      conflict: null,
+      pending: null,
+      closing: false,
+    },
+    pendingSaveRequestId: 'req-conflict-1',
+    mode: 'formatted',
+    scrollTop: 0,
+  });
+
+  // While unmounted, files.saved arrives with outcome: 'conflict'
+  conn.emitMessage({
+    type: 'files.saved',
+    requestId: 'req-conflict-1',
+    outcome: 'conflict',
+    preview: {
+      path: 'test.txt',
+      text: 'concurrent external edit',
+      hash: 'hash-external',
+      editable: true,
+      binary: false,
+      truncated: false,
+      size: 24,
+    },
+  });
+
+  const draftAfterConflict = editorDraftStore.getDraft(tabId);
+  assert.ok(draftAfterConflict);
+  assert.ok(draftAfterConflict.edit);
+  assert.equal(draftAfterConflict.edit.saving, false);
+  assert.equal(draftAfterConflict.edit.text, userText);
+  assert.ok(draftAfterConflict.edit.conflict);
+  assert.equal(draftAfterConflict.edit.conflict.next?.text, 'concurrent external edit');
+  assert.equal(draftAfterConflict.pendingSaveRequestId, null);
+  assert.equal(editorDraftStore.isDirty(tabId), true);
+
+  detach();
+});
+
+test('P2 in-flight save: failed save while unmounted preserves user text and records failure', () => {
+  editorDraftStore.clearAll();
+  const conn = createMockConnection();
+  const detach = editorDraftStore.attachConnection(conn);
+
+  const tabId = 'save-unmounted-fail';
+  const userText = 'unsaved important edits';
+  editorDraftStore.setDraft(tabId, {
+    edit: {
+      opened: 'original',
+      baseHash: 'hash-0',
+      text: userText,
+      saving: true,
+      failure: null,
+      conflict: null,
+      pending: null,
+      closing: false,
+    },
+    pendingSaveRequestId: 'req-fail-1',
+    mode: 'formatted',
+    scrollTop: 0,
+  });
+
+  // While unmounted, server responds with error
+  conn.emitMessage({
+    type: 'error',
+    requestId: 'req-fail-1',
+    text: 'Permission denied / disk write error',
+  });
+
+  const draftAfterFail = editorDraftStore.getDraft(tabId);
+  assert.ok(draftAfterFail);
+  assert.ok(draftAfterFail.edit);
+  assert.equal(draftAfterFail.edit.saving, false);
+  assert.equal(draftAfterFail.edit.text, userText);
+  assert.ok(draftAfterFail.edit.failure);
+  assert.equal(draftAfterFail.edit.failure.text, 'Permission denied / disk write error');
+  assert.equal(draftAfterFail.pendingSaveRequestId, null);
+  assert.equal(editorDraftStore.isDirty(tabId), true);
+
+  detach();
+});
+
+test('P2 in-flight save: disconnect while saving resets saving flag without losing edited text', () => {
+  editorDraftStore.clearAll();
+  const conn = createMockConnection();
+  const detach = editorDraftStore.attachConnection(conn);
+
+  const tabId = 'save-disconnect';
+  const userText = 'critical offline progress';
+  editorDraftStore.setDraft(tabId, {
+    edit: {
+      opened: 'initial text',
+      baseHash: 'hash-initial',
+      text: userText,
+      saving: true,
+      failure: null,
+      conflict: null,
+      pending: null,
+      closing: false,
+    },
+    pendingSaveRequestId: 'req-dc-1',
+    mode: 'formatted',
+    scrollTop: 15,
+  });
+
+  assert.equal(editorDraftStore.getDraft(tabId)?.edit?.saving, true);
+
+  // Disconnect triggered
+  editorDraftStore.handleDisconnect();
+
+  const draftAfterDc = editorDraftStore.getDraft(tabId);
+  assert.ok(draftAfterDc);
+  assert.ok(draftAfterDc.edit);
+  assert.equal(draftAfterDc.edit.saving, false);
+  assert.equal(draftAfterDc.edit.text, userText);
+  assert.equal(draftAfterDc.pendingSaveRequestId, null);
+  assert.equal(editorDraftStore.isDirty(tabId), true);
+
+  // Also verify onReopen triggers disconnect recovery
+  editorDraftStore.setDraft(tabId, {
+    ...draftAfterDc,
+    edit: { ...draftAfterDc.edit, saving: true },
+    pendingSaveRequestId: 'req-dc-2',
+  });
+  assert.equal(editorDraftStore.getDraft(tabId)?.edit?.saving, true);
+  conn.emitReopen();
+  assert.equal(editorDraftStore.getDraft(tabId)?.edit?.saving, false);
+  assert.equal(editorDraftStore.getDraft(tabId)?.edit?.text, userText);
+
+  detach();
+});
+
+test('P2 in-flight save: reconcilePendingSave reconciles disk preview on remount', () => {
+  editorDraftStore.clearAll();
+  const tabId = 'save-reconcile';
+  const savedText = 'content saved on server before remount';
+
+  editorDraftStore.setDraft(tabId, {
+    edit: {
+      opened: 'old text',
+      baseHash: 'hash-old',
+      text: savedText,
+      saving: true,
+      failure: null,
+      conflict: null,
+      pending: null,
+      closing: false,
+    },
+    pendingSaveRequestId: 'req-rec-1',
+    mode: 'formatted',
+    scrollTop: 0,
+  });
+
+  // Remount retrieves file preview matching the saved draft
+  const preview = {
+    path: 'doc.txt',
+    text: savedText,
+    hash: 'hash-new-committed',
+    editable: true,
+    binary: false,
+    truncated: false,
+    size: savedText.length,
+  };
+
+  const outcome = editorDraftStore.reconcilePendingSave(tabId, preview);
+  assert.equal(outcome.saved, true);
+
+  const draftAfterRec = editorDraftStore.getDraft(tabId);
+  assert.ok(draftAfterRec);
+  assert.equal(draftAfterRec.edit, null);
+  assert.equal(draftAfterRec.pendingSaveRequestId, null);
+  assert.equal(draftAfterRec.content?.loaded?.preview?.hash, 'hash-new-committed');
+  assert.equal(editorDraftStore.isDirty(tabId), false);
+});

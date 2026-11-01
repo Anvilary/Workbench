@@ -17,6 +17,7 @@ import { cliFolders } from '../../cli-folders.js';
 
 export interface EditorSelectionCoordinator {
   unselectOtherTabs?(workspaceId: WorkspaceId): Promise<void> | void;
+  commitSelection?(workspaceId: WorkspaceId): Promise<void> | void;
   restoreOtherTabs?(workspaceId: WorkspaceId): Promise<void> | void;
 }
 
@@ -162,17 +163,42 @@ export class EditorTabAdapter {
     action: () => T | Promise<T>,
     options?: { allowInactiveWorkspace?: boolean },
   ): Promise<T> {
+    let rollbackError: unknown = null;
+    let hasFailure = false;
+    let didUnselect = false;
+    let result!: T;
+
+    const originalCoordinator = this.selectionCoordinator;
+    // Intercept unselectOtherTabs to know if selection was altered in this specific transaction
+    const wrappedCoordinator: EditorSelectionCoordinator = {
+      unselectOtherTabs: async (wsId) => {
+        didUnselect = true;
+        await originalCoordinator?.unselectOtherTabs?.(wsId);
+      },
+      commitSelection: async (wsId) => {
+        await originalCoordinator?.commitSelection?.(wsId);
+      },
+      restoreOtherTabs: async (wsId) => {
+        await originalCoordinator?.restoreOtherTabs?.(wsId);
+      },
+    };
+
     // The editor-tab store persists a complete cross-workspace snapshot.
     // Serialize mutations globally so another workspace cannot commit a change
     // that a concurrent, failing transaction must roll back.
-    return this.mutations.runExclusive('all-editor-tabs', async () => {
+    await this.mutations.runExclusive('all-editor-tabs', async () => {
       await this.assertWorkspaceValid(workspaceId, options);
       const before = this.listTabs(workspaceId, { includeClosed: true });
+      this.selectionCoordinator = wrappedCoordinator;
       try {
-        const result = await action();
+        result = await action();
         await this.store.save(Array.from(this.tabs.values()));
-        return result;
+        if (didUnselect) {
+          await originalCoordinator?.commitSelection?.(workspaceId);
+        }
       } catch (error) {
+        hasFailure = true;
+        rollbackError = error;
         // Restore only this workspace: concurrent mutations elsewhere remain intact.
         for (const tab of Array.from(this.tabs.values())) {
           if (tab.workspaceId === workspaceId) {
@@ -182,14 +208,28 @@ export class EditorTabAdapter {
         for (const tab of before) {
           this.tabs.set(tab.id, tab);
         }
+      } finally {
+        this.selectionCoordinator = originalCoordinator;
+      }
+    });
+
+    if (hasFailure) {
+      if (didUnselect) {
         try {
-          await this.selectionCoordinator?.restoreOtherTabs?.(workspaceId);
+          await Promise.race([
+            Promise.resolve(originalCoordinator?.restoreOtherTabs?.(workspaceId)),
+            new Promise<void>((_, reject) =>
+              setTimeout(() => reject(new Error('restoreOtherTabs timed out')), 5000),
+            ),
+          ]);
         } catch (coordError) {
           console.error('[editor-tab-adapter] Failed to restore other tabs selection:', coordError);
         }
-        throw error;
       }
-    });
+      throw rollbackError;
+    }
+
+    return result;
   }
 
   async createTab(input: CreateEditorTabInput): Promise<EditorTab> {

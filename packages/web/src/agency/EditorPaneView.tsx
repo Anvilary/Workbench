@@ -37,7 +37,7 @@ export function EditorPaneView({
 
   const editRef = useRef<DocEdit | null>(edit);
   editRef.current = edit;
-  const pendingSave = useRef<string | null>(null);
+  const pendingSave = useRef<string | null>(initialDraft?.pendingSaveRequestId ?? null);
   const savedTimer = useRef<number | null>(null);
   const dirtyReported = useRef(false);
 
@@ -51,8 +51,17 @@ export function EditorPaneView({
       mode,
       scrollTop,
       content,
+      pendingSaveRequestId: pendingSave.current,
     });
   }, [tab.id, edit, mode, scrollTop, content]);
+
+  useEffect(() => {
+    if (!online && edit?.saving) {
+      pendingSave.current = null;
+      editorDraftStore.setPendingSave(tab.id, null);
+      setEdit((prev) => (prev ? { ...prev, saving: false } : null));
+    }
+  }, [online, edit?.saving, tab.id]);
 
   useEffect(() => {
     if (dirtyReported.current !== isDirty) {
@@ -99,7 +108,20 @@ export function EditorPaneView({
               failed: false,
             });
             const currentEdit = editRef.current;
-            if (currentEdit && typeof preview.hash === 'string' && preview.hash !== currentEdit.baseHash && currentEdit.conflict === null) {
+            if (currentEdit?.saving) {
+              pendingSave.current = null;
+              editorDraftStore.setPendingSave(tab.id, null);
+              if (preview.text === currentEdit.text) {
+                setEdit(null);
+                setJustSaved(true);
+                if (savedTimer.current) window.clearTimeout(savedTimer.current);
+                savedTimer.current = window.setTimeout(() => setJustSaved(false), 1600);
+              } else {
+                setEdit((prev) =>
+                  prev ? { ...prev, saving: false, conflict: { next: preview.editable ? preview : null } } : null,
+                );
+              }
+            } else if (currentEdit && typeof preview.hash === 'string' && preview.hash !== currentEdit.baseHash && currentEdit.conflict === null) {
               setEdit((prev) =>
                 prev ? { ...prev, conflict: { next: preview.editable ? preview : null } } : null,
               );
@@ -108,8 +130,10 @@ export function EditorPaneView({
           break;
         }
         case 'files.saved': {
-          if (pendingSave.current && message.requestId === pendingSave.current) {
+          const expectedRequestId = pendingSave.current ?? editorDraftStore.getPendingSave(tab.id);
+          if (expectedRequestId && message.requestId === expectedRequestId) {
             pendingSave.current = null;
+            editorDraftStore.setPendingSave(tab.id, null);
             if (message.outcome === 'saved') {
               if (message.preview) {
                 setContent({
@@ -132,8 +156,10 @@ export function EditorPaneView({
           break;
         }
         case 'error': {
-          if (pendingSave.current && message.requestId === pendingSave.current) {
+          const expectedRequestId = pendingSave.current ?? editorDraftStore.getPendingSave(tab.id);
+          if (expectedRequestId && message.requestId === expectedRequestId) {
             pendingSave.current = null;
+            editorDraftStore.setPendingSave(tab.id, null);
             setEdit((prev) =>
               prev
                 ? {
@@ -196,6 +222,7 @@ export function EditorPaneView({
         if (!current || current.saving || current.conflict !== null || !online) return;
         const reqId = crypto.randomUUID();
         pendingSave.current = reqId;
+        editorDraftStore.setPendingSave(tab.id, reqId);
         setEdit((prev) => (prev ? { ...prev, saving: true, failure: null } : null));
         connection.send({
           type: 'files.write',
@@ -207,6 +234,8 @@ export function EditorPaneView({
         });
       },
       discard: () => {
+        pendingSave.current = null;
+        editorDraftStore.setPendingSave(tab.id, null);
         setEdit(null);
       },
       adopt: () => {

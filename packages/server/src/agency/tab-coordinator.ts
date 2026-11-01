@@ -49,6 +49,9 @@ export class AgencyTabCoordinator {
           await native.clearWorkspaceSelection(workspaceId);
           await browser.clearWorkspaceSelection(workspaceId);
         },
+        commitSelection: async (workspaceId) => {
+          previousEditorSelections.delete(workspaceId);
+        },
         restoreOtherTabs: async (workspaceId) => {
           const prev = previousEditorSelections.get(workspaceId);
           previousEditorSelections.delete(workspaceId);

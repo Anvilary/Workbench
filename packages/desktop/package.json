@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test policy.test.mjs file-clipboard.test.mjs",
-    "test:electron": "node --test smoke.test.mjs nautilus-clipboard.test.mjs"
+    "test:electron": "node --test --test-concurrency=1 smoke.test.mjs nautilus-clipboard.test.mjs"
   },
   "devDependencies": {
     "electron": "45.2.0"

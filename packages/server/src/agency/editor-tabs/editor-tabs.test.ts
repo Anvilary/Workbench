@@ -8,7 +8,7 @@ import test from 'node:test';
 import type { AgencyServerMessage, TerminalId } from '@agent-workbench/shared';
 import { validateRelativeFilePath } from '@agent-workbench/shared';
 import { EditorTabStore } from './editor-tab-store.js';
-import { EditorTabAdapter } from './editor-tab-adapter.js';
+import { EditorTabAdapter, type EditorSelectionCoordinator } from './editor-tab-adapter.js';
 import { AgencyWorkspaceStore } from '../store.js';
 import { AgencySessionRuntime } from '../agency-session-runtime.js';
 import { AgencySessionStore } from '../agency-session-store.js';
@@ -552,4 +552,255 @@ test('Cross-store selection failure rolls back editor and restores native sessio
   const latestSnapshot = sessionSnapshots[sessionSnapshots.length - 1]!;
   const nativeTabInSnapshot = latestSnapshot.sessions.find((s) => s.id === session.id);
   assert.equal(nativeTabInSnapshot?.tab?.selected, true);
+});
+
+test('P1 regressions: cross-store deadlock removal, snapshot cleanup, and bounded recovery', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'maw-p1-regressions-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+
+  const wsDirA = path.join(root, 'workspaceA');
+  const wsDirB = path.join(root, 'workspaceB');
+  await mkdir(wsDirA, { recursive: true });
+  await mkdir(wsDirB, { recursive: true });
+  await writeFile(path.join(wsDirA, 'fileA.ts'), 'export const a = 1;');
+  await writeFile(path.join(wsDirB, 'fileB.ts'), 'export const b = 2;');
+
+  const workspaceStore = new AgencyWorkspaceStore(path.join(root, 'workspaces.json'));
+  await workspaceStore.load();
+  const proj = await workspaceStore.createProject('P1 Project');
+  const wsA = await workspaceStore.createWorkspace(proj.id, 'WS-A', wsDirA);
+  const wsB = await workspaceStore.createWorkspace(proj.id, 'WS-B', wsDirB);
+
+  const lock = new WorkspaceMutex();
+  const terminals = new Map<string, any>();
+  const registry = Object.assign(new EventEmitter(), {
+    async open() {
+      const terminalId = randomUUID() as TerminalId;
+      const row = { terminalId, kind: 'shell', state: 'running', exitCode: null, pid: 789, alive: true };
+      terminals.set(terminalId, row);
+      return row;
+    },
+    get: (id: string) => terminals.get(id) ?? null,
+    has: (id: string) => terminals.has(id),
+    list: () => [...terminals.values()],
+    close: () => {},
+    activityOf: () => 'unknown',
+  });
+
+  const native = new AgencySessionRuntime({
+    registry: registry as any,
+    store: new AgencySessionStore(path.join(root, 'sessions.json')),
+    profiles: {
+      resolveLaunch: async (input) => ({
+        profileId: input.profileId,
+        provider: 'claude-code',
+        file: '/bin/echo',
+        args: ['p1'],
+        env: { PATH: '/usr/bin' },
+        session: { kind: 'discover' },
+        launchToken: input.launchToken,
+        proposedSessionId: input.proposedSessionId,
+        cwd: input.cwd,
+      }),
+    },
+    workspaces: {
+      protectedDirectories: () => [],
+      withSessionReservation: (id, work) => lock.runExclusive(id, () => work(workspaceStore.getWorkspace(id))),
+    },
+  });
+  await native.initialize();
+  t.after(() => native.dispose());
+
+  const browser = new BrowserTabAdapter({
+    store: new BrowserTabStore(path.join(root, 'web.json')),
+    workspaceStore,
+  });
+  await browser.restore();
+
+  const editorStore = new EditorTabStore(path.join(root, 'editor.json'));
+  const editor = new EditorTabAdapter({
+    store: editorStore,
+    workspaceStore,
+  });
+  await editor.restore();
+
+  const publishedMessages: AgencyServerMessage[] = [];
+  const coordinator = new AgencyTabCoordinator(
+    native,
+    browser,
+    workspaceStore,
+    (msg) => publishedMessages.push(msg),
+    undefined,
+    editor,
+  );
+
+  // 1. Browser selected, editor create fails to persist (Deadlock test)
+  const webTabA = await browser.createTab({
+    workspaceId: wsA.id,
+    url: 'https://chatgpt.com/',
+    title: 'ChatGPT A',
+    select: true,
+  });
+  assert.equal(webTabA.selected, true);
+
+  let injectEditorError = true;
+  const originalSave = editorStore.save.bind(editorStore);
+  editorStore.save = async (tabs) => {
+    if (injectEditorError) {
+      throw new Error('Injected persistence error');
+    }
+    return originalSave(tabs);
+  };
+
+  const startTime = Date.now();
+  const createFailRes = await coordinator.editorRequest({
+    type: 'agency.editorTab.open',
+    requestId: 'p1-r1',
+    workspaceId: wsA.id,
+    filePath: 'fileA.ts',
+    select: true,
+  });
+  const elapsed = Date.now() - startTime;
+
+  // Must not deadlock, must return error within a short time (< 2000ms)
+  assert.ok(elapsed < 2000, `Recovery must complete promptly without deadlock; elapsed: ${elapsed}ms`);
+  assert.equal(createFailRes?.type, 'agency.error');
+  // Browser tab must be restored to selected
+  assert.equal(browser.getTabState(webTabA.id)?.selected, true);
+  // Editor tab list must be empty
+  assert.equal(editor.listTabs(wsA.id).length, 0);
+
+  // 2. Browser selected, editor select fails to persist
+  injectEditorError = false;
+  const editorTabA = await editor.createTab({
+    workspaceId: wsA.id,
+    filePath: 'fileA.ts',
+    select: false,
+  });
+  assert.equal(editorTabA.selected, false);
+  // Re-select browser tab
+  await browser.selectTab(wsA.id, webTabA.id);
+  assert.equal(browser.getTabState(webTabA.id)?.selected, true);
+
+  injectEditorError = true;
+  const selectStartTime = Date.now();
+  await assert.rejects(
+    () => editor.selectTab(wsA.id, editorTabA.id),
+    /Injected persistence error/,
+  );
+  const selectElapsed = Date.now() - selectStartTime;
+  assert.ok(selectElapsed < 2000, `Select rollback must not deadlock; elapsed: ${selectElapsed}ms`);
+  // Browser tab must be restored to selected
+  assert.equal(browser.getTabState(webTabA.id)?.selected, true);
+  // Editor tab A must not be selected
+  assert.equal(editor.getTabState(editorTabA.id)?.selected, false);
+
+  // 3. Successful editor selection followed by unrelated failed rename
+  // Previous selection snapshots must not be retained after successful transactions!
+  injectEditorError = false;
+  // Select editor tab A successfully
+  const selectedTab = await editor.selectTab(wsA.id, editorTabA.id);
+  assert.equal(selectedTab.selected, true);
+  assert.equal(browser.getTabState(webTabA.id)?.selected, false);
+
+  // Now inject failure into store.save and rename editorTabA
+  injectEditorError = true;
+  await assert.rejects(
+    () => editor.renameTab(wsA.id, editorTabA.id, 'Renamed File.ts'),
+    /Injected persistence error/,
+  );
+  // Editor tab A must remain selected and not revert to the obsolete webTabA!
+  assert.equal(editor.getTabState(editorTabA.id)?.selected, true);
+  assert.equal(editor.getTabState(editorTabA.id)?.title, 'fileA.ts');
+  assert.equal(browser.getTabState(webTabA.id)?.selected, false);
+
+  // 4. Concurrent operations across workspaces
+  injectEditorError = false;
+  // In Workspace A: create selected native session
+  const sessionA = await coordinator.createNative({
+    type: 'agency.session.create',
+    requestId: 'p1-r2',
+    workspaceId: wsA.id,
+    kind: 'terminal',
+    cols: 80,
+    rows: 24,
+  });
+  assert.equal(sessionA.tab?.selected, true);
+
+  // In Workspace B: create selected browser tab
+  const webTabB = await browser.createTab({
+    workspaceId: wsB.id,
+    url: 'https://chatgpt.com/',
+    title: 'ChatGPT B',
+    select: true,
+  });
+  assert.equal(webTabB.selected, true);
+
+  // Configure editor save to fail ONLY for Workspace A
+  editorStore.save = async (tabs) => {
+    const wsATabs = (tabs ?? []).filter((t) => t.workspaceId === wsA.id);
+    if (wsATabs.some((t) => t.filePath === 'fileA-fail.ts')) {
+      throw new Error('Workspace A disk error');
+    }
+    return originalSave(tabs);
+  };
+
+  // Run concurrent editor requests across WS-A (failing) and WS-B (succeeding)
+  const [resA, resB] = await Promise.all([
+    coordinator.editorRequest({
+      type: 'agency.editorTab.open',
+      requestId: 'p1-wsA',
+      workspaceId: wsA.id,
+      filePath: 'fileA-fail.ts',
+      select: true,
+    }),
+    coordinator.editorRequest({
+      type: 'agency.editorTab.open',
+      requestId: 'p1-wsB',
+      workspaceId: wsB.id,
+      filePath: 'fileB.ts',
+      select: true,
+    }),
+  ]);
+
+  assert.equal(resA?.type, 'agency.error');
+  assert.equal(resB?.type, 'agency.editorTab.opened');
+
+  // Workspace A: native session selection restored
+  assert.equal(native.get(sessionA.id)?.tab?.selected, true);
+
+  // Workspace B: editor tab opened and selected; browser tab unselected
+  const editorTabB = (resB as any).tab;
+  assert.equal(editor.getTabState(editorTabB.id)?.selected, true);
+  assert.equal(browser.getTabState(webTabB.id)?.selected, false);
+
+  // 5. Recovery completing within a bounded timeout
+  // If restoreOtherTabs hangs, recovery must reject/settle within timeout (< 5500ms)
+  const hangingCoordinator: EditorSelectionCoordinator = {
+    unselectOtherTabs: async () => {},
+    restoreOtherTabs: async () => {
+      // Hang indefinitely
+      await new Promise(() => {});
+    },
+  };
+  editor.setSelectionCoordinator(hangingCoordinator);
+  editorStore.save = async () => {
+    throw new Error('Injected persistence error');
+  };
+
+  const hangStart = Date.now();
+  await assert.rejects(
+    () =>
+      editor.createTab({
+        workspaceId: wsA.id,
+        filePath: 'fileA-hang.ts',
+        select: true,
+      }),
+    /Injected persistence error/,
+  );
+  const hangElapsed = Date.now() - hangStart;
+  assert.ok(
+    hangElapsed >= 4900 && hangElapsed < 6000,
+    `Hanging restoreOtherTabs must time out within bounded duration (5000ms); elapsed: ${hangElapsed}ms`,
+  );
 });
