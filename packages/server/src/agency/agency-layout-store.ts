@@ -85,10 +85,14 @@ export class AgencyLayoutStore {
       throw new Error('Invalid Agency layout store: layouts must be an array');
     }
     const valid: WorkspacePaneLayout[] = [];
+    const seen = new Set<WorkspaceId>();
     for (const item of record.layouts) {
-      if (isWorkspacePaneLayout(item)) {
-        valid.push(item);
-      }
+      // Skipping malformed entries silently loses panes and can prevent backup
+      // recovery. Treat the primary as corrupt and restore its valid backup.
+      if (!isWorkspacePaneLayout(item)) throw new Error('Invalid Agency layout record');
+      if (seen.has(item.workspaceId)) throw new Error('Duplicate Agency layout workspace');
+      seen.add(item.workspaceId);
+      valid.push(item);
     }
     return valid;
   }
