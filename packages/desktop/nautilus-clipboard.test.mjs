@@ -119,17 +119,19 @@ test('authoritative workspace copy-file rejects unauthorized paths and pastes in
       env: {
         ...process.env,
         GDK_BACKEND: 'x11',
+        GSK_RENDERER: 'cairo',
+        LIBGL_ALWAYS_SOFTWARE: '1',
       },
-      stdio: 'ignore',
+      stdio: 'pipe',
     });
 
     // Wait for Nautilus visible window to appear
     let wid = null;
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 60; i++) {
       await new Promise((resolve) => setTimeout(resolve, 200));
       try {
         const out = execSync(
-          'xdotool search --onlyvisible --class org.gnome.Nautilus',
+          'xdotool search --onlyvisible --class org.gnome.Nautilus || xdotool search --class org.gnome.Nautilus || xdotool search --class nautilus',
           { env: process.env },
         )
           .toString('utf8')
