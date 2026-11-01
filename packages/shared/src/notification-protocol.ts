@@ -4,7 +4,8 @@
  * State model:
  *   - idle
  *   - working
- *   - finished
+ *   - needs-input
+ *   - finished (shown as completed)
  *   - unknown
  *   - failed
  *
@@ -18,10 +19,10 @@
 
 import type { IsoTimestamp, ProjectId, RequestId, RuntimeSessionId, WorkspaceId } from './agency-protocol.js';
 
-export type MawActivityState = 'idle' | 'working' | 'finished' | 'unknown' | 'failed';
+export type MawActivityState = 'idle' | 'working' | 'needs-input' | 'finished' | 'unknown' | 'failed';
 
 export function isMawActivityState(value: unknown): value is MawActivityState {
-  return typeof value === 'string' && ['idle', 'working', 'finished', 'unknown', 'failed'].includes(value);
+  return typeof value === 'string' && ['idle', 'working', 'needs-input', 'finished', 'unknown', 'failed'].includes(value);
 }
 
 export type NotificationSourceKind = 'cli' | 'shell' | 'browser' | 'manual';

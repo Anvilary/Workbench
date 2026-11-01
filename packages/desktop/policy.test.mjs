@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { embeddedUrl, externalUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl } from './policy.mjs';
+import { embeddedUrl, externalUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl, githubUrl, githubEmbeddedUrl } from './policy.mjs';
 const id = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
 test('exact HTTPS navigation and initial ChatGPT URL allowlist', () => {
   for (const url of ['https://chatgpt.com/', 'https://auth.openai.com/log-in', 'https://accounts.google.com/o/oauth2/auth', 'https://appleid.apple.com/auth/authorize']) assert.equal(embeddedUrl(url), true, url);
@@ -8,6 +8,20 @@ test('exact HTTPS navigation and initial ChatGPT URL allowlist', () => {
   assert.equal(validCommand({ type: 'open', id, url: 'https://auth.openai.com/' }), false);
   assert.equal(validCommand({ type: 'open', id, url: 'https://chatgpt.com/', preload: 'anything' }), false);
   assert.equal(validCommand({ type: 'open', id, url: 'https://chatgpt.com/' }), true);
+  assert.equal(githubUrl('https://github.com/alteixeira20/My-Amazing-Workspace'), true);
+  assert.equal(githubUrl('https://gist.github.com/example'), true);
+  assert.equal(githubUrl('https://github.com.evil.com/'), false);
+  assert.equal(githubUrl('https://chatgpt.com/'), false);
+  assert.equal(githubEmbeddedUrl('https://objects.githubusercontent.com/a'), true);
+  assert.equal(githubEmbeddedUrl('https://evil.githubusercontent.com.attacker/a'), false);
+  assert.equal(validCommand({ type: 'open', id, url: 'https://github.com/', provider: 'github' }), true);
+  assert.equal(validCommand({ type: 'open', id, url: 'https://github.com/', provider: 'chatgpt' }), false);
+  assert.equal(validCommand({ type: 'open', id, url: 'https://chatgpt.com/', provider: 'github' }), false);
+  assert.equal(validCommand({ type: 'browser-action', id, action: 'reload' }), true);
+  assert.equal(validCommand({ type: 'browser-action', id, action: 'open-link', url: 'https://example.com/a' }), true);
+  assert.equal(validCommand({ type: 'browser-action', id, action: 'open-link', url: 'http://127.0.0.1/' }), false);
+  assert.equal(validCommand({ type: 'copy-file', cwd: '/work/demo', relative: 'src/app.ts' }), true);
+  assert.equal(validCommand({ type: 'copy-file', cwd: '/work/demo', relative: '/etc/passwd' }), false);
   assert.equal(validCommand({ type: 'open', id: [id], url: 'https://chatgpt.com/' }), false);
   assert.equal(embeddedUrl('https://chatgpt.com/\npath'), false);
 });

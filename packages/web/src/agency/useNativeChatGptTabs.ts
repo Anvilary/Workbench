@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { WebTab } from '@agent-workbench/shared';
 import type { useAgencyStore } from './useAgencyStore.js';
-import { nativeChatGptUrl } from './NativeChatGptView.js';
+import { nativeWebProvider, nativeWorkspaceUrl } from './NativeChatGptView.js';
 
 /** Logical metadata stays on the existing authenticated MAW transport. */
 export function useNativeChatGptTabs(tabs: readonly WebTab[], synchronized: boolean, request: ReturnType<typeof useAgencyStore>['request']): void {
@@ -29,9 +29,9 @@ export function useNativeChatGptTabs(tabs: readonly WebTab[], synchronized: bool
     if (!bridge || !synchronized) return;
     const open = new Set<string>();
     for (const tab of tabs) {
-      if (tab.closedAt || tab.runtimeState !== 'client-managed' || !nativeChatGptUrl(tab.url)) continue;
+      if (tab.closedAt || tab.runtimeState !== 'client-managed' || !nativeWorkspaceUrl(tab.url)) continue;
       open.add(tab.id);
-      void bridge.command({ type: 'update', id: tab.id, url: tab.url }).catch(() => {});
+      void bridge.command({ type: 'update', id: tab.id, url: tab.url, provider: nativeWebProvider(tab.url) }).catch(() => {});
     }
     void bridge.command({ type: 'retain', ids: [...open] }).catch(() => {});
   }, [tabs, synchronized]);

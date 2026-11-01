@@ -104,6 +104,7 @@ export function splitPane(
   direction: SplitDirection,
   newPaneId: string,
   tabIdToMove?: string,
+  emptyNewPane = false,
 ): LayoutNode | null {
   if (countLeaves(tree) >= MAX_LEAVES) return null;
 
@@ -116,7 +117,7 @@ export function splitPane(
   if (tabIdToMove && remainingTabs.includes(tabIdToMove)) {
     remainingTabs = remainingTabs.filter((id) => id !== tabIdToMove);
     newPaneTabs = [tabIdToMove];
-  } else if (remainingTabs.length > 1) {
+  } else if (!emptyNewPane && remainingTabs.length > 1) {
     const half = Math.ceil(remainingTabs.length / 2);
     newPaneTabs = remainingTabs.slice(half);
     remainingTabs = remainingTabs.slice(0, half);

@@ -1,6 +1,7 @@
 import { isIP } from 'node:net';
 
 export const PARTITION = 'persist:maw-chatgpt';
+export const GITHUB_PARTITION = 'persist:maw-github';
 export const CHANNEL = 'maw:chatgpt';
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const authHosts = new Set(['auth.openai.com', 'auth0.openai.com', 'accounts.google.com', 'appleid.apple.com', 'login.microsoftonline.com', 'login.live.com']);
@@ -15,6 +16,29 @@ function httpsUrl(value) {
 }
 
 export function chatUrl(value) { return ['chatgpt.com', 'chat.openai.com'].includes(httpsUrl(value)?.hostname); }
+
+function githubHost(hostname) {
+  return hostname === 'github.com' || (hostname.endsWith('.github.com') && hostname.length > '.github.com'.length);
+}
+
+export function githubUrl(value) {
+  const url = httpsUrl(value);
+  return !!url && githubHost(url.hostname);
+}
+
+const githubAssetHosts = new Set(['github.githubassets.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com', 'github-releases.githubusercontent.com', 'codeload.github.com', 'avatars.githubusercontent.com']);
+
+export function githubEmbeddedUrl(value) {
+  const url = httpsUrl(value);
+  if (!url) return false;
+  return githubUrl(value) || authHosts.has(url.hostname) || githubAssetHosts.has(url.hostname) || url.hostname.endsWith('.githubusercontent.com');
+}
+
+export function webProvider(value) {
+  if (chatUrl(value)) return 'chatgpt';
+  if (githubUrl(value)) return 'github';
+  return null;
+}
 
 export function isFileDeliveryHost(hostname) {
   if (!hostname || typeof hostname !== 'string') return false;
@@ -62,7 +86,23 @@ function boundsOverlap(r1, r2) {
 export function validCommand(value) {
   if (!record(value)) return false;
   if (value.type === 'retain') return exact(value, ['type', 'ids']) && Array.isArray(value.ids) && value.ids.length <= 4096 && value.ids.every(id => typeof id === 'string' && UUID.test(id));
-  if (value.type === 'open' || value.type === 'update') return exact(value, ['type', 'id', 'url']) && typeof value.id === 'string' && UUID.test(value.id) && chatUrl(value.url);
+  if (value.type === 'open' || value.type === 'update') {
+    if (!(typeof value.id === 'string' && UUID.test(value.id))) return false;
+    if (exact(value, ['type', 'id', 'url'])) return chatUrl(value.url);
+    if (!exact(value, ['type', 'id', 'url', 'provider'])) return false;
+    if (value.provider === 'chatgpt') return chatUrl(value.url);
+    if (value.provider === 'github') return githubUrl(value.url);
+    return false;
+  }
+  if (value.type === 'browser-action') {
+    const actions = ['back', 'forward', 'reload', 'copy-url', 'copy-selection', 'open-page', 'zoom-in', 'zoom-out', 'zoom-reset'];
+    if (exact(value, ['type', 'id', 'action'])) return UUID.test(value.id) && actions.includes(value.action);
+    return exact(value, ['type', 'id', 'action', 'url']) && value.action === 'open-link' && UUID.test(value.id) && externalUrl(value.url);
+  }
+  if (value.type === 'copy-file') {
+    return exact(value, ['type', 'cwd', 'relative']) && typeof value.cwd === 'string' && value.cwd.startsWith('/') && value.cwd.length <= 4096 &&
+      typeof value.relative === 'string' && value.relative.length > 0 && value.relative.length <= 512 && !value.relative.startsWith('/') && !value.relative.includes('\0');
+  }
   if (value.type === 'close' || value.type === 'capture') return exact(value, ['type', 'id']) && typeof value.id === 'string' && UUID.test(value.id);
 
   if (value.type === 'layout') {

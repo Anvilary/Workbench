@@ -53,6 +53,9 @@ interface Props {
   onAddCliClick: (paneId: string) => void;
   onAddTerminalClick: (paneId: string) => void;
   onAddWebTabClick: (paneId: string) => void;
+  onAddGithubClick?: (paneId: string) => void;
+  onLaunchProfile?: (paneId: string, profileId: string) => void;
+  onSplitCreate?: (paneId: string, direction: SplitDirection, action: 'terminal' | 'agent' | 'web' | 'github', profileId?: string) => void;
   onRenameTab: (tab: WorkspaceTab, title: string) => Promise<void>;
   onFocusPane: (paneId: string) => void;
   onTabDisplayed: (id: string, ready: boolean) => void;
@@ -129,6 +132,9 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
         onAddCliClick={() => onAddCliClick(node.id)}
         onAddTerminalClick={() => onAddTerminalClick(node.id)}
         onAddWebTabClick={() => onAddWebTabClick(node.id)}
+        onAddGithubClick={props.onAddGithubClick ? () => props.onAddGithubClick?.(node.id) : undefined}
+        onLaunchProfile={props.onLaunchProfile ? (profileId) => props.onLaunchProfile?.(node.id, profileId) : undefined}
+        onSplitCreate={props.onSplitCreate ? (direction, action, profileId) => props.onSplitCreate?.(node.id, direction, action, profileId) : undefined}
         onMoveTabToPane={onMoveTabToPane}
         onRenameTab={onRenameTab}
         reportError={reportError}

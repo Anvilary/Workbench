@@ -444,8 +444,8 @@ export function TerminalView({
         const isCtrl = event.ctrlKey || event.metaKey;
         const key = event.key.toLowerCase();
 
-        // Ctrl+A: Seleccionar todo el buffer activo de xterm
-        if (isCtrl && !event.shiftKey && !event.altKey && key === 'a') {
+        // Ctrl+A belongs to the CLI. Ctrl+Shift+A selects the terminal buffer.
+        if (isCtrl && event.shiftKey && !event.altKey && key === 'a') {
           terminal.selectAll();
           return false;
         }

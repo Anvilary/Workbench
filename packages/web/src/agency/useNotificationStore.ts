@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
 import type {
   MawActivityState,
   MawNotificationItem,
@@ -148,7 +149,8 @@ export function useNotificationStore(
           return [item, ...prev];
         });
 
-        if (enabledRef.current) {
+        const actionable = item.state === 'finished' || item.state === 'failed';
+        if (enabledRef.current && actionable && !nativeLayoutCoordinator.isViewing(item.tabId)) {
           pushToast(item);
         }
       } else if (message.type === 'agency.notification.changed') {
