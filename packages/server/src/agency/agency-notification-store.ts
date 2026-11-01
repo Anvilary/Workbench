@@ -26,6 +26,13 @@ import { writeAtomically } from '../atomic-write.js';
 import { appConfigDir } from '../paths.js';
 
 const VERSION = 1;
+
+class UnsupportedAgencyNotificationSchemaError extends Error {
+  constructor(version: unknown) {
+    super('Unsupported Agency notification store version: ' + String(version));
+    this.name = 'UnsupportedAgencyNotificationSchemaError';
+  }
+}
 const NOW = (): string => new Date().toISOString();
 
 export interface CreateNotificationInput {
@@ -74,6 +81,7 @@ export class AgencyNotificationStore extends EventEmitter {
       const contents = await readFile(this.file, 'utf8');
       return this.parse(contents);
     } catch (error) {
+      if (error instanceof UnsupportedAgencyNotificationSchemaError) throw error;
       primaryMissing = (error as NodeJS.ErrnoException).code === 'ENOENT';
       primaryFailure = error;
     }
@@ -83,6 +91,7 @@ export class AgencyNotificationStore extends EventEmitter {
       const backupContents = await readFile(this.file + '.bak', 'utf8');
       recovered = this.parse(backupContents);
     } catch (backupError) {
+      if (backupError instanceof UnsupportedAgencyNotificationSchemaError) throw backupError;
       const backupMissing = (backupError as NodeJS.ErrnoException).code === 'ENOENT';
       if (primaryMissing && backupMissing) {
         return [];
@@ -101,9 +110,8 @@ export class AgencyNotificationStore extends EventEmitter {
       throw new Error('Invalid notification store format');
     }
     const root = raw as Record<string, unknown>;
-    if (root['version'] !== VERSION || !Array.isArray(root['notifications'])) {
-      throw new Error('Unsupported notification store version or shape');
-    }
+    if (root['version'] !== VERSION) throw new UnsupportedAgencyNotificationSchemaError(root['version']);
+    if (!Array.isArray(root['notifications'])) throw new Error('Invalid notification store shape');
     const items: MawNotificationItem[] = [];
     for (const item of root['notifications']) {
       if (!isMawNotificationItem(item)) {
