@@ -34,8 +34,13 @@ export interface WebTab {
   kind: 'web';
   /** Human-readable tab title (e.g. conversation title or user-renamed label). */
   title: string;
-  /** Strictly validated ChatGPT conversation URL. */
+  /** Strictly validated ChatGPT or GitHub URL. The provider is fixed for the life of the tab. */
   url: string;
+  /**
+   * Omitted on records saved before GitHub tabs existed. Those records are ChatGPT
+   * and must still pass the ChatGPT URL check.
+   */
+  provider?: WebTabProvider;
   /** Presentation order in the tab strip (0-indexed). */
   order: number;
   /** Whether this tab is selected in its workspace. At most one open tab is selected per workspace. */
@@ -161,6 +166,63 @@ export function isAllowedChatGptUrl(rawUrl: string): boolean {
   return validateChatGptUrl(rawUrl).valid;
 }
 
+export type WebTabProvider = 'chatgpt' | 'github';
+
+const GITHUB_ROOT_HOSTS = new Set(['github.com']);
+
+function isGithubHost(host: string): boolean {
+  if (GITHUB_ROOT_HOSTS.has(host)) return true;
+  if (!host.endsWith('.github.com')) return false;
+  const subdomain = host.slice(0, -'.github.com'.length);
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(subdomain);
+}
+
+/**
+ * GitHub pages only. The same transport, credential, port, and address
+ * checks as ChatGPT apply. ChatGPT hosts are not accepted here.
+ */
+export function validateGithubUrl(rawUrl: string): UrlValidationResult {
+  if (typeof rawUrl !== 'string') return { valid: false, error: 'URL must be a string' };
+  const trimmed = rawUrl.trim();
+  if (trimmed.length === 0) return { valid: false, error: 'URL cannot be empty' };
+  if (trimmed.length > 2048) return { valid: false, error: 'URL exceeds maximum length of 2048 characters' };
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return { valid: false, error: 'URL contains control characters or newlines' };
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return { valid: false, error: 'Invalid URL format' };
+  }
+  if (parsed.protocol !== 'https:') return { valid: false, error: 'Protocol is not allowed. Only "https:" is permitted.' };
+  if (parsed.username || parsed.password) return { valid: false, error: 'URLs with user credentials are not allowed' };
+  if (parsed.port && parsed.port !== '443') return { valid: false, error: `Custom port "${parsed.port}" is not allowed` };
+  const hostname = parsed.hostname.toLowerCase();
+  if (IP_V4_RE.test(hostname) || hostname.startsWith('[') || hostname.endsWith(']')) {
+    return { valid: false, error: 'IP addresses are not permitted' };
+  }
+  if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local') || hostname.endsWith('.internal')) {
+    return { valid: false, error: 'Navigation to local or internal addresses is strictly forbidden' };
+  }
+  if (!isGithubHost(hostname)) return { valid: false, error: `Host "${hostname}" is not an allowed GitHub domain` };
+  const normalized = new URL(parsed.toString());
+  normalized.hostname = hostname;
+  if (normalized.port === '443') normalized.port = '';
+  return { valid: true, normalizedUrl: normalized.toString() };
+}
+
+export function classifyWebTabUrl(rawUrl: string): UrlValidationResult & { provider?: WebTabProvider } {
+  const chat = validateChatGptUrl(rawUrl);
+  if (chat.valid) return { ...chat, provider: 'chatgpt' };
+  const github = validateGithubUrl(rawUrl);
+  if (github.valid) return { ...github, provider: 'github' };
+  return { valid: false, error: 'URL is not an allowed ChatGPT or GitHub address' };
+}
+
+export function webTabProviderFor(tab: Pick<WebTab, 'url' | 'provider'>): WebTabProvider {
+  if (tab.provider === 'github' || tab.provider === 'chatgpt') return tab.provider;
+  return validateGithubUrl(tab.url).valid ? 'github' : 'chatgpt';
+}
+
 export function validateWebTabTitle(title: unknown): boolean {
   if (typeof title !== 'string') return false;
   const clean = title.trim();
@@ -187,7 +249,11 @@ export function isWebTab(value: unknown): value is WebTab {
   if (typeof tab.id !== 'string' || !UUID_RE.test(tab.id)) return false;
   if (typeof tab.workspaceId !== 'string' || !UUID_RE.test(tab.workspaceId)) return false;
   if (!validateWebTabTitle(tab.title)) return false;
-  if (typeof tab.url !== 'string' || !validateChatGptUrl(tab.url).valid) return false;
+  if (typeof tab.url !== 'string') return false;
+  if (tab.provider !== undefined && tab.provider !== 'chatgpt' && tab.provider !== 'github') return false;
+  const provider = tab.provider === 'github' ? 'github' : 'chatgpt';
+  const urlOk = provider === 'github' ? validateGithubUrl(tab.url).valid : validateChatGptUrl(tab.url).valid;
+  if (!urlOk) return false;
   if (!Number.isSafeInteger(tab.order) || (tab.order as number) < 0) return false;
   if (typeof tab.selected !== 'boolean') return false;
   if (typeof tab.createdAt !== 'string' || Number.isNaN(Date.parse(tab.createdAt))) return false;
@@ -248,8 +314,8 @@ export function parseWebTabClientMessage(raw: unknown): WebTabClientMessage | nu
     case 'agency.webTab.create': {
       if (typeof raw.workspaceId !== 'string' || !UUID_RE.test(raw.workspaceId)) return null;
       if (typeof raw.url !== 'string') return null;
-      const val = validateChatGptUrl(raw.url);
-      if (!val.valid) return null;
+      const val = classifyWebTabUrl(raw.url);
+      if (!val.valid || !val.normalizedUrl) return null;
       let title: string | undefined;
       if (raw.title !== undefined) {
         if (!validateWebTabTitle(raw.title)) return null;
@@ -303,8 +369,8 @@ export function parseWebTabClientMessage(raw: unknown): WebTabClientMessage | nu
       if (typeof raw.workspaceId !== 'string' || !UUID_RE.test(raw.workspaceId)) return null;
       if (typeof raw.tabId !== 'string' || !UUID_RE.test(raw.tabId)) return null;
       if (typeof raw.url !== 'string') return null;
-      const val = validateChatGptUrl(raw.url);
-      if (!val.valid) return null;
+      const val = classifyWebTabUrl(raw.url);
+      if (!val.valid || !val.normalizedUrl) return null;
       return {
         type: 'agency.webTab.navigate',
         requestId,

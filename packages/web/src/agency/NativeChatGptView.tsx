@@ -5,7 +5,7 @@ import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
 
 export interface DesktopBridge {
   command: (command: unknown) => Promise<unknown>;
-  subscribe: (callback: (state: { type: string; id?: string; url?: string; message?: string; direction?: number; filename?: string; percent?: number | null }) => void) => () => void;
+  subscribe: (callback: (state: { type: string; id?: string; url?: string; message?: string; direction?: number; filename?: string; percent?: number | null; linkURL?: string; canGoBack?: boolean; canGoForward?: boolean; selection?: boolean; x?: number; y?: number }) => void) => () => void;
 }
 
 declare global {
@@ -23,6 +23,20 @@ export function nativeChatGptUrl(value: string): boolean {
   }
 }
 
+export function nativeWorkspaceUrl(value: string): boolean {
+  if (nativeChatGptUrl(value)) return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && (url.hostname === 'github.com' || url.hostname.endsWith('.github.com')) && !url.username && !url.password && !url.port;
+  } catch {
+    return false;
+  }
+}
+
+export function nativeWebProvider(value: string): 'chatgpt' | 'github' {
+  return nativeChatGptUrl(value) ? 'chatgpt' : 'github';
+}
+
 export function NativeChatGptView({
   tab,
   onDisplayed,
@@ -33,7 +47,7 @@ export function NativeChatGptView({
   onFocused?: () => void;
 }): JSX.Element {
   const { id } = tab;
-  const supported = nativeChatGptUrl(tab.url);
+  const supported = nativeWorkspaceUrl(tab.url);
   const callback = useRef(onDisplayed);
   callback.current = onDisplayed;
   const focusCallback = useRef(onFocused);
@@ -49,7 +63,7 @@ export function NativeChatGptView({
     const bridge = window.mawChatGpt;
     if (!bridge || !supported || !host.current) return;
 
-    void bridge.command({ type: 'open', id, url: url.current }).catch((err) => {
+    void bridge.command({ type: 'open', id, url: url.current, provider: nativeWebProvider(url.current) }).catch((err) => {
       setError(String(err));
     });
 

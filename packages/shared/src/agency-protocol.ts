@@ -14,6 +14,11 @@ import {
 } from './browser-tabs.js';
 
 import {
+  type EditorTabClientMessage, type EditorTabServerMessage,
+  parseEditorTabClientMessage, parseEditorTabServerMessage,
+} from './editor-tabs.js';
+
+import {
   type NotificationClientMessage,
   type NotificationServerMessage,
   isMawNotificationItem,
@@ -229,7 +234,8 @@ export type AgencyClientMessage =
     })
   | NotificationClientMessage
   | WebTabClientMessage
-  | LayoutClientMessage;
+  | LayoutClientMessage
+  | EditorTabClientMessage;
 
 export type AgencyErrorCode =
   | 'invalid-request'
@@ -274,7 +280,8 @@ export type AgencyServerMessage =
   | { type: 'agency.session.activity'; sessionId: RuntimeSessionId; workspaceId: WorkspaceId; activity: SessionActivity; lifecycle: SessionLifecycle }
   | NotificationServerMessage
   | WebTabServerMessage
-  | LayoutServerMessage;
+  | LayoutServerMessage
+  | EditorTabServerMessage;
 
 /**
  * Existing upstream PTY messages are NOT redefined here:
@@ -322,6 +329,7 @@ function isValidName(value: unknown): value is string {
 export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | null {
   if (!isRecord(raw) || typeof raw['type'] !== 'string') return null;
   if (raw.type.startsWith('agency.webTab')) return parseWebTabClientMessage(raw);
+  if (raw.type.startsWith('agency.editorTab')) return parseEditorTabClientMessage(raw);
   const requestId = raw['requestId'];
   if (!isValidRequestId(requestId)) return null;
 
@@ -625,6 +633,7 @@ const ERROR_CODES = new Set<AgencyErrorCode>([
 export function parseAgencyServerMessage(raw: unknown): AgencyServerMessage | null {
   if (!isRecord(raw) || typeof raw['type'] !== 'string') return null;
   if (raw.type.startsWith('agency.webTab')) return parseWebTabServerMessage(raw);
+  if (raw.type.startsWith('agency.editorTab')) return parseEditorTabServerMessage(raw);
 
   switch (raw['type']) {
     case 'agency.projects.snapshot': {

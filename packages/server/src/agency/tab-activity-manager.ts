@@ -267,48 +267,11 @@ export class TabActivityManager extends EventEmitter {
     }
     if (!this.disposed) this.emit('tabActivity', record);
     await this.deliverPendingNotifications();
-
-    // Manage 30-second long-running continuous work timer
-    const timerKey = key;
-    if (record.state === 'working' && record.reliableSignal && !record.closed) {
-      const existingTimer = this.longRunningTimers.get(timerKey);
-      const taskId = record.taskId ?? 'task';
-      if (!existingTimer || existingTimer.taskId !== taskId) {
-        if (existingTimer) {
-          clearTimeout(existingTimer.timer);
-          this.longRunningTimers.delete(timerKey);
-        }
-        const dedupKey = `long-running:${record.workspaceId}:${record.tabId}:${taskId}`;
-        if (!this.notificationStore.hasDeduplicationKey(dedupKey)) {
-          const timer = setTimeout(() => {
-            this.longRunningTimers.delete(timerKey);
-            if (this.disposed) return;
-            const current = this.states.get(timerKey);
-            if (current && !current.closed && current.state === 'working' && current.taskId === taskId) {
-              if (!this.notificationStore.hasDeduplicationKey(dedupKey)) {
-                const tabLabel = tabName || this.tabNames.get(timerKey) || (notification?.metadata?.tabName as string | undefined) || notification?.title || 'Task';
-                void this.notificationStore.create({
-                  workspaceId: record.workspaceId,
-                  tabId: record.tabId,
-                  ...(record.sessionId ? { sessionId: record.sessionId } : {}),
-                  title: tabLabel,
-                  body: `Task running for 30s (${tabLabel})`,
-                  state: 'working',
-                  deduplicationKey: dedupKey,
-                  metadata: { kind: 'long-running', tabName: tabLabel, taskId, elapsedSeconds: 30 },
-                }).catch((err) => console.warn('[agency] failed creating long-running notification:', err));
-              }
-            }
-          }, this.longRunningThresholdMs);
-          this.longRunningTimers.set(timerKey, { timer, taskId });
-        }
-      }
-    } else {
-      const existingTimer = this.longRunningTimers.get(timerKey);
-      if (existingTimer) {
-        clearTimeout(existingTimer.timer);
-        this.longRunningTimers.delete(timerKey);
-      }
+    // Working and needs-input stay on the tab. They do not raise a notification.
+    const existingTimer = this.longRunningTimers.get(key);
+    if (existingTimer) {
+      clearTimeout(existingTimer.timer);
+      this.longRunningTimers.delete(key);
     }
   }
 
@@ -619,7 +582,7 @@ export class TabActivityManager extends EventEmitter {
       reliable = false;
       detail = 'CLI idle';
     } else if (input.nextActivity === 'awaiting-user' || input.nextActivity === 'awaiting-permission') {
-      nextState = 'working';
+      nextState = 'needs-input';
       reliable = true;
       detail = 'Awaiting user input or permission';
     } else {

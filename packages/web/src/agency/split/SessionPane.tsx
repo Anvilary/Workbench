@@ -8,6 +8,7 @@ import { canLaunchAgent, type AgencyTransport } from '../model.js';
 import type { useAgencyStore } from '../useAgencyStore.js';
 import { PaneContextMenu } from './PaneContextMenu.js';
 import { PaneFeedback } from './PaneFeedback.js';
+import { terminalPathCandidate } from './terminal-path.mjs';
 
 interface Props {
   session: AgencyRuntimeSession;
@@ -23,6 +24,7 @@ interface Props {
   busy?: boolean;
   onConfigure?: (profile: AgencyCliProfile) => void;
   onStartAgain?: (session: AgencyRuntimeSession) => void;
+  workspaceCwd?: string;
 }
 
 export function SessionPane({
@@ -39,11 +41,16 @@ export function SessionPane({
   busy,
   onConfigure,
   onStartAgain,
+  workspaceCwd,
 }: Props): JSX.Element {
   const terminal = useRef<Terminal | null>(null);
   const [rendered, setRendered] = useState(false);
   const [resuming, setResuming] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    candidate: { relative: string; absolute: string } | null;
+  } | null>(null);
   const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const feedbackTimer = useRef<number | null>(null);
 
@@ -90,7 +97,7 @@ export function SessionPane({
     if (!term) return;
     let text = term.getSelection();
     if (kind !== 'selection') {
-      const buffer = term.buffer.active;
+      const buffer = kind === 'all' ? term.buffer.normal : term.buffer.active;
       const lines = Array.from({ length: buffer.length }, (_, index) =>
         buffer.getLine(index)?.translateToString(true) ?? '',
       );
@@ -146,8 +153,106 @@ export function SessionPane({
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY });
+    const selection = terminal.current?.getSelection()?.trim() || '';
+    let candidate: { relative: string; absolute: string } | null = null;
+    if (selection && workspaceCwd) {
+      const res = terminalPathCandidate(selection, workspaceCwd);
+      if (res.ok) candidate = { relative: res.relative, absolute: res.absolute };
+    }
+    setContextMenu({ x: e.clientX, y: e.clientY, candidate });
   };
+
+  const openFile = (relativePath: string) => {
+    void request({
+      type: 'agency.editorTab.open',
+      workspaceId: session.workspaceId,
+      filePath: relativePath,
+      select: true,
+    })
+      .then(() => {
+        showFeedback(t('agency.terminal.fileOpened'), 'success');
+      })
+      .catch((err) => {
+        report(err instanceof Error ? err.message : String(err));
+      });
+  };
+
+  const copyFile = async (relativePath: string) => {
+    if (!workspaceCwd) return;
+    if (typeof window !== 'undefined' && window.mawChatGpt?.command && !(connection.isRemoteClient ? connection.isRemoteClient() : false)) {
+      try {
+        const res = (await window.mawChatGpt.command({
+          type: 'copy-file',
+          cwd: workspaceCwd,
+          relative: relativePath,
+        })) as { ok: boolean; error?: string } | undefined;
+        if (res && res.ok) {
+          showFeedback(t('agency.ui.copied'), 'success');
+        } else {
+          showFeedback(t('agency.terminal.copyFileUnavailable'), 'error');
+        }
+      } catch {
+        showFeedback(t('agency.terminal.copyFileUnavailable'), 'error');
+      }
+    } else {
+      showFeedback(t('agency.terminal.copyFileUnavailable'), 'error');
+    }
+  };
+
+  const copyAbsolutePath = async (absolute: string) => {
+    try {
+      await navigator.clipboard.writeText(absolute);
+      showFeedback(t('agency.ui.copied'), 'success');
+    } catch {
+      showFeedback(t('agency.ui.clipboardDenied'), 'error');
+    }
+  };
+
+  const copyRelativePath = async (relative: string) => {
+    try {
+      await navigator.clipboard.writeText(relative);
+      showFeedback(t('agency.ui.copied'), 'success');
+    } catch {
+      showFeedback(t('agency.ui.clipboardDenied'), 'error');
+    }
+  };
+
+  const copyFileContents = (relativePath: string) => {
+    if (!session.terminalId || !online) return;
+    let timer: number | null = null;
+    let cleaned = false;
+    const unsubscribe = connection.onMessage((msg) => {
+      if (
+        msg.type === 'files.preview' &&
+        msg.terminalId === session.terminalId &&
+        msg.preview.path === relativePath
+      ) {
+        if (timer !== null) clearTimeout(timer);
+        if (!cleaned) {
+          cleaned = true;
+          unsubscribe();
+        }
+        if (msg.preview.binary) {
+          showFeedback(t('agency.terminal.binaryFileError'), 'error');
+        } else {
+          void navigator.clipboard.writeText(msg.preview.text).then(
+            () => showFeedback(t('agency.ui.copied'), 'success'),
+            () => showFeedback(t('agency.ui.clipboardDenied'), 'error'),
+          );
+        }
+      }
+    });
+    timer = window.setTimeout(() => {
+      if (!cleaned) {
+        cleaned = true;
+        unsubscribe();
+      }
+      showFeedback(t('agency.terminal.copyFileUnavailable'), 'error');
+    }, 3000);
+    connection.send({ type: 'files.read', terminalId: session.terminalId, path: relativePath });
+  };
+
+  const canCopyNativeFile = typeof window !== 'undefined' && !!window.mawChatGpt?.command && !(connection.isRemoteClient ? connection.isRemoteClient() : false);
 
   const shellRestartedTitle =
     session.kind === 'terminal' && session.recovery?.status === 'resumed'
@@ -255,12 +360,19 @@ export function SessionPane({
           y={contextMenu.y}
           hasSelection={!!terminal.current?.hasSelection()}
           isLive={live && !!session.terminalId}
+          fileCandidate={contextMenu.candidate}
+          canCopyNativeFile={canCopyNativeFile}
           onCopySelection={() => void copy('selection')}
           onCopyAll={() => void copy('all')}
           onCopyLast={() => void copy('last')}
           onPaste={() => void paste()}
           onInterrupt={interrupt}
           onClear={clear}
+          onOpenFile={contextMenu.candidate ? () => openFile(contextMenu.candidate!.relative) : undefined}
+          onCopyFile={contextMenu.candidate ? () => void copyFile(contextMenu.candidate!.relative) : undefined}
+          onCopyAbsolutePath={contextMenu.candidate ? () => void copyAbsolutePath(contextMenu.candidate!.absolute) : undefined}
+          onCopyRelativePath={contextMenu.candidate ? () => void copyRelativePath(contextMenu.candidate!.relative) : undefined}
+          onCopyFileContents={contextMenu.candidate ? () => copyFileContents(contextMenu.candidate!.relative) : undefined}
           onClose={() => setContextMenu(null)}
         />
       )}

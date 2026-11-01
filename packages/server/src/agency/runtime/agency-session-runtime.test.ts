@@ -977,7 +977,7 @@ test('mixed CLI profiles, repeated profile conversations and shell tabs coexist;
     assert.ok(f.runtime.get(shells[1]!.id)?.tab?.closedAt);
     assert.equal(f.runtime.get(shells[1]!.id)?.stoppedByUser,true);
     for(const session of [...agents,shells[0]!,shells[2]!])assert.equal(f.terminals.get(session.terminalId!)?.alive,true);
-    f.terminals.exit(agents[0]!.terminalId!,7);await new Promise(resolve=>setImmediate(resolve));
+    f.terminals.exit(agents[0]!.terminalId!,7);await until(() => f.runtime.get(agents[0]!.id)?.lifecycle === 'exited');
     await f.runtime.tabAction(f.one.id,agents[0]!.tab!.id,'close');assert.equal(f.runtime.get(agents[0]!.id)?.exitCode,7);
   } finally {f.runtime.dispose();await rm(cwd,{recursive:true,force:true});}
 });

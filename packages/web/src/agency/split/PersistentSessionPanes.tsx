@@ -22,6 +22,7 @@ interface Props {
   onDisplayed: (tabId: string, ready: boolean) => void;
   onConfigure: (profile: AgencyCliProfile) => void;
   onStartAgain: (session: AgencyRuntimeSession) => void;
+  workspaceCwd?: string;
 }
 
 /**
@@ -45,6 +46,7 @@ export function PersistentSessionPanes({
   onDisplayed,
   onConfigure,
   onStartAgain,
+  workspaceCwd,
 }: Props): JSX.Element {
   const holders = useRef(new Map<string, HTMLDivElement>());
   const park = useRef<HTMLDivElement>(null);
@@ -123,6 +125,7 @@ export function PersistentSessionPanes({
             busy={busy}
             onConfigure={onConfigure}
             onStartAgain={onStartAgain}
+            workspaceCwd={workspaceCwd}
           />,
           holder,
           tab.id,
