@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { editorDraftStore, isDraftDirty } from './editorDraftStore.ts';
+import { editorDraftStore, isDraftDirty, shouldFlagReadPreviewConflict } from './editorDraftStore.ts';
 
 test('editorDraftStore tracks dirty state accurately based on edit changes, conflicts, and pending diffs', () => {
   editorDraftStore.clearAll();
@@ -387,45 +387,291 @@ test('P2 in-flight save: disconnect while saving resets saving flag without losi
   detach();
 });
 
-test('P2 in-flight save: reconcilePendingSave reconciles disk preview on remount', () => {
+test('regression 1: delayed files.preview while a save is pending never acknowledges, cancels, or conflicts the write', () => {
   editorDraftStore.clearAll();
-  const tabId = 'save-reconcile';
-  const savedText = 'content saved on server before remount';
+  const tabId = 'delayed-preview-while-saving';
+  const userText = 'user in-flight edits';
+  const edit = {
+    opened: 'disk base',
+    baseHash: 'hash-disk-base',
+    text: userText,
+    saving: true,
+    failure: null,
+    conflict: null,
+    pending: null,
+    closing: false,
+  };
+  editorDraftStore.setDraft(tabId, {
+    edit,
+    pendingSaveRequestId: 'req-save-delayed-preview',
+    mode: 'formatted',
+    scrollTop: 0,
+  });
 
+  // Stale read preview from disk arriving while write is pending
+  const staleReadPreview = {
+    path: 'doc.txt',
+    text: 'disk base',
+    hash: 'hash-disk-other',
+    editable: true,
+    binary: false,
+    truncated: false,
+    size: 9,
+  };
+
+  // Must not flag conflict
+  assert.equal(shouldFlagReadPreviewConflict(edit, staleReadPreview), false);
+  // Reconcile must never acknowledge or settle a write on read preview
+  const outcome = editorDraftStore.reconcilePendingSave(tabId, staleReadPreview);
+  assert.equal(outcome.saved, false);
+
+  // Even if read preview text matches user edit text, read preview must never acknowledge write
+  const matchingReadPreview = { ...staleReadPreview, text: userText, hash: 'hash-disk-matching' };
+  assert.equal(shouldFlagReadPreviewConflict(edit, matchingReadPreview), false);
+  const outcomeMatching = editorDraftStore.reconcilePendingSave(tabId, matchingReadPreview);
+  assert.equal(outcomeMatching.saved, false);
+
+  // In-flight write must remain active and pending
+  const draft = editorDraftStore.getDraft(tabId);
+  assert.ok(draft);
+  assert.equal(draft.pendingSaveRequestId, 'req-save-delayed-preview');
+  assert.equal(draft.edit?.saving, true);
+  assert.equal(draft.edit?.text, userText);
+  assert.equal(draft.edit?.conflict, null);
+  assert.equal(editorDraftStore.isDirty(tabId), true);
+  editorDraftStore.clearAll();
+});
+
+test('regression 2: files.saved arriving after delayed preview correctly settles the pending write', () => {
+  editorDraftStore.clearAll();
+  const conn = createMockConnection();
+  const detach = editorDraftStore.attachConnection(conn);
+
+  const tabId = 'save-after-preview';
+  const userText = 'content to be saved';
+  const edit = {
+    opened: 'original text',
+    baseHash: 'hash-original',
+    text: userText,
+    saving: true,
+    failure: null,
+    conflict: null,
+    pending: null,
+    closing: false,
+  };
+  editorDraftStore.setDraft(tabId, {
+    edit,
+    pendingSaveRequestId: 'req-save-after-prev',
+    mode: 'raw',
+    scrollTop: 10,
+  });
+
+  // Delayed preview arrived first while save was pending
+  const delayedPreview = {
+    path: 'file.txt',
+    text: 'original text',
+    hash: 'hash-original',
+    editable: true,
+    binary: false,
+    truncated: false,
+    size: 13,
+  };
+  assert.equal(shouldFlagReadPreviewConflict(edit, delayedPreview), false);
+  assert.equal(editorDraftStore.reconcilePendingSave(tabId, delayedPreview).saved, false);
+  assert.equal(editorDraftStore.getPendingSave(tabId), 'req-save-after-prev');
+
+  // Now files.saved arrives with matching requestId
+  conn.emitMessage({
+    type: 'files.saved',
+    requestId: 'req-save-after-prev',
+    outcome: 'saved',
+    preview: {
+      path: 'file.txt',
+      text: userText,
+      hash: 'hash-saved-new',
+      editable: true,
+      binary: false,
+      truncated: false,
+      size: userText.length,
+    },
+  });
+
+  const settledDraft = editorDraftStore.getDraft(tabId);
+  assert.ok(settledDraft);
+  assert.equal(settledDraft.edit, null);
+  assert.equal(settledDraft.pendingSaveRequestId, null);
+  assert.equal(editorDraftStore.getPendingSave(tabId), null);
+  assert.equal(settledDraft.content?.loaded?.preview?.hash, 'hash-saved-new');
+  assert.equal(settledDraft.content?.loaded?.preview?.text, userText);
+  assert.equal(editorDraftStore.isDirty(tabId), false);
+
+  detach();
+  editorDraftStore.clearAll();
+});
+
+test('regression 3: actual write conflict preserves unsaved user text and attaches external preview', () => {
+  editorDraftStore.clearAll();
+  const conn = createMockConnection();
+  const detach = editorDraftStore.attachConnection(conn);
+
+  const tabId = 'actual-write-conflict';
+  const userText = 'user edits that clashed';
   editorDraftStore.setDraft(tabId, {
     edit: {
-      opened: 'old text',
-      baseHash: 'hash-old',
-      text: savedText,
+      opened: 'base text',
+      baseHash: 'hash-base',
+      text: userText,
       saving: true,
       failure: null,
       conflict: null,
       pending: null,
       closing: false,
     },
-    pendingSaveRequestId: 'req-rec-1',
+    pendingSaveRequestId: 'req-conflict-write',
     mode: 'formatted',
     scrollTop: 0,
   });
 
-  // Remount retrieves file preview matching the saved draft
-  const preview = {
+  // Server indicates write conflict outcome on save response
+  conn.emitMessage({
+    type: 'files.saved',
+    requestId: 'req-conflict-write',
+    outcome: 'conflict',
+    preview: {
+      path: 'file.txt',
+      text: 'remote concurrent change on disk',
+      hash: 'hash-remote-conflict',
+      editable: true,
+      binary: false,
+      truncated: false,
+      size: 32,
+    },
+  });
+
+  const conflictDraft = editorDraftStore.getDraft(tabId);
+  assert.ok(conflictDraft);
+  assert.ok(conflictDraft.edit);
+  assert.equal(conflictDraft.pendingSaveRequestId, null);
+  assert.equal(conflictDraft.edit.saving, false);
+  assert.equal(conflictDraft.edit.text, userText); // User's unsaved text preserved!
+  assert.ok(conflictDraft.edit.conflict);
+  assert.equal(conflictDraft.edit.conflict.next?.text, 'remote concurrent change on disk');
+  assert.equal(conflictDraft.edit.conflict.next?.hash, 'hash-remote-conflict');
+  assert.equal(editorDraftStore.isDirty(tabId), true);
+
+  detach();
+  editorDraftStore.clearAll();
+});
+
+test('regression 4: remount during an in-flight save preserves pending save and settles on matching files.saved', () => {
+  editorDraftStore.clearAll();
+  const conn = createMockConnection();
+  const detach = editorDraftStore.attachConnection(conn);
+
+  const tabId = 'remount-in-flight-save';
+  const userText = 'text saving while unmounted';
+  editorDraftStore.setDraft(tabId, {
+    edit: {
+      opened: 'old base',
+      baseHash: 'hash-old',
+      text: userText,
+      saving: true,
+      failure: null,
+      conflict: null,
+      pending: null,
+      closing: false,
+    },
+    pendingSaveRequestId: 'req-remount-inflight',
+    mode: 'raw',
+    scrollTop: 24,
+  });
+
+  // Simulate component remount: initialDraft reads persisted draft with pending save
+  const remountInitialDraft = editorDraftStore.getDraft(tabId);
+  assert.ok(remountInitialDraft);
+  assert.equal(remountInitialDraft.pendingSaveRequestId, 'req-remount-inflight');
+  assert.equal(remountInitialDraft.edit?.saving, true);
+
+  // During remount, delayed files.preview arrives
+  const remountPreview = {
     path: 'doc.txt',
-    text: savedText,
-    hash: 'hash-new-committed',
+    text: userText,
+    hash: 'hash-disk-preview',
     editable: true,
     binary: false,
     truncated: false,
-    size: savedText.length,
+    size: userText.length,
   };
+  // Read preview must never acknowledge or settle write on remount
+  assert.equal(shouldFlagReadPreviewConflict(remountInitialDraft.edit, remountPreview), false);
+  assert.equal(editorDraftStore.reconcilePendingSave(tabId, remountPreview).saved, false);
+  assert.equal(editorDraftStore.getPendingSave(tabId), 'req-remount-inflight');
 
-  const outcome = editorDraftStore.reconcilePendingSave(tabId, preview);
-  assert.equal(outcome.saved, true);
+  // Authoritative files.saved arrives after remount
+  conn.emitMessage({
+    type: 'files.saved',
+    requestId: 'req-remount-inflight',
+    outcome: 'saved',
+    preview: {
+      path: 'doc.txt',
+      text: userText,
+      hash: 'hash-authoritative-save',
+      editable: true,
+      binary: false,
+      truncated: false,
+      size: userText.length,
+    },
+  });
 
-  const draftAfterRec = editorDraftStore.getDraft(tabId);
-  assert.ok(draftAfterRec);
-  assert.equal(draftAfterRec.edit, null);
-  assert.equal(draftAfterRec.pendingSaveRequestId, null);
-  assert.equal(draftAfterRec.content?.loaded?.preview?.hash, 'hash-new-committed');
+  const settledAfterRemount = editorDraftStore.getDraft(tabId);
+  assert.ok(settledAfterRemount);
+  assert.equal(settledAfterRemount.edit, null);
+  assert.equal(settledAfterRemount.pendingSaveRequestId, null);
+  assert.equal(settledAfterRemount.content?.loaded?.preview?.hash, 'hash-authoritative-save');
   assert.equal(editorDraftStore.isDirty(tabId), false);
+
+  detach();
+  editorDraftStore.clearAll();
+});
+
+test('regression 5: disconnect during an in-flight save clears pending save and resets saving flag while preserving user text', () => {
+  editorDraftStore.clearAll();
+  const conn = createMockConnection();
+  const detach = editorDraftStore.attachConnection(conn);
+
+  const tabId = 'disconnect-in-flight-save';
+  const userText = 'critical unsaved draft before connection drop';
+  editorDraftStore.setDraft(tabId, {
+    edit: {
+      opened: 'original',
+      baseHash: 'hash-orig',
+      text: userText,
+      saving: true,
+      failure: null,
+      conflict: null,
+      pending: null,
+      closing: false,
+    },
+    pendingSaveRequestId: 'req-dc-inflight',
+    mode: 'formatted',
+    scrollTop: 80,
+  });
+
+  assert.equal(editorDraftStore.getDraft(tabId)?.edit?.saving, true);
+  assert.equal(editorDraftStore.getPendingSave(tabId), 'req-dc-inflight');
+
+  // Connection disconnect / reopen occurs
+  conn.emitReopen();
+
+  const draftAfterDisconnect = editorDraftStore.getDraft(tabId);
+  assert.ok(draftAfterDisconnect);
+  assert.ok(draftAfterDisconnect.edit);
+  assert.equal(draftAfterDisconnect.edit.saving, false);
+  assert.equal(draftAfterDisconnect.edit.text, userText); // User text strictly preserved
+  assert.equal(draftAfterDisconnect.pendingSaveRequestId, null);
+  assert.equal(editorDraftStore.getPendingSave(tabId), null);
+  assert.equal(editorDraftStore.isDirty(tabId), true); // Remains dirty so user can retry
+
+  detach();
+  editorDraftStore.clearAll();
 });

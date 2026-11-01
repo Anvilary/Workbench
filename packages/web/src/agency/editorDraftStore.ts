@@ -21,6 +21,12 @@ export interface EditorDraft {
 
 const STORAGE_KEY = 'maw.agency-editor-drafts.v1';
 
+/** A read response cannot conflict an edit while its write is in flight. */
+export function shouldFlagReadPreviewConflict(edit: DocEdit | null, preview: FilePreview): boolean {
+  return edit !== null && !edit.saving && edit.conflict === null &&
+    typeof preview.hash === 'string' && preview.hash !== edit.baseHash;
+}
+
 export function isDraftDirty(draft?: EditorDraft | null): boolean {
   if (!draft || !draft.edit) return false;
   return (
@@ -152,22 +158,11 @@ class EditorDraftStore {
     return undefined;
   }
 
-  reconcilePendingSave(tabId: string, preview: FilePreview): { saved: boolean } {
-    const draft = this.drafts.get(tabId);
-    if (!draft || !draft.edit || !draft.edit.saving) return { saved: false };
-    if (preview.text === draft.edit.text) {
-      this.setDraft(tabId, {
-        ...draft,
-        edit: null,
-        pendingSaveRequestId: null,
-        content: {
-          loaded: { kind: 'file', preview },
-          loading: false,
-          failed: false,
-        },
-      });
-      return { saved: true };
-    }
+  /**
+   * A read preview must never acknowledge or cancel a pending write.
+   * Only matching files.saved or request-correlated error may settle a write.
+   */
+  reconcilePendingSave(_tabId: string, _preview: FilePreview): { saved: boolean } {
     return { saved: false };
   }
 

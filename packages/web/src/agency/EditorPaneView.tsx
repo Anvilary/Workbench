@@ -7,7 +7,7 @@ import { DocumentViewer } from '../DocumentViewer.js';
 import { editChanges, plainLineBreaks } from '../edit-changes.js';
 import { t } from '../i18n/index.js';
 import type { DocContent, DocEdit, DocEditor } from '../useDocuments.js';
-import { editorDraftStore } from './editorDraftStore.js';
+import { editorDraftStore, shouldFlagReadPreviewConflict } from './editorDraftStore.js';
 
 interface Props {
   tab: EditorTab;
@@ -40,6 +40,8 @@ export function EditorPaneView({
   const pendingSave = useRef<string | null>(initialDraft?.pendingSaveRequestId ?? null);
   const savedTimer = useRef<number | null>(null);
   const dirtyReported = useRef(false);
+  const readSeq = useRef(0);
+  const writeIssuedReadSeq = useRef<number>(initialDraft?.pendingSaveRequestId ? 1 : 0);
 
   const isDirty = Boolean(
     edit && (edit.text !== edit.opened || edit.conflict !== null || edit.pending !== null),
@@ -80,6 +82,7 @@ export function EditorPaneView({
   );
 
   const readFile = useCallback(() => {
+    readSeq.current += 1;
     setContent((prev) => ({
       loaded: prev?.loaded ?? null,
       loading: prev?.loaded ? false : true,
@@ -102,26 +105,24 @@ export function EditorPaneView({
         case 'files.preview': {
           if (message.terminalId === workspaceId && message.preview.path === tab.filePath) {
             const preview = message.preview;
+            const currentEdit = editRef.current;
+            const isSaving = Boolean(currentEdit?.saving || pendingSave.current);
+            if (isSaving) {
+              // A read preview must never acknowledge, cancel, or conflict a pending write,
+              // nor overwrite the newer in-flight draft content.
+              break;
+            }
+            if (writeIssuedReadSeq.current > 0 && readSeq.current <= writeIssuedReadSeq.current) {
+              // Stale read result requested before the last successful save settled: ignore it
+              // to prevent overwriting newer saved content.
+              break;
+            }
             setContent({
               loaded: { kind: 'file', preview },
               loading: false,
               failed: false,
             });
-            const currentEdit = editRef.current;
-            if (currentEdit?.saving) {
-              pendingSave.current = null;
-              editorDraftStore.setPendingSave(tab.id, null);
-              if (preview.text === currentEdit.text) {
-                setEdit(null);
-                setJustSaved(true);
-                if (savedTimer.current) window.clearTimeout(savedTimer.current);
-                savedTimer.current = window.setTimeout(() => setJustSaved(false), 1600);
-              } else {
-                setEdit((prev) =>
-                  prev ? { ...prev, saving: false, conflict: { next: preview.editable ? preview : null } } : null,
-                );
-              }
-            } else if (currentEdit && typeof preview.hash === 'string' && preview.hash !== currentEdit.baseHash && currentEdit.conflict === null) {
+            if (shouldFlagReadPreviewConflict(currentEdit, preview)) {
               setEdit((prev) =>
                 prev ? { ...prev, conflict: { next: preview.editable ? preview : null } } : null,
               );
@@ -135,6 +136,7 @@ export function EditorPaneView({
             pendingSave.current = null;
             editorDraftStore.setPendingSave(tab.id, null);
             if (message.outcome === 'saved') {
+              writeIssuedReadSeq.current = readSeq.current;
               if (message.preview) {
                 setContent({
                   loaded: { kind: 'file', preview: message.preview },
@@ -222,6 +224,7 @@ export function EditorPaneView({
         if (!current || current.saving || current.conflict !== null || !online) return;
         const reqId = crypto.randomUUID();
         pendingSave.current = reqId;
+        writeIssuedReadSeq.current = readSeq.current;
         editorDraftStore.setPendingSave(tab.id, reqId);
         setEdit((prev) => (prev ? { ...prev, saving: true, failure: null } : null));
         connection.send({
