@@ -166,6 +166,7 @@ export class TabActivityManager extends EventEmitter {
     const raw: unknown = JSON.parse(contents);
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid tab activity file format');
     const root = raw as Record<string, unknown>;
+    if (!Number.isInteger(root['version'])) throw new Error('Invalid tab activity store version');
     if (root['version'] !== 1) throw new UnsupportedTabActivitySchemaError(root['version']);
     if (!Array.isArray(root['records'])) throw new Error('Invalid tab activity record list');
     const records: TabActivityRecord[] = [];
