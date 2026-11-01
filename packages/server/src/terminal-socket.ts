@@ -1176,9 +1176,9 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
       return null;
     };
 
-    const sendPathError = (error: unknown, fallback: ServerText): void => {
+    const sendPathError = (error: unknown, fallback: ServerText, requestId?: string): void => {
       if (error instanceof InvalidPathError) {
-        sendError(socket, 'invalid-path', error.text);
+        sendError(socket, 'invalid-path', error.text, undefined, requestId);
         return;
       }
       sendError(
@@ -1186,6 +1186,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         'read-failed',
         fallback,
         error instanceof Error ? error.message : String(error),
+        requestId,
       );
     };
 
@@ -2667,14 +2668,19 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           void (async () => {
             const cwd = cwdOf(message.terminalId);
             if (cwd === null) {
-              sendError(socket, 'unknown-terminal', serverText('terminalGone'));
+              sendError(socket, 'unknown-terminal', serverText('terminalGone'), undefined, message.requestId);
               return;
             }
             try {
               const preview = await readPreview(cwd, message.path, await folders);
-              send(socket, { type: 'files.preview', terminalId: message.terminalId, preview });
+              send(socket, {
+                type: 'files.preview',
+                terminalId: message.terminalId,
+                preview,
+                ...(message.requestId ? { requestId: message.requestId } : {}),
+              });
             } catch (error) {
-              sendPathError(error, serverText('fileReadFailed'));
+              sendPathError(error, serverText('fileReadFailed'), message.requestId);
             }
           })();
           break;

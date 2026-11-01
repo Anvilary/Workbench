@@ -710,6 +710,7 @@ export interface ClientReadFileMessage {
   type: 'files.read';
   terminalId: TerminalId;
   path: string;
+  requestId?: string;
 }
 
 /** Cuantas rutas lleva como mucho un `files.check`. */
@@ -1926,6 +1927,7 @@ export interface ServerFilePreviewMessage {
   type: 'files.preview';
   terminalId: TerminalId;
   preview: FilePreview;
+  requestId?: string;
 }
 
 /**
@@ -2796,9 +2798,11 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     case 'files.read': {
       const terminalId = asNonEmptyString(record['terminalId']);
       const readPath = asNonEmptyString(record['path']);
-      return terminalId === null || readPath === null
-        ? null
-        : { type: 'files.read', terminalId, path: readPath };
+      const requestId = asNonEmptyString(record['requestId']);
+      if (terminalId === null || readPath === null) return null;
+      const message: ClientReadFileMessage = { type: 'files.read', terminalId, path: readPath };
+      if (requestId !== null) message.requestId = requestId;
+      return message;
     }
     case 'files.check': {
       const terminalId = asNonEmptyString(record['terminalId']);
@@ -3568,9 +3572,11 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     case 'files.preview': {
       const terminalId = asNonEmptyString(record['terminalId']);
       const preview = parseFilePreview(record['preview']);
-      return terminalId === null || preview === null
-        ? null
-        : { type: 'files.preview', terminalId, preview };
+      const requestId = asNonEmptyString(record['requestId']);
+      if (terminalId === null || preview === null) return null;
+      const message: ServerFilePreviewMessage = { type: 'files.preview', terminalId, preview };
+      if (requestId !== null) message.requestId = requestId;
+      return message;
     }
     case 'files.checked': {
       const terminalId = asNonEmptyString(record['terminalId']);
