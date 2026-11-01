@@ -26,6 +26,10 @@ test('authoritative workspace copy-file rejects unauthorized paths and pastes in
     return;
   }
 
+  try {
+    execSync('pkill -x nautilus', { stdio: 'ignore' });
+  } catch {}
+
   // Create authoritative workspace, destination for paste, and unauthorized folder
   const baseDir = await mkdtemp(path.join(tmpdir(), 'maw-nautilus-test-'));
   const workspaceDir = path.join(baseDir, 'workspace');

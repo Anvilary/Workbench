@@ -86,6 +86,7 @@ jobs:
         if: runner.os == 'Linux'
         working-directory: packages/desktop
         run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends nautilus xdotool
           maw_sandbox_helper="$(node -p "require('path').join(require('path').dirname(require.resolve('electron')), 'dist/chrome-sandbox')")"
           sudo install -o root -g root -m 4755 "$maw_sandbox_helper" "$maw_sandbox_helper.maw-ci"
           mv "$maw_sandbox_helper.maw-ci" "$maw_sandbox_helper"
