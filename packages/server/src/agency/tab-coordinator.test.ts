@@ -196,6 +196,36 @@ test('main authenticated protocol validates browser contracts and rejects foreig
 });
 
 
+test('native tab creation accepts split-pane destinations through the authenticated protocol', () => {
+  const workspaceId = randomUUID();
+  const launchId = randomUUID();
+
+  for (const kind of ['terminal', 'agent'] as const) {
+    const base = {
+      type: 'agency.session.create',
+      requestId: 'create-' + kind,
+      workspaceId,
+      kind,
+      cols: 100,
+      rows: 30,
+      launchId,
+      ...(kind === 'agent' ? { profileId: 'claude-code' } : {}),
+    };
+
+    // The same parser handles the real WebSocket request before any PTY is created.
+    assert.deepEqual(parseClientMessage(JSON.stringify(base)), base);
+    for (const targetPaneId of ['pane-1', 'pane-ab12cd34']) {
+      const request = { ...base, targetPaneId };
+      assert.deepEqual(parseClientMessage(JSON.stringify(request)), request);
+    }
+
+    for (const invalidPaneId of ['', null, 12, 'x'.repeat(129), 'pane-\u0000x', 'pane-\u007fx']) {
+      assert.equal(parseClientMessage(JSON.stringify({ ...base, targetPaneId: invalidPaneId })), null);
+    }
+  }
+});
+
+
 test('creation commits a stable pane destination and swapped layout survives store restart', async t => {
   const { root, workspace, coordinator, layouts, terminals } = await fixture(t);
   let initial = createDefaultLayout(workspace.id, []);
