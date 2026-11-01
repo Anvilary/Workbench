@@ -186,3 +186,59 @@ test('placement failure surfaces notice banner with tab context without failing 
  await notice.getByRole('button',{name:'Dismiss notification'}).click();
  assert.equal(await page.locator('.agency-notice-bar[role="status"]').count(),0);
 });
+
+test('Decision 1: Split buttons open content picker, support row and column, cancel cleanly, roll back on failure, and persist layout', async t => {
+ const page = await setup(t, 'shape=single');
+ const initialLayout = await layout(page);
+ assert.equal(initialLayout.tree.type, 'pane');
+
+ // 1. Split right opens picker; Escape cancels without modifying layout
+ const splitRightBtn = page.getByRole('button', { name: 'Split right', exact: true });
+ await splitRightBtn.click();
+ const menu = page.getByRole('menu', { name: 'Add tab' });
+ await menu.waitFor();
+ assert.equal(await menu.getByRole('menuitem').count() > 0, true);
+ await page.keyboard.press('Escape');
+ assert.equal(await page.getByRole('menu').count(), 0);
+ assert.deepEqual(await layout(page), initialLayout);
+
+ // 2. Split down opens picker; clicking outside cancels without modifying layout
+ const splitDownBtn = page.getByRole('button', { name: 'Split down', exact: true });
+ await splitDownBtn.click();
+ await page.getByRole('menu', { name: 'Add tab' }).waitFor();
+ await page.locator('#start').click();
+ assert.equal(await page.getByRole('menu').count(), 0);
+ assert.deepEqual(await layout(page), initialLayout);
+
+ // 3. Failed creation rolls back cleanly without leaving an orphaned pane
+ await page.evaluate(() => { window.fixture.delay(false); window.fixture.fail(); });
+ await splitRightBtn.click();
+ await page.getByRole('menu', { name: 'Add tab' }).waitFor();
+ await page.getByRole('menuitem', { name: 'New Terminal', exact: true }).click();
+ await page.getByRole('alert').filter({ hasText: 'Fixture launch failed' }).waitFor();
+ assert.equal(await page.locator('.maw-split-pane').count(), 1);
+ assert.equal((await layout(page)).tree.type, 'pane');
+ await page.locator('.agency-error-bar button').click();
+ assert.equal(await page.locator('.agency-error-bar').count(), 0);
+
+ // 4. Split right with New Terminal creates horizontal split and persists layout
+ await splitRightBtn.click();
+ await page.getByRole('menu', { name: 'Add tab' }).waitFor();
+ await page.getByRole('menuitem', { name: 'New Terminal', exact: true }).click();
+ await page.waitForFunction(() => window.fixture.state.layout.tree.type === 'split');
+ const splitTree = (await layout(page)).tree;
+ assert.equal(splitTree.direction, 'row');
+ assert.equal(await page.locator('.maw-split-pane').count(), 2);
+
+ // 5. Split down with New ChatGPT tab creates vertical split
+ const pane2DownBtn = page.locator('.maw-split-pane').nth(1).getByRole('button', { name: 'Split down', exact: true });
+ await pane2DownBtn.click();
+ await page.getByRole('menu', { name: 'Add tab' }).waitFor();
+ await page.getByRole('menuitem', { name: 'New ChatGPT tab', exact: true }).click();
+ await page.getByRole('dialog').getByRole('button', { name: 'New ChatGPT tab', exact: true }).click();
+ await page.waitForFunction(() => document.querySelectorAll('.maw-split-pane').length === 3);
+ assert.equal(await page.locator('.maw-split-pane').count(), 3);
+ const layout3 = await layout(page);
+ assert.ok(layout3.tree.second.type === 'split');
+ assert.equal(layout3.tree.second.direction, 'column');
+});

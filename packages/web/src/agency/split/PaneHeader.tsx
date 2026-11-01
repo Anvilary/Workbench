@@ -470,7 +470,7 @@ export function PaneHeader({
             className="maw-pane-add-tab"
             aria-label={t('agency.tabs.add')}
             aria-haspopup="menu"
-            aria-expanded={menuOpen}
+            aria-expanded={menuOpen && splitIntent === null}
             disabled={!online || busy}
             onClick={() => {
               menuAnchor.current = addButton.current;
@@ -521,6 +521,8 @@ export function PaneHeader({
           className="maw-pane-action-button"
           title={t('agency.splits.splitRight')}
           aria-label={t('agency.splits.splitRight')}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen && splitIntent === 'row'}
           disabled={!canSplit || !online}
           onClick={(event) => openMenu(event.currentTarget, 'row')}
         >
@@ -534,6 +536,8 @@ export function PaneHeader({
           className="maw-pane-action-button"
           title={t('agency.splits.splitDown')}
           aria-label={t('agency.splits.splitDown')}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen && splitIntent === 'column'}
           disabled={!canSplit || !online}
           onClick={(event) => openMenu(event.currentTarget, 'column')}
         >

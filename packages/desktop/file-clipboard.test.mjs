@@ -27,7 +27,7 @@ test('resolveClipboardTarget stays inside the workspace and rejects escaping sym
     assert.equal(file.absolute, path.join(root, 'nested', 'note.txt'));
     const link = await resolveClipboardTarget(root, 'escape');
     assert.equal(link.ok, false);
-    assert.equal(await resolveClipboardTarget(root, '../outside').ok, false);
+    assert.equal((await resolveClipboardTarget(root, '../outside')).ok, false);
     const directory = await resolveClipboardTarget(root, 'nested');
     assert.equal(directory.ok && directory.directory, true);
   } finally {

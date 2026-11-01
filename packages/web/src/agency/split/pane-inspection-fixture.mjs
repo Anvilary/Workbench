@@ -67,12 +67,19 @@ window.terminals = []; window.disposed = 0;
 Terminal.prototype.open = function(element) { window.terminals.push(this); return terminalOpen.call(this, element); };
 Terminal.prototype.dispose = function() { window.disposed++; return terminalDispose.call(this); };
 if (web && !window.mawChatGpt) {
-  let onState;
+  const gptSubscribers = new Set();
   window.mawChatGpt = {
-    subscribe(fn) { onState = fn; return () => {}; },
+    subscribe(fn) {
+      gptSubscribers.add(fn);
+      return () => { gptSubscribers.delete(fn); };
+    },
     async command(message) {
       nativeCommands.push(message);
-      if (message.type === 'open') setTimeout(() => onState?.({ type: 'ready', id: message.id }), 0);
+      if (message.type === 'open') {
+        setTimeout(() => {
+          for (const fn of gptSubscribers) fn({ type: 'ready', id: message.id });
+        }, 0);
+      }
       return { ok: true };
     },
   };

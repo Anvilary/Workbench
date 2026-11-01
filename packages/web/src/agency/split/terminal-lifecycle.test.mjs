@@ -73,6 +73,12 @@ function Harness() {
         ? { ...row, lifecycle: 'exited', tab: { ...row.tab, closedAt: now, current: false, selected: false } }
         : row));
     }
+    if (message.type === 'agency.session.create') {
+      const tabC = '55555555-5555-4555-8555-555555555555';
+      const created = session('s-c', tabC, 'Shell C', 'term-c', message.kind, 2, true);
+      setSessions((prev) => [...prev, created]);
+      return { type: 'agency.session.created', session: created };
+    }
     return {};
   };
   if (!mounted) return React.createElement('div', { id: 'workspace-gone' });
@@ -225,18 +231,28 @@ test('live terminals keep scrollback, selection and the PTY attachment across sw
   assert.deepEqual(typed.detaches, []);
   assert.deepEqual(typed.inputs, [['term-a', 'Z']]);
 
+  // Decision 1: Split right opens picker; Escape cancels without modifying layout
   await page.getByRole('button', { name: 'Split right' }).click();
+  await page.locator('.maw-pane-menu').waitFor();
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.querySelectorAll('.maw-pane-menu').length === 0);
+  assert.equal(await page.locator('.maw-split-pane').count(), 1);
+
+  // Split right -> pick New Terminal creates the second pane with the new session
+  await page.getByRole('button', { name: 'Split right' }).click();
+  await page.getByRole('menuitem', { name: 'New Terminal' }).click();
   await page.waitForFunction(() => document.querySelectorAll('.maw-split-pane').length === 2);
   const shellPane = await read(tabA);
-  const cliPane = await read(tabB);
+  const tabC = '55555555-5555-4555-8555-555555555555';
+  const newPane = await read(tabC);
   assert.equal(shellPane.n, 0);
-  assert.equal(cliPane.n, 1);
-  assert.notEqual(shellPane.pane, cliPane.pane);
-  assert.equal(shellPane.height > 0 && cliPane.height > 0, true);
-  assert.equal(shellPane.cols > 0 && cliPane.cols > 0 && shellPane.rows > 0 && cliPane.rows > 0, true);
+  assert.equal(newPane.n, 2);
+  assert.notEqual(shellPane.pane, newPane.pane);
+  assert.equal(shellPane.height > 0 && newPane.height > 0, true);
+  assert.equal(shellPane.cols > 0 && newPane.cols > 0 && shellPane.rows > 0 && newPane.rows > 0, true);
   assert.match(shellPane.text, /LIVE-CLI-STILL-HERE/);
   assert.equal((await snapshot()).disposed, 0);
-  assert.deepEqual((await snapshot()).attaches.sort(), ['term-a', 'term-b']);
+  assert.deepEqual((await snapshot()).attaches.sort(), ['term-a', 'term-b', 'term-c']);
 
   await page.evaluate(async (id) => {
     const header = document.querySelectorAll('.maw-pane-header')[1];
@@ -249,7 +265,7 @@ test('live terminals keep scrollback, selection and the PTY attachment across sw
   assert.equal(moved.n, shellPane.n);
   assert.equal(moved.connected, true);
   assert.match(moved.text, /LINE-00/);
-  assert.equal(moved.pane, cliPane.pane);
+  assert.equal(moved.pane, newPane.pane);
   assert.deepEqual((await snapshot()).detaches, []);
 
   await page.getByRole('button', { name: 'Close pane' }).first().click();
@@ -268,8 +284,8 @@ test('live terminals keep scrollback, selection and the PTY attachment across sw
   assert.equal((await read(tabB)).n, 1);
 
   await page.evaluate(() => window.unmountWorkspace());
-  await page.waitForFunction(() => window.disposed === 2 && document.getElementById('workspace-gone'));
+  await page.waitForFunction(() => window.disposed === 3 && document.getElementById('workspace-gone'));
   const gone = await snapshot();
-  assert.deepEqual(gone.detaches.sort(), ['term-a', 'term-b']);
+  assert.deepEqual(gone.detaches.sort(), ['term-a', 'term-b', 'term-c']);
   assert.deepEqual(errors, []);
 });

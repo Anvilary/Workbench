@@ -659,7 +659,7 @@ export function AgencyWorkspaceView({
           <button
             type="button"
             className="agency-icon-button"
-            aria-label={t('agency.ui.workspaceActions')}
+            aria-label={t('agency.ui.workspaceOptions')}
             aria-haspopup="menu"
             aria-expanded={workspaceMenu}
             onClick={() => setWorkspaceMenu((open) => !open)}
@@ -755,8 +755,8 @@ export function AgencyWorkspaceView({
           }}
           onLaunchProfile={(paneId, profile) => {
             creationTarget.current = paneId;
-            setProfileId(profile);
-            void add('agent', paneId, profile);
+            setProfileId(profile as CliProfileId);
+            void add('agent', paneId, profile as CliProfileId);
           }}
           onSplitCreate={(paneId, direction, action, profile) => {
             pendingSplit.current = { paneId, direction };
@@ -765,8 +765,8 @@ export function AgencyWorkspaceView({
             else if (action === 'github') void createGithub();
             else if (action === 'web') webEditor('create');
             else if (profile) {
-              setProfileId(profile);
-              void add('agent', paneId, profile);
+              setProfileId(profile as CliProfileId);
+              void add('agent', paneId, profile as CliProfileId);
             } else {
               setError(null);
               setPicker(true);
@@ -798,13 +798,13 @@ export function AgencyWorkspaceView({
           onDisplayed={reportDisplayed}
           onConfigure={setConfiguringProfile}
           onStartAgain={(session) => void startAgain(session)}
+          workspaceCwd={workspace.cwd}
         />
       </div>
 
       </PaneMovement>
       <BrowserContextMenu
         tabs={webTabs}
-        request={request}
         onCloseTab={(tab) => {
           const match = tabs.find((item) => item.id === tab.id);
           if (match) void close(match);

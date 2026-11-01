@@ -28,7 +28,12 @@ export async function resolveClipboardTarget(cwd, relativePath) {
   if (!path.isAbsolute(cwd) || !relativePath || relativePath.startsWith('/') || relativePath.includes('\0') || relativePath.includes('~')) {
     return { ok: false, error: 'invalid' };
   }
-  const root = await realpath(cwd);
+  let root;
+  try {
+    root = await realpath(cwd);
+  } catch {
+    return { ok: false, error: 'missing' };
+  }
   const lexical = path.resolve(root, relativePath);
   const relativeToRoot = path.relative(root, lexical);
   if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) return { ok: false, error: 'outside' };
@@ -38,8 +43,19 @@ export async function resolveClipboardTarget(cwd, relativePath) {
   } catch {
     return { ok: false, error: 'missing' };
   }
-  const target = await realpath(lexical);
+  let target;
+  try {
+    target = await realpath(lexical);
+  } catch {
+    return { ok: false, error: 'missing' };
+  }
   const stayed = path.relative(root, target);
   if (stayed.startsWith('..') || path.isAbsolute(stayed)) return { ok: false, error: 'outside' };
-  return { ok: true, absolute: target, directory: info.isSymbolicLink() ? (await lstat(target)).isDirectory() : info.isDirectory() };
+  let isDir = false;
+  try {
+    isDir = info.isSymbolicLink() ? (await lstat(target)).isDirectory() : info.isDirectory();
+  } catch {
+    return { ok: false, error: 'missing' };
+  }
+  return { ok: true, absolute: target, directory: isDir };
 }
