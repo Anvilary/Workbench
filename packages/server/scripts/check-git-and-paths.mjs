@@ -174,6 +174,7 @@ const outside = path.join(dir, 'afuera');
 await mkdir(path.join(root, 'src'), { recursive: true });
 await mkdir(outside, { recursive: true });
 await writeFile(path.join(root, 'src', 'a.ts'), 'contenido');
+await writeFile(path.join(root, '..notes.txt'), 'legitimate internal file');
 await writeFile(path.join(outside, 'secreto.txt'), 'no se debe leer');
 
 const accepts = async (relative, options) => {
@@ -195,6 +196,7 @@ const rejects = async (relative, options) => {
 
 check('acepta la raiz', await accepts('', { mustExist: true }));
 check('acepta un archivo interno', await accepts('src/a.ts', { mustExist: true }));
+check('acepta archivo interno cuyo nombre empieza con dos puntos', await accepts('..notes.txt', { mustExist: true }));
 check('acepta una ruta que aun no existe', await accepts('src/todavia-no.ts', {}));
 check('rechaza ..', await rejects('../afuera/secreto.txt', {}));
 check('rechaza .. anidado', await rejects('src/../../afuera/secreto.txt', {}));
