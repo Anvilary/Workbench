@@ -204,12 +204,10 @@ export class BrowserTabStore {
       // If primary was present but corrupt, quarantine it
       if (!primaryMissing) {
         const quarantinePath = `${this.filePath}.corrupt-${randomUUID()}`;
-        try {
-          await rename(this.filePath, quarantinePath);
-          console.warn(`[maw] corrupt browser tab metadata quarantined at ${quarantinePath}`);
-        } catch {
-          // Quarantine failure does not block reading valid backup
-        }
+        // If quarantine fails, a later save would copy the corrupt primary over
+        // the only valid .bak. Fail closed and leave both files untouched.
+        await rename(this.filePath, quarantinePath);
+        console.warn(`[maw] corrupt browser tab metadata quarantined at ${quarantinePath}`);
       }
     }
 
