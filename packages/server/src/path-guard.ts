@@ -58,7 +58,9 @@ function assertRelativeShape(relativePath: string): void {
 function isInside(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
   if (relative.length === 0) return true;
-  return !relative.startsWith('..') && !path.isAbsolute(relative);
+  // Only the parent segment escapes. A valid project file can be named
+  // '..notes.txt' and must not be rejected merely for sharing that prefix.
+  return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
 }
 
 /**
