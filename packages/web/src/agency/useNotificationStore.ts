@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
 import type {
   MawActivityState,
   MawNotificationItem,
@@ -124,8 +125,15 @@ export function useNotificationStore(
   useEffect(() => {
     return transport.onMessage((message) => {
       if (message.type === 'agency.notifications.snapshot') {
+        const seenInSnapshot = new Set<string>();
         const incoming = message.notifications.filter(
-          item => !item.acknowledgedAt && !completedNotificationIds.current.has(item.id),
+          item => {
+            if (item.state !== 'finished' && item.state !== 'failed') return false;
+            if (item.acknowledgedAt || completedNotificationIds.current.has(item.id)) return false;
+            if (seenInSnapshot.has(item.id)) return false;
+            seenInSnapshot.add(item.id);
+            return true;
+          },
         );
         setNotifications(incoming);
 
@@ -140,7 +148,14 @@ export function useNotificationStore(
         }
       } else if (message.type === 'agency.notification.created') {
         const item: MawNotificationItem = message.notification;
-        if (!item || seenNotificationIds.current.has(item.id) || item.acknowledgedAt || completedNotificationIds.current.has(item.id)) return;
+        if (!item) return;
+
+        // Decision 2: Only verified completion or failure.
+        // No notifications for task started, working, unknown activity, or unverified completion.
+        const isVerifiedCompletion = item.state === 'finished' || item.state === 'failed';
+        if (!isVerifiedCompletion) return;
+
+        if (seenNotificationIds.current.has(item.id) || item.acknowledgedAt || completedNotificationIds.current.has(item.id)) return;
         seenNotificationIds.current.add(item.id);
 
         setNotifications((prev) => {
@@ -148,7 +163,19 @@ export function useNotificationStore(
           return [item, ...prev];
         });
 
-        if (enabledRef.current) {
+        // Decision 2: Suppress the transient toast only when:
+        // 1. The application window is focused.
+        // 2. The completed tab is actually visible and active.
+        // When focus or visibility cannot be determined reliably, do not silently discard an otherwise valid completion toast.
+        const hasReliableFocusAndVisibility =
+          typeof document !== 'undefined' &&
+          typeof document.hasFocus === 'function' &&
+          !document.hidden &&
+          document.hasFocus();
+
+        const isActivelyViewed = hasReliableFocusAndVisibility && nativeLayoutCoordinator.isViewing(item.tabId);
+
+        if (enabledRef.current && !isActivelyViewed) {
           pushToast(item);
         }
       } else if (message.type === 'agency.notification.changed') {

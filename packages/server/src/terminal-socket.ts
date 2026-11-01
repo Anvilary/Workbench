@@ -72,6 +72,7 @@ import { AgencyLayoutStore } from './agency/agency-layout-store.js';
 import { TabActivityManager } from './agency/tab-activity-manager.js';
 import { ChatGPTActivityProvider } from './agency/browser-activity-provider.js';
 import { BrowserTabAdapter, BrowserTabStore, BrowserTabStoreError } from './agency/browser-tabs/index.js';
+import { EditorTabAdapter, EditorTabStore } from './agency/editor-tabs/index.js';
 import { AgencyTabCoordinator } from './agency/tab-coordinator.js';
 import { WorkspaceMutex } from './agency/workspace-lock.js';
 import { handleAgencyDomainRequest, type AgencyDomainContext } from './agency/domain-handler.js';
@@ -226,6 +227,7 @@ export interface TerminalSocketOptions {
   agencyNotificationStore?: AgencyNotificationStore;
   agencyActivityManager?: TabActivityManager;
   agencyBrowserTabs?: BrowserTabAdapter;
+  agencyEditorTabs?: EditorTabAdapter;
   agencyLayoutStore?: AgencyLayoutStore;
 }
 
@@ -334,11 +336,17 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
   const chatgptProvider = new ChatGPTActivityProvider();
   agencyActivityManager.registerBrowserProvider(chatgptProvider);
   const agencyBrowserTabs = options.agencyBrowserTabs ?? new BrowserTabAdapter({ store: new BrowserTabStore(), workspaceStore: agencyWorkspaceStore });
+  const agencyEditorTabs = options.agencyEditorTabs ?? new EditorTabAdapter({
+    store: new EditorTabStore(),
+    workspaceStore: agencyWorkspaceStore,
+    protectedDirsProvider: () => agents.protectedDirs(),
+  });
   const agencyReady = Promise.all([
     agencyNotificationStore.initialize(),
     agencyActivityManager.initialize(),
     agencyLayoutStore.initialize(),
     options.agencyBrowserTabs ? Promise.resolve() : agencyBrowserTabs.restore(),
+    options.agencyEditorTabs ? Promise.resolve() : agencyEditorTabs.restore(),
   ]);
 
   const pasteStore = options.pasteStore ?? new PasteStore();
@@ -373,11 +381,12 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     }
   };
 
-  const tabCoordinator = new AgencyTabCoordinator(agencyRuntime, agencyBrowserTabs, agencyWorkspaceStore, broadcast, agencyLayoutStore);
+  const tabCoordinator = new AgencyTabCoordinator(agencyRuntime, agencyBrowserTabs, agencyWorkspaceStore, broadcast, agencyLayoutStore, agencyEditorTabs);
   const hasOpenActivityTab = (workspaceId: import('@agent-workbench/shared').WorkspaceId, tabId: string): boolean => {
     if (!agencyWorkspaceStore.getWorkspace(workspaceId)) return false;
     return agencyRuntime.list(workspaceId).some(session => session.tab?.id === tabId && session.tab.current && !session.tab.closedAt) ||
-      agencyBrowserTabs.listTabs(workspaceId).some(tab => tab.id === tabId);
+      agencyBrowserTabs.listTabs(workspaceId).some(tab => tab.id === tabId) ||
+      agencyEditorTabs.listTabs(workspaceId).some(tab => tab.id === tabId);
   };
   const tabReady = agencyReady.then(async () => {
     await tabCoordinator.restoreSelection();
@@ -1161,13 +1170,15 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
      */
     const cwdOf = (terminalId: TerminalId): string | null => {
       const descriptor = registry.get(terminalId);
-      if (descriptor === null || descriptor.cwd.length === 0) return null;
-      return descriptor.cwd;
+      if (descriptor !== null && descriptor.cwd.length > 0) return descriptor.cwd;
+      const ws = agencyWorkspaceStore.getWorkspace(terminalId as import('@agent-workbench/shared').WorkspaceId);
+      if (ws && ws.status === 'active') return ws.cwd;
+      return null;
     };
 
-    const sendPathError = (error: unknown, fallback: ServerText): void => {
+    const sendPathError = (error: unknown, fallback: ServerText, requestId?: string): void => {
       if (error instanceof InvalidPathError) {
-        sendError(socket, 'invalid-path', error.text);
+        sendError(socket, 'invalid-path', error.text, undefined, requestId);
         return;
       }
       sendError(
@@ -1175,6 +1186,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         'read-failed',
         fallback,
         error instanceof Error ? error.message : String(error),
+        requestId,
       );
     };
 
@@ -1284,6 +1296,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     });
     void tabReady.then(() => {
       send(socket, { type: 'agency.webTabs.snapshot', requestId: '', tabs: agencyBrowserTabs.listTabs() });
+      send(socket, { type: 'agency.editorTabs.snapshot', requestId: '', tabs: agencyEditorTabs.listTabs() });
       send(socket, { type: 'agency.notifications.snapshot', requestId: '', notifications: agencyNotificationStore.list(), activityStates: agencyActivityManager.snapshot() });
       send(socket, { type: 'agency.layouts.snapshot', requestId: '', layouts: tabCoordinator.reconcileAllLayouts() });
     }).catch(() => undefined);
@@ -2655,14 +2668,19 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           void (async () => {
             const cwd = cwdOf(message.terminalId);
             if (cwd === null) {
-              sendError(socket, 'unknown-terminal', serverText('terminalGone'));
+              sendError(socket, 'unknown-terminal', serverText('terminalGone'), undefined, message.requestId);
               return;
             }
             try {
               const preview = await readPreview(cwd, message.path, await folders);
-              send(socket, { type: 'files.preview', terminalId: message.terminalId, preview });
+              send(socket, {
+                type: 'files.preview',
+                terminalId: message.terminalId,
+                preview,
+                ...(message.requestId ? { requestId: message.requestId } : {}),
+              });
             } catch (error) {
-              sendPathError(error, serverText('fileReadFailed'));
+              sendPathError(error, serverText('fileReadFailed'), message.requestId);
             }
           })();
           break;
@@ -3472,7 +3490,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
             store: agencyWorkspaceStore,
             pickers,
             withSessionReservationLock: (id, op) => workspaceLock.runExclusive(id, op),
-            hasBlockingSessions: async (id) => agencyRuntime.hasWorkspaceReferences(id) || tabCoordinator.hasBrowserReferences(id),
+            hasBlockingSessions: async (id) => agencyRuntime.hasWorkspaceReferences(id) || tabCoordinator.hasBrowserReferences(id) || tabCoordinator.hasEditorReferences(id),
             publish: (broadcastMsg) => broadcast(broadcastMsg),
             shutdownWorkspace: (id) => tabCoordinator.shutdownWorkspace(id),
           };
@@ -3625,6 +3643,17 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           if (message.type === 'agency.webTab.close' && response?.type === 'agency.webTab.closed') {
             await agencyActivityManager.closeTab(message.workspaceId, message.tabId);
           }
+          if (response) send(socket, response);
+          break;
+        }
+
+        case 'agency.editorTab.open':
+        case 'agency.editorTab.select':
+        case 'agency.editorTab.rename':
+        case 'agency.editorTab.order':
+        case 'agency.editorTab.close':
+        case 'agency.editorTabs.list': {
+          const response = await tabCoordinator.editorRequest(message as import('@agent-workbench/shared').EditorTabClientMessage);
           if (response) send(socket, response);
           break;
         }

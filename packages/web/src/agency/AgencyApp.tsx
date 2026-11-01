@@ -181,12 +181,14 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
     if (!targetWorkspace) { setError(t('agency.web.workspaceUnavailable')); return; }
     const notificationId = item.notificationId ?? item.id;
     if (item.tabId) {
-      const tab = allWorkspaceTabs(data.sessions, data.webTabs, item.workspaceId).find(tab => tab.id === item.tabId);
+      const tab = allWorkspaceTabs(data.sessions, data.webTabs, item.workspaceId, data.editorTabs).find(tab => tab.id === item.tabId);
       if (!tab) { setError(t('agency.web.tabUnavailable')); return; }
       try {
         await store.request(tab.kind === 'web'
           ? { type: 'agency.webTab.select', workspaceId: item.workspaceId, tabId: tab.id }
-          : { type: 'agency.tab.action', workspaceId: item.workspaceId, tabId: tab.id, action: 'select' });
+          : tab.kind === 'editor'
+            ? { type: 'agency.editorTab.select', workspaceId: item.workspaceId, tabId: tab.id }
+            : { type: 'agency.tab.action', workspaceId: item.workspaceId, tabId: tab.id, action: 'select' });
       } catch (reason) { if (serial === navigationSerial.current) setError(reason instanceof Error ? reason.message : t('agency.web.selectFailed')); return; }
       if (serial !== navigationSerial.current) return;
       setPendingNavigation({ workspaceId: item.workspaceId, tabId: tab.id, notificationId });
@@ -527,6 +529,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
             profiles={data.profiles}
             sessions={data.sessions}
             webTabs={data.webTabs}
+            editorTabs={data.editorTabs}
             onTabDisplayed={handleTabDisplayed}
             draft={drafts[selected.id] ?? ''}
             onDraft={(value) => updateDraft(selected.id, value)}

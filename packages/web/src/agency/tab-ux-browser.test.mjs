@@ -85,6 +85,7 @@ const connection = {
         case 'agency.profiles.list': reply('agency.profiles.snapshot', { profiles: [profile] }); break;
         case 'agency.sessions.list': reply('agency.sessions.snapshot', { sessions: structuredClone(sessions) }); break;
         case 'agency.webTabs.list': reply('agency.webTabs.snapshot', { tabs: structuredClone(webTabs) }); break;
+        case 'agency.editorTabs.list': reply('agency.editorTabs.snapshot', { tabs: [] }); break;
         case 'agency.notifications.list': reply('agency.notifications.snapshot', { notifications: structuredClone(notifications), activityStates: structuredClone(activities) }); break;
         case 'terminal.attach': emit({ type: 'terminal.replay', terminalId: m.terminalId, data: 'prompt$ ', truncated: false }); break;
         case 'agency.tab.action': {
@@ -408,21 +409,102 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   assert.equal(await notifToggleBtn.textContent(), 'Disable notifications');
   assert.equal(await page.evaluate(() => localStorage.getItem('agency-ui.notifications-enabled.v1')), 'true');
 
-  // Subsequent notification while enabled restores toast popup delivery!
+  // Decision 2: No notification for task started, working, or unknown activity
   await page.evaluate(() => {
     window.agencyTest.emitNotificationCreated({
-      id: 'restored-notif-2',
+      id: 'working-notif',
+      workspaceId: '11111111-1111-4111-8111-111111111111',
+      tabId: '44444444-4444-4444-8444-444444444444',
+      title: 'Working Task',
+      body: 'Should not create notification',
+      state: 'working',
+      read: false,
+      createdAt: new Date().toISOString()
+    });
+  });
+  assert.equal(await page.locator('.maw-toast-item').count(), 0);
+  assert.equal(await page.locator('.maw-inbox-item').count(), 1);
+
+  // Decision 2: Completion in the actively viewed tab suppresses toast while updating inbox
+  await page.evaluate(() => {
+    window.agencyTest.emitNotificationCreated({
+      id: 'active-viewed-completion',
       workspaceId: '11111111-1111-4111-8111-111111111111',
       tabId: '33333333-3333-4333-8333-333333333333',
-      title: 'Restored Alert',
-      body: 'Should show toast popup',
+      title: 'Active Viewed Completion',
+      body: 'Toast suppressed because tab is actively viewed in focused window',
+      state: 'finished',
+      read: false,
+      createdAt: new Date().toISOString()
+    });
+  });
+  await page.waitForFunction(() => document.querySelectorAll('.maw-inbox-item').length === 2);
+  assert.equal(await page.locator('.maw-toast-item').count(), 0);
+
+  // Decision 2: Completion in another tab shows toast and updates inbox
+  await page.evaluate(() => {
+    window.agencyTest.emitNotificationCreated({
+      id: 'other-tab-completion',
+      workspaceId: '11111111-1111-4111-8111-111111111111',
+      tabId: '44444444-4444-4444-8444-444444444444',
+      title: 'Other Tab Completion',
+      body: 'Toast displayed because it is another tab',
       state: 'finished',
       read: false,
       createdAt: new Date().toISOString()
     });
   });
   await page.locator('.maw-toast-item').waitFor();
-  assert.ok((await page.locator('.maw-toast-item').textContent() || '').includes('Restored Alert'));
+  assert.ok((await page.locator('.maw-toast-item').textContent() || '').includes('Other Tab Completion'));
+  await page.waitForFunction(() => document.querySelectorAll('.maw-inbox-item').length === 3);
+
+  // Decision 2: Completion when the application is unfocused shows toast
+  await page.evaluate(() => {
+    window.__origHasFocus = document.hasFocus;
+    document.hasFocus = () => false;
+    window.agencyTest.emitNotificationCreated({
+      id: 'unfocused-completion',
+      workspaceId: '11111111-1111-4111-8111-111111111111',
+      tabId: '33333333-3333-4333-8333-333333333333',
+      title: 'Unfocused Window Completion',
+      body: 'Toast displayed because application window is unfocused',
+      state: 'finished',
+      read: false,
+      createdAt: new Date().toISOString()
+    });
+  });
+  await page.waitForFunction(() => {
+    const texts = Array.from(document.querySelectorAll('.maw-toast-item')).map(el => el.textContent || '');
+    return texts.some(t => t.includes('Unfocused Window Completion'));
+  });
+  await page.evaluate(() => {
+    document.hasFocus = window.__origHasFocus;
+  });
+  await page.waitForFunction(() => document.querySelectorAll('.maw-inbox-item').length === 4);
+
+  // Decision 2: Exactly one notification for verified completion (deduplication)
+  const toastCountBefore = await page.locator('.maw-toast-item').count();
+  await page.evaluate(() => {
+    window.agencyTest.emitNotificationCreated({
+      id: 'unfocused-completion',
+      workspaceId: '11111111-1111-4111-8111-111111111111',
+      tabId: '33333333-3333-4333-8333-333333333333',
+      title: 'Unfocused Window Completion Duplicate',
+      body: 'Should be ignored as duplicate',
+      state: 'finished',
+      read: false,
+      createdAt: new Date().toISOString()
+    });
+  });
+  assert.equal(await page.locator('.maw-toast-item').count(), toastCountBefore);
+  assert.equal(await page.locator('.maw-inbox-item').count(), 4);
+
+  // Decision 2: No duplicate notification after reconnect / snapshot replay
+  await page.evaluate(() => {
+    window.agencyTest.emitSnapshot();
+  });
+  assert.equal(await page.locator('.maw-inbox-item').count(), 4);
+  assert.equal(await page.locator('.maw-toast-item').count(), toastCountBefore);
 
   // Close notifications inbox
   await page.locator('.maw-bell-button').click();

@@ -6,12 +6,19 @@ interface Props {
   y: number;
   hasSelection: boolean;
   isLive: boolean;
+  fileCandidate?: { relative: string; absolute: string } | null;
+  canCopyNativeFile?: boolean;
   onCopySelection: () => void;
   onCopyAll: () => void;
   onCopyLast: () => void;
   onPaste: () => void;
   onInterrupt: () => void;
   onClear: () => void;
+  onOpenFile?: () => void;
+  onCopyFile?: () => void;
+  onCopyAbsolutePath?: () => void;
+  onCopyRelativePath?: () => void;
+  onCopyFileContents?: () => void;
   onClose: () => void;
 }
 
@@ -20,12 +27,19 @@ export function PaneContextMenu({
   y,
   hasSelection,
   isLive,
+  fileCandidate,
+  canCopyNativeFile,
   onCopySelection,
   onCopyAll,
   onCopyLast,
   onPaste,
   onInterrupt,
   onClear,
+  onOpenFile,
+  onCopyFile,
+  onCopyAbsolutePath,
+  onCopyRelativePath,
+  onCopyFileContents,
   onClose,
 }: Props): JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -56,7 +70,7 @@ export function PaneContextMenu({
 
   // Clamp menu coordinates inside the viewport
   const menuWidth = 190;
-  const menuHeight = 220;
+  const menuHeight = fileCandidate ? 360 : 220;
   const clampedX = Math.max(10, Math.min(x, window.innerWidth - menuWidth - 10));
   const clampedY = Math.max(10, Math.min(y, window.innerHeight - menuHeight - 10));
 
@@ -133,6 +147,73 @@ export function PaneContextMenu({
       >
         {t('agency.ui.clearTerminal')}
       </button>
+      {fileCandidate && (
+        <>
+          <div className="maw-context-menu-divider" role="separator" />
+          {onOpenFile && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onOpenFile();
+                onClose();
+              }}
+            >
+              {t('agency.terminal.openFile')}
+            </button>
+          )}
+          {onCopyFile && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!canCopyNativeFile}
+              title={!canCopyNativeFile ? t('agency.terminal.copyFileUnavailable') : undefined}
+              onClick={() => {
+                onCopyFile();
+                onClose();
+              }}
+            >
+              {t('agency.terminal.copyFile')}
+            </button>
+          )}
+          {onCopyAbsolutePath && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onCopyAbsolutePath();
+                onClose();
+              }}
+            >
+              {t('agency.terminal.copyAbsolutePath')}
+            </button>
+          )}
+          {onCopyRelativePath && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onCopyRelativePath();
+                onClose();
+              }}
+            >
+              {t('agency.terminal.copyRelativePath')}
+            </button>
+          )}
+          {onCopyFileContents && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onCopyFileContents();
+                onClose();
+              }}
+            >
+              {t('agency.terminal.copyFileContents')}
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }

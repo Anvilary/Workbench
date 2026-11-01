@@ -70,7 +70,7 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
     setSynchronized(false);
     const types = [
       'agency.projects.list', 'agency.workspaces.list',
-      'agency.profiles.list', 'agency.sessions.list', 'agency.webTabs.list', 'agency.notifications.list',
+      'agency.profiles.list', 'agency.sessions.list', 'agency.webTabs.list', 'agency.editorTabs.list', 'agency.notifications.list',
     ] as const;
     types.forEach((type) => { void request({ type }).catch(() => { /* Preserve existing state. */ }); });
   }, [request, connection]);
@@ -130,6 +130,23 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
         setData((old) => ({ ...old, webTabs: message.tabs
           ? [...old.webTabs.filter(tab => tab.workspaceId !== message.workspaceId), ...message.tabs]
           : message.tab ? replaceById(old.webTabs, message.tab) : old.webTabs }));
+      } else if (message.type === 'agency.editorTabs.snapshot') {
+        const workspaceId = pending.current.get(message.requestId)?.workspaceId;
+        setData((old) => ({
+          ...old,
+          editorTabs: workspaceId
+            ? [...old.editorTabs.filter((tab) => tab.workspaceId !== workspaceId), ...message.tabs]
+            : message.tabs,
+        }));
+      } else if (message.type === 'agency.editorTab.opened' || message.type === 'agency.editorTab.updated' || message.type === 'agency.editorTab.closed') {
+        setData((old) => ({ ...old, editorTabs: replaceById(old.editorTabs, message.tab) }));
+      } else if (message.type === 'agency.editorTab.changed') {
+        setData((old) => ({
+          ...old,
+          editorTabs: message.tabs
+            ? [...old.editorTabs.filter((tab) => tab.workspaceId !== message.workspaceId), ...message.tabs]
+            : message.tab ? replaceById(old.editorTabs, message.tab) : old.editorTabs,
+        }));
       } else if (message.type === 'agency.sessions.snapshot') {
         const retained = new Map([...unconfirmedSessions.current].filter(([, session]) => !message.workspaceId || session.workspaceId === message.workspaceId));
         const sessions = retainUnconfirmedCreations(message.sessions, retained);
