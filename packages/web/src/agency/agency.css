@@ -1084,6 +1084,30 @@
   display: none !important;
 }
 
+/* Editor Pane View */
+.maw-editor-pane {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+}
+.maw-editor-pane .panel-body.doc-viewer {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.maw-editor-pane .panel-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 /* Split Dividers */
 .maw-split-divider {
   position: relative;
