@@ -56,7 +56,9 @@ export class AgencyLayoutStore {
     }
 
     if (!primaryMissing) {
-      await rename(this.file, this.file + '.corrupt-' + randomUUID()).catch(() => {});
+      // Refuse recovery if quarantine fails, otherwise the next save could
+      // overwrite the valid backup with the corrupt primary.
+      await rename(this.file, this.file + '.corrupt-' + randomUUID());
     }
     return recovered;
   }
