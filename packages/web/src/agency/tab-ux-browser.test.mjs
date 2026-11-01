@@ -85,6 +85,7 @@ const connection = {
         case 'agency.profiles.list': reply('agency.profiles.snapshot', { profiles: [profile] }); break;
         case 'agency.sessions.list': reply('agency.sessions.snapshot', { sessions: structuredClone(sessions) }); break;
         case 'agency.webTabs.list': reply('agency.webTabs.snapshot', { tabs: structuredClone(webTabs) }); break;
+        case 'agency.editorTabs.list': reply('agency.editorTabs.snapshot', { tabs: [] }); break;
         case 'agency.notifications.list': reply('agency.notifications.snapshot', { notifications: structuredClone(notifications), activityStates: structuredClone(activities) }); break;
         case 'terminal.attach': emit({ type: 'terminal.replay', terminalId: m.terminalId, data: 'prompt$ ', truncated: false }); break;
         case 'agency.tab.action': {

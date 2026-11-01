@@ -16,7 +16,8 @@ const count=shape==='single'?1:shape==='three'?3:shape.includes('four')?4:2;
 const id=n=>String(n).repeat(8)+'-'+String(n).repeat(4)+'-4'+String(n).repeat(3)+'-8'+String(n).repeat(3)+'-'+String(n).repeat(12);
 const session=(n,kind='terminal',launchId)=>({id:'session-'+n,workspaceId:ws,kind,launchId,profileId:kind==='agent'?'fixture-profile':null,terminalId:'term-'+n,lifecycle:'running',activity:'working',exitCode:null,nativeSessionId:null,selectedModel:null,selectedEffort:null,createdAt:now,updatedAt:now,tab:{id:id(n),name:(kind==='agent'?'CLI ':'Terminal ')+n,selected:n===1,current:true,closedAt:null,order:n-1,terminalNumber:n}});
 const web=(n,launchId,title)=>({id:id(n),workspaceId:ws,kind:'web',launchId,title:title||'ChatGPT '+n,url:'https://chatgpt.com/',selected:n===1,closedAt:null,order:n-1,runtimeState:'client-managed',createdAt:now,updatedAt:now});
-const initialSessions=[], initialWeb=[];
+const editor=(n,filePath)=>({id:id(n),workspaceId:ws,kind:'editor',title:filePath.split('/').pop()||filePath,filePath,selected:n===1,closedAt:null,order:n-1,createdAt:now,updatedAt:now});
+const initialSessions=[], initialWeb=[], initialEditor=[];
 for(let n=1;n<=count;n++) {
   if(mode==='web'||mode==='mixed'&&n%2===0||mode==='cli-web'&&n===2) initialWeb.push(web(n));
   else initialSessions.push(session(n,mode==='cli-web'?'agent':'terminal'));
@@ -25,7 +26,8 @@ const pane=n=>({type:'pane',id:'pane-'+n,tabIds:[id(n)],selectedTabId:id(n)});
 const split=(a,b,direction='row',ratio=.5)=>({type:'split',id:'split-'+a.id+'-'+b.id,direction,ratio,first:a,second:b});
 let tree=count===1?pane(1):count===2?split(pane(1),pane(2),shape):count===3?split(pane(1),split(pane(2),pane(3),'column'), 'row',.4):shape==='four-grid'?split(split(pane(1),pane(2),'column'),split(pane(3),pane(4),'column')):split(pane(1),split(pane(2),split(pane(3),pane(4),'column'),'row',.4),'row',.3);
 const initial={workspaceId:ws,version:1,updatedAt:now,focusedPaneId:'pane-1',tree,maximizedPaneId:null};
-const state=JSON.parse(localStorage.getItem('pane-interactions')||'null')||{layout:initial,sessions:initialSessions,webTabs:initialWeb};
+const state=JSON.parse(localStorage.getItem('pane-interactions')||'null')||{layout:initial,sessions:initialSessions,webTabs:initialWeb,editorTabs:initialEditor};
+if(!state.editorTabs) state.editorTabs=[];
 const persist=()=>localStorage.setItem('pane-interactions',JSON.stringify(state));
 const requests=[],listeners=new Set(),pending=[],snapshots=[];
 let fail=false, failPlacement=false, delay=false, lag=false, render=()=>{};
@@ -38,16 +40,20 @@ Terminal.prototype.dispose=function(){window.disposed++;return dispose.call(this
 if(!window.mawChatGpt){let onState;window.mawChatGpt={subscribe(fn){onState=fn;return()=>{}},async command(m){if(m.type==='open')setTimeout(()=>onState?.({type:'ready',id:m.id}),0);return {ok:true}}}}
 async function request(m){
  requests.push(m);
- if(m.type==='agency.session.create'||m.type==='agency.webTab.create'){
+ if(m.type==='agency.session.create'||m.type==='agency.webTab.create'||m.type==='agency.editorTab.open'){
   if(delay)await new Promise(resolve=>pending.push(resolve));
   if(fail){fail=false;throw new Error('Fixture launch failed. Check profile settings and retry.');}
-  const n=state.sessions.length+state.webTabs.length+1;
-  const row=m.type==='agency.session.create'?session(n,m.kind,m.launchId):web(n,m.launchId,m.title);
-  const response=m.type==='agency.session.create'?{type:'agency.session.created',session:row}:{type:'agency.webTab.created',tab:row};
-  const publish=()=>{(m.type==='agency.session.create'?state.sessions:state.webTabs).push(row);persist();render()};
+  const n=state.sessions.length+state.webTabs.length+(state.editorTabs?.length||0)+1;
+  const row=m.type==='agency.session.create'?session(n,m.kind,m.launchId):m.type==='agency.webTab.create'?web(n,m.launchId,m.title):editor(n,m.filePath);
+  const response=m.type==='agency.session.create'?{type:'agency.session.created',session:row}:m.type==='agency.webTab.create'?{type:'agency.webTab.created',tab:row}:{type:'agency.editorTab.opened',tab:row};
+  const publish=()=>{
+    if(!state.editorTabs) state.editorTabs=[];
+    (m.type==='agency.session.create'?state.sessions:m.type==='agency.webTab.create'?state.webTabs:state.editorTabs).push(row);
+    persist();render();
+  };
   if(failPlacement){
     failPlacement=false;
-    const label=m.type==='agency.webTab.create'?(m.title||'ChatGPT '+n):(m.kind==='agent'?'CLI '+n:'Terminal '+n);
+    const label=m.type==='agency.webTab.create'?(m.title||'ChatGPT '+n):m.type==='agency.editorTab.open'?(row.title):(m.kind==='agent'?'CLI '+n:'Terminal '+n);
     state.placementWarning='Layout placement persistence failure for tab "' + label + '". Safe layout reconciliation will restore placement on reconnect or refresh.';
     persist();
     render();
@@ -55,9 +61,11 @@ async function request(m){
   if(lag)snapshots.push(publish);else publish();
   return response;
  }
- if(m.type==='agency.tab.action'&&m.action==='select'||m.type==='agency.webTab.select'){
+ if(m.type==='agency.tab.action'&&m.action==='select'||m.type==='agency.webTab.select'||m.type==='agency.editorTab.select'){
   state.sessions=state.sessions.map(s=>({...s,tab:{...s.tab,selected:s.tab.id===m.tabId}}));
-  state.webTabs=state.webTabs.map(t=>({...t,selected:t.id===m.tabId}));persist();render();
+  state.webTabs=state.webTabs.map(t=>({...t,selected:t.id===m.tabId}));
+  if(state.editorTabs) state.editorTabs=state.editorTabs.map(e=>({...e,selected:e.id===m.tabId}));
+  persist();render();
  }
  if(m.type==='agency.tab.acknowledge')throw new Error('Background completion must not be inspected');
  return {};
@@ -73,7 +81,7 @@ function Harness(){
  const profile={id:'fixture-profile',label:'Fixture CLI',configurationStatus:'available',capabilities:{canLaunch:true},configured:true,available:true,command:'sh'};
  return <><button id="start" onClick={()=>setMounted(true)}>Start isolated fixture</button>
  {mounted&&!away&&<AgencyWorkspaceView workspace={{id:ws,projectId:other,name:'Pane interactions · synthetic data',status:'active',cwd:'/fixture',createdAt:now,updatedAt:now}}
- profiles={[profile]} sessions={state.sessions} webTabs={state.webTabs} connection={connection} request={request} sendImmediate={connection.sendImmediate} online={true} onDone={()=>{}}
+ profiles={[profile]} sessions={state.sessions} webTabs={state.webTabs} editorTabs={state.editorTabs || []} connection={connection} request={request} sendImmediate={connection.sendImmediate} online={true} onDone={()=>{}}
  savedLayout={state.layout} onSaveLayout={async(id,value)=>{state.layout=value;persist()}}
  placementWarning={state.placementWarning} onClearPlacementWarning={()=>{state.placementWarning=null;persist();render();}}
  getTabActivity={(ws,tab)=>tab===window.finished?'finished':'working'} getTabActivityVersion={()=>'turn-1'} onAcknowledgeTab={(ws,tab)=>request({type:'agency.tab.acknowledge',tabId:tab})}/>}</>;
