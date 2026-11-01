@@ -11,6 +11,13 @@ import { appConfigDir } from '../paths.js';
 
 const VERSION = 1;
 
+class UnsupportedAgencyLayoutSchemaError extends Error {
+  constructor(version: unknown) {
+    super('Unsupported Agency layout store version: ' + String(version));
+    this.name = 'UnsupportedAgencyLayoutSchemaError';
+  }
+}
+
 export class AgencyLayoutStore {
   private queue: Promise<void> = Promise.resolve();
   private mutations: Promise<void> = Promise.resolve();
@@ -39,6 +46,7 @@ export class AgencyLayoutStore {
       const contents = await readFile(this.file, 'utf8');
       return this.parse(contents);
     } catch (error) {
+      if (error instanceof UnsupportedAgencyLayoutSchemaError) throw error;
       primaryMissing = (error as NodeJS.ErrnoException).code === 'ENOENT';
       primaryFailure = error;
     }
@@ -48,6 +56,7 @@ export class AgencyLayoutStore {
       const backupContents = await readFile(this.file + '.bak', 'utf8');
       recovered = this.parse(backupContents);
     } catch (backupError) {
+      if (backupError instanceof UnsupportedAgencyLayoutSchemaError) throw backupError;
       const backupMissing = (backupError as NodeJS.ErrnoException).code === 'ENOENT';
       if (primaryMissing && backupMissing) {
         return [];
@@ -70,7 +79,7 @@ export class AgencyLayoutStore {
     }
     const record = raw as Record<string, unknown>;
     if (record.version !== VERSION) {
-      throw new Error(`Unsupported Agency layout store version: ${record.version}`);
+      throw new UnsupportedAgencyLayoutSchemaError(record.version);
     }
     if (!Array.isArray(record.layouts)) {
       throw new Error('Invalid Agency layout store: layouts must be an array');
