@@ -302,6 +302,12 @@ function isValidId(value: unknown): boolean {
   return typeof value === 'string' && UUID_RE.test(value);
 }
 
+// Pane IDs belong to the split-tree namespace (e.g. pane-1), not the UUID namespace.
+function isValidPaneId(value: unknown): value is string {
+  return typeof value === 'string' && value.length >= 1 && value.length <= 128 &&
+    !/[\u0000-\u001f\u007f]/.test(value);
+}
+
 function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
   const allowedSet = new Set(allowed);
   return Object.keys(value).every((k) => allowedSet.has(k));
@@ -473,7 +479,7 @@ export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | nu
     case 'agency.session.create': {
       if (!isValidId(raw['workspaceId'])) return null;
       if (raw.launchId !== undefined && !isValidId(raw.launchId)) return null;
-      if (raw.targetPaneId !== undefined && !isValidId(raw.targetPaneId)) return null;
+      if (raw.targetPaneId !== undefined && !isValidPaneId(raw.targetPaneId)) return null;
       const cols = raw['cols'];
       const rows = raw['rows'];
       if (typeof cols !== 'number' || !Number.isInteger(cols) || cols < 2 || cols > 500) return null;
