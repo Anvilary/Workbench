@@ -11,9 +11,9 @@ import { _electron as electron } from 'playwright';
 const require = createRequire(import.meta.url);
 const here = path.dirname(new URL(import.meta.url).pathname);
 
-const hasNautilusAndXdotool = (() => {
+const hasRequiredDesktopTools = (() => {
   try {
-    execSync('which nautilus && which xdotool', { stdio: 'ignore' });
+    execSync('which nautilus && which xdotool && which xwininfo', { stdio: 'ignore' });
     return true;
   } catch {
     return false;
@@ -21,8 +21,8 @@ const hasNautilusAndXdotool = (() => {
 })();
 
 test('authoritative workspace copy-file rejects unauthorized paths and pastes into real Nautilus', { timeout: 60000 }, async (t) => {
-  if (!hasNautilusAndXdotool) {
-    t.skip('Nautilus or xdotool not available');
+  if (!hasRequiredDesktopTools) {
+    t.skip('Nautilus, xdotool or xwininfo not available');
     return;
   }
 
