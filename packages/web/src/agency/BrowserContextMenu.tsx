@@ -19,13 +19,12 @@ interface MenuState {
  */
 export function BrowserContextMenu({
   tabs,
-  request,
   onCloseTab,
   onMoveNext,
   onDuplicate,
 }: {
   tabs: readonly WebTab[];
-  request: ReturnType<typeof useAgencyStore>['request'];
+  request?: ReturnType<typeof useAgencyStore>['request'];
   onCloseTab: (tab: WebTab) => void;
   onMoveNext: (tabId: string) => void;
   onDuplicate: (tab: WebTab) => void;
@@ -83,11 +82,16 @@ export function BrowserContextMenu({
     { label: t('agency.browser.close'), disabled: !tab, run: () => { if (tab) onCloseTab(tab); setMenu(null); } },
   ];
 
+  const menuWidth = 190;
+  const menuHeight = 320;
+  const clampedX = Math.max(8, Math.min(menu.x, window.innerWidth - menuWidth - 8));
+  const clampedY = Math.max(8, Math.min(menu.y, window.innerHeight - menuHeight - 8));
+
   return (
     <div
       className="maw-context-menu"
       role="menu"
-      style={{ left: Math.max(8, menu.x), top: Math.max(8, menu.y) }}
+      style={{ left: clampedX, top: clampedY }}
       onPointerDown={(event) => event.stopPropagation()}
     >
       {items.map((item) => (

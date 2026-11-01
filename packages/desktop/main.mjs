@@ -278,6 +278,7 @@ async function start() {
   }
 
   function open(id, url, provider = 'chatgpt') {
+    const providerName = provider === 'github' ? 'GitHub' : 'ChatGPT';
     if (views.has(id)) {
       if ((providers.get(id) ?? 'chatgpt') !== provider) {
         send({ type: 'error', id, message: 'This tab cannot change browser provider.' });
@@ -285,7 +286,7 @@ async function start() {
       }
       const contents = views.get(id).webContents;
       if (contents.isDestroyed() || (failures.has(id) && requestedUrls.get(id) === url)) {
-        send({ type: 'error', id, message: failures.get(id) || 'ChatGPT renderer stopped. Use Reload page to retry.' });
+        send({ type: 'error', id, message: failures.get(id) || `${providerName} renderer stopped. Use Reload page to retry.` });
         return;
       }
       if (requestedUrls.get(id) !== url) {
@@ -329,12 +330,12 @@ async function start() {
     view.webContents.on('did-finish-load', () => { if (durablePage(provider, view.webContents.getURL())) send({ type: 'ready', id }); });
     view.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => {
       if (mainFrame && code !== -3) {
-        const message = `ChatGPT failed to load (${code}). Use Reload page to retry.`;
+        const message = `${providerName} failed to load (${code}). Use Reload page to retry.`;
         failures.set(id, message); send({ type: 'error', id, message });
       }
     });
     view.webContents.on('render-process-gone', () => {
-      const message = 'ChatGPT renderer stopped. Use Reload page to retry.';
+      const message = `${providerName} renderer stopped. Use Reload page to retry.`;
       failures.set(id, message);
       if (attachedViews.has(id)) hide(id);
       send({ type: 'error', id, message });
@@ -481,7 +482,8 @@ async function start() {
     for (const view of views.values()) if (!view.webContents.isDestroyed()) view.webContents.close();
     views.clear();
     chatSession.flushStorageData();
-    void chatSession.cookies.flushStore().finally(() => win.close());
+    githubSession.flushStorageData();
+    void Promise.allSettled([chatSession.cookies.flushStore(), githubSession.cookies.flushStore()]).finally(() => win.close());
   });
   app.on('window-all-closed', () => app.quit());
   await win.loadURL(local.href);
