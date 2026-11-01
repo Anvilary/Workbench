@@ -3,7 +3,7 @@ import type {
   AgencyCliProfile, AgencyProject, AgencyRuntimeSession, AgencyServerMessage,
   AgencyClientMessage, AgencyWorkspace, AgencyAgentSession, AgencyProfileCapabilities,
   ClientMessage,
-  SessionActivity, SessionLifecycle, WorkspaceId, CliProfileId, WebTab,
+  SessionActivity, SessionLifecycle, WorkspaceId, CliProfileId, WebTab, EditorTab,
 } from '@agent-workbench/shared';
 
 export interface AgencyTransport {
@@ -24,12 +24,13 @@ export interface AgencySnapshot {
   profiles: readonly AgencyCliProfile[];
   sessions: readonly AgencyRuntimeSession[];
   webTabs: readonly WebTab[];
+  editorTabs: readonly EditorTab[];
   layouts: Record<WorkspaceId, import('@agent-workbench/shared').WorkspacePaneLayout>;
   layoutWarnings?: Record<WorkspaceId, string>;
 }
 
 export const EMPTY_AGENCY_SNAPSHOT: AgencySnapshot = {
-  projects: [], workspaces: [], profiles: [], sessions: [], webTabs: [], layouts: {}, layoutWarnings: {},
+  projects: [], workspaces: [], profiles: [], sessions: [], webTabs: [], editorTabs: [], layouts: {}, layoutWarnings: {},
 };
 
 export function workspaceTabs(sessions: readonly AgencyRuntimeSession[], workspaceId: WorkspaceId): AgencyRuntimeSession[] {
@@ -37,13 +38,20 @@ export function workspaceTabs(sessions: readonly AgencyRuntimeSession[], workspa
     .sort((a,b) => a.tab!.order - b.tab!.order || a.tab!.id.localeCompare(b.tab!.id));
 }
 
-/** Stable identities from both domains share one server-owned selection and order. */
+/** Stable identities from native sessions, web tabs, and editor tabs share one server-owned selection and order. */
 export type WorkspaceTab = {
   id: string; order: number; selected: boolean;
-} & ({ kind: 'native'; session: AgencyRuntimeSession } | { kind: 'web'; web: WebTab });
+} & (
+  | { kind: 'native'; session: AgencyRuntimeSession }
+  | { kind: 'web'; web: WebTab }
+  | { kind: 'editor'; editor: EditorTab }
+);
 
 export function allWorkspaceTabs(
-  sessions: readonly AgencyRuntimeSession[], webTabs: readonly WebTab[], workspaceId: WorkspaceId,
+  sessions: readonly AgencyRuntimeSession[],
+  webTabs: readonly WebTab[],
+  workspaceId: WorkspaceId,
+  editorTabs: readonly EditorTab[] = [],
 ): WorkspaceTab[] {
   const native: WorkspaceTab[] = workspaceTabs(sessions, workspaceId).map(session => ({
     id: session.tab!.id, order: session.tab!.order, selected: session.tab!.selected, kind: 'native', session,
@@ -51,7 +59,10 @@ export function allWorkspaceTabs(
   const web: WorkspaceTab[] = webTabs.filter(tab => tab.workspaceId === workspaceId && !tab.closedAt).map(tab => ({
     id: tab.id, order: tab.order, selected: tab.selected, kind: 'web', web: tab,
   }));
-  return [...native, ...web].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+  const editor: WorkspaceTab[] = editorTabs.filter(tab => tab.workspaceId === workspaceId && !tab.closedAt).map(tab => ({
+    id: tab.id, order: tab.order, selected: tab.selected, kind: 'editor', editor: tab,
+  }));
+  return [...native, ...web, ...editor].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 }
 
 /** Conflicting or absent selection during reconciliation never displays an arbitrary target. */

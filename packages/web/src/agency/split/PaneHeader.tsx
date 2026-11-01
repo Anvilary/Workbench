@@ -38,10 +38,12 @@ interface Props {
   onAddTerminalClick: () => void;
   onAddWebTabClick: () => void;
   onAddGithubClick?: () => void;
+  onOpenFileClick?: () => void;
   onLaunchProfile?: (profileId: string) => void;
-  onSplitCreate?: (direction: SplitDirection, action: 'terminal' | 'agent' | 'web' | 'github', profileId?: string) => void;
+  onSplitCreate?: (direction: SplitDirection, action: 'terminal' | 'agent' | 'web' | 'github' | 'file', profileId?: string) => void;
   onMoveTabToPane: (tabId: string, targetPaneId: string, targetIndex?: number) => void;
   onRenameTab: (tab: WorkspaceTab, title: string) => Promise<void>;
+  isTabUnsaved?: (tabId: string) => boolean;
   reportError: (error: string) => void;
 }
 
@@ -73,10 +75,12 @@ export function PaneHeader({
   onAddTerminalClick,
   onAddWebTabClick,
   onAddGithubClick,
+  onOpenFileClick,
   onLaunchProfile,
   onSplitCreate,
   onMoveTabToPane,
   onRenameTab,
+  isTabUnsaved,
   reportError,
 }: Props): JSX.Element {
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
@@ -172,7 +176,7 @@ export function PaneHeader({
     }
   }
 
-  function choose(action: 'terminal' | 'agent' | 'web' | 'github', profileId?: string) {
+  function choose(action: 'terminal' | 'agent' | 'web' | 'github' | 'file', profileId?: string) {
     const direction = splitIntent;
     setMenuOpen(false);
     setSplitIntent(null);
@@ -185,6 +189,7 @@ export function PaneHeader({
     if (action === 'terminal') onAddTerminalClick();
     else if (action === 'github') onAddGithubClick?.();
     else if (action === 'web') onAddWebTabClick();
+    else if (action === 'file') onOpenFileClick?.();
     else if (profileId) onLaunchProfile?.(profileId);
     else onAddCliClick();
   }
@@ -197,6 +202,7 @@ export function PaneHeader({
 
   function tabName(tab: WorkspaceTab) {
     if (tab.kind === 'web') return tab.web.title;
+    if (tab.kind === 'editor') return tab.editor.title;
     const session = tab.session;
     return (
       session.tab?.name ??
@@ -263,13 +269,15 @@ export function PaneHeader({
             }
             if (tabDrag.current.isDragging) {
               event.preventDefault();
-              const header = document.elementFromPoint(event.clientX, event.clientY)?.closest('.maw-pane-header');
-              const overPaneId = header?.closest('.maw-split-pane')?.id.replace('pane-container-', '') ?? null;
+              const elUnder = document.elementFromPoint(event.clientX, event.clientY);
+              const paneEl = elUnder?.closest('.maw-split-pane');
+              const overPaneId = paneEl?.id.replace('pane-container-', '') ?? null;
+              const header = paneEl?.querySelector('.maw-pane-header');
               const rects = header ? [...header.querySelectorAll<HTMLElement>('.maw-session-tab')].map((element) => {
                 const rect = element.getBoundingClientRect();
                 return { left: rect.left, width: rect.width };
               }) : [];
-              const target = overPaneId ? insertionIndex(event.clientX, rects) : paneTabs.length;
+              const target = overPaneId && rects.length > 0 ? insertionIndex(event.clientX, rects) : rects.length;
               tabDrag.current.targetIndex = target;
               const source = strip.current?.querySelector<HTMLElement>(`[data-tab-id="${tabDrag.current.tabId}"]`);
               setDragState({ tabId: tabDrag.current.tabId, targetIndex: target });
@@ -295,10 +303,12 @@ export function PaneHeader({
             }
             if (dragInfo.isDragging) {
               suppressTabClickUntil.current = Date.now() + 200;
-              const header = document.elementFromPoint(event.clientX, event.clientY)?.closest('.maw-pane-header');
-              const destination = header?.closest('.maw-split-pane')?.id.replace('pane-container-', '');
+              const elUnder = document.elementFromPoint(event.clientX, event.clientY);
+              const destination = elUnder?.closest('.maw-split-pane')?.id.replace('pane-container-', '');
               if (!destination) return;
-              const targetElements = [...header!.querySelectorAll<HTMLElement>('.maw-session-tab')];
+              const targetPaneEl = document.getElementById(`pane-container-${destination}`);
+              const targetHeader = targetPaneEl?.querySelector('.maw-pane-header');
+              const targetElements = targetHeader ? [...targetHeader.querySelectorAll<HTMLElement>('.maw-session-tab')] : [];
               const targetIndex = targetElements.findIndex(element => {
                 const rect = element.getBoundingClientRect();
                 return event.clientX < rect.left + rect.width / 2;
@@ -336,28 +346,33 @@ export function PaneHeader({
         {paneTabs.map((tab, idx) => {
           const tabState = getTabActivity?.(workspaceId, tab.id);
           const session = tab.kind === 'native' ? tab.session : undefined;
+          const isUnsaved = isTabUnsaved?.(tab.id);
           const status = tabState
             ? agencyTabActivityText(tabState)
             : session
               ? agencySessionText(session)
-              : t('agency.web.tabKind');
+              : tab.kind === 'editor'
+                ? (isUnsaved ? t('docs.edit.unsaved') : t('agency.tabs.editor'))
+                : t('agency.web.tabKind');
           const dotClass =
-            tabState === 'finished'
-              ? 'finished'
-              : tabState === 'failed' ||
-                  session?.lifecycle === 'failed' ||
-                  session?.recovery?.status === 'manual' ||
-                  (tab.kind === 'web' && ['error', 'crashed'].includes(tab.web.runtimeState ?? ''))
-                ? 'failed'
-                : session?.lifecycle === 'exited'
-                  ? 'muted'
-                  : session && ['awaiting-user', 'awaiting-permission'].includes(session.activity)
-                    ? 'attention'
-                    : (tab.kind === 'web' && ['navigating', 'attaching'].includes(tab.web.runtimeState ?? ''))
-                      ? 'working'
-                      : tabState === 'needs-input'
-                        ? 'attention'
-                        : tabState ?? (session?.activity === 'working' ? 'working' : session?.activity === 'idle' ? 'idle' : 'unknown');
+            tab.kind === 'editor'
+              ? (isUnsaved ? 'attention' : 'idle')
+              : tabState === 'finished'
+                ? 'finished'
+                : tabState === 'failed' ||
+                    session?.lifecycle === 'failed' ||
+                    session?.recovery?.status === 'manual' ||
+                    (tab.kind === 'web' && ['error', 'crashed'].includes(tab.web.runtimeState ?? ''))
+                  ? 'failed'
+                  : session?.lifecycle === 'exited'
+                    ? 'muted'
+                    : session && ['awaiting-user', 'awaiting-permission'].includes(session.activity)
+                      ? 'attention'
+                      : (tab.kind === 'web' && ['navigating', 'attaching'].includes(tab.web.runtimeState ?? ''))
+                        ? 'working'
+                        : tabState === 'needs-input'
+                          ? 'attention'
+                          : tabState ?? (session?.activity === 'working' ? 'working' : session?.activity === 'idle' ? 'idle' : 'unknown');
 
           const isSelected = selectedTabId === tab.id;
           const previewHere = dragPreview?.overPaneId === paneId ? dragPreview : null;
@@ -411,7 +426,7 @@ export function PaneHeader({
                   aria-selected={isSelected}
                   tabIndex={isSelected ? 0 : -1}
                   disabled={!online}
-                  title={`${tabName(tab)} · ${status}`}
+                  title={`${tabName(tab)}${isUnsaved ? ' •' : ''} · ${status}`}
                   aria-keyshortcuts="F2 Alt+ArrowLeft Alt+ArrowRight"
                   onClick={(event) => {
                     if (Date.now() < suppressTabClickUntil.current) { event.preventDefault(); return; }
@@ -432,7 +447,7 @@ export function PaneHeader({
                   }}
                 >
                   <span aria-hidden="true">
-                    {tab.kind === 'web' ? '◎' : session?.kind === 'agent' ? '◇' : '>_'}
+                    {tab.kind === 'web' ? '◎' : tab.kind === 'editor' ? '✎' : session?.kind === 'agent' ? '◇' : '>_'}
                   </span>
                   <span
                     className="agency-truncate"
@@ -442,7 +457,7 @@ export function PaneHeader({
                       setRenamingTabId(tab.id);
                     }}
                   >
-                    {tabName(tab)}
+                    {tabName(tab)}{isUnsaved ? ' •' : ''}
                   </span>
                   <span className={`agency-status-dot ${dotClass}`} aria-label={status} />
                 </button>
@@ -498,6 +513,7 @@ export function PaneHeader({
               ))}
               <button type="button" role="menuitem" onClick={() => choose('web')}>{t('agency.web.newTab')}</button>
               <button type="button" role="menuitem" onClick={() => choose('github')}>{t('agency.tabs.github')}</button>
+              <button type="button" role="menuitem" onClick={() => choose('file')}>{t('agency.tabs.openFile')}</button>
               {selectedTabId && (
                 <button
                   type="button"
@@ -515,7 +531,6 @@ export function PaneHeader({
         </div>
 
       <div className="maw-pane-actions">
-        <PaneGrip paneId={paneId} workspaceId={workspaceId} disabled={moveDisabled} destinations={destinations} onSwap={onSwapPane} />
         <button
           type="button"
           className="maw-pane-action-button"
@@ -567,6 +582,7 @@ export function PaneHeader({
             ×
           </button>
         )}
+        <PaneGrip paneId={paneId} workspaceId={workspaceId} disabled={moveDisabled} destinations={destinations} onSwap={onSwapPane} />
       </div>
     </div>
   );

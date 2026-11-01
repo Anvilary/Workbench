@@ -163,9 +163,18 @@ export function SessionPane({
   };
 
   const openFile = (relativePath: string) => {
-    if (!session.terminalId) return;
-    connection.send({ type: 'files.read', terminalId: session.terminalId, path: relativePath });
-    showFeedback(t('agency.terminal.fileOpened'), 'success');
+    void request({
+      type: 'agency.editorTab.open',
+      workspaceId: session.workspaceId,
+      filePath: relativePath,
+      select: true,
+    })
+      .then(() => {
+        showFeedback(t('agency.terminal.fileOpened'), 'success');
+      })
+      .catch((err) => {
+        report(err instanceof Error ? err.message : String(err));
+      });
   };
 
   const copyFile = async (relativePath: string) => {

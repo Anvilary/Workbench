@@ -5,7 +5,9 @@ import { createPortal } from 'react-dom';
 import { useDroppable, useDragOperation } from '@dnd-kit/react';
 import { pointerIntersection } from '@dnd-kit/collision';
 import { t } from '../../i18n/index.js';
+import type { AgentConnection } from '../../connection.js';
 import type { WorkspaceTab } from '../model.js';
+import { EditorPaneView } from '../EditorPaneView.js';
 import { NativeChatGptView } from '../NativeChatGptView.js';
 import type { useAgencyStore } from '../useAgencyStore.js';
 import { PaneHeader } from './PaneHeader.js';
@@ -39,6 +41,7 @@ interface Props {
   profiles: readonly AgencyCliProfile[];
   online: boolean;
   busy: boolean;
+  connection: AgentConnection;
   request: ReturnType<typeof useAgencyStore>['request'];
   reportError: (err: string) => void;
   getTabActivity?: (workspaceId: import('@agent-workbench/shared').WorkspaceId, tabId: string) => MawActivityState;
@@ -54,8 +57,12 @@ interface Props {
   onAddTerminalClick: (paneId: string) => void;
   onAddWebTabClick: (paneId: string) => void;
   onAddGithubClick?: (paneId: string) => void;
+  onOpenFileClick?: (paneId: string) => void;
+  onOpenRelativeFile?: (paneId: string, path: string) => void;
+  onDirtyChange?: (tabId: string, dirty: boolean) => void;
+  isTabUnsaved?: (tabId: string) => boolean;
   onLaunchProfile?: (paneId: string, profileId: string) => void;
-  onSplitCreate?: (paneId: string, direction: SplitDirection, action: 'terminal' | 'agent' | 'web' | 'github', profileId?: string) => void;
+  onSplitCreate?: (paneId: string, direction: SplitDirection, action: 'terminal' | 'agent' | 'web' | 'github' | 'file', profileId?: string) => void;
   onRenameTab: (tab: WorkspaceTab, title: string) => Promise<void>;
   onFocusPane: (paneId: string) => void;
   onTabDisplayed: (id: string, ready: boolean) => void;
@@ -78,7 +85,7 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
       window.removeEventListener('pointercancel', release, true);
     };
   }, []);
-  const { node, layout, tabs, profiles, online, busy, request, reportError, getTabActivity, onSelectTab, onCloseTab, onSplit, onClosePane, onToggleMaximize, onMoveTabToPane, onAddCliClick, onAddTerminalClick, onAddWebTabClick, onRenameTab, onFocusPane, onTabDisplayed, onPaneHost } = props;
+  const { node, layout, tabs, profiles, online, busy, connection, request, reportError, getTabActivity, onSelectTab, onCloseTab, onSplit, onClosePane, onToggleMaximize, onMoveTabToPane, onAddCliClick, onAddTerminalClick, onAddWebTabClick, onRenameTab, onFocusPane, onTabDisplayed, onPaneHost } = props;
 
   const totalLeaves = countLeaves(layout.tree);
   const canSplit = totalLeaves < 4;
@@ -114,7 +121,7 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
         moveDisabled={!!layout.maximizedPaneId || totalLeaves < 2 || !online || busy}
         destinations={getPaneNodes(layout.tree).filter(p => p.id !== node.id).map((p) => {
           const tab = tabs.find(tab => tab.id === p.selectedTabId);
-          return { id: p.id, title: t('agency.splits.swapWith', { number: getPaneNodes(layout.tree).findIndex(item => item.id === p.id) + 1, title: tab?.kind === 'web' ? tab.web.title : tab?.session.tab?.name ?? t('agency.tabs.empty') }) };
+          return { id: p.id, title: t('agency.splits.swapWith', { number: getPaneNodes(layout.tree).findIndex(item => item.id === p.id) + 1, title: tab?.kind === 'web' ? tab.web.title : tab?.kind === 'editor' ? tab.editor.title : tab?.session.tab?.name ?? t('agency.tabs.empty') }) };
         })}
         onSwapPane={props.onSwapPane}
         canClose={canClose}
@@ -133,10 +140,12 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
         onAddTerminalClick={() => onAddTerminalClick(node.id)}
         onAddWebTabClick={() => onAddWebTabClick(node.id)}
         onAddGithubClick={props.onAddGithubClick ? () => props.onAddGithubClick?.(node.id) : undefined}
+        onOpenFileClick={props.onOpenFileClick ? () => props.onOpenFileClick?.(node.id) : undefined}
         onLaunchProfile={props.onLaunchProfile ? (profileId) => props.onLaunchProfile?.(node.id, profileId) : undefined}
         onSplitCreate={props.onSplitCreate ? (direction, action, profileId) => props.onSplitCreate?.(node.id, direction, action, profileId) : undefined}
         onMoveTabToPane={onMoveTabToPane}
         onRenameTab={onRenameTab}
+        isTabUnsaved={props.isTabUnsaved}
         reportError={reportError}
       />
 
@@ -147,6 +156,17 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
             tab={selectedTab.web}
             onDisplayed={onTabDisplayed}
             onFocused={() => onFocusPane(node.id)}
+          />
+        ) : selectedTab?.kind === 'editor' ? (
+          <EditorPaneView
+            key={selectedTab.id}
+            tab={selectedTab.editor}
+            workspaceId={layout.workspaceId}
+            connection={connection}
+            online={online}
+            reportError={reportError}
+            onDirtyChange={props.onDirtyChange}
+            onOpenRelativeFile={props.onOpenRelativeFile ? (targetPath) => props.onOpenRelativeFile?.(node.id, targetPath) : undefined}
           />
         ) : selectedTab ? null : (
           <div className="agency-shell-placeholder">
