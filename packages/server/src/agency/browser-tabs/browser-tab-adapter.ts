@@ -98,7 +98,10 @@ export class BrowserTabAdapter {
     return tab;
   }
   private async change<T>(workspaceId: WorkspaceId, action: () => T | Promise<T>, options?: { allowInactiveWorkspace?: boolean }): Promise<T> {
-    return this.mutations.runExclusive(workspaceId, async () => {
+    // The browser-tab store persists a complete cross-workspace snapshot.
+    // Serialize mutations globally so another workspace cannot commit a change
+    // that a concurrent, failing transaction must roll back.
+    return this.mutations.runExclusive('all-browser-tabs', async () => {
       await this.assertWorkspaceValid(workspaceId, options);
       const before = this.listTabs(workspaceId, { includeClosed: true });
       try {
