@@ -6,9 +6,13 @@ const layout=page=>page.evaluate(()=>window.fixture.state.layout);
 const menu=(page,n)=>pane(page,n).locator('.maw-pane-add-tab');
 const create=async(page,n,kind)=>{
  await menu(page,n).click();
- await page.getByRole('menuitem',{name:kind==='agent'?'New CLI':kind==='terminal'?'New Terminal':'New ChatGPT tab',exact:true}).click();
+ await page.getByRole('menuitem',{name:kind==='agent'?'New CLI':kind==='terminal'?'New Terminal':kind==='web'?'New ChatGPT tab':'Open File...',exact:true}).click();
  if(kind==='agent')await page.getByRole('dialog').getByRole('button',{name:/^(Create|Launch|Start)/}).click();
  if(kind==='web')await page.getByRole('dialog').getByRole('button',{name:'New ChatGPT tab',exact:true}).click();
+ if(kind==='file'){
+   await page.getByRole('dialog').locator('input').fill('src/index.ts');
+   await page.getByRole('dialog').getByRole('button',{name:'Open',exact:true}).click();
+ }
 };
 
 test('add menu escapes overflow, clamps at edges, navigates with keys, closes outside/Escape and is exclusive',async t=>{
@@ -33,12 +37,12 @@ test('add menu escapes overflow, clamps at edges, navigates with keys, closes ou
  await menu(page,4).click();const box=await page.getByRole('menu').boundingBox();assert.ok(box.y+box.height<370);
 });
 
-for(const kind of ['terminal','agent','web'])test(`create ${kind} in its initiating pane, preserving its neighbor`,async t=>{
+for(const kind of ['terminal','agent','web','file'])test(`create ${kind} in its initiating pane, preserving its neighbor`,async t=>{
  const page=await setup(t);const before=await layout(page);
  await create(page,2,kind);await page.waitForFunction(()=>window.fixture.state.layout.tree.second.tabIds.length===2);
  const after=await layout(page);assert.deepEqual(after.tree.first,before.tree.first);assert.equal(after.focusedPaneId,'pane-2');assert.equal(after.tree.second.selectedTabId,after.tree.second.tabIds[1]);
- assert.equal(await page.evaluate(kind=>window.fixture.requests.filter(m=>m.type===(kind==='web'?'agency.webTab.create':'agency.session.create')).length,kind),1);
- assert.equal(await page.evaluate(()=>window.fixture.requests.find(m=>m.type==='agency.webTab.create'||m.type==='agency.session.create').targetPaneId),'pane-2');
+ assert.equal(await page.evaluate(kind=>window.fixture.requests.filter(m=>m.type===(kind==='web'?'agency.webTab.create':kind==='file'?'agency.editorTab.open':'agency.session.create')).length,kind),1);
+ assert.equal(await page.evaluate(()=>window.fixture.requests.find(m=>m.type==='agency.webTab.create'||m.type==='agency.session.create'||m.type==='agency.editorTab.open').targetPaneId),'pane-2');
  assert.equal(await page.getByRole('menu').count(),0);
 });
 
@@ -241,4 +245,14 @@ test('Decision 1: Split buttons open content picker, support row and column, can
  const layout3 = await layout(page);
  assert.ok(layout3.tree.second.type === 'split');
  assert.equal(layout3.tree.second.direction, 'column');
+
+ // 6. Split right with Open File opens file in editor and creates split pane
+ const pane1RightBtn = page.locator('.maw-split-pane').nth(0).getByRole('button', { name: 'Split right', exact: true });
+ await pane1RightBtn.click();
+ await page.getByRole('menu', { name: 'Add tab' }).waitFor();
+ await page.getByRole('menuitem', { name: 'Open File...', exact: true }).click();
+ await page.getByRole('dialog').locator('input').fill('src/index.ts');
+ await page.getByRole('dialog').getByRole('button', { name: 'Open', exact: true }).click();
+ await page.waitForFunction(() => document.querySelectorAll('.maw-split-pane').length === 4);
+ assert.equal(await page.locator('.maw-split-pane').count(), 4);
 });
