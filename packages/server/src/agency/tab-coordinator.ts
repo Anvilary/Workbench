@@ -33,11 +33,32 @@ export class AgencyTabCoordinator {
         await this.editor?.clearWorkspaceSelection(workspaceId);
       },
     });
+    const previousEditorSelections = new Map<WorkspaceId, { domain: 'native' | 'browser'; id: string }>();
     if (this.editor) {
       this.editor.setSelectionCoordinator({
         unselectOtherTabs: async (workspaceId) => {
+          const nativeSelected = this.openNative(workspaceId).find((s) => s.tab?.selected);
+          const browserSelected = this.browser.listTabs(workspaceId).find((t) => t.selected);
+          if (nativeSelected?.tab) {
+            previousEditorSelections.set(workspaceId, { domain: 'native', id: nativeSelected.tab.id });
+          } else if (browserSelected) {
+            previousEditorSelections.set(workspaceId, { domain: 'browser', id: browserSelected.id });
+          } else {
+            previousEditorSelections.delete(workspaceId);
+          }
           await native.clearWorkspaceSelection(workspaceId);
           await browser.clearWorkspaceSelection(workspaceId);
+        },
+        restoreOtherTabs: async (workspaceId) => {
+          const prev = previousEditorSelections.get(workspaceId);
+          previousEditorSelections.delete(workspaceId);
+          if (prev) {
+            if (prev.domain === 'native') {
+              await native.tabAction(workspaceId, prev.id, 'select');
+            } else if (prev.domain === 'browser') {
+              await browser.selectTab(workspaceId, prev.id);
+            }
+          }
         },
       });
     }

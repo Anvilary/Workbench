@@ -184,6 +184,7 @@ export class AgencySessionRuntime extends EventEmitter {
   private disposed = false;
   private readonly launchSignatures = new Map<string, string>();
   private readonly launches = new Map<string, Promise<AgencyRuntimeSession>>();
+  private readonly finishing = new Map<RuntimeSessionId, Promise<AgencyRuntimeSession>>();
   private readonly nativeTurnWatchers = new Map<RuntimeSessionId, CodexTurnWatcher>();
 
   constructor(options: AgencyRuntimeOptions) {
@@ -717,6 +718,7 @@ export class AgencySessionRuntime extends EventEmitter {
     this.disposed = true;
     for (const watcher of this.nativeTurnWatchers.values()) watcher.dispose();
     this.nativeTurnWatchers.clear();
+    this.finishing.clear();
     this.registry.off('exit', this.onExit);
     this.registry.off('activity', this.onActivity);
     this.registry.off('session', this.onNativeSession);
@@ -778,25 +780,35 @@ export class AgencySessionRuntime extends EventEmitter {
     exitCode: number | null,
     lifecycle: 'exited' | 'failed',
   ): Promise<AgencyRuntimeSession> {
-    const previous = this.sessions.get(id);
-    if (previous === undefined) throw new AgencyRuntimeError('not-found', 'Session does not exist');
-    if (previous.lifecycle === 'exited' || previous.lifecycle === 'failed') return previous;
-    // Consume an explicitly persisted final event before releasing a short-lived CLI.
-    await this.nativeTurnWatchers.get(id)?.poll();
-    const next: AgencyRuntimeSession = {
-      ...previous,
-      lifecycle,
-      activity: 'offline',
-      exitCode,
-      stoppedAt: NOW(),
-      updatedAt: NOW(),
-    };
-    this.sessions.set(id, next);
-    this.nativeTurnWatchers.get(id)?.dispose();
-    this.nativeTurnWatchers.delete(id);
-    this.releaseNative(id);
-    await this.publish(next);
-    return next;
+    const flight = this.finishing.get(id);
+    if (flight !== undefined) return flight;
+    const task = (async () => {
+      try {
+        const previous = this.sessions.get(id);
+        if (previous === undefined) throw new AgencyRuntimeError('not-found', 'Session does not exist');
+        if (previous.lifecycle === 'exited' || previous.lifecycle === 'failed') return previous;
+        // Consume an explicitly persisted final event before releasing a short-lived CLI.
+        await this.nativeTurnWatchers.get(id)?.poll();
+        const next: AgencyRuntimeSession = {
+          ...previous,
+          lifecycle,
+          activity: 'offline',
+          exitCode: previous.exitCode ?? exitCode,
+          stoppedAt: NOW(),
+          updatedAt: NOW(),
+        };
+        this.sessions.set(id, next);
+        this.nativeTurnWatchers.get(id)?.dispose();
+        this.nativeTurnWatchers.delete(id);
+        this.releaseNative(id);
+        await this.publish(next);
+        return next;
+      } finally {
+        this.finishing.delete(id);
+      }
+    })();
+    this.finishing.set(id, task);
+    return task;
   }
 
   private watchNativeTurns(session: AgencyRuntimeSession, cwd: string): void {

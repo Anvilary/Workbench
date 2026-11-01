@@ -226,15 +226,11 @@ export class EditorTabStore {
    * Persist full snapshot atomically to disk.
    */
   save(tabs?: readonly EditorTab[]): Promise<void> {
-    if (tabs) {
-      this.inMemoryTabs.clear();
-      for (const tab of tabs) {
-        this.inMemoryTabs.set(tab.id, tab);
-      }
-    }
-
-    const allTabs = Array.from(this.inMemoryTabs.values());
-    const sanitized = normalizeEditorWorkspaceSelections(allTabs.map(sanitizeEditorTabForDurableStorage));
+    const previousInMemory = new Map(this.inMemoryTabs);
+    const targetTabs = tabs ? tabs : Array.from(this.inMemoryTabs.values());
+    const sanitized = normalizeEditorWorkspaceSelections(
+      targetTabs.map(sanitizeEditorTabForDurableStorage),
+    );
 
     // Update in-memory state with normalized selections
     this.inMemoryTabs.clear();
@@ -263,8 +259,16 @@ export class EditorTabStore {
     };
 
     // Chain onto queue
-    const next = this.queue.then(task);
+    const next = this.queue.then(task).catch((error) => {
+      // Roll back in-memory tabs on persistence failure
+      this.inMemoryTabs = previousInMemory;
+      throw error;
+    });
     this.queue = next.catch(() => undefined);
     return next;
+  }
+
+  flush(): Promise<void> {
+    return this.queue;
   }
 }

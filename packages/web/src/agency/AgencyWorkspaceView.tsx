@@ -19,6 +19,7 @@ import { PersistentSessionPanes } from './split/PersistentSessionPanes.js';
 import { SplitPaneTree } from './split/SplitPaneTree.js';
 import { usePaneInspection } from './split/usePaneInspection.js';
 import type { useAgencyStore } from './useAgencyStore.js';
+import { editorDraftStore } from './editorDraftStore.js';
 
 interface Props {
   workspace: AgencyWorkspace;
@@ -107,7 +108,19 @@ export function AgencyWorkspaceView({
   const [closing, setClosing] = useState<WorkspaceTab | null>(null);
   const [fileDialog, setFileDialog] = useState<null | { paneId: string; direction?: SplitDirection }>(null);
   const [filePathInput, setFilePathInput] = useState('');
-  const [unsavedTabIds, setUnsavedTabIds] = useState<ReadonlySet<string>>(new Set());
+  const [unsavedTabIds, setUnsavedTabIds] = useState<ReadonlySet<string>>(
+    () => new Set(editorDraftStore.listDirtyTabIds()),
+  );
+  useEffect(() => {
+    const sync = () => {
+      const dirtyIds = editorDraftStore.listDirtyTabIds();
+      setUnsavedTabIds((prev) => {
+        if (prev.size === dirtyIds.length && dirtyIds.every((id) => prev.has(id))) return prev;
+        return new Set(dirtyIds);
+      });
+    };
+    return editorDraftStore.subscribe(sync);
+  }, []);
   const handleDirtyChange = useCallback((tabId: string, dirty: boolean) => {
     setUnsavedTabIds((prev) => {
       if (prev.has(tabId) === dirty) return prev;
@@ -580,6 +593,9 @@ export function AgencyWorkspaceView({
     setBusy(true);
     try {
       await action(tab, 'close');
+      if (tab.kind === 'editor') {
+        editorDraftStore.clearDraft(tab.id);
+      }
       setClosing(null);
     } catch {
       // Keep confirmation and error visible until the server confirms close
@@ -784,9 +800,10 @@ export function AgencyWorkspaceView({
             const session = tab.kind === 'native' ? tab.session : undefined;
             if (session && ['starting', 'running', 'stopping'].includes(session.lifecycle)) {
               setClosing(tab);
-            } else if (tab.kind === 'editor' && unsavedTabIds.has(tab.id)) {
+            } else if (tab.kind === 'editor' && (unsavedTabIds.has(tab.id) || editorDraftStore.isDirty(tab.id))) {
               setClosing(tab);
             } else {
+              if (tab.kind === 'editor') editorDraftStore.clearDraft(tab.id);
               void close(tab);
             }
           }}

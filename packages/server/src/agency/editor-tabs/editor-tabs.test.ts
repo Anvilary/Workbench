@@ -340,3 +340,216 @@ test('AgencyTabCoordinator coordinates selection, order, layout and deletion wit
   assert.equal(editor.listTabs(ws.id).length, 0);
   assert.equal(coordinator.hasEditorReferences(ws.id), false);
 });
+
+test('EditorTabAdapter rolls back in-memory metadata on persistence failure and recovers on restart', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'maw-editor-fail-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+
+  const wsDir = path.join(root, 'workspace');
+  await mkdir(wsDir, { recursive: true });
+  await writeFile(path.join(wsDir, 'file1.txt'), 'one');
+  await writeFile(path.join(wsDir, 'file2.txt'), 'two');
+
+  const workspaceStore = new AgencyWorkspaceStore(path.join(root, 'workspaces.json'));
+  await workspaceStore.load();
+  const proj = await workspaceStore.createProject('Failures');
+  const ws = await workspaceStore.createWorkspace(proj.id, 'WS', wsDir);
+
+  const storeFile = path.join(root, 'editor-tabs.json');
+  const store = new EditorTabStore(storeFile);
+  const adapter = new EditorTabAdapter({
+    store,
+    workspaceStore,
+  });
+
+  // 1. Initially create one tab successfully
+  const tab1 = await adapter.createTab({
+    workspaceId: ws.id,
+    filePath: 'file1.txt',
+    select: true,
+  });
+  assert.equal(adapter.listTabs(ws.id).length, 1);
+  assert.equal(tab1.title, 'file1.txt');
+
+  // 2. Inject persistence failure into store.save
+  let shouldFail = true;
+  const originalSave = store.save.bind(store);
+  store.save = async (tabs) => {
+    if (shouldFail) {
+      throw new Error('Injected disk full error');
+    }
+    return originalSave(tabs);
+  };
+
+  // Attempt to create second tab; must throw injected error
+  await assert.rejects(
+    () =>
+      adapter.createTab({
+        workspaceId: ws.id,
+        filePath: 'file2.txt',
+        select: true,
+      }),
+    /Injected disk full error/,
+  );
+
+  // In-memory state of adapter must have rolled back: file2 is NOT in the list
+  assert.equal(adapter.listTabs(ws.id).length, 1);
+  assert.equal(adapter.listTabs(ws.id)[0]!.filePath, 'file1.txt');
+  assert.equal(adapter.listTabs(ws.id)[0]!.selected, true);
+
+  // Attempt to rename tab1 with failure injected: must roll back title
+  await assert.rejects(
+    () => adapter.renameTab(ws.id, tab1.id, 'new-name.txt'),
+    /Injected disk full error/,
+  );
+  assert.equal(adapter.getTabState(tab1.id)?.title, 'file1.txt');
+
+  // Attempt to close tab1 with failure injected: must roll back closed state
+  await assert.rejects(
+    () => adapter.closeTab(ws.id, tab1.id),
+    /Injected disk full error/,
+  );
+  assert.equal(adapter.getTabState(tab1.id)?.closedAt, null);
+
+  // 3. Restart recovery: load into a fresh store & adapter instance
+  shouldFail = false;
+  const freshStore = new EditorTabStore(storeFile);
+  const freshAdapter = new EditorTabAdapter({
+    store: freshStore,
+    workspaceStore,
+  });
+  await freshAdapter.restore();
+
+  // Fresh adapter must see intact previous state (tab1 open, title file1.txt, no file2)
+  const recoveredTabs = freshAdapter.listTabs(ws.id);
+  assert.equal(recoveredTabs.length, 1);
+  assert.equal(recoveredTabs[0]!.id, tab1.id);
+  assert.equal(recoveredTabs[0]!.title, 'file1.txt');
+  assert.equal(recoveredTabs[0]!.closedAt, null);
+  assert.equal(recoveredTabs[0]!.selected, true);
+});
+
+test('Cross-store selection failure rolls back editor and restores native session selection and snapshot', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'maw-coord-fail-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+
+  const wsDir = path.join(root, 'workspace');
+  await mkdir(wsDir, { recursive: true });
+  await writeFile(path.join(wsDir, 'editor-file.ts'), 'export const y = 2;');
+
+  const workspaceStore = new AgencyWorkspaceStore(path.join(root, 'workspaces.json'));
+  await workspaceStore.load();
+  const proj = await workspaceStore.createProject('Coord Failures');
+  const ws = await workspaceStore.createWorkspace(proj.id, 'WS', wsDir);
+
+  const lock = new WorkspaceMutex();
+  const terminals = new Map<string, any>();
+  const registry = Object.assign(new EventEmitter(), {
+    async open() {
+      const terminalId = randomUUID() as TerminalId;
+      const row = { terminalId, kind: 'shell', state: 'running', exitCode: null, pid: 456, alive: true };
+      terminals.set(terminalId, row);
+      return row;
+    },
+    get: (id: string) => terminals.get(id) ?? null,
+    has: (id: string) => terminals.has(id),
+    list: () => [...terminals.values()],
+    close: () => {},
+    activityOf: () => 'unknown',
+  });
+
+  const native = new AgencySessionRuntime({
+    registry: registry as any,
+    store: new AgencySessionStore(path.join(root, 'sessions.json')),
+    profiles: {
+      resolveLaunch: async (input) => ({
+        profileId: input.profileId,
+        provider: 'claude-code',
+        file: '/bin/echo',
+        args: ['test'],
+        env: { PATH: '/usr/bin' },
+        session: { kind: 'discover' },
+        launchToken: input.launchToken,
+        proposedSessionId: input.proposedSessionId,
+        cwd: input.cwd,
+      }),
+    },
+    workspaces: {
+      protectedDirectories: () => [],
+      withSessionReservation: (id, work) => lock.runExclusive(id, () => work(workspaceStore.getWorkspace(id))),
+    },
+  });
+  await native.initialize();
+  t.after(() => native.dispose());
+
+  const browser = new BrowserTabAdapter({
+    store: new BrowserTabStore(path.join(root, 'web.json')),
+    workspaceStore,
+  });
+  await browser.restore();
+
+  const editorStore = new EditorTabStore(path.join(root, 'editor.json'));
+  const editor = new EditorTabAdapter({
+    store: editorStore,
+    workspaceStore,
+  });
+  await editor.restore();
+
+  const publishedMessages: AgencyServerMessage[] = [];
+  const coordinator = new AgencyTabCoordinator(
+    native,
+    browser,
+    workspaceStore,
+    (msg) => publishedMessages.push(msg),
+    undefined,
+    editor,
+  );
+
+  // 1. Create a native terminal session (it becomes selected)
+  const session = await coordinator.createNative({
+    type: 'agency.session.create',
+    requestId: 'r1',
+    workspaceId: ws.id,
+    kind: 'terminal',
+    cols: 80,
+    rows: 24,
+  });
+  assert.equal(session.tab?.selected, true);
+
+  // Clear messages from setup
+  publishedMessages.length = 0;
+
+  // 2. Inject failure into editorStore.save
+  editorStore.save = async () => {
+    throw new Error('Editor disk write error');
+  };
+
+  // Attempt to open editor tab with select: true via coordinator.editorRequest
+  const errorRes = await coordinator.editorRequest({
+    type: 'agency.editorTab.open',
+    requestId: 'r2',
+    workspaceId: ws.id,
+    filePath: 'editor-file.ts',
+    select: true,
+  });
+
+  // Must return an agency.error
+  assert.equal(errorRes?.type, 'agency.error');
+
+  // Verify editor tabs list is empty (rolled back)
+  assert.equal(editor.listTabs(ws.id).length, 0);
+
+  // Verify native session selection was RESTORED
+  const restoredSession = native.get(session.id);
+  assert.equal(restoredSession?.tab?.selected, true);
+
+  // Verify snapshots: coordinator broadcasted sessions snapshot showing native session selected
+  const sessionSnapshots = publishedMessages.filter(
+    (m): m is Extract<AgencyServerMessage, { type: 'agency.sessions.snapshot' }> =>
+      m.type === 'agency.sessions.snapshot',
+  );
+  assert.ok(sessionSnapshots.length > 0);
+  const latestSnapshot = sessionSnapshots[sessionSnapshots.length - 1]!;
+  const nativeTabInSnapshot = latestSnapshot.sessions.find((s) => s.id === session.id);
+  assert.equal(nativeTabInSnapshot?.tab?.selected, true);
+});

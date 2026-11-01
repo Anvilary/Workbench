@@ -7,6 +7,7 @@ import { DocumentViewer } from '../DocumentViewer.js';
 import { editChanges, plainLineBreaks } from '../edit-changes.js';
 import { t } from '../i18n/index.js';
 import type { DocContent, DocEdit, DocEditor } from '../useDocuments.js';
+import { editorDraftStore } from './editorDraftStore.js';
 
 interface Props {
   tab: EditorTab;
@@ -27,11 +28,12 @@ export function EditorPaneView({
   onDirtyChange,
   onOpenRelativeFile,
 }: Props): JSX.Element {
-  const [content, setContent] = useState<DocContent | undefined>(undefined);
-  const [edit, setEdit] = useState<DocEdit | null>(null);
+  const initialDraft = editorDraftStore.getDraft(tab.id);
+  const [content, setContent] = useState<DocContent | undefined>(initialDraft?.content);
+  const [edit, setEdit] = useState<DocEdit | null>(initialDraft?.edit ?? null);
   const [justSaved, setJustSaved] = useState(false);
-  const [mode, setMode] = useState<DocMode>('formatted');
-  const [scrollTop, setScrollTop] = useState<number>(0);
+  const [mode, setMode] = useState<DocMode>(initialDraft?.mode ?? 'formatted');
+  const [scrollTop, setScrollTop] = useState<number>(initialDraft?.scrollTop ?? 0);
 
   const editRef = useRef<DocEdit | null>(edit);
   editRef.current = edit;
@@ -42,6 +44,15 @@ export function EditorPaneView({
   const isDirty = Boolean(
     edit && (edit.text !== edit.opened || edit.conflict !== null || edit.pending !== null),
   );
+
+  useEffect(() => {
+    editorDraftStore.setDraft(tab.id, {
+      edit,
+      mode,
+      scrollTop,
+      content,
+    });
+  }, [tab.id, edit, mode, scrollTop, content]);
 
   useEffect(() => {
     if (dirtyReported.current !== isDirty) {
@@ -62,7 +73,7 @@ export function EditorPaneView({
   const readFile = useCallback(() => {
     setContent((prev) => ({
       loaded: prev?.loaded ?? null,
-      loading: true,
+      loading: prev?.loaded ? false : true,
       failed: false,
     }));
     connection.send({

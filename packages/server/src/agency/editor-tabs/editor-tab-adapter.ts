@@ -17,6 +17,7 @@ import { cliFolders } from '../../cli-folders.js';
 
 export interface EditorSelectionCoordinator {
   unselectOtherTabs?(workspaceId: WorkspaceId): Promise<void> | void;
+  restoreOtherTabs?(workspaceId: WorkspaceId): Promise<void> | void;
 }
 
 export interface EditorTabAdapterOptions {
@@ -152,9 +153,47 @@ export class EditorTabAdapter {
     return this.tabs.get(tabId);
   }
 
+  flush(): Promise<void> {
+    return this.store.flush();
+  }
+
+  private async change<T>(
+    workspaceId: WorkspaceId,
+    action: () => T | Promise<T>,
+    options?: { allowInactiveWorkspace?: boolean },
+  ): Promise<T> {
+    // The editor-tab store persists a complete cross-workspace snapshot.
+    // Serialize mutations globally so another workspace cannot commit a change
+    // that a concurrent, failing transaction must roll back.
+    return this.mutations.runExclusive('all-editor-tabs', async () => {
+      await this.assertWorkspaceValid(workspaceId, options);
+      const before = this.listTabs(workspaceId, { includeClosed: true });
+      try {
+        const result = await action();
+        await this.store.save(Array.from(this.tabs.values()));
+        return result;
+      } catch (error) {
+        // Restore only this workspace: concurrent mutations elsewhere remain intact.
+        for (const tab of Array.from(this.tabs.values())) {
+          if (tab.workspaceId === workspaceId) {
+            this.tabs.delete(tab.id);
+          }
+        }
+        for (const tab of before) {
+          this.tabs.set(tab.id, tab);
+        }
+        try {
+          await this.selectionCoordinator?.restoreOtherTabs?.(workspaceId);
+        } catch (coordError) {
+          console.error('[editor-tab-adapter] Failed to restore other tabs selection:', coordError);
+        }
+        throw error;
+      }
+    });
+  }
+
   async createTab(input: CreateEditorTabInput): Promise<EditorTab> {
-    return this.mutations.runExclusive(input.workspaceId, async () => {
-      await this.assertWorkspaceValid(input.workspaceId);
+    return this.change(input.workspaceId, async () => {
       const safeRelativePath = await this.validatePath(input.workspaceId, input.filePath);
 
       // Check if an open editor tab already exists for this file in this workspace
@@ -207,7 +246,6 @@ export class EditorTabAdapter {
       };
 
       this.tabs.set(id, tab);
-      await this.store.save(Array.from(this.tabs.values()));
       return tab;
     });
   }
@@ -233,13 +271,11 @@ export class EditorTabAdapter {
     };
     this.tabs.set(tabId, updated);
     await this.selectionCoordinator?.unselectOtherTabs?.(workspaceId);
-    await this.store.save(Array.from(this.tabs.values()));
     return updated;
   }
 
   async selectTab(workspaceId: WorkspaceId, tabId: string): Promise<EditorTab> {
-    return this.mutations.runExclusive(workspaceId, async () => {
-      await this.assertWorkspaceValid(workspaceId);
+    return this.change(workspaceId, async () => {
       return this.select(workspaceId, tabId);
     });
   }
@@ -249,29 +285,30 @@ export class EditorTabAdapter {
     tabId: string,
     options?: { allowInactiveWorkspace?: boolean },
   ): Promise<EditorTab> {
-    return this.mutations.runExclusive(workspaceId, async () => {
-      await this.assertWorkspaceValid(workspaceId, options);
-      const tab = this.tabs.get(tabId);
-      if (!tab || tab.workspaceId !== workspaceId || tab.closedAt !== null) {
-        throw new EditorTabStoreError('not-found', `Editor tab ${tabId} not found in workspace`);
-      }
+    return this.change(
+      workspaceId,
+      async () => {
+        const tab = this.tabs.get(tabId);
+        if (!tab || tab.workspaceId !== workspaceId || tab.closedAt !== null) {
+          throw new EditorTabStoreError('not-found', `Editor tab ${tabId} not found in workspace`);
+        }
 
-      const now = new Date().toISOString();
-      const updated: EditorTab = {
-        ...tab,
-        selected: false,
-        closedAt: now,
-        updatedAt: now,
-      };
-      this.tabs.set(tabId, updated);
-      await this.store.save(Array.from(this.tabs.values()));
-      return updated;
-    });
+        const now = new Date().toISOString();
+        const updated: EditorTab = {
+          ...tab,
+          selected: false,
+          closedAt: now,
+          updatedAt: now,
+        };
+        this.tabs.set(tabId, updated);
+        return updated;
+      },
+      options,
+    );
   }
 
   async renameTab(workspaceId: WorkspaceId, tabId: string, title: string): Promise<EditorTab> {
-    return this.mutations.runExclusive(workspaceId, async () => {
-      await this.assertWorkspaceValid(workspaceId);
+    return this.change(workspaceId, async () => {
       if (!validateEditorTabTitle(title)) {
         throw new EditorTabStoreError('invalid-request', 'Invalid editor tab title');
       }
@@ -287,7 +324,6 @@ export class EditorTabAdapter {
         updatedAt: now,
       };
       this.tabs.set(tabId, updated);
-      await this.store.save(Array.from(this.tabs.values()));
       return updated;
     });
   }
@@ -297,28 +333,44 @@ export class EditorTabAdapter {
     tabIds: readonly string[],
     positions: Map<string, number>,
   ): Promise<void> {
-    const now = new Date().toISOString();
-    for (const id of tabIds) {
-      const tab = this.tabs.get(id);
-      if (tab && tab.workspaceId === workspaceId && !tab.closedAt) {
-        const order = positions.get(id) ?? tab.order;
-        this.tabs.set(id, { ...tab, order, updatedAt: now });
+    return this.change(workspaceId, async () => {
+      const now = new Date().toISOString();
+      for (const id of tabIds) {
+        const tab = this.tabs.get(id);
+        if (tab && tab.workspaceId === workspaceId && !tab.closedAt) {
+          const order = positions.get(id) ?? tab.order;
+          this.tabs.set(id, { ...tab, order, updatedAt: now });
+        }
       }
-    }
-    await this.store.save(Array.from(this.tabs.values()));
+    });
   }
 
   async clearWorkspaceSelection(workspaceId: WorkspaceId): Promise<void> {
-    const now = new Date().toISOString();
-    let modified = false;
-    for (const tab of this.listTabs(workspaceId)) {
-      if (tab.selected) {
-        this.tabs.set(tab.id, { ...tab, selected: false, updatedAt: now });
-        modified = true;
+    return this.mutations.runExclusive('all-editor-tabs', async () => {
+      const before = this.listTabs(workspaceId, { includeClosed: true });
+      const now = new Date().toISOString();
+      let modified = false;
+      for (const tab of this.listTabs(workspaceId)) {
+        if (tab.selected) {
+          this.tabs.set(tab.id, { ...tab, selected: false, updatedAt: now });
+          modified = true;
+        }
       }
-    }
-    if (modified) {
-      await this.store.save(Array.from(this.tabs.values()));
-    }
+      if (modified) {
+        try {
+          await this.store.save(Array.from(this.tabs.values()));
+        } catch (error) {
+          for (const tab of Array.from(this.tabs.values())) {
+            if (tab.workspaceId === workspaceId) {
+              this.tabs.delete(tab.id);
+            }
+          }
+          for (const tab of before) {
+            this.tabs.set(tab.id, tab);
+          }
+          throw error;
+        }
+      }
+    });
   }
 }
