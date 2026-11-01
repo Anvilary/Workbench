@@ -21,14 +21,14 @@ const hasRequiredDesktopTools = (() => {
 })();
 
 test('authoritative workspace copy-file rejects unauthorized paths and pastes into real Nautilus', { timeout: 60000 }, async (t) => {
+  if (process.env.MAW_NAUTILUS_TEST_ISOLATED !== '1') {
+    t.skip('Requires an explicitly isolated Xvfb display and D-Bus session');
+    return;
+  }
   if (!hasRequiredDesktopTools) {
     t.skip('Nautilus, xdotool or xwininfo not available');
     return;
   }
-
-  try {
-    execSync('pkill -x nautilus', { stdio: 'ignore' });
-  } catch {}
 
   // Create authoritative workspace, destination for paste, and unauthorized folder
   const baseDir = await mkdtemp(path.join(tmpdir(), 'maw-nautilus-test-'));
