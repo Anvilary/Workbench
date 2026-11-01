@@ -1,4 +1,4 @@
-import { app, BrowserWindow, WebContentsView, Menu, ipcMain, session, shell, dialog, clipboard } from 'electron';
+import { app, BrowserWindow, WebContentsView, Menu, ipcMain, session, shell, dialog, clipboard, ClipboardItem } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir } from 'node:fs/promises';
@@ -371,16 +371,23 @@ async function start() {
       if (command.action === 'zoom-reset') contents.setZoomLevel(0);
     }
     if (command.type === 'copy-file') {
-      const resolved = await resolveClipboardTarget(command.cwd, command.relative);
+      const resolved = await resolveClipboardTarget(command.cwd, command.relative, { requireAuthoritative: true });
       if (!resolved.ok) return { ok: false, error: resolved.error };
       try {
         const payload = fileClipboardPayload(resolved.absolute);
-        clipboard.writeBuffer('text/uri-list', payload.uriList);
-        clipboard.writeBuffer('x-special/gnome-copied-files', payload.gnome);
-        const written = clipboard.readBuffer('x-special/gnome-copied-files');
-        if (!written.equals(payload.gnome)) return { ok: false, error: 'unavailable' };
+        if (typeof ClipboardItem !== 'undefined' && typeof clipboard.write === 'function') {
+          const item = new ClipboardItem({
+            'text/uri-list': new Blob([payload.uriList], { type: 'text/uri-list' }),
+            'x-special/gnome-copied-files': new Blob([payload.gnome], { type: 'x-special/gnome-copied-files' }),
+          });
+          await clipboard.write([item]);
+        } else if (typeof clipboard.writeBuffer === 'function') {
+          clipboard.writeBuffer('text/uri-list', payload.uriList);
+          clipboard.writeBuffer('x-special/gnome-copied-files', payload.gnome);
+        }
         return { ok: true, directory: resolved.directory };
-      } catch {
+      } catch (err) {
+        console.error('[desktop] copy-file error:', err);
         return { ok: false, error: 'unavailable' };
       }
     }
