@@ -243,6 +243,7 @@
   "agency.ui.resuming": "Reanudando",
   "agency.ui.runningActivityUnavailable": "En ejecución (actividad no disponible)",
   "agency.ui.runningUnknown": "Running / unknown",
+  "agency.ui.selectAll": "Seleccionar todo",
   "agency.ui.selectExistingFolder": "Select existing folder",
   "agency.ui.send": "Enviar ↑",
   "agency.ui.sendPrompt": "Send prompt",

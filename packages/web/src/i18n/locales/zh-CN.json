@@ -243,6 +243,7 @@
   "agency.ui.resuming": "正在恢复",
   "agency.ui.runningActivityUnavailable": "运行中（活动不可用）",
   "agency.ui.runningUnknown": "Running / unknown",
+  "agency.ui.selectAll": "全选",
   "agency.ui.selectExistingFolder": "Select existing folder",
   "agency.ui.send": "Send ↑",
   "agency.ui.sendPrompt": "Send prompt",

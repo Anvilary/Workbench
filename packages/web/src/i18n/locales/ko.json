@@ -243,6 +243,7 @@
   "agency.ui.resuming": "재개 중",
   "agency.ui.runningActivityUnavailable": "실행 중 (활동 정보 없음)",
   "agency.ui.runningUnknown": "Running / unknown",
+  "agency.ui.selectAll": "모두 선택",
   "agency.ui.selectExistingFolder": "Select existing folder",
   "agency.ui.send": "Send ↑",
   "agency.ui.sendPrompt": "Send prompt",
