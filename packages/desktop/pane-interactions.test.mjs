@@ -3,6 +3,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm,mkdir,readFile} from 'node:fs/promises';
+import fs from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createRequire} from 'node:module';
@@ -13,6 +14,9 @@ import {serveFixture,start,frames,pane,order,root} from '../web/src/agency/split
 const require=createRequire(import.meta.url),exec=promisify(execFile);
 const here=path.dirname(new URL(import.meta.url).pathname);
 const artifactDir=process.env.MAW_PANE_EVIDENCE_DIR;
+const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
+  ? '/opt/maw-electron/45.2.0/electron'
+  : require('electron');
 
 async function eventually(check,message='native pane state'){
  for(let n=0;n<200;n++){if(await check())return;await new Promise(resolve=>setTimeout(resolve,40))}
@@ -24,7 +28,7 @@ async function setup(t,query){
  let desktop;
  t.after(async()=>{if(desktop)await desktop.close();await rm(data,{recursive:true,force:true})});
  const launch=async()=>{
-  desktop=await electron.launch({chromiumSandbox:true,executablePath:require('electron'),args:[here,'--ozone-platform=x11'],env});
+  desktop=await electron.launch({chromiumSandbox:true,executablePath:electronExecutable,args:[here,'--ozone-platform=x11'],env});
   await desktop.evaluate(({session,app,BrowserWindow},data)=>{
    BrowserWindow.getAllWindows()[0].setPosition(0,0);
    app.setPath('downloads',data);

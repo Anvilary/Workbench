@@ -7,8 +7,8 @@
   "main": "main.mjs",
   "scripts": {
     "start": "electron .",
-    "test": "node --test policy.test.mjs file-clipboard.test.mjs",
-    "test:electron": "node --test --test-concurrency=1 smoke.test.mjs nautilus-clipboard.test.mjs download-smoke.test.mjs"
+    "test": "node --test policy.test.mjs file-clipboard.test.mjs resource-budget.test.mjs",
+    "test:electron": "node --test --test-concurrency=1 smoke.test.mjs nautilus-clipboard.test.mjs download-smoke.test.mjs resource-tab-pool.test.mjs"
   },
   "devDependencies": {
     "electron": "45.2.0"

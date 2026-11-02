@@ -5,6 +5,7 @@ export interface NativeViewRegistration {
   onFocused?: () => void;
   setCaptureBackdrop: (dataUrl: string | null) => void;
   onError?: (message: string) => void;
+  onRestoring?: (restoring: boolean) => void;
   onDownloadEvent?: (event: { type: string; filename?: string; percent?: number | null; message?: string }) => void;
 }
 
@@ -148,19 +149,30 @@ class NativeLayoutCoordinator {
         if (entry.nativeVisible && entry.element.isConnected && !document.hidden) entry.onFocused?.();
       } else if (state.type === 'ready' && entry) {
         entry.isReady = true;
+        entry.onRestoring?.(false);
         this.lastSerialized = '';
         this.measure();
       } else if (state.type === 'loading' && entry) {
         entry.isReady = false;
         entry.onDisplayed(false);
+      } else if (state.type === 'restoring' && entry) {
+        entry.isReady = false;
+        entry.onDisplayed(false);
+        entry.onRestoring?.(true);
+      } else if (state.type === 'suspended' && entry) {
+        entry.isReady = false;
+        entry.onDisplayed(false);
+        entry.onRestoring?.(false);
       } else if (state.type === 'layout-needed') {
         this.lastSerialized = '';
         this.measure();
       } else if (state.type === 'error') {
         if (entry) {
+          entry.onRestoring?.(false);
           entry.onError?.(state.message ?? 'Native page unavailable.');
         } else {
           for (const v of this.views.values()) {
+            v.onRestoring?.(false);
             v.onError?.(state.message ?? 'Native page unavailable.');
           }
         }

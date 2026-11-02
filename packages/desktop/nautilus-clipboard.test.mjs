@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { execSync, spawn } from 'node:child_process';
@@ -10,6 +11,9 @@ import { _electron as electron } from 'playwright';
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(new URL(import.meta.url).pathname);
+const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
+  ? '/opt/maw-electron/45.2.0/electron'
+  : require('electron');
 
 const hasRequiredDesktopTools = (() => {
   try {
@@ -62,7 +66,7 @@ test('authoritative workspace copy-file rejects unauthorized paths and pastes in
     // Launch Electron desktop process with MAW_WORKSPACE_ROOT configured to authoritative workspace
     desktop = await electron.launch({
       chromiumSandbox: true,
-      executablePath: require('electron'),
+      executablePath: electronExecutable,
       args: [here, '--ozone-platform=x11'],
       env: {
         ...process.env,

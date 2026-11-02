@@ -68,6 +68,7 @@ export function NativeChatGptView({
   url.current = tab.url;
   const host = useRef<HTMLDivElement>(null);
   const [error, setError] = useState('');
+  const [restoring, setRestoring] = useState(false);
   const [captureBackdrop, setCaptureBackdrop] = useState<string | null>(null);
   const [downloadFeedback, setDownloadFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -86,6 +87,7 @@ export function NativeChatGptView({
       onFocused: () => focusCallback.current?.(),
       setCaptureBackdrop,
       onError: (msg) => setError(msg),
+      onRestoring: setRestoring,
       onDownloadEvent: (evt) => {
         if (evt.type === 'download-complete') {
           const name = evt.filename || '';
@@ -132,6 +134,11 @@ export function NativeChatGptView({
       ) : (
         <>
           {captureBackdrop && <img className="maw-capture-backdrop" src={captureBackdrop} alt="" />}
+          {restoring && !captureBackdrop && (
+            <div className="agency-shell-placeholder" role="status">
+              <p>{t('agency.ui.restore') || 'Restoring...'}</p>
+            </div>
+          )}
           {downloadFeedback && (
             <div className={`maw-pane-feedback maw-pane-feedback-${downloadFeedback.type}`} role="status">
               {downloadFeedback.message}

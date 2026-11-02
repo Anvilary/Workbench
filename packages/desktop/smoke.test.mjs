@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
@@ -12,6 +13,9 @@ import { _electron as electron } from 'playwright';
 import { PARTITION } from './policy.mjs';
 const require = createRequire(import.meta.url);
 const here = path.dirname(new URL(import.meta.url).pathname);
+const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
+  ? '/opt/maw-electron/45.2.0/electron'
+  : require('electron');
 const ids = ['8e4fefc1-e565-40cc-b85b-f7d43a16b1df', 'f52e047f-d947-426c-a0fa-c349d035d338'];
 const fixture = `import React, {useState} from 'react';
 import {createRoot} from 'react-dom/client';
@@ -46,7 +50,7 @@ test('native attachment, retention, overlay safety, security and cold cookie sto
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const data = await mkdtemp(path.join(tmpdir(), 'maw-electron-smoke-'));
   let desktop;
-  const launch = () => electron.launch({chromiumSandbox: true,  executablePath: require('electron'), args: [here, '--ozone-platform=x11'], env: { ...process.env, MAW_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`, MAW_DESKTOP_DATA_DIR: data } });
+  const launch = () => electron.launch({chromiumSandbox: true,  executablePath: electronExecutable, args: [here, '--ozone-platform=x11'], env: { ...process.env, MAW_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`, MAW_DESKTOP_DATA_DIR: data } });
   const attached = () => desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.filter(view => view.webContents).length);
   const chatIds = () => desktop.evaluate(({ webContents, session }) => webContents.getAllWebContents().filter(contents => contents.session === session.fromPartition('persist:maw-chatgpt')).map(contents => contents.id).sort((a,b) => a-b));
   try {

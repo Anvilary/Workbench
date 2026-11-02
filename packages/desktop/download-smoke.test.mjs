@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
@@ -10,6 +11,9 @@ import { _electron as electron } from 'playwright';
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(new URL(import.meta.url).pathname);
+const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
+  ? '/opt/maw-electron/45.2.0/electron'
+  : require('electron');
 const id = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
 
 const fixture = `
@@ -99,7 +103,7 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
   try {
     desktop = await electron.launch({
       chromiumSandbox: true,
-      executablePath: require('electron'),
+      executablePath: electronExecutable,
       args: [here, '--ozone-platform=x11'],
       env: {
         ...process.env,
