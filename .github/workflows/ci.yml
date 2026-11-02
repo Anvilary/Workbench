@@ -55,7 +55,7 @@ jobs:
       - name: MAW security, native lifecycle, browser ownership and activity regressions
         if: runner.os == 'Linux'
         working-directory: packages/server
-        run: pnpm exec tsx --test src/security.test.ts src/maw-host.test.ts src/output-backpressure.test.ts src/agency/*.test.ts src/agency/browser-tabs/*.test.ts src/agency/runtime/*.test.ts
+        run: pnpm exec tsx --test src/security.test.ts src/maw-host.test.ts src/output-backpressure.test.ts src/agency/*.test.ts src/agency/browser-tabs/*.test.ts src/agency/runtime/*.test.ts ../web/src/agency/split/interactive-cli-scroll.test.mjs
       - name: MAW updater, activation and rollback acceptance (mocked systemd)
         if: runner.os == 'Linux'
         working-directory: packages/server
@@ -70,7 +70,7 @@ jobs:
         run: pnpm exec playwright install chromium --with-deps
       - name: MAW real browser and notification UI regressions
         if: runner.os == 'Linux'
-        run: node --test packages/web/src/agency/browser-tabs.test.mjs packages/web/src/agency/notifications.test.mjs packages/web/src/maw-root.test.mjs packages/web/src/terminal-webgl.test.mjs
+        run: node --test packages/web/src/agency/browser-tabs.test.mjs packages/web/src/agency/notifications.test.mjs packages/web/src/maw-root.test.mjs packages/web/src/terminal-webgl.test.mjs packages/web/src/agency/split/terminal-scrollback-20k.test.mjs
       - name: Ubuntu desktop package and production integration fixtures
         if: runner.os == 'Linux'
         run: |
