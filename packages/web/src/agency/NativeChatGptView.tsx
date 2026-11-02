@@ -107,7 +107,13 @@ export function NativeChatGptView({
       ) : error ? (
         <div className="agency-shell-placeholder" role="alert">
           <p>{error}</p>
-          <button type="button" onClick={() => void window.mawChatGpt?.command({ type: 'close', id }).then(() => setError(''))}>
+          <button
+            type="button"
+            onClick={() => {
+              setError('');
+              void window.mawChatGpt?.command({ type: 'open', id, url: url.current, provider: nativeWebProvider(url.current) });
+            }}
+          >
             {t('common.reloadPage')}
           </button>
         </div>
