@@ -2,6 +2,7 @@ import { isIP } from 'node:net';
 
 export const PARTITION = 'persist:maw-chatgpt';
 export const GITHUB_PARTITION = 'persist:maw-github';
+export const PERPLEXITY_PARTITION = 'persist:maw-perplexity';
 export const CHANNEL = 'maw:chatgpt';
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const authHosts = new Set(['auth.openai.com', 'auth0.openai.com', 'accounts.google.com', 'appleid.apple.com', 'login.microsoftonline.com', 'login.live.com']);
@@ -34,9 +35,28 @@ export function githubEmbeddedUrl(value) {
   return githubUrl(value) || authHosts.has(url.hostname) || githubAssetHosts.has(url.hostname) || url.hostname.endsWith('.githubusercontent.com');
 }
 
+const perplexityAuthHosts = new Set(['auth.perplexity.ai', 'accounts.google.com', 'appleid.apple.com']);
+const perplexityAssetHosts = new Set(['cdn.perplexity.ai', 'assets.perplexity.ai', 'media.perplexity.ai']);
+
+function perplexityHost(hostname) {
+  return hostname === 'perplexity.ai' || (hostname.endsWith('.perplexity.ai') && hostname.length > '.perplexity.ai'.length);
+}
+
+export function perplexityUrl(value) {
+  const url = httpsUrl(value);
+  return !!url && perplexityHost(url.hostname);
+}
+
+export function perplexityEmbeddedUrl(value) {
+  const url = httpsUrl(value);
+  if (!url) return false;
+  return perplexityUrl(value) || authHosts.has(url.hostname) || perplexityAuthHosts.has(url.hostname) || perplexityAssetHosts.has(url.hostname);
+}
+
 export function webProvider(value) {
   if (chatUrl(value)) return 'chatgpt';
   if (githubUrl(value)) return 'github';
+  if (perplexityUrl(value)) return 'perplexity';
   return null;
 }
 
@@ -92,6 +112,7 @@ export function validCommand(value) {
     if (!exact(value, ['type', 'id', 'url', 'provider'])) return false;
     if (value.provider === 'chatgpt') return chatUrl(value.url);
     if (value.provider === 'github') return githubUrl(value.url);
+    if (value.provider === 'perplexity') return perplexityUrl(value.url);
     return false;
   }
   if (value.type === 'browser-action') {

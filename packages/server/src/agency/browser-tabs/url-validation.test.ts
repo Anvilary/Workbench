@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isAllowedChatGptUrl, validateChatGptUrl } from '@agent-workbench/shared';
+import { isAllowedChatGptUrl, validateChatGptUrl, validatePerplexityUrl, validateGithubUrl, classifyWebTabUrl, webTabProviderFor } from '@agent-workbench/shared';
 
 test('URL validation: accepts canonical and valid ChatGPT URLs', () => {
   const validCases = [
@@ -121,4 +121,48 @@ test('URL validation: rejects embedded credentials, control characters, and malf
     const res = validateChatGptUrl(url);
     assert.equal(res.valid, false, `Expected rejection for malformed: ${url}`);
   }
+});
+
+test('URL validation: Perplexity accepts canonical URLs and rejects dangerous ones', () => {
+  const validPerplexityCases = [
+    'https://perplexity.ai',
+    'https://www.perplexity.ai',
+    'https://www.perplexity.ai/',
+    'https://www.perplexity.ai/search?q=hello+world',
+    'https://perplexity.ai/search/test-uuid',
+    'https://www.perplexity.ai:443/search',
+    '  https://www.perplexity.ai/search  ',
+  ];
+
+  for (const url of validPerplexityCases) {
+    const res = validatePerplexityUrl(url);
+    assert.equal(res.valid, true, `Expected valid for: ${url}`);
+    assert.ok(res.normalizedUrl);
+    const classified = classifyWebTabUrl(url);
+    assert.equal(classified.valid, true);
+    assert.equal(classified.provider, 'perplexity');
+  }
+
+  const invalidPerplexityCases = [
+    'http://www.perplexity.ai',
+    'https://evil-perplexity.ai',
+    'https://perplexity.ai.attacker.com',
+    'https://user:pass@www.perplexity.ai',
+    'https://www.perplexity.ai:8080',
+    'https://localhost',
+    'https://127.0.0.1',
+    'javascript:alert(1)',
+  ];
+
+  for (const url of invalidPerplexityCases) {
+    const res = validatePerplexityUrl(url);
+    assert.equal(res.valid, false, `Expected invalid for: ${url}`);
+  }
+
+  assert.equal(validateGithubUrl('https://github.com/alteixeira20/My-Amazing-Workspace').valid, true);
+  assert.equal(validateGithubUrl('https://evil.com/').valid, false);
+  assert.equal(webTabProviderFor({ url: 'https://www.perplexity.ai/' }), 'perplexity');
+  assert.equal(webTabProviderFor({ url: 'https://github.com/test' }), 'github');
+  assert.equal(webTabProviderFor({ url: 'https://chatgpt.com/' }), 'chatgpt');
+  assert.equal(webTabProviderFor({ url: 'https://other.com/', provider: 'perplexity' }), 'perplexity');
 });

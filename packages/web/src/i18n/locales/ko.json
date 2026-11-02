@@ -90,6 +90,7 @@
   "agency.tabs.newTerminal": "새 터미널",
   "agency.tabs.open": "열기",
   "agency.tabs.openFile": "파일 열기...",
+  "agency.tabs.perplexity": "Perplexity",
   "agency.tabs.restartShell": "터미널 재시작",
   "agency.tabs.sessionCount": "세션 {{count}}개",
   "agency.tabs.shellRestarted": "터미널 재시작됨 (새 프로세스)",

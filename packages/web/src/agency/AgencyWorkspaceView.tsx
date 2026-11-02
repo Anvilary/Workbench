@@ -715,6 +715,44 @@ export function AgencyWorkspaceView({
     }
   }
 
+  async function createPerplexity() {
+    if (flight.current || !online) {
+      pendingSplit.current = null;
+      return;
+    }
+    const placed = takeSplitPane(creationTarget.current ?? layoutRef.current.focusedPaneId);
+    const url = classifyWebTabUrl('https://www.perplexity.ai/');
+    if (!url.valid || !url.normalizedUrl) {
+      if (placed.created) rollbackPane(placed.paneId);
+      setError(t('agency.web.invalidUrl'));
+      return;
+    }
+    flight.current = true;
+    const launchId = crypto.randomUUID();
+    creatingLaunch.current = launchId;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await request({
+        type: 'agency.webTab.create',
+        workspaceId: workspace.id,
+        url: url.normalizedUrl,
+        title: t('agency.tabs.perplexity'),
+        select: true,
+        targetPaneId: placed.paneId,
+        launchId,
+      });
+      completeCreation(response, placed.paneId);
+    } catch (reason) {
+      if (placed.created) rollbackPane(placed.paneId);
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      creatingLaunch.current = null;
+      flight.current = false;
+      setBusy(false);
+    }
+  }
+
   function tabDisplayName(tab: WorkspaceTab) {
     if (tab.kind === 'web') return tab.web.title;
     if (tab.kind === 'editor') return tab.editor.title;
@@ -839,6 +877,10 @@ export function AgencyWorkspaceView({
             creationTarget.current = paneId;
             void createGithub();
           }}
+          onAddPerplexityClick={(paneId) => {
+            creationTarget.current = paneId;
+            void createPerplexity();
+          }}
           onOpenFileClick={(paneId) => {
             creationTarget.current = paneId;
             setFileDialog({ paneId });
@@ -858,6 +900,7 @@ export function AgencyWorkspaceView({
             creationTarget.current = paneId;
             if (action === 'terminal') void add('terminal', paneId);
             else if (action === 'github') void createGithub();
+            else if (action === 'perplexity') void createPerplexity();
             else if (action === 'web') webEditor('create');
             else if (action === 'file') setFileDialog({ paneId, direction });
             else if (profile) {
