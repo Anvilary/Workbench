@@ -243,6 +243,7 @@
   "agency.ui.resuming": "Возобновление",
   "agency.ui.runningActivityUnavailable": "Выполняется (активность недоступна)",
   "agency.ui.runningUnknown": "Running / unknown",
+  "agency.ui.selectAll": "Выбрать все",
   "agency.ui.selectExistingFolder": "Select existing folder",
   "agency.ui.send": "Send ↑",
   "agency.ui.sendPrompt": "Send prompt",

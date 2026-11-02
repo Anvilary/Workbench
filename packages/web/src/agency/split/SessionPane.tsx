@@ -363,6 +363,7 @@ export function SessionPane({
           fileCandidate={contextMenu.candidate}
           canCopyNativeFile={canCopyNativeFile}
           onCopySelection={() => void copy('selection')}
+          onSelectAll={() => terminal.current?.selectAll()}
           onCopyAll={() => void copy('all')}
           onCopyLast={() => void copy('last')}
           onPaste={() => void paste()}

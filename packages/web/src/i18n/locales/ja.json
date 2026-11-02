@@ -243,6 +243,7 @@
   "agency.ui.resuming": "再開中",
   "agency.ui.runningActivityUnavailable": "実行中（アクティビティ利用不可）",
   "agency.ui.runningUnknown": "Running / unknown",
+  "agency.ui.selectAll": "すべて選択",
   "agency.ui.selectExistingFolder": "Select existing folder",
   "agency.ui.send": "Send ↑",
   "agency.ui.sendPrompt": "Send prompt",
