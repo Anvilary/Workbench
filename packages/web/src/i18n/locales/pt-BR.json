@@ -90,6 +90,7 @@
   "agency.tabs.newTerminal": "Novo terminal",
   "agency.tabs.open": "Abrir",
   "agency.tabs.openFile": "Abrir arquivo...",
+  "agency.tabs.perplexity": "Perplexity",
   "agency.tabs.restartShell": "Reiniciar terminal",
   "agency.tabs.sessionCount": "{{count}} sessões",
   "agency.tabs.shellRestarted": "Terminal reiniciado (novo processo)",

@@ -38,9 +38,10 @@ interface Props {
   onAddTerminalClick: () => void;
   onAddWebTabClick: () => void;
   onAddGithubClick?: () => void;
+  onAddPerplexityClick?: () => void;
   onOpenFileClick?: () => void;
   onLaunchProfile?: (profileId: string) => void;
-  onSplitCreate?: (direction: SplitDirection, action: 'terminal' | 'agent' | 'web' | 'github' | 'file', profileId?: string) => void;
+  onSplitCreate?: (direction: SplitDirection, action: 'terminal' | 'agent' | 'web' | 'github' | 'perplexity' | 'file', profileId?: string) => void;
   onMoveTabToPane: (tabId: string, targetPaneId: string, targetIndex?: number) => void;
   onRenameTab: (tab: WorkspaceTab, title: string) => Promise<void>;
   isTabUnsaved?: (tabId: string) => boolean;
@@ -75,6 +76,7 @@ export function PaneHeader({
   onAddTerminalClick,
   onAddWebTabClick,
   onAddGithubClick,
+  onAddPerplexityClick,
   onOpenFileClick,
   onLaunchProfile,
   onSplitCreate,
@@ -176,7 +178,7 @@ export function PaneHeader({
     }
   }
 
-  function choose(action: 'terminal' | 'agent' | 'web' | 'github' | 'file', profileId?: string) {
+  function choose(action: 'terminal' | 'agent' | 'web' | 'github' | 'perplexity' | 'file', profileId?: string) {
     const direction = splitIntent;
     setMenuOpen(false);
     setSplitIntent(null);
@@ -188,6 +190,7 @@ export function PaneHeader({
     }
     if (action === 'terminal') onAddTerminalClick();
     else if (action === 'github') onAddGithubClick?.();
+    else if (action === 'perplexity') onAddPerplexityClick?.();
     else if (action === 'web') onAddWebTabClick();
     else if (action === 'file') onOpenFileClick?.();
     else if (profileId) onLaunchProfile?.(profileId);
@@ -513,6 +516,7 @@ export function PaneHeader({
               ))}
               <button type="button" role="menuitem" onClick={() => choose('web')}>{t('agency.web.newTab')}</button>
               <button type="button" role="menuitem" onClick={() => choose('github')}>{t('agency.tabs.github')}</button>
+              <button type="button" role="menuitem" onClick={() => choose('perplexity')}>{t('agency.tabs.perplexity')}</button>
               <button type="button" role="menuitem" onClick={() => choose('file')}>{t('agency.tabs.openFile')}</button>
               {selectedTabId && (
                 <button

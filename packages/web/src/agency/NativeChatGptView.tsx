@@ -23,8 +23,18 @@ export function nativeChatGptUrl(value: string): boolean {
   }
 }
 
+export function nativePerplexityUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && (url.hostname === 'perplexity.ai' || url.hostname.endsWith('.perplexity.ai')) && !url.username && !url.password && !url.port;
+  } catch {
+    return false;
+  }
+}
+
 export function nativeWorkspaceUrl(value: string): boolean {
   if (nativeChatGptUrl(value)) return true;
+  if (nativePerplexityUrl(value)) return true;
   try {
     const url = new URL(value);
     return url.protocol === 'https:' && (url.hostname === 'github.com' || url.hostname.endsWith('.github.com')) && !url.username && !url.password && !url.port;
@@ -33,8 +43,10 @@ export function nativeWorkspaceUrl(value: string): boolean {
   }
 }
 
-export function nativeWebProvider(value: string): 'chatgpt' | 'github' {
-  return nativeChatGptUrl(value) ? 'chatgpt' : 'github';
+export function nativeWebProvider(value: string): 'chatgpt' | 'github' | 'perplexity' {
+  if (nativeChatGptUrl(value)) return 'chatgpt';
+  if (nativePerplexityUrl(value)) return 'perplexity';
+  return 'github';
 }
 
 export function NativeChatGptView({
@@ -63,7 +75,7 @@ export function NativeChatGptView({
     const bridge = window.mawChatGpt;
     if (!bridge || !supported || !host.current) return;
 
-    void bridge.command({ type: 'open', id, url: url.current, provider: nativeWebProvider(url.current) }).catch((err) => {
+    void bridge.command({ type: 'open', id, url: url.current, provider: tab.provider ?? nativeWebProvider(url.current) }).catch((err) => {
       setError(String(err));
     });
 
@@ -111,7 +123,7 @@ export function NativeChatGptView({
             type="button"
             onClick={() => {
               setError('');
-              void window.mawChatGpt?.command({ type: 'open', id, url: url.current, provider: nativeWebProvider(url.current) });
+              void window.mawChatGpt?.command({ type: 'open', id, url: url.current, provider: tab.provider ?? nativeWebProvider(url.current) });
             }}
           >
             {t('common.reloadPage')}

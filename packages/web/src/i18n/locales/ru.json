@@ -90,6 +90,7 @@
   "agency.tabs.newTerminal": "Новый терминал",
   "agency.tabs.open": "Открыть",
   "agency.tabs.openFile": "Открыть файл...",
+  "agency.tabs.perplexity": "Perplexity",
   "agency.tabs.restartShell": "Перезапустить терминал",
   "agency.tabs.sessionCount": "{{count}} сеансов",
   "agency.tabs.shellRestarted": "Терминал перезапущен (новый процесс)",

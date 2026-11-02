@@ -90,6 +90,7 @@
   "agency.tabs.newTerminal": "新建终端",
   "agency.tabs.open": "打开",
   "agency.tabs.openFile": "打开文件...",
+  "agency.tabs.perplexity": "Perplexity",
   "agency.tabs.restartShell": "重启终端",
   "agency.tabs.sessionCount": "{{count}} 个会话",
   "agency.tabs.shellRestarted": "终端已重启（新进程）",

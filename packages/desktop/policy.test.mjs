@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { embeddedUrl, externalUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl, githubUrl, githubEmbeddedUrl } from './policy.mjs';
+import { embeddedUrl, externalUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl, githubUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl } from './policy.mjs';
 const id = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
 test('exact HTTPS navigation and initial ChatGPT URL allowlist', () => {
   for (const url of ['https://chatgpt.com/', 'https://auth.openai.com/log-in', 'https://accounts.google.com/o/oauth2/auth', 'https://appleid.apple.com/auth/authorize']) assert.equal(embeddedUrl(url), true, url);
@@ -112,4 +112,22 @@ test('FEATURE 10: file delivery and download URL policy', () => {
   assert.equal(isDownloadOrFileDeliveryUrl('https://evil.com/fake.pdf'), false);
   assert.equal(isDownloadOrFileDeliveryUrl('blob:https://evil.com/fake'), false);
   assert.equal(isDownloadOrFileDeliveryUrl('http://files.oaiusercontent.com/file'), false);
+});
+
+test('FEATURE 11: Perplexity URL and embedded auth navigation policy', () => {
+  assert.equal(perplexityUrl('https://perplexity.ai/'), true);
+  assert.equal(perplexityUrl('https://www.perplexity.ai/'), true);
+  assert.equal(perplexityUrl('https://perplexity.ai/search?q=test'), true);
+  assert.equal(perplexityUrl('https://perplexity.ai.evil.com/'), false);
+  assert.equal(perplexityUrl('https://chatgpt.com/'), false);
+  assert.equal(perplexityUrl('https://github.com/'), false);
+  assert.equal(perplexityEmbeddedUrl('https://auth.perplexity.ai/callback'), true);
+  assert.equal(perplexityEmbeddedUrl('https://cdn.perplexity.ai/main.js'), true);
+  assert.equal(perplexityEmbeddedUrl('https://accounts.google.com/o/oauth2/v2/auth'), true);
+  assert.equal(perplexityEmbeddedUrl('https://appleid.apple.com/auth/authorize'), true);
+  assert.equal(perplexityEmbeddedUrl('https://evil.perplexity.ai.attacker/'), false);
+  assert.equal(validCommand({ type: 'open', id, url: 'https://www.perplexity.ai/', provider: 'perplexity' }), true);
+  assert.equal(validCommand({ type: 'open', id, url: 'https://www.perplexity.ai/', provider: 'chatgpt' }), false);
+  assert.equal(validCommand({ type: 'open', id, url: 'https://www.perplexity.ai/', provider: 'github' }), false);
+  assert.equal(validCommand({ type: 'open', id, url: 'https://chatgpt.com/', provider: 'perplexity' }), false);
 });

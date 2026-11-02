@@ -2,7 +2,7 @@ import { app, BrowserWindow, WebContentsView, Menu, ipcMain, session, shell, dia
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir } from 'node:fs/promises';
-import { PARTITION, GITHUB_PARTITION, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, githubEmbeddedUrl } from './policy.mjs';
+import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl } from './policy.mjs';
 import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -23,6 +23,7 @@ async function start() {
   const secure = { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: false, allowRunningInsecureContent: false };
   const chatSession = session.fromPartition(PARTITION);
   const githubSession = session.fromPartition(GITHUB_PARTITION);
+  const perplexitySession = session.fromPartition(PERPLEXITY_PARTITION);
   // Permit clipboard writing only from the official ChatGPT origin.
   // Clipboard reading and all unrelated permissions remain denied.
   const canWriteClipboard = (contents, requestingUrl) => {
@@ -58,6 +59,21 @@ async function start() {
   });
   githubSession.setPermissionCheckHandler((contents, permission, requestingOrigin) =>
     permission === 'clipboard-sanitized-write' && githubClipboard(contents, requestingOrigin)
+  );
+  const perplexityClipboard = (contents, requestingUrl) => {
+    try {
+      if (!contents) return false;
+      const origin = new URL(contents.getURL()).origin;
+      const reqOrigin = new URL(requestingUrl).origin;
+      const allowedOrigins = ['https://www.perplexity.ai', 'https://perplexity.ai'];
+      return allowedOrigins.includes(origin) && allowedOrigins.includes(reqOrigin);
+    } catch { return false; }
+  };
+  perplexitySession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback(permission === 'clipboard-sanitized-write' && perplexityClipboard(contents, details?.requestingUrl));
+  });
+  perplexitySession.setPermissionCheckHandler((contents, permission, requestingOrigin) =>
+    permission === 'clipboard-sanitized-write' && perplexityClipboard(contents, requestingOrigin)
   );
 
   const win = new BrowserWindow({ width: 1280, height: 860, title: 'MAW · ChatGPT feasibility prototype', autoHideMenuBar: true,
@@ -251,6 +267,90 @@ async function start() {
     }
   });
 
+  perplexitySession.on('will-download', (event, item, webContents) => {
+    let tabEntry = [...views.entries()].find(([, view]) => view.webContents === webContents);
+    if (!tabEntry) {
+      const ownerId = popupOwners.get(webContents);
+      if (ownerId && views.has(ownerId)) {
+        tabEntry = [ownerId, views.get(ownerId)];
+      }
+    }
+    if (!tabEntry || providers.get(tabEntry[0]) !== 'perplexity') {
+      event.preventDefault();
+      return;
+    }
+    const initiator = typeof item.getInitiatorOrigin === 'function' ? item.getInitiatorOrigin() : null;
+    if (initiator) {
+      try {
+        const origin = new URL(initiator).origin;
+        if (origin !== 'https://www.perplexity.ai' && origin !== 'https://perplexity.ai') {
+          event.preventDefault();
+          return;
+        }
+      } catch {
+        event.preventDefault();
+        return;
+      }
+    }
+    const destinationUrls = [item.getURL(), ...(typeof item.getURLChain === 'function' ? item.getURLChain() : [])];
+    if (!destinationUrls.every(u => perplexityEmbeddedUrl(u))) {
+      event.preventDefault();
+      return;
+    }
+    const popupWin = BrowserWindow.fromWebContents(webContents);
+    if (popupWin && popups.has(popupWin)) {
+      try { popupWin.hide(); } catch {}
+      item.once('done', () => {
+        if (!popupWin.isDestroyed()) {
+          popupWin.close();
+        }
+      });
+    }
+    let rawFilename = item.getFilename() || 'download';
+    let baseFilename = path.basename(rawFilename).replace(/[\u0000-\u001f\u007f\\/:]/g, '_').trim();
+    if (!baseFilename || baseFilename === '.' || baseFilename === '..') {
+      baseFilename = 'download';
+    }
+    let downloadsDir;
+    try {
+      downloadsDir = app.getPath('downloads');
+    } catch {
+      downloadsDir = process.env.HOME ? path.join(process.env.HOME, 'Downloads') : '/tmp';
+    }
+    const defaultPath = path.join(downloadsDir, baseFilename);
+    if (process.env.MAW_DOWNLOAD_AUTO_SAVE === '1') {
+      item.setSavePath(defaultPath);
+    } else {
+      item.setSaveDialogOptions({ defaultPath, title: 'Save File' });
+    }
+    const tabId = tabEntry[0];
+    send({ type: 'download-start', id: tabId, filename: baseFilename });
+    item.on('updated', (_event, state) => {
+      if (state === 'progressing') {
+        const total = item.getTotalBytes();
+        const received = item.getReceivedBytes();
+        const percent = total > 0 ? Math.round((received / total) * 100) : null;
+        send({ type: 'download-progress', id: tabId, filename: baseFilename, percent });
+      } else if (state === 'interrupted') {
+        if (!item.canResume()) item.cancel();
+      }
+    });
+    item.once('done', (_event, state) => {
+      if (state === 'completed') {
+        send({ type: 'download-complete', id: tabId, filename: baseFilename, savePath: item.getSavePath() });
+      } else if (state === 'cancelled') {
+        send({ type: 'download-cancelled', id: tabId, filename: baseFilename });
+      } else {
+        send({ type: 'download-failed', id: tabId, filename: baseFilename, message: 'Download interrupted.' });
+      }
+      const view = views.get(tabId);
+      const viewContents = view?.webContents;
+      if (viewContents && !viewContents.isDestroyed() && !viewContents.isLoading() && !failures.has(tabId) && durablePage(providers.get(tabId) ?? 'chatgpt', viewContents.getURL())) {
+        send({ type: 'ready', id: tabId });
+      }
+    });
+  });
+
   function invalidate() { hideAll(); send({ type: 'layout-needed' }); }
 
   async function openExternal(url) {
@@ -263,6 +363,7 @@ async function start() {
 
   function navigationAllowed(provider, url) {
     if (provider === 'github') return githubEmbeddedUrl(url);
+    if (provider === 'perplexity') return perplexityEmbeddedUrl(url);
     return embeddedUrl(url);
   }
 
@@ -292,7 +393,7 @@ async function start() {
       }
       if (allowPopup && navigationAllowed(provider, url) && popups.size < 1) return { action: 'allow', overrideBrowserWindowOptions: {
         parent: win, autoHideMenuBar: true, width: 640, height: 760,
-        webPreferences: { ...secure, session: provider === 'github' ? githubSession : chatSession, preload: '' },
+        webPreferences: { ...secure, session: provider === 'github' ? githubSession : provider === 'perplexity' ? perplexitySession : chatSession, preload: '' },
       } };
       void openExternal(url).catch(() => {});
       return { action: 'deny' };
@@ -351,12 +452,19 @@ async function start() {
         return url.origin === 'https://github.com' && ![...url.searchParams.keys()].some(key => /token|code|state|session/i.test(key));
       } catch { return false; }
     }
+    if (provider === 'perplexity') {
+      try {
+        const url = new URL(value);
+        return perplexityUrl(value) && !/^\/(api|auth)(\/|$)/.test(url.pathname) &&
+          ![...url.searchParams.keys()].some(key => /token|code|state|session/i.test(key));
+      } catch { return false; }
+    }
     return chatUrlForPersistence(value);
   }
 
   function open(id, url, provider = 'chatgpt') {
-    const providerName = provider === 'github' ? 'GitHub' : 'ChatGPT';
-    const targetSession = provider === 'github' ? githubSession : chatSession;
+    const providerName = provider === 'github' ? 'GitHub' : provider === 'perplexity' ? 'Perplexity' : 'ChatGPT';
+    const targetSession = provider === 'github' ? githubSession : provider === 'perplexity' ? perplexitySession : chatSession;
     if (views.has(id)) {
       if ((providers.get(id) ?? 'chatgpt') !== provider) {
         send({ type: 'error', id, message: 'This tab cannot change browser provider.' });
