@@ -133,7 +133,7 @@ export class BrowserTabAdapter {
       if (!valid.valid || !valid.provider) throw new BrowserTabStoreError('invalid-request', valid.error ?? 'Invalid URL');
       if (input.title !== undefined && !validateWebTabTitle(input.title)) throw new BrowserTabStoreError('invalid-request', 'Invalid title');
       const now = new Date().toISOString();
-      const tab: WebTab = { id: randomUUID(), workspaceId: input.workspaceId, kind: 'web', title: input.title?.trim() ?? (valid.provider === 'github' ? 'GitHub' : 'ChatGPT'), url: valid.normalizedUrl!, provider: valid.provider,
+      const tab: WebTab = { id: randomUUID(), workspaceId: input.workspaceId, kind: 'web', title: input.title?.trim() ?? (valid.provider === 'github' ? 'GitHub' : valid.provider === 'perplexity' ? 'Perplexity' : 'ChatGPT'), url: valid.normalizedUrl!, provider: valid.provider,
         order: input.order !== undefined && Number.isSafeInteger(input.order) && input.order >= 0 ? input.order : Math.max(-1, ...this.listTabs(input.workspaceId).map(tab => tab.order)) + 1,
         selected: input.select !== false, closedAt: null, createdAt: now, updatedAt: now, runtimeState: 'client-managed', targetRef: null, cleanupRequired: false, launchId: input.launchId };
       this.tabs.set(tab.id, tab);

@@ -166,7 +166,7 @@ export function isAllowedChatGptUrl(rawUrl: string): boolean {
   return validateChatGptUrl(rawUrl).valid;
 }
 
-export type WebTabProvider = 'chatgpt' | 'github';
+export type WebTabProvider = 'chatgpt' | 'github' | 'perplexity';
 
 const GITHUB_ROOT_HOSTS = new Set(['github.com']);
 
@@ -210,17 +210,63 @@ export function validateGithubUrl(rawUrl: string): UrlValidationResult {
   return { valid: true, normalizedUrl: normalized.toString() };
 }
 
+const PERPLEXITY_ROOT_HOSTS = new Set(['perplexity.ai']);
+
+function isPerplexityHost(host: string): boolean {
+  if (PERPLEXITY_ROOT_HOSTS.has(host)) return true;
+  if (!host.endsWith('.perplexity.ai')) return false;
+  const subdomain = host.slice(0, -'.perplexity.ai'.length);
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(subdomain);
+}
+
+/**
+ * Perplexity pages only (https://www.perplexity.ai/ or https://perplexity.ai/).
+ * Same strict transport, credential, port, and security boundaries.
+ */
+export function validatePerplexityUrl(rawUrl: string): UrlValidationResult {
+  if (typeof rawUrl !== 'string') return { valid: false, error: 'URL must be a string' };
+  const trimmed = rawUrl.trim();
+  if (trimmed.length === 0) return { valid: false, error: 'URL cannot be empty' };
+  if (trimmed.length > 2048) return { valid: false, error: 'URL exceeds maximum length of 2048 characters' };
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return { valid: false, error: 'URL contains control characters or newlines' };
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return { valid: false, error: 'Invalid URL format' };
+  }
+  if (parsed.protocol !== 'https:') return { valid: false, error: 'Protocol is not allowed. Only "https:" is permitted.' };
+  if (parsed.username || parsed.password) return { valid: false, error: 'URLs with user credentials are not allowed' };
+  if (parsed.port && parsed.port !== '443') return { valid: false, error: `Custom port "${parsed.port}" is not allowed` };
+  const hostname = parsed.hostname.toLowerCase();
+  if (IP_V4_RE.test(hostname) || hostname.startsWith('[') || hostname.endsWith(']')) {
+    return { valid: false, error: 'IP addresses are not permitted' };
+  }
+  if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local') || hostname.endsWith('.internal')) {
+    return { valid: false, error: 'Navigation to local or internal addresses is strictly forbidden' };
+  }
+  if (!isPerplexityHost(hostname)) return { valid: false, error: `Host "${hostname}" is not an allowed Perplexity domain` };
+  const normalized = new URL(parsed.toString());
+  normalized.hostname = hostname;
+  if (normalized.port === '443') normalized.port = '';
+  return { valid: true, normalizedUrl: normalized.toString() };
+}
+
 export function classifyWebTabUrl(rawUrl: string): UrlValidationResult & { provider?: WebTabProvider } {
   const chat = validateChatGptUrl(rawUrl);
   if (chat.valid) return { ...chat, provider: 'chatgpt' };
   const github = validateGithubUrl(rawUrl);
   if (github.valid) return { ...github, provider: 'github' };
-  return { valid: false, error: 'URL is not an allowed ChatGPT or GitHub address' };
+  const perplexity = validatePerplexityUrl(rawUrl);
+  if (perplexity.valid) return { ...perplexity, provider: 'perplexity' };
+  return { valid: false, error: 'URL is not an allowed ChatGPT, GitHub, or Perplexity address' };
 }
 
 export function webTabProviderFor(tab: Pick<WebTab, 'url' | 'provider'>): WebTabProvider {
-  if (tab.provider === 'github' || tab.provider === 'chatgpt') return tab.provider;
-  return validateGithubUrl(tab.url).valid ? 'github' : 'chatgpt';
+  if (tab.provider === 'github' || tab.provider === 'chatgpt' || tab.provider === 'perplexity') return tab.provider;
+  if (validateGithubUrl(tab.url).valid) return 'github';
+  if (validatePerplexityUrl(tab.url).valid) return 'perplexity';
+  return 'chatgpt';
 }
 
 export function validateWebTabTitle(title: unknown): boolean {
@@ -250,9 +296,9 @@ export function isWebTab(value: unknown): value is WebTab {
   if (typeof tab.workspaceId !== 'string' || !UUID_RE.test(tab.workspaceId)) return false;
   if (!validateWebTabTitle(tab.title)) return false;
   if (typeof tab.url !== 'string') return false;
-  if (tab.provider !== undefined && tab.provider !== 'chatgpt' && tab.provider !== 'github') return false;
-  const provider = tab.provider === 'github' ? 'github' : 'chatgpt';
-  const urlOk = provider === 'github' ? validateGithubUrl(tab.url).valid : validateChatGptUrl(tab.url).valid;
+  if (tab.provider !== undefined && tab.provider !== 'chatgpt' && tab.provider !== 'github' && tab.provider !== 'perplexity') return false;
+  const provider = tab.provider ?? (validateGithubUrl(tab.url).valid ? 'github' : validatePerplexityUrl(tab.url).valid ? 'perplexity' : 'chatgpt');
+  const urlOk = provider === 'github' ? validateGithubUrl(tab.url).valid : provider === 'perplexity' ? validatePerplexityUrl(tab.url).valid : validateChatGptUrl(tab.url).valid;
   if (!urlOk) return false;
   if (!Number.isSafeInteger(tab.order) || (tab.order as number) < 0) return false;
   if (typeof tab.selected !== 'boolean') return false;

@@ -57,12 +57,13 @@ interface Props {
   onAddTerminalClick: (paneId: string) => void;
   onAddWebTabClick: (paneId: string) => void;
   onAddGithubClick?: (paneId: string) => void;
+  onAddPerplexityClick?: (paneId: string) => void;
   onOpenFileClick?: (paneId: string) => void;
   onOpenRelativeFile?: (paneId: string, path: string) => void;
   onDirtyChange?: (tabId: string, dirty: boolean) => void;
   isTabUnsaved?: (tabId: string) => boolean;
   onLaunchProfile?: (paneId: string, profileId: string) => void;
-  onSplitCreate?: (paneId: string, direction: SplitDirection, action: 'terminal' | 'agent' | 'web' | 'github' | 'file', profileId?: string) => void;
+  onSplitCreate?: (paneId: string, direction: SplitDirection, action: 'terminal' | 'agent' | 'web' | 'github' | 'perplexity' | 'file', profileId?: string) => void;
   onRenameTab: (tab: WorkspaceTab, title: string) => Promise<void>;
   onFocusPane: (paneId: string) => void;
   onTabDisplayed: (id: string, ready: boolean) => void;
@@ -140,6 +141,7 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
         onAddTerminalClick={() => onAddTerminalClick(node.id)}
         onAddWebTabClick={() => onAddWebTabClick(node.id)}
         onAddGithubClick={props.onAddGithubClick ? () => props.onAddGithubClick?.(node.id) : undefined}
+        onAddPerplexityClick={props.onAddPerplexityClick ? () => props.onAddPerplexityClick?.(node.id) : undefined}
         onOpenFileClick={props.onOpenFileClick ? () => props.onOpenFileClick?.(node.id) : undefined}
         onLaunchProfile={props.onLaunchProfile ? (profileId) => props.onLaunchProfile?.(node.id, profileId) : undefined}
         onSplitCreate={props.onSplitCreate ? (direction, action, profileId) => props.onSplitCreate?.(node.id, direction, action, profileId) : undefined}

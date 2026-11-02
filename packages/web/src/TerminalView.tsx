@@ -124,7 +124,7 @@ export function TerminalView({
   theme,
   autoFocus = true,
   pasteOnCtrlV = false,
-  enableAgencyShortcuts = false,
+  enableAgencyShortcuts = true,
   onTerminalInstance,
   onClipboardError,
 }: TerminalViewProps): JSX.Element {
@@ -150,7 +150,7 @@ export function TerminalView({
       fontFamily: '"Cascadia Mono", "Consolas", "Menlo", "DejaVu Sans Mono", monospace',
       fontSize: 14,
       lineHeight: 1.2,
-      scrollback: 10_000,
+      scrollback: 20_000,
       allowProposedApi: true,
       theme: TERMINAL_THEMES[themeRef.current],
       minimumContrastRatio: MINIMUM_CONTRAST[themeRef.current],
@@ -432,25 +432,27 @@ export function TerminalView({
     document.addEventListener('visibilitychange', reclaimSize);
 
     /*
-      Ctrl+V en una consola (§5.2): devolver false hace que xterm no arme el
-      `^V` ni cancele el evento, y el navegador pega como con el clic derecho.
-      El texto entra por el `paste` de xterm, con los delimitadores de pegado
-      si la consola los pidio.
+      Atajos de teclado unificados:
+      - Ctrl+Shift+A selecciona todo el buffer accesible (20.000 lineas).
+      - Ctrl+A sin shift no se intercepta y llega intacto a la CLI/shell (inicio de linea, tmux, etc.).
+      - Ctrl+Shift+C copia la seleccion como atajo convencional de terminal.
+      - Ctrl+C copia si hay seleccion; si no hay seleccion, envia ^C a la PTY (interrupcion).
+      - Ctrl+V en consolas con pasteOnCtrlV permite que el navegador pegue.
     */
-    if (enableAgencyShortcuts) {
-      terminal.attachCustomKeyEventHandler((event) => {
-        if (event.type !== 'keydown') return true;
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type !== 'keydown') return true;
 
-        const isCtrl = event.ctrlKey || event.metaKey;
-        const key = event.key.toLowerCase();
+      const isCtrl = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
 
-        // Ctrl+A belongs to the CLI. Ctrl+Shift+A selects the terminal buffer.
-        if (isCtrl && event.shiftKey && !event.altKey && key === 'a') {
-          terminal.selectAll();
-          return false;
-        }
+      // Ctrl+Shift+A selects all accessible history in the active terminal buffer
+      if (isCtrl && event.shiftKey && !event.altKey && key === 'a') {
+        terminal.selectAll();
+        return false;
+      }
 
-        // Ctrl+Shift+C: Copiar seleccion como atajo convencional de terminal
+      if (enableAgencyShortcuts) {
+        // Ctrl+Shift+C: conventional terminal copy
         if (isCtrl && event.shiftKey && !event.altKey && key === 'c') {
           if (terminal.hasSelection()) {
             const text = terminal.getSelection();
@@ -463,7 +465,7 @@ export function TerminalView({
           return false;
         }
 
-        // Ctrl+C: Copiar si hay seleccion; si no hay seleccion, enviar ^C a la PTY (interrupcion)
+        // Ctrl+C: copy if selection exists; if no selection, let ^C reach the PTY for interrupt
         if (isCtrl && !event.shiftKey && !event.altKey && key === 'c') {
           if (terminal.hasSelection()) {
             const text = terminal.getSelection();
@@ -476,12 +478,14 @@ export function TerminalView({
           }
           return true;
         }
+      }
 
-        return true;
-      });
-    } else if (pasteOnCtrlV) {
-      terminal.attachCustomKeyEventHandler((event) => !isConsolePasteKey(event));
-    }
+      if (pasteOnCtrlV && isConsolePasteKey(event)) {
+        return false;
+      }
+
+      return true;
+    });
 
     // Teclas del usuario -> pty. Sin filtro; la unica excepcion es la de arriba.
     const dataSubscription = terminal.onData((data) => {

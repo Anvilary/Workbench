@@ -9,6 +9,7 @@ interface Props {
   fileCandidate?: { relative: string; absolute: string } | null;
   canCopyNativeFile?: boolean;
   onCopySelection: () => void;
+  onSelectAll?: () => void;
   onCopyAll: () => void;
   onCopyLast: () => void;
   onPaste: () => void;
@@ -30,6 +31,7 @@ export function PaneContextMenu({
   fileCandidate,
   canCopyNativeFile,
   onCopySelection,
+  onSelectAll,
   onCopyAll,
   onCopyLast,
   onPaste,
@@ -94,6 +96,18 @@ export function PaneContextMenu({
       >
         {t('agency.ui.copySelection')}
       </button>
+      {onSelectAll && (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            onSelectAll();
+            onClose();
+          }}
+        >
+          {t('agency.ui.selectAll')}
+        </button>
+      )}
       <button
         type="button"
         role="menuitem"
