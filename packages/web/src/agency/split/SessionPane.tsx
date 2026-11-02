@@ -97,7 +97,9 @@ export function SessionPane({
     if (!term) return;
     let text = term.getSelection();
     if (kind !== 'selection') {
-      const buffer = kind === 'all' ? term.buffer.normal : term.buffer.active;
+      const buffer = kind === 'all'
+        ? (term.buffer.normal.length > term.rows ? term.buffer.normal : term.buffer.active)
+        : term.buffer.active;
       const lines = Array.from({ length: buffer.length }, (_, index) =>
         buffer.getLine(index)?.translateToString(true) ?? '',
       );

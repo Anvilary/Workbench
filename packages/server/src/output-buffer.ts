@@ -36,11 +36,23 @@ export class OutputBuffer {
   private chunks: string[] = [];
   private sizeBytes = 0;
   private truncated = false;
+  private inAlternateScreen = false;
 
-  constructor(private readonly limitBytes: number = DEFAULT_LIMIT_BYTES) {}
+  private readonly limitBytes: number;
+
+  constructor(limitBytes: number = DEFAULT_LIMIT_BYTES) {
+    this.limitBytes = limitBytes;
+  }
 
   push(chunk: string): void {
     if (chunk.length === 0) return;
+
+    if (chunk.includes('\x1b[?1049h') || chunk.includes('\x1b[?47h')) {
+      this.inAlternateScreen = true;
+    }
+    if (chunk.includes('\x1b[?1049l') || chunk.includes('\x1b[?47l')) {
+      this.inAlternateScreen = false;
+    }
 
     this.chunks.push(chunk);
     this.sizeBytes += Buffer.byteLength(chunk, 'utf8');
@@ -68,9 +80,17 @@ export class OutputBuffer {
    * Puede empezar a mitad de una secuencia ANSI si el buffer se desbordo. No se
    * intenta reparar: la CLI redibuja la pantalla en cuanto llega cualquier
    * evento, y adivinar donde cortar una secuencia haria mas dano que bien.
+   *
+   * Si el buffer desbordo mientras corria una app en pantalla alterna (TUI) y la
+   * secuencia de entrada a pantalla alterna cayo en el tramo descartado, se
+   * reinyecta para que xterm pinte en el buffer alterno y no sobre el normal.
    */
   read(): string {
-    return this.chunks.join('');
+    const raw = this.chunks.join('');
+    if (this.truncated && this.inAlternateScreen && !raw.includes('\x1b[?1049h') && !raw.includes('\x1b[?47h')) {
+      return '\x1b[?1049h' + raw;
+    }
+    return raw;
   }
 
   /** true si se perdio salida vieja por desborde. */
@@ -82,5 +102,6 @@ export class OutputBuffer {
     this.chunks = [];
     this.sizeBytes = 0;
     this.truncated = false;
+    this.inAlternateScreen = false;
   }
 }

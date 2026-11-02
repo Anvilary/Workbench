@@ -156,13 +156,14 @@ export function createCodexAdapter(): AgentAdapter {
       const { resumeSessionId } = input;
       // Hito 49: la pestana de revision. `codex resume` acepta la sandbox despues del subcomando (su `--help`).
       const sandbox = input.readOnly === true ? READ_ONLY_SANDBOX : [];
+      const inlineMode = ['--no-alt-screen'];
       if (resumeSessionId === null) {
-        return { file: input.location.file, args: [...input.location.prefixArgs, ...sandbox], session: { kind: 'discover' } };
+        return { file: input.location.file, args: [...input.location.prefixArgs, ...inlineMode, ...sandbox], session: { kind: 'discover' } };
       }
       if (!isUuid(resumeSessionId)) throw new Error('Invalid Codex session id.');
       return {
         file: input.location.file,
-        args: [...input.location.prefixArgs, 'resume', ...sandbox, resumeSessionId],
+        args: [...input.location.prefixArgs, 'resume', ...inlineMode, ...sandbox, resumeSessionId],
         session: { kind: 'known', sessionId: resumeSessionId },
       };
     },

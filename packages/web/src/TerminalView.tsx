@@ -487,6 +487,19 @@ export function TerminalView({
       return true;
     });
 
+    // Custom wheel handler for alternate screen fallback:
+    // When Shift+Wheel is used in an alternate-screen application (like raw Codex, less, etc.),
+    // send PageUp / PageDown keys to the PTY so conversation/pager history scrolls.
+    terminal.attachCustomWheelEventHandler((event) => {
+      if (event.shiftKey && terminal.buffer.active.type === 'alternate') {
+        const key = event.deltaY < 0 ? '\x1b[5~' : '\x1b[6~';
+        connection.send({ type: 'input', terminalId, data: key });
+        event.preventDefault();
+        return false;
+      }
+      return true;
+    });
+
     // Teclas del usuario -> pty. Sin filtro; la unica excepcion es la de arriba.
     const dataSubscription = terminal.onData((data) => {
       connection.send({ type: 'input', terminalId, data });

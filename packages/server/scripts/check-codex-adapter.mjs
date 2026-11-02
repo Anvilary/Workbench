@@ -2572,15 +2572,15 @@ const throwsOn = (run) => {
   const plain = { resolvedPath: '/bin/codex', file: '/bin/codex', prefixArgs: [], version: 'codex-cli 0.154.0' };
   const shim = { resolvedPath: 'x.cmd', file: 'cmd.exe', prefixArgs: ['/c', 'x.cmd'], version: null };
   const fresh = adapter.launch({ location: plain, cwd: CWD, resumeSessionId: null, proposedSessionId: cid(91) });
-  check('E1 sesion nueva: sin argumentos, el id se descubre y el propuesto no se usa',
-    fresh.file === '/bin/codex' && same(fresh.args, []) && same(fresh.session, { kind: 'discover' }), show(fresh));
+  check('E1 sesion nueva: --no-alt-screen para scrollback nativo, el id se descubre y el propuesto no se usa',
+    fresh.file === '/bin/codex' && same(fresh.args, ['--no-alt-screen']) && same(fresh.session, { kind: 'discover' }), show(fresh));
   const resumed = adapter.launch({ location: plain, cwd: CWD, resumeSessionId: id, proposedSessionId: cid(91) });
-  check('E1 reanudar: resume <id> y la sesion es conocida',
-    same(resumed.args, ['resume', id]) && same(resumed.session, { kind: 'known', sessionId: id }), show(resumed));
+  check('E1 reanudar: resume --no-alt-screen <id> y la sesion es conocida',
+    same(resumed.args, ['resume', '--no-alt-screen', id]) && same(resumed.session, { kind: 'known', sessionId: id }), show(resumed));
   const viaShim = adapter.launch({ location: shim, cwd: CWD, resumeSessionId: id, proposedSessionId: '' });
   const freshShim = adapter.launch({ location: shim, cwd: CWD, resumeSessionId: null, proposedSessionId: '' });
   check('E1 con el shim, los argumentos del interprete van primero',
-    viaShim.file === 'cmd.exe' && same(viaShim.args, ['/c', 'x.cmd', 'resume', id]) && same(freshShim.args, ['/c', 'x.cmd']),
+    viaShim.file === 'cmd.exe' && same(viaShim.args, ['/c', 'x.cmd', 'resume', '--no-alt-screen', id]) && same(freshShim.args, ['/c', 'x.cmd', '--no-alt-screen']),
     show([viaShim.args, freshShim.args]));
   check('E1 un id con espacio, comilla o que no es uuid no llega a la linea de comando',
     throwsOn(() => adapter.launch({ location: shim, cwd: CWD, resumeSessionId: `${id} x`, proposedSessionId: '' })) &&

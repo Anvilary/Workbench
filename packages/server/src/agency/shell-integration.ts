@@ -246,6 +246,11 @@ if [[ -z "\${PS1:-}" ]]; then
 elif [[ "$PS1" != *"133;B"* ]]; then
   PS1="$PS1\\[\\033]133;B\\007\\]"
 fi
+
+# 4. Interactive CLI scrolling support: ensure Codex CLI runs inline with native scrollback
+if command -v codex >/dev/null 2>&1 && ! type codex 2>/dev/null | grep -q "function\\|alias"; then
+  alias codex='codex --no-alt-screen'
+fi
 `;
 }
 
@@ -277,6 +282,10 @@ else
   precmd_functions+=(__maw_osc133_zsh_precmd)
   typeset -ga preexec_functions
   preexec_functions+=(__maw_osc133_zsh_preexec)
+fi
+
+if (( $+commands[codex] )) && [[ "$(which codex 2>/dev/null)" != *"alias"* && "$(which codex 2>/dev/null)" != *"function"* ]]; then
+  alias codex='codex --no-alt-screen'
 fi
 `;
 }
