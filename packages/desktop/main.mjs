@@ -71,19 +71,27 @@ async function start() {
   // Native clicks must not make an unchanged renderer layout look like a new focus request.
   let reportedFocusedId = null;
   const popups = new Set();
+  const popupOwners = new Map(); // popup WebContents -> tabId
   const attachedViews = new Map(); // id -> WebContentsView (up to 4 simultaneously visible)
   let shuttingDown = false;
   const send = state => { if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(CHANNEL + ':state', state); };
 
   // FEATURE 10: Official ChatGPT downloads with native Save As dialog and security validation
   chatSession.on('will-download', (event, item, webContents) => {
-    // 1. Verify that download originates from an authorized WebContents
-    const tabEntry = [...views.entries()].find(([, v]) => v.webContents === webContents);
+    // 1. Verify that download originates from an authorized WebContents (view or popup)
+    let tabEntry = [...views.entries()].find(([, v]) => v.webContents === webContents);
+    let tabId = tabEntry?.[0];
+    if (!tabEntry) {
+      const ownerId = popupOwners.get(webContents);
+      if (ownerId && views.has(ownerId)) {
+        tabId = ownerId;
+        tabEntry = [ownerId, views.get(ownerId)];
+      }
+    }
     if (!tabEntry) {
       event.preventDefault();
       return;
     }
-    const [tabId] = tabEntry;
 
     // 2. Verify initiator origin (Electron 45 getInitiatorOrigin)
     const initiator = typeof item.getInitiatorOrigin === 'function' ? item.getInitiatorOrigin() : null;
@@ -100,7 +108,26 @@ async function start() {
       }
     }
 
-    // 3. Sanitize suggested filename
+    // 3. Verify destination URL and URL chain
+    const destinationUrls = [item.getURL(), ...(typeof item.getURLChain === 'function' ? item.getURLChain() : [])];
+    const destinationAllowed = destinationUrls.every(u => isDownloadOrFileDeliveryUrl(u) || chatUrl(u));
+    if (!destinationAllowed) {
+      event.preventDefault();
+      return;
+    }
+
+    // If download originated from a popup window, safely hide and close when download completes
+    const popupWin = BrowserWindow.fromWebContents(webContents);
+    if (popupWin && popups.has(popupWin)) {
+      try { popupWin.hide(); } catch {}
+      item.once('done', () => {
+        if (!popupWin.isDestroyed()) {
+          popupWin.close();
+        }
+      });
+    }
+
+    // 4. Sanitize suggested filename
     let rawFilename = item.getFilename() || 'download';
     let baseFilename = path.basename(rawFilename).replace(/[\u0000-\u001f\u007f\\/:]/g, '_').trim();
     if (!baseFilename || baseFilename === '.' || baseFilename === '..') {
@@ -132,6 +159,10 @@ async function start() {
         const received = item.getReceivedBytes();
         const percent = total > 0 ? Math.round((received / total) * 100) : null;
         send({ type: 'download-progress', id: tabId, filename: baseFilename, percent });
+      } else if (state === 'interrupted') {
+        if (!item.canResume()) {
+          item.cancel();
+        }
       }
     });
 
@@ -144,6 +175,11 @@ async function start() {
       } else {
         // Interrupted or failed
         send({ type: 'download-failed', id: tabId, filename: baseFilename, message: 'Download interrupted.' });
+      }
+      const view = views.get(tabId);
+      const viewContents = view?.webContents;
+      if (viewContents && !viewContents.isDestroyed() && !viewContents.isLoading() && !failures.has(tabId) && durablePage(providers.get(tabId) ?? 'chatgpt', viewContents.getURL())) {
+        send({ type: 'ready', id: tabId });
       }
     });
   });
@@ -174,7 +210,13 @@ async function start() {
   }
 
   githubSession.on('will-download', (event, item, webContents) => {
-    const tabEntry = [...views.entries()].find(([, view]) => view.webContents === webContents);
+    let tabEntry = [...views.entries()].find(([, view]) => view.webContents === webContents);
+    if (!tabEntry) {
+      const ownerId = popupOwners.get(webContents);
+      if (ownerId && views.has(ownerId)) {
+        tabEntry = [ownerId, views.get(ownerId)];
+      }
+    }
     if (!tabEntry || providers.get(tabEntry[0]) !== 'github') {
       event.preventDefault();
       return;
@@ -193,6 +235,20 @@ async function start() {
         return;
       }
     }
+    const destinationUrls = [item.getURL(), ...(typeof item.getURLChain === 'function' ? item.getURLChain() : [])];
+    if (!destinationUrls.every(u => githubEmbeddedUrl(u))) {
+      event.preventDefault();
+      return;
+    }
+    const popupWin = BrowserWindow.fromWebContents(webContents);
+    if (popupWin && popups.has(popupWin)) {
+      try { popupWin.hide(); } catch {}
+      item.once('done', () => {
+        if (!popupWin.isDestroyed()) {
+          popupWin.close();
+        }
+      });
+    }
   });
 
   function invalidate() { hideAll(); send({ type: 'layout-needed' }); }
@@ -206,11 +262,22 @@ async function start() {
   }
 
   function navigationAllowed(provider, url) {
-    return provider === 'github' ? githubEmbeddedUrl(url) : (embeddedUrl(url) || isDownloadOrFileDeliveryUrl(url));
+    if (provider === 'github') return githubEmbeddedUrl(url);
+    return embeddedUrl(url);
   }
 
   function guard(contents, provider = 'chatgpt', allowPopup = true) {
+    const getTabId = () => [...views.entries()].find(([, v]) => v.webContents === contents)?.[0] || popupOwners.get(contents);
+    const handleFileDelivery = (event, url) => {
+      if (provider === 'chatgpt' && isDownloadOrFileDeliveryUrl(url)) {
+        event.preventDefault();
+        contents.downloadURL(url);
+        return true;
+      }
+      return false;
+    };
     const navigation = (event, url) => {
+      if (handleFileDelivery(event, url)) return;
       if (navigationAllowed(provider, url)) return;
       event.preventDefault();
       void openExternal(url).catch(() => send({ type: 'error', message: 'Could not open external browser.' }));
@@ -219,6 +286,10 @@ async function start() {
     contents.on('will-redirect', navigation);
     contents.on('will-attach-webview', event => event.preventDefault());
     contents.setWindowOpenHandler(({ url }) => {
+      if (provider === 'chatgpt' && isDownloadOrFileDeliveryUrl(url)) {
+        contents.downloadURL(url);
+        return { action: 'deny' };
+      }
       if (allowPopup && navigationAllowed(provider, url) && popups.size < 1) return { action: 'allow', overrideBrowserWindowOptions: {
         parent: win, autoHideMenuBar: true, width: 640, height: 760,
         webPreferences: { ...secure, session: provider === 'github' ? githubSession : chatSession, preload: '' },
@@ -228,9 +299,15 @@ async function start() {
     });
     contents.on('did-create-window', popup => {
       popups.add(popup);
+      const tabId = getTabId();
+      if (tabId) popupOwners.set(popup.webContents, tabId);
       popup.setMenu(null);
       guard(popup.webContents, provider, false);
-      popup.on('closed', () => { popups.delete(popup); invalidate(); });
+      popup.on('closed', () => {
+        popupOwners.delete(popup.webContents);
+        popups.delete(popup);
+        invalidate();
+      });
     });
     contents.on('before-input-event', desktopShortcut);
     contents.on('context-menu', (event, params) => {
@@ -279,28 +356,32 @@ async function start() {
 
   function open(id, url, provider = 'chatgpt') {
     const providerName = provider === 'github' ? 'GitHub' : 'ChatGPT';
+    const targetSession = provider === 'github' ? githubSession : chatSession;
     if (views.has(id)) {
       if ((providers.get(id) ?? 'chatgpt') !== provider) {
         send({ type: 'error', id, message: 'This tab cannot change browser provider.' });
         return;
       }
       const contents = views.get(id).webContents;
-      if (contents.isDestroyed() || (failures.has(id) && requestedUrls.get(id) === url)) {
-        send({ type: 'error', id, message: failures.get(id) || `${providerName} renderer stopped. Use Reload page to retry.` });
+      if (contents.isDestroyed() || failures.has(id)) {
+        closeView(id);
+      } else {
+        if (requestedUrls.get(id) !== url || contents.getURL() !== url) {
+          requestedUrls.set(id, url);
+          urls.set(id, url);
+          void contents.loadURL(url).catch(() => {});
+        } else if (!contents.isLoading() && !durablePage(provider, contents.getURL())) {
+          void contents.loadURL(url).catch(() => {});
+        }
+        if (!contents.isLoading() && durablePage(provider, contents.getURL())) {
+          send({ type: 'ready', id });
+          if (urls.get(id) !== url) send({ type: 'committed', id, url: contents.getURL() });
+        }
         return;
       }
-      if (requestedUrls.get(id) !== url) {
-        requestedUrls.set(id, url);
-        if (urls.get(id) !== url) { urls.set(id, url); void contents.loadURL(url).catch(() => {}); }
-      }
-      if (!contents.isLoading() && durablePage(provider, contents.getURL())) {
-        send({ type: 'ready', id });
-        if (urls.get(id) !== url) send({ type: 'committed', id, url: contents.getURL() });
-      }
-      return;
     }
     if (views.size >= 8) throw new Error('Prototype view limit reached');
-    const view = new WebContentsView({ webPreferences: { ...secure, session: provider === 'github' ? githubSession : chatSession, backgroundThrottling: true } });
+    const view = new WebContentsView({ webPreferences: { ...secure, session: targetSession, backgroundThrottling: true } });
     view.setVisible(false);
     view.setBackgroundColor('#212121');
     views.set(id, view);
@@ -327,11 +408,19 @@ async function start() {
     view.webContents.on('did-navigate', committed);
     view.webContents.on('did-navigate-in-page', committed);
     view.webContents.on('did-start-loading', () => { failures.delete(id); send({ type: 'loading', id }); });
-    view.webContents.on('did-finish-load', () => { if (durablePage(provider, view.webContents.getURL())) send({ type: 'ready', id }); });
+    view.webContents.on('did-finish-load', () => { if (!failures.has(id) && durablePage(provider, view.webContents.getURL())) send({ type: 'ready', id }); });
+    view.webContents.on('did-stop-loading', () => { if (!failures.has(id) && durablePage(provider, view.webContents.getURL())) send({ type: 'ready', id }); });
     view.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => {
-      if (mainFrame && code !== -3) {
-        const message = `${providerName} failed to load (${code}). Use Reload page to retry.`;
-        failures.set(id, message); send({ type: 'error', id, message });
+      if (mainFrame) {
+        if (code === -3) {
+          if (!failures.has(id) && durablePage(provider, view.webContents.getURL())) {
+            send({ type: 'ready', id });
+          }
+        } else {
+          const message = `${providerName} failed to load (${code}). Use Reload page to retry.`;
+          failures.set(id, message);
+          send({ type: 'error', id, message });
+        }
       }
     });
     view.webContents.on('render-process-gone', () => {
@@ -361,7 +450,10 @@ async function start() {
       if (!contents || contents.isDestroyed()) return;
       if (command.action === 'back' && contents.canGoBack()) contents.goBack();
       if (command.action === 'forward' && contents.canGoForward()) contents.goForward();
-      if (command.action === 'reload') contents.reload();
+      if (command.action === 'reload') {
+        failures.delete(command.id);
+        contents.reload();
+      }
       if (command.action === 'copy-url') clipboard.writeText(contents.getURL());
       if (command.action === 'copy-selection') contents.copy();
       if (command.action === 'open-page') void openExternal(contents.getURL());
