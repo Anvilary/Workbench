@@ -2,7 +2,7 @@ import { app, BrowserWindow, WebContentsView, Menu, ipcMain, session, shell, dia
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir } from 'node:fs/promises';
-import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl } from './policy.mjs';
+import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl } from './policy.mjs';
 import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -462,7 +462,7 @@ async function start() {
     return chatUrlForPersistence(value);
   }
 
-  function open(id, url, provider = 'chatgpt') {
+  function open(id, url, provider = 'chatgpt', explicit = true) {
     const providerName = provider === 'github' ? 'GitHub' : provider === 'perplexity' ? 'Perplexity' : 'ChatGPT';
     const targetSession = provider === 'github' ? githubSession : provider === 'perplexity' ? perplexitySession : chatSession;
     if (views.has(id)) {
@@ -471,19 +471,31 @@ async function start() {
         return;
       }
       const contents = views.get(id).webContents;
-      if (contents.isDestroyed() || failures.has(id)) {
+      if (contents.isDestroyed()) {
         closeView(id);
+      } else if (failures.has(id)) {
+        if (explicit) {
+          closeView(id);
+        } else {
+          send({ type: 'error', id, message: failures.get(id) || `${providerName} renderer stopped. Use Reload page to retry.` });
+          return;
+        }
       } else {
-        if (requestedUrls.get(id) !== url || contents.getURL() !== url) {
+        if (requestedUrls.get(id) !== url) {
           requestedUrls.set(id, url);
-          urls.set(id, url);
-          void contents.loadURL(url).catch(() => {});
+          if (urls.get(id) !== url && contents.getURL() !== url) {
+            urls.set(id, url);
+            void contents.loadURL(url).catch(() => {});
+          }
         } else if (!contents.isLoading() && !durablePage(provider, contents.getURL())) {
           void contents.loadURL(url).catch(() => {});
         }
         if (!contents.isLoading() && durablePage(provider, contents.getURL())) {
           send({ type: 'ready', id });
-          if (urls.get(id) !== url) send({ type: 'committed', id, url: contents.getURL() });
+          if (urls.get(id) !== contents.getURL()) {
+            urls.set(id, contents.getURL());
+            send({ type: 'committed', id, url: contents.getURL() });
+          }
         }
         return;
       }
@@ -550,8 +562,8 @@ async function start() {
 
   ipcMain.handle(CHANNEL, async (event, command) => {
     if (!trustedSender(event, win.webContents, local.origin) || !validCommand(command)) throw new Error('Invalid desktop request');
-    if (command.type === 'open') open(command.id, command.url, command.provider ?? 'chatgpt');
-    if (command.type === 'update' && views.has(command.id)) open(command.id, command.url, command.provider ?? providers.get(command.id) ?? 'chatgpt');
+    if (command.type === 'open') open(command.id, command.url, command.provider ?? 'chatgpt', true);
+    if (command.type === 'update' && views.has(command.id)) open(command.id, command.url, command.provider ?? providers.get(command.id) ?? 'chatgpt', false);
     if (command.type === 'browser-action') {
       const view = views.get(command.id);
       const contents = view?.webContents;

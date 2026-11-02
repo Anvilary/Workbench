@@ -151,9 +151,23 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
         if (url.pathname === '/failing.pdf') {
           return Response.error();
         }
+        if (url.hostname === 'chatgpt.com' && url.pathname === '/report.pdf') {
+          return new Response('%PDF-1.4 chatgpt.com report content', {
+            headers: {
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': 'attachment; filename="chatgpt-report.pdf"',
+            },
+          });
+        }
+        if (url.hostname === 'chatgpt.com' && url.pathname.startsWith('/c/')) {
+          return new Response('<!doctype html><title>ChatGPT - Active Conversation</title><p>Active chat</p>', {
+            headers: { 'Content-Type': 'text/html' },
+          });
+        }
         return new Response(`<!doctype html>
           <title>ChatGPT</title>
           <a id="dl-direct" href="https://files.oaiusercontent.com/direct.pdf" download="chatgpt-direct.pdf">Direct</a>
+          <a id="dl-chatgpt-report" href="https://chatgpt.com/report.pdf" download="chatgpt-report.pdf">ChatGPT Report</a>
           <a id="dl-popup" href="https://files.oaiusercontent.com/popup.pdf" target="_blank">Popup</a>
           <a id="dl-redirect" href="https://chatgpt.com/redirect-download">Redirect</a>
           <a id="dl-inline" href="https://files.oaiusercontent.com/inline.pdf">Inline</a>
@@ -215,6 +229,26 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
     const directContent = await readFile(event1.savePath, 'utf8');
     assert.equal(directContent, '%PDF-1.4 direct content');
     await rm(event1.savePath, { force: true });
+    assert.equal((await nativeState()).url, 'https://chatgpt.com/', 'Tab URL must stay chatgpt.com');
+
+    // 1b. Direct attachment download from https://chatgpt.com/report.pdf (exercising chatUrl allowlist in will-download)
+    await desktop.evaluate(async ({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const view = win.contentView.children.find((v) => v.webContents);
+      await view.webContents.executeJavaScript(`document.getElementById('dl-chatgpt-report').click()`);
+    });
+
+    await eventually(async () => {
+      const text = await page.textContent('#event-state');
+      return text && text.includes('download-complete') && text.includes('chatgpt-report.pdf');
+    });
+
+    let eventChatGpt = JSON.parse((await page.textContent('#event-state')) || '{}');
+    assert.equal(eventChatGpt.type, 'download-complete');
+    assert.equal(eventChatGpt.filename, 'chatgpt-report.pdf');
+    const chatGptContent = await readFile(eventChatGpt.savePath, 'utf8');
+    assert.equal(chatGptContent, '%PDF-1.4 chatgpt.com report content');
+    await rm(eventChatGpt.savePath, { force: true });
     assert.equal((await nativeState()).url, 'https://chatgpt.com/', 'Tab URL must stay chatgpt.com');
 
     // 2. Popup-initiated download via user click
@@ -358,6 +392,44 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
 
     // Verify view is still attached and usable
     assert.equal((await nativeState()).isLoading, false);
+
+    // 9. Navigation reconciliation: in-page navigation must not navigate backward when delayed checkpoint sends old URL
+    await desktop.evaluate(async ({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const view = win.contentView.children.find((v) => v.webContents);
+      // Simulate live in-page navigation (e.g. user opening conversation /c/active-conversation)
+      await view.webContents.executeJavaScript(`window.history.pushState({}, '', '/c/active-conversation')`);
+    });
+
+    // Wait for committed event to propagate to the frontend
+    await eventually(async () => {
+      const events = (await page.textContent('#all-events')) || '[]';
+      const parsed = JSON.parse(events);
+      return parsed.some(e => e.type === 'committed' && e.url === 'https://chatgpt.com/c/active-conversation');
+    });
+
+    assert.equal((await nativeState()).url, 'https://chatgpt.com/c/active-conversation', 'Live URL must update to new path');
+
+    // Send an unrelated tab update with the OLD persisted URL (checkpoint delayed)
+    await desktop.evaluate(async ({ BrowserWindow }, tabId) => {
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      await win.webContents.executeJavaScript(`window.mawChatGpt.command({ type: 'update', id: '${tabId}', url: 'https://chatgpt.com/' })`);
+    }, id);
+
+    // Give time for any unexpected backward navigation to settle
+    await new Promise(r => setTimeout(r, 600));
+
+    // Verify no backward navigation occurred: live URL remains at the conversation URL
+    assert.equal((await nativeState()).url, 'https://chatgpt.com/c/active-conversation', 'Live URL must remain on current page without backward navigation');
+
+    // Now send the updated checkpoint once the server confirms it
+    await desktop.evaluate(async ({ BrowserWindow }, tabId) => {
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      await win.webContents.executeJavaScript(`window.mawChatGpt.command({ type: 'update', id: '${tabId}', url: 'https://chatgpt.com/c/active-conversation' })`);
+    }, id);
+
+    await new Promise(r => setTimeout(r, 300));
+    assert.equal((await nativeState()).url, 'https://chatgpt.com/c/active-conversation', 'Live URL remains steady after checkpoint update');
   } finally {
     if (desktop) await desktop.close();
     server.close();
