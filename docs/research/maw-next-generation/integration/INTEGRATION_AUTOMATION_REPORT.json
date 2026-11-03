@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-11-03T19:24:42.997Z",
+  "timestamp": "2026-11-03T20:00:31.599Z",
   "baseRevision": "502181f235ce8d0f9f9c83661c874bc7cde014e1",
   "executionMode": "DRY_RUN",
   "targetBranch": "integration/maw-next-generation",
@@ -17,12 +17,12 @@
     "B": {
       "name": "Lane B (Reconnection)",
       "branch": "feat/maw-reconnection",
-      "currentHash": "2c7041a",
-      "fullHash": "2c7041abde02b57bc9ce87e1140b8f8c85d0d5aa",
-      "isClean": false,
+      "currentHash": "f67f9d2",
+      "fullHash": "f67f9d28b3efa5dbf92f0d68e7efa2dd7e1c4699",
+      "isClean": true,
       "hashMatches": true,
       "isDescendedFromBase": true,
-      "statusMessage": "DIRTY_WORKTREE"
+      "statusMessage": "OK"
     },
     "C": {
       "name": "Lane C (Notifications)",
@@ -45,7 +45,7 @@
       "statusMessage": "OK"
     }
   },
-  "overlapsFound": 0,
+  "overlapsFound": 1,
   "testResults": {
     "passed": 18,
     "failed": 0,
