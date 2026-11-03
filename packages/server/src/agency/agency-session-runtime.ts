@@ -102,7 +102,7 @@ export interface AgencyWorkspaceSource {
 export type AgencyTerminalRegistry = Pick<
   TerminalRegistry,
   'open' | 'get' | 'list' | 'has' | 'close' | 'activityOf' | 'on' | 'off'
->;
+> & Partial<Pick<TerminalRegistry, 'consumeTombstone' | 'isPersistent' | 'pidOf'>>;
 
 export interface AgencyRuntimeOptions {
   registry: AgencyTerminalRegistry;
@@ -200,6 +200,43 @@ export class AgencySessionRuntime extends EventEmitter {
     if (this.initialized) throw new Error('Agency runtime already initialized');
     let changed = false;
     for (const previous of migrateSessionTabs(await this.store.load())) {
+      const liveDescriptor = previous.terminalId ? this.registry.get(previous.terminalId) : null;
+      if (liveDescriptor && liveDescriptor.alive && (ACTIVE.has(previous.lifecycle) || previous.recovery?.status === 'resuming')) {
+        // Child PTY survived backend restart!
+        const session: AgencyRuntimeSession = {
+          ...previous,
+          lifecycle: 'running',
+          activity: activityFor(this.registry.activityOf(previous.terminalId!)),
+          updatedAt: NOW(),
+        };
+        this.byTerminal.set(previous.terminalId!, session.id);
+        if (session.kind === 'agent' && session.nativeIdentity && session.nativeSessionId) {
+          try {
+            this.claimNative('provider:' + session.nativeIdentity.provider + ':' + session.nativeSessionId, session.id);
+          } catch {}
+        }
+        this.sessions.set(session.id, session);
+        continue;
+      }
+
+      const tombstone = previous.terminalId && typeof this.registry.consumeTombstone === 'function'
+        ? this.registry.consumeTombstone(previous.terminalId)
+        : null;
+      if (tombstone && ACTIVE.has(previous.lifecycle)) {
+        // Child PTY exited while backend was down
+        const session: AgencyRuntimeSession = {
+          ...previous,
+          lifecycle: 'exited',
+          activity: 'offline',
+          exitCode: tombstone.exitCode,
+          stoppedAt: tombstone.exitedAt ?? NOW(),
+          updatedAt: NOW(),
+        };
+        changed = true;
+        this.sessions.set(session.id, session);
+        continue;
+      }
+
       const needsRecovery = ACTIVE.has(previous.lifecycle) || previous.recovery?.status === 'resuming';
       const session: AgencyRuntimeSession = needsRecovery ? {
         ...previous,
@@ -219,6 +256,11 @@ export class AgencySessionRuntime extends EventEmitter {
     this.registry.on('activity', this.onActivity);
     this.registry.on('session', this.onNativeSession);
     this.initialized = true;
+  }
+
+  getLiveSessionIds(): ReadonlySet<RuntimeSessionId> {
+    this.assertReady();
+    return new Set(this.liveList().map((s) => s.id));
   }
 
   /** Startup only. Single-flight and sequential: never invoked by browser reconnect. */

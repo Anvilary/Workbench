@@ -1136,11 +1136,29 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     const backpressure = new OutputBackpressure(socket, (terminalIds) => {
       for (const terminalId of terminalIds) {
         const attached = registry.attach(terminalId, listener);
-        if (attached !== null) send(socket, { type: 'terminal.replay', terminalId, data: attached.replay, truncated: attached.truncated });
+        if (attached !== null) {
+          send(socket, {
+            type: 'terminal.replay',
+            terminalId,
+            data: attached.replay,
+            truncated: attached.truncated,
+            reset: attached.reset,
+            startOffset: attached.startOffset,
+            endOffset: attached.endOffset,
+            offset: attached.endOffset,
+          });
+        }
       }
     });
-    const listener: OutputListener = (terminalId, chunk) => {
-      if (backpressure.shouldSend(terminalId)) send(socket, { type: 'terminal.output', terminalId, data: chunk });
+    const listener: OutputListener = (terminalId, chunk, offset) => {
+      if (backpressure.shouldSend(terminalId)) {
+        send(socket, {
+          type: 'terminal.output',
+          terminalId,
+          data: chunk,
+          offset,
+        });
+      }
     };
 
     // Conversaciones y repos que sigue **este** socket. Se sueltan al cerrarse,
@@ -2297,7 +2315,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           break;
 
         case 'terminal.attach': {
-          const attached = registry.attach(message.terminalId, listener);
+          const attached = registry.attach(message.terminalId, listener, message.sinceOffset);
           if (attached === null) {
             sendError(socket, 'unknown-terminal', serverText('terminalGone'));
             break;
@@ -2307,6 +2325,10 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
             terminalId: message.terminalId,
             data: attached.replay,
             truncated: attached.truncated,
+            reset: attached.reset,
+            startOffset: attached.startOffset,
+            endOffset: attached.endOffset,
+            offset: attached.endOffset,
           });
           // El tamano del cliente manda: el pty puede venir de otra ventana.
           registry.resize(message.terminalId, message.cols, message.rows);

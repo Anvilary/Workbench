@@ -1,7 +1,7 @@
 /**
  * Tipos y contratos para la comunicacion IPC con el supervisor de PTYs (maw-ptyd).
  *
- * Lane A - Protocolo Version 1 (Frozen Contract)
+ * Lane A & B - Protocolo Version 1 (Frozen Contract)
  */
 
 export const PTY_PROTOCOL_VERSION = 1;

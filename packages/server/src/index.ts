@@ -11,6 +11,7 @@ import { nativeRecoveryCapacity } from './agency/recovery-capacity.js';
 import { acquireStoreOwnership, publishReadiness, readReleaseIdentity } from './maw-host.js';
 import { existsSync } from 'node:fs';
 import { createServer, type Server as HttpServer } from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
@@ -554,6 +555,7 @@ async function main(): Promise<void> {
       }),
   };
 
+  await registry.initialize();
   const agencySessionStore = new SplitAgencySessionStore(path.join(appConfigDir(), 'agency-sessions.json'));
   const agencyRuntime = new AgencySessionRuntime({
     registry,
@@ -663,7 +665,11 @@ async function main(): Promise<void> {
       '  MAW executes shell commands. Loopback-only binding does not eliminate all risks.\n'
     );
   }
-  const clearReadiness = process.env['MAW_RUNTIME_DIR'] ? await publishReadiness(process.env['MAW_RUNTIME_DIR'], url, await readReleaseIdentity(repoRoot)) : async () => {};
+  const runtimeDir = process.env['MAW_RUNTIME_DIR']
+    ?? (process.env['XDG_RUNTIME_DIR'] ? path.join(process.env['XDG_RUNTIME_DIR'], 'maw') : null)
+    ?? (typeof process.getuid === 'function' && existsSync(`/run/user/${process.getuid()}`) ? path.join(`/run/user/${process.getuid()}`, 'maw') : null)
+    ?? path.join(os.tmpdir(), 'maw');
+  const clearReadiness = await publishReadiness(runtimeDir, url, await readReleaseIdentity(repoRoot));
   // Escape para desarrollo y pruebas automatizadas: arrancar sin abrir nada.
   if (process.env['AGENT_WORKBENCH_NO_OPEN'] !== '1') openBrowser(url);
 

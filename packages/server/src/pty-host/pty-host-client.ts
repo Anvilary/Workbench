@@ -1,7 +1,7 @@
 /**
  * Cliente IPC para conectarse a `maw-ptyd` (Persistent PTY Supervisor).
  *
- * Lane A - Client Adapter & Reconnection Protocol
+ * Lane A & B - Client Adapter & Reconnection Protocol
  */
 
 import net from 'node:net';
@@ -45,10 +45,15 @@ export class PtyHostClient {
   private exitListeners = new Set<PtyExitCallback>();
   private disconnectListeners = new Set<PtyDisconnectCallback>();
   private closed = false;
+  private _snapshot: PtySnapshotResponse | null = null;
 
   readonly socketPath: string;
   readonly authPath: string;
   private authToken: string;
+
+  get snapshot(): PtySnapshotResponse | null {
+    return this._snapshot;
+  }
 
   private constructor(socketPath: string, authPath: string, authToken: string) {
     this.socketPath = socketPath;
@@ -60,7 +65,8 @@ export class PtyHostClient {
    * Conecta a un demonio `maw-ptyd` existente o lanza uno en segundo plano si no existe.
    */
   static async connectOrSpawn(options: PtyHostClientOptions = {}): Promise<PtyHostClient> {
-    const runtimeDir = process.env.XDG_RUNTIME_DIR ||
+    const runtimeDir = process.env.MAW_RUNTIME_DIR ||
+      process.env.XDG_RUNTIME_DIR ||
       (typeof process.getuid === 'function' ? `/run/user/${process.getuid()}` : os.tmpdir());
 
     const socketPath = options.socketPath ||
@@ -72,7 +78,7 @@ export class PtyHostClient {
       `${socketPath}.auth`;
 
     const autoSpawn = options.autoSpawn ?? true;
-    const timeoutMs = options.spawnTimeoutMs ?? 3000;
+    const timeoutMs = options.spawnTimeoutMs ?? 4000;
 
     let authToken = options.authToken || '';
     if (!authToken && fs.existsSync(authPath)) {
@@ -84,7 +90,8 @@ export class PtyHostClient {
     const client = new PtyHostClient(socketPath, authPath, authToken);
 
     try {
-      await client._connect();
+      const snap = await client._connect();
+      client._snapshot = snap;
       return client;
     } catch (err) {
       if (!autoSpawn) throw err;
@@ -107,7 +114,8 @@ export class PtyHostClient {
         }
 
         try {
-          await client._connect();
+          const snap = await client._connect();
+          client._snapshot = snap;
           return client;
         } catch (e) {
           lastErr = e;
@@ -119,8 +127,9 @@ export class PtyHostClient {
   }
 
   private async _spawnDaemon(scriptPath?: string): Promise<void> {
-    const defaultScript = path.join(path.dirname(new URL(import.meta.url).pathname), 'maw-ptyd.mjs');
-    const targetScript = scriptPath || defaultScript;
+    const targetScript = scriptPath ||
+      process.env.MAW_PTYD_SCRIPT ||
+      path.join(path.dirname(new URL(import.meta.url).pathname), 'maw-ptyd.mjs');
 
     const child = spawn(process.execPath, [
       targetScript,
@@ -427,5 +436,9 @@ export class PtyHostClient {
   onDisconnect(listener: PtyDisconnectCallback): () => void {
     this.disconnectListeners.add(listener);
     return () => this.disconnectListeners.delete(listener);
+  }
+
+  get supervisorPid(): number | null {
+    return this._snapshot?.pid ?? null;
   }
 }

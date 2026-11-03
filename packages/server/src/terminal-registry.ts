@@ -40,6 +40,8 @@ import { createPtyScreen, type PtyScreen } from './pty-screen.js';
 import type { ShellLocation } from './shell-locator.js';
 import { prepareIntegratedShell } from './agency/shell-integration.js';
 import { integrationsDir } from './paths.js';
+import { PtyHostClient } from './pty-host/pty-host-client.js';
+import type { PtyHostSessionInfo, PtyHostTombstoneInfo } from './pty-host/pty-host-types.js';
 
 import { ActivityBook, wakeActionFor, type ActivityEntry } from './terminal-activity.js';
 import { TerminalOpenError, resolveLaunchPlan } from './terminal-open-error.js';
@@ -62,7 +64,51 @@ const RESTART_EXIT_TIMEOUT_MS = 10_000;
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
 
-export type OutputListener = (terminalId: TerminalId, chunk: string) => void;
+export interface IPtySession {
+  readonly pid: number;
+  readonly cwd: string;
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  dispose(): void;
+}
+
+export class RemotePtySession implements IPtySession {
+  private disposed = false;
+
+  constructor(
+    private readonly client: PtyHostClient,
+    readonly id: string,
+    readonly pid: number,
+    readonly cwd: string,
+  ) {}
+
+  write(data: string): void {
+    if (this.disposed) return;
+    this.client.write(this.id, data);
+  }
+
+  resize(cols: number, rows: number): void {
+    if (this.disposed) return;
+    this.client.resize(this.id, cols, rows);
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    void this.client.kill(this.id, 'SIGTERM').catch(() => {});
+  }
+}
+
+export type OutputListener = (terminalId: TerminalId, chunk: string, offset?: number) => void;
+
+export interface AttachResult {
+  readonly replay: string;
+  readonly truncated: boolean;
+  readonly reset: boolean;
+  readonly startOffset: number;
+  readonly endOffset: number;
+  readonly sinceOffset?: number;
+}
 
 /**
  * De que CLI es una sesion del historial, o null si no se sabe.
@@ -105,7 +151,7 @@ interface TerminalEntry {
    * Tambien queda en null cuando el proceso termina, pero eso se distingue por
    * el `exitCode` del descriptor: son dos cosas distintas para el usuario.
    */
-  session: PtySession | null;
+  session: IPtySession | null;
   buffer: OutputBuffer;
   listeners: Set<OutputListener>;
   /**
@@ -183,7 +229,7 @@ export interface OpenTerminalOptions {
 export { TerminalOpenError } from './terminal-open-error.js';
 
 export interface TerminalRegistryEvents {
-  output: (terminalId: TerminalId, chunk: string) => void;
+  output: (terminalId: TerminalId, chunk: string, offset?: number) => void;
   exit: (terminalId: TerminalId, exitCode: number, signal: number | null) => void;
   changed: () => void;
   /**
@@ -230,6 +276,10 @@ export class TerminalRegistry extends EventEmitter {
   private unavailableTabs: PlacedTab[] = [];
   /** Pestanas guardadas de una CLI que esta build no conoce. Idem, crudas. */
   private foreignTabs: ForeignTab[] = [];
+  private client: PtyHostClient | null = null;
+  private readonly tombstones = new Map<TerminalId, PtyHostTombstoneInfo>();
+  private readonly persistentPty: boolean;
+  private readonly supervisorScriptPath?: string;
 
   constructor(
     private readonly agents: AgentRegistry,
@@ -245,8 +295,154 @@ export class TerminalRegistry extends EventEmitter {
     private readonly tabWorktreeOf: TabWorktreeLookup = () => Promise.resolve(null),
     /** Disposable integration directory for fixture PTYs. */
     private readonly shellIntegrationDir: () => string = () => integrationsDir() + '/shell',
+    options?: { persistentPty?: boolean; supervisorScriptPath?: string },
   ) {
     super();
+    this.persistentPty = options?.persistentPty ?? (process.env.MAW_PERSISTENT_PTY === '1' && process.env.MAW_DISABLE_PTYD !== '1');
+    this.supervisorScriptPath = options?.supervisorScriptPath ?? process.env.MAW_PTYD_SCRIPT;
+  }
+
+  isPersistent(): boolean {
+    return this.client !== null;
+  }
+
+  pidOf(terminalId: TerminalId): number | null {
+    return this.terminals.get(terminalId)?.session?.pid ?? null;
+  }
+
+  consumeTombstone(terminalId: TerminalId): PtyHostTombstoneInfo | null {
+    const tombstone = this.tombstones.get(terminalId) ?? null;
+    if (tombstone) {
+      this.tombstones.delete(terminalId);
+      this.client?.reapTombstone(terminalId);
+    }
+    return tombstone;
+  }
+
+  async initialize(): Promise<void> {
+    if (this.persistentPty && !this.client) {
+      try {
+        this.client = await PtyHostClient.connectOrSpawn({
+          autoSpawn: true,
+          supervisorScriptPath: this.supervisorScriptPath,
+        });
+
+        this.client.onData((id, chunk, offset) => {
+          const target = this.terminals.get(id);
+          if (target !== undefined) {
+            target.buffer.push(chunk);
+            for (const listener of target.listeners) {
+              listener(id, chunk, offset);
+            }
+          }
+          this.emit('output', id, chunk, offset);
+        });
+
+        this.client.onExit((event) => {
+          const target = this.terminals.get(event.id);
+          if (target !== undefined) {
+            target.session = null;
+            target.descriptor = {
+              ...target.descriptor,
+              alive: false,
+              exitCode: event.exitCode,
+              sleeping: false,
+              launchedAt: null,
+            };
+            target.stopWatchingActivity?.();
+            target.stopWatchingActivity = null;
+            this.setActivity(event.id, 'offline');
+            target.launchHook.exit();
+          }
+          this.tombstones.set(event.id, {
+            id: event.id,
+            sessionId: event.sessionId,
+            pid: event.pid,
+            exitCode: event.exitCode,
+            signal: event.signal,
+            exitedAt: event.exitedAt,
+            startOffset: 0,
+            endOffset: event.finalOffset,
+          });
+          this.emit('exit', event.id, event.exitCode, event.signal);
+          this.emit('changed');
+        });
+
+        const snapshot = this.client.snapshot ?? await this.client.list();
+        for (const session of snapshot.sessions) {
+          if (session.alive) {
+            await this.adoptSupervisorSession(session);
+          }
+        }
+        for (const tombstone of snapshot.tombstones) {
+          this.tombstones.set(tombstone.id, tombstone);
+        }
+      } catch (err) {
+        console.warn('[registry] Failed connecting to pty supervisor, using in-process pty:', err);
+        this.client = null;
+      }
+    }
+  }
+
+  private async adoptSupervisorSession(session: PtyHostSessionInfo): Promise<void> {
+    let entry = this.terminals.get(session.id);
+    if (entry !== undefined) {
+      entry.session = new RemotePtySession(this.client!, session.id, session.pid, session.cwd);
+      entry.descriptor = {
+        ...entry.descriptor,
+        alive: true,
+        sleeping: false,
+      };
+      try {
+        const replay = await this.client!.replay(session.id);
+        entry.buffer.seed(replay.data, replay.startOffset, replay.endOffset, replay.truncated);
+      } catch {}
+      return;
+    }
+
+    const descriptor: TerminalDescriptor = {
+      terminalId: session.id,
+      kind: 'agent',
+      agent: null,
+      cwd: session.cwd,
+      sessionId: session.sessionId || '',
+      label: '',
+      resumed: true,
+      createdAt: new Date(session.createdAt).getTime() || Date.now(),
+      alive: true,
+      exitCode: null,
+      sleeping: false,
+      launchedAt: new Date(session.createdAt).getTime() || Date.now(),
+      worktree: null,
+      review: false,
+    };
+
+    const buffer = new OutputBuffer();
+    try {
+      const replay = await this.client!.replay(session.id);
+      buffer.seed(replay.data, replay.startOffset, replay.endOffset, replay.truncated);
+    } catch {}
+
+    const remoteSession = new RemotePtySession(this.client!, session.id, session.pid, session.cwd);
+    const createdEntry: TerminalEntry = {
+      descriptor,
+      session: remoteSession,
+      buffer,
+      listeners: new Set(),
+      size: { cols: DEFAULT_COLS, rows: DEFAULT_ROWS },
+      stopWatchingActivity: null,
+      launchHook: new LaunchHookSlot(),
+      agencyLaunch: null,
+      agencyManaged: true,
+      launching: false,
+      launchedAt: descriptor.launchedAt,
+    };
+
+    this.terminals.set(session.id, createdEntry);
+    if (!this.order.includes(session.id)) {
+      this.order.push(session.id);
+    }
+    this.emit('changed');
   }
 
   /** La rama de una carpeta, sin que un fallo al leer `.git` frene una pestana. */
@@ -675,55 +871,65 @@ export class TerminalRegistry extends EventEmitter {
     }
 
     const launchedAt = Date.now();
-    let session: PtySession;
+    let session: IPtySession;
     try {
-      session = new PtySession({
-        launch,
-        cwd,
-        env,
-        cols: entry.size.cols,
-        rows: entry.size.rows,
-        onData: (chunk) => {
-          buffer.push(chunk);
-          const target = this.terminals.get(terminalId);
-          const listenerCount = target?.listeners.size ?? 0;
-          debugLog(
-            'pty',
-            `output ${chunk.length} bytes from ${terminalId.slice(0, 8)}, ${listenerCount} listeners`,
-          );
-          if (target !== undefined) {
-            for (const listener of target.listeners) listener(terminalId, chunk);
-          }
-          this.emit('output', terminalId, chunk);
-        },
-        onExit: (exitCode, signal) => {
-          const target = this.terminals.get(terminalId);
-          if (target !== undefined) {
-            // La pestana no se cierra sola: queda muerta y visible, para que el
-            // usuario vea el codigo de salida en vez de que desaparezca. Sin
-            // proceso vuelve a ser una pestana que se lee y se puede despertar.
-            target.session = null;
-            target.descriptor = {
-              ...target.descriptor,
-              alive: false,
-              exitCode,
-              sleeping: false,
-              launchedAt: null,
-            };
-            target.stopWatchingActivity?.();
-            target.stopWatchingActivity = null;
-            this.setActivity(terminalId, 'offline');
-            /*
-              Con la pestana todavia en el registro: es la ultima oportunidad del
-              gancho de mirar lo que la CLI dejo escrito al salir, y lo que
-              encuentre tiene que tener a quien avisarle. Despues queda soltado.
-            */
-            target.launchHook.exit();
-          }
-          this.emit('exit', terminalId, exitCode, signal);
-          this.emit('changed');
-        },
-      });
+      if (this.client !== null) {
+        const spawned = await this.client.spawn({
+          id: terminalId,
+          cmd: launch.file,
+          args: [...launch.args],
+          cwd,
+          env,
+          cols: entry.size.cols,
+          rows: entry.size.rows,
+          sessionId: launchedSessionId,
+        });
+        if (this.terminals.get(terminalId) !== entry) {
+          void this.client.kill(terminalId, 'SIGTERM').catch(() => {});
+          return false;
+        }
+        session = new RemotePtySession(this.client, terminalId, spawned.pid, cwd);
+      } else {
+        session = new PtySession({
+          launch,
+          cwd,
+          env,
+          cols: entry.size.cols,
+          rows: entry.size.rows,
+          onData: (chunk) => {
+            buffer.push(chunk);
+            const target = this.terminals.get(terminalId);
+            const listenerCount = target?.listeners.size ?? 0;
+            debugLog(
+              'pty',
+              `output ${chunk.length} bytes from ${terminalId.slice(0, 8)}, ${listenerCount} listeners`,
+            );
+            if (target !== undefined) {
+              for (const listener of target.listeners) listener(terminalId, chunk);
+            }
+            this.emit('output', terminalId, chunk);
+          },
+          onExit: (exitCode, signal) => {
+            const target = this.terminals.get(terminalId);
+            if (target !== undefined) {
+              target.session = null;
+              target.descriptor = {
+                ...target.descriptor,
+                alive: false,
+                exitCode,
+                sleeping: false,
+                launchedAt: null,
+              };
+              target.stopWatchingActivity?.();
+              target.stopWatchingActivity = null;
+              this.setActivity(terminalId, 'offline');
+              target.launchHook.exit();
+            }
+            this.emit('exit', terminalId, exitCode, signal);
+            this.emit('changed');
+          },
+        });
+      }
     } catch (error) {
       throw new TerminalOpenError(
         'spawn-failed',
@@ -1056,6 +1262,8 @@ export class TerminalRegistry extends EventEmitter {
     entry.stopWatchingActivity?.();
     // Una pestana dormida no tiene nada que terminar: se saca y listo.
     entry.session?.dispose();
+    this.tombstones.delete(terminalId);
+    this.client?.reapTombstone(terminalId);
     this.activity.delete(terminalId);
     this.terminals.delete(terminalId);
     this.order = this.order.filter((id) => id !== terminalId);
@@ -1071,17 +1279,25 @@ export class TerminalRegistry extends EventEmitter {
   attach(
     terminalId: TerminalId,
     listener: OutputListener,
-  ): { replay: string; truncated: boolean } | null {
+    sinceOffset?: number,
+  ): AttachResult | null {
     const entry = this.terminals.get(terminalId);
     if (entry === undefined) return null;
 
     entry.listeners.add(listener);
-    const replay = entry.buffer.read();
+    const sliced = entry.buffer.sliceFrom(sinceOffset);
     debugLog(
       'registry',
-      `attach ${terminalId.slice(0, 8)}: replay of ${replay.length} bytes, ${entry.listeners.size} listeners`,
+      `attach ${terminalId.slice(0, 8)}: replay of ${sliced.data.length} bytes (reset=${sliced.reset}, sinceOffset=${sinceOffset}), ${entry.listeners.size} listeners`,
     );
-    return { replay, truncated: entry.buffer.isTruncated() };
+    return {
+      replay: sliced.data,
+      truncated: sliced.truncated,
+      reset: sliced.reset,
+      startOffset: sliced.startOffset,
+      endOffset: sliced.endOffset,
+      sinceOffset,
+    };
   }
 
   detach(terminalId: TerminalId, listener: OutputListener): void {
@@ -1089,8 +1305,13 @@ export class TerminalRegistry extends EventEmitter {
   }
 
   /** Quita un oyente de todas las terminales. Para cuando se cae un socket. */
-  detachAll(listener: OutputListener): void {
-    for (const entry of this.terminals.values()) entry.listeners.delete(listener);
+  detachAll(listener?: OutputListener): void {
+    if (listener !== undefined) {
+      for (const entry of this.terminals.values()) entry.listeners.delete(listener);
+    } else {
+      for (const entry of this.terminals.values()) entry.listeners.clear();
+      this.client?.detach();
+    }
   }
 
   /**
@@ -1177,7 +1398,12 @@ export class TerminalRegistry extends EventEmitter {
       // Sin pasada final: los adaptadores ya se liberaron (B4 del hito 25).
       entry.launchHook.cancel();
       entry.stopWatchingActivity?.();
-      entry.session?.dispose();
+      if (!this.persistentPty || !this.client) {
+        entry.session?.dispose();
+      }
+    }
+    if (this.client) {
+      this.client.detach();
     }
     this.terminals.clear();
     this.activity.clear();
