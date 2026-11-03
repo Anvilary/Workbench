@@ -172,7 +172,7 @@ test('native Workbench Codex resume and literal profile args are preserved', asy
       environment: { PATH: '/bin', TERM: 'xterm', TRACE_TAG: 'base' },
     }, { identities });
     assert.equal(launch.file, f.binary);
-    assert.deepEqual(launch.args, ['--config', 'key="space preserving"', 'resume', UUID3]);
+    assert.deepEqual(launch.args, ['--config', 'key="space preserving"', 'resume', '--no-alt-screen', UUID3]);
     assert.deepEqual(launch.session, { kind: 'known', sessionId: UUID3 });
     assert.equal(launch.env['TRACE_TAG'], 'base');
   } finally { await f.cleanup(); }

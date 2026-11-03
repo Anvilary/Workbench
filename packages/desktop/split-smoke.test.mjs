@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
@@ -10,6 +11,9 @@ import { _electron as electron } from 'playwright';
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(new URL(import.meta.url).pathname);
+const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
+  ? '/opt/maw-electron/45.2.0/electron'
+  : require('electron');
 
 const testIds = [
   '11111111-1111-4111-8111-111111111111',
@@ -107,7 +111,7 @@ test('multi-ChatGPT views: 2 and 4 simultaneous attached views with atomic recon
   try {
     desktop = await electron.launch({
       chromiumSandbox: true,
-      executablePath: require('electron'),
+      executablePath: electronExecutable,
       args: [here, '--ozone-platform=x11'],
       env: {
         ...process.env,

@@ -842,8 +842,8 @@ const adapter = createClaudeCodeAdapter();
       sameShape(args('claude-code', 'viejo', true), ['--permission-mode', 'plan', '--resume', 'viejo']),
     JSON.stringify(args('claude-code', null, true)));
   check('49 codex: la sandbox de solo lectura al abrir, y despues de `resume` al reanudar',
-    sameShape(args('codex', null, true), ['--sandbox', 'read-only']) &&
-      sameShape(args('codex', uuid, true), ['resume', '--sandbox', 'read-only', uuid]),
+    sameShape(args('codex', null, true), ['--no-alt-screen', '--sandbox', 'read-only']) &&
+      sameShape(args('codex', uuid, true), ['resume', '--no-alt-screen', '--sandbox', 'read-only', uuid]),
     JSON.stringify(args('codex', uuid, true)));
   check('49 antigravity: --mode plan en vez de accept-edits',
     sameShape(args('antigravity', null, true), ['--mode', 'plan']) && sameShape(args('antigravity', null), ['--mode', 'accept-edits']),

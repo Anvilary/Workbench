@@ -1,9 +1,11 @@
 import { app, BrowserWindow, WebContentsView, Menu, ipcMain, session, shell, dialog, clipboard, ClipboardItem } from 'electron';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { mkdir } from 'node:fs/promises';
 import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl } from './policy.mjs';
 import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
+import { calculateResourceBudget, selectEvictionCandidate } from './resource-budget.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Deliberately distinct from both production MAW and any Brave/Neko profile.
@@ -89,6 +91,10 @@ async function start() {
   const popups = new Set();
   const popupOwners = new Map(); // popup WebContents -> tabId
   const attachedViews = new Map(); // id -> WebContentsView (up to 4 simultaneously visible)
+  const suspendedTabs = new Map(); // id -> { id, provider, url, requestedUrl, zoomLevel, suspendedAt }
+  const lastAccessedAt = new Map(); // id -> number (timestamp)
+  const activeDownloads = new Map(); // id -> number (count)
+  const zoomLevels = new Map(); // id -> number
   let shuttingDown = false;
   const send = state => { if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(CHANNEL + ':state', state); };
 
@@ -107,6 +113,9 @@ async function start() {
     if (!tabEntry) {
       event.preventDefault();
       return;
+    }
+    if (tabId) {
+      activeDownloads.set(tabId, (activeDownloads.get(tabId) || 0) + 1);
     }
 
     // 2. Verify initiator origin (Electron 45 getInitiatorOrigin)
@@ -183,6 +192,11 @@ async function start() {
     });
 
     item.once('done', (_event, state) => {
+      if (tabId) {
+        const remaining = (activeDownloads.get(tabId) || 1) - 1;
+        if (remaining <= 0) activeDownloads.delete(tabId);
+        else activeDownloads.set(tabId, remaining);
+      }
       if (state === 'completed') {
         send({ type: 'download-complete', id: tabId, filename: baseFilename, savePath: item.getSavePath() });
       } else if (state === 'cancelled') {
@@ -237,6 +251,10 @@ async function start() {
       event.preventDefault();
       return;
     }
+    const tabId = tabEntry[0];
+    if (tabId) {
+      activeDownloads.set(tabId, (activeDownloads.get(tabId) || 0) + 1);
+    }
     const initiator = typeof item.getInitiatorOrigin === 'function' ? item.getInitiatorOrigin() : null;
     if (initiator) {
       try {
@@ -244,27 +262,35 @@ async function start() {
         const allowed = host === 'github.com' || host.endsWith('.github.com') || host.endsWith('.githubusercontent.com');
         if (!allowed) {
           event.preventDefault();
+          if (tabId) activeDownloads.delete(tabId);
           return;
         }
       } catch {
         event.preventDefault();
+        if (tabId) activeDownloads.delete(tabId);
         return;
       }
     }
     const destinationUrls = [item.getURL(), ...(typeof item.getURLChain === 'function' ? item.getURLChain() : [])];
     if (!destinationUrls.every(u => githubEmbeddedUrl(u))) {
       event.preventDefault();
+      if (tabId) activeDownloads.delete(tabId);
       return;
     }
     const popupWin = BrowserWindow.fromWebContents(webContents);
     if (popupWin && popups.has(popupWin)) {
       try { popupWin.hide(); } catch {}
-      item.once('done', () => {
-        if (!popupWin.isDestroyed()) {
-          popupWin.close();
-        }
-      });
     }
+    item.once('done', () => {
+      if (tabId) {
+        const remaining = (activeDownloads.get(tabId) || 1) - 1;
+        if (remaining <= 0) activeDownloads.delete(tabId);
+        else activeDownloads.set(tabId, remaining);
+      }
+      if (popupWin && popups.has(popupWin) && !popupWin.isDestroyed()) {
+        popupWin.close();
+      }
+    });
   });
 
   perplexitySession.on('will-download', (event, item, webContents) => {
@@ -324,6 +350,9 @@ async function start() {
       item.setSaveDialogOptions({ defaultPath, title: 'Save File' });
     }
     const tabId = tabEntry[0];
+    if (tabId) {
+      activeDownloads.set(tabId, (activeDownloads.get(tabId) || 0) + 1);
+    }
     send({ type: 'download-start', id: tabId, filename: baseFilename });
     item.on('updated', (_event, state) => {
       if (state === 'progressing') {
@@ -336,6 +365,11 @@ async function start() {
       }
     });
     item.once('done', (_event, state) => {
+      if (tabId) {
+        const remaining = (activeDownloads.get(tabId) || 1) - 1;
+        if (remaining <= 0) activeDownloads.delete(tabId);
+        else activeDownloads.set(tabId, remaining);
+      }
       if (state === 'completed') {
         send({ type: 'download-complete', id: tabId, filename: baseFilename, savePath: item.getSavePath() });
       } else if (state === 'cancelled') {
@@ -462,10 +496,102 @@ async function start() {
     return chatUrlForPersistence(value);
   }
 
+  function canEvict(id) {
+    if (attachedViews.has(id)) return false;
+    if (layoutFocusedId === id) return false;
+    if ((activeDownloads.get(id) ?? 0) > 0) return false;
+    for (const ownerId of popupOwners.values()) {
+      if (ownerId === id) return false;
+    }
+    const view = views.get(id);
+    if (!view || view.webContents.isDestroyed()) return false;
+    if (view.webContents.isLoading()) return false;
+    return true;
+  }
+
+  function getResourceBudget() {
+    let tabWorkingSetBytes = 0;
+    try {
+      if (typeof app.getAppMetrics === 'function') {
+        const metrics = app.getAppMetrics();
+        for (const m of metrics) {
+          if (m.type === 'Tab' && m.memory?.workingSetSize) {
+            tabWorkingSetBytes += m.memory.workingSetSize * 1024;
+          }
+        }
+      }
+    } catch {}
+
+    const freeBytes = typeof os.freemem === 'function' ? os.freemem() : 4 * 1024 * 1024 * 1024;
+    const totalBytes = typeof os.totalmem === 'function' ? os.totalmem() : 16 * 1024 * 1024 * 1024;
+
+    return calculateResourceBudget({
+      freeBytes,
+      totalBytes,
+      tabWorkingSetBytes,
+      attachedCount: attachedViews.size,
+      envOverride: process.env.MAW_MAX_RESIDENT_VIEWS,
+    }).budget;
+  }
+
+  function evictTab(id) {
+    const view = views.get(id);
+    if (!view) return;
+
+    let currentUrl = urls.get(id) || requestedUrls.get(id);
+    try {
+      if (!view.webContents.isDestroyed()) {
+        const activeUrl = view.webContents.getURL();
+        if (durablePage(providers.get(id) ?? 'chatgpt', activeUrl)) {
+          currentUrl = activeUrl;
+        }
+      }
+    } catch {}
+
+    const provider = providers.get(id) ?? 'chatgpt';
+    const zoomLevel = zoomLevels.get(id) ?? 0;
+
+    suspendedTabs.set(id, {
+      id,
+      provider,
+      url: currentUrl,
+      requestedUrl: requestedUrls.get(id) || currentUrl,
+      zoomLevel,
+      suspendedAt: Date.now(),
+    });
+
+    hide(id);
+    if (!view.webContents.isDestroyed()) {
+      view.webContents.close();
+    }
+    views.delete(id);
+    urls.delete(id);
+    requestedUrls.delete(id);
+    failures.delete(id);
+
+    send({ type: 'suspended', id });
+  }
+
+  function ensureCapacity(excludeId) {
+    const budget = getResourceBudget();
+    while (views.size >= budget) {
+      const candidateId = selectEvictionCandidate({
+        residentIds: views.keys(),
+        lastAccessedAt,
+        canEvict,
+        excludeId,
+      });
+
+      if (!candidateId) break;
+      evictTab(candidateId);
+    }
+  }
+
   function open(id, url, provider = 'chatgpt', explicit = true) {
     const providerName = provider === 'github' ? 'GitHub' : provider === 'perplexity' ? 'Perplexity' : 'ChatGPT';
     const targetSession = provider === 'github' ? githubSession : provider === 'perplexity' ? perplexitySession : chatSession;
     if (views.has(id)) {
+      lastAccessedAt.set(id, Date.now());
       if ((providers.get(id) ?? 'chatgpt') !== provider) {
         send({ type: 'error', id, message: 'This tab cannot change browser provider.' });
         return;
@@ -500,16 +626,36 @@ async function start() {
         return;
       }
     }
-    if (views.size >= 8) throw new Error('Prototype view limit reached');
+
+    let targetUrl = url;
+    let initialZoom = 0;
+    if (suspendedTabs.has(id)) {
+      const suspended = suspendedTabs.get(id);
+      suspendedTabs.delete(id);
+      if (suspended) {
+        if (durablePage(provider, suspended.url)) {
+          targetUrl = suspended.url;
+        }
+        initialZoom = suspended.zoomLevel ?? 0;
+        send({ type: 'restoring', id });
+      }
+    }
+
+    ensureCapacity(id);
     const view = new WebContentsView({ webPreferences: { ...secure, session: targetSession, backgroundThrottling: true } });
     view.setVisible(false);
     view.setBackgroundColor('#212121');
     views.set(id, view);
     providers.set(id, provider);
-    urls.set(id, url);
-    requestedUrls.set(id, url);
+    urls.set(id, targetUrl);
+    requestedUrls.set(id, targetUrl);
+    lastAccessedAt.set(id, Date.now());
+    if (initialZoom !== 0) {
+      zoomLevels.set(id, initialZoom);
+    }
     guard(view.webContents, provider);
     const reportFocus = () => {
+      lastAccessedAt.set(id, Date.now());
       if (views.get(id) !== view || attachedViews.get(id) !== view ||
           view.webContents.isDestroyed() || reportedFocusedId === id) return;
       reportedFocusedId = id;
@@ -528,7 +674,12 @@ async function start() {
     view.webContents.on('did-navigate', committed);
     view.webContents.on('did-navigate-in-page', committed);
     view.webContents.on('did-start-loading', () => { failures.delete(id); send({ type: 'loading', id }); });
-    view.webContents.on('did-finish-load', () => { if (!failures.has(id) && durablePage(provider, view.webContents.getURL())) send({ type: 'ready', id }); });
+    view.webContents.on('did-finish-load', () => {
+      if (initialZoom !== 0 && !view.webContents.isDestroyed()) {
+        try { view.webContents.setZoomLevel(initialZoom); } catch {}
+      }
+      if (!failures.has(id) && durablePage(provider, view.webContents.getURL())) send({ type: 'ready', id });
+    });
     view.webContents.on('did-stop-loading', () => { if (!failures.has(id) && durablePage(provider, view.webContents.getURL())) send({ type: 'ready', id }); });
     view.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => {
       if (mainFrame) {
@@ -549,10 +700,14 @@ async function start() {
       if (attachedViews.has(id)) hide(id);
       send({ type: 'error', id, message });
     });
-    void view.webContents.loadURL(url).catch(() => {});
+    void view.webContents.loadURL(targetUrl).catch(() => {});
   }
 
   function closeView(id) {
+    suspendedTabs.delete(id);
+    lastAccessedAt.delete(id);
+    zoomLevels.delete(id);
+    activeDownloads.delete(id);
     const view = views.get(id);
     if (!view) return;
     hide(id);
@@ -563,11 +718,23 @@ async function start() {
   ipcMain.handle(CHANNEL, async (event, command) => {
     if (!trustedSender(event, win.webContents, local.origin) || !validCommand(command)) throw new Error('Invalid desktop request');
     if (command.type === 'open') open(command.id, command.url, command.provider ?? 'chatgpt', true);
-    if (command.type === 'update' && views.has(command.id)) open(command.id, command.url, command.provider ?? providers.get(command.id) ?? 'chatgpt', false);
+    if (command.type === 'update') {
+      if (views.has(command.id)) {
+        open(command.id, command.url, command.provider ?? providers.get(command.id) ?? 'chatgpt', false);
+      } else if (suspendedTabs.has(command.id)) {
+        const item = suspendedTabs.get(command.id);
+        if (item) {
+          item.url = command.url;
+          item.requestedUrl = command.url;
+          if (command.provider) item.provider = command.provider;
+        }
+      }
+    }
     if (command.type === 'browser-action') {
       const view = views.get(command.id);
       const contents = view?.webContents;
       if (!contents || contents.isDestroyed()) return;
+      lastAccessedAt.set(command.id, Date.now());
       if (command.action === 'back' && contents.canGoBack()) contents.goBack();
       if (command.action === 'forward' && contents.canGoForward()) contents.goForward();
       if (command.action === 'reload') {
@@ -578,9 +745,20 @@ async function start() {
       if (command.action === 'copy-selection') contents.copy();
       if (command.action === 'open-page') void openExternal(contents.getURL());
       if (command.action === 'open-link') void openExternal(command.url);
-      if (command.action === 'zoom-in') contents.setZoomLevel(Math.min(3, contents.getZoomLevel() + 0.5));
-      if (command.action === 'zoom-out') contents.setZoomLevel(Math.max(-3, contents.getZoomLevel() - 0.5));
-      if (command.action === 'zoom-reset') contents.setZoomLevel(0);
+      if (command.action === 'zoom-in') {
+        const lvl = Math.min(3, contents.getZoomLevel() + 0.5);
+        contents.setZoomLevel(lvl);
+        zoomLevels.set(command.id, lvl);
+      }
+      if (command.action === 'zoom-out') {
+        const lvl = Math.max(-3, contents.getZoomLevel() - 0.5);
+        contents.setZoomLevel(lvl);
+        zoomLevels.set(command.id, lvl);
+      }
+      if (command.action === 'zoom-reset') {
+        contents.setZoomLevel(0);
+        zoomLevels.set(command.id, 0);
+      }
     }
     if (command.type === 'copy-file') {
       const resolved = await resolveClipboardTarget(command.cwd, command.relative, { requireAuthoritative: true });
@@ -604,7 +782,10 @@ async function start() {
       }
     }
     if (command.type === 'close') closeView(command.id);
-    if (command.type === 'retain') for (const id of views.keys()) if (!command.ids.includes(id)) closeView(id);
+    if (command.type === 'retain') {
+      for (const id of views.keys()) if (!command.ids.includes(id)) closeView(id);
+      for (const id of [...suspendedTabs.keys()]) if (!command.ids.includes(id)) suspendedTabs.delete(id);
+    }
 
     // FEATURE 4: In-memory visual capture fallback for overlapping overlays
     if (command.type === 'capture' && views.has(command.id)) {
@@ -623,12 +804,17 @@ async function start() {
     // FEATURE 3: Centralized Multi-WebContentsView layout coordinator (atomic reconciliation)
     if (command.type === 'layout') {
       const focusedId = 'focusedId' in command ? command.focusedId : command.id ?? null;
+      if (focusedId) lastAccessedAt.set(focusedId, Date.now());
       const focusChanged = focusedId !== layoutFocusedId;
       layoutFocusedId = focusedId;
       if (focusChanged) reportedFocusedId = focusedId;
       const targetViews = Array.isArray(command.views)
         ? command.views
         : (command.id && command.bounds ? [{ id: command.id, bounds: command.bounds }] : []);
+
+      for (const item of targetViews) {
+        lastAccessedAt.set(item.id, Date.now());
+      }
 
       if (win.isMinimized() || targetViews.length === 0) {
         hideAll();
@@ -700,9 +886,18 @@ async function start() {
     for (const popup of popups) popup.destroy();
     for (const view of views.values()) if (!view.webContents.isDestroyed()) view.webContents.close();
     views.clear();
+    suspendedTabs.clear();
+    lastAccessedAt.clear();
+    zoomLevels.clear();
+    activeDownloads.clear();
     chatSession.flushStorageData();
     githubSession.flushStorageData();
-    void Promise.allSettled([chatSession.cookies.flushStore(), githubSession.cookies.flushStore()]).finally(() => win.close());
+    perplexitySession.flushStorageData();
+    void Promise.allSettled([
+      chatSession.cookies.flushStore(),
+      githubSession.cookies.flushStore(),
+      perplexitySession.cookies.flushStore(),
+    ]).finally(() => win.close());
   });
   app.on('window-all-closed', () => app.quit());
   await win.loadURL(local.href);

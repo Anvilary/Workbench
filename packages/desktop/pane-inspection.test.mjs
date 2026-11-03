@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { execFile } from 'node:child_process';
@@ -14,6 +15,9 @@ import { fixture, html, workspaceId, tabA, tabB } from '../web/src/agency/split/
 const require = createRequire(import.meta.url);
 const here = path.dirname(new URL(import.meta.url).pathname);
 const exec = promisify(execFile);
+const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
+  ? '/opt/maw-electron/45.2.0/electron'
+  : require('electron');
 
 async function eventually(check) {
   for (let n = 0; n < 160; n++) {
@@ -37,7 +41,7 @@ async function setup(t, query = 'web') {
     await new Promise(resolve => server.close(resolve));
     await rm(data, { recursive: true, force: true });
   });
-  desktop = await electron.launch({ chromiumSandbox: true, executablePath: require('electron'), args: [here, '--ozone-platform=x11'], env: {
+  desktop = await electron.launch({ chromiumSandbox: true, executablePath: electronExecutable, args: [here, '--ozone-platform=x11'], env: {
     ...process.env, MAW_DESKTOP_URL: 'http://127.0.0.1:' + server.address().port + '/?' + query, MAW_DESKTOP_DATA_DIR: data,
   } });
   await desktop.evaluate(({ session, app, BrowserWindow }) => {
