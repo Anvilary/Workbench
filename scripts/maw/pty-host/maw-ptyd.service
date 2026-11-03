@@ -1,0 +1,24 @@
+[Unit]
+Description=MAW Persistent PTY Supervisor (maw-ptyd)
+Documentation=https://github.com/user/My-Amazing-Workspace
+DefaultDependencies=no
+After=basic.target
+
+[Service]
+Type=simple
+WorkingDirectory=__MAW_ROOT__
+ExecStart=/usr/bin/env node __MAW_ROOT__/packages/server/src/pty-host/maw-ptyd.mjs
+Restart=on-failure
+RestartSec=1
+KillMode=control-group
+TimeoutStopSec=10
+Environment=NODE_ENV=production
+Environment=HOME=%h
+Environment=XDG_RUNTIME_DIR=%t
+StandardOutput=append:%h/.local/state/maw/logs/maw-ptyd.stdout.log
+StandardError=append:%h/.local/state/maw/logs/maw-ptyd.stderr.log
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
