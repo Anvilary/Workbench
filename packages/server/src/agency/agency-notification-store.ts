@@ -26,6 +26,7 @@ import { writeAtomically } from '../atomic-write.js';
 import { appConfigDir } from '../paths.js';
 
 const VERSION = 1;
+const MAX_NOTIFICATIONS = 150;
 
 class UnsupportedAgencyNotificationSchemaError extends Error {
   constructor(version: unknown) {
@@ -187,6 +188,18 @@ export class AgencyNotificationStore extends EventEmitter {
     this.notifications.set(id, item);
     if (input.deduplicationKey) {
       this.deduplicationIndex.set(input.deduplicationKey, { id, createdAt: Date.now() });
+    }
+
+    // Bound inbox retention: prune oldest acknowledged and read items if capacity exceeded
+    if (this.notifications.size > MAX_NOTIFICATIONS) {
+      const candidates = [...this.notifications.values()]
+        .filter((n) => n.read && n.acknowledgedAt && n.id !== id)
+        .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+      const excess = this.notifications.size - MAX_NOTIFICATIONS;
+      for (let i = 0; i < Math.min(excess, candidates.length); i++) {
+        const victim = candidates[i];
+        if (victim) this.notifications.delete(victim.id);
+      }
     }
 
     try { await this.persist(); }

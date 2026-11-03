@@ -58,6 +58,16 @@ export interface TabActivityKey {
   tabId: string;
 }
 
+export interface TabActivityManagerOptions {
+  notificationStore: AgencyNotificationStore;
+  storageDir?: string;
+  filePath?: string;
+  /** @deprecated Long-running notifications have been removed; kept for backward compatibility */
+  longRunningThresholdMs?: number;
+  /** Whether to emit durable notifications when a CLI session enters needs-input. Defaults to false. */
+  notifyOnNeedsInput?: boolean;
+}
+
 export class TabActivityManager extends EventEmitter {
   private queue: Promise<void> = Promise.resolve();
   private mutations: Promise<void> = Promise.resolve();
@@ -72,20 +82,17 @@ export class TabActivityManager extends EventEmitter {
   private readonly browserProviders = new Map<string, BrowserActivityProvider>();
   private readonly notificationStore: AgencyNotificationStore;
   private readonly tabNames = new Map<string, string>();
+  private readonly notifyOnNeedsInput: boolean;
   readonly longRunningThresholdMs: number;
   readonly file: string;
   private initialized = false;
 
-  constructor(options: {
-    notificationStore: AgencyNotificationStore;
-    storageDir?: string;
-    filePath?: string;
-    longRunningThresholdMs?: number;
-  }) {
+  constructor(options: TabActivityManagerOptions) {
     super();
     this.notificationStore = options.notificationStore;
     this.file = options.filePath ?? path.join(options.storageDir ?? appConfigDir(), 'agency-tab-activity.json');
     this.longRunningThresholdMs = options.longRunningThresholdMs ?? 30_000;
+    this.notifyOnNeedsInput = options.notifyOnNeedsInput ?? false;
   }
 
   private makeKey(workspaceId: string, tabId: string): string {
@@ -180,7 +187,7 @@ export class TabActivityManager extends EventEmitter {
       if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)) throw new Error('Invalid pending notification');
       const item = receipt as Record<string, unknown>;
       if (typeof item['deduplicationKey'] !== 'string' || !item['deduplicationKey'] ||
-          !['finished', 'failed'].includes(String(item['state'])) ||
+          !['finished', 'failed', 'needs-input'].includes(String(item['state'])) ||
           !isMawNotificationItem({ ...item, id: '00000000-0000-4000-8000-000000000001', read: false, createdAt: new Date(0).toISOString() })) {
         throw new Error('Invalid pending notification');
       }
@@ -602,7 +609,7 @@ export class TabActivityManager extends EventEmitter {
     };
     let notification: CreateNotificationInput | undefined;
 
-    // Create notification upon entering finished or failed with STABLE distinct turn ID deduplication
+    // Create notification upon entering finished, failed, or needs-input with STABLE distinct turn ID deduplication
     if (nextState === 'finished' && reliable) {
       const tabLabel = input.tabName || 'CLI Agent';
       const deduplicationKey = `cli-turn:${input.workspaceId}:${input.tabId}:${currentTaskId}`;
@@ -630,6 +637,20 @@ export class TabActivityManager extends EventEmitter {
         state: 'failed',
         deduplicationKey,
         metadata: { kind: 'cli', tabName: input.tabName ?? '', exitCode: input.exitCode ?? null, taskId: currentTaskId, turnSequence: currentSeq > 0 ? currentSeq : undefined },
+      };
+    } else if (nextState === 'needs-input' && reliable && this.notifyOnNeedsInput) {
+      const tabLabel = input.tabName || 'CLI Agent';
+      const deduplicationKey = `cli-input:${input.workspaceId}:${input.tabId}:${currentTaskId}`;
+      notification = {
+        workspaceId: input.workspaceId,
+        ...(input.projectId ? { projectId: input.projectId } : {}),
+        tabId: input.tabId,
+        sessionId: input.sessionId,
+        title: tabLabel,
+        body: detail || 'Agent is awaiting user input or permission',
+        state: 'needs-input',
+        deduplicationKey,
+        metadata: { kind: 'cli', tabName: input.tabName ?? '', taskId: currentTaskId, turnSequence: currentSeq > 0 ? currentSeq : undefined },
       };
     }
     await this.saveActivity(record, notification, input.tabName ?? undefined);
