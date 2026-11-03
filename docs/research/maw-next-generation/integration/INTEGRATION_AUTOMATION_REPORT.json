@@ -1,7 +1,8 @@
 {
-  "timestamp": "2026-11-03T19:06:10.358Z",
+  "timestamp": "2026-11-03T19:24:42.997Z",
   "baseRevision": "502181f235ce8d0f9f9c83661c874bc7cde014e1",
   "executionMode": "DRY_RUN",
+  "targetBranch": "integration/maw-next-generation",
   "lanes": {
     "A": {
       "name": "Lane A (PTY Supervisor)",
@@ -10,15 +11,17 @@
       "fullHash": "0311ae10f39bba39a7eb5c186c0239012cf314b0",
       "isClean": true,
       "hashMatches": true,
+      "isDescendedFromBase": true,
       "statusMessage": "OK"
     },
     "B": {
       "name": "Lane B (Reconnection)",
       "branch": "feat/maw-reconnection",
-      "currentHash": "0e4dab8",
-      "fullHash": "0e4dab82ce88536ad0cb86f0e41d544d66a8c4ac",
+      "currentHash": "2c7041a",
+      "fullHash": "2c7041abde02b57bc9ce87e1140b8f8c85d0d5aa",
       "isClean": false,
       "hashMatches": true,
+      "isDescendedFromBase": true,
       "statusMessage": "DIRTY_WORKTREE"
     },
     "C": {
@@ -28,6 +31,7 @@
       "fullHash": "2147c907ca85919a8abd2e8dfc300b023fa0b64c",
       "isClean": true,
       "hashMatches": true,
+      "isDescendedFromBase": true,
       "statusMessage": "OK"
     },
     "D": {
@@ -37,9 +41,37 @@
       "fullHash": "7d85b1afcd239330d512e5db1aa6bf6a7b652750",
       "isClean": true,
       "hashMatches": true,
+      "isDescendedFromBase": true,
       "statusMessage": "OK"
     }
   },
   "overlapsFound": 0,
+  "testResults": {
+    "passed": 18,
+    "failed": 0,
+    "skipped": 0,
+    "gates": [
+      {
+        "name": "Typecheck",
+        "status": "PASS"
+      },
+      {
+        "name": "Monorepo Build",
+        "status": "PASS"
+      },
+      {
+        "name": "Server Bundler",
+        "status": "PASS"
+      },
+      {
+        "name": "Lane A OutputBuffer Unit",
+        "status": "PASS"
+      },
+      {
+        "name": "Full-System Acceptance (14 tests)",
+        "status": "PASS"
+      }
+    ]
+  },
   "status": "READY_FOR_INTEGRATION"
 }
