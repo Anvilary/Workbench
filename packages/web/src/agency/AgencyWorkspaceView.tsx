@@ -375,6 +375,12 @@ export function AgencyWorkspaceView({
     nativeLayoutCoordinator.setFocusedTabId(activeTabId ?? null);
   }, [activeTabId]);
 
+  useEffect(() => {
+    return () => {
+      nativeLayoutCoordinator.setFocusedTabId(null);
+    };
+  }, []);
+
   usePaneInspection({
     workspaceId: workspace.id,
     tab: tabs.find((tab) => tab.id === activeTabId),

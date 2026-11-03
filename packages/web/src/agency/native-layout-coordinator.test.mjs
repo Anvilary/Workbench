@@ -266,10 +266,19 @@ test('event-driven layout coordinator eliminates idle animation-frame loop and i
   await frames(5);
   const focusedLayout = await page.evaluate(() => window.layoutHistory.at(-1));
   assert.equal(focusedLayout.focusedId, 'view-1', 'Layout must reflect updated focused tab ID');
+  assert.equal(await page.evaluate(() => window.nativeLayoutCoordinator.isViewing('view-1')), true, 'Coordinator must report viewing view-1');
 
-  // 5. Unregister view cleanly stops coordinator and hides views
+  // 5. Unregister view cleanly stops coordinator, clears focused tab, and hides views
   await page.evaluate(() => window.unregisterView());
   await frames(5);
   const finalLayout = await page.evaluate(() => window.layoutHistory.at(-1));
   assert.deepEqual(finalLayout.views, [], 'Unregistering all views must publish empty view array');
+  assert.equal(await page.evaluate(() => window.nativeLayoutCoordinator.isViewing('view-1')), false, 'Unregistering focused view must clear focused tab identity');
+
+  // 6. Explicit clearing of focused tab ID (e.g. on workspace view unmount)
+  await page.evaluate(() => {
+    window.nativeLayoutCoordinator.setFocusedTabId('test-workspace-tab');
+    window.nativeLayoutCoordinator.setFocusedTabId(null);
+  });
+  assert.equal(await page.evaluate(() => window.nativeLayoutCoordinator.isViewing('test-workspace-tab')), false, 'Workspace unmount cleanup must reset focused tab to null');
 });

@@ -110,9 +110,16 @@ export function PaneHeader({
     ghostEl: HTMLElement | null;
     shieldEl: HTMLElement | null;
     cachedHeaders: Map<string, { rect: DOMRect; tabRects: { left: number; width: number }[] }>;
+    rafId: number;
+    latestX: number;
+    latestY: number;
   } | null>(null);
 
   const cleanupDrag = () => {
+    if (tabDrag.current?.rafId) {
+      cancelAnimationFrame(tabDrag.current.rafId);
+      tabDrag.current.rafId = 0;
+    }
     if (tabDrag.current?.ghostEl) {
       tabDrag.current.ghostEl.remove();
       tabDrag.current.ghostEl = null;
@@ -289,6 +296,9 @@ export function PaneHeader({
                 ghostEl: null,
                 shieldEl: null,
                 cachedHeaders: new Map(),
+                rafId: 0,
+                latestX: event.clientX,
+                latestY: event.clientY,
               };
             }
           }
@@ -340,9 +350,19 @@ export function PaneHeader({
             if (drag.isDragging) {
               event.preventDefault();
 
-              // Direct transform update on ghost element (0 layout reads, 0 React re-renders)
-              if (drag.ghostEl) {
-                drag.ghostEl.style.transform = `translate3d(${event.clientX - drag.grabOffsetX}px, ${event.clientY - drag.grabOffsetY}px, 0)`;
+              // Coalesce ghost transform updates to requestAnimationFrame (cuts style recalcs under rapid pointermove)
+              drag.latestX = event.clientX;
+              drag.latestY = event.clientY;
+              if (drag.rafId === 0) {
+                drag.rafId = requestAnimationFrame(() => {
+                  const current = tabDrag.current;
+                  if (current && current.rafId !== 0) {
+                    current.rafId = 0;
+                    if (current.ghostEl) {
+                      current.ghostEl.style.transform = `translate3d(${current.latestX - current.grabOffsetX}px, ${current.latestY - current.grabOffsetY}px, 0)`;
+                    }
+                  }
+                });
               }
 
               // Determine target pane

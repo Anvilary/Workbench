@@ -135,6 +135,9 @@ class NativeLayoutCoordinator {
       }
       this.views.delete(reg.id);
       this.lastSerialized = '';
+      if (this.focusedId === reg.id) {
+        this.focusedId = null;
+      }
 
       if (this.views.size === 0) {
         this.stop();
