@@ -136,7 +136,7 @@ export function NativeChatGptView({
           {captureBackdrop && <img className="maw-capture-backdrop" src={captureBackdrop} alt="" />}
           {restoring && !captureBackdrop && (
             <div className="agency-shell-placeholder" role="status">
-              <p>{t('agency.ui.restore') || 'Restoring...'}</p>
+              <p>{t('agency.splits.restorePane')}</p>
             </div>
           )}
           {downloadFeedback && (
