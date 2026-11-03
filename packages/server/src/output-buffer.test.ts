@@ -155,3 +155,29 @@ test('OutputBuffer: clear() deterministically resets all state', () => {
   assert.equal(buf.isTruncated(), false);
   assert.equal(buf.read(), '');
 });
+
+test('OutputBuffer: seed() restores supervisor replay state with monotonic offsets', () => {
+  const buf = new OutputBuffer(1024);
+  buf.seed('previous output from supervisor\n', 500, 532, true);
+
+  assert.equal(buf.read(), 'previous output from supervisor\n');
+  assert.equal(buf.endOffset, 532);
+  assert.equal(buf.isTruncated(), true);
+
+  // Slicing from before startOffset triggers reset
+  const evicted = buf.sliceFrom(400);
+  assert.equal(evicted.reset, true);
+  assert.equal(evicted.data, 'previous output from supervisor\n');
+
+  // Slicing from current endOffset returns delta ''
+  const current = buf.sliceFrom(532);
+  assert.equal(current.reset, false);
+  assert.equal(current.data, '');
+
+  // Pushing new data increments monotonic offsets
+  buf.push('new line\n');
+  assert.equal(buf.endOffset, 532 + 9);
+  const delta = buf.sliceFrom(532);
+  assert.equal(delta.reset, false);
+  assert.equal(delta.data, 'new line\n');
+});

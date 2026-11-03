@@ -225,6 +225,7 @@ import {
   asFiniteNumber,
   asLiteral,
   asNonEmptyString,
+  asNonNegativeInt,
   asPositiveInt,
   asRecord,
   asString,
@@ -566,6 +567,8 @@ export interface ClientAttachTerminalMessage {
   /** Tamano actual del contenedor, para sincronizar el pty al reenganchar. */
   cols: number;
   rows: number;
+  /** Offset monotonico opcional para replay incremental acotado (sin reset). */
+  sinceOffset?: number;
 }
 
 /** Deja de recibir salida de esa terminal, sin matarla. */
@@ -1537,13 +1540,16 @@ export interface ServerTerminalOutputMessage {
   type: 'terminal.output';
   terminalId: TerminalId;
   data: string;
+  /** Offset monotonico acumulado tras este chunk. */
+  offset?: number;
 }
 
 /**
  * Contenido del buffer circular, en respuesta a `terminal.attach`.
  *
- * El cliente tiene que limpiar la pantalla antes de escribirlo: es el estado
- * completo que conocemos, no un incremento.
+ * El cliente tiene que limpiar la pantalla antes de escribirlo si reset es true:
+ * es el estado completo que conocemos. Si reset es false, es un replay incremental
+ * que se anexa sin limpiar la pantalla para preservar todo el scrollback.
  */
 export interface ServerTerminalReplayMessage {
   type: 'terminal.replay';
@@ -1551,6 +1557,11 @@ export interface ServerTerminalReplayMessage {
   data: string;
   /** true si el buffer se lleno y se perdio salida anterior. */
   truncated: boolean;
+  /** true si el cliente debe resetear la terminal antes de escribir; false para delta. */
+  reset?: boolean;
+  startOffset?: number;
+  endOffset?: number;
+  offset?: number;
 }
 
 /** El proceso termino. La pestana sigue abierta hasta que el usuario la cierre. */
@@ -2703,9 +2714,16 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       const terminalId = asNonEmptyString(record['terminalId']);
       const cols = asPositiveInt(record['cols']);
       const rows = asPositiveInt(record['rows']);
+      const sinceOffset = asNonNegativeInt(record['sinceOffset']);
       return terminalId === null || cols === null || rows === null
         ? null
-        : { type: 'terminal.attach', terminalId, cols, rows };
+        : {
+            type: 'terminal.attach',
+            terminalId,
+            cols,
+            rows,
+            ...(sinceOffset !== null ? { sinceOffset } : {}),
+          };
     }
     case 'terminal.detach': {
       const terminalId = asNonEmptyString(record['terminalId']);
@@ -3296,16 +3314,35 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     case 'terminal.output': {
       const terminalId = asNonEmptyString(record['terminalId']);
       const data = asString(record['data']);
+      const offset = asNonNegativeInt(record['offset']);
       return terminalId === null || data === null
         ? null
-        : { type: 'terminal.output', terminalId, data };
+        : {
+            type: 'terminal.output',
+            terminalId,
+            data,
+            ...(offset !== null ? { offset } : {}),
+          };
     }
     case 'terminal.replay': {
       const terminalId = asNonEmptyString(record['terminalId']);
       const data = asString(record['data']);
+      const reset = asBoolean(record['reset']);
+      const startOffset = asNonNegativeInt(record['startOffset']);
+      const endOffset = asNonNegativeInt(record['endOffset']);
+      const offset = asNonNegativeInt(record['offset']);
       return terminalId === null || data === null
         ? null
-        : { type: 'terminal.replay', terminalId, data, truncated: record['truncated'] === true };
+        : {
+            type: 'terminal.replay',
+            terminalId,
+            data,
+            truncated: record['truncated'] === true,
+            ...(reset !== null ? { reset } : {}),
+            ...(startOffset !== null ? { startOffset } : {}),
+            ...(endOffset !== null ? { endOffset } : {}),
+            ...(offset !== null ? { offset } : {}),
+          };
     }
     case 'terminal.exit': {
       const terminalId = asNonEmptyString(record['terminalId']);

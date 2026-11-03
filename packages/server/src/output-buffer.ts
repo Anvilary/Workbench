@@ -1,6 +1,6 @@
 /**
  * Buffer circular de la salida reciente de una terminal con soporte para
- * offsets monotonicos y replay incremental acotado (Hito A4 / Lane A).
+ * offsets monotonicos y replay incremental acotado (Hito A4 / Lane A & B).
  *
  * Existe porque las pty sobreviven a la caida del WebSocket (CLAUDE.md 3.0):
  * cuando el navegador recarga y se vuelve a enganchar, hay que repintarle la
@@ -228,5 +228,20 @@ export class OutputBuffer {
     this.totalBytesPushed = 0;
     this.truncated = false;
     this.inAlternateScreen = false;
+  }
+
+  seed(data: string, _startOffset: number, endOffset: number, truncated: boolean): void {
+    this.chunks = data.length > 0 ? [data] : [];
+    const byteLen = Buffer.byteLength(data, 'utf8');
+    this.chunkSizes = data.length > 0 ? [byteLen] : [];
+    this.sizeBytes = byteLen;
+    this.totalBytesPushed = endOffset;
+    this.truncated = truncated;
+    if (data.includes('\x1b[?1049h') || data.includes('\x1b[?47h')) {
+      this.inAlternateScreen = true;
+    }
+    if (data.includes('\x1b[?1049l') || data.includes('\x1b[?47l')) {
+      this.inAlternateScreen = false;
+    }
   }
 }

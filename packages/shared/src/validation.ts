@@ -38,6 +38,11 @@ export function asPositiveInt(value: unknown): number | null {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null;
 }
 
+/** Entero mayor o igual que cero. Para byte offsets monotonicos de terminal. */
+export function asNonNegativeInt(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
 export function asStringArray(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
   const result: string[] = [];
