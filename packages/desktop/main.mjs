@@ -2,7 +2,8 @@ import { app, BrowserWindow, WebContentsView, Menu, ipcMain, session, shell, dia
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile, lstat } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl } from './policy.mjs';
 import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
 import { calculateResourceBudget, selectEvictionCandidate } from './resource-budget.mjs';
@@ -715,8 +716,57 @@ async function start() {
     views.delete(id); urls.delete(id); providers.delete(id); requestedUrls.delete(id); failures.delete(id);
   }
 
+  async function discoverBackendReadiness() {
+    const uid = typeof process.getuid === 'function' ? process.getuid() : null;
+    let file;
+    if (process.env.MAW_RUNTIME_DIR) {
+      file = path.join(process.env.MAW_RUNTIME_DIR, 'maw-ready.json');
+    } else if (process.env.XDG_RUNTIME_DIR) {
+      file = path.join(process.env.XDG_RUNTIME_DIR, 'maw', 'maw-ready.json');
+    } else if (uid !== null && existsSync(`/run/user/${uid}`)) {
+      file = path.join(`/run/user/${uid}`, 'maw', 'maw-ready.json');
+    } else {
+      file = path.join(os.tmpdir(), 'maw', 'maw-ready.json');
+    }
+
+    const info = await lstat(file);
+    if (!info.isFile() || info.isSymbolicLink()) throw new Error('Invalid readiness file type');
+    if (uid !== null && info.uid !== uid) throw new Error('Unsafe readiness file owner');
+    if (info.mode & 0o077) throw new Error('Unsafe readiness file permissions');
+
+    const raw = await readFile(file, 'utf8');
+    const state = JSON.parse(raw);
+    if (!Number.isInteger(state.pid) || state.pid <= 0) throw new Error('Invalid readiness PID');
+
+    try {
+      process.kill(state.pid, 0);
+    } catch {
+      throw new Error('Service PID not running');
+    }
+
+    const parsedUrl = serviceUrl(state.url);
+    const probe = await fetch(parsedUrl, { signal: AbortSignal.timeout(1500), redirect: 'error' });
+    if (!probe.ok && probe.status !== 401) throw new Error(`Service probe returned ${probe.status}`);
+
+    return { url: parsedUrl, pid: state.pid, state };
+  }
+
   ipcMain.handle(CHANNEL, async (event, command) => {
     if (!trustedSender(event, win.webContents, local.origin) || !validCommand(command)) throw new Error('Invalid desktop request');
+    if (command.type === 'get-backend-endpoint') {
+      try {
+        const found = await discoverBackendReadiness();
+        return {
+          ok: true,
+          url: found.url.href,
+          origin: found.url.origin,
+          token: found.url.searchParams.get('token'),
+          port: found.url.port,
+        };
+      } catch (err) {
+        return { ok: false, error: err.message };
+      }
+    }
     if (command.type === 'open') open(command.id, command.url, command.provider ?? 'chatgpt', true);
     if (command.type === 'update') {
       if (views.has(command.id)) {
@@ -872,6 +922,38 @@ async function start() {
   for (const event of ['minimize', 'restore', 'enter-full-screen', 'leave-full-screen']) win.on(event, invalidate);
   win.on('resize', () => send({ type: 'layout-needed' }));
   win.webContents.on('before-input-event', desktopShortcut);
+
+  let backendFailureCount = 0;
+  const checkInterval = setInterval(async () => {
+    if (shuttingDown) return;
+    try {
+      const probe = await fetch(local, { signal: AbortSignal.timeout(1200), redirect: 'error' });
+      if (probe.ok || probe.status === 401) {
+        backendFailureCount = 0;
+        return;
+      }
+    } catch {
+      backendFailureCount++;
+    }
+
+    if (backendFailureCount > 0) {
+      try {
+        const discovered = await discoverBackendReadiness();
+        if (discovered.url.href !== local.href) {
+          local = discovered.url;
+          backendFailureCount = 0;
+          send({
+            type: 'backend-reconnected',
+            url: discovered.url.href,
+            token: discovered.url.searchParams.get('token'),
+            port: discovered.url.port,
+          });
+        }
+      } catch {}
+    }
+  }, 2000);
+  checkInterval.unref();
+
   app.on('second-instance', (_event, _argv, _cwd, data) => {
     try {
       const next = serviceUrl(data.serviceUrl);
@@ -883,6 +965,7 @@ async function start() {
     if (shuttingDown) return;
     event.preventDefault();
     shuttingDown = true;
+    clearInterval(checkInterval);
     hideAll();
     for (const popup of popups) popup.destroy();
     for (const view of views.values()) if (!view.webContents.isDestroyed()) view.webContents.close();

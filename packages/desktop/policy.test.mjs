@@ -131,3 +131,9 @@ test('FEATURE 11: Perplexity URL and embedded auth navigation policy', () => {
   assert.equal(validCommand({ type: 'open', id, url: 'https://www.perplexity.ai/', provider: 'github' }), false);
   assert.equal(validCommand({ type: 'open', id, url: 'https://chatgpt.com/', provider: 'perplexity' }), false);
 });
+
+test('endpoint rediscovery command validation', () => {
+  assert.equal(validCommand({ type: 'get-backend-endpoint' }), true);
+  assert.equal(validCommand({ type: 'get-backend-endpoint', extra: 'unauthorized' }), false);
+  assert.equal(validCommand({ type: 'close', id }), true);
+});

@@ -18,6 +18,7 @@ import {
   type ServerMessage,
 } from '@agent-workbench/shared';
 import { sessionToken } from './session-token.js';
+import type {} from './agency/NativeChatGptView.js';
 
 /**
  * `revoked` (hito 37): esta ventana entro como equipo remoto y el anfitrion lo
@@ -37,6 +38,8 @@ export class AgentConnection {
   private socket: WebSocket | null = null;
   private status: ConnectionStatus = 'connecting';
   private remoteClient = true;
+  private overrideEndpoint?: { url: string; token: string | null };
+  private unsubBridge?: () => void;
 
   isRemoteClient(): boolean { return this.remoteClient; }
   private attempt = 0;
@@ -50,6 +53,26 @@ export class AgentConnection {
 
   /** Cola de mensajes escritos mientras el socket estaba caido. */
   private readonly outbox: ClientMessage[] = [];
+
+  constructor() {
+    if (typeof window !== 'undefined' && window.mawChatGpt?.subscribe) {
+      try {
+        this.unsubBridge = window.mawChatGpt.subscribe((state) => {
+          if (state && state.type === 'backend-reconnected' && state.url) {
+            this.overrideEndpoint = {
+              url: state.url,
+              token: state.token ?? null,
+            };
+            if (this.socket === null || this.status === 'reconnecting' || this.status === 'failed') {
+              window.clearTimeout(this.reconnectTimer);
+              this.attempt = 0;
+              this.connect();
+            }
+          }
+        });
+      } catch {}
+    }
+  }
 
   getStatus(): ConnectionStatus {
     return this.status;
@@ -73,12 +96,22 @@ export class AgentConnection {
   connect(): void {
     if (this.socket !== null) return;
 
-    const url = new URL(WS_PATH, window.location.href);
-    url.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Sin token en la URL —el caso de una recarga— la cookie de sesion
-    // autentica igual. Si tampoco vale, el servidor rechaza el upgrade y lo
-    // tratamos como fallo de conexion.
-    if (sessionToken !== null) url.searchParams.set(TOKEN_QUERY_PARAM, sessionToken);
+    let url: URL;
+    if (this.overrideEndpoint) {
+      const base = new URL(this.overrideEndpoint.url);
+      url = new URL(WS_PATH, base);
+      url.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
+      if (this.overrideEndpoint.token) {
+        url.searchParams.set(TOKEN_QUERY_PARAM, this.overrideEndpoint.token);
+      }
+    } else {
+      url = new URL(WS_PATH, window.location.href);
+      url.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      // Sin token en la URL —el caso de una recarga— la cookie de sesion
+      // autentica igual. Si tampoco vale, el servidor rechaza el upgrade y lo
+      // tratamos como fallo de conexion.
+      if (sessionToken !== null) url.searchParams.set(TOKEN_QUERY_PARAM, sessionToken);
+    }
 
     const socket = new WebSocket(url);
     this.socket = socket;
@@ -160,6 +193,7 @@ export class AgentConnection {
   close(): void {
     this.closedByUs = true;
     window.clearTimeout(this.reconnectTimer);
+    this.unsubBridge?.();
     this.socket?.close();
     this.socket = null;
   }
@@ -176,7 +210,7 @@ export class AgentConnection {
     // Si nunca llegamos a conectar, el problema no es una caida pasajera:
     // o falta el token o el servidor no esta. Reintentar para siempre solo
     // esconde el error.
-    if (!this.hasConnectedOnce && this.attempt > 4) {
+    if (!this.hasConnectedOnce && this.attempt > 10) {
       this.setStatus('failed');
       return;
     }
@@ -185,6 +219,19 @@ export class AgentConnection {
     // martillamos el navegador con intentos.
     const delay = Math.min(RECONNECT_BASE_MS * 2 ** (this.attempt - 1), RECONNECT_MAX_MS);
     window.clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = window.setTimeout(() => this.connect(), delay);
+    this.reconnectTimer = window.setTimeout(async () => {
+      if (typeof window !== 'undefined' && window.mawChatGpt?.command) {
+        try {
+          const res = (await window.mawChatGpt.command({ type: 'get-backend-endpoint' })) as { ok?: boolean; url?: string; token?: string; port?: string } | undefined;
+          if (res && res.ok && res.url) {
+            this.overrideEndpoint = {
+              url: res.url,
+              token: res.token ?? null,
+            };
+          }
+        } catch {}
+      }
+      this.connect();
+    }, delay);
   }
 }

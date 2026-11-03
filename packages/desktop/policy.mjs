@@ -125,6 +125,7 @@ export function validCommand(value) {
       typeof value.relative === 'string' && value.relative.length > 0 && value.relative.length <= 512 && !value.relative.startsWith('/') && !value.relative.includes('\0');
   }
   if (value.type === 'close' || value.type === 'capture') return exact(value, ['type', 'id']) && typeof value.id === 'string' && UUID.test(value.id);
+  if (value.type === 'get-backend-endpoint') return exact(value, ['type']);
 
   if (value.type === 'layout') {
     // Single-view layout (legacy / simple)

@@ -5,7 +5,7 @@ import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
 
 export interface DesktopBridge {
   command: (command: unknown) => Promise<unknown>;
-  subscribe: (callback: (state: { type: string; id?: string; url?: string; message?: string; direction?: number; filename?: string; percent?: number | null; linkURL?: string; canGoBack?: boolean; canGoForward?: boolean; selection?: boolean; x?: number; y?: number }) => void) => () => void;
+  subscribe: (callback: (state: { type: string; id?: string; url?: string; token?: string; port?: string; message?: string; direction?: number; filename?: string; percent?: number | null; linkURL?: string; canGoBack?: boolean; canGoForward?: boolean; selection?: boolean; x?: number; y?: number }) => void) => () => void;
 }
 
 declare global {

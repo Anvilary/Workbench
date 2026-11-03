@@ -505,20 +505,41 @@ export function TerminalView({
       connection.send({ type: 'input', terminalId, data });
     });
 
+    let lastRenderedOffset: number | undefined = undefined;
+
     const offMessage = connection.onMessage((message) => {
       switch (message.type) {
         case 'terminal.output':
-          if (message.terminalId === terminalId) terminal.write(message.data);
+          if (message.terminalId === terminalId) {
+            if (message.offset !== undefined && lastRenderedOffset !== undefined && message.offset <= lastRenderedOffset) {
+              // Deduplicate live output already rendered in historical replay or earlier chunk
+              break;
+            }
+            if (message.offset !== undefined) {
+              lastRenderedOffset = message.offset;
+            }
+            terminal.write(message.data);
+          }
           break;
         case 'terminal.replay':
           if (message.terminalId !== terminalId) break;
-          // El replay es el estado completo que conoce el servidor, no un
-          // incremento: hay que limpiar antes de escribirlo.
-          terminal.reset();
-          if (message.truncated) {
-            terminal.write(`\x1b[90m-- ${t('terminal.replayTruncated')} --\x1b[0m\r\n`);
+          // Si reset es false, es una reconexion delta sin perdida: preservamos
+          // los 20.000 renglones de scrollback en xterm y anexamos solo los bytes nuevos.
+          // Si reset es true (o no viene en servidores legacy), reseteamos terminal.
+          if (message.reset ?? true) {
+            terminal.reset();
+            if (message.truncated) {
+              terminal.write(`\x1b[90m-- ${t('terminal.replayTruncated')} --\x1b[0m\r\n`);
+            }
           }
-          terminal.write(message.data);
+          if (message.data.length > 0) {
+            terminal.write(message.data);
+          }
+          if (message.endOffset !== undefined) {
+            lastRenderedOffset = message.endOffset;
+          } else if (message.offset !== undefined) {
+            lastRenderedOffset = message.offset;
+          }
           break;
         case 'terminal.exit':
           if (message.terminalId !== terminalId) break;
@@ -543,7 +564,13 @@ export function TerminalView({
       const cols = terminal.cols > 0 ? terminal.cols : 80;
       const rows = terminal.rows > 0 ? terminal.rows : 24;
       lastSize = { cols, rows };
-      connection.send({ type: 'terminal.attach', terminalId, cols, rows });
+      connection.send({
+        type: 'terminal.attach',
+        terminalId,
+        cols,
+        rows,
+        ...(lastRenderedOffset !== undefined ? { sinceOffset: lastRenderedOffset } : {}),
+      });
     };
 
     attach();
