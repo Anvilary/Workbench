@@ -1,0 +1,45 @@
+{
+  "timestamp": "2026-11-03T19:06:10.358Z",
+  "baseRevision": "502181f235ce8d0f9f9c83661c874bc7cde014e1",
+  "executionMode": "DRY_RUN",
+  "lanes": {
+    "A": {
+      "name": "Lane A (PTY Supervisor)",
+      "branch": "feat/maw-pty-supervisor",
+      "currentHash": "0311ae1",
+      "fullHash": "0311ae10f39bba39a7eb5c186c0239012cf314b0",
+      "isClean": true,
+      "hashMatches": true,
+      "statusMessage": "OK"
+    },
+    "B": {
+      "name": "Lane B (Reconnection)",
+      "branch": "feat/maw-reconnection",
+      "currentHash": "0e4dab8",
+      "fullHash": "0e4dab82ce88536ad0cb86f0e41d544d66a8c4ac",
+      "isClean": false,
+      "hashMatches": true,
+      "statusMessage": "DIRTY_WORKTREE"
+    },
+    "C": {
+      "name": "Lane C (Notifications)",
+      "branch": "feat/maw-notifications",
+      "currentHash": "2147c90",
+      "fullHash": "2147c907ca85919a8abd2e8dfc300b023fa0b64c",
+      "isClean": true,
+      "hashMatches": true,
+      "statusMessage": "OK"
+    },
+    "D": {
+      "name": "Lane D (Performance)",
+      "branch": "feat/maw-performance",
+      "currentHash": "7d85b1a",
+      "fullHash": "7d85b1afcd239330d512e5db1aa6bf6a7b652750",
+      "isClean": true,
+      "hashMatches": true,
+      "statusMessage": "OK"
+    }
+  },
+  "overlapsFound": 0,
+  "status": "READY_FOR_INTEGRATION"
+}
