@@ -1,4 +1,4 @@
-import { open } from 'node:fs/promises';
+import { open, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { asRecord } from '@agent-workbench/shared';
@@ -56,28 +56,63 @@ export class CodexTurnWatcher {
   }
 
   private async read(): Promise<void> {
-    const file = await findRollout(this.input.sessionId, {
-      sessionsRoot: path.join(this.input.home, 'sessions'),
-      archivedRoot: null,
-    });
     if (this.disposed) return;
-    if (!file || !await withinNativeScope(this.input.home, file)) { this.loseEvidence(); return; }
+    let file = this.file;
+
+    let info = null;
+    if (file) {
+      try {
+        info = await stat(file);
+      } catch {
+        info = null;
+      }
+    }
+
+    if (!info) {
+      file = await findRollout(this.input.sessionId, {
+        sessionsRoot: path.join(this.input.home, 'sessions'),
+        archivedRoot: null,
+      });
+      if (this.disposed) return;
+      if (!file || !await withinNativeScope(this.input.home, file)) {
+        this.loseEvidence();
+        return;
+      }
+      this.file = file;
+      try {
+        info = await stat(file);
+      } catch {
+        this.loseEvidence();
+        return;
+      }
+    }
+
+    if (!file || !info.isFile()) {
+      this.loseEvidence();
+      return;
+    }
+
+    const identity = `${info.dev}:${info.ino}`;
+    if (identity !== this.fileIdentity || info.size < this.offset) {
+      if (!await withinNativeScope(this.input.home, file)) {
+        this.loseEvidence();
+        return;
+      }
+      this.loseEvidence();
+      this.file = file;
+      this.fileIdentity = identity;
+      this.offset = 0;
+      this.partial = '';
+      this.decoder = new StringDecoder('utf8');
+      this.metadataVerified = false;
+      this.droppingLine = false;
+      this.active.clear();
+    }
+
+    if (info.size <= this.offset) return;
+
     const handle = await open(file, 'r');
     try {
-      const info = await handle.stat();
-      if (!info.isFile()) { this.loseEvidence(); return; }
-      const identity = `${info.dev}:${info.ino}`;
-      if (file !== this.file || identity !== this.fileIdentity || info.size < this.offset) {
-        this.loseEvidence();
-        this.file = file;
-        this.fileIdentity = identity;
-        this.offset = 0;
-        this.partial = '';
-        this.decoder = new StringDecoder('utf8');
-        this.metadataVerified = false;
-        this.droppingLine = false;
-        this.active.clear();
-      }
       const buffer = Buffer.alloc(Math.min(1024 * 1024, Math.max(0, info.size - this.offset)));
       if (buffer.length === 0) return;
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, this.offset);
@@ -93,7 +128,9 @@ export class CodexTurnWatcher {
           this.droppingLine = false;
         }
       }
-    } finally { await handle.close(); }
+    } finally {
+      await handle.close();
+    }
   }
 
   private consume(line: string): void {
