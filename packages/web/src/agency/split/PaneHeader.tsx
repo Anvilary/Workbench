@@ -101,20 +101,43 @@ export function PaneHeader({
     pointerId: number;
     startX: number;
     startY: number;
+    grabOffsetX: number;
+    grabOffsetY: number;
     isDragging: boolean;
     targetIndex: number;
+    overPaneId: string | null;
+    sourceWidth: number;
+    ghostEl: HTMLElement | null;
+    shieldEl: HTMLElement | null;
+    cachedHeaders: Map<string, { rect: DOMRect; tabRects: { left: number; width: number }[] }>;
   } | null>(null);
+
+  const cleanupDrag = () => {
+    if (tabDrag.current?.ghostEl) {
+      tabDrag.current.ghostEl.remove();
+      tabDrag.current.ghostEl = null;
+    }
+    if (tabDrag.current?.shieldEl) {
+      tabDrag.current.shieldEl.remove();
+      tabDrag.current.shieldEl = null;
+    }
+    document.body.classList.remove('maw-pane-dragging');
+    tabDrag.current = null;
+    setDragState(null);
+    setTabDragPreview(null);
+  };
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && tabDrag.current) {
-        tabDrag.current = null;
-        setDragState(null);
-        setTabDragPreview(null);
+        cleanupDrag();
       }
     };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      cleanupDrag();
+    };
   }, []);
 
   useEffect(() => {
@@ -251,73 +274,157 @@ export function PaneHeader({
             const tabId = tabEl.getAttribute('data-tab-id');
             if (tabId) {
               const idx = paneTabs.findIndex((t) => t.id === tabId);
+              const rect = tabEl.getBoundingClientRect();
               tabDrag.current = {
                 tabId,
                 pointerId: event.pointerId,
                 startX: event.clientX,
                 startY: event.clientY,
+                grabOffsetX: event.clientX - rect.left,
+                grabOffsetY: event.clientY - rect.top,
                 isDragging: false,
                 targetIndex: idx,
+                overPaneId: paneId,
+                sourceWidth: rect.width,
+                ghostEl: null,
+                shieldEl: null,
+                cachedHeaders: new Map(),
               };
             }
           }
         }}
         onPointerMove={(event) => {
-          if (tabDrag.current && tabDrag.current.pointerId === event.pointerId) {
-            if (!tabDrag.current.isDragging) {
-              if (Math.hypot(event.clientX - tabDrag.current.startX, event.clientY - tabDrag.current.startY) > 6) {
-                tabDrag.current.isDragging = true;
+          const drag = tabDrag.current;
+          if (drag && drag.pointerId === event.pointerId) {
+            if (!drag.isDragging) {
+              if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 6) {
+                drag.isDragging = true;
                 event.currentTarget.setPointerCapture(event.pointerId);
+
+                // Create ghost element tracking the cursor
+                const sourceTab = paneTabs.find((t) => t.id === drag.tabId);
+                if (sourceTab) {
+                  const ghost = document.createElement('div');
+                  ghost.className = 'maw-tab-drag-ghost';
+                  const iconSpan = document.createElement('span');
+                  iconSpan.setAttribute('aria-hidden', 'true');
+                  iconSpan.textContent =
+                    sourceTab.kind === 'web'
+                      ? '◎'
+                      : sourceTab.kind === 'editor'
+                        ? '✎'
+                        : sourceTab.session?.kind === 'agent'
+                          ? '◇'
+                          : '>_';
+                  const titleSpan = document.createElement('span');
+                  titleSpan.className = 'agency-truncate';
+                  titleSpan.textContent = tabName(sourceTab);
+                  ghost.appendChild(iconSpan);
+                  ghost.appendChild(titleSpan);
+                  ghost.style.transform = `translate3d(${event.clientX - drag.grabOffsetX}px, ${event.clientY - drag.grabOffsetY}px, 0)`;
+                  document.body.appendChild(ghost);
+                  drag.ghostEl = ghost;
+                }
+
+                // Add drag shield so native WebContentsViews do not obscure dragged ghost or drop targets
+                if (!document.querySelector('.maw-pane-drag-shield')) {
+                  const shield = document.createElement('div');
+                  shield.className = 'maw-pane-drag-shield';
+                  shield.setAttribute('aria-hidden', 'true');
+                  document.body.appendChild(shield);
+                  drag.shieldEl = shield;
+                }
+                document.body.classList.add('maw-pane-dragging');
               }
             }
-            if (tabDrag.current.isDragging) {
+            if (drag.isDragging) {
               event.preventDefault();
-              const elUnder = document.elementFromPoint(event.clientX, event.clientY);
-              const paneEl = elUnder?.closest('.maw-split-pane');
-              const overPaneId = paneEl?.id.replace('pane-container-', '') ?? null;
-              const header = paneEl?.querySelector('.maw-pane-header');
-              const rects = header ? [...header.querySelectorAll<HTMLElement>('.maw-session-tab')].map((element) => {
-                const rect = element.getBoundingClientRect();
-                return { left: rect.left, width: rect.width };
-              }) : [];
-              const target = overPaneId && rects.length > 0 ? insertionIndex(event.clientX, rects) : rects.length;
-              tabDrag.current.targetIndex = target;
-              const source = strip.current?.querySelector<HTMLElement>(`[data-tab-id="${tabDrag.current.tabId}"]`);
-              setDragState({ tabId: tabDrag.current.tabId, targetIndex: target });
-              setTabDragPreview({
-                tabId: tabDrag.current.tabId,
-                sourcePaneId: paneId,
-                sourceIndex: paneTabs.findIndex((tab) => tab.id === tabDrag.current?.tabId),
-                width: source?.getBoundingClientRect().width ?? 0,
-                overPaneId,
-                overIndex: overPaneId ? target : null,
-              });
+
+              // Direct transform update on ghost element (0 layout reads, 0 React re-renders)
+              if (drag.ghostEl) {
+                drag.ghostEl.style.transform = `translate3d(${event.clientX - drag.grabOffsetX}px, ${event.clientY - drag.grabOffsetY}px, 0)`;
+              }
+
+              // Determine target pane
+              let targetPaneId: string | null = null;
+              let targetPaneEl: HTMLElement | null = null;
+
+              const currentHeader = drag.overPaneId ? drag.cachedHeaders.get(drag.overPaneId) : undefined;
+              if (
+                currentHeader &&
+                event.clientX >= currentHeader.rect.left &&
+                event.clientX <= currentHeader.rect.right &&
+                event.clientY >= currentHeader.rect.top &&
+                event.clientY <= currentHeader.rect.bottom
+              ) {
+                targetPaneId = drag.overPaneId;
+              } else {
+                const elUnder = document.elementFromPoint(event.clientX, event.clientY);
+                targetPaneEl = elUnder?.closest<HTMLElement>('.maw-split-pane') ?? null;
+                targetPaneId = targetPaneEl?.id.replace('pane-container-', '') ?? null;
+              }
+
+              if (!targetPaneId) return;
+
+              // Cache header rects on first encounter during this drag
+              let headerData = drag.cachedHeaders.get(targetPaneId);
+              if (!headerData) {
+                const pEl = targetPaneEl ?? document.getElementById(`pane-container-${targetPaneId}`);
+                const header = pEl?.querySelector<HTMLElement>('.maw-pane-header');
+                if (header) {
+                  const headerRect = header.getBoundingClientRect();
+                  const tabEls = [...header.querySelectorAll<HTMLElement>('.maw-session-tab')];
+                  const tabRects = tabEls.map((element) => {
+                    const rect = element.getBoundingClientRect();
+                    return { left: rect.left, width: rect.width };
+                  });
+                  headerData = { rect: headerRect, tabRects };
+                  drag.cachedHeaders.set(targetPaneId, headerData);
+                }
+              }
+
+              const rects = headerData?.tabRects ?? [];
+              const target = targetPaneId && rects.length > 0 ? insertionIndex(event.clientX, rects) : rects.length;
+
+              // Only update React state when target index or pane actually changes!
+              if (target !== drag.targetIndex || targetPaneId !== drag.overPaneId) {
+                drag.targetIndex = target;
+                drag.overPaneId = targetPaneId;
+                setDragState({ tabId: drag.tabId, targetIndex: target });
+                setTabDragPreview({
+                  tabId: drag.tabId,
+                  sourcePaneId: paneId,
+                  sourceIndex: paneTabs.findIndex((tab) => tab.id === drag.tabId),
+                  width: drag.sourceWidth,
+                  overPaneId: targetPaneId,
+                  overIndex: target,
+                });
+              }
             }
           }
         }}
         onPointerUp={async (event) => {
-          if (tabDrag.current && tabDrag.current.pointerId === event.pointerId) {
-            const dragInfo = tabDrag.current;
-            tabDrag.current = null;
-            setDragState(null);
-            setTabDragPreview(null);
+          const dragInfo = tabDrag.current;
+          if (dragInfo && dragInfo.pointerId === event.pointerId) {
             if (event.currentTarget.hasPointerCapture(event.pointerId)) {
               event.currentTarget.releasePointerCapture(event.pointerId);
             }
+            cleanupDrag();
+
             if (dragInfo.isDragging) {
               suppressTabClickUntil.current = Date.now() + 200;
               const elUnder = document.elementFromPoint(event.clientX, event.clientY);
-              const destination = elUnder?.closest('.maw-split-pane')?.id.replace('pane-container-', '');
+              const destination = elUnder?.closest('.maw-split-pane')?.id.replace('pane-container-', '') ?? dragInfo.overPaneId;
               if (!destination) return;
               const targetPaneEl = document.getElementById(`pane-container-${destination}`);
               const targetHeader = targetPaneEl?.querySelector('.maw-pane-header');
               const targetElements = targetHeader ? [...targetHeader.querySelectorAll<HTMLElement>('.maw-session-tab')] : [];
-              const targetIndex = targetElements.findIndex(element => {
+              const targetIndex = targetElements.findIndex((element) => {
                 const rect = element.getBoundingClientRect();
                 return event.clientX < rect.left + rect.width / 2;
               });
               const insertion = targetIndex < 0 ? targetElements.length : targetIndex;
-              const sourceIndex = paneTabs.findIndex(tab => tab.id === dragInfo.tabId);
+              const sourceIndex = paneTabs.findIndex((tab) => tab.id === dragInfo.tabId);
               onMoveTabToPane(dragInfo.tabId, destination, destination === paneId && insertion > sourceIndex ? insertion - 1 : insertion);
               if (destination !== paneId) return;
               const currentIdx = tabs.findIndex((t) => t.id === dragInfo.tabId);
@@ -341,9 +448,7 @@ export function PaneHeader({
           if (event.currentTarget.hasPointerCapture(event.pointerId)) {
             event.currentTarget.releasePointerCapture(event.pointerId);
           }
-          tabDrag.current = null;
-          setDragState(null);
-          setTabDragPreview(null);
+          cleanupDrag();
         }}
       >
         {paneTabs.map((tab, idx) => {

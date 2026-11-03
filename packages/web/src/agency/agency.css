@@ -429,6 +429,32 @@
 .maw-session-tab.maw-drop-target-before::before { left: 0; }
 .maw-session-tab.maw-drop-target-after::after { right: 0; }
 .maw-tabs-strip.is-dragging { cursor: grabbing; }
+.maw-tab-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 160;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #181b24;
+  border: 1px solid rgba(156, 169, 227, 0.45);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 12px;
+  max-width: 240px;
+  will-change: transform;
+  transform-origin: 0 0;
+  user-select: none;
+}
+.maw-tab-drag-ghost .agency-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .maw-session-tab button { border:0; background:transparent; color:#b8bdcc; cursor:pointer; }
 .maw-session-tab [role=tab] { display:flex; gap:8px; align-items:center; flex:1; min-width:0; height:100%; padding:8px; }
 .maw-session-tab [data-close] { padding:8px; }

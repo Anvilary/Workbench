@@ -15,6 +15,19 @@ let current: TabDragPreview | null = null;
 const listeners = new Set<Listener>();
 
 export function setTabDragPreview(preview: TabDragPreview | null): void {
+  if (
+    current === preview ||
+    (current !== null &&
+      preview !== null &&
+      current.tabId === preview.tabId &&
+      current.sourcePaneId === preview.sourcePaneId &&
+      current.sourceIndex === preview.sourceIndex &&
+      current.width === preview.width &&
+      current.overPaneId === preview.overPaneId &&
+      current.overIndex === preview.overIndex)
+  ) {
+    return;
+  }
   current = preview;
   for (const listener of listeners) listener(preview);
 }

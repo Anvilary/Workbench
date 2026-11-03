@@ -16,6 +16,9 @@ export async function serveFixture(t){
 }
 export function executable(){
  if(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE)return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+ for(const bin of ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser']) {
+   if(existsSync(bin)) return bin;
+ }
  if(existsSync(chromium.executablePath()))return chromium.executablePath();
  const cache=homedir()+'/.cache/ms-playwright';
  for(const folder of existsSync(cache)?readdirSync(cache).filter(n=>n.startsWith('chromium_headless_shell-')).sort().reverse():[]){const file=cache+'/'+folder+'/chrome-headless-shell-linux64/chrome-headless-shell';if(existsSync(file))return file}
