@@ -517,6 +517,10 @@
   border-left: 4px solid #60a5fa;
 }
 
+.maw-toast-item.state-needs-input {
+  border-left: 4px solid #fbbf24;
+}
+
 .maw-toast-item.state-unknown {
   border-left: 4px solid #94a3b8;
 }
@@ -531,6 +535,7 @@
 .maw-toast-item.state-finished .maw-toast-icon { color: #4ade80; }
 .maw-toast-item.state-failed .maw-toast-icon { color: #f87171; }
 .maw-toast-item.state-working .maw-toast-icon { color: #60a5fa; }
+.maw-toast-item.state-needs-input .maw-toast-icon { color: #fbbf24; }
 .maw-toast-item.state-unknown .maw-toast-icon { color: #94a3b8; }
 
 .maw-toast-content {
@@ -861,6 +866,11 @@
 .maw-state-badge.state-working {
   background: rgba(96, 165, 250, 0.15);
   color: #60a5fa;
+}
+
+.maw-state-badge.state-needs-input {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
 }
 
 .maw-state-badge.state-unknown, .maw-state-badge.state-idle {

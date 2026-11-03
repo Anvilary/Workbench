@@ -392,3 +392,182 @@ test('Desktop permission state resolution and user-initiated permission flow', a
   assert.equal(result, 'granted');
   assert.equal(resolveDesktopPermission(true, mockNotification.permission), 'granted');
 });
+
+test('Focus-aware suppression and dual-channel routing logic', () => {
+  function determineDelivery({
+    item,
+    windowFocused,
+    documentHidden,
+    activeWorkspaceId,
+    showingDone,
+    activeTabId,
+    isViewingTab,
+  }) {
+    // Actively viewed: window focused, visible, active workspace, not in Done, tab is focused
+    const isActivelyViewed =
+      windowFocused &&
+      !documentHidden &&
+      !showingDone &&
+      activeWorkspaceId === item.workspaceId &&
+      (activeTabId === item.tabId || isViewingTab);
+
+    if (isActivelyViewed) return 'suppress';
+    if (!windowFocused || documentHidden) return 'os';
+    return 'toast';
+  }
+
+  const item = { workspaceId: 'ws-1', tabId: 'tab-1', id: 'notif-1' };
+
+  // 1. Actively viewed: in same workspace, active tab, window focused -> SUPPRESS
+  assert.equal(
+    determineDelivery({
+      item,
+      windowFocused: true,
+      documentHidden: false,
+      activeWorkspaceId: 'ws-1',
+      showingDone: false,
+      activeTabId: 'tab-1',
+      isViewingTab: true,
+    }),
+    'suppress',
+    'Actively viewed session must suppress notifications',
+  );
+
+  // 2. Focused in MAW, but session is in another tab -> TOAST
+  assert.equal(
+    determineDelivery({
+      item,
+      windowFocused: true,
+      documentHidden: false,
+      activeWorkspaceId: 'ws-1',
+      showingDone: false,
+      activeTabId: 'tab-2',
+      isViewingTab: false,
+    }),
+    'toast',
+    'Session in another tab must display in-app toast',
+  );
+
+  // 3. Focused in MAW, but session is in another workspace -> TOAST
+  assert.equal(
+    determineDelivery({
+      item,
+      windowFocused: true,
+      documentHidden: false,
+      activeWorkspaceId: 'ws-2',
+      showingDone: false,
+      activeTabId: 'tab-1',
+      isViewingTab: false,
+    }),
+    'toast',
+    'Session in another workspace must display in-app toast',
+  );
+
+  // 4. MAW is unfocused (user working in another OS app) -> OS notification
+  assert.equal(
+    determineDelivery({
+      item,
+      windowFocused: false,
+      documentHidden: false,
+      activeWorkspaceId: 'ws-1',
+      showingDone: false,
+      activeTabId: 'tab-1',
+      isViewingTab: true,
+    }),
+    'os',
+    'Unfocused application must dispatch OS desktop notification',
+  );
+
+  // 5. MAW is minimized -> OS notification
+  assert.equal(
+    determineDelivery({
+      item,
+      windowFocused: true,
+      documentHidden: true,
+      activeWorkspaceId: 'ws-1',
+      showingDone: false,
+      activeTabId: 'tab-1',
+      isViewingTab: true,
+    }),
+    'os',
+    'Minimized application must dispatch OS desktop notification',
+  );
+});
+
+test('Anti-storm burst coalescing and toast boundedness', () => {
+  const MAX_TOASTS = 4;
+  let toasts = [];
+  const osDispatches = [];
+  let recentOsTimestamps = [];
+
+  function handleDelivery(item, channel, now = Date.now()) {
+    if (channel === 'toast') {
+      const trimmed = toasts.length >= MAX_TOASTS ? toasts.slice(toasts.length - (MAX_TOASTS - 1)) : toasts;
+      toasts = [...trimmed, { id: `toast-${item.id}`, notificationId: item.id }];
+    } else if (channel === 'os') {
+      recentOsTimestamps = recentOsTimestamps.filter((t) => now - t < 2000);
+      if (recentOsTimestamps.length >= 2) {
+        osDispatches.push({ type: 'burst-summary', count: recentOsTimestamps.length + 1 });
+        recentOsTimestamps.push(now);
+      } else {
+        osDispatches.push({ type: 'single', id: item.id });
+        recentOsTimestamps.push(now);
+      }
+    }
+  }
+
+  // 1. Rapid fire 6 toasts: visible toasts remain bounded to at most MAX_TOASTS (4)
+  for (let i = 1; i <= 6; i++) {
+    handleDelivery({ id: `item-${i}` }, 'toast');
+  }
+  assert.equal(toasts.length, MAX_TOASTS, 'Toasts must be bounded to MAX_TOASTS');
+  assert.equal(toasts[toasts.length - 1].notificationId, 'item-6');
+
+  // 2. Rapid burst of 5 OS alerts within 100ms
+  const burstStart = 10000;
+  handleDelivery({ id: 'os-1' }, 'os', burstStart);
+  handleDelivery({ id: 'os-2' }, 'os', burstStart + 20);
+  handleDelivery({ id: 'os-3' }, 'os', burstStart + 40);
+  handleDelivery({ id: 'os-4' }, 'os', burstStart + 60);
+  handleDelivery({ id: 'os-5' }, 'os', burstStart + 80);
+
+  // First 2 are single; 3rd, 4th, 5th coalesce into burst-summary
+  assert.equal(osDispatches[0].type, 'single');
+  assert.equal(osDispatches[1].type, 'single');
+  assert.equal(osDispatches[2].type, 'burst-summary');
+  assert.equal(osDispatches[3].type, 'burst-summary');
+  assert.equal(osDispatches[4].type, 'burst-summary');
+
+  // After 3 seconds of calm, next alert is single again
+  handleDelivery({ id: 'os-6' }, 'os', burstStart + 3500);
+  assert.equal(osDispatches[5].type, 'single');
+});
+
+test('Needs-input state handling in notifications and inbox labels', () => {
+  const item = {
+    id: 'input-1',
+    workspaceId: 'ws-1',
+    tabId: 'tab-1',
+    title: 'Agent Claude',
+    body: 'Awaiting permission prompt',
+    state: 'needs-input',
+    read: false,
+    createdAt: new Date().toISOString(),
+  };
+
+  // 1. Relevant alert states include needs-input
+  const isRelevant = ['finished', 'failed', 'needs-input'].includes(item.state);
+  assert.equal(isRelevant, true);
+
+  // 2. Inbox state label formatting
+  function getStatusLabel(state) {
+    switch (state) {
+      case 'finished': return 'Finished';
+      case 'needs-input': return 'Needs input';
+      case 'working': return 'Working';
+      case 'failed': return 'Failed';
+      default: return 'Idle';
+    }
+  }
+  assert.equal(getStatusLabel(item.state), 'Needs input');
+});

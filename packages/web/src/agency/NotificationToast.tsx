@@ -33,7 +33,7 @@ export function NotificationToastContainer({ toasts, onDismiss, onNavigate }: Pr
           }}
         >
           <div className="maw-toast-icon" aria-hidden="true">
-            {toast.state === 'finished' ? '✓' : toast.state === 'failed' ? '✕' : toast.state === 'working' ? '⚙' : '◇'}
+            {toast.state === 'finished' ? '✓' : toast.state === 'failed' ? '✕' : toast.state === 'needs-input' ? '?' : toast.state === 'working' ? '⚙' : '◇'}
           </div>
           <div className="maw-toast-content">
             <div className="maw-toast-title">{notificationText(toast).title}</div>

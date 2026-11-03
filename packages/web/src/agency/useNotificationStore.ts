@@ -3,16 +3,18 @@
  *
  * Responsibilities:
  *   - Manages notifications inbox, unread counts, and top-right toasts.
- *   - Tracks tab activity states: idle, working, finished, unknown, failed.
+ *   - Tracks tab activity states: idle, working, needs-input, finished, unknown, failed.
  *   - Enforces invariant: 'finished' state persists until user opens/inspects tab.
  *   - Enforces invariant: Reading notification inbox != acknowledging tab completion.
+ *   - Focus-aware suppression: suppresses redundant alerts for actively viewed sessions.
+ *   - Dual-channel routing: In-app toasts when focused on another tab; OS desktop alert when unfocused/minimized.
+ *   - Anti-storm protection: coalesces rapid burst notifications into grouped summary.
  *   - Toast dismissal does not delete inbox history.
  *   - Deduplicates repeated completion events.
  *   - Preserves state across browser refresh (localStorage cache + server snapshot).
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
 import type {
   MawActivityState,
   MawNotificationItem,
@@ -22,8 +24,10 @@ import type {
 import { isMawNotificationItem } from '@agent-workbench/shared';
 import type { AgencyTransport } from './model.js';
 import type { useAgencyStore } from './useAgencyStore.js';
+import { focusTracker, type FocusContext } from './focus-tracker.js';
 
 const CACHE_KEY = 'maw.notifications.cache.v1';
+const MAX_TOASTS = 4;
 
 export interface ToastItem {
   id: string;
@@ -36,6 +40,12 @@ export interface ToastItem {
   createdAt: string;
   metadata?: Record<string, unknown>;
   deduplicationKey?: string;
+}
+
+export interface NotificationStoreOptions {
+  activeWorkspaceId?: WorkspaceId | null;
+  showingDone?: boolean;
+  activeTabId?: string | null;
 }
 
 function loadCachedNotifications(): MawNotificationItem[] {
@@ -60,6 +70,7 @@ export function useNotificationStore(
   transport: AgencyTransport,
   request: ReturnType<typeof useAgencyStore>['request'],
   enabled: boolean = true,
+  options?: NotificationStoreOptions,
 ) {
   const [notifications, setNotifications] = useState<MawNotificationItem[]>(loadCachedNotifications);
   const [activityStates, setActivityStates] = useState<Map<string, TabActivityRecord>>(new Map());
@@ -67,8 +78,11 @@ export function useNotificationStore(
   const seenNotificationIds = useRef(new Set(notifications.map(item => item.id)));
   const completedNotificationIds = useRef(new Set<string>());
   const toastTimeouts = useRef(new Map<string, number>());
+  const recentOsNotifications = useRef<number[]>([]);
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
 
   useEffect(() => {
     if (!enabled) {
@@ -112,7 +126,11 @@ export function useNotificationStore(
       deduplicationKey: item.deduplicationKey,
     };
 
-    setToasts((prev) => [...prev, toast]);
+    setToasts((prev) => {
+      // Bound visible toasts to prevent overflowing the view
+      const trimmed = prev.length >= MAX_TOASTS ? prev.slice(prev.length - (MAX_TOASTS - 1)) : prev;
+      return [...trimmed, toast];
+    });
 
     // Auto-dismiss after 6.5s
     const timer = window.setTimeout(() => {
@@ -121,6 +139,55 @@ export function useNotificationStore(
     toastTimeouts.current.set(toastId, timer);
   }, [dismissToast]);
 
+  const dispatchOsNotification = useCallback((item: { workspaceId: WorkspaceId; tabId: string; id: string; title: string; body: string }) => {
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+
+    const now = Date.now();
+    // Prune entries older than 2000 ms
+    recentOsNotifications.current = recentOsNotifications.current.filter((t) => now - t < 2000);
+
+    try {
+      // Anti-storm: when 3 or more alerts fire within 2s, coalesce into a grouped alert
+      if (recentOsNotifications.current.length >= 2) {
+        const count = recentOsNotifications.current.length + 1;
+        const groupNotif = new Notification('MAW', {
+          body: `${count} coding agents completed tasks`,
+          tag: 'maw-burst-summary',
+        });
+        groupNotif.onclick = () => {
+          if (typeof window !== 'undefined') {
+            window.focus();
+            window.dispatchEvent(
+              new CustomEvent('maw:select-tab', {
+                detail: { workspaceId: item.workspaceId, tabId: item.tabId, notificationId: item.id },
+              }),
+            );
+          }
+        };
+        recentOsNotifications.current.push(now);
+        return;
+      }
+
+      recentOsNotifications.current.push(now);
+      const osNotif = new Notification(item.title, {
+        body: item.body,
+        tag: 'maw-' + item.id,
+      });
+      osNotif.onclick = () => {
+        if (typeof window !== 'undefined') {
+          window.focus();
+          window.dispatchEvent(
+            new CustomEvent('maw:select-tab', {
+              detail: { workspaceId: item.workspaceId, tabId: item.tabId, notificationId: item.id },
+            }),
+          );
+        }
+      };
+    } catch {
+      // Notification constructor safe fallback
+    }
+  }, []);
+
   // Inbound WebSocket message handling
   useEffect(() => {
     return transport.onMessage((message) => {
@@ -128,7 +195,7 @@ export function useNotificationStore(
         const seenInSnapshot = new Set<string>();
         const incoming = message.notifications.filter(
           item => {
-            if (item.state !== 'finished' && item.state !== 'failed') return false;
+            if (item.state !== 'finished' && item.state !== 'failed' && item.state !== 'needs-input') return false;
             if (item.acknowledgedAt || completedNotificationIds.current.has(item.id)) return false;
             if (seenInSnapshot.has(item.id)) return false;
             seenInSnapshot.add(item.id);
@@ -150,10 +217,9 @@ export function useNotificationStore(
         const item: MawNotificationItem = message.notification;
         if (!item) return;
 
-        // Decision 2: Only verified completion or failure.
-        // No notifications for task started, working, unknown activity, or unverified completion.
-        const isVerifiedCompletion = item.state === 'finished' || item.state === 'failed';
-        if (!isVerifiedCompletion) return;
+        // Relevant states: verified completion, failure, or needs-input
+        const isAlertableState = item.state === 'finished' || item.state === 'failed' || item.state === 'needs-input';
+        if (!isAlertableState) return;
 
         if (seenNotificationIds.current.has(item.id) || item.acknowledgedAt || completedNotificationIds.current.has(item.id)) return;
         seenNotificationIds.current.add(item.id);
@@ -163,38 +229,25 @@ export function useNotificationStore(
           return [item, ...prev];
         });
 
-        // Decision 2: Suppress the transient toast only when:
-        // 1. The application window is focused.
-        // 2. The completed tab is actually visible and active.
-        // When focus or visibility cannot be determined reliably, do not silently discard an otherwise valid completion toast.
-        const hasReliableFocusAndVisibility =
-          typeof document !== 'undefined' &&
-          typeof document.hasFocus === 'function' &&
-          !document.hidden &&
-          document.hasFocus();
+        if (!enabledRef.current) return;
 
-        const isActivelyViewed = hasReliableFocusAndVisibility && nativeLayoutCoordinator.isViewing(item.tabId);
+        const context: FocusContext = {
+          activeWorkspaceId: optionsRef.current?.activeWorkspaceId ?? null,
+          showingDone: Boolean(optionsRef.current?.showingDone),
+          activeTabId: optionsRef.current?.activeTabId ?? null,
+        };
 
-        if (enabledRef.current && !isActivelyViewed) {
+        const channel = focusTracker.determineDeliveryChannel(item, context);
+
+        if (channel === 'suppress') {
+          // Suppress redundant alert: user is actively viewing this tab
+          return;
+        }
+
+        if (channel === 'os') {
+          dispatchOsNotification(item);
+        } else {
           pushToast(item);
-          if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && (typeof document === 'undefined' || !document.hasFocus() || document.hidden)) {
-            try {
-              const osNotif = new Notification(item.title, {
-                body: item.body,
-                tag: 'maw-' + item.id,
-              });
-              osNotif.onclick = () => {
-                if (typeof window !== 'undefined') {
-                  window.focus();
-                  window.dispatchEvent(new CustomEvent('maw:select-tab', {
-                    detail: { workspaceId: item.workspaceId, tabId: item.tabId, notificationId: item.id }
-                  }));
-                }
-              };
-            } catch {
-              // Notification constructor may throw in unsupported environment
-            }
-          }
         }
       } else if (message.type === 'agency.notification.changed') {
         const item: MawNotificationItem = message.notification;
@@ -220,7 +273,7 @@ export function useNotificationStore(
         });
       }
     });
-  }, [transport, pushToast]);
+  }, [transport, pushToast, dispatchOsNotification]);
 
   // Server events are authoritative. A failed mutation cannot erase a concurrent completion.
   const markRead = useCallback(async (notificationId: string) => {
@@ -274,6 +327,46 @@ export function useNotificationStore(
     return activityStates.get(key)?.state ?? 'unknown';
   }, [activityStates]);
 
+  /**
+   * Helper for client-side attention/input requests (e.g. from session transitions).
+   * Routes cleanly through focus-aware suppression and click navigation.
+   */
+  const notifySessionAttention = useCallback((input: {
+    workspaceId: WorkspaceId;
+    tabId: string;
+    sessionId?: string;
+    title: string;
+    body: string;
+  }) => {
+    if (!enabledRef.current) return;
+
+    const context: FocusContext = {
+      activeWorkspaceId: optionsRef.current?.activeWorkspaceId ?? null,
+      showingDone: Boolean(optionsRef.current?.showingDone),
+      activeTabId: optionsRef.current?.activeTabId ?? null,
+    };
+
+    const channel = focusTracker.determineDeliveryChannel(input, context);
+    if (channel === 'suppress') return;
+
+    const fakeItem: MawNotificationItem = {
+      id: crypto.randomUUID(),
+      workspaceId: input.workspaceId,
+      tabId: input.tabId,
+      title: input.title,
+      body: input.body,
+      state: 'needs-input',
+      read: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (channel === 'os') {
+      dispatchOsNotification(fakeItem);
+    } else {
+      pushToast(fakeItem);
+    }
+  }, [dispatchOsNotification, pushToast]);
+
   const unreadCount = notifications.filter((n) => !n.read && !n.acknowledgedAt).length;
 
   return {
@@ -287,5 +380,6 @@ export function useNotificationStore(
     dismissToast,
     acknowledgeTab,
     getTabActivity,
+    notifySessionAttention,
   };
 }

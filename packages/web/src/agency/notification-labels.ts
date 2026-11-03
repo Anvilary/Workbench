@@ -10,7 +10,16 @@ export function notificationText(item: {
   const title = tabName === 'CLI Agent' ? t('agency.ui.agentLabel') : tabName === 'Terminal' ? t('agency.ui.shell') : tabName;
   if (!['cli', 'shell', 'browser'].includes(String(kind))) return { title, body: item.body };
   if (item.state !== 'finished' && item.state !== 'failed') {
-    return { title, body: item.state === 'working' ? t('agency.notifications.statusWorking') : item.state === 'unknown' ? t('agency.notifications.statusUnknown') : t('agency.notifications.statusIdle') };
+    return {
+      title,
+      body: item.state === 'needs-input'
+        ? t('agency.ui.needsInput')
+        : item.state === 'working'
+          ? t('agency.notifications.statusWorking')
+          : item.state === 'unknown'
+            ? t('agency.notifications.statusUnknown')
+            : t('agency.notifications.statusIdle'),
+    };
   }
   const failed = item.state === 'failed';
   const body = kind === 'shell'

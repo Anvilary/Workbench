@@ -50,6 +50,8 @@ export function NotificationInbox({
     switch (state) {
       case 'finished':
         return t('agency.notifications.statusFinished');
+      case 'needs-input':
+        return t('agency.ui.needsInput');
       case 'working':
         return t('agency.notifications.statusWorking');
       case 'failed':

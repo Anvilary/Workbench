@@ -82,9 +82,12 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   const [menuOpen, setMenuOpen] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(readNotificationsEnabled);
   const [desktopPermission, setDesktopPermission] = useState<DesktopPermission>(readDesktopPermission);
-  const notificationStore = useNotificationStore(agencyTransport, store.request, notificationsEnabled);
   const [selectedId, setSelectedId] = useState<WorkspaceId | null>(() => { try { return localStorage.getItem('agency-ui.selected-workspace.v1') as WorkspaceId | null; } catch { return null; } });
   const [showingDone, setShowingDone] = useState(false);
+  const notificationStore = useNotificationStore(agencyTransport, store.request, notificationsEnabled, {
+    activeWorkspaceId: selectedId,
+    showingDone,
+  });
   const [sidebarOpen, setSidebarOpen] = useState(() => { try { return localStorage.getItem('agency-ui.sidebar-open.v1') !== 'false'; } catch { return true; } });
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     try {
@@ -153,14 +156,17 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
     const sessionName = noticeSession?.tab?.name ?? (noticeSession?.kind === 'terminal' ? t('agency.tabs.terminalNamed', { number: noticeSession.tab?.terminalNumber ?? 1 }) : data.profiles.find(profile => profile.id === noticeSession?.profileId)?.label ?? '');
     const label = (ws?.name ?? t('agency.ui.workspace')) + (sessionName ? ' / ' + sessionName : '');
     const message = notice.kind === 'attention' ? t('agency.ui.needsAttentionNamed', { name: label }) : t('agency.ui.completedTurnNamed', { name: label });
-    if (notificationsEnabled) {
-      setStatusToast(message);
+
+    if (notice.kind === 'attention' && noticeSession?.tab?.id) {
+      notificationStore.notifySessionAttention({
+        workspaceId: notice.workspaceId as WorkspaceId,
+        tabId: noticeSession.tab.id,
+        sessionId: notice.sessionId,
+        title: label,
+        body: message,
+      });
     }
-    if (notificationsEnabled && typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) {
-      // Only confirmed server transitions, never snapshots or local send clicks.
-      new Notification(t('agency.ui.agency'), { body: message, tag: 'agency-' + notice.sessionId + '-' + notice.kind });
-    }
-  }, [notice, data.workspaces, data.sessions, data.profiles, notificationsEnabled]);
+  }, [notice, data.workspaces, data.sessions, data.profiles, notificationStore]);
 
   const selected = !showingDone ? data.workspaces.find((ws) => ws.id === selectedId && ws.status === 'active') : undefined;
   useEffect(() => { try { if (selectedId) localStorage.setItem('agency-ui.selected-workspace.v1', selectedId); } catch {} }, [selectedId]);
