@@ -202,6 +202,15 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
     }
   }
 
+  useEffect(() => {
+    const onSelectTab = (event: Event) => {
+      const custom = event as CustomEvent<{ workspaceId: WorkspaceId; tabId?: string; notificationId?: string }>;
+      if (custom.detail) void handleNotificationNavigate(custom.detail);
+    };
+    window.addEventListener('maw:select-tab', onSelectTab);
+    return () => window.removeEventListener('maw:select-tab', onSelectTab);
+  }, [handleNotificationNavigate]);
+
   function updateDraft(workspaceId: string, value: string) {
     setDrafts((prev) => putWorkspaceDraft(prev, workspaceId as WorkspaceId, value));
   }

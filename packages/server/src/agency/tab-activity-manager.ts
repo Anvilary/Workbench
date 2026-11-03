@@ -51,7 +51,7 @@ class UnsupportedTabActivitySchemaError extends Error {
 }
 
 /** Providers that actually emit verified turn-completion signals via real-time watchers or events. */
-const VERIFIED_TURN_PROVIDERS = new Set<string>(['claude-code', 'opencode']);
+const VERIFIED_TURN_PROVIDERS = new Set<string>(['claude-code', 'opencode', 'antigravity']);
 
 export interface TabActivityKey {
   workspaceId: WorkspaceId;
@@ -71,7 +71,6 @@ export class TabActivityManager extends EventEmitter {
   private readonly shellCommandCounters = new Map<string, number>();
   private readonly browserProviders = new Map<string, BrowserActivityProvider>();
   private readonly notificationStore: AgencyNotificationStore;
-  private readonly longRunningTimers = new Map<string, { timer: NodeJS.Timeout; taskId: string }>();
   private readonly tabNames = new Map<string, string>();
   readonly longRunningThresholdMs: number;
   readonly file: string;
@@ -267,12 +266,6 @@ export class TabActivityManager extends EventEmitter {
     }
     if (!this.disposed) this.emit('tabActivity', record);
     await this.deliverPendingNotifications();
-    // Working and needs-input stay on the tab. They do not raise a notification.
-    const existingTimer = this.longRunningTimers.get(key);
-    if (existingTimer) {
-      clearTimeout(existingTimer.timer);
-      this.longRunningTimers.delete(key);
-    }
   }
 
   /**
@@ -369,11 +362,6 @@ export class TabActivityManager extends EventEmitter {
       this.shellParsers.delete(tabId);
     }
     this.shellCommandCounters.delete(tabId);
-    const existingTimer = this.longRunningTimers.get(key);
-    if (existingTimer) {
-      clearTimeout(existingTimer.timer);
-      this.longRunningTimers.delete(key);
-    }
   }
 
   /**
@@ -543,7 +531,11 @@ export class TabActivityManager extends EventEmitter {
     if (sameTask && existing?.acknowledgedAt && input.nextActivity === 'working' && input.taskId) return;
     if (sameTask && existing?.state === 'finished' && input.taskId && input.nextActivity === 'working') return;
 
-    if (input.lifecycle === 'failed' || (input.lifecycle === 'exited' && typeof input.exitCode === 'number' && input.exitCode !== 0)) {
+    if (input.lifecycle === 'stopping') {
+      nextState = 'unknown';
+      reliable = false;
+      detail = 'CLI stopping';
+    } else if (input.lifecycle === 'failed' || (input.lifecycle === 'exited' && typeof input.exitCode === 'number' && input.exitCode !== 0)) {
       nextState = 'failed';
       reliable = true;
       detail = `CLI failed or exited with code ${input.exitCode ?? 'error'}`;
@@ -725,10 +717,6 @@ export class TabActivityManager extends EventEmitter {
 
   dispose(): void {
     this.disposed = true;
-    for (const entry of this.longRunningTimers.values()) {
-      clearTimeout(entry.timer);
-    }
-    this.longRunningTimers.clear();
     for (const parser of this.shellParsers.values()) {
       parser.dispose();
     }

@@ -1020,6 +1020,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         nextActivity: activity.activity,
         lifecycle: activity.lifecycle,
         exitCode: session.exitCode,
+        completionEvidence: 'status-transition',
       }).catch(error => console.error('[agency] activity persistence failed:', String(error)));
     }
   };

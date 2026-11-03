@@ -177,6 +177,24 @@ export function useNotificationStore(
 
         if (enabledRef.current && !isActivelyViewed) {
           pushToast(item);
+          if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && (typeof document === 'undefined' || !document.hasFocus() || document.hidden)) {
+            try {
+              const osNotif = new Notification(item.title, {
+                body: item.body,
+                tag: 'maw-' + item.id,
+              });
+              osNotif.onclick = () => {
+                if (typeof window !== 'undefined') {
+                  window.focus();
+                  window.dispatchEvent(new CustomEvent('maw:select-tab', {
+                    detail: { workspaceId: item.workspaceId, tabId: item.tabId, notificationId: item.id }
+                  }));
+                }
+              };
+            } catch {
+              // Notification constructor may throw in unsupported environment
+            }
+          }
         }
       } else if (message.type === 'agency.notification.changed') {
         const item: MawNotificationItem = message.notification;
