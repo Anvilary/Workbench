@@ -869,7 +869,8 @@ async function start() {
   win.webContents.on('will-redirect', (event, url) => { if (new URL(url).origin !== local.origin) event.preventDefault(); });
   win.webContents.on('did-start-loading', hideAll);
   win.webContents.on('render-process-gone', hideAll);
-  for (const event of ['resize', 'minimize', 'restore', 'enter-full-screen', 'leave-full-screen']) win.on(event, invalidate);
+  for (const event of ['minimize', 'restore', 'enter-full-screen', 'leave-full-screen']) win.on(event, invalidate);
+  win.on('resize', () => send({ type: 'layout-needed' }));
   win.webContents.on('before-input-event', desktopShortcut);
   app.on('second-instance', (_event, _argv, _cwd, data) => {
     try {

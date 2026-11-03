@@ -87,7 +87,7 @@ test('native attachment, retention, overlay safety, security and cold cookie sto
     await page.getByText('Dismiss', { exact: true }).click();
     await eventually(async () => await attached() === 1);
     await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1010, 720));
-    await eventually(async () => await attached() === 1);
+    await eventually(async () => await attached() === 1 && (await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.find(v => v.webContents)?.getBounds()?.width)) === 800);
     const geometry = await desktop.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];
       return { size: win.getContentSize(), bounds: win.contentView.children.find(view => view.webContents).getBounds() };
