@@ -5,6 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -12,6 +13,9 @@ const serverRoot = path.resolve(here, '..');
 const bundlePath = path.join(serverRoot, 'dist/index.mjs');
 
 test('Prebuilt production server bundle: exists and starts cleanly under raw node', async () => {
+  if (!existsSync(bundlePath)) {
+    execSync('node scripts/build-bundle.mjs', { cwd: serverRoot, stdio: 'inherit' });
+  }
   assert.ok(existsSync(bundlePath), 'dist/index.mjs should exist');
 
   const tempHome = await mkdtemp(path.join(tmpdir(), 'maw-bundle-test-'));

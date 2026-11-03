@@ -62,6 +62,14 @@ try {
   const sizeKiB = (stats.size / 1024).toFixed(1);
 
   console.log(`[build-bundle] Server bundle built in ${durationMs} ms (${sizeKiB} KiB) -> ${outfile}`);
+
+  const supervisorSrc = path.join(serverRoot, 'src/pty-host/maw-ptyd.mjs');
+  const supervisorDest = path.join(outdir, 'maw-ptyd.mjs');
+  if (fs.existsSync(supervisorSrc)) {
+    fs.copyFileSync(supervisorSrc, supervisorDest);
+    fs.chmodSync(supervisorDest, 0o755);
+    console.log(`[build-bundle] Copied standalone supervisor to ${supervisorDest}`);
+  }
 } catch (error) {
   console.error('[build-bundle] Failed to bundle server:', error);
   process.exit(1);
