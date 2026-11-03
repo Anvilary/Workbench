@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
+// @ts-expect-error - standalone pure-ESM supervisor script
 import { PtySupervisor } from './maw-ptyd.mjs';
 import { PtyHostClient } from './pty-host-client.js';
 
@@ -291,7 +292,7 @@ test('Persistent PTY Acceptance: Security, permissions and input validation', as
     // 2. Rechazar conexion no autenticada
     await assert.rejects(async () => {
       const sock = net.connect(env.socketPath);
-      await new Promise((resolve, reject) => {
+      await new Promise<void>((_, reject) => {
         sock.once('connect', () => {
           sock.write(JSON.stringify({ op: 'hello', reqId: 'test-1', version: 1, authToken: 'wrong-token' }) + '\n');
         });
@@ -309,7 +310,7 @@ test('Persistent PTY Acceptance: Security, permissions and input validation', as
     await assert.rejects(async () => {
       const token = fs.readFileSync(env.authPath, 'utf8').trim();
       const sock = net.connect(env.socketPath);
-      await new Promise((resolve, reject) => {
+      await new Promise<void>((_, reject) => {
         sock.once('connect', () => {
           sock.write(JSON.stringify({ op: 'hello', reqId: 'test-v', version: 999, authToken: token }) + '\n');
         });
@@ -332,7 +333,7 @@ test('Persistent PTY Acceptance: Security, permissions and input validation', as
 
     const rawSock = net.connect(env.socketPath);
     const token = fs.readFileSync(env.authPath, 'utf8').trim();
-    await new Promise((resolve) => {
+    await new Promise<void>((resolve) => {
       rawSock.once('connect', () => {
         rawSock.write(JSON.stringify({ op: 'hello', reqId: 'ok', version: 1, authToken: token }) + '\n');
         rawSock.write('{bad-json-syntax-here\n');

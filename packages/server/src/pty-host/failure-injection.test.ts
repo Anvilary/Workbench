@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
+// @ts-expect-error - standalone pure-ESM supervisor script
 import { PtySupervisor } from './maw-ptyd.mjs';
 import { PtyHostClient } from './pty-host-client.js';
 
@@ -135,6 +136,7 @@ test('Failure Injection: Slow reader backpressure triggers disconnection without
     // El supervisor principal debe continuar respondiendo con normalidad
     const list = await client.list();
     assert.ok(list.sessions.length > 0, 'Supervisor must remain healthy and responsive');
+    assert.equal(typeof hungDisconnected, 'boolean');
 
     await client.kill('backpressure-tab');
     client.detach();
