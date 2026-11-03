@@ -280,6 +280,8 @@ export class TerminalRegistry extends EventEmitter {
   private readonly tombstones = new Map<TerminalId, PtyHostTombstoneInfo>();
   private readonly persistentPty: boolean;
   private readonly supervisorScriptPath?: string;
+  private readonly socketPath?: string;
+  private readonly authPath?: string;
 
   constructor(
     private readonly agents: AgentRegistry,
@@ -295,11 +297,13 @@ export class TerminalRegistry extends EventEmitter {
     private readonly tabWorktreeOf: TabWorktreeLookup = () => Promise.resolve(null),
     /** Disposable integration directory for fixture PTYs. */
     private readonly shellIntegrationDir: () => string = () => integrationsDir() + '/shell',
-    options?: { persistentPty?: boolean; supervisorScriptPath?: string },
+    options?: { persistentPty?: boolean; supervisorScriptPath?: string; socketPath?: string; authPath?: string },
   ) {
     super();
     this.persistentPty = options?.persistentPty ?? (process.env.MAW_PERSISTENT_PTY === '1' && process.env.MAW_DISABLE_PTYD !== '1');
     this.supervisorScriptPath = options?.supervisorScriptPath ?? process.env.MAW_PTYD_SCRIPT;
+    this.socketPath = options?.socketPath;
+    this.authPath = options?.authPath;
   }
 
   isPersistent(): boolean {
@@ -325,6 +329,8 @@ export class TerminalRegistry extends EventEmitter {
         this.client = await PtyHostClient.connectOrSpawn({
           autoSpawn: true,
           supervisorScriptPath: this.supervisorScriptPath,
+          socketPath: this.socketPath,
+          authPath: this.authPath,
         });
 
         this.client.onData((id, chunk, offset) => {
