@@ -27,6 +27,7 @@ import { appConfigDir } from '../paths.js';
 
 const VERSION = 1;
 const MAX_NOTIFICATIONS = 150;
+const MAX_DEDUP_INDEX_SIZE = 1000;
 
 class UnsupportedAgencyNotificationSchemaError extends Error {
   constructor(version: unknown) {
@@ -199,6 +200,17 @@ export class AgencyNotificationStore extends EventEmitter {
       for (let i = 0; i < Math.min(excess, candidates.length); i++) {
         const victim = candidates[i];
         if (victim) this.notifications.delete(victim.id);
+      }
+    }
+
+    // Bound deduplication index retention: retain a safe replay horizon while
+    // evicting ancient keys for items that were already pruned from the inbox.
+    if (this.deduplicationIndex.size > MAX_DEDUP_INDEX_SIZE) {
+      for (const [key, entry] of this.deduplicationIndex) {
+        if (!this.notifications.has(entry.id)) {
+          this.deduplicationIndex.delete(key);
+          if (this.deduplicationIndex.size <= MAX_DEDUP_INDEX_SIZE) break;
+        }
       }
     }
 
