@@ -39,6 +39,7 @@
     "typecheck": "pnpm -r typecheck",
     "vault:import": "pnpm --filter @agent-workbench/server vault:import",
     "check": "pnpm --filter @agent-workbench/server check",
+    "test": "pnpm --filter @agent-workbench/desktop test && pnpm --filter @agent-workbench/server test && pnpm --filter @agent-workbench/web test",
     "perf": "node scripts/perf-check.mjs",
     "perf:full": "node scripts/perf-check.mjs full",
     "demo": "node scripts/demo/run.mjs",
