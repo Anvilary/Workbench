@@ -8,42 +8,42 @@
     "cores": 16,
     "totalMemGiB": 28.67,
     "nodeVersion": "v24.22.0",
-    "timestamp": "2026-11-03T18:19:29.062Z"
+    "timestamp": "2026-11-03T19:52:43.436Z"
   },
   "benchmarks": {
     "coldStartup": {
       "tsx": {
-        "mean": 393.21,
-        "stddev": 3.83,
-        "min": 388.15,
-        "max": 397.4,
-        "p95": 397.4
+        "mean": 450.06,
+        "stddev": 38.12,
+        "min": 416.07,
+        "max": 503.3,
+        "p95": 503.3
       },
       "bundle": {
-        "mean": 228.64,
-        "stddev": 2.5,
-        "min": 226.22,
-        "max": 232.08,
-        "p95": 232.08
+        "mean": 244.35,
+        "stddev": 5.45,
+        "min": 239.68,
+        "max": 252,
+        "p95": 252
       },
-      "latencyReductionPct": 41.9
+      "latencyReductionPct": 45.7
     },
     "inotifyAndMemory": {
       "lazyWatches": 0,
-      "attachedWatches": 2179,
-      "savedWatches": 2179
+      "attachedWatches": 2511,
+      "savedWatches": 2511
     },
     "outputBatching": {
       "lines": 20000,
       "totalBytes": 1100000,
       "unbatched": {
         "frames": 20000,
-        "durationMs": 3.24
+        "durationMs": 3.07
       },
       "batched": {
         "frames": 17,
-        "durationMs": 3.38,
-        "throughputMiBs": 310.55
+        "durationMs": 3.28,
+        "throughputMiBs": 319.47
       },
       "frameReductionRatio": 1176.47
     },
@@ -51,27 +51,27 @@
       "events": 300,
       "uncoalesced": {
         "writes": 300,
-        "durationMs": 21.68
+        "durationMs": 23.58
       },
       "coalesced": {
         "writes": 1,
-        "durationMs": 0.67
+        "durationMs": 0.71
       },
       "writeReductionPct": 99.7
     },
     "eventLoopDelay": {
-      "mean": 0.25,
-      "stddev": 0.17,
-      "min": 0.11,
-      "max": 0.96,
-      "p95": 0.69
+      "mean": 0.59,
+      "stddev": 0.6,
+      "min": 0,
+      "max": 2.39,
+      "p95": 2.04
     },
     "lifecycleCleanup": {
       "initialFds": 26,
       "initialMem": {
-        "rssMiB": 86.9,
-        "pssMiB": 41.2,
-        "hwmMiB": 86.9
+        "rssMiB": 86.8,
+        "pssMiB": 37,
+        "hwmMiB": 86.8
       }
     }
   }

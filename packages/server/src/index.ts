@@ -50,7 +50,7 @@ import { NotesStore } from './notes-store.js';
 import { DraftStore, workspaceDraftOwners } from './draft-store.js';
 import { locateShells, pickShell, type ShellLocation } from './shell-locator.js';
 import { AppSettingsService } from './app-settings-service.js';
-import { watchSessions } from './session-watcher.js';
+import { ClassicWorkbenchLifecycle } from './classic-workbench-lifecycle.js';
 import { TerminalRegistry } from './terminal-registry.js';
 import { attachTerminalSocket } from './terminal-socket.js';
 import { VaultCatalog } from './vault/catalog.js';
@@ -404,7 +404,6 @@ async function main(): Promise<void> {
   */
   const index = new SessionIndex(agents, archived, catalog, worktreeLinks);
   const vault = new VaultService({ agents, index, archived, settings, catalog, platform: process.platform });
-  vault.start();
   const registry = new TerminalRegistry(
     agents,
     shell,
@@ -470,6 +469,13 @@ async function main(): Promise<void> {
   // escribe dentro de un proyecto, y solo cuando el usuario lo confirma.
   const memory = new MemoryHub(registry);
   const pasteStore = new PasteStore();
+
+  const classicLifecycle = new ClassicWorkbenchLifecycle({
+    index,
+    vault,
+    conversations,
+    agents,
+  });
 
   const app = express();
   app.disable('x-powered-by');
@@ -593,6 +599,7 @@ async function main(): Promise<void> {
     appSettings,
     registry,
     index,
+    classicLifecycle,
     archived,
     notes,
     drafts,
@@ -617,10 +624,9 @@ async function main(): Promise<void> {
   */
   void pasteStore.purgeStale();
 
-  void index.start();
-  const stopWatching = watchSessions(index, conversations, agents);
-  // Lo que el watcher no ve de una CLI que se relee sola (§10.10).
-  conversations.on('historyGrew', (agent, filePath) => void index.refreshPath(agent, filePath));
+  if (process.env['MAW_EAGER_CLASSIC'] === '1') {
+    void classicLifecycle.ensureStarted();
+  }
 
   /*
     Las pestanas del arranque anterior tambien van en segundo plano: relanzar
@@ -679,10 +685,8 @@ async function main(): Promise<void> {
     shuttingDown = true;
     console.log('\nClosing Agent Workbench...');
 
-    stopWatching();
+    classicLifecycle.dispose();
     detachSocket();
-    // Cancela los temporizadores de la copia; lo pendiente se copia en el proximo arranque.
-    vault.dispose();
     conversations.disposeAll();
     /*
       Suelta los adaptadores ya, y la promesa espera lo que alguno tiene que

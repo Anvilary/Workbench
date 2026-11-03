@@ -124,6 +124,8 @@ import { QueuedSubmitBook, reclaimQueuedSubmits } from './queued-submits.js';
 import type { RepoHub } from './repo-hub.js';
 import { revealPath } from './reveal.js';
 import type { SessionIndex } from './session-index.js';
+import { TerminalOutputBatcher } from './terminal-output-batcher.js';
+import type { ClassicWorkbenchLifecycle } from './classic-workbench-lifecycle.js';
 import { OutputBackpressure } from './output-backpressure.js';
 import { AppSettingsChangeError, type AppSettingsService } from './app-settings-service.js';
 import { TerminalOpenError, type OutputListener, type TerminalRegistry } from './terminal-registry.js';
@@ -196,6 +198,7 @@ export interface TerminalSocketOptions {
   appSettings: AppSettingsService;
   registry: TerminalRegistry;
   index: SessionIndex;
+  classicLifecycle?: ClassicWorkbenchLifecycle;
   archived: ArchivedSessions;
   notes: NotesStore;
   /** Los borradores del cuadro de escritura, entre arranques (§6.29). */
@@ -1150,14 +1153,31 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         }
       }
     });
-    const listener: OutputListener = (terminalId, chunk, offset) => {
-      if (backpressure.shouldSend(terminalId)) {
+    const outputBatcher = new TerminalOutputBatcher({
+      maxWaitMs: 2,
+      maxBatchBytes: 64 * 1024,
+      onFlush: (terminalId, data, offset) => {
         send(socket, {
           type: 'terminal.output',
           terminalId,
-          data: chunk,
-          offset,
+          data,
+          ...(offset !== undefined ? { offset } : {}),
         });
+      },
+    });
+
+    const listener: OutputListener = (terminalId, chunk, offset) => {
+      if (backpressure.shouldSend(terminalId)) {
+        if (process.env.MAW_OUTPUT_BATCHING === '0') {
+          send(socket, {
+            type: 'terminal.output',
+            terminalId,
+            data: chunk,
+            offset,
+          });
+        } else {
+          outputBatcher.push(terminalId, chunk, offset);
+        }
       }
     };
 
@@ -1342,6 +1362,14 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         return;
       }
       if (message.type !== 'input') debugLog('socket', `received ${message.type}`);
+
+      if (options.classicLifecycle && (
+        message.type.startsWith('index.') ||
+        message.type.startsWith('vault.') ||
+        message.type.startsWith('session.')
+      )) {
+        void options.classicLifecycle.ensureStarted();
+      }
 
       // Antes de atender nada: lo que a un equipo remoto no se le atiende (hito 37).
       const refusal = remoteRefusal(message.type, deviceId !== null);
@@ -3792,6 +3820,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         tornDown = true;
         planLimits.release();
       }
+      outputBatcher.dispose();
       backpressure.dispose();
       if (phonePairingOwner === socket) {
         phonePairingOwner = null;

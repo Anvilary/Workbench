@@ -22,7 +22,7 @@ export interface OutputBatcherOptions {
   /** Maximum buffered bytes before an immediate flush occurs. Default: 65,536 (64 KiB). */
   readonly maxBatchBytes?: number;
   /** Callback invoked when a batch is flushed for a given terminal. */
-  readonly onFlush: (terminalId: TerminalId, data: string) => void;
+  readonly onFlush: (terminalId: TerminalId, data: string, offset?: number) => void;
 }
 
 export interface BatcherMetrics {
@@ -37,6 +37,7 @@ export interface BatcherMetrics {
 interface TerminalBatchQueue {
   chunks: string[];
   bufferedBytes: number;
+  lastOffset?: number;
   timer: NodeJS.Timeout | null;
 }
 
@@ -46,7 +47,7 @@ export const DEFAULT_MAX_BATCH_BYTES = 64 * 1024; // 64 KiB
 export class TerminalOutputBatcher {
   private readonly maxWaitMs: number;
   private readonly maxBatchBytes: number;
-  private readonly onFlush: (terminalId: TerminalId, data: string) => void;
+  private readonly onFlush: (terminalId: TerminalId, data: string, offset?: number) => void;
   private readonly queues = new Map<TerminalId, TerminalBatchQueue>();
 
   private totalPushedChunks = 0;
@@ -67,7 +68,7 @@ export class TerminalOutputBatcher {
    * If accumulated size exceeds maxBatchBytes, flushes immediately.
    * Otherwise, starts or relies on a 2ms timer.
    */
-  push(terminalId: TerminalId, chunk: string): void {
+  push(terminalId: TerminalId, chunk: string, offset?: number): void {
     if (this.disposed || chunk.length === 0) return;
 
     const chunkBytes = Buffer.byteLength(chunk, 'utf8');
@@ -82,6 +83,9 @@ export class TerminalOutputBatcher {
 
     queue.chunks.push(chunk);
     queue.bufferedBytes += chunkBytes;
+    if (offset !== undefined) {
+      queue.lastOffset = offset;
+    }
 
     if (queue.bufferedBytes >= this.maxBatchBytes) {
       this.immediateByteFlushes += 1;
@@ -192,12 +196,14 @@ export class TerminalOutputBatcher {
 
     const first = queue.chunks[0];
     const data = queue.chunks.length === 1 && first !== undefined ? first : queue.chunks.join('');
+    const lastOffset = queue.lastOffset;
     queue.chunks = [];
     queue.bufferedBytes = 0;
+    queue.lastOffset = undefined;
     this.totalFlushedFrames += 1;
 
     try {
-      this.onFlush(terminalId, data);
+      this.onFlush(terminalId, data, lastOffset);
     } catch (error) {
       console.warn(`[output-batcher] onFlush error for ${terminalId}:`, error);
     }
