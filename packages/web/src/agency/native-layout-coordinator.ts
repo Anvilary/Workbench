@@ -53,6 +53,11 @@ class NativeLayoutCoordinator {
   private frame = 0;
   private lastSerialized = '';
   private observer: MutationObserver | null = null;
+  private pending = false;
+  private resizeObserver: ResizeObserver | null = null;
+  private runningTransitions = 0;
+  private heartbeat = 0;
+  private listeners: Array<[EventTarget, string, EventListener, boolean | undefined]> = [];
   private unsubscribeBridge: (() => void) | null = null;
   private focusedId: string | null = null;
 
@@ -69,11 +74,28 @@ class NativeLayoutCoordinator {
     }
   }
 
+  /** Coalesce any number of triggers into at most one measure() per animation frame. */
+  private schedule() {
+    if (this.pending || this.views.size === 0) return;
+    this.pending = true;
+    this.frame = requestAnimationFrame(() => {
+      this.pending = false;
+      this.measure();
+      // While CSS transitions/animations run (sidebar, split divider), geometry changes every frame.
+      if (this.runningTransitions > 0) this.schedule();
+    });
+  }
+
+  private listen(target: EventTarget, type: string, handler: EventListener, capture?: boolean) {
+    target.addEventListener(type, handler, capture);
+    this.listeners.push([target, type, handler, capture]);
+  }
+
   setFocusedTabId(id: string | null) {
     if (this.focusedId !== id) {
       this.focusedId = id;
       this.lastSerialized = '';
-      this.measure();
+      this.schedule();
     }
   }
 
@@ -98,6 +120,7 @@ class NativeLayoutCoordinator {
     if (this.views.size === 1) {
       this.start();
     }
+    this.resizeObserver?.observe(reg.element);
     this.measure();
 
     return () => {
@@ -108,6 +131,7 @@ class NativeLayoutCoordinator {
         existing.hasBackdrop = false;
         existing.backdropApplied = false;
         existing.onDisplayed(false);
+        this.resizeObserver?.unobserve(existing.element);
       }
       this.views.delete(reg.id);
       this.lastSerialized = '';
@@ -121,7 +145,7 @@ class NativeLayoutCoordinator {
           viewport: { width: window.innerWidth, height: window.innerHeight },
         }).catch(() => {});
       } else {
-        this.measure();
+        this.schedule();
       }
     };
   }
@@ -130,17 +154,50 @@ class NativeLayoutCoordinator {
     const bridge = window.mawChatGpt;
     if (!bridge) return;
 
-    this.observer = new MutationObserver(() => this.measure());
+    // Terminal repaints (xterm DOM renderer rows, cursor blink) cannot move a native view or open an overlay.
+    const ignorable = (n: Node | null): boolean => {
+      const el = n && n.nodeType === 1 ? (n as Element) : n?.parentElement ?? null;
+      return !!el && el.closest('.xterm') !== null;
+    };
+    this.observer = new MutationObserver((records) => {
+      for (const r of records) {
+        if (!ignorable(r.target)) {
+          this.schedule();
+          return;
+        }
+      }
+    });
     this.observer.observe(document.body, { subtree: true, childList: true, attributes: true });
 
-    const handleEvent = () => { this.lastSerialized = ''; this.measure(); };
-    window.addEventListener('pointerup', handleEvent, true);
-    window.addEventListener('pointercancel', handleEvent, true);
-    window.addEventListener('lostpointercapture', handleEvent, true);
-    window.addEventListener('blur', handleEvent);
-    window.addEventListener('focus', handleEvent);
-    window.addEventListener('resize', handleEvent);
-    document.addEventListener('visibilitychange', handleEvent);
+    this.resizeObserver = new ResizeObserver(() => this.schedule());
+    this.resizeObserver.observe(document.documentElement);
+    for (const reg of this.views.values()) this.resizeObserver.observe(reg.element);
+
+    const bump = (d: number) => () => {
+      this.runningTransitions = Math.max(0, this.runningTransitions + d);
+      this.schedule();
+    };
+    this.listen(document, 'transitionrun', bump(1), true);
+    this.listen(document, 'transitionend', bump(-1), true);
+    this.listen(document, 'transitioncancel', bump(-1), true);
+    this.listen(document, 'scroll', (e) => {
+      if (!ignorable(e.target as Node)) this.schedule();
+    }, true);
+
+    // Safety net for geometry changes with no DOM/size signal (async font load, ancestor moves): 1 Hz instead of 60-165 Hz.
+    this.heartbeat = window.setInterval(() => this.schedule(), 1000);
+
+    const handleEvent = () => {
+      this.lastSerialized = '';
+      this.schedule();
+    };
+    this.listen(window, 'pointerup', handleEvent, true);
+    this.listen(window, 'pointercancel', handleEvent, true);
+    this.listen(window, 'lostpointercapture', handleEvent, true);
+    this.listen(window, 'blur', handleEvent);
+    this.listen(window, 'focus', handleEvent);
+    this.listen(window, 'resize', handleEvent);
+    this.listen(document, 'visibilitychange', handleEvent);
 
     this.unsubscribeBridge = bridge.subscribe((state) => {
       const entry = this.views.get(state.id ?? '');
@@ -151,7 +208,7 @@ class NativeLayoutCoordinator {
         entry.isReady = true;
         entry.onRestoring?.(false);
         this.lastSerialized = '';
-        this.measure();
+        this.schedule();
       } else if (state.type === 'loading' && entry) {
         entry.isReady = false;
         entry.onDisplayed(false);
@@ -165,7 +222,7 @@ class NativeLayoutCoordinator {
         entry.onRestoring?.(false);
       } else if (state.type === 'layout-needed') {
         this.lastSerialized = '';
-        this.measure();
+        this.schedule();
       } else if (state.type === 'error') {
         if (entry) {
           entry.onRestoring?.(false);
@@ -181,15 +238,18 @@ class NativeLayoutCoordinator {
       }
     });
 
-    const tick = () => {
-      this.measure();
-      this.frame = requestAnimationFrame(tick);
-    };
-    tick();
+    this.schedule();
   }
 
   private stop() {
     cancelAnimationFrame(this.frame);
+    this.pending = false;
+    window.clearInterval(this.heartbeat);
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    for (const [t, type, h, c] of this.listeners) t.removeEventListener(type, h, c);
+    this.listeners = [];
+    this.runningTransitions = 0;
     this.observer?.disconnect();
     this.observer = null;
     this.unsubscribeBridge?.();
@@ -286,7 +346,7 @@ class NativeLayoutCoordinator {
             requestAnimationFrame(() => requestAnimationFrame(() => {
               if (this.views.get(id) !== current || current.captureEpoch !== epoch) return;
               current.backdropReady = true;
-              this.measure();
+              this.schedule();
             }));
             return;
           }

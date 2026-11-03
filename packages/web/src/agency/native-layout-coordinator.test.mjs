@@ -9,13 +9,24 @@ import { chromium } from 'playwright';
 
 const fixture = `
 import { nativeLayoutCoordinator } from './src/agency/native-layout-coordinator.ts';
+window.nativeLayoutCoordinator = nativeLayoutCoordinator;
 window.commands = [];
 window.pending = [];
 window.backdrops = [];
 window.focused = [];
+window.layoutHistory = [];
+window.measureCount = 0;
+const origMeasure = nativeLayoutCoordinator.measure.bind(nativeLayoutCoordinator);
+nativeLayoutCoordinator.measure = function() {
+  window.measureCount++;
+  return origMeasure();
+};
 window.mawChatGpt = {
   command(cmd) {
     window.commands.push(cmd.type);
+    if (cmd.type === 'layout') {
+      window.layoutHistory.push(JSON.parse(JSON.stringify(cmd)));
+    }
     if (cmd.type === 'capture') {
       return new Promise((resolve) => window.pending.push(resolve));
     }
@@ -27,7 +38,7 @@ window.mawChatGpt = {
   },
 };
 const view = document.getElementById('view');
-nativeLayoutCoordinator.register({
+window.unregisterView = nativeLayoutCoordinator.register({
   id: 'view-1',
   element: view,
   onDisplayed() {},
@@ -38,6 +49,7 @@ nativeLayoutCoordinator.register({
 });
 window.overlay = (open) => { document.getElementById('overlay').hidden = !open; };
 window.resizeView = (width) => { view.style.width = width + 'px'; };
+
 `;
 
 function browserExecutable() {
@@ -78,6 +90,9 @@ test('native capture fallback ignores results that arrive after the overlay clos
     res.end(`<!doctype html><html><body style="margin:0">
       <div id="view" style="position:absolute;left:0;top:0;width:400px;height:300px"></div>
       <div id="overlay" role="dialog" hidden style="position:absolute;left:20px;top:20px;width:160px;height:120px"></div>
+      <div class="xterm" id="term" style="position:absolute;left:450px;top:0;width:300px;height:200px">
+        <div id="term-row">line 1</div>
+      </div>
       <script type="module" src="/bundle.js"></script>
     </body></html>`);
   });
@@ -168,4 +183,93 @@ test('native capture fallback ignores results that arrive after the overlay clos
   const last = await page.evaluate(() => window.backdrops.at(-1)?.url ?? null);
   assert.equal(last === null || last === undefined || !String(last).startsWith('data:'), true);
   assert.deepEqual(errors, []);
+});
+
+test('event-driven layout coordinator eliminates idle animation-frame loop and ignores xterm repaints', { timeout: 60000 }, async (t) => {
+  const executablePath = browserExecutable();
+  if (!executablePath) {
+    t.skip('Chromium is not installed; set PLAYWRIGHT_CHROMIUM_EXECUTABLE');
+    return;
+  }
+  const bundle = await build({
+    stdin: { contents: fixture, loader: 'ts', resolveDir: process.cwd() + '/packages/web' },
+    bundle: true,
+    write: false,
+    format: 'esm',
+    logLevel: 'silent',
+  });
+  const server = createServer((req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+    if (url.pathname === '/bundle.js') {
+      res.setHeader('Content-Type', 'text/javascript');
+      res.end(bundle.outputFiles[0].text);
+      return;
+    }
+    res.setHeader('Content-Type', 'text/html');
+    res.end(`<!doctype html><html><body style="margin:0">
+      <div id="view" style="position:absolute;left:0;top:0;width:400px;height:300px"></div>
+      <div id="overlay" role="dialog" hidden style="position:absolute;left:20px;top:20px;width:160px;height:120px"></div>
+      <div class="xterm" id="term" style="position:absolute;left:450px;top:0;width:300px;height:200px">
+        <div id="term-row">line 1</div>
+      </div>
+      <script type="module" src="/bundle.js"></script>
+    </body></html>`);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const browser = await chromium.launch({ headless: true, executablePath });
+  t.after(async () => {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  });
+  const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+  await page.goto('http://127.0.0.1:' + server.address().port);
+  await page.waitForFunction(() => typeof window.resizeView === 'function');
+
+  const frames = (count) => page.evaluate(async (n) => {
+    for (let i = 0; i < n; i += 1) await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  }, count);
+
+  // Let initial setup settle
+  await frames(5);
+  const baselineMeasures = await page.evaluate(() => window.measureCount);
+
+  // 1. Across 30 animation frames, idle measures should not run every frame (unconditional loop would run 30 times)
+  await frames(30);
+  const idleMeasuresDelta = (await page.evaluate(() => window.measureCount)) - baselineMeasures;
+  assert.ok(idleMeasuresDelta <= 2, `Idle measures across 30 frames must be bounded (got delta ${idleMeasuresDelta}, expected <= 2)`);
+
+  // 2. Terminal repaints (DOM mutations inside .xterm) must be ignored
+  const beforeTerm = await page.evaluate(() => window.measureCount);
+  await page.evaluate(() => {
+    const row = document.getElementById('term-row');
+    for (let i = 0; i < 20; i++) {
+      const span = document.createElement('span');
+      span.textContent = ' chunk ' + i;
+      row.appendChild(span);
+    }
+  });
+  await frames(5);
+  const termDelta = (await page.evaluate(() => window.measureCount)) - beforeTerm;
+  assert.equal(termDelta, 0, 'Mutations inside .xterm must not trigger native layout measurements');
+
+  // 3. Resizing the element must be detected by ResizeObserver and trigger layout
+  const beforeResize = await page.evaluate(() => window.layoutHistory.length);
+  await page.evaluate(() => window.resizeView(550));
+  await frames(5);
+  const afterResize = await page.evaluate(() => window.layoutHistory.length);
+  assert.ok(afterResize > beforeResize, 'ResizeObserver must trigger layout on element size change');
+  const latestLayout = await page.evaluate(() => window.layoutHistory.at(-1));
+  assert.equal(latestLayout.views[0]?.bounds.width, 550, 'Layout bounds must reflect resized element width');
+
+  // 4. Focus change must update layout
+  await page.evaluate(() => window.nativeLayoutCoordinator.setFocusedTabId('view-1'));
+  await frames(5);
+  const focusedLayout = await page.evaluate(() => window.layoutHistory.at(-1));
+  assert.equal(focusedLayout.focusedId, 'view-1', 'Layout must reflect updated focused tab ID');
+
+  // 5. Unregister view cleanly stops coordinator and hides views
+  await page.evaluate(() => window.unregisterView());
+  await frames(5);
+  const finalLayout = await page.evaluate(() => window.layoutHistory.at(-1));
+  assert.deepEqual(finalLayout.views, [], 'Unregistering all views must publish empty view array');
 });
