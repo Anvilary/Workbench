@@ -1,0 +1,78 @@
+{
+  "host": {
+    "hostname": "workbench-host",
+    "platform": "linux",
+    "arch": "x64",
+    "release": "7.0.0-38-generic",
+    "cpuModel": "AMD Ryzen 7 250 w/ Radeon 780M Graphics",
+    "cores": 16,
+    "totalMemGiB": 28.67,
+    "nodeVersion": "v24.22.0",
+    "timestamp": "2026-11-03T18:19:29.062Z"
+  },
+  "benchmarks": {
+    "coldStartup": {
+      "tsx": {
+        "mean": 393.21,
+        "stddev": 3.83,
+        "min": 388.15,
+        "max": 397.4,
+        "p95": 397.4
+      },
+      "bundle": {
+        "mean": 228.64,
+        "stddev": 2.5,
+        "min": 226.22,
+        "max": 232.08,
+        "p95": 232.08
+      },
+      "latencyReductionPct": 41.9
+    },
+    "inotifyAndMemory": {
+      "lazyWatches": 0,
+      "attachedWatches": 2179,
+      "savedWatches": 2179
+    },
+    "outputBatching": {
+      "lines": 20000,
+      "totalBytes": 1100000,
+      "unbatched": {
+        "frames": 20000,
+        "durationMs": 3.24
+      },
+      "batched": {
+        "frames": 17,
+        "durationMs": 3.38,
+        "throughputMiBs": 310.55
+      },
+      "frameReductionRatio": 1176.47
+    },
+    "persistenceEfficiency": {
+      "events": 300,
+      "uncoalesced": {
+        "writes": 300,
+        "durationMs": 21.68
+      },
+      "coalesced": {
+        "writes": 1,
+        "durationMs": 0.67
+      },
+      "writeReductionPct": 99.7
+    },
+    "eventLoopDelay": {
+      "mean": 0.25,
+      "stddev": 0.17,
+      "min": 0.11,
+      "max": 0.96,
+      "p95": 0.69
+    },
+    "lifecycleCleanup": {
+      "initialFds": 26,
+      "initialMem": {
+        "rssMiB": 86.9,
+        "pssMiB": 41.2,
+        "hwmMiB": 86.9
+      }
+    }
+  }
+}
