@@ -1,0 +1,431 @@
+/**
+ * Cliente IPC para conectarse a `maw-ptyd` (Persistent PTY Supervisor).
+ *
+ * Lane A - Client Adapter & Reconnection Protocol
+ */
+
+import net from 'node:net';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import {
+  PTY_PROTOCOL_VERSION,
+  MAX_PAYLOAD_SIZE,
+  type PtyClientRequest,
+  type PtyServerMessage,
+  type PtyHostSessionInfo,
+  type PtyHostTombstoneInfo,
+  type PtySnapshotResponse,
+  type PtySpawnedResponse,
+  type PtyReplayDataResponse,
+  type PtyKilledResponse,
+  type PtyExitEvent,
+} from './pty-host-types.js';
+
+export interface PtyHostClientOptions {
+  socketPath?: string;
+  authPath?: string;
+  authToken?: string;
+  autoSpawn?: boolean;
+  spawnTimeoutMs?: number;
+  supervisorScriptPath?: string;
+}
+
+export type PtyDataCallback = (id: string, chunk: string, offset: number) => void;
+export type PtyExitCallback = (event: PtyExitEvent) => void;
+export type PtyDisconnectCallback = () => void;
+
+export class PtyHostClient {
+  private socket: net.Socket | null = null;
+  private lineBuffer = '';
+  private pendingRequests = new Map<string, { resolve: (val: any) => void; reject: (err: Error) => void; timer: NodeJS.Timeout }>();
+  private dataListeners = new Set<PtyDataCallback>();
+  private exitListeners = new Set<PtyExitCallback>();
+  private disconnectListeners = new Set<PtyDisconnectCallback>();
+  private closed = false;
+
+  readonly socketPath: string;
+  readonly authPath: string;
+  private authToken: string;
+
+  private constructor(socketPath: string, authPath: string, authToken: string) {
+    this.socketPath = socketPath;
+    this.authPath = authPath;
+    this.authToken = authToken;
+  }
+
+  /**
+   * Conecta a un demonio `maw-ptyd` existente o lanza uno en segundo plano si no existe.
+   */
+  static async connectOrSpawn(options: PtyHostClientOptions = {}): Promise<PtyHostClient> {
+    const runtimeDir = process.env.XDG_RUNTIME_DIR ||
+      (typeof process.getuid === 'function' ? `/run/user/${process.getuid()}` : os.tmpdir());
+
+    const socketPath = options.socketPath ||
+      process.env.MAW_PTYD_SOCKET ||
+      path.join(runtimeDir, 'maw', 'ptyd.sock');
+
+    const authPath = options.authPath ||
+      process.env.MAW_PTYD_AUTH_FILE ||
+      `${socketPath}.auth`;
+
+    const autoSpawn = options.autoSpawn ?? true;
+    const timeoutMs = options.spawnTimeoutMs ?? 3000;
+
+    let authToken = options.authToken || '';
+    if (!authToken && fs.existsSync(authPath)) {
+      try {
+        authToken = fs.readFileSync(authPath, 'utf8').trim();
+      } catch {}
+    }
+
+    const client = new PtyHostClient(socketPath, authPath, authToken);
+
+    try {
+      await client._connect();
+      return client;
+    } catch (err) {
+      if (!autoSpawn) throw err;
+
+      // Intentar lanzar el supervisor en segundo plano
+      await client._spawnDaemon(options.supervisorScriptPath);
+
+      // Reintentar conexion con backoff hasta timeout
+      const startTime = Date.now();
+      let lastErr = err;
+
+      while (Date.now() - startTime < timeoutMs) {
+        await new Promise((r) => setTimeout(r, 100));
+
+        // Re-leer token si no lo teniamos
+        if (!client.authToken && fs.existsSync(authPath)) {
+          try {
+            client.authToken = fs.readFileSync(authPath, 'utf8').trim();
+          } catch {}
+        }
+
+        try {
+          await client._connect();
+          return client;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+
+      throw new Error(`Failed to connect to maw-ptyd within ${timeoutMs}ms: ${(lastErr as Error).message}`);
+    }
+  }
+
+  private async _spawnDaemon(scriptPath?: string): Promise<void> {
+    const defaultScript = path.join(path.dirname(new URL(import.meta.url).pathname), 'maw-ptyd.mjs');
+    const targetScript = scriptPath || defaultScript;
+
+    const child = spawn(process.execPath, [
+      targetScript,
+      '--socket', this.socketPath,
+      '--auth-file', this.authPath,
+    ], {
+      detached: true,
+      stdio: 'ignore',
+      env: {
+        ...process.env,
+        MAW_PTYD_SOCKET: this.socketPath,
+        MAW_PTYD_AUTH_FILE: this.authPath,
+      },
+    });
+
+    child.unref();
+  }
+
+  private async _connect(): Promise<PtySnapshotResponse> {
+    if (!this.authToken && fs.existsSync(this.authPath)) {
+      this.authToken = fs.readFileSync(this.authPath, 'utf8').trim();
+    }
+
+    return new Promise<PtySnapshotResponse>((resolve, reject) => {
+      const sock = net.connect(this.socketPath);
+      let handshook = false;
+
+      const connectTimer = setTimeout(() => {
+        sock.destroy();
+        reject(new Error(`Connection timeout connecting to ${this.socketPath}`));
+      }, 2000);
+
+      sock.once('connect', () => {
+        clearTimeout(connectTimer);
+        this.socket = sock;
+
+        // Enviar handshake hello
+        const reqId = randomUUID();
+        const helloReq: PtyClientRequest = {
+          op: 'hello',
+          reqId,
+          version: PTY_PROTOCOL_VERSION,
+          authToken: this.authToken,
+          subscribe: true,
+        };
+
+        this._registerPending(reqId, (res) => {
+          handshook = true;
+          resolve(res as PtySnapshotResponse);
+        }, reject, 3000);
+
+        this._rawSend(helloReq);
+      });
+
+      sock.on('data', (chunk) => this._onData(chunk));
+
+      sock.on('close', () => {
+        clearTimeout(connectTimer);
+        this.socket = null;
+        for (const [, req] of this.pendingRequests) {
+          clearTimeout(req.timer);
+          req.reject(new Error('Connection closed by supervisor'));
+        }
+        this.pendingRequests.clear();
+
+        for (const listener of this.disconnectListeners) {
+          try { listener(); } catch {}
+        }
+      });
+
+      sock.once('error', (err) => {
+        clearTimeout(connectTimer);
+        if (!handshook) {
+          reject(err);
+        }
+      });
+    });
+  }
+
+  private _onData(chunk: Buffer): void {
+    this.lineBuffer += chunk.toString('utf8');
+
+    if (this.lineBuffer.length > MAX_PAYLOAD_SIZE && !this.lineBuffer.includes('\n')) {
+      this.socket?.destroy();
+      throw new Error('Received message exceeding maximum protocol line size');
+    }
+
+    let newlineIndex: number;
+    while ((newlineIndex = this.lineBuffer.indexOf('\n')) !== -1) {
+      const line = this.lineBuffer.slice(0, newlineIndex).trim();
+      this.lineBuffer = this.lineBuffer.slice(newlineIndex + 1);
+
+      if (line.length === 0) continue;
+
+      let msg: PtyServerMessage;
+      try {
+        msg = JSON.parse(line) as PtyServerMessage;
+      } catch {
+        continue;
+      }
+
+      this._handleServerMessage(msg);
+    }
+  }
+
+  private _handleServerMessage(msg: PtyServerMessage): void {
+    if ('reqId' in msg && msg.reqId && this.pendingRequests.has(msg.reqId)) {
+      const pending = this.pendingRequests.get(msg.reqId)!;
+      this.pendingRequests.delete(msg.reqId);
+      clearTimeout(pending.timer);
+
+      if (msg.op === 'error') {
+        pending.reject(new Error(`[${msg.code}] ${msg.message}`));
+      } else {
+        pending.resolve(msg);
+      }
+      return;
+    }
+
+    if (msg.op === 'data') {
+      const chunk = Buffer.from(msg.dataB64, 'base64').toString('utf8');
+      for (const listener of this.dataListeners) {
+        try { listener(msg.id, chunk, msg.offset); } catch {}
+      }
+    } else if (msg.op === 'exit') {
+      for (const listener of this.exitListeners) {
+        try { listener(msg); } catch {}
+      }
+    }
+  }
+
+  private _registerPending(
+    reqId: string,
+    resolve: (val: any) => void,
+    reject: (err: Error) => void,
+    timeoutMs = 10_000
+  ): void {
+    const timer = setTimeout(() => {
+      if (this.pendingRequests.has(reqId)) {
+        this.pendingRequests.delete(reqId);
+        reject(new Error(`Request ${reqId} timed out after ${timeoutMs}ms`));
+      }
+    }, timeoutMs);
+
+    this.pendingRequests.set(reqId, { resolve, reject, timer });
+  }
+
+  private _rawSend(msg: PtyClientRequest): void {
+    if (!this.socket || this.socket.destroyed) {
+      throw new Error('Cannot send message: socket is not connected');
+    }
+    this.socket.write(JSON.stringify(msg) + '\n');
+  }
+
+  private async _request<T>(msg: PtyClientRequest, timeoutMs = 10_000): Promise<T> {
+    const reqId = msg.reqId || randomUUID();
+    const withReqId = { ...msg, reqId };
+
+    return new Promise<T>((resolve, reject) => {
+      this._registerPending(reqId, resolve, reject, timeoutMs);
+      try {
+        this._rawSend(withReqId);
+      } catch (err) {
+        this.pendingRequests.delete(reqId);
+        reject(err as Error);
+      }
+    });
+  }
+
+  async spawn(params: {
+    id: string;
+    sessionId?: string;
+    cmd: string;
+    args?: readonly string[];
+    cwd: string;
+    env?: Record<string, string>;
+    cols?: number;
+    rows?: number;
+  }): Promise<PtySpawnedResponse> {
+    return this._request<PtySpawnedResponse>({
+      op: 'spawn',
+      reqId: randomUUID(),
+      id: params.id,
+      sessionId: params.sessionId,
+      cmd: params.cmd,
+      args: params.args || [],
+      cwd: params.cwd,
+      env: params.env || {},
+      cols: params.cols ?? 80,
+      rows: params.rows ?? 24,
+    });
+  }
+
+  write(id: string, data: string | Buffer): void {
+    const dataB64 = Buffer.isBuffer(data)
+      ? data.toString('base64')
+      : Buffer.from(data, 'utf8').toString('base64');
+
+    this._rawSend({
+      op: 'write',
+      id,
+      dataB64,
+    });
+  }
+
+  resize(id: string, cols: number, rows: number): void {
+    this._rawSend({
+      op: 'resize',
+      id,
+      cols,
+      rows,
+    });
+  }
+
+  async replay(id: string, sinceOffset?: number): Promise<{
+    reset: boolean;
+    startOffset: number;
+    endOffset: number;
+    sinceOffset?: number;
+    data: string;
+    truncated: boolean;
+  }> {
+    const res = await this._request<PtyReplayDataResponse>({
+      op: 'replay',
+      reqId: randomUUID(),
+      id,
+      sinceOffset,
+    });
+
+    return {
+      reset: res.reset,
+      startOffset: res.startOffset,
+      endOffset: res.endOffset,
+      sinceOffset: res.sinceOffset,
+      data: Buffer.from(res.dataB64, 'base64').toString('utf8'),
+      truncated: res.truncated,
+    };
+  }
+
+  async kill(id: string, signal = 'SIGTERM'): Promise<PtyKilledResponse> {
+    return this._request<PtyKilledResponse>({
+      op: 'kill',
+      reqId: randomUUID(),
+      id,
+      signal,
+    });
+  }
+
+  reapTombstone(id: string): void {
+    this._rawSend({
+      op: 'reap_tombstone',
+      id,
+    });
+  }
+
+  async list(): Promise<{ sessions: readonly PtyHostSessionInfo[]; tombstones: readonly PtyHostTombstoneInfo[] }> {
+    const res = await this._request<{ sessions: readonly PtyHostSessionInfo[]; tombstones: readonly PtyHostTombstoneInfo[] }>({
+      op: 'list',
+      reqId: randomUUID(),
+    });
+    return {
+      sessions: res.sessions,
+      tombstones: res.tombstones,
+    };
+  }
+
+  /**
+   * Cierra la conexion del cliente con maw-ptyd SIN matar ninguna sesion PTY hija.
+   */
+  detach(): void {
+    if (this.closed) return;
+    this.closed = true;
+
+    try {
+      if (this.socket && !this.socket.destroyed) {
+        this._rawSend({ op: 'detach' });
+        this.socket.end();
+      }
+    } catch {}
+  }
+
+  /**
+   * Ordena al demonio terminar y opcionalmente matar todas las sesiones hijas.
+   */
+  async shutdown(killAll = false): Promise<void> {
+    if (this.closed) return;
+    try {
+      await this._request({ op: 'shutdown', reqId: randomUUID(), killAll });
+    } finally {
+      this.detach();
+    }
+  }
+
+  onData(listener: PtyDataCallback): () => void {
+    this.dataListeners.add(listener);
+    return () => this.dataListeners.delete(listener);
+  }
+
+  onExit(listener: PtyExitCallback): () => void {
+    this.exitListeners.add(listener);
+    return () => this.exitListeners.delete(listener);
+  }
+
+  onDisconnect(listener: PtyDisconnectCallback): () => void {
+    this.disconnectListeners.add(listener);
+    return () => this.disconnectListeners.delete(listener);
+  }
+}
