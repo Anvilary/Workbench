@@ -11,18 +11,18 @@ test('FocusTracker: window focus, visibility, and native view focus modeling', (
     let hiddenVal = false;
     let visibilityVal = 'visible';
 
-    globalThis.document = {
+    (globalThis as any).document = {
       hasFocus: () => hasFocusVal,
       get hidden() { return hiddenVal; },
-      get visibilityState() { return visibilityVal; },
+      get visibilityState() { return visibilityVal as DocumentVisibilityState; },
     };
 
-    let bridgeHandler = null;
-    globalThis.window = {
+    let bridgeHandler: ((event: any) => void) | null = null;
+    (globalThis as any).window = {
       addEventListener: () => {},
       removeEventListener: () => {},
       mawChatGpt: {
-        subscribe: (fn) => {
+        subscribe: (fn: any) => {
           bridgeHandler = fn;
           return () => { bridgeHandler = null; };
         },
@@ -50,7 +50,7 @@ test('FocusTracker: window focus, visibility, and native view focus modeling', (
     // 4. Native view focus: user clicks inside ChatGPT child WebContentsView
     // document.hasFocus is false, but bridge emits focused
     assert.ok(bridgeHandler);
-    bridgeHandler({ type: 'focused', id: 'tab-chatgpt-1' });
+    (bridgeHandler as any)({ type: 'focused', id: 'tab-chatgpt-1' });
     assert.equal(tracker.isWindowFocused(), true, 'Native view focus counts as window focus');
     assert.equal(tracker.getNativeFocusedTabId(), 'tab-chatgpt-1');
 
@@ -69,12 +69,12 @@ test('FocusTracker: isSessionActivelyViewed matrix', () => {
     let hasFocusVal = true;
     let hiddenVal = false;
 
-    globalThis.document = {
+    (globalThis as any).document = {
       hasFocus: () => hasFocusVal,
       get hidden() { return hiddenVal; },
-      get visibilityState() { return hiddenVal ? 'hidden' : 'visible'; },
+      get visibilityState() { return (hiddenVal ? 'hidden' : 'visible') as DocumentVisibilityState; },
     };
-    globalThis.window = {
+    (globalThis as any).window = {
       addEventListener: () => {},
       removeEventListener: () => {},
     };
@@ -161,12 +161,12 @@ test('FocusTracker: determineDeliveryChannel routing policy', () => {
     let hasFocusVal = true;
     let hiddenVal = false;
 
-    globalThis.document = {
+    (globalThis as any).document = {
       hasFocus: () => hasFocusVal,
       get hidden() { return hiddenVal; },
-      get visibilityState() { return hiddenVal ? 'hidden' : 'visible'; },
+      get visibilityState() { return (hiddenVal ? 'hidden' : 'visible') as DocumentVisibilityState; },
     };
-    globalThis.window = {
+    (globalThis as any).window = {
       addEventListener: () => {},
       removeEventListener: () => {},
     };
