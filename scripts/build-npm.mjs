@@ -24,7 +24,7 @@
  * puede empaquetar, y a las demas no se gana nada duplicandolas.
  */
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
@@ -72,6 +72,10 @@ console.log('3/4  Copying the interface and the package files...');
 cpSync(path.join(repoRoot, 'packages', 'web', 'dist'), path.join(outDir, 'dist', 'web'), {
   recursive: true,
 });
+const supervisorSrc = path.join(repoRoot, 'packages', 'server', 'src', 'pty-host', 'maw-ptyd.mjs');
+if (existsSync(supervisorSrc)) {
+  cpSync(supervisorSrc, path.join(outDir, 'dist', 'maw-ptyd.mjs'));
+}
 cpSync(path.join(repoRoot, 'LICENSE'), path.join(outDir, 'LICENSE'));
 
 // npm renderiza el README en la pagina del paquete, y ahi una ruta relativa a
