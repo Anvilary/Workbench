@@ -326,8 +326,9 @@ export class TerminalRegistry extends EventEmitter {
   async initialize(): Promise<void> {
     if (this.persistentPty && !this.client) {
       try {
+        const autoSpawn = process.env.MAW_AUTO_SPAWN_PTYD !== '0';
         this.client = await PtyHostClient.connectOrSpawn({
-          autoSpawn: true,
+          autoSpawn,
           supervisorScriptPath: this.supervisorScriptPath,
           socketPath: this.socketPath,
           authPath: this.authPath,

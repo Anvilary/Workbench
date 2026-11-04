@@ -124,6 +124,10 @@ case "$command_name" in
     ;;
   status)
     maw_sctl show "$unit" --property=ActiveState,SubState,MainPID,ExecMainStatus || true
+    if maw_sctl cat "$ptyd_unit" >/dev/null 2>&1; then
+      printf 'supervisor (%s):\n' "$ptyd_unit"
+      maw_sctl show "$ptyd_unit" --property=ActiveState,SubState,MainPID,ExecMainStatus || true
+    fi
     for p in current staged healthy previous; do
       t=$(maw_pointer_raw "$p")
       printf '%-9s%s\n' "$p:" "${t:+$(basename "$t")}"

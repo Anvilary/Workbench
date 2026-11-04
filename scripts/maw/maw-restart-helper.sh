@@ -70,7 +70,7 @@ probe() {
 fail_reason=""
 start_and_verify() {
   _id=$(maw_release_id "$1")
-  sctl reset-failed "$unit" >/dev/null 2>&1 || true
+  sctl reset-failed "$unit" "${MAW_PTYD_UNIT:-maw-ptyd.service}" >/dev/null 2>&1 || true
   if ! sctl restart "$unit"; then
     # Type=exec: ExecStartPre failure, missing binary, start-limit-hit or unit errors.
     fail_reason="systemctl restart failed"

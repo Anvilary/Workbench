@@ -15,6 +15,9 @@ set -eu
 
 : "${HOME:?HOME is required}"
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+# shellcheck source=maw-lib.sh
+. "$script_dir/maw-lib.sh"
+maw_init_paths
 repo_dir=$(CDPATH='' cd -- "$script_dir/../.." && pwd)
 state_dir="${MAW_STATE_DIR:-$HOME/.local/share/maw}"
 lib_dir="${MAW_LIB_DIR:-$HOME/.local/lib/maw}"
@@ -24,7 +27,7 @@ unit_name="${MAW_UNIT:-maw.service}"
 ptyd_unit_name="${MAW_PTYD_UNIT:-maw-ptyd.service}"
 runtime_name="${MAW_RUNTIME_NAME:-maw}"
 ptyd_runtime_name="${MAW_PTYD_RUNTIME_NAME:-maw-ptyd}"
-node_bin="${MAW_NODE_BIN:-$(command -v node 2>/dev/null || true)}"
+node_bin="${MAW_NODE_BIN:-$node_bin}"
 
 mode="${1:---commands-only}"
 case "$mode" in
@@ -46,6 +49,7 @@ esac
 install -d -m 700 "$lib_dir" "$state_dir" "$state_dir/releases"
 install -d "$bin_dir"
 [ -f "$state_dir/source_path" ] || printf '%s\n' "$repo_dir" > "$state_dir/source_path"
+[ -n "$node_bin" ] && printf '%s\n' "$node_bin" > "$state_dir/node_path"
 
 install -m 644 "$script_dir/maw-lib.sh" "$lib_dir/maw-lib.sh"
 install -m 644 "$script_dir/control.mjs" "$lib_dir/control.mjs"

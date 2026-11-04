@@ -18,6 +18,7 @@ ExecStart=@NODE_BIN@ --import @STATE_DIR@/current/packages/server/node_modules/t
 Environment=PATH=@PATH@
 Environment=AGENT_WORKBENCH_NO_OPEN=1
 Environment=MAW_RUNTIME_DIR=%t/@RUNTIME_NAME@
+Environment=MAW_AUTO_SPAWN_PTYD=0
 # Optional persistent connection settings; secrets never belong in a release.
 EnvironmentFile=-@ENV_FILE@
 RuntimeDirectory=@RUNTIME_NAME@

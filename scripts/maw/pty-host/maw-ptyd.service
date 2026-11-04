@@ -5,6 +5,7 @@ Description=MAW Persistent PTY Supervisor (maw-ptyd)
 Documentation=https://github.com/user/My-Amazing-Workspace
 DefaultDependencies=no
 After=basic.target
+ConditionPathExists=@STATE_DIR@/current/packages/server/dist/maw-ptyd.mjs
 
 [Service]
 Type=simple

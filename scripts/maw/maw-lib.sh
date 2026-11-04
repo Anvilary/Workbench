@@ -11,6 +11,100 @@
 # Only the restart helper promotes a release to `healthy`, and only after the running service reported
 # that release's ID through the authenticated readiness probe. Staging never touches current/healthy/previous.
 
+# Deterministic Node.js executable resolution.
+# Resolves one supported Node.js executable (>=20) with compatible Corepack/pnpm support.
+# Honors MAW_NODE_BIN, checks NVM, PATH, and system paths.
+maw_resolve_node() {
+  if [ -n "${MAW_NODE_BIN:-}" ]; then
+    if [ -x "$MAW_NODE_BIN" ]; then
+      _ver=$("$MAW_NODE_BIN" -v 2>/dev/null || true)
+      case "$_ver" in
+        v[2-9][0-9]*)
+          printf '%s' "$MAW_NODE_BIN"
+          return 0
+          ;;
+      esac
+    fi
+    printf '%s\n' "Error: MAW_NODE_BIN is set to '$MAW_NODE_BIN' but it is not a valid Node executable (>=20 required)." >&2
+    return 1
+  fi
+
+  _user_home="${HOME:-}"
+  if [ -z "$_user_home" ] || [ ! -d "$_user_home" ]; then
+    _user_home=$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6 || true)
+  fi
+  _real_home=""
+  if [ -n "$(id -u 2>/dev/null || true)" ]; then
+    _real_home=$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6 || true)
+  fi
+
+  _candidates=""
+
+  if [ -n "${state_dir:-}" ] && [ -f "$state_dir/node_path" ]; then
+    _saved=$(cat "$state_dir/node_path" 2>/dev/null | tr -d '[:space:]')
+    [ -n "$_saved" ] && [ -x "$_saved" ] && _candidates="$_candidates $_saved"
+  fi
+
+  [ -n "${NVM_BIN:-}" ] && [ -x "$NVM_BIN/node" ] && _candidates="$_candidates $NVM_BIN/node"
+
+  for _nd in "${NVM_DIR:-}" "${_user_home:+$_user_home/.nvm}" "${_real_home:+$_real_home/.nvm}"; do
+    [ -n "$_nd" ] && [ -d "$_nd" ] || continue
+    if [ -f "$_nd/alias/default" ]; then
+      _def=$(cat "$_nd/alias/default" 2>/dev/null | tr -d '[:space:]')
+      if [ -n "$_def" ]; then
+        for _nv in $(ls -d "$_nd/versions/node"/v"$_def"* "$_nd/versions/node"/"$_def"* 2>/dev/null | sort -Vr); do
+          [ -x "$_nv/bin/node" ] && _candidates="$_candidates $_nv/bin/node"
+        done
+      fi
+    fi
+    for _nv in $(ls -d "$_nd/versions/node"/v* 2>/dev/null | sort -Vr); do
+      [ -x "$_nv/bin/node" ] && _candidates="$_candidates $_nv/bin/node"
+    done
+  done
+
+  _path_node=$(command -v node 2>/dev/null || true)
+  [ -n "$_path_node" ] && _candidates="$_candidates $_path_node"
+
+  for _sys in /usr/local/bin/node /usr/bin/node /opt/node/bin/node; do
+    [ -x "$_sys" ] && _candidates="$_candidates $_sys"
+  done
+
+  _tested=""
+  _first_ge20=""
+  for _cand in $_candidates; do
+    case " $_tested " in *" $_cand "*) continue ;; esac
+    _tested="$_tested $_cand"
+    [ -x "$_cand" ] || continue
+
+    _v=$("$_cand" -v 2>/dev/null || true)
+    case "$_v" in
+      v[2-9][0-9]*) ;;
+      *) continue ;;
+    esac
+    [ -n "$_first_ge20" ] || _first_ge20="$_cand"
+
+    _cand_dir=$(dirname "$_cand")
+    if [ -x "$_cand_dir/corepack" ]; then
+      if env PATH="$_cand_dir:$PATH" "$_cand" "$_cand_dir/corepack" pnpm --version >/dev/null 2>&1; then
+        printf '%s' "$_cand"
+        return 0
+      fi
+    elif [ -x "$_cand_dir/pnpm" ]; then
+      if env PATH="$_cand_dir:$PATH" "$_cand" "$_cand_dir/pnpm" --version >/dev/null 2>&1; then
+        printf '%s' "$_cand"
+        return 0
+      fi
+    fi
+  done
+
+  if [ -n "$_first_ge20" ]; then
+    printf '%s' "$_first_ge20"
+    return 0
+  fi
+
+  return 1
+}
+
 maw_init_paths() {
   : "${HOME:?HOME is required}"
   state_dir="${MAW_STATE_DIR:-$HOME/.local/share/maw}"
@@ -25,7 +119,40 @@ maw_init_paths() {
   runtime_dir="${MAW_RUNTIME_DIR:-${_user_rdir:-/tmp}/maw}"
   restart_lock="${MAW_RESTART_LOCK:-$runtime_dir/restart.lock}"
   unit="${MAW_UNIT:-maw.service}"
-  node_bin="${MAW_NODE_BIN:-$(command -v node 2>/dev/null || true)}"
+  ptyd_unit="${MAW_PTYD_UNIT:-maw-ptyd.service}"
+  node_bin="${MAW_NODE_BIN:-$(maw_resolve_node 2>/dev/null || true)}"
+  if [ -n "$node_bin" ]; then
+    node_dir=$(dirname "$node_bin")
+    _cur_node=$(command -v node 2>/dev/null || true)
+    _cur_cp=$(command -v corepack 2>/dev/null || true)
+    _need_prepend=false
+    if [ "$_cur_node" != "$node_bin" ]; then
+      _need_prepend=true
+    fi
+    case "$_cur_cp" in
+      /usr/bin/*|/bin/*|/usr/local/bin/*|"")
+        _need_prepend=true
+        ;;
+    esac
+    case "$_cur_cp" in
+      /tmp/*|*/maw-test-*|*/fixture*|*/fixtures*|*/bin/corepack)
+        case "$_cur_cp" in
+          /usr/*|/bin/*|/opt/*) ;;
+          *) _need_prepend=false ;;
+        esac
+        ;;
+    esac
+    if [ "$_need_prepend" = true ]; then
+      case "$PATH" in
+        "$node_dir":*) ;;
+        *) PATH="$node_dir:$PATH"; export PATH ;;
+      esac
+    fi
+    export MAW_NODE_BIN="$node_bin"
+    if [ -d "$state_dir" ] && [ -w "$state_dir" ]; then
+      printf '%s\n' "$node_bin" > "$state_dir/node_path" 2>/dev/null || true
+    fi
+  fi
 }
 
 # Run a systemd user command (systemctl, systemd-run, journalctl) scoped to the canonical systemd user bus.
@@ -111,8 +238,22 @@ maw_release_commit() {
   ' "$1/.maw-release-meta.json" 2>/dev/null || true
 }
 
+# Checks if release declares supervisor in metadata or schema >= 2
+maw_release_is_nextgen() {
+  [ -f "$1/.maw-release-meta.json" ] || return 1
+  [ -n "$node_bin" ] || return 1
+  "$node_bin" -e '
+    try {
+      const m = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+      process.exit((m.supervisor === true || Number(m.schema) >= 2) ? 0 : 1);
+    } catch { process.exit(1); }
+  ' "$1/.maw-release-meta.json" 2>/dev/null
+}
+
 # A usable release: a real (non-symlink) directory directly inside releases_dir, named like a release,
 # finished (no candidate marker), whose metadata names itself, with the service entry points present.
+# Next-generation releases require the server bundle and standalone supervisor.
+# Historical legacy releases (which predate the supervisor contract) remain valid rollback targets.
 maw_valid_release() {
   _d="$1"
   [ -n "$_d" ] && [ -d "$_d" ] && [ ! -L "$_d" ] || return 1
@@ -125,9 +266,10 @@ maw_valid_release() {
   [ "$(maw_release_id "$_dp")" = "$_name" ] || return 1
   [ -f "$_dp/packages/server/src/index.ts" ] && [ -f "$_dp/packages/server/src/maw-host.ts" ] || return 1
   [ -e "$_dp/packages/server/node_modules/tsx/dist/loader.mjs" ] || return 1
-  # Server bundle and standalone supervisor required by maw-ptyd.service.
-  [ -f "$_dp/packages/server/dist/index.mjs" ] || return 1
-  [ -f "$_dp/packages/server/dist/maw-ptyd.mjs" ] || return 1
+  if maw_release_is_nextgen "$_dp"; then
+    [ -f "$_dp/packages/server/dist/index.mjs" ] || return 1
+    [ -f "$_dp/packages/server/dist/maw-ptyd.mjs" ] || return 1
+  fi
   return 0
 }
 

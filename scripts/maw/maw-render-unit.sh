@@ -5,7 +5,9 @@
 set -eu
 : "${HOME:?HOME is required}"
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-node_bin="${MAW_NODE_BIN:-$(command -v node 2>/dev/null || true)}"
+# shellcheck source=maw-lib.sh
+. "$script_dir/maw-lib.sh"
+maw_init_paths
 [ -n "$node_bin" ] && [ -x "$node_bin" ] || { printf '%s\n' 'node not found; set MAW_NODE_BIN.' >&2; exit 1; }
 state_dir="${MAW_STATE_DIR:-$HOME/.local/share/maw}"
 bin_dir="${MAW_BIN_DIR:-$HOME/.local/bin}"

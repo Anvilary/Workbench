@@ -10,7 +10,8 @@ set -eu
 
 repo_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 script_dir="$repo_dir/scripts/maw"
-node_bin="${MAW_NODE_BIN:-$(command -v node 2>/dev/null || true)}"
+. "$script_dir/maw-lib.sh"
+maw_init_paths
 [ -n "$node_bin" ] || { printf 'SKIP: node not found\n' >&2; exit 0; }
 
 pass=0
@@ -49,7 +50,18 @@ create_valid_release() {
   printf '#!/usr/bin/env node\nconsole.log("server");\n' > "$_rd/packages/server/dist/index.mjs"
   printf '#!/usr/bin/env node\nconsole.log("ptyd");\n' > "$_rd/packages/server/dist/maw-ptyd.mjs"
   chmod 755 "$_rd/packages/server/dist/maw-ptyd.mjs"
-  printf '{"releaseId":"%s","commit":"abc1234","ref":"origin/main","channel":"approved","builtAt":"20261104","source":"/tmp"}\n' \
+  printf '{"releaseId":"%s","commit":"abc1234","ref":"origin/main","channel":"approved","builtAt":"20261104","source":"/tmp","schema":2,"supervisor":true}\n' \
+    "$2" > "$_rd/.maw-release-meta.json"
+}
+
+create_legacy_release() {
+  _rd="$1/$2"
+  mkdir -p "$_rd/packages/server/src"
+  mkdir -p "$_rd/packages/server/node_modules/tsx/dist"
+  printf 'export {};\n' > "$_rd/packages/server/src/index.ts"
+  printf 'export {};\n' > "$_rd/packages/server/src/maw-host.ts"
+  printf 'export {};\n' > "$_rd/packages/server/node_modules/tsx/dist/loader.mjs"
+  printf '{"releaseId":"%s","commit":"a93fecc","ref":"origin/main","channel":"approved","builtAt":"20261104","source":"/tmp"}\n' \
     "$2" > "$_rd/.maw-release-meta.json"
 }
 
@@ -252,6 +264,120 @@ if "$node_bin" -c "$repo_dir/packages/server/dist/maw-ptyd.mjs" 2>/dev/null; the
   ok
 else
   fail "maw-ptyd.mjs should pass node -c syntax check"
+fi
+
+# ---- Test 13: Reproduce Corepack failure with system Node 22 / Corepack 0.24.0 ----
+begin "13. reproduction: system corepack 0.24 fails on pnpm 12 (missing pnpm.cjs)"
+if [ -x "/usr/bin/corepack" ]; then
+  # System corepack hardcodes pnpm.cjs for all pnpm >=6, which breaks on pnpm 12
+  out=$(PATH="/usr/bin:/bin" /usr/bin/corepack pnpm --version 2>&1 || true)
+  if echo "$out" | grep -q "pnpm.cjs"; then
+    ok
+  else
+    fail "expected system corepack to fail with missing pnpm.cjs, got: $out"
+  fi
+else
+  ok
+fi
+
+# ---- Test 14: maw_resolve_node selects compatible Node with working Corepack ----
+begin "14. maw_resolve_node resolves Node runtime supporting pnpm 12"
+resolved_node=$(unset MAW_NODE_BIN; . "$script_dir/maw-lib.sh"; maw_resolve_node)
+if [ -n "$resolved_node" ] && [ -x "$resolved_node" ]; then
+  resolved_dir=$(dirname "$resolved_node")
+  cp_ver=$(PATH="$resolved_dir:$PATH" corepack pnpm --version 2>/dev/null || true)
+  if [ -n "$cp_ver" ]; then
+    ok
+  else
+    fail "resolved node at $resolved_node failed corepack pnpm check"
+  fi
+else
+  fail "maw_resolve_node failed to find a valid node executable"
+fi
+
+# ---- Test 15: maw_init_paths prepends node_dir to PATH before system paths ----
+begin "15. maw_init_paths prioritizes resolved node_dir over /usr/bin in PATH"
+subshell_out=$(
+  PATH="/usr/local/bin:/usr/bin:/bin"
+  unset MAW_NODE_BIN
+  . "$script_dir/maw-lib.sh"
+  maw_init_paths
+  printf '%s|%s|%s' "$(command -v node)" "$(command -v corepack)" "$(corepack pnpm --version 2>/dev/null || true)"
+)
+node_path=$(echo "$subshell_out" | cut -d'|' -f1)
+cp_path=$(echo "$subshell_out" | cut -d'|' -f2)
+cp_ver=$(echo "$subshell_out" | cut -d'|' -f3)
+if [ "$node_path" != "/usr/bin/node" ] && [ "$cp_path" != "/usr/bin/corepack" ] && [ -n "$cp_ver" ]; then
+  ok
+else
+  fail "maw_init_paths did not prioritize compatible node/corepack: node=$node_path cp=$cp_path ver=$cp_ver"
+fi
+
+# ---- Test 16: MAW_NODE_BIN override handling ----
+begin "16. MAW_NODE_BIN override validation"
+# Valid override
+valid_out=$(MAW_NODE_BIN="$resolved_node" . "$script_dir/maw-lib.sh"; maw_resolve_node)
+[ "$valid_out" = "$resolved_node" ] || { fail "valid MAW_NODE_BIN not returned"; }
+# Invalid override
+invalid_out=$(MAW_NODE_BIN="/bin/false" . "$script_dir/maw-lib.sh"; maw_resolve_node 2>/dev/null || true)
+[ -z "$invalid_out" ] || { fail "invalid MAW_NODE_BIN should be rejected"; }
+ok
+
+# ---- Test 17: Legacy release validation and rollback preservation ----
+begin "17. legacy release (a93fecc without dist/) validates and supports rollback"
+td=$(make_test_dir)
+releases_dir="$td/releases"; mkdir -p "$releases_dir"
+state_dir="$td"; export state_dir releases_dir node_bin
+. "$script_dir/maw-lib.sh"
+legacy_rid="20261104140117-a93fecc"
+create_legacy_release "$releases_dir" "$legacy_rid"
+if ! maw_valid_release "$releases_dir/$legacy_rid"; then
+  fail "legacy release should be valid under original contract"
+else
+  # Setting healthy and previous to legacy release must succeed
+  maw_set_pointer healthy "$releases_dir/$legacy_rid"
+  maw_set_pointer previous "$releases_dir/$legacy_rid"
+  h_val=$(maw_pointer healthy)
+  p_val=$(maw_pointer previous)
+  if [ "$(basename "$h_val")" = "$legacy_rid" ] && [ "$(basename "$p_val")" = "$legacy_rid" ]; then
+    ok
+  else
+    fail "legacy release pointers not set: healthy=$h_val previous=$p_val"
+  fi
+fi
+
+# ---- Test 18: Next-generation release requires supervisor bundle ----
+begin "18. next-generation release strictly requires dist/maw-ptyd.mjs"
+td=$(make_test_dir)
+releases_dir="$td/releases"; mkdir -p "$releases_dir"
+state_dir="$td"; export state_dir releases_dir node_bin
+. "$script_dir/maw-lib.sh"
+nextgen_rid="20261104160000-nextgen1"
+create_valid_release "$releases_dir" "$nextgen_rid"
+rm -f "$releases_dir/$nextgen_rid/packages/server/dist/maw-ptyd.mjs"
+if maw_valid_release "$releases_dir/$nextgen_rid"; then
+  fail "next-gen release missing maw-ptyd.mjs must be rejected"
+else
+  ok
+fi
+
+# ---- Test 19: maw-ptyd.service template includes ConditionPathExists ----
+begin "19. rendered maw-ptyd.service contains ConditionPathExists"
+ptyd_unit_text=$(sh "$script_dir/maw-render-ptyd-unit.sh")
+if echo "$ptyd_unit_text" | grep -q "ConditionPathExists="; then
+  ok
+else
+  fail "maw-ptyd.service must specify ConditionPathExists to guard against legacy releases"
+fi
+
+# ---- Test 20: AutoSpawn suppression in systemd production environments ----
+begin "20. maw.service sets MAW_AUTO_SPAWN_PTYD=0 and terminal-registry respects it"
+reg_source=$(cat "$repo_dir/packages/server/src/terminal-registry.ts")
+unit_source=$(cat "$repo_dir/scripts/maw/maw.service")
+if echo "$reg_source" | grep -q "MAW_AUTO_SPAWN_PTYD" && echo "$unit_source" | grep -q "MAW_AUTO_SPAWN_PTYD=0"; then
+  ok
+else
+  fail "maw.service must configure MAW_AUTO_SPAWN_PTYD=0 and terminal-registry must check it"
 fi
 
 # ---- Summary ----

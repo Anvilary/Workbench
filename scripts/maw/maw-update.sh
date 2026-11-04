@@ -176,6 +176,12 @@ if [ -n "$target_pkg" ] && ! "$node_bin" -e '
   fail pre-check 'Node runtime compatibility check failed'
 fi
 
+# 7b. Package manager and runtime execution preflight check before creating worktree
+printf '%s\n' 'Validating package manager compatibility...'
+if ! corepack pnpm --version >/dev/null 2>&1; then
+  fail pre-check "Corepack/pnpm execution failed using Node at '$node_bin'. Ensure Corepack and pnpm are compatible with the target release packageManager."
+fi
+
 # 8. Candidate worktree. Interruption (HUP/INT/TERM) aborts the running step, removes ONLY this candidate
 #    (proven ours by path and marker) and leaves every pointer untouched. SIGKILL is recovered by step 3.
 ts=$(date -u +"%Y%m%d%H%M%S")
@@ -264,7 +270,7 @@ trap '' HUP INT TERM
 rm -f "$candidate_dir/.git"
 git -C "$source_dir" worktree prune 2>/dev/null || true
 channel_state=approved; [ "$approved" = true ] || channel_state=unapproved
-printf '{"releaseId":"%s","commit":"%s","ref":"%s","channel":"%s","builtAt":"%s","source":"%s"}\n' \
+printf '{"releaseId":"%s","commit":"%s","ref":"%s","channel":"%s","builtAt":"%s","source":"%s","schema":2,"supervisor":true}\n' \
   "$release_id" "$target_commit" "$target_ref" "$channel_state" "$ts" "$source_dir" > "$candidate_dir/.maw-release-meta.json"
 rm -f "$candidate_dir/.maw-candidate"
 if ! maw_valid_release "$candidate_dir"; then
