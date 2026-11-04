@@ -9,28 +9,63 @@ export interface NativeViewRegistration {
   onDownloadEvent?: (event: { type: string; filename?: string; percent?: number | null; message?: string }) => void;
 }
 
-function hasIntersectingOverlay(viewBounds: { left: number; top: number; right: number; bottom: number }): boolean {
-  if (viewBounds.right <= viewBounds.left || viewBounds.bottom <= viewBounds.top) return false;
+export interface OverlayRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+export interface ClippingAncestor {
+  element: HTMLElement;
+  clipsX: boolean;
+  clipsY: boolean;
+}
+
+function collectActiveOverlayRects(): OverlayRect[] {
   const items = document.querySelectorAll<HTMLElement>(
     '[role="dialog"], [role="menu"], .agency-modal-backdrop, .agency-dropdown-menu, .maw-toast-item, .context-menu, .agency-dialog, .maw-context-menu, .maw-pane-drag-shield'
   );
+  if (items.length === 0) return [];
+
+  const rects: OverlayRect[] = [];
   for (let i = 0; i < items.length; i++) {
     const item = items[i]!;
-    const rects = item.getClientRects();
-    if (rects.length === 0) continue;
+    const clientRects = item.getClientRects();
+    if (clientRects.length === 0) continue;
     const style = window.getComputedStyle(item);
     if (style.visibility === 'hidden' || style.display === 'none' || style.opacity === '0') continue;
-    for (let j = 0; j < rects.length; j++) {
-      const r = rects[j]!;
-      if (r.width <= 0 || r.height <= 0) continue;
-      if (
-        r.left < viewBounds.right &&
-        r.right > viewBounds.left &&
-        r.top < viewBounds.bottom &&
-        r.bottom > viewBounds.top
-      ) {
-        return true;
+    for (let j = 0; j < clientRects.length; j++) {
+      const r = clientRects[j]!;
+      if (r.width > 0 && r.height > 0) {
+        rects.push({
+          left: r.left,
+          top: r.top,
+          right: r.right,
+          bottom: r.bottom,
+        });
       }
+    }
+  }
+  return rects;
+}
+
+function intersectsAnyOverlay(
+  viewBounds: { left: number; top: number; right: number; bottom: number },
+  overlayRects: readonly OverlayRect[]
+): boolean {
+  if (overlayRects.length === 0 || viewBounds.right <= viewBounds.left || viewBounds.bottom <= viewBounds.top) {
+    return false;
+  }
+  for (let i = 0; i < overlayRects.length; i++) {
+    const r = overlayRects[i]!;
+    if (
+      r.left < viewBounds.right &&
+      r.right > viewBounds.left &&
+      r.top < viewBounds.bottom &&
+      r.bottom > viewBounds.top
+    ) {
+      return true;
     }
   }
   return false;
@@ -46,6 +81,7 @@ type TrackedView = NativeViewRegistration & {
   backdropReady: boolean;
   nativeVisible: boolean;
   captureBounds: string;
+  clippingAncestors: ClippingAncestor[] | null;
 };
 
 class NativeLayoutCoordinator {
@@ -60,6 +96,13 @@ class NativeLayoutCoordinator {
   private listeners: Array<[EventTarget, string, EventListener, boolean | undefined]> = [];
   private unsubscribeBridge: (() => void) | null = null;
   private focusedId: string | null = null;
+  private dprCleanup: (() => void) | null = null;
+
+  private invalidateClippingCache(): void {
+    for (const entry of this.views.values()) {
+      entry.clippingAncestors = null;
+    }
+  }
 
   /** Drop a capture that must not land on a visible view, and release its bitmap. */
   private cancelCapture(entry: TrackedView): void {
@@ -114,8 +157,10 @@ class NativeLayoutCoordinator {
       backdropReady: false,
       nativeVisible: false,
       captureBounds: '',
+      clippingAncestors: null,
     });
     this.lastSerialized = '';
+    this.invalidateClippingCache();
 
     if (this.views.size === 1) {
       this.start();
@@ -135,6 +180,7 @@ class NativeLayoutCoordinator {
       }
       this.views.delete(reg.id);
       this.lastSerialized = '';
+      this.invalidateClippingCache();
       if (this.focusedId === reg.id) {
         this.focusedId = null;
       }
@@ -163,11 +209,16 @@ class NativeLayoutCoordinator {
       return !!el && el.closest('.xterm') !== null;
     };
     this.observer = new MutationObserver((records) => {
+      let shouldSchedule = false;
       for (const r of records) {
         if (!ignorable(r.target)) {
-          this.schedule();
-          return;
+          shouldSchedule = true;
+          break;
         }
+      }
+      if (shouldSchedule) {
+        this.invalidateClippingCache();
+        this.schedule();
       }
     });
     this.observer.observe(document.body, { subtree: true, childList: true, attributes: true });
@@ -187,11 +238,36 @@ class NativeLayoutCoordinator {
       if (!ignorable(e.target as Node)) this.schedule();
     }, true);
 
+    // Font readiness: font metrics shift layout immediately on load without waiting for the heartbeat timer.
+    if (document.fonts) {
+      void document.fonts.ready.then(() => {
+        this.invalidateClippingCache();
+        this.schedule();
+      }).catch(() => {});
+    }
+
+    // Observe Device Pixel Ratio or zoom changes
+    try {
+      const dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dpr)`);
+      const onDprChange = () => {
+        this.lastSerialized = '';
+        this.invalidateClippingCache();
+        this.schedule();
+      };
+      dprQuery.addEventListener?.('change', onDprChange);
+      this.dprCleanup = () => dprQuery.removeEventListener?.('change', onDprChange);
+    } catch {}
+
     // Safety net for geometry changes with no DOM/size signal (async font load, ancestor moves): 1 Hz instead of 60-165 Hz.
-    this.heartbeat = window.setInterval(() => this.schedule(), 1000);
+    // Suppressed when document is hidden or when no views are tracked to preserve CPU deep-sleep.
+    this.heartbeat = window.setInterval(() => {
+      if (document.hidden || this.views.size === 0) return;
+      this.schedule();
+    }, 1000);
 
     const handleEvent = () => {
       this.lastSerialized = '';
+      this.invalidateClippingCache();
       this.schedule();
     };
     this.listen(window, 'pointerup', handleEvent, true);
@@ -208,10 +284,13 @@ class NativeLayoutCoordinator {
         window.dispatchEvent(new Event('maw:dismiss-pane-menus'));
         if (entry.nativeVisible && entry.element.isConnected && !document.hidden) entry.onFocused?.();
       } else if (state.type === 'ready' && entry) {
+        const wasReady = entry.isReady;
         entry.isReady = true;
         entry.onRestoring?.(false);
-        this.lastSerialized = '';
-        this.schedule();
+        if (!wasReady) {
+          this.lastSerialized = '';
+          this.schedule();
+        }
       } else if (state.type === 'loading' && entry) {
         entry.isReady = false;
         entry.onDisplayed(false);
@@ -248,6 +327,8 @@ class NativeLayoutCoordinator {
     cancelAnimationFrame(this.frame);
     this.pending = false;
     window.clearInterval(this.heartbeat);
+    this.dprCleanup?.();
+    this.dprCleanup = null;
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     for (const [t, type, h, c] of this.listeners) t.removeEventListener(type, h, c);
@@ -257,23 +338,47 @@ class NativeLayoutCoordinator {
     this.observer = null;
     this.unsubscribeBridge?.();
     this.unsubscribeBridge = null;
+    this.invalidateClippingCache();
   }
 
   measure() {
     const bridge = window.mawChatGpt;
     if (!bridge) return;
 
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+
+    if (document.hidden) {
+      for (const reg of this.views.values()) {
+        reg.nativeVisible = false;
+        this.cancelCapture(reg);
+      }
+      const hiddenCommand = {
+        type: 'layout',
+        views: [],
+        viewport,
+        focusedId: this.focusedId,
+      };
+      const serialized = JSON.stringify(hiddenCommand);
+      if (serialized !== this.lastSerialized) {
+        this.lastSerialized = serialized;
+        void bridge.command(hiddenCommand).then(() => {
+          for (const reg of this.views.values()) reg.onDisplayed(false);
+        }).catch(() => {});
+      }
+      return;
+    }
+
     const visibleViews: Array<{
       id: string;
       bounds: { x: number; y: number; width: number; height: number };
     }> = [];
 
-    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    const overlayRects = collectActiveOverlayRects();
     const paneDrag = document.querySelector('.maw-pane-drag-shield') !== null;
 
     for (const [id, reg] of this.views) {
       const el = reg.element;
-      if (!el || !el.isConnected || document.hidden || window.getComputedStyle(el).visibility !== 'visible') {
+      if (!el || !el.isConnected || window.getComputedStyle(el).visibility !== 'visible') {
         reg.nativeVisible = false;
         this.cancelCapture(reg);
         continue;
@@ -291,14 +396,27 @@ class NativeLayoutCoordinator {
       let right = Math.min(viewport.width, rect.right);
       let bottom = Math.min(viewport.height, rect.bottom);
 
-      for (let parent = el.parentElement; parent; parent = parent.parentElement) {
-        const style = window.getComputedStyle(parent);
-        const bounds = parent.getBoundingClientRect();
-        if (style.overflowX !== 'visible') {
+      if (reg.clippingAncestors === null) {
+        const ancestors: ClippingAncestor[] = [];
+        for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+          const style = window.getComputedStyle(parent);
+          const clipsX = style.overflowX !== 'visible';
+          const clipsY = style.overflowY !== 'visible';
+          if (clipsX || clipsY) {
+            ancestors.push({ element: parent, clipsX, clipsY });
+          }
+        }
+        reg.clippingAncestors = ancestors;
+      }
+
+      for (let i = 0; i < reg.clippingAncestors.length; i++) {
+        const ancestor = reg.clippingAncestors[i]!;
+        const bounds = ancestor.element.getBoundingClientRect();
+        if (ancestor.clipsX) {
           left = Math.max(left, bounds.left);
           right = Math.min(right, bounds.right);
         }
-        if (style.overflowY !== 'visible') {
+        if (ancestor.clipsY) {
           top = Math.max(top, bounds.top);
           bottom = Math.min(bottom, bounds.bottom);
         }
@@ -316,7 +434,7 @@ class NativeLayoutCoordinator {
       }
 
       const viewBounds = { left: x, top: y, right: x + width, bottom: y + height };
-      const isIntersecting = hasIntersectingOverlay(viewBounds);
+      const isIntersecting = intersectsAnyOverlay(viewBounds, overlayRects);
       const boundsKey = `${x},${y},${width},${height}`;
 
       if (!isIntersecting) {

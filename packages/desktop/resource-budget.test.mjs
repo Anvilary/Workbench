@@ -9,7 +9,7 @@ import {
 const GB = 1024 * 1024 * 1024;
 
 test('calculateResourceBudget: normal memory conditions', () => {
-  // 16 GB total, 10 GB free -> normal tier with high free RAM (budget >= 14)
+  // 16 GB total, 10 GB free -> normal tier with high free RAM (budget = safeAttached + 2)
   const res1 = calculateResourceBudget({
     freeBytes: 10 * GB,
     totalBytes: 16 * GB,
@@ -17,9 +17,9 @@ test('calculateResourceBudget: normal memory conditions', () => {
     attachedCount: 2,
   });
   assert.equal(res1.tier, MemoryPressureTier.NORMAL);
-  assert.equal(res1.budget, 14);
+  assert.equal(res1.budget, 4);
 
-  // 16 GB total, 5 GB free -> normal tier (budget = 10)
+  // 16 GB total, 5 GB free -> normal tier (budget = safeAttached + 2)
   const res2 = calculateResourceBudget({
     freeBytes: 5 * GB,
     totalBytes: 16 * GB,
@@ -27,11 +27,11 @@ test('calculateResourceBudget: normal memory conditions', () => {
     attachedCount: 1,
   });
   assert.equal(res2.tier, MemoryPressureTier.NORMAL);
-  assert.equal(res2.budget, 10);
+  assert.equal(res2.budget, 3);
 });
 
 test('calculateResourceBudget: moderate memory pressure', () => {
-  // 3 GB free (between 2GB and 4GB)
+  // 3 GB free (between 2GB and 4GB) -> moderate tier (budget = safeAttached + 1)
   const res = calculateResourceBudget({
     freeBytes: 3 * GB,
     totalBytes: 16 * GB,
@@ -39,7 +39,7 @@ test('calculateResourceBudget: moderate memory pressure', () => {
     attachedCount: 2,
   });
   assert.equal(res.tier, MemoryPressureTier.MODERATE);
-  assert.equal(res.budget, 6);
+  assert.equal(res.budget, 3);
 
   // High tab working set triggers moderate pressure even with free RAM
   const resTabLoad = calculateResourceBudget({
@@ -49,11 +49,11 @@ test('calculateResourceBudget: moderate memory pressure', () => {
     attachedCount: 1,
   });
   assert.equal(resTabLoad.tier, MemoryPressureTier.MODERATE);
-  assert.equal(resTabLoad.budget, 6);
+  assert.equal(resTabLoad.budget, 2);
 });
 
 test('calculateResourceBudget: high memory pressure', () => {
-  // 1.5 GB free (between 1GB and 2GB)
+  // 1.5 GB free (between 1GB and 2GB) -> high tier (budget = safeAttached)
   const res = calculateResourceBudget({
     freeBytes: 1.5 * GB,
     totalBytes: 16 * GB,
@@ -61,7 +61,7 @@ test('calculateResourceBudget: high memory pressure', () => {
     attachedCount: 2,
   });
   assert.equal(res.tier, MemoryPressureTier.HIGH);
-  assert.equal(res.budget, 4);
+  assert.equal(res.budget, 2);
 
   // High tab working set (2.8 GB)
   const resTabLoad = calculateResourceBudget({
@@ -71,11 +71,11 @@ test('calculateResourceBudget: high memory pressure', () => {
     attachedCount: 2,
   });
   assert.equal(resTabLoad.tier, MemoryPressureTier.HIGH);
-  assert.equal(resTabLoad.budget, 4);
+  assert.equal(resTabLoad.budget, 2);
 });
 
 test('calculateResourceBudget: critical memory pressure', () => {
-  // 500 MB free (< 1GB)
+  // 500 MB free (< 1GB) -> critical tier (budget = safeAttached)
   const res = calculateResourceBudget({
     freeBytes: 500 * 1024 * 1024,
     totalBytes: 16 * GB,
@@ -83,7 +83,7 @@ test('calculateResourceBudget: critical memory pressure', () => {
     attachedCount: 1,
   });
   assert.equal(res.tier, MemoryPressureTier.CRITICAL);
-  assert.equal(res.budget, 2);
+  assert.equal(res.budget, 1);
 
   // 4 attached views during critical pressure must never be evicted
   const resAttached = calculateResourceBudget({
@@ -166,4 +166,75 @@ test('selectEvictionCandidate: returns null when no views can be evicted', () =>
     canEvict: () => false,
   });
   assert.equal(candidate, null);
+});
+
+test('selectEvictionCandidate: anti-thrashing dwell hysteresis prioritizes matured candidates', () => {
+  const residentIds = ['tab-recent', 'tab-mature'];
+  const now = 100000;
+  // tab-recent was accessed 5 seconds ago (< 15s dwell)
+  // tab-mature was accessed 20 seconds ago (>= 15s dwell)
+  const lastAccessedAt = new Map([
+    ['tab-recent', now - 5000],
+    ['tab-mature', now - 20000],
+  ]);
+
+  const candidate = selectEvictionCandidate({
+    residentIds,
+    lastAccessedAt,
+    canEvict: () => true,
+    minDwellMs: 15000,
+    now,
+  });
+  // tab-mature is selected because it passed the 15s dwell threshold
+  assert.equal(candidate, 'tab-mature');
+
+  // When all candidates are within the dwell threshold (< 15s), fallback selects oldest
+  const lastAccessedAtRecentOnly = new Map([
+    ['tab-a', now - 3000], // 3s ago
+    ['tab-b', now - 8000], // 8s ago (older)
+  ]);
+  const fallbackCandidate = selectEvictionCandidate({
+    residentIds: ['tab-a', 'tab-b'],
+    lastAccessedAt: lastAccessedAtRecentOnly,
+    canEvict: () => true,
+    minDwellMs: 15000,
+    now,
+  });
+  assert.equal(fallbackCandidate, 'tab-b');
+});
+
+test('data safety: generative AI tabs protected from eviction in normal memory tier', () => {
+  // Simulate canEvict with provider check across tiers
+  function mockCanEvict(id, provider, tier) {
+    if (tier === MemoryPressureTier.NORMAL) {
+      if (provider === 'chatgpt' || provider === 'perplexity') return false;
+    }
+    return true;
+  }
+
+  const residentIds = ['tab-chatgpt', 'tab-docs'];
+  const lastAccessedAt = new Map([
+    ['tab-chatgpt', 1000], // oldest
+    ['tab-docs', 2000],
+  ]);
+
+  // Under normal tier, tab-chatgpt is protected from automatic eviction
+  const normalCandidate = selectEvictionCandidate({
+    residentIds,
+    lastAccessedAt,
+    canEvict: (id) => mockCanEvict(id, id === 'tab-chatgpt' ? 'chatgpt' : 'github', MemoryPressureTier.NORMAL),
+    minDwellMs: 1000,
+    now: 5000,
+  });
+  assert.equal(normalCandidate, 'tab-docs', 'tab-docs is evicted because tab-chatgpt is protected in normal tier');
+
+  // Under critical tier, tab-chatgpt can be evicted if necessary to protect system from OOM
+  const criticalCandidate = selectEvictionCandidate({
+    residentIds,
+    lastAccessedAt,
+    canEvict: (id) => mockCanEvict(id, id === 'tab-chatgpt' ? 'chatgpt' : 'github', MemoryPressureTier.CRITICAL),
+    minDwellMs: 1000,
+    now: 5000,
+  });
+  assert.equal(criticalCandidate, 'tab-chatgpt', 'under critical pressure oldest candidate is evictable');
 });

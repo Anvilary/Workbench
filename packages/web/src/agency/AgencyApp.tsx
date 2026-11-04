@@ -100,6 +100,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
     return 240;
   });
   const [resizingSidebar, setResizingSidebar] = useState(false);
+  const sidebarRef = useRef<HTMLElement | null>(null);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [creatorProject, setCreatorProject] = useState<ProjectId | undefined>();
   const [creatingProject, setCreatingProject] = useState(false);
@@ -246,7 +247,11 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
       if (e.pointerId !== pointerId) return;
       const clamped = Math.max(180, Math.min(500, e.clientX));
       latestWidth = clamped;
-      setSidebarWidth(clamped);
+      // Fast path: bypass React render cycle during active dragging to avoid reconciliation overhead
+      if (sidebarRef.current) {
+        sidebarRef.current.style.width = `${clamped}px`;
+        sidebarRef.current.style.flexBasis = `${clamped}px`;
+      }
     };
 
     const cleanup = () => {
@@ -260,6 +265,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
         }
       } catch {}
       setResizingSidebar(false);
+      setSidebarWidth(latestWidth);
       try {
         localStorage.setItem(SIDEBAR_WIDTH_KEY, latestWidth.toString());
       } catch {}
@@ -349,6 +355,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   return (
     <div className="agency-app">
       <aside
+        ref={sidebarRef}
         className={
           'agency-sidebar' +
           (sidebarOpen ? '' : ' agency-sidebar-collapsed') +

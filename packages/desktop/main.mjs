@@ -6,7 +6,7 @@ import { mkdir, readFile, lstat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl } from './policy.mjs';
 import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
-import { calculateResourceBudget, selectEvictionCandidate } from './resource-budget.mjs';
+import { MemoryPressureTier, calculateResourceBudget, selectEvictionCandidate } from './resource-budget.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Deliberately distinct from both production MAW and any Brave/Neko profile.
@@ -497,7 +497,7 @@ async function start() {
     return chatUrlForPersistence(value);
   }
 
-  function canEvict(id) {
+  function canEvict(id, tier = MemoryPressureTier.NORMAL) {
     if (attachedViews.has(id)) return false;
     if (layoutFocusedId === id) return false;
     if ((activeDownloads.get(id) ?? 0) > 0) return false;
@@ -507,10 +507,22 @@ async function start() {
     const view = views.get(id);
     if (!view || view.webContents.isDestroyed()) return false;
     if (view.webContents.isLoading()) return false;
+
+    // Data-safety guard: Protect user-important generative AI surfaces (ChatGPT, Perplexity)
+    // from automatic silent renderer destruction under normal healthy memory conditions.
+    // Under Moderate, High, Critical pressure or manual test override, eviction is permitted
+    // to safeguard overall OS stability.
+    if (tier === MemoryPressureTier.NORMAL) {
+      const provider = providers.get(id) ?? 'chatgpt';
+      if (provider === 'chatgpt' || provider === 'perplexity') {
+        return false;
+      }
+    }
+
     return true;
   }
 
-  function getResourceBudget() {
+  function getResourceBudgetInfo() {
     let tabWorkingSetBytes = 0;
     try {
       if (typeof app.getAppMetrics === 'function') {
@@ -532,7 +544,11 @@ async function start() {
       tabWorkingSetBytes,
       attachedCount: attachedViews.size,
       envOverride: process.env.MAW_MAX_RESIDENT_VIEWS,
-    }).budget;
+    });
+  }
+
+  function getResourceBudget() {
+    return getResourceBudgetInfo().budget;
   }
 
   function evictTab(id) {
@@ -574,12 +590,12 @@ async function start() {
   }
 
   function ensureCapacity(excludeId) {
-    const budget = getResourceBudget();
+    const { budget, tier } = getResourceBudgetInfo();
     while (views.size >= budget) {
       const candidateId = selectEvictionCandidate({
         residentIds: views.keys(),
         lastAccessedAt,
-        canEvict,
+        canEvict: (id) => canEvict(id, tier),
         excludeId,
       });
 
