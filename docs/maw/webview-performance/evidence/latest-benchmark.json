@@ -1,0 +1,153 @@
+{
+  "timestamp": "2026-11-04T20:50:34.481Z",
+  "environment": {
+    "platform": "linux",
+    "arch": "x64",
+    "nodeVersion": "v24.22.0"
+  },
+  "benchmarks": {
+    "lifecycle": {
+      "viewCreation": {
+        "mean": 0.913,
+        "min": 0.61,
+        "max": 4.14,
+        "p50": 0.743,
+        "p95": 4.14,
+        "p99": 4.14,
+        "count": 20
+      },
+      "viewAttachment": {
+        "mean": 0.136,
+        "min": 0.11,
+        "max": 0.21,
+        "p50": 0.133,
+        "p95": 0.21,
+        "p99": 0.21,
+        "count": 20
+      },
+      "boundsUpdate": {
+        "mean": 0.049,
+        "min": 0.035,
+        "max": 0.064,
+        "p50": 0.049,
+        "p95": 0.064,
+        "p99": 0.064,
+        "count": 20
+      },
+      "viewDetachment": {
+        "mean": 0.038,
+        "min": 0.027,
+        "max": 0.09,
+        "p50": 0.034,
+        "p95": 0.09,
+        "p99": 0.09,
+        "count": 20
+      },
+      "viewDestruction": {
+        "mean": 0.005,
+        "min": 0.004,
+        "max": 0.009,
+        "p50": 0.005,
+        "p95": 0.009,
+        "p99": 0.009,
+        "count": 20
+      }
+    },
+    "tabSwitch": {
+      "warmSwitchPrimitiveMs": {
+        "mean": 0.088,
+        "min": 0.071,
+        "max": 0.174,
+        "p50": 0.082,
+        "p95": 0.174,
+        "p99": 0.174,
+        "count": 20
+      }
+    },
+    "paneResize": {
+      "setBoundsLatencyMs": {
+        "mean": 0.017,
+        "min": 0.014,
+        "max": 0.042,
+        "p50": 0.016,
+        "p95": 0.026,
+        "p99": 0.042,
+        "count": 51
+      }
+    },
+    "overlayCapture": {
+      "gpuReadbackMs": {
+        "mean": 0.012,
+        "min": 0.001,
+        "max": 0.098,
+        "p50": 0.002,
+        "p95": 0.098,
+        "p99": 0.098,
+        "count": 10
+      },
+      "pngEncodeMs": {
+        "mean": 0.02,
+        "min": 0,
+        "max": 0.191,
+        "p50": 0,
+        "p95": 0.191,
+        "p99": 0.191,
+        "count": 10
+      },
+      "totalCaptureMs": {
+        "mean": 0.032,
+        "min": 0.001,
+        "max": 0.289,
+        "p50": 0.002,
+        "p95": 0.289,
+        "p99": 0.289,
+        "count": 10
+      },
+      "payloadBytes": {
+        "mean": 22,
+        "min": 22,
+        "max": 22,
+        "p50": 22,
+        "p95": 22,
+        "p99": 22,
+        "count": 10
+      }
+    },
+    "resourceMatrix": {
+      "processCount": 4,
+      "totalRssMiB": 476.9,
+      "totalPssMiB": 201.7,
+      "totalPrivateMiB": 120.7,
+      "processes": [
+        {
+          "type": "Browser",
+          "pid": 2263482,
+          "rssMiB": 165.8,
+          "pssMiB": 84.5,
+          "privateMiB": 66.2
+        },
+        {
+          "type": "GPU",
+          "pid": 2263531,
+          "rssMiB": 139,
+          "pssMiB": 62.7,
+          "privateMiB": 25.5
+        },
+        {
+          "type": "Utility",
+          "pid": 2263533,
+          "rssMiB": 81.6,
+          "pssMiB": 24.8,
+          "privateMiB": 14.5
+        },
+        {
+          "type": "Tab",
+          "pid": 2263541,
+          "rssMiB": 90.5,
+          "pssMiB": 29.7,
+          "privateMiB": 14.5
+        }
+      ]
+    }
+  }
+}
