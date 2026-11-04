@@ -202,3 +202,39 @@ test('selectEvictionCandidate: anti-thrashing dwell hysteresis prioritizes matur
   });
   assert.equal(fallbackCandidate, 'tab-b');
 });
+
+test('data safety: generative AI tabs protected from eviction in normal memory tier', () => {
+  // Simulate canEvict with provider check across tiers
+  function mockCanEvict(id, provider, tier) {
+    if (tier === MemoryPressureTier.NORMAL) {
+      if (provider === 'chatgpt' || provider === 'perplexity') return false;
+    }
+    return true;
+  }
+
+  const residentIds = ['tab-chatgpt', 'tab-docs'];
+  const lastAccessedAt = new Map([
+    ['tab-chatgpt', 1000], // oldest
+    ['tab-docs', 2000],
+  ]);
+
+  // Under normal tier, tab-chatgpt is protected from automatic eviction
+  const normalCandidate = selectEvictionCandidate({
+    residentIds,
+    lastAccessedAt,
+    canEvict: (id) => mockCanEvict(id, id === 'tab-chatgpt' ? 'chatgpt' : 'github', MemoryPressureTier.NORMAL),
+    minDwellMs: 1000,
+    now: 5000,
+  });
+  assert.equal(normalCandidate, 'tab-docs', 'tab-docs is evicted because tab-chatgpt is protected in normal tier');
+
+  // Under critical tier, tab-chatgpt can be evicted if necessary to protect system from OOM
+  const criticalCandidate = selectEvictionCandidate({
+    residentIds,
+    lastAccessedAt,
+    canEvict: (id) => mockCanEvict(id, id === 'tab-chatgpt' ? 'chatgpt' : 'github', MemoryPressureTier.CRITICAL),
+    minDwellMs: 1000,
+    now: 5000,
+  });
+  assert.equal(criticalCandidate, 'tab-chatgpt', 'under critical pressure oldest candidate is evictable');
+});
