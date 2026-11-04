@@ -118,7 +118,6 @@ export class CoalescedJsonStore<T> {
         this.debounceTimer = null;
         void this.executeWrite().catch(() => {});
       }, waitMs);
-      this.debounceTimer.unref();
     }
 
     return promise;
