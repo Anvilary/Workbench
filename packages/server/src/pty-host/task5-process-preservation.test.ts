@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { WebSocket } from 'ws';
@@ -37,9 +38,9 @@ import { SplitAgencySessionStore } from '../agency/agency-session-store.js';
 import { WorkspaceMutex } from '../agency/workspace-lock.js';
 import { encodeClientMessage, parseServerMessage, type ServerMessage } from '@agent-workbench/shared';
 
-const LANE_A_DIR = '/home/user/Projects/MAW-pty-supervisor/packages/server/src/pty-host';
-const SUPERVISOR_SCRIPT = path.join(LANE_A_DIR, 'maw-ptyd.mjs');
-const SYNTHETIC_AGENT_PATH = path.join(LANE_A_DIR, 'fixtures', 'synthetic-agent.mjs');
+const PTY_HOST_DIR = path.dirname(fileURLToPath(import.meta.url));
+const SUPERVISOR_SCRIPT = path.join(PTY_HOST_DIR, 'maw-ptyd.mjs');
+const SYNTHETIC_AGENT_PATH = path.join(PTY_HOST_DIR, 'fixtures', 'synthetic-agent.mjs');
 
 interface DisposableBackend {
   port: number;
@@ -472,6 +473,17 @@ async function runTask5Acceptance() {
     if (backend2) await backend2.shutdown().catch(() => {});
     if (supervisorClient) {
       await supervisorClient.shutdown(true).catch(() => {});
+    } else {
+      try {
+        if (fs.existsSync(socketPath) && fs.existsSync(authPath)) {
+          const client = await PtyHostClient.connectOrSpawn({
+            socketPath,
+            authPath,
+            autoSpawn: false,
+          });
+          await client.shutdown(true).catch(() => {});
+        }
+      } catch {}
     }
     await rm(tmpBase, { recursive: true, force: true }).catch(() => {});
   }
@@ -551,7 +563,20 @@ async function runTask5Concurrency() {
   } finally {
     if (backend1) await backend1.shutdown().catch(() => {});
     if (backend2) await backend2.shutdown().catch(() => {});
-    if (supervisorClient) await supervisorClient.shutdown(true).catch(() => {});
+    if (supervisorClient) {
+      await supervisorClient.shutdown(true).catch(() => {});
+    } else {
+      try {
+        if (fs.existsSync(socketPath) && fs.existsSync(authPath)) {
+          const client = await PtyHostClient.connectOrSpawn({
+            socketPath,
+            authPath,
+            autoSpawn: false,
+          });
+          await client.shutdown(true).catch(() => {});
+        }
+      } catch {}
+    }
     await rm(tmpBase, { recursive: true, force: true }).catch(() => {});
   }
 }

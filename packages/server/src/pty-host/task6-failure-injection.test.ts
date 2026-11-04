@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { WebSocket } from 'ws';
@@ -37,9 +38,9 @@ import { SplitAgencySessionStore } from '../agency/agency-session-store.js';
 import { WorkspaceMutex } from '../agency/workspace-lock.js';
 import { encodeClientMessage, parseServerMessage, type ServerMessage } from '@agent-workbench/shared';
 
-const LANE_A_DIR = '/home/user/Projects/MAW-pty-supervisor/packages/server/src/pty-host';
-const SUPERVISOR_SCRIPT = path.join(LANE_A_DIR, 'maw-ptyd.mjs');
-const SYNTHETIC_AGENT_PATH = path.join(LANE_A_DIR, 'fixtures', 'synthetic-agent.mjs');
+const PTY_HOST_DIR = path.dirname(fileURLToPath(import.meta.url));
+const SUPERVISOR_SCRIPT = path.join(PTY_HOST_DIR, 'maw-ptyd.mjs');
+const SYNTHETIC_AGENT_PATH = path.join(PTY_HOST_DIR, 'fixtures', 'synthetic-agent.mjs');
 
 interface TestHarness {
   tmpBase: string;
@@ -67,6 +68,17 @@ async function createHarness(): Promise<TestHarness> {
     socketPath,
     authPath,
     cleanup: async () => {
+      try {
+        if (fs.existsSync(socketPath) && fs.existsSync(authPath)) {
+          const client = await PtyHostClient.connectOrSpawn({
+            socketPath,
+            authPath,
+            autoSpawn: false,
+            spawnTimeoutMs: 1000,
+          });
+          await client.shutdown(true).catch(() => {});
+        }
+      } catch {}
       await rm(tmpBase, { recursive: true, force: true }).catch(() => {});
     },
   };

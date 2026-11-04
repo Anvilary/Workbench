@@ -19,6 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import pty from 'node-pty';
 
 const PROTOCOL_VERSION = 1;
@@ -864,7 +865,7 @@ export class PtySupervisor {
 // Punto de entrada CLI si se ejecuta directamente
 // -------------------------------------------------------------
 
-function parseCliArgs() {
+export function parseCliArgs() {
   const args = process.argv.slice(2);
   const options = {};
 
@@ -876,6 +877,8 @@ function parseCliArgs() {
       options.authPath = args[++i];
     } else if (arg === '--auth-token' && i + 1 < args.length) {
       options.authToken = args[++i];
+    } else if (arg === '--runtime-dir' && i + 1 < args.length) {
+      options.runtimeDir = args[++i];
     } else if (arg === '--kill-children-on-exit') {
       options.killChildrenOnExit = true;
     }
@@ -884,7 +887,26 @@ function parseCliArgs() {
   return options;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+export function isMainModule(importMetaUrl = import.meta.url) {
+  if (!process.argv || !process.argv[1] || typeof process.argv[1] !== 'string') {
+    return false;
+  }
+  try {
+    let argvPath = process.argv[1];
+    if (argvPath.startsWith('file://')) {
+      try {
+        argvPath = fileURLToPath(argvPath);
+      } catch {}
+    }
+    const scriptPath = fs.realpathSync(path.resolve(argvPath));
+    const modulePath = fs.realpathSync(fileURLToPath(importMetaUrl));
+    return scriptPath === modulePath;
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule(import.meta.url)) {
   const options = parseCliArgs();
   const supervisor = new PtySupervisor(options);
 
