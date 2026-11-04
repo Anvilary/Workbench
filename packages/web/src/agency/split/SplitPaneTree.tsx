@@ -53,7 +53,6 @@ interface Props {
   onUpdateRatio: (splitId: string, ratio: number) => void;
   onSwapPane: (sourcePaneId: string, targetPaneId: string) => void;
   onMoveTabToPane: (tabId: string, targetPaneId: string, targetIndex?: number) => void;
-  onAddCliClick: (paneId: string) => void;
   onAddTerminalClick: (paneId: string) => void;
   onAddWebTabClick: (paneId: string) => void;
   onAddGithubClick?: (paneId: string) => void;
@@ -62,8 +61,7 @@ interface Props {
   onOpenRelativeFile?: (paneId: string, path: string) => void;
   onDirtyChange?: (tabId: string, dirty: boolean) => void;
   isTabUnsaved?: (tabId: string) => boolean;
-  onLaunchProfile?: (paneId: string, profileId: string) => void;
-  onSplitCreate?: (paneId: string, direction: SplitDirection, action: 'terminal' | 'agent' | 'web' | 'github' | 'perplexity' | 'file', profileId?: string) => void;
+  onSplitCreate?: (paneId: string, direction: SplitDirection, action: 'terminal' | 'web' | 'github' | 'perplexity' | 'file') => void;
   onRenameTab: (tab: WorkspaceTab, title: string) => Promise<void>;
   onFocusPane: (paneId: string) => void;
   onTabDisplayed: (id: string, ready: boolean) => void;
@@ -86,7 +84,7 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
       window.removeEventListener('pointercancel', release, true);
     };
   }, []);
-  const { node, layout, tabs, profiles, online, busy, connection, request, reportError, getTabActivity, onSelectTab, onCloseTab, onSplit, onClosePane, onToggleMaximize, onMoveTabToPane, onAddCliClick, onAddTerminalClick, onAddWebTabClick, onRenameTab, onFocusPane, onTabDisplayed, onPaneHost } = props;
+  const { node, layout, tabs, profiles, online, busy, connection, request, reportError, getTabActivity, onSelectTab, onCloseTab, onSplit, onClosePane, onToggleMaximize, onMoveTabToPane, onAddTerminalClick, onAddWebTabClick, onRenameTab, onFocusPane, onTabDisplayed, onPaneHost } = props;
 
   const totalLeaves = countLeaves(layout.tree);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -183,14 +181,12 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
         onSplitDown={() => onSplit(node.id, 'column')}
         onToggleMaximize={() => onToggleMaximize(node.id)}
         onClosePane={() => onClosePane(node.id)}
-        onAddCliClick={() => onAddCliClick(node.id)}
         onAddTerminalClick={() => onAddTerminalClick(node.id)}
         onAddWebTabClick={() => onAddWebTabClick(node.id)}
         onAddGithubClick={props.onAddGithubClick ? () => props.onAddGithubClick?.(node.id) : undefined}
         onAddPerplexityClick={props.onAddPerplexityClick ? () => props.onAddPerplexityClick?.(node.id) : undefined}
         onOpenFileClick={props.onOpenFileClick ? () => props.onOpenFileClick?.(node.id) : undefined}
-        onLaunchProfile={props.onLaunchProfile ? (profileId) => props.onLaunchProfile?.(node.id, profileId) : undefined}
-        onSplitCreate={props.onSplitCreate ? (direction, action, profileId) => props.onSplitCreate?.(node.id, direction, action, profileId) : undefined}
+        onSplitCreate={props.onSplitCreate ? (direction, action) => props.onSplitCreate?.(node.id, direction, action) : undefined}
         onMoveTabToPane={onMoveTabToPane}
         onRenameTab={onRenameTab}
         isTabUnsaved={props.isTabUnsaved}
@@ -223,9 +219,9 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
               type="button"
               className="agency-secondary-button"
               disabled={!online}
-              onClick={() => onAddCliClick(node.id)}
+              onClick={() => onAddTerminalClick(node.id)}
             >
-              {t('agency.tabs.newCLI')}
+              {t('agency.tabs.newTerminal')}
             </button>
           </div>
         )}

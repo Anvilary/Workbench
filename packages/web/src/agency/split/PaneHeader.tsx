@@ -38,14 +38,12 @@ interface Props {
   onSplitDown: () => void;
   onToggleMaximize: () => void;
   onClosePane: () => void;
-  onAddCliClick: () => void;
   onAddTerminalClick: () => void;
   onAddWebTabClick: () => void;
   onAddGithubClick?: () => void;
   onAddPerplexityClick?: () => void;
   onOpenFileClick?: () => void;
-  onLaunchProfile?: (profileId: string) => void;
-  onSplitCreate?: (direction: SplitDirection, action: 'terminal' | 'agent' | 'web' | 'github' | 'perplexity' | 'file', profileId?: string) => void;
+  onSplitCreate?: (direction: SplitDirection, action: 'terminal' | 'web' | 'github' | 'perplexity' | 'file') => void;
   onMoveTabToPane: (tabId: string, targetPaneId: string, targetIndex?: number) => void;
   onRenameTab: (tab: WorkspaceTab, title: string) => Promise<void>;
   isTabUnsaved?: (tabId: string) => boolean;
@@ -80,13 +78,11 @@ export function PaneHeader({
   onSplitDown,
   onToggleMaximize,
   onClosePane,
-  onAddCliClick: _onAddCliClick,
   onAddTerminalClick,
   onAddWebTabClick,
   onAddGithubClick,
   onAddPerplexityClick,
   onOpenFileClick,
-  onLaunchProfile: _onLaunchProfile,
   onSplitCreate,
   onMoveTabToPane,
   onRenameTab,

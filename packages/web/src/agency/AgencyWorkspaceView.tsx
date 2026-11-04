@@ -12,7 +12,7 @@ import type { AgentConnection } from '../connection.js';
 import { t } from '../i18n/index.js';
 import { AgencyProfileDialog } from './AgencyProfileDialog.js';
 import { BrowserContextMenu } from './BrowserContextMenu.js';
-import { allWorkspaceTabs, canLaunchAgent, selectedWorkspaceTab, type AgencyTransport, type WorkspaceTab } from './model.js';
+import { allWorkspaceTabs, selectedWorkspaceTab, type AgencyTransport, type WorkspaceTab } from './model.js';
 import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
 import { PaneMovement } from './split/PaneMovement.js';
 import { PersistentSessionPanes } from './split/PersistentSessionPanes.js';
@@ -118,17 +118,11 @@ export function AgencyWorkspaceView({
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
 
-  const [picker, setPicker] = useState(false);
   const [workspaceMenu, setWorkspaceMenu] = useState(false);
   const [webDialog, setWebDialog] = useState<'create' | 'navigate' | null>(null);
   const [webUrl, setWebUrl] = useState('https://chatgpt.com/');
   const [webTitle, setWebTitle] = useState('');
-  const [profileId, setProfileId] = useState<CliProfileId | ''>(profiles[0]?.id ?? '');
   const [configuringProfile, setConfiguringProfile] = useState<AgencyCliProfile | null>(null);
-  const selectedProfile = profiles.find((profile) => profile.id === profileId);
-  const isUnconfigured =
-    selectedProfile?.configurationStatus === 'error' &&
-    (selectedProfile.configurationMessage?.includes('Configure an executable') ?? false);
   const [error, setError] = useState<string | null>(null);
   const [closing, setClosing] = useState<WorkspaceTab | null>(null);
   const [fileDialog, setFileDialog] = useState<null | { paneId: string; direction?: SplitDirection }>(null);
@@ -406,10 +400,6 @@ export function AgencyWorkspaceView({
     });
   }, []);
 
-  useEffect(() => {
-    if (!profileId && profiles.length) setProfileId(profiles[0]!.id);
-  }, [profileId, profiles]);
-
   const focusedPane = findPaneNode(layout.tree, layout.focusedPaneId);
   const activeTabId = focusedPane?.selectedTabId;
   const activity = activeTabId ? getTabActivity?.(workspace.id, activeTabId) : undefined;
@@ -447,11 +437,10 @@ export function AgencyWorkspaceView({
   }, selecting);
 
   useEffect(() => {
-    if ((!picker && !closing && !webDialog && !fileDialog) || configuringProfile) return;
+    if ((!closing && !webDialog && !fileDialog) || configuringProfile) return;
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !flight.current) {
         pendingSplit.current = null;
-        setPicker(false);
         setClosing(null);
         setWebDialog(null);
         setFileDialog(null);
@@ -475,7 +464,7 @@ export function AgencyWorkspaceView({
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [picker, closing, webDialog, fileDialog, configuringProfile]);
+  }, [closing, webDialog, fileDialog, configuringProfile]);
 
   function completeCreation(response: Awaited<ReturnType<Props['request']>>, targetPaneId: string) {
     // The server commits the destination even if this workspace was switched away.
@@ -532,7 +521,7 @@ export function AgencyWorkspaceView({
   }
 
   async function add(kind: 'agent' | 'terminal', targetPaneId = creationTarget.current ?? layoutRef.current.focusedPaneId, profileOverride?: string) {
-    const profile = profileOverride ?? profileId;
+    const profile = profileOverride;
     if (flight.current || !online || (kind === 'agent' && !profile)) {
       pendingSplit.current = null;
       return;
@@ -555,7 +544,6 @@ export function AgencyWorkspaceView({
         ...(kind === 'agent' ? { profileId: profile as CliProfileId } : {}),
       } as Parameters<Props['request']>[0]);
       completeCreation(response, placed.paneId);
-      setPicker(false);
     } catch (reason) {
       if (placed.created) rollbackPane(placed.paneId);
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -929,11 +917,6 @@ export function AgencyWorkspaceView({
           onUpdateRatio={handleUpdateRatio}
           onSwapPane={handleSwapPane}
           onMoveTabToPane={handleMoveTab}
-          onAddCliClick={(paneId) => {
-            creationTarget.current = paneId;
-            setError(null);
-            setPicker(true);
-          }}
           onAddTerminalClick={(paneId) => {
             void add('terminal', paneId);
           }}
@@ -958,12 +941,7 @@ export function AgencyWorkspaceView({
           }}
           onDirtyChange={handleDirtyChange}
           isTabUnsaved={(id) => unsavedTabIds.has(id)}
-          onLaunchProfile={(paneId, profile) => {
-            creationTarget.current = paneId;
-            setProfileId(profile as CliProfileId);
-            void add('agent', paneId, profile as CliProfileId);
-          }}
-          onSplitCreate={(paneId, direction, action, profile) => {
+          onSplitCreate={(paneId, direction, action) => {
             pendingSplit.current = { paneId, direction };
             creationTarget.current = paneId;
             if (action === 'terminal') void add('terminal', paneId);
@@ -971,13 +949,6 @@ export function AgencyWorkspaceView({
             else if (action === 'perplexity') void createPerplexity();
             else if (action === 'web') webEditor('create');
             else if (action === 'file') setFileDialog({ paneId, direction });
-            else if (profile) {
-              setProfileId(profile as CliProfileId);
-              void add('agent', paneId, profile as CliProfileId);
-            } else {
-              setError(null);
-              setPicker(true);
-            }
           }}
           onRenameTab={async (tab, title) => {
             await request(
@@ -1041,7 +1012,7 @@ export function AgencyWorkspaceView({
         }}
       />
 
-      {(picker || closing || webDialog || fileDialog) && (
+      {(closing || webDialog || fileDialog) && (
         <div className="agency-modal-backdrop">
           <div
             ref={dialog}
@@ -1055,48 +1026,8 @@ export function AgencyWorkspaceView({
                 ? t('agency.tabs.confirmClose', { name: tabDisplayName(closing) })
                 : fileDialog
                   ? t('agency.tabs.openFile')
-                  : webDialog
-                    ? webHeading
-                    : t('agency.tabs.newCLI')}
+                  : webHeading}
             </h2>
-
-            {!closing && !webDialog && !fileDialog && isUnconfigured && (
-              <div
-                className="agency-callout"
-                role="alert"
-                style={{
-                  background: 'rgba(234, 179, 8, 0.12)',
-                  border: '1px solid rgba(234, 179, 8, 0.35)',
-                  borderRadius: '8px',
-                  padding: '10px 14px',
-                  margin: '12px 0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                  fontSize: '12px',
-                  color: '#fef08a',
-                }}
-              >
-                <span>⚙ {t('agency.profile.notConfiguredBanner')}</span>
-                <button
-                  type="button"
-                  className="agency-primary-button"
-                  style={{ padding: '6px 14px', fontSize: '12px', whiteSpace: 'nowrap' }}
-                  onClick={() => setConfiguringProfile(selectedProfile ?? null)}
-                >
-                  {t('agency.profile.configureAction')}
-                </button>
-              </div>
-            )}
-
-            {!closing && !webDialog && !fileDialog && !isUnconfigured && !canLaunchAgent(selectedProfile) && (
-              <p role="status">
-                {selectedProfile?.configurationStatus === 'not-installed'
-                  ? t('agency.profile.executableNotFound')
-                  : selectedProfile?.configurationMessage}
-              </p>
-            )}
 
             {closing ? (
               <p>
@@ -1123,7 +1054,7 @@ export function AgencyWorkspaceView({
                   />
                 </label>
               </form>
-            ) : webDialog ? (
+            ) : (
               <form
                 id="maw-web-tab-form"
                 onSubmit={(event) => {
@@ -1155,33 +1086,6 @@ export function AgencyWorkspaceView({
                   />
                 </label>
               </form>
-            ) : (
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', marginBottom: '16px' }}>
-                <label className="agency-field" style={{ flex: 1, marginBottom: 0 }}>
-                  <span>{t('agency.ui.cliProfile')}</span>
-                  <select
-                    autoFocus
-                    value={profileId}
-                    onChange={(event) => setProfileId(event.target.value as CliProfileId)}
-                  >
-                    {profiles.map((profile) => (
-                      <option value={profile.id} key={profile.id}>
-                        {profile.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {selectedProfile && (
-                  <button
-                    type="button"
-                    className={isUnconfigured ? 'agency-primary-button' : 'agency-secondary-button'}
-                    style={{ height: '40px', padding: '0 14px', whiteSpace: 'nowrap', fontWeight: 600 }}
-                    onClick={() => setConfiguringProfile(selectedProfile)}
-                  >
-                    {t('agency.profile.configureAction')}
-                  </button>
-                )}
-              </div>
             )}
 
             {error && <p role="alert" className="agency-error">{error}</p>}
@@ -1192,7 +1096,6 @@ export function AgencyWorkspaceView({
                 disabled={busy}
                 onClick={() => {
                   pendingSplit.current = null;
-                  setPicker(false);
                   setClosing(null);
                   setWebDialog(null);
                   setFileDialog(null);
@@ -1217,7 +1120,7 @@ export function AgencyWorkspaceView({
                 <button
                   type="button"
                   className="agency-primary-button"
-                  disabled={busy || !online || (!closing && !canLaunchAgent(selectedProfile))}
+                  disabled={busy || !online}
                   onClick={() => {
                     if (closing) {
                       if (closing.kind === 'editor') {
@@ -1228,12 +1131,10 @@ export function AgencyWorkspaceView({
                         });
                       }
                       void close(closing);
-                    } else {
-                      void add('agent');
                     }
                   }}
                 >
-                  {closing ? t('agency.tabs.closeSession') : t('agency.ui.startCLI')}
+                  {t('agency.tabs.closeSession')}
                 </button>
               )}
             </div>
