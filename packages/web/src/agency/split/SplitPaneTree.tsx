@@ -254,7 +254,7 @@ function SplitStructure(props: Props & { holders: Map<string, HTMLDivElement> })
         <div
           className="maw-split-child"
           style={{
-            flex: `${node.ratio} 1 0px`,
+            flex: `var(--split-ratio-first, ${node.ratio}) 1 0px`,
             display: 'flex',
             minWidth: 0,
             minHeight: 0,
@@ -274,7 +274,7 @@ function SplitStructure(props: Props & { holders: Map<string, HTMLDivElement> })
         <div
           className="maw-split-child"
           style={{
-            flex: `${1 - node.ratio} 1 0px`,
+            flex: `var(--split-ratio-second, ${1 - node.ratio}) 1 0px`,
             display: 'flex',
             minWidth: 0,
             minHeight: 0,
