@@ -10,6 +10,7 @@ The primary objective is to make embedded ChatGPT and Perplexity feel as respons
 - Working tree: `/home/user/Projects/My-Amazing-Workspace-webview-research`
 - Branch: `research/maw-webview-performance`
 - Base commit SHA: `fe242b74796da604848e3e114e600f3a9d66d016` (`origin/main`)
+- Lane A integration reference: `b56b4f3a76e033e07d722bf8810cf19aa36a8ce3` (`main`)
 - Electron runtime: Electron 45.2.0 (Chromium 156.0.8078.49, V8 15.6.75.19, Node 24.22.1)
 - Host platform: Ubuntu Linux x86_64, Wayland/X11 compositing
 
@@ -142,19 +143,20 @@ To solve this, [packages/web/src/agency/native-layout-coordinator.ts:319](file:/
   5. `this.schedule()` triggers `measure()` and sends a redundant `command({ type: 'layout', ... })` back to the main process.
 - **Evidence**: Traced 5 to 7 redundant IPC messages traversing the bridge whenever a background agent outputs a single activity notification.
 
-### Bottleneck 4: Aggressive LRU Eviction Causing 140x to 10,000x Latency Penalties
+### Bottleneck 4: Aggressive LRU Eviction Causing 10,000x Latency Penalties
 - **Location**: [packages/desktop/resource-budget.mjs:55](file:///home/user/Projects/My-Amazing-Workspace-webview-research/packages/desktop/resource-budget.mjs#L55) and [packages/desktop/main.mjs:565](file:///home/user/Projects/My-Amazing-Workspace-webview-research/packages/desktop/main.mjs#L565).
 - **Mechanism**: When memory pressure is high or working set exceeds thresholds, `resource-budget.mjs` constrains the resident pool to 2-4 tabs. `evictTab(candidateId)` calls `view.webContents.close()`, permanently destroying the Chromium renderer and its DOM tree.
 - **Evidence**:
-  - Warm tab switch (retained view): **0.170ms**
-  - Cold tab switch (evicted view on simple local page): **23.781ms** (140x slower)
-  - Cold tab switch (evicted ChatGPT / Perplexity): **1,500ms to 4,000ms** (over 10,000x slower)
+  - Warm tab switch (C++ engine attachment primitive): **0.170ms**
+  - Warm tab switch (user-visible frame presentation): **30.5ms**
+  - Cold tab switch (evicted view on simple local page): **23.781ms**
+  - Cold tab switch (evicted ChatGPT / Perplexity): **1,500ms to 4,000ms** (over 10,000x slower than the C++ primitive)
   - Furthermore, in-progress message drafts, temporary input states, and scroll positions are lost or require slow network recovery.
 
-### Bottleneck 5: Background Throttling Slowing AI Streaming in Unfocused Tabs
+### Bottleneck 5: Background Throttling on AI Streaming in Unfocused Tabs
 - **Location**: [packages/desktop/main.mjs:646](file:///home/user/Projects/My-Amazing-Workspace-webview-research/packages/desktop/main.mjs#L646).
-- **Mechanism**: Every `WebContentsView` is instantiated with `backgroundThrottling: true`. When a user switches to a terminal pane to run code while ChatGPT or Perplexity is generating a response, MAW detaches the browser view (`win.contentView.removeChildView(view); view.setVisible(false)`). Chromium detects that the surface is occluded and throttles timers to 1000ms and halts `requestAnimationFrame`.
-- **Evidence**: The DOM rendering of streaming tokens is clamped. When the user switches back to the tab, the page experiences a rendering surge or was paused in the background.
+- **Mechanism**: Every `WebContentsView` is instantiated with `backgroundThrottling: true`. When a user switches to a terminal pane to run code while ChatGPT or Perplexity is generating a response, MAW detaches the browser view (`win.contentView.removeChildView(view); view.setVisible(false)`). While network packets continue to be received by Chromium's Network Process, JavaScript timers are clamped to 1000ms and `requestAnimationFrame` is halted, delaying virtualized DOM token rendering until the tab is refocused.
+- **Evidence**: Visual token updating pauses or queues up. When the user switches back to the tab, the page experiences a rendering surge.
 
 ### Bottleneck 6: Full AgencyApp Component Tree Re-Renders During Sidebar Dragging
 - **Location**: [packages/web/src/agency/AgencyApp.tsx:249](file:///home/user/Projects/My-Amazing-Workspace-webview-research/packages/web/src/agency/AgencyApp.tsx#L249).
@@ -181,10 +183,15 @@ To solve this, [packages/web/src/agency/native-layout-coordinator.ts:319](file:/
 
 ## Parallel UX Stabilization Boundary Analysis
 
-A parallel agent is actively stabilizing pane layouts, menu interactions, tab scrolling, terminal close latency, and terminal-first behavior.
+Lane A has completed UX stabilization at commit `b56b4f3a76e033e07d722bf8810cf19aa36a8ce3` on `main`.
 
-To prevent overlap, this research lane establishes strict modular boundaries:
-- **UX Lane Domain**: `packages/web/src/agency/split/PaneMenu.tsx`, `PaneContextMenu.tsx`, `PaneHeader.tsx`, tab strip drag-and-drop, tab scrolling UX, terminal close handlers, and PTY supervisor reconnection.
-- **Webview Performance Lane Domain**: Electron `main.mjs` native view lifecycle, `WebContentsView` creation/attachment, `native-layout-coordinator.ts` measurement algorithms, `resource-budget.mjs` resident pooling, Chromium webPreferences (`backgroundThrottling`), and overlay visual freeze optimizations.
+Key architectural changes introduced by Lane A:
+1. **8-Pane Ceiling in Split Layout**: Expands nested splitting up to 8 panes (`packages/shared/src/split-layout.ts` and `SplitPaneTree.tsx`). This reinforces the necessity of strict resident view budgeting and reflow pruning, as 8 concurrent panes could otherwise trigger up to 64 forced reflows per frame if unoptimized.
+2. **Consolidated Pane Menu and Tab Scrolling**: Refactors `PaneHeader.tsx` for immediate splitting and horizontal tab scrolling with the mouse wheel.
+3. **Recoverable Tab Closing**: Refactors `AgencyWorkspaceView.tsx` and server tab coordinator for immediate visual removal.
 
-No overlap occurs between these research recommendations and the UX stabilization agent's scope.
+To prevent overlap, this research lane maintains strict modular boundaries:
+- **UX Lane Domain (Lane A)**: `packages/web/src/agency/split/PaneMenu.tsx`, `PaneContextMenu.tsx`, `PaneHeader.tsx`, tab strip drag-and-drop, tab scrolling UX, terminal close handlers, and PTY supervisor reconnection.
+- **Webview Performance Lane Domain**: Electron `main.mjs` native view lifecycle, `WebContentsView` creation/attachment, `native-layout-coordinator.ts` measurement algorithms, `resource-budget.mjs` resident pooling, Chromium webPreferences, and overlay visual freeze optimizations.
+
+No overlap occurs between these research recommendations and Lane A's scope. All optimizations are designed to validate cleanly against both the baseline (`fe242b7`) and the integrated Lane A revision (`b56b4f3`).

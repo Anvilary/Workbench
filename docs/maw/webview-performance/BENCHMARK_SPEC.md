@@ -1,19 +1,19 @@
-# Benchmark Specification: Automated Performance and Responsiveness Gates
+# Benchmark Specification: Automated Performance, Resource Efficiency, and Regression Gates
 
 ## Overview
 
-This specification defines a reproducible, automated performance benchmark suite for MAW's embedded browser surfaces (ChatGPT, Perplexity, and native WebContentsView lifecycle). It establishes strict acceptance thresholds and regression gates to guarantee that future updates do not degrade responsiveness.
+This specification defines a reproducible, automated benchmark suite and resource-efficiency test framework for MAW's embedded browser surfaces (ChatGPT, Perplexity, and native WebContentsView lifecycle). It establishes strict acceptance thresholds and regression gates covering **CPU usage, memory allocation (PSS/RSS/Private), GPU memory, interaction latency, and frame cadence**.
 
 ---
 
-## Test Harness Architecture
+## Benchmark Suite Architecture
 
 The benchmark harness is organized into modular Node.js/Electron suites executed under both headless virtual display environments (Xvfb) and real graphical desktops.
 
 ### CLI Invocation
 
 ```sh
-# Run the complete webview benchmark suite with JSON reporting
+# Run the complete webview benchmark suite with resource accounting
 xvfb-run -a pnpm --filter @agent-workbench/desktop run bench:webview
 
 # Run individual targeted benchmarks
@@ -22,6 +22,7 @@ xvfb-run -a pnpm --filter @agent-workbench/desktop run bench:tab-switch
 xvfb-run -a pnpm --filter @agent-workbench/desktop run bench:pane-resize
 xvfb-run -a pnpm --filter @agent-workbench/desktop run bench:overlay-capture
 xvfb-run -a pnpm --filter @agent-workbench/desktop run bench:concurrent-stream
+xvfb-run -a pnpm --filter @agent-workbench/desktop run bench:resource-matrix
 ```
 
 ### Statistical Reporting Standards
@@ -31,13 +32,13 @@ Every benchmark executes warm and cold iterations, discarding initial JIT compil
 - 50th percentile (p50 median).
 - 95th percentile (p95 upper bound).
 - 99th percentile (p99 tail latency).
-- Standard deviation and coefficient of variation.
+- Memory breakdown: RSS, PSS, Private Memory, Shared Memory via `/proc/<pid>/smaps_rollup`.
 
 ---
 
-## Benchmark Suite Specifications
+## Automated Benchmark Specifications
 
-### Benchmark 1: Native View Lifecycle (`bench:view-lifecycle`)
+### Benchmark 1: Native View Lifecycle (`bench:lifecycle`)
 - **Objective**: Measure raw Electron `WebContentsView` primitive timings in isolation.
 - **Workflow**:
   1. Measure `new WebContentsView()` instantiation time.
@@ -46,7 +47,6 @@ Every benchmark executes warm and cold iterations, discarding initial JIT compil
   4. Measure deterministic local page navigation time (`loadURL`).
   5. Measure `win.contentView.removeChildView(view)` detachment time.
   6. Measure `view.webContents.close()` destruction time.
-- **Iteration Count**: 20 cycles.
 - **Acceptance Thresholds**:
   - `view.setBounds()`: p95 <= 0.20ms (Target: < 0.10ms).
   - View attachment: p95 <= 0.50ms (Target: < 0.25ms).
@@ -56,17 +56,18 @@ Every benchmark executes warm and cold iterations, discarding initial JIT compil
 ---
 
 ### Benchmark 2: Tab Switching Latency (`bench:tab-switch`)
-- **Objective**: Measure user-perceived latency when alternating between tabs in the same pane and across split panes.
+- **Objective**: Measure latency when alternating between tabs in the same pane and across split panes, separating C++ engine primitives from user-visible frame presentation.
 - **Workflow**:
   1. Pre-load two native views (View A and View B) with controlled local pages.
-  2. Measure **Warm Switch Latency**: Hide View A (`removeChildView`), attach View B (`addChildView`), apply bounds, focus `webContents`, and wait for paint.
-  3. Measure **Cold Switch Latency**: Evict View B, then simulate user clicking Tab B: instantiate new view, attach, navigate, wait for `did-finish-load` and paint.
-- **Iteration Count**: 20 warm switches, 10 cold switches.
+  2. Measure **Warm Switch Latency**:
+     - C++ primitive time: `removeChildView` + `addChildView` + `setBounds`.
+     - End-to-end user-visible time: React tab click -> coordinator measure -> IPC -> compositor frame presentation.
+  3. Measure **Cold Switch Latency**: Evict View B, simulate click, measure full recreation, loadURL, and initial paint.
 - **Acceptance Thresholds**:
-  - **Warm Switch p50**: <= 1.0ms (Target: <= 0.20ms).
-  - **Warm Switch p95**: <= 2.5ms (Target: <= 0.50ms).
-  - **Cold Switch p95 (Local Page)**: <= 50.0ms.
-  - **Cold Switch p95 (ChatGPT / Perplexity)**: Marked as informative (depends on network); warm pool hit rate must be >= 95% for recent tabs.
+  - **Warm Switch (C++ Primitive) p95**: <= 0.50ms (Target: <= 0.20ms).
+  - **Warm Switch (User-Visible Presentation) p95**: <= 45.0ms (Target: <= 33.3ms, within 2 frames).
+  - **Cold Switch p95 (Local Test Page)**: <= 35.0ms.
+  - **Cold Switch (ChatGPT / Perplexity)**: Marked as informative (network-dependent); standby pool hit rate must be >= 95% for recent tabs.
 
 ---
 
@@ -79,7 +80,6 @@ Every benchmark executes warm and cold iterations, discarding initial JIT compil
      - Number of layout events dispatched vs frames rendered.
      - Time delta between pointermove event timestamp and `view.setBounds` completion.
      - Number of dropped animation frames.
-- **Iteration Count**: 10 drag sweeps.
 - **Acceptance Thresholds**:
   - **Pointer-to-Bounds Delta p50**: <= 16.7ms (1 frame at 60Hz).
   - **Pointer-to-Bounds Delta p95**: <= 33.3ms (maximum 2 frames).
@@ -88,13 +88,12 @@ Every benchmark executes warm and cold iterations, discarding initial JIT compil
 ---
 
 ### Benchmark 4: Overlay Interception and Backdrop Latency (`bench:overlay-capture`)
-- **Objective**: Measure the latency penalty when opening a context menu, dropdown menu, or modal dialog over an active native browser surface.
+- **Objective**: Measure latency and memory allocation when opening a context menu, dropdown menu, or modal dialog over an active native browser surface.
 - **Workflow**:
   1. Focus an active WebContentsView displaying complex DOM content.
   2. Trigger an overlay open event (`hasIntersectingOverlay = true`).
   3. Measure time to initiate capture, perform GPU readback, serialize bitmap, and render the static backdrop.
   4. Measure V8 heap memory allocated during the operation.
-- **Iteration Count**: 15 overlay open/close cycles.
 - **Acceptance Thresholds**:
   - **Total Overlay Open Latency p50**: <= 15.0ms (Target: <= 5.0ms with sub-bounds clipping).
   - **Total Overlay Open Latency p95**: <= 25.0ms (Current baseline: ~61ms).
@@ -103,7 +102,7 @@ Every benchmark executes warm and cold iterations, discarding initial JIT compil
 ---
 
 ### Benchmark 5: Concurrent Terminal Streaming and Background AI Generation (`bench:concurrent-stream`)
-- **Objective**: Verify that high-volume terminal output does not degrade neighboring browser pane responsiveness, and that background browser tabs generate streaming tokens without throttling.
+- **Objective**: Verify that high-volume terminal output does not degrade neighboring browser pane responsiveness, and that background browser tabs generate streaming tokens without artificial throttling.
 - **Workflow**:
   1. Pane 1: Run active Bash PTY outputting 5,000 lines/sec (e.g. `cat large_build.log`).
   2. Pane 2: Run active Server-Sent Events stream delivering 50 tokens/sec in an active WebContentsView.
@@ -112,21 +111,26 @@ Every benchmark executes warm and cold iterations, discarding initial JIT compil
 - **Acceptance Thresholds**:
   - **Foreground Token Interval Jitter (p95)**: <= 5.0ms deviation from nominal 20ms cadence.
   - **Background Generation Completion**: Total streaming time for 100 tokens must be <= 2.2 seconds (no 1000ms timer clamping).
-  - **Idle CPU**: Upon generation completion and terminal idle, total application CPU must drop to <= 1.0%.
+  - **Idle CPU**: Upon generation completion and terminal idle, total application CPU must drop to <= 0.5%.
 
 ---
 
-### Benchmark 6: Multi-Hour Memory Soak and Pool Stability (`bench:memory-soak`)
-- **Objective**: Ensure long-running multi-pane sessions do not leak memory, retain orphaned native views, or cause V8 heap exhaustion.
-- **Workflow**:
-  1. Initialize a 4-pane workspace (2 web tabs, 2 terminals).
-  2. Execute 100 automated tab switches, 50 split pane resizes, and 20 workspace switches over a 30-minute automated test cycle.
-  3. Sample Linux `smaps_rollup` PSS and RSS every 60 seconds.
+### Benchmark 6: Multi-Workload Resource and Memory Matrix (`bench:resource-matrix`)
+- **Objective**: Quantify RSS, PSS, Private Memory, and CPU utilization across six standardized operational states.
+- **Standard States Tested**:
+  1. MAW Shell Only (Window with empty shell, zero webviews).
+  2. One Active Webpage (Single WebContentsView loaded with 2,500 DOM elements).
+  3. Two Resident Webpages (1 visible active, 1 detached standby).
+  4. Four Resident Webpages (2 split visible, 2 detached standby).
+  5. Active Streaming Workload (1 view streaming 50 tokens/sec, 1 visible view, 2 standby views).
+  6. Post-Hibernation State (2 views evicted, leaving 1 active and 1 standby).
+- **Measurement Method**: Linux `/proc/<pid>/smaps_rollup` summing all descendant PIDs of the Electron main process tree.
 - **Acceptance Thresholds**:
-  - **Zero Orphaned Views**: `BrowserWindow.getAllWindows()[0].contentView.children` count must exactly match visible panes.
-  - **Main Process PSS Growth**: <= 15 MiB growth over 30 minutes.
-  - **Renderer PSS Growth**: <= 25 MiB growth over 30 minutes (excluding website DOM accumulation).
-  - **Residual Views in Memory**: Never exceed configured `MAW_MAX_RESIDENT_VIEWS` budget.
+  - **Shell Idle PSS**: <= 310 MiB.
+  - **Per-Standby Tab PSS Overhead**: <= 55 MiB (local page) / <= 120 MiB (real ChatGPT page).
+  - **Four Webpages Total PSS**: <= 520 MiB (local page) / <= 950 MiB (real ChatGPT/Perplexity pages).
+  - **Post-Eviction Memory Reclaim**: Evicting 2 views must immediately reclaim >= 70 MiB PSS.
+  - **Steady-State Idle CPU**: <= 0.5% CPU across all 14 processes when no input is active.
 
 ---
 
@@ -135,5 +139,11 @@ Every benchmark executes warm and cold iterations, discarding initial JIT compil
 ### Automated Regression Gate
 In local test runs and CI pipelines:
 1. Benchmarks execute against baseline commits.
-2. Any commit that introduces a **> 10% regression** in warm tab switch latency (p95) or pointer-to-bounds delta fails the CI quality gate.
+2. Any commit that introduces a **> 10% regression** in warm tab switch latency (p95), pointer-to-bounds delta, or idle PSS fails the CI quality gate.
 3. Automated benchmark reports are emitted in JSON format to `docs/maw/webview-performance/evidence/latest-benchmark.json` alongside human-readable Markdown summaries.
+
+### Validation Against Integrated Lane A Revision
+Before any performance optimization PR is merged:
+1. The optimization branch must be test-merged with Lane A commit `b56b4f3a76e033e07d722bf8810cf19aa36a8ce3`.
+2. All 8-pane split configurations must pass `bench:resource-matrix` and `bench:pane-resize`.
+3. Tab scrolling wheel interactions in `PaneHeader.tsx` must remain smooth at 60Hz.

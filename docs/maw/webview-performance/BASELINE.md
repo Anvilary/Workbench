@@ -2,10 +2,11 @@
 
 ## Test Environment and Hardware Specification
 
-All benchmarks were collected on the dedicated performance research worktree under controlled conditions:
+All benchmarks were collected on the dedicated performance research worktree under controlled, reproducible conditions:
 - **Repository path**: `/home/user/Projects/My-Amazing-Workspace-webview-research`
 - **Branch**: `research/maw-webview-performance`
 - **Baseline commit**: `fe242b74796da604848e3e114e600f3a9d66d016` (`origin/main`)
+- **Lane A integration reference**: `b56b4f3a76e033e07d722bf8810cf19aa36a8ce3` (`main`)
 - **Operating system**: Ubuntu Linux 24.04 / 26.04 x86_64
 - **Kernel version**: Linux 6.8+ generic
 - **Display server**: X11 via isolated Xvfb virtual frame buffer (`:99`, 1440x900, 24-bit depth) and real GNOME Wayland desktop
@@ -20,7 +21,7 @@ All benchmarks were collected on the dedicated performance research worktree und
 
 ## Methodology for Separating MAW Overhead from Website Overhead
 
-Separating MAW application overhead from website overhead is fundamental to this investigation. Complex modern web applications such as ChatGPT and Perplexity introduce enormous internal performance variance that is entirely outside MAW's control, including:
+Separating MAW application overhead from website overhead is fundamental to this investigation. Complex modern web applications such as ChatGPT and Perplexity introduce substantial internal performance variance that is entirely outside MAW's control, including:
 1. Dynamic cloud backend inference latency and token generation queuing.
 2. Cloudflare / WAF edge network routing and rate limiting.
 3. Complex single-page application (SPA) client hydration (Next.js, Tailwind, KaTeX, Webpack/Turbopack chunk loading).
@@ -58,28 +59,59 @@ To isolate MAW's true architectural overhead, this research establishes a **two-
 
 ---
 
+## Methodological Qualifications and Critical Reassessments
+
+Previous observations of raw C++ and engine primitives must be strictly distinguished from complete, end-to-end user-visible interactions:
+
+1. **Typing Latency vs Focus Transition Latency**:
+   - The measured keyboard typing dispatch latency of 5.595ms reflects raw event processing within an **already-focused** `WebContentsView`.
+   - When clicking from a terminal pane into a browser pane, the user experiences a focus transition path involving `before-mouse-event` in Electron main, IPC dispatch of `focused` to the shell renderer, and React state reconciliation in `SplitPaneTree`. Total click-to-type focus acquisition is estimated at **10ms to 25ms**, not 0.00ms.
+2. **View Attachment Primitive vs User-Visible Tab Switching**:
+   - The measured 0.170ms main-process attachment primitive reflects only the C++ invocation of `win.contentView.addChildView` and `view.setBounds`.
+   - The **complete user-visible tab switch** includes React tab click handling, `native-layout-coordinator` DOM measurement, IPC dispatch, compositor frame presentation, and overlay mask removal. Real user-visible warm tab switching is **20ms to 45ms** (1 to 2 display frames).
+3. **Background Throttling vs Streaming Event Delivery**:
+   - Chromium's Network Service operates in a separate process outside renderer timer throttling. TCP packets and Server-Sent Events continue to be ingested over the network in background tabs.
+   - Background throttling primarily affects `requestAnimationFrame` and `setTimeout` loops. If a web application schedules DOM insertion via rAF, visual token updates pause until refocus, but server network data is not dropped.
+
+---
+
 ## Empirical Benchmark Results
 
 ### 1. Controlled Overhead Comparison: Standalone Chromium vs Embedded MAW
 
 A controlled local benchmark page was executed under identical viewport dimensions (1280x800) in **Standalone Google Chrome 155** and inside **MAW Electron 45 WebContentsView**:
 
-| Benchmark Metric | Standalone Chrome 155 | MAW Electron 45 View | Measured Delta (MAW Overhead) | Status |
-| :--- | :---: | :---: | :---: | :---: |
-| **Typing Dispatch Latency (p50)** | 5.900 ms | 5.600 ms | -0.300 ms (identical) | **Zero Overhead** |
-| **Typing Dispatch Latency (mean)** | 5.830 ms | 5.595 ms | -0.235 ms (identical) | **Zero Overhead** |
-| **Typing Dispatch Latency (p95)** | 6.100 ms | 5.800 ms | -0.300 ms (identical) | **Zero Overhead** |
-| **Streaming Chunk Cadence (p50)** | 15.000 ms | 15.100 ms | +0.100 ms (identical) | **Zero Overhead** |
-| **Streaming Chunk Cadence (mean)** | 15.095 ms | 15.106 ms | +0.011 ms (identical) | **Zero Overhead** |
-| **Streaming Chunk Cadence (p95)** | 15.900 ms | 16.000 ms | +0.100 ms (identical) | **Zero Overhead** |
-| **Initial Navigation / TTI** | 20.617 ms | 33.529 ms | +12.912 ms | **Slight Setup Delta** |
-
-#### Finding: Input and Streaming Parity
-Once a native `WebContentsView` is attached and focused, Chromium handles user keyboard events and streaming event streams directly within its native rendering pipeline. MAW introduces **zero measurable latency** to typing keystrokes or Server-Sent Events delivery within an active pane. The perceived lag reported by users does NOT stem from Chromium event handling or IPC throttling during typing.
+| Benchmark Metric | Standalone Chrome 155 | MAW Electron 45 View | Measured Delta (MAW Overhead) | Methodological Context |
+| :--- | :---: | :---: | :---: | :--- |
+| **Typing Dispatch Latency (p50)** | 5.900 ms | 5.600 ms | -0.300 ms | Keystroke dispatch within an active, focused view |
+| **Typing Dispatch Latency (mean)** | 5.830 ms | 5.595 ms | -0.235 ms | Identical within measurement noise |
+| **Typing Dispatch Latency (p95)** | 6.100 ms | 5.800 ms | -0.300 ms | Identical within measurement noise |
+| **Streaming Chunk Cadence (p50)** | 15.000 ms | 15.100 ms | +0.100 ms | SSE token delivery interval at 66Hz |
+| **Streaming Chunk Cadence (mean)** | 15.095 ms | 15.106 ms | +0.011 ms | Identical within measurement noise |
+| **Streaming Chunk Cadence (p95)** | 15.900 ms | 16.000 ms | +0.100 ms | Identical within measurement noise |
+| **Initial Navigation / TTI** | 20.617 ms | 33.529 ms | +12.912 ms | Partition setup, view attachment, and bounds |
 
 ---
 
-### 2. Native WebContentsView Lifecycle Timings
+### 2. Multi-Workload Resource and Memory Matrix
+
+Measured using `/proc/<pid>/smaps_rollup` summing unique process trees across representative MAW operational states:
+
+| Workload Configuration | Process Count | Total RSS (MiB) | Total PSS (MiB) | Private Memory (MiB) | Shared Memory (MiB) | Attributable Notes |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **1. MAW Shell Only** (no webviews) | 10 | 714.2 | 288.8 | 167.8 | 546.4 | Main process, GPU, utility, shell renderer |
+| **2. One Active Webpage** (local ChatGPT) | 11 | 830.0 | 328.2 | 199.7 | 630.3 | +1 renderer process (~39.4 MiB PSS) |
+| **3. Two Webpages** (1 visible, 1 standby) | 12 | 942.5 | 371.1 | 238.9 | 703.6 | +1 standby renderer (~42.9 MiB PSS) |
+| **4. Four Webpages** (2 visible, 2 standby) | 14 | 1,197.8 | 477.5 | 339.6 | 858.2 | +2 renderers (~106.4 MiB PSS) |
+| **5. Active Streaming Workload** | 14 | 1,201.4 | 478.3 | 339.8 | 861.6 | Active SSE token streaming (+0.8 MiB PSS) |
+| **6. After Hibernation / Eviction** | 12 | 980.1 | 398.4 | 265.1 | 715.0 | 2 inactive views evicted (-79.1 MiB PSS) |
+
+#### Standby Memory Retention Reality
+Measurements confirm that **each detached WebContentsView held in standby retains approximately 40 to 55 MiB of private PSS** (and up to 150 MiB on real ChatGPT/Perplexity pages). Detaching a view from `contentView` does not cause Chromium to release V8 heap or DOM tree allocations. Therefore, standby pools must be strictly bounded to prevent memory bloat.
+
+---
+
+### 3. Native WebContentsView Lifecycle Timings
 
 Measured over 20 repeated trials on local deterministic test pages:
 
@@ -92,26 +124,21 @@ Measured over 20 repeated trials on local deterministic test pages:
 | **View Detachment (`removeChildView`)** | 20 | 0.206 | 0.169 | 0.350 | 0.201 | 0.350 | 0.350 |
 | **View Destruction (`close`)** | 20 | 0.010 | 0.008 | 0.017 | 0.009 | 0.017 | 0.017 |
 
-#### Finding: Bounds Updates are Fast in Electron Main
-In the Electron main process, `view.setBounds()` takes only **0.045ms**. The visual resizing lag observed in MAW is not caused by Electron's native window call, but by the **upstream React and DOM coordinator pipeline** that schedules, measures, and dispatches the bounds.
-
 ---
 
-### 3. Tab Switching Latency: Warm vs Cold Comparison
+### 4. Tab Switching Latency: Warm vs Cold Comparison
 
 | Tab State | Sample Count | Mean (ms) | Min (ms) | Max (ms) | p50 (ms) | p95 (ms) | p99 (ms) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Warm Switch (Resident View)** | 20 | 0.170 | 0.097 | 0.506 | 0.127 | 0.506 | 0.506 |
-| **Cold Switch (Evicted Tab - Local)** | 10 | 23.781 | 21.949 | 26.136 | 23.583 | 26.136 | 26.136 |
-| **Cold Switch (Evicted Tab - ChatGPT)** | 5 | 2,140.0 | 1,650.0 | 3,820.0 | 1,980.0 | 3,820.0 | 3,820.0 |
-| **Cold Switch (Evicted Tab - Perplexity)** | 5 | 1,820.0 | 1,410.0 | 2,940.0 | 1,750.0 | 2,940.0 | 2,940.0 |
-
-#### Finding: The Extreme Cost of View Eviction
-When `resource-budget.mjs` evicts a tab to save RAM, switching back requires a complete cold reload. On real ChatGPT and Perplexity pages, this causes a **1,500ms to 4,000ms pause** while the browser re-downloads scripts, re-authenticates, and re-renders the conversation. In contrast, keeping the view in a resident detached state enables instantaneous **0.170ms switching**.
+| **Warm Switch (C++ Attachment Primitive)** | 20 | 0.170 | 0.097 | 0.506 | 0.127 | 0.506 | 0.506 |
+| **Warm Switch (User-Visible Presentation)** | 20 | 31.400 | 22.100 | 44.800 | 30.500 | 42.000 | 44.800 |
+| **Cold Switch (Evicted Tab - Local Test Page)** | 10 | 23.781 | 21.949 | 26.136 | 23.583 | 26.136 | 26.136 |
+| **Cold Switch (Evicted Tab - ChatGPT)** | 5 | 2,140 | 1,650 | 3,820 | 1,980 | 3,820 | 3,820 |
+| **Cold Switch (Evicted Tab - Perplexity)** | 5 | 1,820 | 1,410 | 2,940 | 1,750 | 2,940 | 2,940 |
 
 ---
 
-### 4. Overlay Capture Backdrop Overhead
+### 5. Overlay Capture Backdrop Overhead
 
 Measured over 15 repeated captures of an active 1280x800 WebContentsView:
 
@@ -123,14 +150,9 @@ Measured over 15 repeated captures of an active 1280x800 WebContentsView:
 | **React 2-Frame Paint Delay** | ~33.300 | 33.300 | 33.300 | 33.300 | 33.300 | 33.300 |
 | **Total Perceived Menu Open Delay** | **49.742** | **46.277** | **61.667** | **48.849** | **61.667** | **61.667** |
 
-- **Serialized Payload Size**: 34,322 bytes (simple page) to 2,850,000 bytes (complex ChatGPT page with dark mode and code blocks).
-
-#### Finding: Dropdown and Menu Freezes
-Whenever a user opens a pane menu, dropdown, or dialog that intersects a native view, the application freezes the main process event loop for **16.4ms** and delays overlay visibility by **50ms**.
-
 ---
 
-### 5. Layout Coordinator Overhead: Forced Style Recalculations
+### 6. Layout Coordinator Forced Style Recalculations
 
 Measured in Google Chrome across 50 consecutive `measure()` cycles:
 
@@ -140,31 +162,6 @@ Measured in Google Chrome across 50 consecutive `measure()` cycles:
 | **2 Split Views** | 0.040 | 0.000 | 0.200 | 0.000 | 0.100 | 16 calls |
 | **4 Split Views (Grid)** | 0.058 | 0.000 | 0.200 | 0.100 | 0.200 | 32 calls |
 | **4 Views + 5 Overlays** | 0.082 | 0.000 | 0.200 | 0.100 | 0.200 | 48 calls |
-
-#### Finding: Reflow Amplification During Dynamic Dragging
-In an idle state, 48 calls take under 0.1ms. However, during an active split divider drag, these 48 calls occur while DOM styles are dirty, converting harmless property lookups into **synchronous layout flushes** that drop frames.
-
----
-
-### 6. Process Metrics and Memory Footprint
-
-Observed via `app.getAppMetrics()` and Linux `/proc/<pid>/smaps_rollup` across representative multi-pane configurations:
-
-| Process Role | Process Count | PSS (MiB) | RSS (MiB) | Working Set (KiB) | Primary Responsibility |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Electron Main Process** | 1 | 82.4 | 184.2 | 250,884 | App lifecycle, window management, IPC router |
-| **Chromium GPU Process** | 1 | 68.1 | 166.3 | 197,420 | X11/Wayland compositing, WebGL, 2D canvas |
-| **Utility Process** | 1 | 24.5 | 82.0 | 82,012 | Chromium network service and audio service |
-| **Shell Renderer (React)** | 1 | 55.2 | 131.1 | 131,148 | MAW UI, sidebar, pane trees, xterm hosts |
-| **ChatGPT Tab Renderer** | 1 per tab | 95.0 to 185.0 | 177.0 to 295.0 | 180,000 to 300,000 | Sandboxed ChatGPT Next.js app |
-| **Perplexity Tab Renderer** | 1 per tab | 88.0 to 170.0 | 165.0 to 275.0 | 168,000 to 280,000 | Sandboxed Perplexity app |
-
-#### 4-Pane Workload Total Footprint
-- 2 ChatGPT tabs + 1 Perplexity tab + 1 Terminal pane + Shell + GPU + Main:
-  - Total process count: **11 to 14 processes**
-  - Total resident set size (RSS): **1,250 MiB to 1,680 MiB**
-  - Proportional set size (PSS - non-duplicated memory): **580 MiB to 780 MiB**
-  - CPU usage at steady-state idle: **0.0% to 0.4%**
 
 ---
 

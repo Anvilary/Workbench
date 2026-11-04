@@ -1,21 +1,109 @@
-# Optimization Plan: Embedded Webpage Responsiveness in MAW
+# Revised Optimization Plan: Balanced Responsiveness, Resource Efficiency, and Session Preservation
 
-## Strategic Overview
+## Strategic Overview and Guiding Principles
 
-This plan outlines concrete, measurable architectural improvements to eliminate overhead and latency in MAW's embedded browser surfaces (ChatGPT and Perplexity).
+This revised plan addresses the owner's primary mandate:
+**MAW must deliver excellent webpage responsiveness while consuming the least practical CPU, RAM, GPU memory, and electrical power.**
 
-The core principle is:
-**Preserve Chromium's raw native performance while eliminating the overhead introduced by MAW's React coordination, IPC chatter, premature eviction, and overlay workarounds.**
+Performance optimizations that cause unnecessary memory retention, continuous background CPU wakeups, or excessive GPU texture allocation are explicitly rejected.
 
-All proposals strictly adhere to the project constraints:
-1. No weakening of Chromium sandboxing, site isolation, or web security.
-2. Zero compromise of PTY persistence or terminal supervisor integrity.
-3. Zero overlap or regression with the parallel UX stabilization work.
-4. Measurable before-and-after benchmark gates for every modification.
+### Architectural Constraints
+1. **No Global Unthrottling**: Background browser tabs must remain subject to Chromium's resource-saving background throttling by default.
+2. **Strict Standby Ceilings**: Standby tabs held in memory must be strictly bounded to prevent memory bloat; detached views still consume 40MB to 150MB PSS each.
+3. **Zero Polling**: Background monitors and coordinators must be strictly event-driven; timers and heartbeats must be eliminated.
+4. **Explicit State Preservation Guarantees**: Differentiate what state is guaranteed to survive versus what is necessarily discarded when a view is evicted.
+5. **Full Lane A Compatibility**: All optimizations must align with Lane A's completed UX stabilization (commit `b56b4f3a76e033e07d722bf8810cf19aa36a8ce3`), including its 8-pane ceiling, consolidated menus, and tab scrolling.
+6. **No Speculative Flags or Weakened Security**: Sandboxing, site isolation, and web security remain non-negotiable.
 
 ---
 
-## Candidate Improvements
+## Resource Policy Specification
+
+```
+ ┌────────────────────────────────────────────────────────────────────────┐
+ │                      MAW RESOURCE POLICY TIERS                         │
+ ├────────────────────────────────────────────────────────────────────────┤
+ │ TIER 1: ACTIVE VISIBLE (In a visible pane)                             │
+ │   - Attached to contentView, visible, full hardware compositing        │
+ │   - Immediate pointer, keyboard, and layout synchronization            │
+ │   - Allocated: 1 to 4 panes (up to 8 in expanded split layouts)        │
+ ├────────────────────────────────────────────────────────────────────────┤
+ │ TIER 2: BOUNDED STANDBY (Recently viewed, detached from window)        │
+ │   - Detached from contentView, hidden, backgroundThrottling: true      │
+ │   - Retains V8 heap, DOM tree, scroll position, and draft text         │
+ │   - Strict quota: max 1 to 2 tabs (Normal RAM), 0 tabs (Critical RAM)  │
+ │   - Zero network reload required when switching back                   │
+ ├────────────────────────────────────────────────────────────────────────┤
+ │ TIER 3: HIBERNATED (Evicted under resource constraints)                │
+ │   - WebContentsView closed, renderer process and GPU textures freed    │
+ │   - Saves URL, workspace association, and metadata to durable store    │
+ │   - Restored lazily on user selection via standard web reload          │
+ └────────────────────────────────────────────────────────────────────────┘
+```
+
+### 1. Resident View Budgets and Quotas
+
+Resident views (the sum of Active Visible and Standby Detached views) must be strictly governed by available system memory, measured dynamically via `os.freemem()` and `os.totalmem()`:
+
+| System Memory State | Available RAM Condition | Max Visible Panes | Max Standby Tabs | Resident Ceiling |
+| :--- | :--- | :---: | :---: | :---: |
+| **Normal State** | > 4.0 GB free and > 25% free | Up to 4 (or 8) | **2 tabs** | Visible + 2 (Max 6) |
+| **Moderate Pressure** | 2.0 GB to 4.0 GB free | Up to 4 | **1 tab** | Visible + 1 (Max 4) |
+| **High Pressure** | 1.0 GB to 2.0 GB free | Up to 2 | **0 tabs** | Visible only (Max 2) |
+| **Critical Pressure** | < 1.0 GB free or < 8% free | 1 pane | **0 tabs** | 1 active view only |
+
+### 2. Memory Pressure Handling and Anti-Thrashing Hysteresis
+
+To prevent "eviction thrashing" (where rapid tab switching causes continuous destruction and recreation of renderer processes):
+- **Dwell Time Threshold**: A detached tab must remain inactive for at least **60 seconds** before becoming eligible for eviction, unless system memory is in Critical Pressure (< 1GB free).
+- **High-Water vs Low-Water Trimming**:
+  - Eviction is evaluated only when opening a new tab or when system free memory drops below a tier threshold.
+  - Eviction trims the oldest standby tab, never all background tabs at once.
+- **Priority Preservation Order**:
+  1. Active visible panes (Never evictable).
+  2. Tab with user input modified within the last 3 minutes (Protected from eviction).
+  3. Recently viewed ChatGPT or Perplexity tab within 60-second dwell window (Protected).
+  4. Oldest idle standby tab (First candidate for Tier 3 Hibernation).
+
+### 3. CPU Idling Strategy
+
+MAW must draw near-zero CPU when the user is not actively interacting:
+- **Eliminate Coordinator Heartbeat**: Remove the 1 Hz `setInterval` in [packages/web/src/agency/native-layout-coordinator.ts:191](file:///home/user/Projects/My-Amazing-Workspace-webview-research/packages/web/src/agency/native-layout-coordinator.ts#L191). DOM changes and geometry shifts are already fully captured by `ResizeObserver` and window resize listeners.
+- **Background Tab Throttling**: Keep `backgroundThrottling: true` enabled on all native views. Inactive background tabs must consume **0.0% CPU**.
+- **Steady-State Idle Budget**: Total MAW process tree CPU usage while idle must remain **<= 0.5% CPU**.
+
+### 4. Background Execution Behavior and Conservative Streaming Handling
+
+- **Chromium Throttling Semantics**:
+  - Network sockets (TCP/TLS) for Server-Sent Events (SSE) and WebSockets run in Chromium's separate Network Process and are **not dropped** by background throttling.
+  - Throttling primarily clamps JavaScript `setTimeout` loops to 1000ms and halts `requestAnimationFrame`.
+- **Conservative Dwell Grace Window**:
+  - Rather than globally disabling background throttling (which permanently burns battery and CPU), implement an **ephemeral 30-second dwell grace window**:
+  - When the user switches away from a ChatGPT or Perplexity tab, the view remains attached to the internal coordinator for 30 seconds before aggressive detachment occurs. This allows in-flight streaming tokens to complete visual processing without keeping the view unthrottled indefinitely.
+- **Zero Script Injection**: No undocumented DOM scrapers or site-internal hooks are injected. Throttling management relies strictly on Electron's standard window visibility and attachment APIs.
+
+### 5. GPU Memory Considerations
+
+- **Detachment Releases Compositing Passes**: When a tab moves to Standby, detaching it from `win.contentView` stops Chromium's compositor from scheduling redundant render passes, saving GPU cycles.
+- **Eliminate Base64 Texture Allocation**: Full-page `capturePage()` + `toDataURL()` creates multi-megabyte uncompressed pixel buffers in both GPU and V8 heap memory. Replacing full captures with sub-bounds clipping or raw memory handles eliminates transient GPU texture spikes.
+
+### 6. Session Preservation Guarantees and Explicit Limitations
+
+#### Guaranteed Session Preservation (Tiers 1 and 2)
+- While a tab is in **Active** or **Standby** state:
+  - 100% of DOM nodes, conversation scroll position, form input, and unsubmitted prompt text are preserved in memory.
+  - Reactivated tabs display immediately without network requests, reloading, or token re-verification.
+
+#### Explicit Limitations of Eviction (Tier 3 Hibernation)
+- When a tab is evicted due to system memory pressure:
+  - The underlying Chromium renderer process is closed to protect OS stability.
+  - In-memory JavaScript heap state, undo history, and transient unsubmitted input are necessarily erased.
+  - **Preservation Fallback**: MAW preserves the durable tab descriptor in `agency-web-tabs.json` (UUID, workspaceId, title, order, URL). Upon reactivation, the tab re-navigates to its saved HTTPS URL.
+  - If a user was drafting an unsubmitted message, that ephemeral DOM text cannot be recovered after process teardown unless explicitly submitted.
+
+---
+
+## Revised Candidate Improvements
 
 ### Optimization 1: Direct Fast-Path Bounds Resizing During Split Drag
 - **Current Behavior**:
@@ -81,136 +169,96 @@ All proposals strictly adhere to the project constraints:
 
 ---
 
-### Optimization 4: Selective Background Throttling Bypass During Active AI Streaming
+### Optimization 4: Streaming-Aware Background Dwell Window
 - **Current Behavior**:
-  All `WebContentsView` instances are created with `backgroundThrottling: true` in [packages/desktop/main.mjs:646](file:///home/user/Projects/My-Amazing-Workspace-webview-research/packages/desktop/main.mjs#L646). When the user asks ChatGPT or Perplexity a question and switches to a terminal pane, Chromium throttles background timers to 1000ms and halts `requestAnimationFrame`. Streaming token rendering is clamped until the user refocuses the tab.
-- **Root Cause**:
-  Static global throttling configuration that does not distinguish between idle background tabs and actively generating AI streams.
-- **Proposed Implementation**:
-  1. Detect active streaming generations: observe network activity or tab activity state (`activity: 'generating'`).
-  2. When an AI tab is in the background while actively generating: dynamically set `view.webContents.setBackgroundThrottling(false)`.
-  3. Once generation finishes (or activity returns to `'idle'`), re-enable `setBackgroundThrottling(true)` to ensure low idle CPU and battery conservation.
-- **Expected Measurable Improvement**:
-  ChatGPT and Perplexity responses generate at full throughput in background panes while the user works uninterrupted in the terminal. No catch-up stutter when refocusing.
+  Detaching an inactive browser view immediately clamps background timers and halts rAF.
+- **Revised Approach**:
+  Do not globally disable background throttling. Instead, maintain an ephemeral **30-second dwell grace window** during which background throttling is delayed after a view is detached from active display. Once the 30-second grace window elapses without interaction, normal background throttling is enforced.
+- **Expected Improvement**:
+  In-flight AI streaming token queues finish processing without visual catch-up stutter, while guaranteeing 0.0% background CPU consumption once idle.
 - **Confidence Level**: High.
 - **Complexity**: Low.
-- **Regression Risk**: Low (throttling is restored as soon as streaming completes).
-- **Security Implications**: None.
-- **UX Lane Compatibility**: Fully compatible. Leverages existing activity state contracts.
-- **Validation Benchmark**: `bench:concurrent-stream` measuring token delivery intervals in background vs foreground views.
+- **Regression Risk**: Very Low.
+- **Validation Benchmark**: `bench:concurrent-stream` measuring token completion time in background panes.
 
 ---
 
 ### Optimization 5: Decoupled Tab Sync and Elimination of Circular IPC Chatter
 - **Current Behavior**:
-  [packages/web/src/agency/useNativeChatGptTabs.ts:27](file:///home/user/Projects/My-Amazing-Workspace-webview-research/packages/web/src/agency/useNativeChatGptTabs.ts#L27) runs on every `tabs` array identity change, iterating all tabs and sending `command({ type: 'update' })` and `retain`. Electron responds with `ready` events, which triggers coordinator `schedule()`, leading to redundant `measure()` and `layout` IPC commands.
+  [packages/web/src/agency/useNativeChatGptTabs.ts:27](file:///home/user/Projects/My-Amazing-Workspace-webview-research/packages/web/src/agency/useNativeChatGptTabs.ts#L27) runs on every `tabs` array identity change, iterating all tabs and sending `command({ type: 'update' })` and `retain`. Electron responds with `ready`, which resets `lastSerialized` in [`native-layout-coordinator.ts:210`](file:///home/user/Projects/My-Amazing-Workspace-webview-research/packages/web/src/agency/native-layout-coordinator.ts#L210), scheduling a redundant `measure()` and dispatching a `layout` IPC command.
 - **Root Cause**:
   Coupling of logical tab metadata updates (unread badges, titles, activity states) with low-level native view lifecycle commands.
 - **Proposed Implementation**:
   1. In `useNativeChatGptTabs`, track previous URL and provider per tab ID. Dispatch `update` IPC ONLY if the URL or provider actually changed.
   2. In `NativeLayoutCoordinator`, ignore `ready` events for views that are already recorded as `isReady = true`, eliminating redundant `measure()` and `layout` dispatches.
 - **Expected Measurable Improvement**:
-  Reduces IPC traffic between renderer and main process by 70% to 90% during active terminal streaming. Eliminates idle layout reflow triggers.
+  Eliminates redundant IPC message storms between renderer and main process during active terminal execution.
 - **Confidence Level**: High.
 - **Complexity**: Low.
 - **Regression Risk**: Low.
-- **Security Implications**: None.
-- **UX Lane Compatibility**: Fully compatible.
-- **Validation Benchmark**: IPC message count and CPU utilization during terminal burst benchmarks.
+- **Validation Benchmark**: IPC message frequency counter during concurrent terminal tests.
 
 ---
 
-### Optimization 6: Layout Coordinator Reflow Pruning and Style Caching
+### Optimization 6: Coordinator Reflow Pruning and Heartbeat Elimination
 - **Current Behavior**:
-  [packages/web/src/agency/native-layout-coordinator.ts:294](file:///home/user/Projects/My-Amazing-Workspace-webview-research/packages/web/src/agency/native-layout-coordinator.ts#L294) recursively calls `window.getComputedStyle(parent)` and `parent.getBoundingClientRect()` on every ancestor element for every view on every measurement frame (8 to 48 calls per frame).
-- **Root Cause**:
-  Checking overflow styles and bounds dynamically on every animation frame even when ancestor DOM hierarchy has not changed.
+  [packages/web/src/agency/native-layout-coordinator.ts:191](file:///home/user/Projects/My-Amazing-Workspace-webview-research/packages/web/src/agency/native-layout-coordinator.ts#L191) runs an unconditional 1 Hz `setInterval` heartbeat, and lines 294-305 recursively traverse all parent elements calling `getComputedStyle(parent)` on every frame (8 to 48 calls).
 - **Proposed Implementation**:
-  1. Cache parent element overflow properties (`overflowX`, `overflowY`) and only re-query when ancestor DOM classes change.
-  2. Use a single bounding rect lookup relative to the workspace container element rather than recursing up the full document tree.
-  3. Replace the 1 Hz `setInterval` heartbeat with event-driven ResizeObserver signals.
-- **Expected Measurable Improvement**:
-  Reduces forced style recalculations from 48 calls/frame to 4 calls/frame (1 per view), saving 0.5ms to 2.0ms of main thread time per frame during layout shifts.
+  1. Remove the 1 Hz `setInterval` heartbeat entirely.
+  2. Cache ancestor element overflow properties, invalidating only when DOM hierarchy changes.
+  3. Compute view bounds directly relative to the workspace container element.
+- **Expected Improvement**:
+  Eliminates background timer wakeups during user idle. Reduces forced style recalculations from up to 48 calls/frame to 1 call per view.
 - **Confidence Level**: High.
 - **Complexity**: Low.
 - **Regression Risk**: Low.
-- **Security Implications**: None.
-- **UX Lane Compatibility**: Fully compatible.
-- **Validation Benchmark**: `bench:coordinator-reflow` counting `getComputedStyle` invocations.
+- **Validation Benchmark**: Chrome tracing profile measuring style recalc counts and CPU timer wakeups.
 
 ---
 
 ### Optimization 7: Uncontrolled CSS Custom Property Sidebar Dragging
 - **Current Behavior**:
   In [packages/web/src/agency/AgencyApp.tsx:249](file:///home/user/Projects/My-Amazing-Workspace-webview-research/packages/web/src/agency/AgencyApp.tsx#L249), `onPointerMove` calls `setSidebarWidth(clamped)` on every pixel of mouse movement, causing full-tree React re-renders at up to 144Hz.
-- **Root Cause**:
-  Storing high-frequency transient drag coordinates in root application React state.
 - **Proposed Implementation**:
-  1. During active sidebar dragging, update a CSS variable `--agency-sidebar-width` directly on the root DOM element.
-  2. Commit the final width to `AgencyApp` React state and `localStorage` only on `pointerup`.
-- **Expected Measurable Improvement**:
-  Completely eliminates React re-renders of the workspace and split pane tree during sidebar resizing.
+  Update a CSS variable `--agency-sidebar-width` directly on the root DOM element during dragging; commit to React state only on `pointerup`.
+- **Expected Improvement**:
+  Zero React re-renders or commits of the workspace or split pane tree during sidebar dragging.
 - **Confidence Level**: High.
 - **Complexity**: Low.
 - **Regression Risk**: Low.
-- **Security Implications**: None.
-- **UX Lane Compatibility**: Fully compatible. Does not modify sidebar menus or workspace logic.
-- **Validation Benchmark**: React Profiler commit frequency during sidebar dragging.
+- **Validation Benchmark**: React Profiler commit count during sidebar resizing.
 
 ---
 
-## Risk and Expected-Impact Ranking
+## Combined Priority Ranking Matrix
 
-| Rank | Candidate Improvement | Expected Real-World Impact | Implementation Complexity | Regression Risk | Confidence |
-| :---: | :--- | :---: | :---: | :---: | :---: |
-| **1** | **Opt 3: 3-Tier Tab Lifecycle (Standby Pool)** | **Highest** (2000ms -> 0.17ms tab switch) | Medium | Low | High |
-| **2** | **Opt 1: Direct Fast-Path Bounds Resizing** | **High** (resizing lag 50ms -> 16ms) | Medium | Low | High |
-| **3** | **Opt 2: Overlay Capture Backdrop Optimization** | **High** (menu open lag 50ms -> 10ms) | Medium | Medium | High |
-| **4** | **Opt 4: Streaming-Aware Background Throttling** | **High** (unthrottled background AI generations) | Low | Low | High |
-| **5** | **Opt 5: Circular IPC Chatter Elimination** | **Medium** (70-90% less IPC during terminal runs) | Low | Low | High |
-| **6** | **Opt 6: Coordinator Reflow Pruning** | **Medium** (eliminates synchronous style flushes) | Low | Low | High |
-| **7** | **Opt 7: Uncontrolled CSS Sidebar Dragging** | **Medium** (zero React commits during sidebar drag) | Low | Low | High |
+Optimizations are ranked by their **combined responsiveness gains, resource savings, implementation complexity, and regression risk**:
 
----
-
-## Phased Implementation Sequence
-
-```
- ┌────────────────────────────────────────────────────────────────────────┐
- │ PHASE P1: LOW-RISK HYGIENE (Immediate Wins)                            │
- │                                                                        │
- │  1. Opt 5: Decouple tab metadata sync and eliminate circular IPC.     │
- │  2. Opt 6: Prune coordinator ancestor style traversal and reflows.    │
- │  3. Opt 7: Convert sidebar drag to CSS custom property.                │
- │  -> Zero architectural risk; immediately reduces CPU and IPC chatter.  │
- └──────────────────────────────────┬─────────────────────────────────────┘
-                                    │
-                                    ▼
- ┌────────────────────────────────────────────────────────────────────────┐
- │ PHASE P2: RESPONSIVENESS AND GEOMETRY PIPELINE                         │
- │                                                                        │
- │  1. Opt 1: Direct fast-path bounds updates during divider drag.        │
- │  2. Opt 2: Optimized overlay visual freeze / sub-bounds clipping.      │
- │  -> Delivers smooth 60/120Hz divider resizing and snappy menu opens.   │
- └──────────────────────────────────┬─────────────────────────────────────┘
-                                    │
-                                    ▼
- ┌────────────────────────────────────────────────────────────────────────┐
- │ PHASE P3: LIFECYCLE AND AI STREAMING ENGINE                            │
- │                                                                        │
- │  1. Opt 3: 3-Tier WebContentsView lifecycle (Active/Standby/Hibernate).│
- │  2. Opt 4: Streaming-aware background throttling bypass.               │
- │  -> Solves tab-switching lag and ensures background AI streaming.      │
- └────────────────────────────────────────────────────────────────────────┘
-```
+| Rank | Candidate Optimization | Responsiveness Gain | Resource Efficiency Impact | Complexity | Risk | Recommended Slice |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: |
+| **1** | **Opt 6: Coordinator Reflow Pruning & Heartbeat Removal** | Medium | **High** (Eliminates idle wakeups & reflows) | Low | Low | **Slice 1 (First)** |
+| **2** | **Opt 5: IPC Chatter Elimination** | Medium | **High** (Stops circular IPC during runs) | Low | Low | **Slice 1 (First)** |
+| **3** | **Opt 7: CSS Variable Sidebar Drag** | Medium | **Medium** (Zero React commits during drag) | Low | Low | **Slice 1 (First)** |
+| **4** | **Opt 1: Fast-Path Divider Drag Bounds** | **High** (Lag 50ms -> 16ms) | **Medium** (Bypasses React DOM tree) | Medium | Low | **Slice 2** |
+| **5** | **Opt 4: Streaming Dwell Grace Window** | **High** (Smooth AI streams) | **High** (Retains background throttling) | Low | Low | **Slice 2** |
+| **6** | **Opt 2: Overlay Capture Backdrop Replacement** | **High** (Menu open lag 50ms -> 10ms) | **High** (Eliminates 3MB base64 & GC churn) | Medium | Medium | **Slice 3** |
+| **7** | **Opt 3: Bounded Standby Pool (Max 2 Tabs)** | **Highest** (Switch 2000ms -> 30ms) | **High Risk if Unbounded** (Capped at 2 tabs) | Medium | Medium | **Slice 3** |
 
 ---
 
-## Deployment and Rollback Strategy
+## Recommended Small First Implementation Slice (Slice 1)
 
-Every optimization is designed for risk-free deployment behind optional environment variables or safe defaults:
-- `MAW_FAST_BOUNDS=1`: Enables fast-path divider bounds updates (defaults to enabled in development, fallback to existing coordinator path).
-- `MAW_MAX_RESIDENT_VIEWS=N`: Allows configuring the standby view pool size (defaults to 8-12 tabs on machines with >= 16GB RAM).
-- `MAW_STREAM_UNTHROTTLE=1`: Enables dynamic background unthrottling during active generations.
+To deliver immediate responsiveness and CPU efficiency gains **without modifying native tab lifecycle semantics or risking regressions**:
 
-If any regression occurs, each optimization can be independently rolled back without affecting persistent workspace data or PTY sessions.
+### Slice 1 Components:
+1. **Remove Coordinator Heartbeat**: Delete the 1 Hz `setInterval` in `native-layout-coordinator.ts`.
+2. **Prune Coordinator Ancestor Reflows**: Cache ancestor overflow styles to eliminate recursive `getComputedStyle` calls.
+3. **Deduplicate Tab IPC**: In `useNativeChatGptTabs.ts`, dispatch `update` only when URLs change, and ignore redundant `ready` events.
+4. **CSS Custom Property Sidebar Drag**: Convert `AgencyApp.tsx` sidebar resizing to update CSS custom variables during drag.
+
+### Why Slice 1 is Ideal:
+- Modifies zero lifecycle or eviction code.
+- Touches zero Lane A UX stabilization files.
+- Immediately drops idle CPU wakeups to zero.
+- Immediately stops IPC chatter during coding agent execution.
+- Delivers measurable latency reductions with near-zero regression risk.
