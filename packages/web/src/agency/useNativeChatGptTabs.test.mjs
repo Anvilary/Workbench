@@ -13,9 +13,14 @@ import { useNativeChatGptTabs } from './src/agency/useNativeChatGptTabs.ts';
 
 window.ipcCommands = [];
 window.navigateRequests = [];
+window.failFilter = null;
+window.navigateFailFilter = null;
 
 window.mawChatGpt = {
   command(cmd) {
+    if (window.failFilter && window.failFilter(cmd)) {
+      return Promise.reject(new Error('Simulated bridge error: ' + cmd.type));
+    }
     window.ipcCommands.push(JSON.parse(JSON.stringify(cmd)));
     return Promise.resolve({ ok: true });
   },
@@ -34,6 +39,9 @@ function TestHarness() {
 
   const mockRequest = (payload) => {
     window.navigateRequests.push(payload);
+    if (window.navigateFailFilter && window.navigateFailFilter(payload)) {
+      return Promise.reject(new Error('Simulated backend error: ' + payload.type));
+    }
     return Promise.resolve({ ok: true });
   };
 
@@ -216,4 +224,92 @@ test('useNativeChatGptTabs eliminates redundant update and retain IPC', { timeou
   assert.equal(commands.length, 0, 'committed URL update does not send redundant update IPC');
 
   assert.equal(errors.length, 0, 'no page errors during execution');
+});
+
+test('useNativeChatGptTabs handles failure, retry, and backend persistence rollback', { timeout: 60000 }, async (t) => {
+  const executablePath = browserExecutable();
+  if (!executablePath) {
+    t.skip('Chromium is not installed');
+    return;
+  }
+
+  const bundle = await build({
+    stdin: { contents: fixture, loader: 'tsx', resolveDir: process.cwd() + '/packages/web' },
+    bundle: true,
+    write: false,
+    format: 'esm',
+    logLevel: 'silent',
+  });
+
+  const server = createServer((req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+    if (url.pathname === '/bundle.js') {
+      res.setHeader('Content-Type', 'text/javascript');
+      res.end(bundle.outputFiles[0].text);
+      return;
+    }
+    res.setHeader('Content-Type', 'text/html');
+    res.end('<!doctype html><html><body><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>');
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const browser = await chromium.launch({ headless: true, executablePath });
+  t.after(async () => {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  });
+
+  const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+  await page.goto('http://127.0.0.1:' + server.address().port);
+  await page.waitForFunction(() => typeof window.setTabs === 'function');
+
+  // Test Case A: Bridge update fails initially, retries automatically after recovery
+  let failAttempts = 2;
+  await page.evaluate(() => {
+    window.ipcCommands = [];
+    window.failFilter = (cmd) => {
+      if (cmd.type === 'update' && cmd.id === 'tab-fail') {
+        if (window.failCount === undefined) window.failCount = 0;
+        window.failCount++;
+        return window.failCount <= 2;
+      }
+      return false;
+    };
+    window.setTabs([
+      { id: 'tab-fail', workspaceId: 'ws-1', url: 'https://chatgpt.com/', title: 'Failing Tab', runtimeState: 'client-managed', closedAt: null },
+    ]);
+    window.setSynchronized(true);
+  });
+
+  // Wait for retry to execute and succeed after the 2 failures
+  await page.waitForFunction(() => window.ipcCommands.some((c) => c.type === 'update' && c.id === 'tab-fail'), { timeout: 10000 });
+  let commands = await page.evaluate(() => window.ipcCommands);
+  assert(commands.some((c) => c.type === 'update' && c.id === 'tab-fail'), 'update was retried and succeeded');
+
+  // Test Case B: Committed navigation where backend persistence fails rolls back optimistic confirmation
+  await page.evaluate(() => {
+    window.ipcCommands = [];
+    window.navigateRequests = [];
+    // Configure backend request to fail for tab-fail
+    window.navigateFailFilter = (req) => req.tabId === 'tab-fail';
+    window.onBridgeState({ type: 'committed', id: 'tab-fail', url: 'https://chatgpt.com/c/rejected-nav' });
+  });
+
+  await page.waitForFunction(() => window.navigateRequests.length === 1);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  // Since backend persistence failed, the store still has old url 'https://chatgpt.com/'
+  // When a store snapshot arrives with the old url, synchronization MUST NOT be suppressed
+  await page.evaluate(() => {
+    window.ipcCommands = [];
+    window.failFilter = null;
+    window.setTabs([
+      { id: 'tab-fail', workspaceId: 'ws-1', url: 'https://chatgpt.com/c/authoritative-nav', title: 'Authoritative', runtimeState: 'client-managed', closedAt: null },
+    ]);
+  });
+
+  await page.waitForFunction(() => window.ipcCommands.some((c) => c.type === 'update' && c.id === 'tab-fail' && c.url === 'https://chatgpt.com/c/authoritative-nav'));
+  commands = await page.evaluate(() => window.ipcCommands);
+  const authUpdate = commands.find((c) => c.id === 'tab-fail' && c.url === 'https://chatgpt.com/c/authoritative-nav');
+  assert(authUpdate, 'subsequent authoritative update was NOT suppressed after backend persistence failure');
 });
