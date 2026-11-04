@@ -6,7 +6,7 @@ This final report synthesizes the complete research, optimization, and validatio
 
 ### The Problem Baseline
 Prior to this initiative, embedded AI webpages in MAW exhibited several severe performance bottlenecks compared to standalone Chromium:
-- **Idle CPU Overhead**: 2.8% to 4.2% continuous CPU usage on an idle workspace, driven by a 60 Hz layout verification polling loop in the layout coordinator.
+- **Idle CPU Overhead**: 2.8% to 4.2% continuous CPU usage on an idle workspace, driven by unconditional 1 Hz layout polling in the coordinator triggering forced reflows and redundant IPC updates even when idle or hidden.
 - **Forced Synchronous Layouts**: Over 16 `getComputedStyle()` and DOM layout queries per coordinator tick, triggering layout thrashing during scrolling and animation.
 - **Redundant IPC Flooding**: Every React tab state update dispatched redundant `update` and `retain` commands for all tabs regardless of whether their navigation target changed.
 - **Pane Resizing Latency**: Resizing pane dividers forced continuous React virtual DOM diffing and re-renders of the entire workspace tree at 60-144 Hz, resulting in 16-33 ms frame delays and UI stutter.
@@ -65,7 +65,7 @@ afb2aaf docs(perf): publish webview performance audit, baseline, plan, and bench
    - Replaced repeated `getComputedStyle()` lookups with batched overlay bounding box queries via `collectActiveOverlayRects()`.
    - Cached DOM clipping ancestor hierarchies (`clippingAncestorsCache`), invalidating only on DOM mutations or layout structure shifts.
    - Suppressed redundant `ready` IPC events if container position and dimensions are unchanged.
-   - Replaced continuous 60 Hz polling loops with an adaptive 1 Hz layout heartbeat during user idle.
+   - Replaced unconditional 1 Hz layout polling with an adaptive 1 Hz heartbeat that idles when hidden or viewless, while eliminating forced reflows during ticks.
 3. [packages/web/src/agency/AgencyApp.tsx](file:///home/user/Projects/My-Amazing-Workspace-webview-research/packages/web/src/agency/AgencyApp.tsx)
    - Implemented fast-path direct DOM mutation for sidebar dragging on `sidebarRef.current.style.width`.
    - Single authoritative React state commit and layout persistence on pointer release.
@@ -99,7 +99,7 @@ afb2aaf docs(perf): publish webview performance audit, baseline, plan, and bench
 - **Semantic Tab Diffing**: Prior to Slice 1, React's `useEffect` in `useNativeChatGptTabs.ts` executed on every array reference change, iterating over all tabs and dispatching IPC messages. We introduced a semantic equality check comparing tab identity, target URL, provider, open state, and lifecycle state. In addition, committed navigation URLs are pre-synchronized immediately upon IPC dispatch, preventing feedback loops. Redundant tab update IPC dropped to zero.
 - **Batched Overlay Rectangles**: Instead of querying `getComputedStyle()` repeatedly on every registered view, `collectActiveOverlayRects()` executes once per coordinator tick, querying `document.querySelectorAll()` for active modal and menu attributes (`[data-overlay-surface]`, `.monaco-dropdown`, `dialog[open]`). Style checks are performed only on elements whose bounding boxes intersect visible views.
 - **Clipping Ancestor Caching**: DOM tree traversal to find scrolling or clipping parents (`overflow: hidden|auto|scroll`) is cached in `clippingAncestorsCache`. A lightweight MutationObserver and layout observer invalidate this cache only when the DOM structure changes.
-- **Adaptive 1 Hz Heartbeat**: Replaced the continuous 60 Hz polling loop with an event-driven model. The coordinator relies on ResizeObserver and scroll listeners for active updates. When no geometry events occur, an adaptive heartbeat fires at 1 Hz purely as a safety net.
+- **Adaptive 1 Hz Heartbeat**: Replaced the baseline unconditional 1 Hz layout timer with an adaptive, event-driven model. The coordinator relies on ResizeObserver and scroll listeners for active updates. When no geometry events occur, an adaptive heartbeat fires at 1 Hz purely as a safety net (and exits early when the document is hidden or no views are active, eliminating forced reflows during idle). Note: Baseline coordinator heartbeat was 1 Hz unconditional, not 60 Hz; 60 Hz was an earlier misattribution referencing requestAnimationFrame loops.
 
 ### Slice 2: Fast-Path Direct DOM Pane Resizing
 - **Pointer-to-Flex Bypass**: Resizing split panes via `SplitDivider.tsx` previously scheduled `requestAnimationFrame` to invoke `onRatioChange` on every pointer move. This forced React to re-render the entire workspace tree at 60-144 Hz, causing frame drops under multi-pane load.
@@ -168,7 +168,7 @@ All measurements were conducted under identical test conditions: Ubuntu 24.04 LT
 | **Tab-Switch Latency (Hibernated)**| N/A | N/A | N/A | **~340 ms** | **Fast cold restore** |
 | **Tab Sync IPC Flooding** | O(N) duplicate | O(1) semantic | O(1) semantic | **O(1) semantic** | **Zero duplicate IPC** |
 | **Overlay Style Recalculations** | 16 calls / tick| 3 calls / tick | 3 calls / tick | **3 calls / tick** | **81.25% reduction** |
-| **Layout Heartbeat Frequency** | 60 Hz constant | 1 Hz adaptive | 1 Hz adaptive | **1 Hz adaptive** | **98.3% fewer polls**|
+| **Layout Heartbeat Frequency** | 1 Hz unconditional | 1 Hz adaptive | 1 Hz adaptive | **1 Hz adaptive** | **Zero idle reflows**|
 
 ---
 
