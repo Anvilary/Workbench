@@ -77,11 +77,32 @@ export function AgencyWorkspaceView({
   const creationTarget = useRef<string | null>(null);
   const pendingSplit = useRef<null | { paneId: string; direction: SplitDirection }>(null);
   const [createdTabs, setCreatedTabs] = useState<WorkspaceTab[]>([]);
+  const [closingTabIds, setClosingTabIds] = useState<ReadonlySet<string>>(() => new Set());
+  const closingInFlight = useRef<Set<string>>(new Set());
   const serverTabs = allWorkspaceTabs(sessions, webTabs, workspace.id, editorTabs);
-  const tabs = [...serverTabs.filter(tab => (tab.kind === 'web' ? tab.web.launchId : tab.kind === 'native' ? tab.session.launchId : undefined) !== creatingLaunch.current || !creatingLaunch.current),
-    ...createdTabs.filter(tab => !serverTabs.some(current => current.id === tab.id))];
+  const openServerTabs = serverTabs.filter((tab) => !closingTabIds.has(tab.id));
+  const tabs = [
+    ...openServerTabs.filter((tab) => (tab.kind === 'web' ? tab.web.launchId : tab.kind === 'native' ? tab.session.launchId : undefined) !== creatingLaunch.current || !creatingLaunch.current),
+    ...createdTabs.filter((tab) => !closingTabIds.has(tab.id) && !serverTabs.some((current) => current.id === tab.id)),
+  ];
   useEffect(() => {
-    setCreatedTabs(current => current.filter(tab => !serverTabs.some(row => row.id === tab.id)));
+    setCreatedTabs((current) => {
+      if (current.length === 0) return current;
+      const next = current.filter((tab) => !serverTabs.some((row) => row.id === tab.id));
+      return next.length === current.length ? current : next;
+    });
+    setClosingTabIds((current) => {
+      if (current.size === 0) return current;
+      const remaining = new Set<string>();
+      for (const id of current) {
+        if (serverTabs.some((row) => row.id === id)) {
+          remaining.add(id);
+        } else {
+          closingInFlight.current.delete(id);
+        }
+      }
+      return remaining.size === current.size ? current : remaining;
+    });
   }, [sessions, webTabs, editorTabs]);
   const openTabIds = tabs.map((t) => t.id);
   const defaultSelected = selectedWorkspaceTab(tabs)?.id;
@@ -629,20 +650,33 @@ export function AgencyWorkspaceView({
   }
 
   async function close(tab: WorkspaceTab) {
-    if (flight.current) return;
-    flight.current = true;
-    setBusy(true);
+    if (closingInFlight.current.has(tab.id)) return;
+    closingInFlight.current.add(tab.id);
+    setClosing(null);
+    setClosingTabIds((prev) => new Set(prev).add(tab.id));
+    if (tab.kind === 'editor') {
+      editorDraftStore.clearDraft(tab.id);
+      setUnsavedTabIds((prev) => {
+        if (!prev.has(tab.id)) return prev;
+        const next = new Set(prev);
+        next.delete(tab.id);
+        return next;
+      });
+    }
     try {
       await action(tab, 'close');
-      if (tab.kind === 'editor') {
-        editorDraftStore.clearDraft(tab.id);
-      }
-      setClosing(null);
-    } catch {
-      // Keep confirmation and error visible until the server confirms close
+    } catch (reason) {
+      // Backend rejected termination or request failed:
+      // Recoverable closing lifecycle rolls back optimistic removal and restores tab.
+      closingInFlight.current.delete(tab.id);
+      setClosingTabIds((prev) => {
+        const next = new Set(prev);
+        next.delete(tab.id);
+        return next;
+      });
+      setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
-      flight.current = false;
-      setBusy(false);
+      closingInFlight.current.delete(tab.id);
     }
   }
 
