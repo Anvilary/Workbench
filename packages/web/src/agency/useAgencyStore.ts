@@ -162,6 +162,10 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
         setData((old) => ({ ...old, layouts: { ...old.layouts, ...layoutsMap } }));
       } else if (message.type === 'agency.layout.changed') {
         setData((old) => {
+          const existing = old.layouts?.[message.workspaceId];
+          if (existing && existing.updatedAt > message.layout.updatedAt) {
+            return old;
+          }
           const nextWarnings = old.layoutWarnings ? { ...old.layoutWarnings } : undefined;
           if (nextWarnings && message.workspaceId in nextWarnings) {
             delete nextWarnings[message.workspaceId];

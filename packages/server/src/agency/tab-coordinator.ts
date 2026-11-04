@@ -71,6 +71,14 @@ export class AgencyTabCoordinator {
     return this.native.list(workspaceId).filter(session => session.tab?.current && !session.tab.closedAt);
   }
 
+  listOpenTabIds(workspaceId: WorkspaceId): string[] {
+    return [
+      ...this.openNative(workspaceId).map((session) => session.tab!.id),
+      ...this.browser.listTabs(workspaceId).map((tab) => tab.id),
+      ...(this.editor ? this.editor.listTabs(workspaceId).map((tab) => tab.id) : []),
+    ];
+  }
+
   hasBrowserReferences(workspaceId: WorkspaceId): boolean {
     return this.browser.listTabs(workspaceId, { includeClosed: true }).some(tab => !tab.closedAt);
   }
@@ -171,11 +179,7 @@ export class AgencyTabCoordinator {
 
   reconcileLayout(workspaceId: WorkspaceId): WorkspacePaneLayout | undefined {
     if (!this.layouts) return undefined;
-    const open = [
-      ...this.openNative(workspaceId).map(session => session.tab!.id),
-      ...this.browser.listTabs(workspaceId).map(tab => tab.id),
-      ...(this.editor ? this.editor.listTabs(workspaceId).map(tab => tab.id) : []),
-    ];
+    const open = this.listOpenTabIds(workspaceId);
     return reconcileLayout(this.layouts.get(workspaceId), workspaceId, open);
   }
 
@@ -190,11 +194,7 @@ export class AgencyTabCoordinator {
 
     const reconciled: WorkspacePaneLayout[] = [];
     for (const wsId of workspaceIds) {
-      const open = [
-        ...this.openNative(wsId).map(session => session.tab!.id),
-        ...this.browser.listTabs(wsId).map(tab => tab.id),
-        ...(this.editor ? this.editor.listTabs(wsId).map(tab => tab.id) : []),
-      ];
+      const open = this.listOpenTabIds(wsId);
       const saved = this.layouts.get(wsId);
       if (saved || open.length > 0) {
         reconciled.push(reconcileLayout(saved, wsId, open));
@@ -219,11 +219,7 @@ export class AgencyTabCoordinator {
 
   private async placeCreatedTab(workspaceId: WorkspaceId, targetPaneId: string | undefined, tabId: string): Promise<void> {
     if (!targetPaneId || !this.layouts) return;
-    const open = [
-      ...this.openNative(workspaceId).map(session => session.tab!.id),
-      ...this.browser.listTabs(workspaceId).map(tab => tab.id),
-      ...(this.editor ? this.editor.listTabs(workspaceId).map(tab => tab.id) : []),
-    ];
+    const open = this.listOpenTabIds(workspaceId);
     try {
       const layout = await this.layouts.update(workspaceId, current =>
         assignCreatedTab(reconcileLayout(current, workspaceId, open), targetPaneId, tabId));

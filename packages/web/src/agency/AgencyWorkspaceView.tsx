@@ -85,6 +85,10 @@ export function AgencyWorkspaceView({
   }, [sessions, webTabs, editorTabs]);
   const openTabIds = tabs.map((t) => t.id);
   const defaultSelected = selectedWorkspaceTab(tabs)?.id;
+  const openTabIdsRef = useRef(openTabIds);
+  openTabIdsRef.current = openTabIds;
+  const defaultSelectedRef = useRef(defaultSelected);
+  defaultSelectedRef.current = defaultSelected;
 
   const [layout, setLayout] = useState<WorkspacePaneLayout>(() =>
     reconcileLayout(savedLayout, workspace.id, openTabIds, defaultSelected),
@@ -161,9 +165,10 @@ export function AgencyWorkspaceView({
     if (saveTimer.current === null) return;
     clearTimeout(saveTimer.current);
     saveTimer.current = null;
-    // Flush a divider edit before leaving this workspace, rather than allowing an
-    // old timer to overwrite a creation that finishes after the switch.
-    void persistence.current?.(workspace.id, layoutRef.current).catch(reason => console.warn('[maw-layout] save failed:', reason));
+    // Flush a divider edit before leaving this workspace, reconciling against current open tabs
+    const currentOpen = openTabIdsRef.current;
+    const currentLayout = reconcileLayout(layoutRef.current, workspace.id, currentOpen, defaultSelectedRef.current);
+    void persistence.current?.(workspace.id, currentLayout).catch(reason => console.warn('[maw-layout] save failed:', reason));
   }, [workspace.id]);
 
   const serverSelectedId = selectedWorkspaceTab(tabs)?.id;
@@ -173,6 +178,7 @@ export function AgencyWorkspaceView({
   if (currentTabKey !== prevTabKey) {
     setPrevTabKey(currentTabKey);
     const reconciled = reconcileLayout(layout, workspace.id, openTabIds, defaultSelected);
+    layoutRef.current = reconciled;
     setLayout(reconciled);
   }
 
@@ -187,11 +193,13 @@ export function AgencyWorkspaceView({
           ...p,
           selectedTabId: serverSelectedId,
         }));
-        setLayout({
+        const nextLayout = {
           ...layout,
           tree: nextTree,
           focusedPaneId: ownerPane.id,
-        });
+        };
+        layoutRef.current = nextLayout;
+        setLayout(nextLayout);
       }
     }
   }
@@ -203,31 +211,48 @@ export function AgencyWorkspaceView({
       setLayout((prev) => {
         if (!initialSavedLayoutApplied.current || savedLayout.updatedAt > prev.updatedAt) {
           initialSavedLayoutApplied.current = true;
-          return reconcileLayout(savedLayout, workspace.id, openTabIds, defaultSelected);
+          const next = reconcileLayout(savedLayout, workspace.id, openTabIds, defaultSelected);
+          layoutRef.current = next;
+          return next;
         }
         return prev;
       });
     }
-  }, [savedLayout, workspace.id]);
+  }, [savedLayout, workspace.id, openTabIds, defaultSelected]);
 
   const save = useCallback(
     (nextLayout: WorkspacePaneLayout, immediate = false) => {
-      layoutRef.current = nextLayout;
-      setLayout(nextLayout);
+      const currentOpen = openTabIdsRef.current;
+      const sanitized = reconcileLayout(nextLayout, workspace.id, currentOpen, defaultSelectedRef.current);
+      layoutRef.current = sanitized;
+      setLayout(sanitized);
       if (saveTimer.current !== null) {
         clearTimeout(saveTimer.current);
         saveTimer.current = null;
       }
       if (immediate) {
-        void onSaveLayout?.(workspace.id, nextLayout).catch(reason => setError(t('agency.splits.saveFailed', { error: String(reason) })));
+        void onSaveLayout?.(workspace.id, sanitized).catch((reason) => {
+          setError(t('agency.splits.saveFailed', { error: String(reason) }));
+          const fallback = reconcileLayout(savedLayout ?? layoutRef.current, workspace.id, openTabIdsRef.current, defaultSelectedRef.current);
+          layoutRef.current = fallback;
+          setLayout(fallback);
+        });
       } else {
         saveTimer.current = window.setTimeout(() => {
-          void onSaveLayout?.(workspace.id, nextLayout).catch(reason => setError(t('agency.splits.saveFailed', { error: String(reason) })));
+          const freshOpen = openTabIdsRef.current;
+          const freshLayout = reconcileLayout(layoutRef.current, workspace.id, freshOpen, defaultSelectedRef.current);
+          layoutRef.current = freshLayout;
+          void onSaveLayout?.(workspace.id, freshLayout).catch((reason) => {
+            setError(t('agency.splits.saveFailed', { error: String(reason) }));
+            const fallback = reconcileLayout(savedLayout ?? layoutRef.current, workspace.id, openTabIdsRef.current, defaultSelectedRef.current);
+            layoutRef.current = fallback;
+            setLayout(fallback);
+          });
           saveTimer.current = null;
         }, 200);
       }
     },
-    [workspace.id, onSaveLayout],
+    [workspace.id, onSaveLayout, savedLayout],
   );
 
   const handleSplit = useCallback(

@@ -221,3 +221,47 @@ test('created tabs retain their destination or use a live fallback without dupli
   assert.equal(findPaneNode(fallback.tree, 'pane-1')?.selectedTabId, 'late');
   assert.equal(layoutOwnershipError(fallback, ws, ['existing', 'neighbor', 'new', 'late']), null);
 });
+
+test('split layout: layout ownership validates mixed native, browser, and editor tabs', () => {
+  const ws = '11111111-1111-4111-8111-111111111111' as WorkspaceId;
+  const terminalTabId = 'term-tab-1';
+  const chatGptTabId = 'chatgpt-tab-2';
+  const editorTabId = 'editor-tab-3';
+
+  const mixedLayout: WorkspacePaneLayout = {
+    version: 1,
+    workspaceId: ws,
+    focusedPaneId: 'pane-1',
+    maximizedPaneId: null,
+    updatedAt: new Date().toISOString(),
+    tree: {
+      type: 'split',
+      id: 'split-1',
+      direction: 'row',
+      ratio: 0.5,
+      first: {
+        type: 'pane',
+        id: 'pane-1',
+        tabIds: [terminalTabId, chatGptTabId],
+        selectedTabId: terminalTabId,
+      },
+      second: {
+        type: 'pane',
+        id: 'pane-2',
+        tabIds: [editorTabId],
+        selectedTabId: editorTabId,
+      },
+    },
+  };
+
+  // When all open tabs (native, browser, editor) are present, validation succeeds
+  const allOpenTabs = [terminalTabId, chatGptTabId, editorTabId];
+  assert.equal(layoutOwnershipError(mixedLayout, ws, allOpenTabs), null);
+
+  // If editorTabId was omitted (the defect in terminal-socket.ts:3780), validation fails
+  const omittedEditorTabs = [terminalTabId, chatGptTabId];
+  assert.equal(
+    layoutOwnershipError(mixedLayout, ws, omittedEditorTabs),
+    'Layout tab does not belong to the requested workspace',
+  );
+});

@@ -3777,21 +3777,18 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
             send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Workspace not found' });
             break;
           }
-          const openTabIds = [
-            ...agencyRuntime.list(message.workspaceId)
-              .filter((session) => session.tab?.current && !session.tab.closedAt)
-              .map((session) => session.tab!.id),
-            ...agencyBrowserTabs.listTabs(message.workspaceId).map((tab) => tab.id),
-          ];
-          const decision = evaluateLayoutSave(message.workspaceId, message.layout, openTabIds);
-          if (!decision.ok) {
-            send(socket, { type: 'agency.error', requestId: message.requestId, code: 'invalid-request', message: decision.message });
-            break;
-          }
-          // Persist the validated layout only. Session records and their ids stay as they are.
-          await agencyLayoutStore.save(decision.layout);
-          send(socket, { type: 'agency.layout.saved', requestId: message.requestId, workspaceId: message.workspaceId });
-          broadcast({ type: 'agency.layout.changed', workspaceId: message.workspaceId, layout: decision.layout });
+          await tabCoordinator.mutations.runExclusive(message.workspaceId, async () => {
+            const openTabIds = tabCoordinator.listOpenTabIds(message.workspaceId);
+            const decision = evaluateLayoutSave(message.workspaceId, message.layout, openTabIds);
+            if (!decision.ok) {
+              send(socket, { type: 'agency.error', requestId: message.requestId, code: 'invalid-request', message: decision.message });
+              return;
+            }
+            // Persist the validated layout only. Session records and their ids stay as they are.
+            await agencyLayoutStore.save(decision.layout);
+            send(socket, { type: 'agency.layout.saved', requestId: message.requestId, workspaceId: message.workspaceId });
+            broadcast({ type: 'agency.layout.changed', workspaceId: message.workspaceId, layout: decision.layout });
+          });
           break;
         }
 
