@@ -125,6 +125,9 @@ maw_valid_release() {
   [ "$(maw_release_id "$_dp")" = "$_name" ] || return 1
   [ -f "$_dp/packages/server/src/index.ts" ] && [ -f "$_dp/packages/server/src/maw-host.ts" ] || return 1
   [ -e "$_dp/packages/server/node_modules/tsx/dist/loader.mjs" ] || return 1
+  # Server bundle and standalone supervisor required by maw-ptyd.service.
+  [ -f "$_dp/packages/server/dist/index.mjs" ] || return 1
+  [ -f "$_dp/packages/server/dist/maw-ptyd.mjs" ] || return 1
   return 0
 }
 

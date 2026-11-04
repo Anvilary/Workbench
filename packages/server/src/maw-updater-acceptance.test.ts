@@ -81,9 +81,9 @@ step="$1"; [ "$step" = --filter ] && step=test
 echo "pnpm $step $$ $PWD" >> "${root}/pnpm.log"
 if [ -n "\${PNPM_SLEEP:-}" ] && [ "\${SLEEP_STEP:-build}" = "$step" ]; then sleep "$PNPM_SLEEP"; fi
 case "$step" in
-  install) [ -f FAIL_INSTALL ] && exit 1; mkdir -p packages/server/node_modules/tsx/dist && echo '' > packages/server/node_modules/tsx/dist/loader.mjs ;;
+  install) [ -f FAIL_INSTALL ] && exit 1; mkdir -p packages/server/node_modules/tsx/dist packages/server/node_modules/node-pty && echo '' > packages/server/node_modules/tsx/dist/loader.mjs ;;
   typecheck) [ -f FAIL_TYPECHECK ] && { echo "simulated typecheck failure" >&2; exit 1; } ;;
-  build) [ -f FAIL_BUILD ] && { echo "simulated build failure" >&2; exit 1; }; mkdir -p packages/web/dist && echo "<html>built</html>" > packages/web/dist/index.html ;;
+  build) [ -f FAIL_BUILD ] && { echo "simulated build failure" >&2; exit 1; }; mkdir -p packages/web/dist packages/server/dist && echo "<html>built</html>" > packages/web/dist/index.html && echo "export {};" > packages/server/dist/index.mjs && echo "#!/usr/bin/env node" > packages/server/dist/maw-ptyd.mjs ;;
   test) [ -f FAIL_TEST ] && exit 1 ;;
 esac
 exit 0
@@ -139,10 +139,14 @@ console.log('Healthy; release ' + id);
 
 async function makeRelease(dir: string, id: string, commit: string): Promise<void> {
   await mkdir(path.join(dir, 'packages/server/src'), { recursive: true });
+  await mkdir(path.join(dir, 'packages/server/dist'), { recursive: true });
   await mkdir(path.join(dir, 'packages/server/node_modules/tsx/dist'), { recursive: true });
+  await mkdir(path.join(dir, 'packages/server/node_modules/node-pty'), { recursive: true });
   await writeFile(path.join(dir, 'packages/server/src/maw-host.ts'), '');
   await writeFile(path.join(dir, 'packages/server/src/index.ts'), '');
   await writeFile(path.join(dir, 'packages/server/node_modules/tsx/dist/loader.mjs'), '');
+  await writeFile(path.join(dir, 'packages/server/dist/index.mjs'), 'export {};\n');
+  await writeFile(path.join(dir, 'packages/server/dist/maw-ptyd.mjs'), '#!/usr/bin/env node\n');
   await writeFile(path.join(dir, '.maw-release-meta.json'), JSON.stringify({ releaseId: id, commit }) + '\n');
 }
 

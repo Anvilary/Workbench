@@ -51,11 +51,14 @@ const CRASHING_SERVER = `setTimeout(() => { console.error('candidate crashed on 
 async function makeRelease(releases: string, id: string, source: string): Promise<string> {
   const dir = path.join(releases, id);
   await mkdir(path.join(dir, 'packages/server/src'), { recursive: true });
+  await mkdir(path.join(dir, 'packages/server/dist'), { recursive: true });
   await mkdir(path.join(dir, 'packages/server/node_modules'), { recursive: true });
   await writeFile(path.join(dir, 'packages/server/package.json'), '{"type":"module"}\n');
   await symlink(TSX!, path.join(dir, 'packages/server/node_modules/tsx'));
   await writeFile(path.join(dir, 'packages/server/src/maw-host.ts'), 'export {};\n');
   await writeFile(path.join(dir, 'packages/server/src/index.ts'), source);
+  await writeFile(path.join(dir, 'packages/server/dist/index.mjs'), 'export {};\n');
+  await writeFile(path.join(dir, 'packages/server/dist/maw-ptyd.mjs'), '#!/usr/bin/env node\n');
   await writeFile(path.join(dir, '.maw-release-meta.json'), JSON.stringify({ releaseId: id, commit: id.split('-')[1] }) + '\n');
   return dir;
 }
