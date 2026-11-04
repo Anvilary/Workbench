@@ -6,7 +6,7 @@
   "description": "Interfaz de Agent Workbench",
   "scripts": {
     "build": "vite build",
-    "test": "node --test src/agency/model.test.mjs src/agency/notifications.test.mjs src/agency/notifications-browser-acceptance.test.mjs src/agency/editor-drafts.test.mjs src/agency/split/tab-geometry.test.mjs src/agency/split/terminal-path.test.mjs src/agency/split/tab-dnd-acceptance.test.mjs",
+    "test": "tsx --test src/agency/model.test.mjs src/agency/notifications.test.mjs src/agency/notifications-browser-acceptance.test.mjs src/agency/editor-drafts.test.mjs src/agency/split/tab-geometry.test.mjs src/agency/split/terminal-path.test.mjs src/agency/split/tab-dnd-acceptance.test.mjs",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
@@ -27,6 +27,7 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.20.3",
     "vite": "^6.3.5"
   }
 }
