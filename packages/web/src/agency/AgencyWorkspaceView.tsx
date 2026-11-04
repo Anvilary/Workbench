@@ -5,7 +5,7 @@ import type {
 } from '@agent-workbench/shared';
 import {
   assignCreatedTab, swapPanes, countLeaves, createDefaultLayout, findPaneNode, getPaneNodes, moveTabBetweenPanes,
-  reconcileLayout, splitPane, closePane, updatePaneNode, updateSplitRatio,
+  reconcileLayout, splitPane, closePane, updatePaneNode, updateSplitRatio, MAX_LEAVES,
   validateChatGptUrl, validateWebTabTitle, classifyWebTabUrl,
 } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
@@ -488,7 +488,10 @@ export function AgencyWorkspaceView({
           ? allWorkspaceTabs([], [], workspace.id, [response.tab])[0]
           : undefined;
     if (!created) throw new Error(t('agency.errors.internalError'));
-    setCreatedTabs(current => [...current.filter(tab => tab.id !== created.id), created]);
+    setCreatedTabs((current) => [...current.filter((tab) => tab.id !== created.id), created]);
+    if (!openTabIdsRef.current.includes(created.id)) {
+      openTabIdsRef.current = [...openTabIdsRef.current, created.id];
+    }
     save(assignCreatedTab(layoutRef.current, targetPaneId, created.id), true);
   }
 
@@ -504,7 +507,7 @@ export function AgencyWorkspaceView({
     const pending = pendingSplit.current;
     pendingSplit.current = null;
     if (!pending) return { paneId: fallback, created: false };
-    if (countLeaves(layoutRef.current.tree) >= 4) return { paneId: fallback, created: false };
+    if (countLeaves(layoutRef.current.tree) >= MAX_LEAVES) return { paneId: fallback, created: false };
     const newPaneId = `pane-${crypto.randomUUID().slice(0, 8)}`;
     const nextTree = splitPane(layoutRef.current.tree, pending.paneId, pending.direction, newPaneId, undefined, true);
     if (!nextTree) return { paneId: fallback, created: false };

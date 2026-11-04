@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { AgencyCliProfile, MawActivityState, SplitDirection, WorkspaceId } from '@agent-workbench/shared';
 import { t } from '../../i18n/index.js';
 import { agencySessionText, agencyTabActivityText } from '../agency-labels.js';
-import { canLaunchAgent, type WorkspaceTab } from '../model.js';
+import type { WorkspaceTab } from '../model.js';
 import { PaneMenu } from './PaneMenu.js';
 import { PaneGrip } from './PaneMovement.js';
 import { setTabDragPreview, useTabDragPreview } from './tab-drag-store.js';
@@ -19,6 +19,10 @@ interface Props {
   workspaceId: WorkspaceId;
   isFocused: boolean;
   canSplit: boolean;
+  canSplitRight?: boolean;
+  canSplitDown?: boolean;
+  splitRightReason?: string;
+  splitDownReason?: string;
   moveDisabled: boolean;
   destinations: { id: string; title: string }[];
   onSwapPane: (source: string, target: string) => void;
@@ -57,6 +61,10 @@ export function PaneHeader({
   workspaceId,
   isFocused,
   canSplit,
+  canSplitRight,
+  canSplitDown,
+  splitRightReason,
+  splitDownReason,
   moveDisabled,
   destinations,
   onSwapPane,
@@ -72,13 +80,13 @@ export function PaneHeader({
   onSplitDown,
   onToggleMaximize,
   onClosePane,
-  onAddCliClick,
+  onAddCliClick: _onAddCliClick,
   onAddTerminalClick,
   onAddWebTabClick,
   onAddGithubClick,
   onAddPerplexityClick,
   onOpenFileClick,
-  onLaunchProfile,
+  onLaunchProfile: _onLaunchProfile,
   onSplitCreate,
   onMoveTabToPane,
   onRenameTab,
@@ -88,10 +96,12 @@ export function PaneHeader({
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [splitIntent, setSplitIntent] = useState<SplitDirection | null>(null);
+  const [paneActionsOpen, setPaneActionsOpen] = useState(false);
   const [renameWidth, setRenameWidth] = useState<number | null>(null);
   const addButton = useRef<HTMLButtonElement>(null);
-  const menuAnchor = useRef<HTMLButtonElement | null>(null);
+  const paneActionBtn = useRef<HTMLButtonElement>(null);
+  const splitRightAllowed = canSplitRight !== undefined ? canSplitRight : canSplit;
+  const splitDownAllowed = canSplitDown !== undefined ? canSplitDown : canSplit;
   const strip = useRef<HTMLDivElement | null>(null);
   const dragPreview = useTabDragPreview();
   const [dragState, setDragState] = useState<{ tabId: string; targetIndex: number } | null>(null);
@@ -151,9 +161,30 @@ export function PaneHeader({
     const node = strip.current;
     if (!node) return;
     const onWheel = (event: WheelEvent) => {
+      // Touchpad horizontal swipe: pass through to native browser momentum scrolling
+      if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+
+      // Vertical mouse wheel: convert to horizontal scroll
       if (node.scrollWidth <= node.clientWidth) return;
-      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+
+      let delta = event.deltaY;
+      if (event.deltaMode === 1) {
+        // Line mode
+        delta *= 18;
+      } else if (event.deltaMode === 2) {
+        // Page mode
+        delta *= node.clientWidth;
+      } else {
+        // Pixel mode: damp excessive wheel jumps
+        delta = Math.sign(delta) * Math.min(Math.abs(delta), 100);
+      }
+
       if (delta === 0) return;
+
+      // Allow event to bubble to parent when reaching boundaries
+      if (delta < 0 && node.scrollLeft <= 0) return;
+      if (delta > 0 && node.scrollLeft + node.clientWidth >= node.scrollWidth - 1) return;
+
       event.preventDefault();
       node.scrollLeft += delta;
     };
@@ -208,29 +239,13 @@ export function PaneHeader({
     }
   }
 
-  function choose(action: 'terminal' | 'agent' | 'web' | 'github' | 'perplexity' | 'file', profileId?: string) {
-    const direction = splitIntent;
+  function choose(action: 'terminal' | 'web' | 'github' | 'perplexity' | 'file') {
     setMenuOpen(false);
-    setSplitIntent(null);
-    if (direction) {
-      if (onSplitCreate) onSplitCreate(direction, action, profileId);
-      else if (direction === 'row') onSplitRight();
-      else onSplitDown();
-      return;
-    }
     if (action === 'terminal') onAddTerminalClick();
     else if (action === 'github') onAddGithubClick?.();
     else if (action === 'perplexity') onAddPerplexityClick?.();
     else if (action === 'web') onAddWebTabClick();
     else if (action === 'file') onOpenFileClick?.();
-    else if (profileId) onLaunchProfile?.(profileId);
-    else onAddCliClick();
-  }
-
-  function openMenu(button: HTMLButtonElement | null, direction: SplitDirection | null) {
-    menuAnchor.current = button;
-    setSplitIntent(direction);
-    setMenuOpen(true);
   }
 
   function tabName(tab: WorkspaceTab) {
@@ -613,32 +628,15 @@ export function PaneHeader({
             className="maw-pane-add-tab"
             aria-label={t('agency.tabs.add')}
             aria-haspopup="menu"
-            aria-expanded={menuOpen && splitIntent === null}
+            aria-expanded={menuOpen}
             disabled={!online || busy}
-            onClick={() => {
-              menuAnchor.current = addButton.current;
-              setSplitIntent(null);
-              setMenuOpen(!menuOpen);
-            }}
+            onClick={() => setMenuOpen(!menuOpen)}
           >
             +
           </button>
           {menuOpen && (
-            <PaneMenu anchor={menuAnchor.current ? menuAnchor as React.RefObject<HTMLButtonElement> : addButton} label={t('agency.tabs.add')} onClose={() => { setMenuOpen(false); setSplitIntent(null); }}>
+            <PaneMenu anchor={addButton} label={t('agency.tabs.add')} onClose={() => setMenuOpen(false)}>
               <button type="button" role="menuitem" onClick={() => choose('terminal')}>{t('agency.tabs.newTerminal')}</button>
-              <button type="button" role="menuitem" onClick={() => choose('agent')}>{t('agency.tabs.newCLI')}</button>
-              {profiles.map((profile) => (
-                <button
-                  type="button"
-                  role="menuitem"
-                  key={profile.id}
-                  disabled={!canLaunchAgent(profile)}
-                  title={profile.configurationMessage ?? profile.label}
-                  onClick={() => choose('agent', profile.id)}
-                >
-                  {profile.label}
-                </button>
-              ))}
               <button type="button" role="menuitem" onClick={() => choose('web')}>{t('agency.web.newTab')}</button>
               <button type="button" role="menuitem" onClick={() => choose('github')}>{t('agency.tabs.github')}</button>
               <button type="button" role="menuitem" onClick={() => choose('perplexity')}>{t('agency.tabs.perplexity')}</button>
@@ -661,55 +659,81 @@ export function PaneHeader({
 
       <div className="maw-pane-actions">
         <button
+          ref={paneActionBtn}
           type="button"
-          className="maw-pane-action-button"
-          title={t('agency.splits.splitRight')}
-          aria-label={t('agency.splits.splitRight')}
+          className="maw-pane-action-button maw-pane-menu-toggle"
+          title={t('agency.splits.paneActions')}
+          aria-label={t('agency.splits.paneActions')}
           aria-haspopup="menu"
-          aria-expanded={menuOpen && splitIntent === 'row'}
-          disabled={!canSplit || !online}
-          onClick={(event) => openMenu(event.currentTarget, 'row')}
+          aria-expanded={paneActionsOpen}
+          disabled={!online}
+          onClick={() => setPaneActionsOpen((open) => !open)}
         >
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-            <rect x="1.5" y="1.5" width="13" height="13" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
-            <line x1="8" y1="2.5" x2="8" y2="13.5" stroke="currentColor" strokeWidth="1.2" />
+            <path d="M2.75 4.5h10.5M2.75 8h10.5M2.75 11.5h10.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
           </svg>
         </button>
-        <button
-          type="button"
-          className="maw-pane-action-button"
-          title={t('agency.splits.splitDown')}
-          aria-label={t('agency.splits.splitDown')}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen && splitIntent === 'column'}
-          disabled={!canSplit || !online}
-          onClick={(event) => openMenu(event.currentTarget, 'column')}
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-            <rect x="1.5" y="1.5" width="13" height="13" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
-            <line x1="2.5" y1="8" x2="13.5" y2="8" stroke="currentColor" strokeWidth="1.2" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className="maw-pane-action-button"
-          title={isMaximized ? t('agency.splits.restorePane') : t('agency.splits.maximizePane')}
-          aria-label={isMaximized ? t('agency.splits.restorePane') : t('agency.splits.maximizePane')}
-          onClick={onToggleMaximize}
-        >
-          {isMaximized ? '⤢' : '⤡'}
-        </button>
-        {canClose && (
-          <button
-            type="button"
-            className="maw-pane-action-button"
-            title={t('agency.splits.closePane')}
-            aria-label={t('agency.splits.closePane')}
-            disabled={!online}
-            onClick={onClosePane}
+        {paneActionsOpen && (
+          <PaneMenu
+            anchor={paneActionBtn}
+            label={t('agency.splits.paneActions')}
+            onClose={() => setPaneActionsOpen(false)}
           >
-            ×
-          </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="agency-dropdown-item"
+              disabled={!online || !splitRightAllowed}
+              title={splitRightReason}
+              onClick={() => {
+                setPaneActionsOpen(false);
+                if (onSplitCreate) onSplitCreate('row', 'terminal');
+                else onSplitRight();
+              }}
+            >
+              <span className="agency-dropdown-label">{t('agency.splits.splitVertically')}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="agency-dropdown-item"
+              disabled={!online || !splitDownAllowed}
+              title={splitDownReason}
+              onClick={() => {
+                setPaneActionsOpen(false);
+                if (onSplitCreate) onSplitCreate('column', 'terminal');
+                else onSplitDown();
+              }}
+            >
+              <span className="agency-dropdown-label">{t('agency.splits.splitHorizontally')}</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="agency-dropdown-item"
+              onClick={() => {
+                setPaneActionsOpen(false);
+                onToggleMaximize();
+              }}
+            >
+              <span className="agency-dropdown-label">
+                {isMaximized ? t('agency.splits.restorePane') : t('agency.splits.maximizePane')}
+              </span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="agency-dropdown-item"
+              disabled={!canClose || !online}
+              title={!canClose ? t('agency.splits.singlePane') : undefined}
+              onClick={() => {
+                setPaneActionsOpen(false);
+                onClosePane();
+              }}
+            >
+              <span className="agency-dropdown-label">{t('agency.splits.closePane')}</span>
+            </button>
+          </PaneMenu>
         )}
         <PaneGrip paneId={paneId} workspaceId={workspaceId} disabled={moveDisabled} destinations={destinations} onSwap={onSwapPane} />
       </div>
