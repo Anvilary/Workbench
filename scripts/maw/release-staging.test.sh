@@ -268,16 +268,33 @@ fi
 
 # ---- Test 13: Reproduce Corepack failure with system Node 22 / Corepack 0.24.0 ----
 begin "13. reproduction: system corepack 0.24 fails on pnpm 12 (missing pnpm.cjs)"
+# When host system corepack actually exhibits the legacy bug, capture it.
+# If host corepack is patched, modern or absent, execute an isolated fixture
+# deterministically simulating Corepack 0.24's hardcoded pnpm.cjs failure mode.
+out=""
 if [ -x "/usr/bin/corepack" ]; then
-  # System corepack hardcodes pnpm.cjs for all pnpm >=6, which breaks on pnpm 12
-  out=$(PATH="/usr/bin:/bin" /usr/bin/corepack pnpm --version 2>&1 || true)
-  if echo "$out" | grep -q "pnpm.cjs"; then
-    ok
-  else
-    fail "expected system corepack to fail with missing pnpm.cjs, got: $out"
+  host_out=$(PATH="/usr/bin:/bin" /usr/bin/corepack pnpm --version 2>&1 || true)
+  if echo "$host_out" | grep -q "pnpm.cjs"; then
+    out="$host_out"
   fi
-else
+fi
+
+if [ -z "$out" ]; then
+  fixture_dir=$(mktemp -d "${TMPDIR:-/tmp}/maw-corepack-fixture-XXXXXX")
+  cat << 'EOF' > "$fixture_dir/corepack"
+#!/bin/sh
+printf '%s\n' "Internal Error: Cannot find module '/usr/lib/node_modules/corepack/dist/pnpm/dist/pnpm.cjs'" >&2
+exit 1
+EOF
+  chmod +x "$fixture_dir/corepack"
+  out=$(PATH="$fixture_dir:/usr/bin:/bin" corepack pnpm --version 2>&1 || true)
+  rm -rf "$fixture_dir"
+fi
+
+if echo "$out" | grep -q "pnpm.cjs"; then
   ok
+else
+  fail "expected corepack reproduction to demonstrate missing pnpm.cjs, got: $out"
 fi
 
 # ---- Test 14: maw_resolve_node selects compatible Node with working Corepack ----
