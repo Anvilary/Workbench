@@ -28,9 +28,9 @@ test('split layout: default single pane', () => {
   assert.equal(panes[0]!.selectedTabId, 'tab-1');
 });
 
-test('split layout: split right up to 4 panes maximum', () => {
+test('split layout: nested splitting up to 8 panes ceiling including bottom-right nested pane', () => {
   const wsId = '11111111-1111-4111-8111-111111111111' as WorkspaceId;
-  let layout = createDefaultLayout(wsId, ['t1', 't2', 't3', 't4']);
+  const layout = createDefaultLayout(wsId, ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8']);
 
   // Split 1 -> 2 (side-by-side)
   const tree2 = splitPane(layout.tree, 'pane-1', 'row', 'pane-2', 't2');
@@ -40,7 +40,7 @@ test('split layout: split right up to 4 panes maximum', () => {
   assert.equal(panes2.length, 2);
   assert.deepEqual(findPaneNode(tree2, 'pane-2')?.tabIds, ['t2']);
 
-  // Split 2 -> 3 (asymmetric: pane-2 split down)
+  // Split 2 -> 3 (asymmetric: pane-2 split down -> pane-3 is bottom-right)
   const tree3 = splitPane(tree2, 'pane-2', 'column', 'pane-3');
   assert.ok(tree3);
   assert.equal(countLeaves(tree3), 3);
@@ -50,9 +50,29 @@ test('split layout: split right up to 4 panes maximum', () => {
   assert.ok(tree4);
   assert.equal(countLeaves(tree4), 4);
 
-  // Attempting 5th pane must be rejected (max 4 leaves invariant)
-  const tree5 = splitPane(tree4, 'pane-4', 'row', 'pane-5');
-  assert.equal(tree5, null, 'Splitting beyond 4 panes must be rejected');
+  // Arbitrary nested split: split the bottom-right pane (pane-3) further down -> pane-5
+  const tree5 = splitPane(tree4, 'pane-3', 'column', 'pane-5');
+  assert.ok(tree5, 'Bottom-right pane must be splittable');
+  assert.equal(countLeaves(tree5), 5);
+
+  // Split bottom-right pane-5 right -> pane-6
+  const tree6 = splitPane(tree5, 'pane-5', 'row', 'pane-6');
+  assert.ok(tree6);
+  assert.equal(countLeaves(tree6), 6);
+
+  // Split pane-6 down -> pane-7
+  const tree7 = splitPane(tree6, 'pane-6', 'column', 'pane-7');
+  assert.ok(tree7);
+  assert.equal(countLeaves(tree7), 7);
+
+  // Split pane-7 right -> pane-8 (ceiling reached)
+  const tree8 = splitPane(tree7, 'pane-7', 'row', 'pane-8');
+  assert.ok(tree8);
+  assert.equal(countLeaves(tree8), 8);
+
+  // Attempting 9th pane must be rejected (safety ceiling of 8 panes)
+  const tree9 = splitPane(tree8, 'pane-8', 'row', 'pane-9');
+  assert.equal(tree9, null, 'Splitting beyond 8 panes ceiling must be rejected');
 });
 
 test('split layout: close pane merges tabs safely to remaining pane', () => {

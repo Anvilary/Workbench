@@ -40,7 +40,7 @@ export type LayoutServerMessage =
 
 export const MIN_SPLIT_RATIO = 0.1;
 export const MAX_SPLIT_RATIO = 0.9;
-export const MAX_LEAVES = 4;
+export const MAX_LEAVES = 8;
 
 export function clampRatio(value: number): number {
   if (!Number.isFinite(value)) return 0.5;

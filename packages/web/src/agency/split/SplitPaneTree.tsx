@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { AgencyCliProfile, MawActivityState, SplitDirection } from '@agent-workbench/shared';
-import { countLeaves, getPaneNodes, type LayoutPaneNode, type LayoutNode, type WorkspacePaneLayout } from '@agent-workbench/shared';
+import { countLeaves, getPaneNodes, MAX_LEAVES, type LayoutPaneNode, type LayoutNode, type WorkspacePaneLayout } from '@agent-workbench/shared';
 import { createPortal } from 'react-dom';
 import { useDroppable, useDragOperation } from '@dnd-kit/react';
 import { pointerIntersection } from '@dnd-kit/collision';
@@ -89,7 +89,49 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
   const { node, layout, tabs, profiles, online, busy, connection, request, reportError, getTabActivity, onSelectTab, onCloseTab, onSplit, onClosePane, onToggleMaximize, onMoveTabToPane, onAddCliClick, onAddTerminalClick, onAddWebTabClick, onRenameTab, onFocusPane, onTabDisplayed, onPaneHost } = props;
 
   const totalLeaves = countLeaves(layout.tree);
-  const canSplit = totalLeaves < 4;
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+
+  const setContainerRef = useCallback((element: HTMLDivElement | null) => {
+    containerRef.current = element;
+    drop.ref(element);
+  }, [drop.ref]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width > 0 || rect.height > 0) {
+      setDimensions({ width: rect.width, height: rect.height });
+    }
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setDimensions({ width: entry.contentRect.width, height: entry.contentRect.height });
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const maxReached = totalLeaves >= MAX_LEAVES;
+  const isTooNarrow = dimensions.width > 0 && dimensions.width < 280;
+  const isTooShort = dimensions.height > 0 && dimensions.height < 180;
+
+  const canSplit = !maxReached;
+  const canSplitRight = !maxReached && !isTooNarrow;
+  const canSplitDown = !maxReached && !isTooShort;
+  const splitRightReason = maxReached
+    ? t('agency.splits.maxPanesReached')
+    : isTooNarrow
+      ? t('agency.splits.tooNarrow')
+      : undefined;
+  const splitDownReason = maxReached
+    ? t('agency.splits.maxPanesReached')
+    : isTooShort
+      ? t('agency.splits.tooShort')
+      : undefined;
+
   const canClose = totalLeaves > 1;
 
   // Node is a leaf Pane
@@ -99,7 +141,7 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
 
   return (
     <div
-      ref={drop.ref}
+      ref={setContainerRef}
       className={`maw-split-pane${isFocused ? ' is-focused' : ''}${drop.isDropTarget && !isDragSource ? ' is-pane-drop-target' : ''}${isDragSource ? ' is-pane-drag-source' : ''}`}
       id={`pane-container-${node.id}`}
       tabIndex={-1}
@@ -119,6 +161,10 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
         workspaceId={layout.workspaceId}
         isFocused={isFocused}
         canSplit={canSplit}
+        canSplitRight={canSplitRight}
+        canSplitDown={canSplitDown}
+        splitRightReason={splitRightReason}
+        splitDownReason={splitDownReason}
         moveDisabled={!!layout.maximizedPaneId || totalLeaves < 2 || !online || busy}
         destinations={getPaneNodes(layout.tree).filter(p => p.id !== node.id).map((p) => {
           const tab = tabs.find(tab => tab.id === p.selectedTabId);
