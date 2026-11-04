@@ -2,7 +2,10 @@
 # The service always boots `current`; only the restart helper changes `current` (see maw-lib.sh).
 [Unit]
 Description=My Amazing Workspace
-After=network.target
+# Start maw-ptyd.service if not already running so the persistent supervisor is available.
+# Restarting maw.service does NOT stop maw-ptyd.service (no PartOf=).
+Wants=maw-ptyd.service
+After=network.target maw-ptyd.service
 StartLimitIntervalSec=120
 StartLimitBurst=3
 

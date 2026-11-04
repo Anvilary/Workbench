@@ -1,8 +1,16 @@
 #!/bin/sh
-# Install the maw launcher scripts and, with --service, the systemd user unit plus an initial release.
+# Install the maw launcher scripts and, with --service, the systemd user units plus an initial release.
 #
 # The service never runs from the developer checkout: --service builds the first release with the same
 # isolated staging as `maw update` (maw-update.sh --initial) and points `current` at it.
+#
+# Two systemd units are installed:
+#   maw.service      - main backend (TypeScript, tsx)
+#   maw-ptyd.service - persistent PTY supervisor (independent cgroup, independent RuntimeDirectory)
+#
+# The supervisor's RuntimeDirectory (maw-ptyd by default) is separate from maw.service's RuntimeDirectory
+# (maw by default).  Restarting maw.service does NOT clean the supervisor's runtime directory, so the
+# supervisor socket survives backend restarts.
 set -eu
 
 : "${HOME:?HOME is required}"
@@ -13,7 +21,9 @@ lib_dir="${MAW_LIB_DIR:-$HOME/.local/lib/maw}"
 bin_dir="${MAW_BIN_DIR:-$HOME/.local/bin}"
 unit_dir="${MAW_SYSTEMD_USER_DIR:-$HOME/.config/systemd/user}"
 unit_name="${MAW_UNIT:-maw.service}"
+ptyd_unit_name="${MAW_PTYD_UNIT:-maw-ptyd.service}"
 runtime_name="${MAW_RUNTIME_NAME:-maw}"
+ptyd_runtime_name="${MAW_PTYD_RUNTIME_NAME:-maw-ptyd}"
 node_bin="${MAW_NODE_BIN:-$(command -v node 2>/dev/null || true)}"
 
 mode="${1:---commands-only}"
@@ -51,7 +61,12 @@ fi
 install -m 755 "$script_dir/maw-update.sh" "$lib_dir/maw-update.sh"
 install -m 755 "$script_dir/maw-restart-helper.sh" "$lib_dir/maw-restart-helper.sh"
 install -m 755 "$script_dir/maw-render-unit.sh" "$lib_dir/maw-render-unit.sh"
+install -m 755 "$script_dir/maw-render-ptyd-unit.sh" "$lib_dir/maw-render-ptyd-unit.sh"
+install -m 755 "$script_dir/maw-activate-guard.sh" "$lib_dir/maw-activate-guard.sh"
 install -m 644 "$script_dir/maw.service" "$lib_dir/maw.service"
+install -m 644 "$script_dir/pty-host/maw-ptyd.service" "$lib_dir/maw-ptyd.service"
+install -d -m 755 "$lib_dir/pty-host"
+install -m 644 "$script_dir/pty-host/maw-ptyd.service" "$lib_dir/pty-host/maw-ptyd.service"
 install -m 755 "$script_dir/maw" "$lib_dir/maw"
 install -m 755 "$script_dir/maw" "$bin_dir/maw"
 printf '1\n' > "$lib_dir/desktop-launcher-api"
@@ -80,9 +95,20 @@ if [ "$mode" = --service ]; then
     MAW_STATE_DIR="$state_dir" MAW_NODE_BIN="$node_bin" MAW_BIN_DIR="$bin_dir" \
       /bin/sh "$lib_dir/maw-update.sh" --initial --source "$repo_dir"
   fi
+  # Render and install maw.service (backend)
   MAW_NODE_BIN="$node_bin" MAW_STATE_DIR="$state_dir" MAW_BIN_DIR="$bin_dir" MAW_RUNTIME_NAME="$runtime_name" \
     /bin/sh "$lib_dir/maw-render-unit.sh" > "$unit_dir/$unit_name.tmp" && mv -f "$unit_dir/$unit_name.tmp" "$unit_dir/$unit_name"
   chmod 644 "$unit_dir/$unit_name"
+  # Render and install maw-ptyd.service.
+  # The supervisor has its own RuntimeDirectory (@PTYD_RUNTIME_NAME@, default: maw-ptyd).
+  # It is NOT coupled to maw.service via PartOf=; restarting maw.service leaves the supervisor alive.
+  MAW_NODE_BIN="$node_bin" MAW_STATE_DIR="$state_dir" MAW_BIN_DIR="$bin_dir" \
+    MAW_PTYD_RUNTIME_NAME="$ptyd_runtime_name" \
+    /bin/sh "$lib_dir/maw-render-ptyd-unit.sh" > "$unit_dir/$ptyd_unit_name.tmp" && \
+    mv -f "$unit_dir/$ptyd_unit_name.tmp" "$unit_dir/$ptyd_unit_name"
+  chmod 644 "$unit_dir/$ptyd_unit_name"
+  # Create the shared log directory that both units append to.
+  install -d -m 700 "$HOME/.local/state/maw/logs"
   # shellcheck source=scripts/maw/maw-lib.sh
   . "$script_dir/maw-lib.sh"
   maw_sctl daemon-reload
@@ -102,7 +128,7 @@ if [ "$mode" = --desktop ]; then
   "$node_bin" -e '
     const fs=require("fs"); const command=process.argv[1];
     if (/[\n\r]/.test(command)) throw Error("Invalid launcher path");
-    const escaped=command.replace(/([\\"`$])/g,"\\$1").replace(/%/g,"%%");
+    const escaped=command.replace(/([\\\"`$])/g,"\\$1").replace(/%/g,"%%");
     fs.writeFileSync(process.argv[2], `[Desktop Entry]\nType=Application\nName=My Amazing Workspace\nExec="${escaped}" desktop\nTerminal=false\nCategories=Development;\n`);
   ' "$bin_dir/maw" "$desktop_apps/maw.desktop"
   printf '%s\n' 'Desktop installed. Start the existing service with maw start if needed, then launch: maw desktop'

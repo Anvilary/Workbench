@@ -21,12 +21,14 @@ maw_init_paths
 control_script="${MAW_CONTROL_SCRIPT:-$self_dir/control.mjs}"
 timeout_seconds="${MAW_READY_TIMEOUT:-20}"
 mode=restart
+force=false
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --unit) unit="$2"; shift 2 ;;
     --timeout) timeout_seconds="$2"; shift 2 ;;
     --start) mode=start; shift ;;
+    --force) force=true; shift ;;
     *) shift ;;
   esac
 done
@@ -129,6 +131,17 @@ maw_valid_release "$target" || managed=false
 
 maw_log activation-start target "$target_name" mode "$mode" from "$(basename "$current_raw")" healthy "$(basename "${healthy:-none}")"
 printf '%s\n' "Activating $target_name on $unit..."
+
+# Activation guard: protect active coding agents from being killed by backend restart
+guard_script="${MAW_ACTIVATE_GUARD:-$self_dir/maw-activate-guard.sh}"
+if [ "$force" != true ] && [ -x "$guard_script" ]; then
+  if ! "$guard_script" --unit "$unit"; then
+    maw_log activation-blocked target "$target_name" reason 'active coding agents in unit cgroup'
+    printf '%s\n' 'Activation refused: active coding agents detected in service cgroup.' \
+      'Wait for tasks to finish, or pass --force (e.g. maw restart --force) to override.' >&2
+    exit 1
+  fi
+fi
 
 phase=switch
 if [ "$managed" = true ] && [ "$target" != "$current_raw" ]; then

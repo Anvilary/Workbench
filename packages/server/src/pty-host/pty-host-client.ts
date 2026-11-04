@@ -37,6 +37,28 @@ export type PtyDataCallback = (id: string, chunk: string, offset: number) => voi
 export type PtyExitCallback = (event: PtyExitEvent) => void;
 export type PtyDisconnectCallback = () => void;
 
+function safeReadAuthToken(authPath: string): string {
+  try {
+    const dir = path.dirname(authPath);
+    if (!fs.existsSync(dir) || !fs.existsSync(authPath)) return '';
+    const dirStat = fs.lstatSync(dir);
+    if (dirStat.isSymbolicLink()) {
+      throw new Error(`Security violation: socket parent directory ${dir} cannot be a symbolic link`);
+    }
+    if (typeof process.getuid === 'function' && dirStat.uid !== process.getuid()) {
+      throw new Error(`Security violation: socket parent directory ${dir} is owned by UID ${dirStat.uid}, expected ${process.getuid()}`);
+    }
+    const authStat = fs.lstatSync(authPath);
+    if (authStat.isSymbolicLink()) {
+      throw new Error(`Security violation: auth file ${authPath} cannot be a symbolic link`);
+    }
+    return fs.readFileSync(authPath, 'utf8').trim();
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return '';
+    throw err;
+  }
+}
+
 export class PtyHostClient {
   private socket: net.Socket | null = null;
   private lineBuffer = '';
@@ -65,13 +87,17 @@ export class PtyHostClient {
    * Conecta a un demonio `maw-ptyd` existente o lanza uno en segundo plano si no existe.
    */
   static async connectOrSpawn(options: PtyHostClientOptions = {}): Promise<PtyHostClient> {
-    const runtimeDir = process.env.MAW_RUNTIME_DIR ||
-      process.env.XDG_RUNTIME_DIR ||
+    const baseRuntime = process.env.XDG_RUNTIME_DIR ||
       (typeof process.getuid === 'function' ? `/run/user/${process.getuid()}` : os.tmpdir());
+
+    const runtimeDir = process.env.MAW_PTYD_RUNTIME_DIR ||
+      path.join(baseRuntime, 'maw-ptyd');
 
     const socketPath = options.socketPath ||
       process.env.MAW_PTYD_SOCKET ||
-      path.join(runtimeDir, 'maw', 'ptyd.sock');
+      // Default: independent runtime dir owned by maw-ptyd.service (not the maw.service runtime dir).
+      // This ensures the backend finds the socket after a maw.service restart.
+      path.join(runtimeDir, 'ptyd.sock');
 
     const authPath = options.authPath ||
       process.env.MAW_PTYD_AUTH_FILE ||
@@ -83,8 +109,10 @@ export class PtyHostClient {
     let authToken = options.authToken || '';
     if (!authToken && fs.existsSync(authPath)) {
       try {
-        authToken = fs.readFileSync(authPath, 'utf8').trim();
-      } catch {}
+        authToken = safeReadAuthToken(authPath);
+      } catch (err) {
+        throw err;
+      }
     }
 
     const client = new PtyHostClient(socketPath, authPath, authToken);
@@ -109,8 +137,10 @@ export class PtyHostClient {
         // Re-leer token si no lo teniamos
         if (!client.authToken && fs.existsSync(authPath)) {
           try {
-            client.authToken = fs.readFileSync(authPath, 'utf8').trim();
-          } catch {}
+            client.authToken = safeReadAuthToken(authPath);
+          } catch (err) {
+            throw err;
+          }
         }
 
         try {
@@ -150,7 +180,7 @@ export class PtyHostClient {
 
   private async _connect(): Promise<PtySnapshotResponse> {
     if (!this.authToken && fs.existsSync(this.authPath)) {
-      this.authToken = fs.readFileSync(this.authPath, 'utf8').trim();
+      this.authToken = safeReadAuthToken(this.authPath);
     }
 
     return new Promise<PtySnapshotResponse>((resolve, reject) => {

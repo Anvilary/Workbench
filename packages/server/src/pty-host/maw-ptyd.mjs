@@ -198,13 +198,17 @@ class SupervisorOutputBuffer {
 
 export class PtySupervisor {
   constructor(options = {}) {
-    this.runtimeDir = options.runtimeDir ||
+    const baseRuntime = options.runtimeDir ||
       process.env.XDG_RUNTIME_DIR ||
       (typeof process.getuid === 'function' ? `/run/user/${process.getuid()}` : os.tmpdir());
 
+    this.runtimeDir = process.env.MAW_PTYD_RUNTIME_DIR || path.join(baseRuntime, 'maw-ptyd');
+
     this.socketPath = options.socketPath ||
       process.env.MAW_PTYD_SOCKET ||
-      path.join(this.runtimeDir, 'maw', 'ptyd.sock');
+      // Default: independent runtime dir owned by maw-ptyd.service (not the maw.service runtime dir).
+      // This ensures the socket survives maw.service restarts. Overridable via MAW_PTYD_SOCKET.
+      path.join(this.runtimeDir, 'ptyd.sock');
 
     this.authPath = options.authPath ||
       process.env.MAW_PTYD_AUTH_FILE ||
@@ -236,13 +240,23 @@ export class PtySupervisor {
 
   /**
    * Prepara el directorio seguro (0700) y graba el token criptografico (0600).
+   * Rechaza directorios que sean symlinks o pertenezcan a otros usuarios.
    */
   _setupSecurityContext() {
     const dir = path.dirname(this.socketPath);
+    if (fs.existsSync(dir)) {
+      const lstat = fs.lstatSync(dir);
+      if (lstat.isSymbolicLink()) {
+        throw new Error(`Security violation: socket parent directory ${dir} cannot be a symbolic link`);
+      }
+    }
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 
     try {
-      const stat = fs.statSync(dir);
+      const stat = fs.lstatSync(dir);
+      if (stat.isSymbolicLink()) {
+        throw new Error(`Security violation: socket parent directory ${dir} cannot be a symbolic link`);
+      }
       if (typeof process.getuid === 'function' && stat.uid !== process.getuid()) {
         throw new Error(`Security violation: socket parent directory ${dir} is owned by UID ${stat.uid}, expected ${process.getuid()}`);
       }
@@ -251,6 +265,13 @@ export class PtySupervisor {
       }
     } catch (err) {
       if (err.code !== 'ENOENT') throw err;
+    }
+
+    if (fs.existsSync(this.socketPath) && fs.lstatSync(this.socketPath).isSymbolicLink()) {
+      throw new Error(`Security violation: socket path ${this.socketPath} cannot be a symbolic link`);
+    }
+    if (fs.existsSync(this.authPath) && fs.lstatSync(this.authPath).isSymbolicLink()) {
+      throw new Error(`Security violation: auth path ${this.authPath} cannot be a symbolic link`);
     }
 
     // Escribir token de autenticacion en archivo efimero con permisos 0600

@@ -1,3 +1,5 @@
+# Template rendered by maw-render-ptyd-unit.sh (@NODE_BIN@, @STATE_DIR@, @PATH@, @PTYD_RUNTIME_NAME@).
+# The supervisor always runs from the `current` release; maw-restart-helper.sh updates `current`.
 [Unit]
 Description=MAW Persistent PTY Supervisor (maw-ptyd)
 Documentation=https://github.com/user/My-Amazing-Workspace
@@ -6,8 +8,9 @@ After=basic.target
 
 [Service]
 Type=simple
-WorkingDirectory=__MAW_ROOT__
-ExecStart=/usr/bin/env node __MAW_ROOT__/packages/server/src/pty-host/maw-ptyd.mjs
+WorkingDirectory=@STATE_DIR@/current
+ExecStartPre=/usr/bin/test -f @STATE_DIR@/current/packages/server/dist/maw-ptyd.mjs
+ExecStart=@NODE_BIN@ @STATE_DIR@/current/packages/server/dist/maw-ptyd.mjs
 Restart=on-failure
 RestartSec=1
 KillMode=control-group
@@ -15,8 +18,17 @@ TimeoutStopSec=10
 Environment=NODE_ENV=production
 Environment=HOME=%h
 Environment=XDG_RUNTIME_DIR=%t
+Environment=PATH=@PATH@
+# Independent runtime directory: systemd manages @PTYD_RUNTIME_NAME@ separately from maw.
+# Stopping or restarting maw.service does NOT clean this directory.
+RuntimeDirectory=@PTYD_RUNTIME_NAME@
+RuntimeDirectoryMode=0700
+# Supervisor socket and auth file live under /run/user/<UID>/@PTYD_RUNTIME_NAME@/
+Environment=MAW_PTYD_SOCKET=%t/@PTYD_RUNTIME_NAME@/ptyd.sock
+Environment=MAW_PTYD_AUTH_FILE=%t/@PTYD_RUNTIME_NAME@/ptyd.sock.auth
 StandardOutput=append:%h/.local/state/maw/logs/maw-ptyd.stdout.log
 StandardError=append:%h/.local/state/maw/logs/maw-ptyd.stderr.log
+UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 
