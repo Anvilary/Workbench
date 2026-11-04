@@ -4,10 +4,10 @@ import {setup,frames,pane,order,drag} from './pane-interactions-harness.mjs';
 
 const layout=page=>page.evaluate(()=>window.fixture.state.layout);
 const menu=(page,n)=>pane(page,n).locator('.maw-pane-add-tab');
+const paneAction=(page,n)=>pane(page,n).locator('.maw-pane-menu-toggle');
 const create=async(page,n,kind)=>{
  await menu(page,n).click();
- await page.getByRole('menuitem',{name:kind==='agent'?'New CLI':kind==='terminal'?'New Terminal':kind==='web'?'New ChatGPT tab':'Open File...',exact:true}).click();
- if(kind==='agent')await page.getByRole('dialog').getByRole('button',{name:/^(Create|Launch|Start)/}).click();
+ await page.getByRole('menuitem',{name:kind==='terminal'?'New Terminal':kind==='web'?'New ChatGPT tab':'Open File...',exact:true}).click();
  if(kind==='web')await page.getByRole('dialog').getByRole('button',{name:'New ChatGPT tab',exact:true}).click();
  if(kind==='file'){
    await page.getByRole('dialog').locator('input').fill('src/index.ts');
@@ -37,7 +37,7 @@ test('add menu escapes overflow, clamps at edges, navigates with keys, closes ou
  await menu(page,4).click();const box=await page.getByRole('menu').boundingBox();assert.ok(box.y+box.height<370);
 });
 
-for(const kind of ['terminal','agent','web','file'])test(`create ${kind} in its initiating pane, preserving its neighbor`,async t=>{
+for(const kind of ['terminal','web','file'])test(`create ${kind} in its initiating pane, preserving its neighbor`,async t=>{
  const page=await setup(t);const before=await layout(page);
  await create(page,2,kind);await page.waitForFunction(()=>window.fixture.state.layout.tree.second.tabIds.length===2);
  const after=await layout(page);assert.deepEqual(after.tree.first,before.tree.first);assert.equal(after.focusedPaneId,'pane-2');assert.equal(after.tree.second.selectedTabId,after.tree.second.tabIds[1]);
@@ -57,7 +57,8 @@ test('delayed creation retains destination after focus changes, absent snapshots
  assert.equal(await pane(page,2).getByRole('tab').count(),2);
  await page.evaluate(()=>window.fixture.lag(false));await create(page,2,'terminal');await page.waitForFunction(()=>window.fixture.pending.length===1);
  // Closing the target pane does not terminate any of its sessions.
- await pane(page,2).getByRole('button',{name:'Close pane',exact:true}).click();
+ await paneAction(page,2).click();
+ await page.getByRole('menuitem',{name:'Close pane',exact:true}).click();
  await page.evaluate(()=>window.fixture.resolve());await page.waitForFunction(()=>window.fixture.state.layout.tree.tabIds.length===4);
  const final=await layout(page);assert.equal(new Set(final.tree.tabIds).size,4);assert.equal(final.focusedPaneId,'pane-1');
  await page.evaluate(()=>{window.fixture.delay(false);window.fixture.fail()});
@@ -81,8 +82,10 @@ test('self, outside and Escape are no-ops; keyboard swap persists across workspa
  assert.deepEqual(await order(page),['pane-2','pane-1']);
  await page.evaluate(()=>window.fixture.switchWorkspace());await page.evaluate(()=>window.fixture.switchWorkspace());await frames(page);assert.deepEqual(await order(page),['pane-2','pane-1']);
  await page.reload();await page.locator('#start').click();await frames(page);assert.deepEqual(await order(page),['pane-2','pane-1']);
- await pane(page,1).getByRole('button',{name:'Maximize pane',exact:true}).click();assert.equal(await pane(page,1).locator('.maw-pane-grip').isDisabled(),true);
- await pane(page,1).getByRole('button',{name:'Restore pane',exact:true}).click();await frames(page);assert.equal(await pane(page,1).locator('.maw-pane-grip').isDisabled(),false);
+ await paneAction(page,1).click();
+ await page.getByRole('menuitem',{name:'Maximize pane',exact:true}).click();assert.equal(await pane(page,1).locator('.maw-pane-grip').isDisabled(),true);
+ await paneAction(page,1).click();
+ await page.getByRole('menuitem',{name:'Restore pane',exact:true}).click();await frames(page);assert.equal(await pane(page,1).locator('.maw-pane-grip').isDisabled(),false);
 });
 
 test('terminal scrollback, selection, viewport and attachments survive repeated swaps; reduced motion and dividers work',async t=>{
@@ -123,12 +126,11 @@ test('tab dragging moves only one tab and rejects foreign tab payloads',async t=
  await pane(page,2).locator('.maw-pane-header').dispatchEvent('drop',{dataTransfer:data});await frames(page);assert.deepEqual((await layout(page)).tree,after.tree);
 });
 
-test('CLI launch errors retain a usable picker and web validation prevents unwanted launches',async t=>{
+test('launch errors surface error banner and web validation prevents unwanted launches',async t=>{
  const page=await setup(t);await page.evaluate(()=>window.fixture.fail());
- await create(page,2,'agent');await page.getByRole('dialog').getByRole('alert').waitFor();
- await page.getByRole('dialog').getByRole('button',{name:/Start new CLI/}).click();
- await page.getByRole('dialog').waitFor({state:'detached'});await frames(page);
- assert.equal((await layout(page)).tree.second.tabIds.length,2);
+ await create(page,2,'terminal');await page.getByRole('alert').filter({hasText:'Fixture launch failed'}).waitFor();
+ await page.locator('.agency-error-bar button').click();await frames(page);
+ assert.equal(await page.locator('.agency-error-bar').count(),0);
  await menu(page,1).click();await page.getByRole('menuitem',{name:'New ChatGPT tab',exact:true}).click();
  await page.getByRole('dialog').getByLabel('ChatGPT URL',{exact:true}).fill('https://example.com/');
  await page.getByRole('dialog').getByRole('button',{name:'New ChatGPT tab',exact:true}).click();
@@ -171,13 +173,13 @@ test('placement failure surfaces notice banner with tab context without failing 
  await notice.getByRole('button',{name:'Dismiss notification'}).click();
  assert.equal(await page.locator('.agency-notice-bar[role="status"]').count(),0);
 
- // 4. Repeat with a CLI
+ // 4. Repeat with a file
  await page.evaluate(()=>window.fixture.failPlacement());
- await create(page,2,'agent');
- await page.waitForFunction(cnt=>window.fixture.state.sessions.length===cnt+2,initSessions);
+ await create(page,2,'file');
+ await page.waitForFunction(cnt=>window.fixture.state.sessions.length+window.fixture.state.editorTabs.length===cnt+2,initSessions);
  await notice.waitFor();
- const cliText=await notice.textContent();
- assert.match(cliText,/Layout placement persistence failure for tab "CLI/i);
+ const fileText=await notice.textContent();
+ assert.match(fileText,/Layout placement persistence failure for tab "index\.ts"/i);
  await notice.getByRole('button',{name:'Dismiss notification'}).click();
 
  // Repeat with a ChatGPT tab
@@ -191,68 +193,51 @@ test('placement failure surfaces notice banner with tab context without failing 
  assert.equal(await page.locator('.agency-notice-bar[role="status"]').count(),0);
 });
 
-test('Decision 1: Split buttons open content picker, support row and column, cancel cleanly, roll back on failure, and persist layout', async t => {
+test('Pane action menu: Split vertically and horizontally create terminal immediately, Escape cancels, failure rolls back cleanly, and layout persists', async t => {
  const page = await setup(t, 'shape=single');
  const initialLayout = await layout(page);
  assert.equal(initialLayout.tree.type, 'pane');
 
- // 1. Split right opens picker; Escape cancels without modifying layout
- const splitRightBtn = page.getByRole('button', { name: 'Split right', exact: true });
- await splitRightBtn.click();
- const menu = page.getByRole('menu', { name: 'Add tab' });
+ // 1. Pane actions menu: Escape cancels without modifying layout
+ await paneAction(page, 1).click();
+ const menu = page.getByRole('menu', { name: 'Pane actions' });
  await menu.waitFor();
  assert.equal(await menu.getByRole('menuitem').count() > 0, true);
  await page.keyboard.press('Escape');
  assert.equal(await page.getByRole('menu').count(), 0);
  assert.deepEqual(await layout(page), initialLayout);
 
- // 2. Split down opens picker; clicking outside cancels without modifying layout
- const splitDownBtn = page.getByRole('button', { name: 'Split down', exact: true });
- await splitDownBtn.click();
- await page.getByRole('menu', { name: 'Add tab' }).waitFor();
+ // 2. Pane actions menu: clicking outside cancels without modifying layout
+ await paneAction(page, 1).click();
+ await page.getByRole('menu', { name: 'Pane actions' }).waitFor();
  await page.locator('#start').click();
  assert.equal(await page.getByRole('menu').count(), 0);
  assert.deepEqual(await layout(page), initialLayout);
 
  // 3. Failed creation rolls back cleanly without leaving an orphaned pane
  await page.evaluate(() => { window.fixture.delay(false); window.fixture.fail(); });
- await splitRightBtn.click();
- await page.getByRole('menu', { name: 'Add tab' }).waitFor();
- await page.getByRole('menuitem', { name: 'New Terminal', exact: true }).click();
+ await paneAction(page, 1).click();
+ await page.getByRole('menuitem', { name: 'Split vertically', exact: true }).click();
  await page.getByRole('alert').filter({ hasText: 'Fixture launch failed' }).waitFor();
  assert.equal(await page.locator('.maw-split-pane').count(), 1);
  assert.equal((await layout(page)).tree.type, 'pane');
  await page.locator('.agency-error-bar button').click();
  assert.equal(await page.locator('.agency-error-bar').count(), 0);
 
- // 4. Split right with New Terminal creates horizontal split and persists layout
- await splitRightBtn.click();
- await page.getByRole('menu', { name: 'Add tab' }).waitFor();
- await page.getByRole('menuitem', { name: 'New Terminal', exact: true }).click();
+ // 4. Split vertically creates side-by-side split immediately and persists layout
+ await paneAction(page, 1).click();
+ await page.getByRole('menuitem', { name: 'Split vertically', exact: true }).click();
  await page.waitForFunction(() => window.fixture.state.layout.tree.type === 'split');
  const splitTree = (await layout(page)).tree;
  assert.equal(splitTree.direction, 'row');
  assert.equal(await page.locator('.maw-split-pane').count(), 2);
 
- // 5. Split down with New ChatGPT tab creates vertical split
- const pane2DownBtn = page.locator('.maw-split-pane').nth(1).getByRole('button', { name: 'Split down', exact: true });
- await pane2DownBtn.click();
- await page.getByRole('menu', { name: 'Add tab' }).waitFor();
- await page.getByRole('menuitem', { name: 'New ChatGPT tab', exact: true }).click();
- await page.getByRole('dialog').getByRole('button', { name: 'New ChatGPT tab', exact: true }).click();
+ // 5. Split horizontally on pane 2 creates vertical split immediately
+ await page.locator('.maw-split-pane').nth(1).locator('.maw-pane-menu-toggle').click();
+ await page.getByRole('menuitem', { name: 'Split horizontally', exact: true }).click();
  await page.waitForFunction(() => document.querySelectorAll('.maw-split-pane').length === 3);
  assert.equal(await page.locator('.maw-split-pane').count(), 3);
  const layout3 = await layout(page);
  assert.ok(layout3.tree.second.type === 'split');
  assert.equal(layout3.tree.second.direction, 'column');
-
- // 6. Split right with Open File opens file in editor and creates split pane
- const pane1RightBtn = page.locator('.maw-split-pane').nth(0).getByRole('button', { name: 'Split right', exact: true });
- await pane1RightBtn.click();
- await page.getByRole('menu', { name: 'Add tab' }).waitFor();
- await page.getByRole('menuitem', { name: 'Open File...', exact: true }).click();
- await page.getByRole('dialog').locator('input').fill('src/index.ts');
- await page.getByRole('dialog').getByRole('button', { name: 'Open', exact: true }).click();
- await page.waitForFunction(() => document.querySelectorAll('.maw-split-pane').length === 4);
- assert.equal(await page.locator('.maw-split-pane').count(), 4);
 });

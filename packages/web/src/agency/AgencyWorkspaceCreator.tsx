@@ -1,10 +1,10 @@
 import { t } from '../i18n/index.js';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { AgencyCliProfile, AgencyProject, CliProfileId, ProfileStatus, ProjectId } from '@agent-workbench/shared';
+import type { AgencyProject, CliProfileId, ProjectId } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import { FolderPicker } from '../FolderPicker.js';
 
-export type WorkspaceCreationMode = 'agent' | 'terminal' | 'combined' | 'empty';
+export type WorkspaceCreationMode = 'terminal';
 
 export interface WorkspaceCreationOptions {
   mode: WorkspaceCreationMode;
@@ -13,7 +13,7 @@ export interface WorkspaceCreationOptions {
 
 interface Props {
   projects: readonly AgencyProject[];
-  profiles: readonly AgencyCliProfile[];
+  profiles?: readonly unknown[];
   initialProject?: ProjectId;
   connection: AgentConnection;
   onCreate: (
@@ -25,39 +25,16 @@ interface Props {
   onClose: () => void;
 }
 
-function profileStatusText(status: ProfileStatus): string {
-  switch (status) {
-    case 'available': return t('agency.ui.profileReady');
-    case 'not-installed': return t('agency.ui.profileMissingBinary');
-    case 'needs-authentication': return t('agency.ui.permissionRequired');
-    case 'disabled': return t('agency.ui.profileDisabled');
-    case 'error': return t('agency.ui.profileMisconfigured');
-    default: return status;
-  }
-}
-
 export function AgencyWorkspaceCreator({
-  projects, profiles, initialProject, connection, onCreate, onClose,
+  projects, initialProject, connection, onCreate, onClose,
 }: Props): JSX.Element {
   const [projectId, setProjectId] = useState<ProjectId | ''>(initialProject ?? projects[0]?.id ?? '');
   const [name, setName] = useState('');
-  const [mode, setMode] = useState<WorkspaceCreationMode>('agent');
-  const [profileId, setProfileId] = useState<CliProfileId | ''>(() => {
-    const ready = profiles.find((p) => p.configurationStatus === 'available');
-    return ready?.id ?? profiles[0]?.id ?? '';
-  });
   const [picking, setPicking] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const creatingFlight = useRef(false);
   const dialogRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    if (!profileId && profiles.length > 0) {
-      const ready = profiles.find((p) => p.configurationStatus === 'available');
-      setProfileId(ready?.id ?? profiles[0]?.id ?? '');
-    }
-  }, [profileId, profiles]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -95,8 +72,7 @@ export function AgencyWorkspaceCreator({
     setCreating(true);
     // Keep the server-owned picker alive until creation is acknowledged, even if handlers are async.
     void onCreate(projectId, name.trim(), pickerId, {
-      mode,
-      profileId: (mode === 'agent' || mode === 'combined') && profileId ? profileId : undefined,
+      mode: 'terminal',
     }).then(() => {
       setPicking(false);
       onClose();
@@ -133,29 +109,6 @@ export function AgencyWorkspaceCreator({
               {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
             </select>
           </label>
-          <label className="agency-field">
-            <span>{t('agency.ui.workspaceType')}</span>
-            <select value={mode} disabled={creating}
-              onChange={(event) => setMode(event.target.value as WorkspaceCreationMode)}>
-              <option value="agent">{t('agency.ui.agentWorkspace')}</option>
-              <option value="combined">{t('agency.tabs.combined')}</option>
-              <option value="terminal">{t('agency.ui.terminalOnlyWorkspace')}</option>
-              <option value="empty">{t('agency.ui.emptyWorkspace')}</option>
-            </select>
-          </label>
-          {(mode === 'agent' || mode === 'combined') && profiles.length > 0 && (
-            <label className="agency-field">
-              <span>{t('agency.ui.cliProfile')}</span>
-              <select value={profileId} disabled={creating}
-                onChange={(event) => setProfileId(event.target.value as CliProfileId)}>
-                {profiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label} ({profileStatusText(p.configurationStatus)})
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
           {error && <p role="alert" className="agency-error">{error}</p>}
           <div className="agency-dialog-actions">
             <button type="button" className="agency-secondary-button" onClick={onClose} disabled={creating}>{t('common.cancel')}</button>

@@ -600,11 +600,10 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
           const launch = async (kind: 'agent' | 'terminal') => {
             try {
               await store.request({ type: 'agency.session.create', workspaceId: newWorkspace.id, kind, launchId: crypto.randomUUID(), cols: 100, rows: 30,
-                ...(kind === 'agent' ? { profileId: options.profileId! } : {}) } as Parameters<typeof store.request>[0]);
+                ...(kind === 'agent' && options.profileId ? { profileId: options.profileId } : {}) } as Parameters<typeof store.request>[0]);
             } catch (reason) { failures.push((kind === 'agent' ? t('agency.ui.agentLabel') : t('agency.ui.shell')) + ': ' + String(reason)); }
           };
-          if ((options.mode === 'agent' || options.mode === 'combined') && options.profileId) await launch('agent');
-          if (options.mode === 'terminal' || options.mode === 'combined') await launch('terminal');
+          await launch('terminal');
           if (failures.length) setLaunchErrors(prev => ({ ...prev, [newWorkspace.id]: failures.join(' · ') }));
         }} />}
       {notificationsEnabled && (
