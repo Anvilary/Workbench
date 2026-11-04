@@ -1,5 +1,5 @@
 import { assignCreatedTab, reconcileLayout } from '@agent-workbench/shared';
-import type { AgencyClientMessage, AgencyServerMessage, EditorTabClientMessage, WebTabClientMessage, WorkspaceId, WorkspacePaneLayout } from '@agent-workbench/shared';
+import type { AgencyClientMessage, AgencyRuntimeSession, AgencyServerMessage, EditorTabClientMessage, WebTabClientMessage, WorkspaceId, WorkspacePaneLayout } from '@agent-workbench/shared';
 import { AgencyRuntimeError, type AgencySessionRuntime } from './agency-session-runtime.js';
 import type { AgencyWorkspaceStore } from './store.js';
 import { WorkspaceMutex } from './workspace-lock.js';
@@ -15,6 +15,7 @@ import { handleEditorTabMessage } from './editor-tabs/editor-tab-handler.js';
  */
 export class AgencyTabCoordinator {
   readonly mutations = new WorkspaceMutex();
+  private readonly inFlightCloses = new Map<string, Promise<void>>();
   private lastNativeSnapshot: string | undefined;
   private lastBrowserSnapshot: string | undefined;
   private lastEditorSnapshot: string | undefined;
@@ -67,13 +68,21 @@ export class AgencyTabCoordinator {
     }
   }
 
-  private openNative(workspaceId?: WorkspaceId) {
-    return this.native.list(workspaceId).filter(session => session.tab?.current && !session.tab.closedAt);
+  isClosing(tabId: string): boolean {
+    return this.inFlightCloses.has(tabId) || this.native.isClosing(tabId);
   }
 
-  listOpenTabIds(workspaceId: WorkspaceId): string[] {
+  private openNative(workspaceId?: WorkspaceId, options?: { includeClosing?: boolean }): AgencyRuntimeSession[] {
+    return this.native.list(workspaceId).filter(session => {
+      if (!session.tab?.current || session.tab.closedAt) return false;
+      if (!options?.includeClosing && this.isClosing(session.tab.id)) return false;
+      return true;
+    });
+  }
+
+  listOpenTabIds(workspaceId: WorkspaceId, options?: { includeClosing?: boolean }): string[] {
     return [
-      ...this.openNative(workspaceId).map((session) => session.tab!.id),
+      ...this.openNative(workspaceId, options).map((session) => session.tab!.id),
       ...this.browser.listTabs(workspaceId).map((tab) => tab.id),
       ...(this.editor ? this.editor.listTabs(workspaceId).map((tab) => tab.id) : []),
     ];
@@ -153,10 +162,10 @@ export class AgencyTabCoordinator {
     }
   }
 
-  private async selectFallback(workspaceId: WorkspaceId): Promise<void> {
-    const native = this.openNative(workspaceId);
-    const web = this.browser.listTabs(workspaceId);
-    const editor = this.editor ? this.editor.listTabs(workspaceId) : [];
+  private async selectFallback(workspaceId: WorkspaceId, excludeTabId?: string): Promise<void> {
+    const native = this.openNative(workspaceId).filter(session => session.tab?.id !== excludeTabId);
+    const web = this.browser.listTabs(workspaceId).filter(tab => tab.id !== excludeTabId);
+    const editor = (this.editor ? this.editor.listTabs(workspaceId) : []).filter(tab => tab.id !== excludeTabId);
     if (native.some(session => session.tab?.selected) || web.some(tab => tab.selected) || editor.some(tab => tab.selected)) return;
     if (native[0]?.tab) await this.native.tabAction(workspaceId, native[0].tab.id, 'select');
     else if (web[0]) await this.browser.selectTab(workspaceId, web[0].id);
@@ -261,6 +270,53 @@ export class AgencyTabCoordinator {
   }
 
   async nativeAction(message: Extract<AgencyClientMessage, { type: 'agency.tab.action' | 'agency.tabs.order' | 'agency.tab.rename' }>): Promise<void> {
+    if (message.type === 'agency.tab.action' && message.action === 'close') {
+      const isEditor = Boolean(this.editor?.getTabState(message.tabId));
+      if (isEditor) {
+        return this.mutations.runExclusive(message.workspaceId, async () => {
+          try {
+            await this.editor!.closeTab(message.workspaceId, message.tabId);
+            await this.selectFallback(message.workspaceId);
+          } finally {
+            this.snapshot();
+          }
+        });
+      }
+
+      const existing = this.inFlightCloses.get(message.tabId);
+      if (existing) return existing;
+
+      const closePromise = (async () => {
+        try {
+          // Phase 1: Brief setup under workspace lock (validates existence and switches selection immediately)
+          await this.mutations.runExclusive(message.workspaceId, async () => {
+            const source = this.native.list(message.workspaceId).find(s => s.tab?.id === message.tabId && s.tab.current && !s.tab.closedAt);
+            if (!source) throw new AgencyRuntimeError('not-found', 'Tab does not exist');
+            if (source.tab?.selected) {
+              await this.selectFallback(message.workspaceId, message.tabId);
+            }
+          });
+
+          // Phase 2: Await process termination outside workspace lock
+          await this.native.tabAction(message.workspaceId, message.tabId, 'close');
+
+          // Phase 3: Brief cleanup under workspace lock
+          await this.mutations.runExclusive(message.workspaceId, async () => {
+            try {
+              await this.selectFallback(message.workspaceId);
+            } finally {
+              this.snapshot();
+            }
+          });
+        } finally {
+          this.inFlightCloses.delete(message.tabId);
+        }
+      })();
+
+      this.inFlightCloses.set(message.tabId, closePromise);
+      return closePromise;
+    }
+
     return this.mutations.runExclusive(message.workspaceId, async () => {
       try {
         if (message.type === 'agency.tab.rename') {
@@ -273,10 +329,7 @@ export class AgencyTabCoordinator {
           await this.order(message.workspaceId, message.tabIds);
         } else {
           if (this.editor?.getTabState(message.tabId)) {
-            if (message.action === 'close') {
-              await this.editor.closeTab(message.workspaceId, message.tabId);
-              await this.selectFallback(message.workspaceId);
-            } else if (message.action === 'select') {
+            if (message.action === 'select') {
               await this.editor.selectTab(message.workspaceId, message.tabId);
               await this.browser.clearWorkspaceSelection(message.workspaceId);
               await this.native.clearWorkspaceSelection(message.workspaceId);

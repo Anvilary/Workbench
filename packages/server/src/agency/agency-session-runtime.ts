@@ -186,6 +186,7 @@ export class AgencySessionRuntime extends EventEmitter {
   private readonly launches = new Map<string, Promise<AgencyRuntimeSession>>();
   private readonly finishing = new Map<RuntimeSessionId, Promise<AgencyRuntimeSession>>();
   private readonly nativeTurnWatchers = new Map<RuntimeSessionId, CodexTurnWatcher>();
+  private readonly closingTabs = new Map<string, Promise<void>>();
 
   constructor(options: AgencyRuntimeOptions) {
     super();
@@ -653,18 +654,62 @@ export class AgencySessionRuntime extends EventEmitter {
     });
   }
 
+  isClosing(tabId: string): boolean {
+    return this.closingTabs.has(tabId);
+  }
+
   async tabAction(workspaceId: WorkspaceId, tabId: string, action: 'select' | 'close' | 'resume'): Promise<void> {
     checkId(workspaceId); checkId(tabId);
+    if (action === 'close') {
+      const existing = this.closingTabs.get(tabId);
+      if (existing) return existing;
+    }
     const source = this.list(workspaceId).find(s => s.tab?.id === tabId && s.tab.current && !s.tab.closedAt);
     if (!source) throw new AgencyRuntimeError('not-found', 'Tab does not exist');
     if (action === 'resume') { await this.resumeTab(workspaceId, tabId); return; }
-    if (action === 'close' && ACTIVE.has(source.lifecycle)) {
-      await this.stop(source.id);
-      const deadline = Date.now() + 5000;
-      while (ACTIVE.has(this.sessions.get(source.id)?.lifecycle ?? 'exited')) {
-        if (Date.now() >= deadline) throw new AgencyRuntimeError('session-unavailable', 'Termination not confirmed; tab remains visible');
-        await new Promise(resolve => setTimeout(resolve, 20));
-      }
+    if (action === 'close') {
+      const closePromise = (async () => {
+        try {
+          if (ACTIVE.has(source.lifecycle)) {
+            await this.stop(source.id);
+            const deadline = Date.now() + 5000;
+            while (ACTIVE.has(this.sessions.get(source.id)?.lifecycle ?? 'exited')) {
+              if (Date.now() >= deadline) throw new AgencyRuntimeError('session-unavailable', 'Termination not confirmed; tab remains visible');
+              await new Promise(resolve => setTimeout(resolve, 20));
+            }
+          }
+          await this.workspaces.withSessionReservation(workspaceId, async () => {
+            const rows = this.list(workspaceId);
+            const wasSelected = rows.find(s => s.tab?.id === tabId && s.tab.current)?.tab?.selected;
+            const next = rows.filter(s => s.tab?.current && !s.tab.closedAt && s.tab.id !== tabId).sort((a,b) => a.tab!.order - b.tab!.order)[0];
+            const changed: AgencyRuntimeSession[] = [];
+            const updatedAt = NOW();
+            for (const row of rows) {
+              if (!row.tab) continue;
+              const tab = { ...row.tab };
+              if (tab.id === tabId) { tab.closedAt = updatedAt; tab.selected = false; }
+              else if (wasSelected) tab.selected = tab.current && tab.id === next?.tab?.id;
+              if (tab.selected === row.tab.selected && tab.closedAt === row.tab.closedAt) continue;
+              changed.push(row);
+              this.sessions.set(row.id, { ...row, tab, updatedAt });
+            }
+            if (!changed.length) return;
+            try { await this.persist(); }
+            catch (error) {
+              for (const row of changed) {
+                const current = this.sessions.get(row.id)!;
+                this.sessions.set(row.id, { ...current, tab: row.tab });
+              }
+              throw error;
+            }
+            for (const row of changed) this.emit('changed', this.sessions.get(row.id));
+          });
+        } finally {
+          this.closingTabs.delete(tabId);
+        }
+      })();
+      this.closingTabs.set(tabId, closePromise);
+      return closePromise;
     }
     await this.workspaces.withSessionReservation(workspaceId, async () => {
       const rows = this.list(workspaceId);
@@ -676,7 +721,6 @@ export class AgencySessionRuntime extends EventEmitter {
         if (!row.tab) continue;
         const tab = { ...row.tab };
         if (action === 'select') tab.selected = tab.current && !tab.closedAt && tab.id === tabId;
-        else if (tab.id === tabId) { tab.closedAt = updatedAt; tab.selected = false; }
         else if (wasSelected) tab.selected = tab.current && tab.id === next?.tab?.id;
         if (tab.selected === row.tab.selected && tab.closedAt === row.tab.closedAt) continue;
         changed.push(row);

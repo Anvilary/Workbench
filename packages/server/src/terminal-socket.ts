@@ -3778,7 +3778,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
             break;
           }
           await tabCoordinator.mutations.runExclusive(message.workspaceId, async () => {
-            const openTabIds = tabCoordinator.listOpenTabIds(message.workspaceId);
+            const openTabIds = tabCoordinator.listOpenTabIds(message.workspaceId, { includeClosing: true });
             const decision = evaluateLayoutSave(message.workspaceId, message.layout, openTabIds);
             if (!decision.ok) {
               send(socket, { type: 'agency.error', requestId: message.requestId, code: 'invalid-request', message: decision.message });
