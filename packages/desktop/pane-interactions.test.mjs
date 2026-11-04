@@ -111,7 +111,7 @@ test('native menu, creation, cancellation, clipboard, download and cold restart'
  if(artifactDir){await mkdir(artifactDir,{recursive:true});recording=spawn('ffmpeg',['-y','-loglevel','error','-f','x11grab','-framerate','12','-video_size','1280x860','-i',process.env.DISPLAY+'+0,0','-c:v','libvpx-vp9','-crf','38','-b:v','0',path.join(artifactDir,'pane-interactions.webm')],{stdio:['pipe','ignore','pipe']});t.after(async()=>{if(recording?.exitCode===null){recording.stdin.write('q');await new Promise(resolve=>recording.on('exit',resolve))}})}
  await pane(page,2).locator('.maw-pane-add-tab').click();
  await eventually(async()=> (await app.attached()).length<2);await frames(page);await app.screenshot('01-add-menu.png');
- await page.getByRole('menuitem',{name:'New CLI',exact:true}).click();await page.getByRole('dialog').waitFor();await page.getByRole('button',{name:'Cancel',exact:true}).click();
+ await page.getByRole('menuitem',{name:'New ChatGPT tab',exact:true}).click();await page.getByRole('dialog').waitFor();await page.getByRole('button',{name:'Cancel',exact:true}).click();
  await eventually(async()=> (await app.attached()).length===2);
  await pane(page,2).locator('.maw-pane-add-tab').click();await page.getByRole('menuitem',{name:'New Terminal',exact:true}).click();
  await page.waitForFunction(()=>window.fixture.state.layout.tree.second.tabIds.length===2);await frames(page,16);
