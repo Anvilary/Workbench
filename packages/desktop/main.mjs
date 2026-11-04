@@ -6,7 +6,7 @@ import { mkdir, readFile, lstat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl } from './policy.mjs';
 import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
-import { MemoryPressureTier, calculateResourceBudget, selectEvictionCandidate } from './resource-budget.mjs';
+import { MemoryPressureTier, calculateResourceBudget, selectEvictionCandidate, isProtectedProvider } from './resource-budget.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Deliberately distinct from both production MAW and any Brave/Neko profile.
@@ -509,14 +509,13 @@ async function start() {
     if (view.webContents.isLoading()) return false;
 
     // Data-safety guard: Protect user-important generative AI surfaces (ChatGPT, Perplexity)
-    // from automatic silent renderer destruction under normal healthy memory conditions.
-    // Under Moderate, High, Critical pressure or manual test override, eviction is permitted
-    // to safeguard overall OS stability.
-    if (tier === MemoryPressureTier.NORMAL) {
-      const provider = providers.get(id) ?? 'chatgpt';
-      if (provider === 'chatgpt' || provider === 'perplexity') {
-        return false;
-      }
+    // from automatic silent renderer destruction under NORMAL, MODERATE, and HIGH memory pressure,
+    // as well as under standby count quotas (OVERRIDE).
+    // Under CRITICAL pressure (imminent risk of kernel OOM-killer), eviction of background AI tabs
+    // is permitted as an explicit emergency fallback to prevent uncontrolled process crash.
+    const provider = providers.get(id) ?? 'chatgpt';
+    if (isProtectedProvider(provider) && tier !== MemoryPressureTier.CRITICAL) {
+      return false;
     }
 
     return true;
@@ -544,6 +543,7 @@ async function start() {
       tabWorkingSetBytes,
       attachedCount: attachedViews.size,
       envOverride: process.env.MAW_MAX_RESIDENT_VIEWS,
+      tierOverride: process.env.MAW_MEMORY_PRESSURE_TIER,
     });
   }
 
@@ -590,12 +590,14 @@ async function start() {
   }
 
   function ensureCapacity(excludeId) {
-    const { budget, tier } = getResourceBudgetInfo();
+    const { budget, tier, memoryTier } = getResourceBudgetInfo();
+    const effectiveTier = tier === MemoryPressureTier.OVERRIDE ? (memoryTier ?? MemoryPressureTier.NORMAL) : tier;
     while (views.size >= budget) {
       const candidateId = selectEvictionCandidate({
         residentIds: views.keys(),
         lastAccessedAt,
-        canEvict: (id) => canEvict(id, tier),
+        canEvict: (id) => canEvict(id, effectiveTier),
+        isProtected: (id) => isProtectedProvider(providers.get(id) ?? 'chatgpt'),
         excludeId,
       });
 

@@ -136,15 +136,13 @@ test('resource-aware resident tab pool: creates >8 tabs, evicts LRU background v
       });
     };
 
-    // 1. Open 12 tabs (6 ChatGPT, 4 Perplexity, 2 GitHub) - exceeds the old limit of 8!
+    // 1. Open 12 tabs: 2 protected ChatGPT tabs (opened first, oldest), then 10 ordinary GitHub tabs
     for (let i = 0; i < tabIds.length; i++) {
       const id = tabIds[i];
-      const provider = i < 6 ? 'chatgpt' : i < 10 ? 'perplexity' : 'github';
+      const provider = i < 2 ? 'chatgpt' : 'github';
       const url =
         provider === 'chatgpt'
           ? `https://chatgpt.com/c/mock-${i}`
-          : provider === 'perplexity'
-          ? `https://perplexity.ai/search/mock-${i}`
           : `https://github.com/mock-repo-${i}`;
 
       const res = await page.evaluate(
@@ -195,11 +193,13 @@ test('resource-aware resident tab pool: creates >8 tabs, evicts LRU background v
 
     // 4. Open tabs 0, 1, 2 again in the background. Attached views (tabs 10 & 11) must NOT be evicted!
     for (let i = 0; i < 3; i++) {
+      const provider = i < 2 ? 'chatgpt' : 'github';
+      const url = provider === 'chatgpt' ? `https://chatgpt.com/c/mock-${i}` : `https://github.com/mock-repo-${i}`;
       await page.evaluate(
-        async ({ id, url }) => {
-          await window.mawChatGpt.command({ type: 'open', id, url, provider: 'chatgpt' });
+        async ({ id, url, provider }) => {
+          await window.mawChatGpt.command({ type: 'open', id, url, provider });
         },
-        { id: tabIds[i], url: `https://chatgpt.com/c/mock-${i}` }
+        { id: tabIds[i], url, provider }
       );
     }
 
@@ -227,8 +227,8 @@ test('resource-aware resident tab pool: creates >8 tabs, evicts LRU background v
           await window.mawChatGpt.command({
             type: 'open',
             id,
-            url: 'https://chatgpt.com/c/mock-4',
-            provider: 'chatgpt',
+            url: 'https://github.com/mock-repo-4',
+            provider: 'github',
           });
           return { ok: true };
         } catch (err) {
