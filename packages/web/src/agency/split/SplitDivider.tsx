@@ -30,18 +30,22 @@ export function SplitDivider({
   } | null>(null);
   const rafRef = useRef<number | null>(null);
   const latestRatioRef = useRef(ratio);
-  latestRatioRef.current = ratio;
+  if (!dragRef.current) {
+    latestRatioRef.current = ratio;
+  }
 
   const stopDrag = useCallback(() => {
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
+    const finalRatio = latestRatioRef.current;
     dragRef.current = null;
     setIsDragging(false);
     setSnapGuide(null);
     onDragStateChange?.(false);
-  }, [onDragStateChange]);
+    onRatioChange(finalRatio);
+  }, [onDragStateChange, onRatioChange]);
 
   useEffect(() => {
     const handleBlur = () => {
@@ -127,6 +131,18 @@ export function SplitDivider({
     const maxPx = totalPx - minPx;
     const clampedPx = Math.max(minPx, Math.min(maxPx, rawPx));
     const nextRatio = Math.round((clampedPx / totalPx) * 1000) / 1000;
+    latestRatioRef.current = nextRatio;
+
+    // Fast path: mutate split sibling flex styles directly on the DOM during active drag
+    const parent = dividerRef.current?.parentElement;
+    if (parent) {
+      const firstChild = parent.firstElementChild as HTMLElement | null;
+      const lastChild = parent.lastElementChild as HTMLElement | null;
+      if (firstChild && lastChild) {
+        firstChild.style.flex = `${nextRatio} 1 0px`;
+        lastChild.style.flex = `${1 - nextRatio} 1 0px`;
+      }
+    }
 
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
@@ -136,7 +152,6 @@ export function SplitDivider({
       } else {
         setSnapGuide(null);
       }
-      onRatioChange(nextRatio);
     });
   };
 
