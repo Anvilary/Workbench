@@ -1562,6 +1562,9 @@ export interface ServerTerminalReplayMessage {
   startOffset?: number;
   endOffset?: number;
   offset?: number;
+  /** Dimensions at which a rendering checkpoint must be restored. */
+  cols?: number;
+  rows?: number;
 }
 
 /** El proceso termino. La pestana sigue abierta hasta que el usuario la cierre. */
@@ -3331,6 +3334,8 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       const startOffset = asNonNegativeInt(record['startOffset']);
       const endOffset = asNonNegativeInt(record['endOffset']);
       const offset = asNonNegativeInt(record['offset']);
+      const cols = asNonNegativeInt(record['cols']);
+      const rows = asNonNegativeInt(record['rows']);
       return terminalId === null || data === null
         ? null
         : {
@@ -3338,6 +3343,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
             terminalId,
             data,
             truncated: record['truncated'] === true,
+            ...(cols !== null && cols > 0 && rows !== null && rows > 0 ? { cols, rows } : {}),
             ...(reset !== null ? { reset } : {}),
             ...(startOffset !== null ? { startOffset } : {}),
             ...(endOffset !== null ? { endOffset } : {}),

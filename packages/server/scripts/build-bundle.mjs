@@ -38,6 +38,7 @@ const external = [
   'express',
   'fzstd',
   '@xterm/headless',
+  '@xterm/addon-serialize',
   'vite',
 ];
 
@@ -68,6 +69,7 @@ try {
   if (fs.existsSync(supervisorSrc)) {
     fs.copyFileSync(supervisorSrc, supervisorDest);
     fs.chmodSync(supervisorDest, 0o755);
+    fs.copyFileSync(path.join(serverRoot, 'src/pty-host/terminal-state.mjs'), path.join(outdir, 'terminal-state.mjs'));
     console.log(`[build-bundle] Copied standalone supervisor to ${supervisorDest}`);
   }
 } catch (error) {

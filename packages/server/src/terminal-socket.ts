@@ -1136,48 +1136,64 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     // sin que ninguna se entere de que hubo una reconexion.
     // A client that stops reading must not make the server buffer PTY output without bound (audit N-3):
     // over the high-water mark output is skipped, and once the socket drains the client gets the replay.
+    const sentOffsets = new Map<TerminalId, number>();
+    const replaying = new Map<TerminalId, { frames: { data: string; offset?: number }[]; bytes: number }>();
     const backpressure = new OutputBackpressure(socket, (terminalIds) => {
-      for (const terminalId of terminalIds) {
-        const attached = registry.attach(terminalId, listener);
-        if (attached !== null) {
-          send(socket, {
-            type: 'terminal.replay',
-            terminalId,
-            data: attached.replay,
-            truncated: attached.truncated,
-            reset: attached.reset,
-            startOffset: attached.startOffset,
-            endOffset: attached.endOffset,
-            offset: attached.endOffset,
-          });
-        }
-      }
+      for (const terminalId of terminalIds) void replayTerminal(terminalId, sentOffsets.get(terminalId));
     });
+    const sendOutput = (terminalId: TerminalId, data: string, offset?: number): void => {
+      send(socket, { type: 'terminal.output', terminalId, data,
+        ...(offset !== undefined ? { offset } : {}) });
+      if (offset !== undefined) sentOffsets.set(terminalId, offset);
+    };
     const outputBatcher = new TerminalOutputBatcher({
       maxWaitMs: 2,
       maxBatchBytes: 64 * 1024,
       onFlush: (terminalId, data, offset) => {
-        send(socket, {
-          type: 'terminal.output',
-          terminalId,
-          data,
-          ...(offset !== undefined ? { offset } : {}),
-        });
+        const pending = replaying.get(terminalId);
+        if (pending) {
+          pending.bytes += Buffer.byteLength(data);
+          if (pending.bytes > 8 * 1024 * 1024) {
+            // Bound recovery buffering. A new attachment gets a fresh checkpoint.
+            socket.close(1013, 'Terminal recovery backlog exceeded');
+            return;
+          }
+          pending.frames.push({ data, offset });
+        } else sendOutput(terminalId, data, offset);
       },
     });
-
     const listener: OutputListener = (terminalId, chunk, offset) => {
-      if (backpressure.shouldSend(terminalId)) {
-        if (process.env.MAW_OUTPUT_BATCHING === '0') {
-          send(socket, {
-            type: 'terminal.output',
-            terminalId,
-            data: chunk,
-            offset,
-          });
-        } else {
-          outputBatcher.push(terminalId, chunk, offset);
+      if (replaying.has(terminalId) || backpressure.shouldSend(terminalId)) {
+        outputBatcher.push(terminalId, chunk, offset);
+        if (process.env.MAW_OUTPUT_BATCHING === '0') outputBatcher.flush(terminalId);
+      }
+    };
+    const replayTerminal = async (terminalId: TerminalId, sinceOffset?: number): Promise<boolean | null> => {
+      outputBatcher.flush(terminalId);
+      const pending = { frames: [] as { data: string; offset?: number }[], bytes: 0 };
+      replaying.set(terminalId, pending);
+      try {
+        const attached = await registry.renderingReplay(terminalId, listener, sinceOffset);
+        if (replaying.get(terminalId) !== pending) return null;
+        if (!attached) return false;
+        send(socket, {
+          type: 'terminal.replay', terminalId, data: attached.replay,
+          truncated: attached.truncated, reset: attached.reset,
+          startOffset: attached.startOffset, endOffset: attached.endOffset,
+          offset: attached.endOffset, cols: attached.cols, rows: attached.rows,
+        });
+        sentOffsets.set(terminalId, attached.endOffset);
+        outputBatcher.flush(terminalId);
+        for (const frame of pending.frames) {
+          if (frame.offset !== undefined && frame.offset <= attached.endOffset) continue;
+          sendOutput(terminalId, frame.data, frame.offset);
         }
+        return true;
+      } catch (error) {
+        if (socket.readyState === socket.OPEN) console.warn('[terminal] Recovery failed:', String(error));
+        return false;
+      } finally {
+        if (replaying.get(terminalId) === pending) replaying.delete(terminalId);
       }
     };
 
@@ -1195,6 +1211,14 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
       the view re-attaches.
     */
     const inputGrants = new Set<TerminalId>();
+    const pendingAttachments = new Map<TerminalId, Promise<boolean>>();
+    const attachmentGenerations = new Map<TerminalId, number>();
+
+    const advanceAttachmentGeneration = (terminalId: TerminalId): number => {
+      const next = (attachmentGenerations.get(terminalId) ?? 0) + 1;
+      attachmentGenerations.set(terminalId, next);
+      return next;
+    };
     const gitSubscriptions = new Set<TerminalId>();
     const memorySubscriptions = new Set<TerminalId>();
     /*
@@ -1355,12 +1379,15 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     const knownLimits = planLimits.snapshot();
     if (knownLimits.length > 0) send(socket, { type: 'plan.limits', limits: knownLimits });
 
-    socket.on('message', async (raw: Buffer | ArrayBuffer | Buffer[]) => {
+    const handleSocketMessage = async (
+      raw: Buffer | ArrayBuffer | Buffer[],
+      parsedMessage: ReturnType<typeof parseClientMessage>,
+    ): Promise<void> => {
       const text = Array.isArray(raw)
         ? Buffer.concat(raw).toString('utf8')
         : Buffer.from(raw as Buffer).toString('utf8');
 
-      const message = parseClientMessage(text);
+      const message = parsedMessage;
       if (message === null) {
         const rawObj = asRecord(parseJson(text));
         if (rawObj && typeof rawObj['type'] === 'string' && rawObj['type'].startsWith('agency.') && typeof rawObj['requestId'] === 'string') {
@@ -1402,6 +1429,16 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           // de error quedaba arriba sin tener que ver con nada que el usuario
           // hubiera pedido. Que no hay CLI ya lo dicen el nombre tachado, el
           // punto y "Abrir CLI". El aviso sigue para lo que manda el cuadro.
+          const pendingAttachment = pendingAttachments.get(message.terminalId);
+          if (pendingAttachment) {
+            const generation = attachmentGenerations.get(message.terminalId);
+            const attached = await pendingAttachment;
+
+            if (!attached) break;
+            if (attachmentGenerations.get(message.terminalId) !== generation) break;
+            if (socket.readyState !== socket.OPEN) break;
+          }
+
           if (!inputGrants.has(message.terminalId)) {
             // Not attached by this socket: drop without feedback, like a sleeping tab.
             debugLog('socket', `input dropped: terminal ${message.terminalId.slice(0, 8)} not attached by this socket`);
@@ -2344,6 +2381,10 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         }
 
         case 'terminal.close':
+          advanceAttachmentGeneration(message.terminalId);
+          pendingAttachments.delete(message.terminalId);
+          inputGrants.delete(message.terminalId);
+          replaying.delete(message.terminalId);
           void (async () => {
             const session = agencyRuntime.list().find(item => item.terminalId === message.terminalId);
             if (session) await agencyRuntime.stop(session.id);
@@ -2360,29 +2401,53 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           break;
 
         case 'terminal.attach': {
-          const attached = registry.attach(message.terminalId, listener, message.sinceOffset);
-          if (attached === null) {
-            inputGrants.delete(message.terminalId);
-            sendError(socket, 'unknown-terminal', serverText('terminalGone'));
-            break;
+          const terminalId = message.terminalId;
+          const generation = advanceAttachmentGeneration(terminalId);
+
+          inputGrants.delete(terminalId);
+
+          const attachment = (async (): Promise<boolean> => {
+            const replayed = await replayTerminal(terminalId, message.sinceOffset);
+
+            if (
+              attachmentGenerations.get(terminalId) !== generation ||
+              socket.readyState !== socket.OPEN
+            ) {
+              return false;
+            }
+
+            if (replayed === null) return false;
+
+            if (!replayed) {
+              sendError(socket, 'unknown-terminal', serverText('terminalGone'));
+              return false;
+            }
+
+            inputGrants.add(terminalId);
+            registry.resize(terminalId, message.cols, message.rows);
+            return true;
+          })();
+
+          pendingAttachments.set(terminalId, attachment);
+
+          try {
+            await attachment;
+          } finally {
+            if (pendingAttachments.get(terminalId) === attachment) {
+              pendingAttachments.delete(terminalId);
+            }
           }
-          inputGrants.add(message.terminalId);
-          send(socket, {
-            type: 'terminal.replay',
-            terminalId: message.terminalId,
-            data: attached.replay,
-            truncated: attached.truncated,
-            reset: attached.reset,
-            startOffset: attached.startOffset,
-            endOffset: attached.endOffset,
-            offset: attached.endOffset,
-          });
-          // El tamano del cliente manda: el pty puede venir de otra ventana.
-          registry.resize(message.terminalId, message.cols, message.rows);
+
           break;
         }
 
         case 'terminal.detach':
+          advanceAttachmentGeneration(message.terminalId);
+          pendingAttachments.delete(message.terminalId);
+          inputGrants.delete(message.terminalId);
+          replaying.delete(message.terminalId);
+          outputBatcher.clear(message.terminalId);
+          sentOffsets.delete(message.terminalId);
           registry.detach(message.terminalId, listener);
           backpressure.forget(message.terminalId);
           inputGrants.delete(message.terminalId);
@@ -3827,6 +3892,83 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
             message: error instanceof Error ? error.message : String(error) });
         } else console.error('[socket] request failed:', String(error));
       }
+    };
+
+    // Preserve wire order for commands affecting the same terminal.
+    // Different terminals and sockets retain independent queues.
+    const terminalCommandQueues = new Map<
+      TerminalId,
+      { tail: Promise<void>; count: number; bytes: number }
+    >();
+
+    const MAX_TERMINAL_COMMANDS = 1024;
+    const MAX_TERMINAL_QUEUE_BYTES = 2 * 1024 * 1024;
+
+    socket.on('message', (raw: Buffer | ArrayBuffer | Buffer[]) => {
+      const text = Array.isArray(raw)
+        ? Buffer.concat(raw).toString('utf8')
+        : Buffer.from(raw as Buffer).toString('utf8');
+
+      const message = parseClientMessage(text);
+
+      if (
+        message === null ||
+        !(
+          message.type === 'input' ||
+          message.type === 'terminal.attach' ||
+          message.type === 'terminal.detach' ||
+          message.type === 'terminal.close'
+        )
+      ) {
+        void handleSocketMessage(raw, message).catch(error => {
+          console.error('[socket] Message handler failed:', String(error));
+        });
+        return;
+      }
+
+      const terminalId = message.terminalId;
+      let queue = terminalCommandQueues.get(terminalId);
+
+      if (!queue) {
+        queue = { tail: Promise.resolve(), count: 0, bytes: 0 };
+        terminalCommandQueues.set(terminalId, queue);
+      }
+
+      const size = Buffer.byteLength(text);
+
+      if (
+        queue.count >= MAX_TERMINAL_COMMANDS ||
+        queue.bytes + size > MAX_TERMINAL_QUEUE_BYTES
+      ) {
+        socket.close(1009, 'Terminal command backlog exceeded');
+        return;
+      }
+
+      queue.count += 1;
+      queue.bytes += size;
+
+      const currentQueue = queue;
+
+      currentQueue.tail = currentQueue.tail
+        .catch(() => undefined)
+        .then(async () => {
+          if (socket.readyState !== socket.OPEN) return;
+          await handleSocketMessage(raw, message);
+        })
+        .catch(error => {
+          console.error('[socket] Terminal command failed:', String(error));
+        })
+        .finally(() => {
+          currentQueue.count -= 1;
+          currentQueue.bytes -= size;
+
+          if (
+            currentQueue.count === 0 &&
+            terminalCommandQueues.get(terminalId) === currentQueue
+          ) {
+            terminalCommandQueues.delete(terminalId);
+          }
+        });
     });
 
     let tornDown = false;
@@ -3837,7 +3979,12 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         tornDown = true;
         planLimits.release();
       }
+      inputGrants.clear();
+      pendingAttachments.clear();
+      attachmentGenerations.clear();
+      replaying.clear();
       outputBatcher.dispose();
+      sentOffsets.clear();
       backpressure.dispose();
       if (phonePairingOwner === socket) {
         phonePairingOwner = null;

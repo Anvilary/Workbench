@@ -5,6 +5,7 @@
  */
 
 import net from 'node:net';
+import { StringDecoder } from 'node:string_decoder';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -62,6 +63,7 @@ function safeReadAuthToken(authPath: string): string {
 export class PtyHostClient {
   private socket: net.Socket | null = null;
   private lineBuffer = '';
+  private decoder = new StringDecoder('utf8');
   private pendingRequests = new Map<string, { resolve: (val: any) => void; reject: (err: Error) => void; timer: NodeJS.Timeout }>();
   private dataListeners = new Set<PtyDataCallback>();
   private exitListeners = new Set<PtyExitCallback>();
@@ -184,6 +186,8 @@ export class PtyHostClient {
     }
 
     return new Promise<PtySnapshotResponse>((resolve, reject) => {
+      this.lineBuffer = '';
+      this.decoder = new StringDecoder('utf8');
       const sock = net.connect(this.socketPath);
       let handshook = false;
 
@@ -240,7 +244,7 @@ export class PtyHostClient {
   }
 
   private _onData(chunk: Buffer): void {
-    this.lineBuffer += chunk.toString('utf8');
+    this.lineBuffer += this.decoder.write(chunk);
 
     if (this.lineBuffer.length > MAX_PAYLOAD_SIZE && !this.lineBuffer.includes('\n')) {
       this.socket?.destroy();
@@ -381,6 +385,7 @@ export class PtyHostClient {
     sinceOffset?: number;
     data: string;
     truncated: boolean;
+    screen?: { data: string; cols: number; rows: number };
   }> {
     const res = await this._request<PtyReplayDataResponse>({
       op: 'replay',
@@ -396,6 +401,7 @@ export class PtyHostClient {
       sinceOffset: res.sinceOffset,
       data: Buffer.from(res.dataB64, 'base64').toString('utf8'),
       truncated: res.truncated,
+      screen: res.screen,
     };
   }
 

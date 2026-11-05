@@ -310,19 +310,25 @@
   overflow: hidden;
 }
 
-/* xterm scrollbar styling matching dark theme */
+/* Keep terminal history discoverable on desktop, including unfocused panes.
+   This is xterm's own viewport; alternate screens correctly have no history. */
+.agency-xterm-host .xterm-viewport {
+  scrollbar-width: auto;
+  scrollbar-color: #718096 #12141a;
+}
 .agency-xterm-host .xterm-viewport::-webkit-scrollbar {
-  width: 8px;
+  width: 12px;
 }
 .agency-xterm-host .xterm-viewport::-webkit-scrollbar-track {
   background: #12141a;
 }
 .agency-xterm-host .xterm-viewport::-webkit-scrollbar-thumb {
-  background: #2b303c;
-  border-radius: 4px;
+  background: #718096;
+  border: 2px solid #12141a;
+  border-radius: 6px;
 }
 .agency-xterm-host .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: #394050;
+  background: #a0aec0;
 }
 
 .agency-shell-placeholder {
@@ -1197,6 +1203,11 @@
 .maw-pane-drop-edge {
   position: absolute;
   z-index: 10;
+  /* The 36px drop strip overlaps xterm's scrollbar and last rows. It must
+     receive pointer events only while a tab/pane is actually being dragged. */
+  pointer-events: none;
+}
+.maw-pane-dragging .maw-pane-drop-edge {
   pointer-events: auto;
 }
 .maw-pane-drop-edge-right {
