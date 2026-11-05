@@ -520,7 +520,7 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                                 {view.isSharedRenderer && (
                                   <span
                                     className="maw-perf-shared-badge"
-                                    title={t('performance.sharedAllocationTooltip', { count: view.sharedTabCount, pid: view.rendererPid })}
+                                    title={t('performance.sharedAllocationTooltip', { count: view.sharedTabCount, pid: view.rendererPid ?? '-' })}
                                   >
                                     {t('performance.sharedAllocation')} ({view.sharedTabCount})
                                   </span>
@@ -529,13 +529,13 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                               <td className="maw-perf-td-mono">{view.rendererPid ?? '-'}</td>
                               <td
                                 className="maw-perf-td-mono"
-                                title={view.isSharedRenderer ? t('performance.sharedAllocationTooltip', { count: view.sharedTabCount, pid: view.rendererPid }) : undefined}
+                                title={view.isSharedRenderer ? t('performance.sharedAllocationTooltip', { count: view.sharedTabCount, pid: view.rendererPid ?? '-' }) : undefined}
                               >
                                 {view.isSharedRenderer ? `~${view.cpuPercent}%` : `${view.cpuPercent}%`}
                               </td>
                               <td
                                 className="maw-perf-td-mono"
-                                title={view.isSharedRenderer ? t('performance.sharedAllocationTooltip', { count: view.sharedTabCount, pid: view.rendererPid }) : undefined}
+                                title={view.isSharedRenderer ? t('performance.sharedAllocationTooltip', { count: view.sharedTabCount, pid: view.rendererPid ?? '-' }) : undefined}
                               >
                                 {view.isSharedRenderer ? `~${formatBytes(view.pssBytes)}` : formatBytes(view.pssBytes)}
                               </td>
