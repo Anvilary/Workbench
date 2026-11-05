@@ -314,6 +314,10 @@ export class TerminalRegistry extends EventEmitter {
     return this.terminals.get(terminalId)?.session?.pid ?? null;
   }
 
+  get supervisorPid(): number | null {
+    return this.client?.supervisorPid ?? null;
+  }
+
   consumeTombstone(terminalId: TerminalId): PtyHostTombstoneInfo | null {
     const tombstone = this.tombstones.get(terminalId) ?? null;
     if (tombstone) {

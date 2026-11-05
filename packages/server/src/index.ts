@@ -160,6 +160,7 @@ function createAuthMiddleware(port: number, token: string, remote: RemoteAccessS
     const authorization = authorizeRequest(request, port, token, remote.verifier());
     if (authorization.ok) {
       const { credential } = authorization;
+      (request as any).mawCredential = credential;
       if (credential.kind === 'session' && credential.source === 'query') {
         response.setHeader('Set-Cookie', buildTokenCookie(token));
       }
@@ -579,6 +580,44 @@ async function main(): Promise<void> {
   await agencyNotificationStore.initialize();
   await agencyActivityManager.initialize();
   await agencyLayoutStore.initialize();
+
+  // Administrative performance endpoint for local MAW Resource Monitor
+  app.get('/api/performance/terminals', (request: Request, response: Response) => {
+    const clientIp = request.socket.remoteAddress;
+    const isLoopback = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === '::ffff:127.0.0.1';
+    if (!isLoopback) {
+      response.status(403).json({ ok: false, error: 'Loopback access only' });
+      return;
+    }
+    const reqAuth = (request as unknown as { mawCredential?: { kind: string } }).mawCredential;
+    if (reqAuth && reqAuth.kind === 'device') {
+      response.status(403).json({ ok: false, error: 'Forbidden' });
+      return;
+    }
+
+    const list = registry.list();
+    const terminals = list.map((descriptor) => {
+      const pid = registry.pidOf(descriptor.terminalId);
+      const identity = registry.nativeIdentityOf?.(descriptor.terminalId);
+      return {
+        terminalId: descriptor.terminalId,
+        sessionId: descriptor.sessionId || null,
+        title: descriptor.label,
+        kind: descriptor.kind,
+        agent: descriptor.agent,
+        pid,
+        cwd: descriptor.cwd,
+        provider: identity?.provider ?? descriptor.agent ?? null,
+      };
+    });
+
+    response.json({
+      ok: true,
+      backendPid: process.pid,
+      supervisorPid: registry.supervisorPid,
+      terminals,
+    });
+  });
 
   const closeUi = isProduction ? mountBuiltUi(app) : await mountDevUi(app, httpServer);
 
