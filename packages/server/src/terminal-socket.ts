@@ -129,6 +129,7 @@ import type { ClassicWorkbenchLifecycle } from './classic-workbench-lifecycle.js
 import { OutputBackpressure } from './output-backpressure.js';
 import { AppSettingsChangeError, type AppSettingsService } from './app-settings-service.js';
 import { TerminalOpenError, type OutputListener, type TerminalRegistry } from './terminal-registry.js';
+import { TerminalHistoryStore } from './terminal-history-store.js';
 import { TerminalWriteQueue, type PieceWriter } from './terminal-write-queue.js';
 import { VaultError, type VaultService } from './vault/service.js';
 import { GitMissingError } from './git-repo.js';
@@ -367,6 +368,27 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     demas CLIs no se anota nada.
   */
   const queuedSubmits = new QueuedSubmitBook();
+
+  /*
+    Almacen de historial persistente por terminal (Lane F).
+  */
+  const historyStores = new Map<TerminalId, TerminalHistoryStore>();
+
+  /**
+   * Obtiene o instancia el almacen de historial persistente para una terminal activa.
+   */
+  const getHistoryStore = (terminalId: TerminalId): TerminalHistoryStore | null => {
+    let store = historyStores.get(terminalId);
+    if (!store && registry.has(terminalId)) {
+      try {
+        store = new TerminalHistoryStore(terminalId);
+        historyStores.set(terminalId, store);
+      } catch {
+        return null;
+      }
+    }
+    return store ?? null;
+  };
 
   // noServer: manejamos el upgrade a mano para no pisarnos con el WebSocket de
   // HMR de Vite, que vive en el mismo servidor HTTP.
@@ -843,6 +865,12 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     repos.drop(terminalId);
     memory.drop(terminalId);
     queuedSubmits.drop(terminalId);
+    // Cierra y descarta el almacen de historial persistente de esta pestana.
+    const historyStore = historyStores.get(terminalId);
+    if (historyStore) {
+      historyStores.delete(terminalId);
+      void historyStore.dispose();
+    }
     // Las imagenes que se pegaron en esta pestana ya no le sirven a nadie: la
     // conversacion que las nombraba se fue con ella. Y el transcript de una
     // continuacion, tampoco (hito 29, D17).
@@ -909,6 +937,15 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     });
   };
 
+  // Almacena la salida del terminal en el historial persistente (Lane F).
+  const onRegistryOutput = (terminalId: TerminalId, chunk: string): void => {
+    const store = getHistoryStore(terminalId);
+    if (store) {
+      store.push(chunk);
+    }
+  };
+
+  registry.on('output', onRegistryOutput);
   registry.on('changed', onRegistryChanged);
   registry.on('exit', onRegistryExit);
   registry.on('activity', onRegistryActivity);
@@ -2271,6 +2308,11 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
                   : {}),
                 ...(message.label !== undefined ? { label: message.label } : {}),
               });
+              try {
+                historyStores.set(descriptor.terminalId, new TerminalHistoryStore(descriptor.terminalId));
+              } catch (error) {
+                console.warn(`[terminal-history] Failed to create store for ${descriptor.terminalId}:`, error);
+              }
               send(socket, {
                 type: 'terminal.opened',
                 requestId: message.requestId,
@@ -2338,6 +2380,11 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
               backpressure.forget(message.terminalId);
               gitSubscriptions.delete(message.terminalId);
               memorySubscriptions.delete(message.terminalId);
+              const store = historyStores.get(message.terminalId);
+              if (store) {
+                historyStores.delete(message.terminalId);
+                void store.dispose();
+              }
             }
           })().catch(error => sendError(socket, 'unknown-terminal', serverText('terminalGone'), String(error)));
           break;
@@ -2367,6 +2414,55 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           registry.detach(message.terminalId, listener);
           backpressure.forget(message.terminalId);
           break;
+
+        /*
+          El cliente pide una pagina del historial persistente de una terminal (Lane F).
+        */
+        case 'terminal.history.page': {
+          const { terminalId, page, pageSize, requestId } = message;
+          if (!registry.has(terminalId)) {
+            send(socket, {
+              type: 'terminal.history.error',
+              terminalId,
+              requestId,
+              reason: 'Terminal not found',
+            });
+            break;
+          }
+          const store = getHistoryStore(terminalId);
+          if (!store) {
+            send(socket, {
+              type: 'terminal.history.error',
+              terminalId,
+              requestId,
+              reason: 'History store not available',
+            });
+            break;
+          }
+          try {
+            const actualPageSize = pageSize ?? 1000;
+            const historyPage = await store.getPage(page, actualPageSize);
+            send(socket, {
+              type: 'terminal.history.data',
+              terminalId,
+              requestId,
+              page: historyPage.page,
+              pageSize: historyPage.pageSize,
+              totalLines: historyPage.totalLines,
+              totalPages: historyPage.totalPages,
+              lines: historyPage.lines,
+              hasMore: historyPage.hasMore,
+            });
+          } catch (error) {
+            send(socket, {
+              type: 'terminal.history.error',
+              terminalId,
+              requestId,
+              reason: error instanceof Error ? error.message : String(error),
+            });
+          }
+          break;
+        }
 
         case 'terminal.rename':
           if (!registry.rename(message.terminalId, message.label)) {
@@ -3844,6 +3940,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
   return () => {
     clearInterval(notificationRetry);
     httpServer.off('upgrade', onUpgrade);
+    registry.off('output', onRegistryOutput);
     registry.off('changed', onRegistryChanged);
     registry.off('activity', onRegistryActivity);
     registry.off('exit', onRegistryExit);
@@ -3879,6 +3976,10 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     agencyNotificationStore.off('created', onNotificationCreated);
     agencyNotificationStore.off('changed', onNotificationChanged);
     agencyActivityManager.off('tabActivity', onTabActivity);
+    for (const store of historyStores.values()) {
+      void store.dispose();
+    }
+    historyStores.clear();
     for (const client of wss.clients) client.terminate();
     wss.close();
   };

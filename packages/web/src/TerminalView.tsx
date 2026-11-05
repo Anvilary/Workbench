@@ -16,7 +16,7 @@
  * vuelve, se reengancha y repinta con el replay.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type MutableRefObject, type RefObject } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal } from '@xterm/xterm';
@@ -115,6 +115,19 @@ interface TerminalViewProps {
    * Notifica fallos al escribir en el portapapeles del sistema.
    */
   onClipboardError?: (error: Error) => void;
+  /**
+   * Callback invocado cuando el usuario sube al tope del scrollback de xterm.
+   */
+  onScrolledToTop?: () => void;
+  /**
+   * Manejadores para respuestas de historial paginado del servidor.
+   */
+  historyHandlers?: RefObject<TerminalHistoryHandlers | null> | MutableRefObject<TerminalHistoryHandlers | null> | TerminalHistoryHandlers;
+}
+
+export interface TerminalHistoryHandlers {
+  onData: (message: any) => void;
+  onError: (message: any) => void;
 }
 
 export function TerminalView({
@@ -127,6 +140,8 @@ export function TerminalView({
   enableAgencyShortcuts = true,
   onTerminalInstance,
   onClipboardError,
+  onScrolledToTop,
+  historyHandlers: historyHandlersProp,
 }: TerminalViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -135,6 +150,16 @@ export function TerminalView({
   onTerminalInstanceRef.current = onTerminalInstance;
   const onClipboardErrorRef = useRef(onClipboardError);
   onClipboardErrorRef.current = onClipboardError;
+  const onScrolledToTopRef = useRef(onScrolledToTop);
+  onScrolledToTopRef.current = onScrolledToTop;
+
+  const defaultHistoryHandlersRef = useRef<TerminalHistoryHandlers | null>(null);
+  const historyHandlers = (historyHandlersProp && 'current' in historyHandlersProp)
+    ? historyHandlersProp
+    : defaultHistoryHandlersRef;
+  if (historyHandlersProp && !('current' in historyHandlersProp)) {
+    defaultHistoryHandlersRef.current = historyHandlersProp;
+  }
   // El tema entra por un ref para que cambiarlo no vuelva a correr el efecto de
   // montaje: recrear el terminal perderia la pantalla y reabriria el attach.
   const themeRef = useRef(theme);
@@ -150,7 +175,7 @@ export function TerminalView({
       fontFamily: '"Cascadia Mono", "Consolas", "Menlo", "DejaVu Sans Mono", monospace',
       fontSize: 14,
       lineHeight: 1.2,
-      scrollback: 20_000,
+      scrollback: 5_000,
       allowProposedApi: true,
       theme: TERMINAL_THEMES[themeRef.current],
       minimumContrastRatio: MINIMUM_CONTRAST[themeRef.current],
@@ -433,7 +458,7 @@ export function TerminalView({
 
     /*
       Atajos de teclado unificados:
-      - Ctrl+Shift+A selecciona todo el buffer accesible (20.000 lineas).
+      - Ctrl+Shift+A selecciona todo el buffer accesible (5.000 lineas).
       - Ctrl+A sin shift no se intercepta y llega intacto a la CLI/shell (inicio de linea, tmux, etc.).
       - Ctrl+Shift+C copia la seleccion como atajo convencional de terminal.
       - Ctrl+C copia si hay seleccion; si no hay seleccion, envia ^C a la PTY (interrupcion).
@@ -505,9 +530,21 @@ export function TerminalView({
       connection.send({ type: 'input', terminalId, data });
     });
 
+    const scrollSub = terminal.onScroll(() => {
+      const inAlternateScreen = terminal.buffer.active.type === 'alternate';
+      if (terminal.buffer.active.viewportY === 0 && !inAlternateScreen) {
+        // User scrolled to the top; request older history
+        // This triggers via a callback prop
+        onScrolledToTopRef.current?.();
+      }
+    });
+
     let lastRenderedOffset: number | undefined = undefined;
 
-    const offMessage = connection.onMessage((message) => {
+    const offMessage = connection.onMessage((rawMessage) => {
+      // TODO: Agent B definira 'terminal.history.data' y 'terminal.history.error' en protocol.ts (ServerMessage).
+      // Se castea temporalmente a any para manejar los nuevos tipos antes de que se unan los tipos.
+      const message = rawMessage as any;
       switch (message.type) {
         case 'terminal.output':
           if (message.terminalId === terminalId) {
@@ -524,7 +561,7 @@ export function TerminalView({
         case 'terminal.replay':
           if (message.terminalId !== terminalId) break;
           // Si reset es false, es una reconexion delta sin perdida: preservamos
-          // los 20.000 renglones de scrollback en xterm y anexamos solo los bytes nuevos.
+          // los 5.000 renglones de scrollback en xterm y anexamos solo los bytes nuevos.
           // Si reset es true (o no viene en servidores legacy), reseteamos terminal.
           if (message.reset ?? true) {
             terminal.reset();
@@ -546,6 +583,16 @@ export function TerminalView({
           terminal.write(
             `\r\n\x1b[90m-- ${t('terminal.exited', { code: message.exitCode })} --\x1b[0m\r\n`,
           );
+          break;
+        case 'terminal.history.data':
+          if (message.terminalId === terminalId) {
+            historyHandlers.current?.onData(message);
+          }
+          break;
+        case 'terminal.history.error':
+          if (message.terminalId === terminalId) {
+            historyHandlers.current?.onError(message);
+          }
           break;
         default:
           break;
@@ -589,6 +636,7 @@ export function TerminalView({
       container.removeEventListener('touchcancel', onTouchCancel, { capture: true });
       renderSubscription.dispose();
       scrollSubscription.dispose();
+      scrollSub.dispose();
       dataSubscription.dispose();
       offMessage();
       offReopen();

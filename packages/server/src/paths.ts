@@ -162,3 +162,11 @@ export function integrationsDir(): string {
 export function agentStatusDir(agent: string): string {
   return path.join(appConfigDir(), 'agent-status', agent);
 }
+
+/**
+ * Raiz del historial persistente de terminales.
+ * Cada terminal tiene su propia subcarpeta: terminal-history/<terminalId>/
+ */
+export function terminalHistoryDir(): string {
+  return path.join(appConfigDir(), 'terminal-history');
+}

@@ -1368,6 +1368,7 @@ export type ClientMessage =
   | ClientCloseTerminalMessage
   | ClientAttachTerminalMessage
   | ClientDetachTerminalMessage
+  | ClientTerminalHistoryPageMessage
   | ClientRenameTerminalMessage
   | ClientReorderTabsMessage
   | ClientRefreshIndexMessage
@@ -1570,6 +1571,45 @@ export interface ServerTerminalExitMessage {
   terminalId: TerminalId;
   exitCode: number;
   signal: number | null;
+}
+
+/**
+ * El cliente pide una pagina del historial persistente de una terminal.
+ * Las paginas son 0-indexed; la 0 es la mas reciente.
+ */
+export interface ClientTerminalHistoryPageMessage {
+  type: 'terminal.history.page';
+  terminalId: TerminalId;
+  page: number;
+  pageSize?: number;
+  /** ID unico de esta solicitud para cancelacion y deduplicacion. */
+  requestId: string;
+}
+
+/**
+ * Respuesta a `terminal.history.page`.
+ */
+export interface ServerTerminalHistoryDataMessage {
+  type: 'terminal.history.data';
+  terminalId: TerminalId;
+  requestId: string;
+  page: number;
+  pageSize: number;
+  totalLines: number;
+  totalPages: number;
+  /** Lineas de salida, con ANSI preservado. Puede estar vacio si page >= totalPages. */
+  lines: string[];
+  hasMore: boolean;
+}
+
+/**
+ * El servidor no pudo atender la solicitud de historial.
+ */
+export interface ServerTerminalHistoryErrorMessage {
+  type: 'terminal.history.error';
+  terminalId: TerminalId;
+  requestId: string;
+  reason: string;
 }
 
 /** La pestana se cerro y ya no existe. */
@@ -2452,6 +2492,8 @@ export type ServerMessage =
   | ServerTerminalReplayMessage
   | ServerTerminalExitMessage
   | ServerTerminalClosedMessage
+  | ServerTerminalHistoryDataMessage
+  | ServerTerminalHistoryErrorMessage
   | ServerTerminalActivityMessage
   | ServerIndexStatusMessage
   | ServerIndexProjectsMessage
@@ -2729,6 +2771,8 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       const terminalId = asNonEmptyString(record['terminalId']);
       return terminalId === null ? null : { type: 'terminal.detach', terminalId };
     }
+    case 'terminal.history.page':
+      return record as unknown as ClientTerminalHistoryPageMessage;
     case 'terminal.rename': {
       const terminalId = asNonEmptyString(record['terminalId']);
       const label = asString(record['label']);
