@@ -1604,6 +1604,10 @@ export interface ServerTerminalHistoryDataMessage {
   hasMore: boolean;
   /** Total de lineas podadas por politica de retencion. */
   prunedLines?: number;
+  /** Bytes lost before persistence, separate from deliberate retention pruning. */
+  droppedBytes?: number;
+  /** Some output was lost or could not be read or recovered reliably. */
+  incomplete?: boolean;
   direction?: 'backward' | 'forward';
 }
 
@@ -2776,8 +2780,18 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       const terminalId = asNonEmptyString(record['terminalId']);
       return terminalId === null ? null : { type: 'terminal.detach', terminalId };
     }
-    case 'terminal.history.page':
-      return record as unknown as ClientTerminalHistoryPageMessage;
+    case 'terminal.history.page': {
+      const terminalId = asNonEmptyString(record['terminalId']);
+      const requestId = asNonEmptyString(record['requestId']);
+      const page = record['page'];
+      const pageSize = record['pageSize'] ?? 1000;
+      const direction = record['direction'] ?? 'backward';
+      if (terminalId === null || terminalId.length > 128 || requestId === null || requestId.length > 128 ||
+          typeof page !== 'number' || !Number.isSafeInteger(page) || page < 0 || page > 1_000_000 ||
+          typeof pageSize !== 'number' || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 1000 ||
+          (direction !== 'backward' && direction !== 'forward')) return null;
+      return { type: 'terminal.history.page', terminalId, requestId, page, pageSize, direction };
+    }
     case 'terminal.rename': {
       const terminalId = asNonEmptyString(record['terminalId']);
       const label = asString(record['label']);

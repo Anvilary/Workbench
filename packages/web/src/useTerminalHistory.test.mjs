@@ -123,12 +123,11 @@ test('useTerminalHistory and TerminalView history pagination', { timeout: 60000 
   });
 
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const browser = await chromium.launch({ headless: true, executablePath });
-
   t.after(async () => {
-    await browser.close();
     await new Promise((resolve) => server.close(resolve));
   });
+  const browser = await chromium.launch({ headless: true, executablePath, chromiumSandbox: true });
+  t.after(async () => { await browser.close(); });
 
   const page = await browser.newPage({ viewport: { width: 1000, height: 600 } });
   await page.goto('http://127.0.0.1:' + server.address().port);
@@ -217,6 +216,9 @@ test('useTerminalHistory and TerminalView history pagination', { timeout: 60000 
       totalPages: 2,
       lines: ['page 0 line 1', 'page 0 line 2'],
       hasMore: true,
+      prunedLines: 50,
+      droppedBytes: 123,
+      incomplete: true,
     });
   }, page0Request.requestId);
 
@@ -225,9 +227,13 @@ test('useTerminalHistory and TerminalView history pagination', { timeout: 60000 
     loading: window.historyHook.loading,
     pages: window.historyHook.pages,
     hasMore: window.historyHook.hasMore,
+    droppedBytes: window.historyHook.droppedBytes,
+    incomplete: window.historyHook.incomplete,
   }));
   assert.equal(afterData.loading, false);
   assert.equal(afterData.hasMore, true);
+  assert.equal(afterData.droppedBytes, 123);
+  assert.equal(afterData.incomplete, true);
   assert.equal(afterData.pages.length, 1);
   assert.equal(afterData.pages[0].page, 0);
   assert.deepEqual(afterData.pages[0].lines, ['page 0 line 1', 'page 0 line 2']);
@@ -279,7 +285,15 @@ test('useTerminalHistory and TerminalView history pagination', { timeout: 60000 
     pagesCount: window.historyHook.pages.length,
     hasMore: window.historyHook.hasMore,
     error: window.historyHook.error,
+    droppedBytes: window.historyHook.droppedBytes,
+    incomplete: window.historyHook.incomplete,
+    totalLines: window.historyHook.totalLines,
+    prunedLines: window.historyHook.prunedLines,
   }));
+  assert.equal(afterReset.droppedBytes, 0);
+  assert.equal(afterReset.incomplete, false);
+  assert.equal(afterReset.totalLines, 0);
+  assert.equal(afterReset.prunedLines, 0);
   assert.equal(afterReset.pagesCount, 0);
   assert.equal(afterReset.hasMore, true);
   assert.equal(afterReset.error, null);
@@ -349,4 +363,18 @@ test('useTerminalHistory and TerminalView history pagination', { timeout: 60000 
   await page.waitForFunction((initial) => window.topScrolledCount > initial, initialScrollCount);
   const finalScrollCount = await page.evaluate(() => window.topScrolledCount);
   assert.ok(finalScrollCount > initialScrollCount, 'onScrolledToTop must be triggered when scrolling to viewportY === 0');
+
+  // Persistent loss must be visible in the drawer, not only in hook state.
+  await page.evaluate(() => { window.sent.length = 0; });
+  await page.getByRole('button', { name: 'Open Persistent History' }).click();
+  await page.waitForFunction(() => window.sent.some(m => m.type === 'terminal.history.page'));
+  const drawerRequest = await page.evaluate(() => window.sent.find(m => m.type === 'terminal.history.page'));
+  await page.evaluate(requestId => window.emitServerMessage({
+    type: 'terminal.history.data', terminalId: 'term-1', requestId,
+    page: 0, pageSize: 1000, totalLines: 1, totalPages: 1,
+    lines: ['retained output'], hasMore: false, droppedBytes: 42, incomplete: true,
+  }), drawerRequest.requestId);
+  await page.waitForFunction(() => document.querySelector('.terminal-history-loss')?.textContent.includes('42 bytes lost'));
+  assert.match(await page.locator('.terminal-history-loss').innerText(), /History is incomplete/);
+
 });

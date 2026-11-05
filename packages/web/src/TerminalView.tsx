@@ -871,6 +871,14 @@ export function TerminalView({
                   ({history.prunedLines} pruned)
                 </span>
               )}
+              {history.incomplete && (
+                <span role="status" className="terminal-history-loss" style={{ color: '#d29922' }}>
+                  History is incomplete{history.droppedBytes > 0 ? ` (${history.droppedBytes} bytes lost)` : ''}.
+                </span>
+              )}
+              {history.error && (
+                <span role="alert" style={{ color: '#f85149' }}>{history.error}</span>
+              )}
               {hasTuiMarkers && (
                 <span
                   title="Output contains cursor addressing or alternate screen sequences that may not render as linear text"

@@ -32,6 +32,8 @@ export interface UseTerminalHistoryResult {
   totalLines: number;
   /** Total de lineas podadas por politica de retencion. */
   prunedLines: number;
+  droppedBytes: number;
+  incomplete: boolean;
   /** Pide la siguiente pagina mas antigua. No hace nada si ya hay una en vuelo. */
   loadOlder(): void;
   /** Limpia el cache local (p. ej. al desmontar o cambiar de terminal). */
@@ -48,6 +50,8 @@ export interface HistoryDataPayload {
   lines: string[];
   hasMore: boolean;
   prunedLines?: number;
+  droppedBytes?: number;
+  incomplete?: boolean;
   direction?: 'backward' | 'forward';
 }
 
@@ -78,18 +82,20 @@ export function useTerminalHistory(
   const [error, setError] = useState<string | null>(null);
   const [totalLines, setTotalLines] = useState(0);
   const [prunedLines, setPrunedLines] = useState(0);
+  const [droppedBytes, setDroppedBytes] = useState(0);
+  const [incomplete, setIncomplete] = useState(false);
 
   // Track the oldest page number loaded (pages go backwards: highest page index = oldest)
   const oldestPageRef = useRef<number | null>(null);
   const inflight = useRef<string | null>(null); // requestId of inflight request
 
   const loadOlder = useCallback(() => {
-    if (!enabled || loading || !hasMore) return;
+    if (!enabled || inflight.current !== null || loading || !hasMore) return;
 
     // Determine which page to fetch
     const nextPage = oldestPageRef.current === null ? 0 : oldestPageRef.current + 1;
 
-    const requestId = `hist-${terminalId}-${nextPage}-${Date.now()}`;
+    const requestId = `hist-${terminalId}-${nextPage}-${crypto.randomUUID()}`;
     inflight.current = requestId;
     setLoading(true);
     setError(null);
@@ -110,9 +116,9 @@ export function useTerminalHistory(
     inflight.current = null;
     setLoading(false);
     setTotalLines(message.totalLines);
-    if (message.prunedLines !== undefined) {
-      setPrunedLines(message.prunedLines);
-    }
+    setPrunedLines(message.prunedLines ?? 0);
+    setDroppedBytes(message.droppedBytes ?? 0);
+    setIncomplete(message.incomplete ?? false);
 
     setPages((prev) => {
       // Avoid duplicates
@@ -151,6 +157,10 @@ export function useTerminalHistory(
     setHasMore(true);
     setLoading(false);
     setError(null);
+    setTotalLines(0);
+    setPrunedLines(0);
+    setDroppedBytes(0);
+    setIncomplete(false);
     oldestPageRef.current = null;
     inflight.current = null;
   }, []);
@@ -171,6 +181,8 @@ export function useTerminalHistory(
     error,
     totalLines,
     prunedLines,
+    droppedBytes,
+    incomplete,
     loadOlder,
     reset,
     // expose handlers for TerminalView
