@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { TerminalHistoryStore } from './terminal-history-store.js';
 
-test('Disk Retention and Recovery: Quotas, Active Segment Protection, Memory Bounded Queue, and Fault Resilience', async (t) => {
+test('Disk retention enforces quotas, bounded queues and recoverable indexes', async (t) => {
   const baseDir = path.join(tmpdir(), `maw-retention-test-${randomUUID()}`);
   await mkdir(baseDir, { recursive: true });
   t.after(async () => {
@@ -38,16 +38,14 @@ test('Disk Retention and Recovery: Quotas, Active Segment Protection, Memory Bou
   assert.ok(store.prunedLines > 0, `prunedLines must be > 0, got ${store.prunedLines}`);
   assert.equal(store.totalLines + store.prunedLines, 200, 'Sum of remaining + pruned lines must equal total produced');
 
-  // Verify that active segment (seg-3.bin) is still present
+  // Retention can remove the newest segment because transcript history is independent of the live PTY.
   const files = await readdir(path.join(baseDir, terminalId));
   const segmentFiles = files.filter((f) => f.startsWith('seg-') && f.endsWith('.bin'));
-  assert.ok(segmentFiles.includes('seg-3.bin'), 'Active latest segment must never be pruned');
+  assert.ok(segmentFiles.length > 0, 'Some history should remain below the configured quota');
 
-  // 2. Active Session Protection: verify that even with an extreme quota of 1 line,
-  // the active segment is never pruned while the session is alive.
+  // 2. Strict quota: transcript pruning is independent of the live PTY.
   const pruneExtreme = await store.prune({ maxTotalLines: 1 });
-  assert.ok(pruneExtreme.remainingSegments >= 1, 'Store must always retain at least 1 segment (the active segment)');
-  assert.ok(store.totalLines > 0, 'Active segment lines must remain intact');
+  assert.equal(pruneExtreme.remainingLines, 0, 'Extreme quota can prune all persisted transcript lines');
 
   // 3. Backpressure and Memory Queue Cap Verification
   // Push 50 KB of data into a store with 10 KB maxQueueBytes without flushing
