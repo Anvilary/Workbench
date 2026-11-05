@@ -518,18 +518,36 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                                   {view.lifecycle === 'active' ? t('performance.active') : view.lifecycle === 'background' ? t('performance.background') : t('performance.hibernated')}
                                 </span>
                                 {view.isSharedRenderer && (
-                                  <span className="maw-perf-shared-badge" title="Shares Chromium renderer process">
-                                    Shared ({view.sharedTabCount})
+                                  <span
+                                    className="maw-perf-shared-badge"
+                                    title={t('performance.sharedAllocationTooltip', { count: view.sharedTabCount, pid: view.rendererPid })}
+                                  >
+                                    {t('performance.sharedAllocation')} ({view.sharedTabCount})
                                   </span>
                                 )}
                               </td>
                               <td className="maw-perf-td-mono">{view.rendererPid ?? '-'}</td>
-                              <td className="maw-perf-td-mono">{view.cpuPercent}%</td>
-                              <td className="maw-perf-td-mono">{formatBytes(view.pssBytes)}</td>
+                              <td
+                                className="maw-perf-td-mono"
+                                title={view.isSharedRenderer ? t('performance.sharedAllocationTooltip', { count: view.sharedTabCount, pid: view.rendererPid }) : undefined}
+                              >
+                                {view.isSharedRenderer ? `~${view.cpuPercent}%` : `${view.cpuPercent}%`}
+                              </td>
+                              <td
+                                className="maw-perf-td-mono"
+                                title={view.isSharedRenderer ? t('performance.sharedAllocationTooltip', { count: view.sharedTabCount, pid: view.rendererPid }) : undefined}
+                              >
+                                {view.isSharedRenderer ? `~${formatBytes(view.pssBytes)}` : formatBytes(view.pssBytes)}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
+                    )}
+                    {snapshot.browserViews.views.some((v) => v.isSharedRenderer) && (
+                      <div className="maw-perf-shared-notice">
+                        {t('performance.sharedRendererNote')}
+                      </div>
                     )}
                   </div>
                 )}
