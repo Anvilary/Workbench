@@ -1184,6 +1184,17 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     // Conversaciones y repos que sigue **este** socket. Se sueltan al cerrarse,
     // para que el seguimiento se apague cuando no queda nadie mirando.
     const subscriptions = new Set<TerminalId>();
+    /*
+      Input isolation. Keystrokes (`input`) are accepted only for terminals this
+      socket has explicitly attached and not detached since. The grant is kept
+      apart from the output listener on purpose: backpressure may drop and
+      re-attach the listener while a user is still typing (Ctrl+C during a
+      flood must not be lost), but a terminal the view never attached, or
+      already detached, must not be writable by a stale or foreign sender.
+      The set dies with the socket, so a reconnect starts with no grants until
+      the view re-attaches.
+    */
+    const inputGrants = new Set<TerminalId>();
     const gitSubscriptions = new Set<TerminalId>();
     const memorySubscriptions = new Set<TerminalId>();
     /*
@@ -1391,6 +1402,11 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           // de error quedaba arriba sin tener que ver con nada que el usuario
           // hubiera pedido. Que no hay CLI ya lo dicen el nombre tachado, el
           // punto y "Abrir CLI". El aviso sigue para lo que manda el cuadro.
+          if (!inputGrants.has(message.terminalId)) {
+            // Not attached by this socket: drop without feedback, like a sleeping tab.
+            debugLog('socket', `input dropped: terminal ${message.terminalId.slice(0, 8)} not attached by this socket`);
+            break;
+          }
           if (!registry.write(message.terminalId, message.data) && registry.get(message.terminalId) === null) {
             sendError(socket, 'unknown-terminal', serverText('terminalGone'));
           }
@@ -2336,6 +2352,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
             } else {
               subscriptions.delete(message.terminalId);
               backpressure.forget(message.terminalId);
+              inputGrants.delete(message.terminalId);
               gitSubscriptions.delete(message.terminalId);
               memorySubscriptions.delete(message.terminalId);
             }
@@ -2345,9 +2362,11 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         case 'terminal.attach': {
           const attached = registry.attach(message.terminalId, listener, message.sinceOffset);
           if (attached === null) {
+            inputGrants.delete(message.terminalId);
             sendError(socket, 'unknown-terminal', serverText('terminalGone'));
             break;
           }
+          inputGrants.add(message.terminalId);
           send(socket, {
             type: 'terminal.replay',
             terminalId: message.terminalId,
@@ -2366,6 +2385,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         case 'terminal.detach':
           registry.detach(message.terminalId, listener);
           backpressure.forget(message.terminalId);
+          inputGrants.delete(message.terminalId);
           break;
 
         case 'terminal.rename':
