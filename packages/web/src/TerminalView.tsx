@@ -24,6 +24,12 @@ import type { TerminalId } from '@agent-workbench/shared';
 import type { AgentConnection } from './connection.js';
 import { isConsolePasteKey } from './console-paste.js';
 import { t } from './i18n/index.js';
+import {
+  KEYBOARD_GESTURE_EVENTS,
+  documentHasWindowFocus,
+  shouldForwardTerminalData,
+  shouldForwardWheelInput,
+} from './terminal-input-gate.js';
 import { isDrag, momentumStep, releaseVelocity, wholePixels, type TouchSample } from './touch-scroll.js';
 
 /** Espera a que el contenedor deje de cambiar de tamano antes de avisar al pty. */
@@ -139,6 +145,9 @@ export function TerminalView({
   // montaje: recrear el terminal perderia la pantalla y reabriria el attach.
   const themeRef = useRef(theme);
   themeRef.current = theme;
+  // Same idea for `active`: the mount effect must read the current value without re-running.
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -491,7 +500,7 @@ export function TerminalView({
     // When Shift+Wheel is used in an alternate-screen application (like raw Codex, less, etc.),
     // send PageUp / PageDown keys to the PTY so conversation/pager history scrolls.
     terminal.attachCustomWheelEventHandler((event) => {
-      if (event.shiftKey && terminal.buffer.active.type === 'alternate') {
+      if (event.shiftKey && terminal.buffer.active.type === 'alternate' && shouldForwardWheelInput(activeRef.current)) {
         const key = event.deltaY < 0 ? '\x1b[5~' : '\x1b[6~';
         connection.send({ type: 'input', terminalId, data: key });
         event.preventDefault();
@@ -500,8 +509,28 @@ export function TerminalView({
       return true;
     });
 
-    // Teclas del usuario -> pty. Sin filtro; la unica excepcion es la de arriba.
+    // Teclas del usuario -> pty. Input isolation: keyboard-origin data (keys, IME, paste on the
+    // xterm textarea) is forwarded only while this terminal owns the keyboard; protocol replies
+    // and programmatic input are not keyboard input and pass untouched (see terminal-input-gate.ts).
+    let lastKeyboardGestureAt: number | null = null;
+    const markKeyboardGesture = (): void => {
+      lastKeyboardGestureAt = performance.now();
+    };
+    const gestureTarget = terminal.textarea ?? null;
+    if (gestureTarget !== null) {
+      for (const name of KEYBOARD_GESTURE_EVENTS) gestureTarget.addEventListener(name, markKeyboardGesture, true);
+    }
     const dataSubscription = terminal.onData((data) => {
+      const forward = shouldForwardTerminalData({
+        lastGestureAt: lastKeyboardGestureAt,
+        now: performance.now(),
+        ownership: {
+          active: activeRef.current,
+          textareaFocused: gestureTarget !== null && document.activeElement === gestureTarget,
+          documentFocused: documentHasWindowFocus(document),
+        },
+      });
+      if (!forward) return;
       connection.send({ type: 'input', terminalId, data });
     });
 
@@ -590,6 +619,9 @@ export function TerminalView({
       renderSubscription.dispose();
       scrollSubscription.dispose();
       dataSubscription.dispose();
+      if (gestureTarget !== null) {
+        for (const name of KEYBOARD_GESTURE_EVENTS) gestureTarget.removeEventListener(name, markKeyboardGesture, true);
+      }
       offMessage();
       offReopen();
       // Desenganchar no mata el proceso: la pty sigue viva en el servidor.
