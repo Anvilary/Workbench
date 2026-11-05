@@ -2419,7 +2419,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           El cliente pide una pagina del historial persistente de una terminal (Lane F).
         */
         case 'terminal.history.page': {
-          const { terminalId, page, pageSize, requestId } = message;
+          const { terminalId, page, pageSize, direction, requestId } = message;
           if (!registry.has(terminalId)) {
             send(socket, {
               type: 'terminal.history.error',
@@ -2441,7 +2441,8 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           }
           try {
             const actualPageSize = pageSize ?? 1000;
-            const historyPage = await store.getPage(page, actualPageSize);
+            const actualDirection = direction ?? 'backward';
+            const historyPage = await store.getPage(page, actualPageSize, actualDirection);
             send(socket, {
               type: 'terminal.history.data',
               terminalId,
@@ -2452,6 +2453,8 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
               totalPages: historyPage.totalPages,
               lines: historyPage.lines,
               hasMore: historyPage.hasMore,
+              prunedLines: historyPage.prunedLines,
+              direction: historyPage.direction,
             });
           } catch (error) {
             send(socket, {

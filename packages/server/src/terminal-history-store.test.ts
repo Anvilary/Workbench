@@ -344,3 +344,113 @@ test('Trailing partial line buffering: buffered until newline or forced by flush
 
   await store.dispose();
 });
+
+test('12. Backward pagination (direction: backward): page 0 is latest slice, page 1 is older slice', async (t) => {
+  const baseDir = await createTempBaseDir();
+  t.after(async () => {
+    await rm(baseDir, { recursive: true, force: true });
+  });
+
+  const terminalId = randomUUID();
+  const store = new TerminalHistoryStore(terminalId, {
+    baseDir,
+    maxSegmentLines: 500,
+  });
+
+  for (let i = 0; i < 2500; i++) {
+    store.push(`item ${i}\n`);
+  }
+  await store.flush();
+
+  // Pagina 0 en backward: lineas 1500 a 2499 (las 1000 mas recientes)
+  const page0 = await store.getPage(0, 1000, 'backward');
+  assert.equal(page0.page, 0);
+  assert.equal(page0.pageSize, 1000);
+  assert.equal(page0.lines.length, 1000);
+  assert.equal(page0.lines[0], 'item 1500');
+  assert.equal(page0.lines[999], 'item 2499');
+  assert.equal(page0.hasMore, true);
+
+  // Pagina 1 en backward: lineas 500 a 1499
+  const page1 = await store.getPage(1, 1000, 'backward');
+  assert.equal(page1.page, 1);
+  assert.equal(page1.lines.length, 1000);
+  assert.equal(page1.lines[0], 'item 500');
+  assert.equal(page1.lines[999], 'item 1499');
+  assert.equal(page1.hasMore, true);
+
+  // Pagina 2 en backward: lineas 0 a 499 (primeras lineas del historial)
+  const page2 = await store.getPage(2, 1000, 'backward');
+  assert.equal(page2.page, 2);
+  assert.equal(page2.lines.length, 500);
+  assert.equal(page2.lines[0], 'item 0');
+  assert.equal(page2.lines[499], 'item 499');
+  assert.equal(page2.hasMore, false);
+
+  await store.dispose();
+});
+
+test('13. Retention pruning: prunes oldest completed segments when quota exceeded', async (t) => {
+  const baseDir = await createTempBaseDir();
+  t.after(async () => {
+    await rm(baseDir, { recursive: true, force: true });
+  });
+
+  const terminalId = randomUUID();
+  const store = new TerminalHistoryStore(terminalId, {
+    baseDir,
+    maxSegmentLines: 100,
+    retentionPolicy: {
+      maxTotalLines: 250, // Conserva como maximo 250 lineas
+    },
+  });
+
+  // Escribir 500 lineas (5 segmentos de 100 lineas)
+  for (let i = 0; i < 500; i++) {
+    store.push(`line-${i}\n`);
+  }
+  await store.flush();
+
+  // El flush automatico ya aplica retentionPolicy configurado
+  assert.equal(store.totalLines <= 250, true);
+
+  // Comprobar que getPage reporta las lineas podadas
+  const page = await store.getPage(0, 100);
+  assert.equal(page.prunedLines! >= 200, true);
+
+  // Podado manual adicional a un limite mas bajo (150 lineas)
+  const result = await store.prune({ maxTotalLines: 150 });
+  assert.equal(result.remainingLines <= 150, true);
+  assert.equal(result.prunedLines > 0, true);
+
+  await store.dispose();
+});
+
+test('14. exportSlice: bounded streaming export with optional ANSI stripping', async (t) => {
+  const baseDir = await createTempBaseDir();
+  t.after(async () => {
+    await rm(baseDir, { recursive: true, force: true });
+  });
+
+  const terminalId = randomUUID();
+  const store = new TerminalHistoryStore(terminalId, { baseDir, maxSegmentLines: 50 });
+
+  for (let i = 0; i < 100; i++) {
+    store.push(`\x1b[32mline ${i}\x1b[0m\n`);
+  }
+  await store.flush();
+
+  // Exportar con ANSI removido
+  const exported = await store.exportSlice(10, 20, { stripAnsi: true });
+  assert.equal(exported.lines.length, 10);
+  assert.equal(exported.lines[0], 'line 10');
+  assert.equal(exported.lines[9], 'line 19');
+  assert.equal(exported.truncated, false);
+
+  // Exportar con limite estricto de bytes
+  const smallExport = await store.exportSlice(0, 100, { maxBytes: 150 });
+  assert.equal(smallExport.truncated, true);
+  assert.equal(smallExport.lines.length < 100, true);
+
+  await store.dispose();
+});

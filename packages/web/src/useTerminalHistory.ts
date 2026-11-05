@@ -28,6 +28,10 @@ export interface UseTerminalHistoryResult {
   loading: boolean;
   /** true si el servidor reporto un error en la ultima peticion. */
   error: string | null;
+  /** Total de lineas registradas en el servidor. */
+  totalLines: number;
+  /** Total de lineas podadas por politica de retencion. */
+  prunedLines: number;
   /** Pide la siguiente pagina mas antigua. No hace nada si ya hay una en vuelo. */
   loadOlder(): void;
   /** Limpia el cache local (p. ej. al desmontar o cambiar de terminal). */
@@ -43,6 +47,8 @@ export interface HistoryDataPayload {
   totalPages: number;
   lines: string[];
   hasMore: boolean;
+  prunedLines?: number;
+  direction?: 'backward' | 'forward';
 }
 
 export interface HistoryErrorPayload {
@@ -70,6 +76,8 @@ export function useTerminalHistory(
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [totalLines, setTotalLines] = useState(0);
+  const [prunedLines, setPrunedLines] = useState(0);
 
   // Track the oldest page number loaded (pages go backwards: highest page index = oldest)
   const oldestPageRef = useRef<number | null>(null);
@@ -86,18 +94,14 @@ export function useTerminalHistory(
     setLoading(true);
     setError(null);
 
-    // TODO: Agent B definira 'terminal.history.page' en protocol.ts (ClientMessage).
-    // Se castea temporalmente a any hasta que este integrado en el protocolo compartido.
     connection.send({
       type: 'terminal.history.page',
       terminalId,
       page: nextPage,
       pageSize: HISTORY_PAGE_SIZE,
+      direction: 'backward',
       requestId,
-    } as any);
-
-    // The response arrives via connection.onMessage in a useEffect in TerminalView.
-    // This hook exposes a handleMessage function for TerminalView to call.
+    });
   }, [enabled, loading, hasMore, terminalId, connection]);
 
   // This function is called by TerminalView when it receives a history message
@@ -105,6 +109,10 @@ export function useTerminalHistory(
     if (message.requestId !== inflight.current) return; // stale response
     inflight.current = null;
     setLoading(false);
+    setTotalLines(message.totalLines);
+    if (message.prunedLines !== undefined) {
+      setPrunedLines(message.prunedLines);
+    }
 
     setPages((prev) => {
       // Avoid duplicates
@@ -161,6 +169,8 @@ export function useTerminalHistory(
     hasMore,
     loading,
     error,
+    totalLines,
+    prunedLines,
     loadOlder,
     reset,
     // expose handlers for TerminalView

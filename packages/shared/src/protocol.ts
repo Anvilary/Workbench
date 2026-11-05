@@ -1582,6 +1582,8 @@ export interface ClientTerminalHistoryPageMessage {
   terminalId: TerminalId;
   page: number;
   pageSize?: number;
+  /** Direccion de la paginacion: backward (por omision, hacia el pasado) o forward. */
+  direction?: 'backward' | 'forward';
   /** ID unico de esta solicitud para cancelacion y deduplicacion. */
   requestId: string;
 }
@@ -1600,6 +1602,9 @@ export interface ServerTerminalHistoryDataMessage {
   /** Lineas de salida, con ANSI preservado. Puede estar vacio si page >= totalPages. */
   lines: string[];
   hasMore: boolean;
+  /** Total de lineas podadas por politica de retencion. */
+  prunedLines?: number;
+  direction?: 'backward' | 'forward';
 }
 
 /**

@@ -16,7 +16,7 @@
  * vuelve, se reengancha y repinta con el replay.
  */
 
-import { useEffect, useRef, type MutableRefObject, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal } from '@xterm/xterm';
@@ -25,6 +25,7 @@ import type { AgentConnection } from './connection.js';
 import { isConsolePasteKey } from './console-paste.js';
 import { t } from './i18n/index.js';
 import { isDrag, momentumStep, releaseVelocity, wholePixels, type TouchSample } from './touch-scroll.js';
+import { useTerminalHistory } from './useTerminalHistory.js';
 
 /** Espera a que el contenedor deje de cambiar de tamano antes de avisar al pty. */
 const RESIZE_DEBOUNCE_MS = 60;
@@ -123,11 +124,29 @@ interface TerminalViewProps {
    * Manejadores para respuestas de historial paginado del servidor.
    */
   historyHandlers?: RefObject<TerminalHistoryHandlers | null> | MutableRefObject<TerminalHistoryHandlers | null> | TerminalHistoryHandlers;
+  /**
+   * Habilita el viewport de historial persistente integrado (Lane F).
+   */
+  enablePersistentHistory?: boolean;
 }
 
 export interface TerminalHistoryHandlers {
   onData: (message: any) => void;
   onError: (message: any) => void;
+}
+
+function cleanAnsiForDisplay(text: string): string {
+  return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '');
+}
+
+function containsTuiMarkers(lines: readonly string[]): boolean {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (line.includes('\x1b[?1049h') || line.includes('\x1b[2J') || line.includes('\x1b[H')) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function TerminalView({
@@ -142,6 +161,7 @@ export function TerminalView({
   onClipboardError,
   onScrolledToTop,
   historyHandlers: historyHandlersProp,
+  enablePersistentHistory = true,
 }: TerminalViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -152,6 +172,12 @@ export function TerminalView({
   onClipboardErrorRef.current = onClipboardError;
   const onScrolledToTopRef = useRef(onScrolledToTop);
   onScrolledToTopRef.current = onScrolledToTop;
+
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [showHistoryPrompt, setShowHistoryPrompt] = useState(false);
+  const history = useTerminalHistory(terminalId, connection, active && enablePersistentHistory);
+  const historyRef = useRef(history);
+  historyRef.current = history;
 
   const defaultHistoryHandlersRef = useRef<TerminalHistoryHandlers | null>(null);
   const historyHandlers = (historyHandlersProp && 'current' in historyHandlersProp)
@@ -164,6 +190,46 @@ export function TerminalView({
   // montaje: recrear el terminal perderia la pantalla y reabriria el attach.
   const themeRef = useRef(theme);
   themeRef.current = theme;
+
+  // Manejo de la tecla Escape para cerrar el visor de historial y volver a la terminal activa
+  useEffect(() => {
+    if (!historyOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setHistoryOpen(false);
+        terminalRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [historyOpen]);
+
+  const allHistoryLines = useMemo(() => {
+    const reversedPages = [...history.pages].reverse();
+    const lines: string[] = [];
+    for (const p of reversedPages) {
+      for (const line of p.lines) {
+        lines.push(cleanAnsiForDisplay(line));
+      }
+    }
+    return lines;
+  }, [history.pages]);
+
+  const hasTuiMarkers = useMemo(() => {
+    for (const p of history.pages) {
+      if (containsTuiMarkers(p.lines)) return true;
+    }
+    return false;
+  }, [history.pages]);
+
+  const handleCopyHistory = useCallback(() => {
+    const text = allHistoryLines.join('\n');
+    if (text.length > 0) {
+      navigator.clipboard.writeText(text).catch((err) => {
+        onClipboardErrorRef.current?.(err instanceof Error ? err : new Error(String(err)));
+      });
+    }
+  }, [allHistoryLines]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -533,17 +599,18 @@ export function TerminalView({
     const scrollSub = terminal.onScroll(() => {
       const inAlternateScreen = terminal.buffer.active.type === 'alternate';
       if (terminal.buffer.active.viewportY === 0 && !inAlternateScreen) {
-        // User scrolled to the top; request older history
-        // This triggers via a callback prop
+        // El usuario llego al tope del scrollback en memoria de xterm (5.000 lineas).
+        // Se ofrece y habilita la carga del historial persistente.
         onScrolledToTopRef.current?.();
+        setShowHistoryPrompt(true);
+      } else if (terminal.buffer.active.viewportY > 15) {
+        setShowHistoryPrompt(false);
       }
     });
 
     let lastRenderedOffset: number | undefined = undefined;
 
     const offMessage = connection.onMessage((rawMessage) => {
-      // TODO: Agent B definira 'terminal.history.data' y 'terminal.history.error' en protocol.ts (ServerMessage).
-      // Se castea temporalmente a any para manejar los nuevos tipos antes de que se unan los tipos.
       const message = rawMessage as any;
       switch (message.type) {
         case 'terminal.output':
@@ -586,11 +653,13 @@ export function TerminalView({
           break;
         case 'terminal.history.data':
           if (message.terminalId === terminalId) {
+            historyRef.current._handleHistoryData(message);
             historyHandlers.current?.onData(message);
           }
           break;
         case 'terminal.history.error':
           if (message.terminalId === terminalId) {
+            historyRef.current._handleHistoryError(message);
             historyHandlers.current?.onError(message);
           }
           break;
@@ -694,9 +763,147 @@ export function TerminalView({
   }, [active, autoFocus, terminalId, connection]);
 
   return (
-    <div
-      className={`terminal-surface${active ? '' : ' terminal-surface-hidden'}`}
-      ref={containerRef}
-    />
+    <div className={`terminal-surface${active ? '' : ' terminal-surface-hidden'}`}>
+      {historyOpen && (
+        <div
+          className="terminal-history-viewport"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            maxHeight: '65%',
+            zIndex: 20,
+            display: 'flex',
+            flexDirection: 'column',
+            backgroundColor: theme === 'dark' ? '#181b22' : '#f0f3f6',
+            borderBottom: `1px solid ${theme === 'dark' ? '#30363d' : '#d0d7de'}`,
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)',
+            fontFamily: '"Cascadia Mono", "Consolas", "Menlo", monospace',
+            fontSize: '13px',
+            color: theme === 'dark' ? '#c9d1d9' : '#24292f',
+          }}
+          role="region"
+          aria-label="Terminal History Viewport"
+        >
+          <div
+            className="terminal-history-toolbar"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '6px 12px',
+              backgroundColor: theme === 'dark' ? '#0d1117' : '#e6ebf1',
+              borderBottom: `1px solid ${theme === 'dark' ? '#21262d' : '#d8dee4'}`,
+              fontSize: '12px',
+              gap: '8px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <strong>Terminal History (Read-only)</strong>
+              <span style={{ opacity: 0.7 }}>
+                {allHistoryLines.length} lines loaded ({history.totalLines} on disk)
+              </span>
+              {history.prunedLines > 0 && (
+                <span style={{ color: '#d29922' }}>
+                  ({history.prunedLines} pruned)
+                </span>
+              )}
+              {hasTuiMarkers && (
+                <span
+                  title="Output contains cursor addressing or alternate screen sequences that may not render as linear text"
+                  style={{ color: '#f0883e', cursor: 'help' }}
+                >
+                  [TUI screen fidelity limited]
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => history.loadOlder()}
+                disabled={history.loading || !history.hasMore}
+                style={{ padding: '2px 8px', fontSize: '12px' }}
+              >
+                {history.loading ? 'Loading...' : (history.hasMore ? 'Load Older (1k lines)' : 'Start of History')}
+              </button>
+              <button
+                type="button"
+                className="link-button"
+                onClick={handleCopyHistory}
+                disabled={allHistoryLines.length === 0}
+                style={{ padding: '2px 8px', fontSize: '12px' }}
+              >
+                Copy History
+              </button>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => {
+                  setHistoryOpen(false);
+                  terminalRef.current?.focus();
+                }}
+                style={{ padding: '2px 8px', fontSize: '12px', fontWeight: 'bold' }}
+              >
+                Jump to Live (Esc)
+              </button>
+            </div>
+          </div>
+          <div
+            className="terminal-history-lines"
+            style={{
+              flex: 1,
+              overflowY: 'auto',
+              padding: '8px 12px',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all',
+              userSelect: 'text',
+              maxHeight: '350px',
+            }}
+          >
+            {allHistoryLines.length === 0 ? (
+              <span style={{ opacity: 0.5 }}>No historical lines loaded. Click "Load Older" above.</span>
+            ) : (
+              allHistoryLines.join('\n')
+            )}
+          </div>
+        </div>
+      )}
+      {!historyOpen && showHistoryPrompt && (
+        <div
+          className="terminal-history-prompt"
+          style={{
+            position: 'absolute',
+            top: '8px',
+            right: '16px',
+            zIndex: 15,
+            backgroundColor: theme === 'dark' ? '#21262d' : '#ffffff',
+            border: `1px solid ${theme === 'dark' ? '#30363d' : '#d0d7de'}`,
+            borderRadius: '4px',
+            padding: '4px 10px',
+            fontSize: '12px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <span>Top of live scrollback reached</span>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => {
+              setHistoryOpen(true);
+              if (history.pages.length === 0) history.loadOlder();
+            }}
+            style={{ fontWeight: 'bold' }}
+          >
+            Open Persistent History
+          </button>
+        </div>
+      )}
+      <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+    </div>
   );
 }

@@ -34,12 +34,14 @@ export interface HistoryIndex {
   version: 1;
   terminalId: string;
   totalLines: number;
+  prunedLines?: number;
   segments: Array<{
     file: string;      // Nombre base del archivo, ej: "seg-0.bin"
     startLine: number; // Indice 0-based inclusivo de inicio
     endLine: number;   // Indice 0-based exclusivo de fin
     byteOffset: number;// Byte inicial dentro del archivo (0 para archivos nuevos)
     byteLength: number;// Tamano en bytes de los datos escritos
+    createdAt?: number;// Timestamp de creacion para retencion por antiguedad
   }>;
 }
 
@@ -51,6 +53,24 @@ export interface HistoryPage {
   totalPages: number;
   lines: string[];  // Lineas de texto reales (secuencias ANSI preservadas)
   hasMore: boolean;
+  prunedLines?: number;
+  direction?: 'backward' | 'forward';
+}
+
+/** Politica configurable de retencion de historial. */
+export interface HistoryRetentionPolicy {
+  maxDiskBytes?: number;
+  maxTotalLines?: number;
+  maxAgeMs?: number;
+}
+
+/** Resultado de podado de historial. */
+export interface PruneResult {
+  prunedSegments: number;
+  prunedLines: number;
+  remainingSegments: number;
+  remainingLines: number;
+  remainingDiskBytes: number;
 }
 
 /** Opciones de configuracion para TerminalHistoryStore. */
@@ -59,6 +79,7 @@ export interface TerminalHistoryStoreOptions {
   maxSegmentLines?: number;
   writeIntervalMs?: number;
   maxQueueBytes?: number;
+  retentionPolicy?: HistoryRetentionPolicy;
 }
 
 export class TerminalHistoryStore {
@@ -69,6 +90,7 @@ export class TerminalHistoryStore {
   private readonly maxSegmentLines: number;
   private readonly writeIntervalMs: number;
   private readonly maxQueueBytes: number;
+  private readonly retentionPolicy?: HistoryRetentionPolicy;
 
   private index: HistoryIndex;
   private writeQueue: string[] = [];
@@ -91,6 +113,7 @@ export class TerminalHistoryStore {
     this.maxSegmentLines = options?.maxSegmentLines ?? DEFAULT_MAX_SEGMENT_LINES;
     this.writeIntervalMs = options?.writeIntervalMs ?? DEFAULT_WRITE_INTERVAL_MS;
     this.maxQueueBytes = options?.maxQueueBytes ?? DEFAULT_MAX_QUEUE_BYTES;
+    this.retentionPolicy = options?.retentionPolicy;
 
     this.index = this.loadIndexSync();
   }
@@ -255,6 +278,7 @@ export class TerminalHistoryStore {
             endLine: this.index.totalLines,
             byteOffset: 0,
             byteLength: 0,
+            createdAt: Date.now(),
           };
           this.index.segments.push(currentSeg);
         }
@@ -277,6 +301,9 @@ export class TerminalHistoryStore {
       }
 
       await this.writeIndexAtomic();
+      if (this.retentionPolicy) {
+        await this.prune();
+      }
     } catch (error) {
       console.warn(`[TerminalHistoryStore] Error writing history for terminal ${this.terminalId}:`, error);
     }
@@ -289,10 +316,18 @@ export class TerminalHistoryStore {
   }
 
   /**
-   * Obtiene una pagina de lineas (0-based) a partir de los segmentos en disco.
+   * Obtiene una pagina de lineas a partir de los segmentos en disco.
    * Lee unicamente los segmentos relevantes para el rango pedido.
+   *
+   * direction:
+   *  - 'forward' (por omision): la pagina 0 es el tramo mas antiguo (desde el inicio historico).
+   *  - 'backward': la pagina 0 es el tramo mas reciente (inmediatamente previo a la pty viva).
    */
-  async getPage(page: number, pageSize: number = 1000): Promise<HistoryPage> {
+  async getPage(
+    page: number,
+    pageSize: number = 1000,
+    direction: 'backward' | 'forward' = 'forward',
+  ): Promise<HistoryPage> {
     if (this.writeQueue.length > 0 || this.pendingPartial.length > 0) {
       await this.flush();
     }
@@ -309,12 +344,23 @@ export class TerminalHistoryStore {
         totalPages,
         lines: [],
         hasMore: false,
+        prunedLines: this.index.prunedLines ?? 0,
+        direction,
       };
     }
 
-    const startLine = page * size;
-    const endLine = Math.min(startLine + size, total);
-    const hasMore = page < totalPages - 1;
+    let startLine: number;
+    let endLine: number;
+
+    if (direction === 'backward') {
+      endLine = total - (page * size);
+      startLine = Math.max(0, endLine - size);
+    } else {
+      startLine = page * size;
+      endLine = Math.min(startLine + size, total);
+    }
+
+    const hasMore = direction === 'backward' ? startLine > 0 : endLine < total;
 
     // Filtra segmentos que se solapan con el rango [startLine, endLine)
     const relevantSegments = this.index.segments.filter(
@@ -350,6 +396,145 @@ export class TerminalHistoryStore {
       totalPages,
       lines: resultLines,
       hasMore,
+      prunedLines: this.index.prunedLines ?? 0,
+      direction,
+    };
+  }
+
+  /**
+   * Exporta un tramo acotado de lineas para operaciones de portapapeles (Lane B)
+   * sin requerir cargar todo el archivo en memoria.
+   */
+  async exportSlice(
+    startLine: number,
+    endLine: number,
+    options?: { stripAnsi?: boolean; maxBytes?: number },
+  ): Promise<{ lines: string[]; byteLength: number; truncated: boolean }> {
+    if (this.writeQueue.length > 0 || this.pendingPartial.length > 0) {
+      await this.flush();
+    }
+
+    const clampedStart = Math.max(0, startLine);
+    const clampedEnd = Math.min(this.index.totalLines, Math.max(clampedStart, endLine));
+    const maxBytes = options?.maxBytes ?? (10 * 1024 * 1024);
+    const stripAnsi = options?.stripAnsi ?? false;
+
+    const relevantSegments = this.index.segments.filter(
+      (seg) => seg.startLine < clampedEnd && seg.endLine > clampedStart,
+    );
+
+    const lines: string[] = [];
+    let currentBytes = 0;
+    let truncated = false;
+
+    for (const seg of relevantSegments) {
+      const filePath = path.join(this.dir, seg.file);
+      let content = '';
+      try {
+        content = await readFile(filePath, 'utf8');
+      } catch {
+        continue;
+      }
+
+      const segLines = content.length === 0 ? [] : (content.endsWith('\n') ? content.slice(0, -1) : content).split('\n');
+      const segStart = Math.max(clampedStart, seg.startLine) - seg.startLine;
+      const segEnd = Math.min(clampedEnd, seg.endLine) - seg.startLine;
+      const slice = segLines.slice(segStart, segEnd);
+
+      for (const line of slice) {
+        const text = stripAnsi ? line.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '') : line;
+        const lineBytes = Buffer.byteLength(text, 'utf8') + 1;
+        if (currentBytes + lineBytes > maxBytes) {
+          truncated = true;
+          break;
+        }
+        lines.push(text);
+        currentBytes += lineBytes;
+      }
+
+      if (truncated) break;
+    }
+
+    return { lines, byteLength: currentBytes, truncated };
+  }
+
+  /**
+   * Aplica politicas de retencion podando los segmentos mas antiguos
+   * cuando se superan limites de espacio en disco, total de lineas o antiguedad.
+   * Nunca poda el ultimo segmento activo de una sesion en curso.
+   */
+  async prune(policy?: HistoryRetentionPolicy): Promise<PruneResult> {
+    const activePolicy = policy ?? this.retentionPolicy;
+    if (!activePolicy) {
+      const diskBytes = await this.diskUsageBytes();
+      return {
+        prunedSegments: 0,
+        prunedLines: 0,
+        remainingSegments: this.index.segments.length,
+        remainingLines: this.index.totalLines,
+        remainingDiskBytes: diskBytes,
+      };
+    }
+
+    if (this.writeQueue.length > 0 || this.pendingPartial.length > 0) {
+      await this.flush();
+    }
+
+    const { maxDiskBytes, maxTotalLines, maxAgeMs } = activePolicy;
+    const now = Date.now();
+
+    const segmentsToKeep = [...this.index.segments];
+    const segmentsToRemove: HistoryIndex['segments'] = [];
+    let linesPruned = 0;
+
+    // Solo podemos podar si hay mas de 1 segmento (nunca el activo)
+    while (segmentsToKeep.length > 1) {
+      const oldest = segmentsToKeep[0]!;
+      const totalDisk = segmentsToKeep.reduce((acc, s) => acc + s.byteLength, 0);
+      const totalLines = this.index.totalLines - linesPruned;
+
+      const exceedsBytes = maxDiskBytes !== undefined && totalDisk > maxDiskBytes;
+      const exceedsLines = maxTotalLines !== undefined && totalLines > maxTotalLines;
+      const exceedsAge = maxAgeMs !== undefined && oldest.createdAt !== undefined && (now - oldest.createdAt > maxAgeMs);
+
+      if (exceedsBytes || exceedsLines || exceedsAge) {
+        segmentsToRemove.push(oldest);
+        segmentsToKeep.shift();
+        linesPruned += (oldest.endLine - oldest.startLine);
+      } else {
+        break;
+      }
+    }
+
+    if (segmentsToRemove.length > 0) {
+      for (const seg of segmentsToRemove) {
+        try {
+          await rm(path.join(this.dir, seg.file), { force: true });
+        } catch (error) {
+          console.warn(`[TerminalHistoryStore] Error removing pruned segment ${seg.file}:`, error);
+        }
+      }
+
+      const lineShift = linesPruned;
+      for (const seg of segmentsToKeep) {
+        seg.startLine = Math.max(0, seg.startLine - lineShift);
+        seg.endLine = Math.max(0, seg.endLine - lineShift);
+      }
+
+      this.index.segments = segmentsToKeep;
+      this.index.totalLines = Math.max(0, this.index.totalLines - lineShift);
+      this.index.prunedLines = (this.index.prunedLines ?? 0) + lineShift;
+
+      await this.writeIndexAtomic();
+    }
+
+    const remainingDiskBytes = await this.diskUsageBytes();
+    return {
+      prunedSegments: segmentsToRemove.length,
+      prunedLines: linesPruned,
+      remainingSegments: this.index.segments.length,
+      remainingLines: this.index.totalLines,
+      remainingDiskBytes,
     };
   }
 
