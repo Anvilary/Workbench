@@ -1,19 +1,19 @@
 {
-  "timestamp": 1793877623025,
+  "timestamp": 1793879386352,
   "isPaused": false,
-  "sampleDurationMs": 15.88,
+  "sampleDurationMs": 14.8,
   "global": {
-    "cpuUsagePercent": 0.8,
-    "mawCpuPercent": 0.8,
+    "cpuUsagePercent": 1.2,
+    "mawCpuPercent": 1.2,
     "cpuCoreCount": 16,
-    "mawPssBytes": 99869696,
-    "mawRssBytes": 150093824,
-    "mawPrivateBytes": 95862784,
-    "mawSharedBytes": 54231040,
+    "mawPssBytes": 99348480,
+    "mawRssBytes": 149946368,
+    "mawPrivateBytes": 94699520,
+    "mawSharedBytes": 55246848,
     "systemTotalBytes": 30787805184,
-    "systemFreeBytes": 5606076416,
-    "systemAvailableBytes": 5606076416,
-    "systemMemoryPressure": "moderate",
+    "systemFreeBytes": 3776077824,
+    "systemAvailableBytes": 3776077824,
+    "systemMemoryPressure": "high",
     "gpuProcessMetric": null,
     "gpuHardwareUtilization": null,
     "gpuVramBytes": null,
@@ -21,7 +21,7 @@
     "totalMawProcesses": 1,
     "backendHealth": {
       "status": "healthy",
-      "pid": 954506,
+      "pid": 1081181,
       "type": "Node.js Express & WebSocket Backend"
     },
     "supervisorHealth": {
@@ -31,7 +31,7 @@
     },
     "desktopHealth": {
       "status": "healthy",
-      "pid": 954506,
+      "pid": 1081181,
       "type": "Electron 45.2.0 Main Process"
     }
   },
@@ -53,8 +53,8 @@
     "groups": []
   },
   "browserViews": {
-    "totalCpuPercent": 0.8,
-    "totalPssBytes": 99869696,
+    "totalCpuPercent": 1.2,
+    "totalPssBytes": 99348480,
     "totalCount": 1,
     "activeCount": 1,
     "backgroundCount": 0,
@@ -66,14 +66,14 @@
         "providerLabel": "ChatGPT",
         "url": "https://chatgpt.com/",
         "lifecycle": "active",
-        "rendererPid": 954506,
+        "rendererPid": 1081181,
         "isSharedRenderer": false,
         "sharedTabCount": 1,
-        "cpuPercent": 0.8,
-        "pssBytes": 99869696,
-        "rssBytes": 150093824,
-        "privateBytes": 95862784,
-        "sharedBytes": 54231040
+        "cpuPercent": 1.2,
+        "pssBytes": 99348480,
+        "rssBytes": 149946368,
+        "privateBytes": 94699520,
+        "sharedBytes": 55246848
       }
     ]
   },
@@ -96,52 +96,52 @@
   },
   "history": [
     {
-      "timestamp": 1793877616859,
+      "timestamp": 1793879380191,
       "mawCpuPercent": 0,
       "systemCpuPercent": 0,
-      "mawPssBytes": 100591616,
+      "mawPssBytes": 99471360,
       "mawProcessCount": 1
     },
     {
-      "timestamp": 1793877618859,
-      "mawCpuPercent": 0,
-      "systemCpuPercent": 0,
-      "mawPssBytes": 100701184,
-      "mawProcessCount": 1
-    },
-    {
-      "timestamp": 1793877620859,
+      "timestamp": 1793879382190,
       "mawCpuPercent": 0.1,
       "systemCpuPercent": 0.1,
-      "mawPssBytes": 100987904,
+      "mawPssBytes": 99635200,
       "mawProcessCount": 1
     },
     {
-      "timestamp": 1793877622171,
+      "timestamp": 1793879384191,
+      "mawCpuPercent": 0.1,
+      "systemCpuPercent": 0.1,
+      "mawPssBytes": 100356096,
+      "mawProcessCount": 1
+    },
+    {
+      "timestamp": 1793879385500,
       "mawCpuPercent": 0.4,
       "systemCpuPercent": 0.4,
-      "mawPssBytes": 98804736,
+      "mawPssBytes": 98549760,
       "mawProcessCount": 1
     },
     {
-      "timestamp": 1793877622605,
-      "mawCpuPercent": 0.4,
-      "systemCpuPercent": 0.4,
-      "mawPssBytes": 99660800,
+      "timestamp": 1793879385934,
+      "mawCpuPercent": 0.1,
+      "systemCpuPercent": 0.1,
+      "mawPssBytes": 98664448,
       "mawProcessCount": 1
     },
     {
-      "timestamp": 1793877622859,
+      "timestamp": 1793879386192,
       "mawCpuPercent": 0.5,
       "systemCpuPercent": 0.5,
-      "mawPssBytes": 99697664,
+      "mawPssBytes": 98684928,
       "mawProcessCount": 1
     },
     {
-      "timestamp": 1793877623025,
-      "mawCpuPercent": 0.8,
-      "systemCpuPercent": 0.8,
-      "mawPssBytes": 99869696,
+      "timestamp": 1793879386352,
+      "mawCpuPercent": 1.2,
+      "systemCpuPercent": 1.2,
+      "mawPssBytes": 99348480,
       "mawProcessCount": 1
     }
   ]
