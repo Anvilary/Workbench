@@ -1,5 +1,10 @@
 # Terminal History Implementation Report
 
+> The focused corrections starting from `97279e25c68eb994ecbee58cfd0c85bcb54669f1`
+> are documented in [CORRECTION_REPORT.md](./CORRECTION_REPORT.md). That report is
+> authoritative for current retention, authorization, lifecycle, validation and
+> loss behavior; the measurements and revision notes below describe earlier work.
+
 **Lane**: F: Resource-Efficient Terminal History  
 **Branch**: `feat/maw-terminal-history`  
 **Base SHA**: `85dd91c745980a9870eb591dc0936b40ce7da86c`  
