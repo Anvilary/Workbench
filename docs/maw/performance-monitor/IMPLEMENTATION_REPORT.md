@@ -479,10 +479,14 @@ Commit History for Lane A on branch `feat/maw-resource-monitor`:
 6. `2de545d`: feat(server): harden performance endpoint authorization and reject unauthenticated loopback access
 7. `8220e1d`: feat(web): label shared Chromium browser renderers as estimated proportional allocations
 8. `9c908d3`: test(desktop): add comprehensive process ownership and performance reproduction suite
-9. `4c98ff4`: docs(perf): update implementation report with verification pass findings and compatibility analysis
+9. `4ff098c`: fix(web): ensure non-null rendererPid interpolation in shared allocation tooltips
+10. `b4af33d`: docs(perf): finalize implementation report with verification pass findings and compatibility analysis
 
-Final Integration HEAD SHA:
-`4c98ff403c8fee213ea9330b3210244f7b88dbc3`
+Feature and Verification Code HEAD:
+`4ff098c12e0d0a916c2269d03efcbd8c13b3e76a`
+
+Final Integration Branch HEAD:
+`b4af33d7d701f98526408befa226598399b081ce`
 
 Starting Base Revision:
 `85dd91c745980a9870eb591dc0936b40ce7da86c`
