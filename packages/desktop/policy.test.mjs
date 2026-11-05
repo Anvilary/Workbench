@@ -22,6 +22,13 @@ test('exact HTTPS navigation and initial ChatGPT URL allowlist', () => {
   assert.equal(validCommand({ type: 'browser-action', id, action: 'open-link', url: 'http://127.0.0.1/' }), false);
   assert.equal(validCommand({ type: 'copy-file', cwd: '/work/demo', relative: 'src/app.ts' }), true);
   assert.equal(validCommand({ type: 'copy-file', cwd: '/work/demo', relative: '/etc/passwd' }), false);
+  assert.equal(validCommand({ type: 'write-clipboard-text', text: 'terminal text' }), true);
+  assert.equal(validCommand({ type: 'write-clipboard-text', text: '' }), true);
+  assert.equal(validCommand({ type: 'write-clipboard-text', text: 123 }), false);
+  assert.equal(validCommand({ type: 'write-clipboard-text' }), false);
+  assert.equal(validCommand({ type: 'write-clipboard-text', text: 'a', extra: 'bad' }), false);
+  assert.equal(validCommand({ type: 'read-clipboard-text' }), true);
+  assert.equal(validCommand({ type: 'read-clipboard-text', extra: true }), false);
   assert.equal(validCommand({ type: 'open', id: [id], url: 'https://chatgpt.com/' }), false);
   assert.equal(embeddedUrl('https://chatgpt.com/\npath'), false);
 });

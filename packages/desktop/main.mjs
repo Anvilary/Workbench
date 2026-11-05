@@ -849,6 +849,24 @@ async function start() {
         return { ok: false, error: 'unavailable' };
       }
     }
+    if (command.type === 'write-clipboard-text') {
+      try {
+        await clipboard.writeText(command.text);
+        return { ok: true };
+      } catch (err) {
+        console.error('[desktop] write-clipboard-text error:', err);
+        return { ok: false, error: 'unavailable' };
+      }
+    }
+    if (command.type === 'read-clipboard-text') {
+      try {
+        const text = await clipboard.readText();
+        return { ok: true, text: typeof text === 'string' ? text : '' };
+      } catch (err) {
+        console.error('[desktop] read-clipboard-text error:', err);
+        return { ok: false, error: 'unavailable' };
+      }
+    }
     if (command.type === 'close') closeView(command.id);
     if (command.type === 'retain') {
       for (const id of views.keys()) if (!command.ids.includes(id)) closeView(id);
