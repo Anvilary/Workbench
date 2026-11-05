@@ -147,6 +147,91 @@ async function runScaleBenchmark(targetLines, segmentLines = 10000) {
   };
 }
 
+async function runMultiTerminalBenchmark(numTerminals = 5, linesPerTerminal = 20000) {
+  const baseDir = path.join(tmpdir(), `maw-bench-multi-${numTerminals}x${linesPerTerminal}-${randomUUID()}`);
+  await mkdir(baseDir, { recursive: true });
+
+  const stores = [];
+  for (let i = 0; i < numTerminals; i++) {
+    const terminalId = randomUUID();
+    stores.push(new TerminalHistoryStore(terminalId, {
+      baseDir,
+      maxSegmentLines: 10000,
+    }));
+  }
+
+  if (global.gc) global.gc();
+  const memBefore = process.memoryUsage();
+  const startTime = performance.now();
+
+  const lineTemplate = (tid, i) => `\x1b[34m[T${tid} #${String(i).padStart(6, '0')}]\x1b[0m Worker concurrent output: latency=3.1ms, session=${randomUUID()}\n`;
+  let totalBytesPushed = 0;
+
+  // Concurrent write across all terminals
+  await Promise.all(stores.map(async (store, tIndex) => {
+    let written = 0;
+    while (written < linesPerTerminal) {
+      const batch = Math.min(1000, linesPerTerminal - written);
+      let chunk = '';
+      for (let j = 0; j < batch; j++) {
+        chunk += lineTemplate(tIndex, written + j);
+      }
+      totalBytesPushed += Buffer.byteLength(chunk, 'utf8');
+      store.push(chunk);
+      written += batch;
+      if (written % 5000 === 0) {
+        await store.flush();
+      }
+    }
+    await store.flush();
+  }));
+
+  const writeDurationMs = performance.now() - startTime;
+  const memAfter = process.memoryUsage();
+
+  const totalLines = numTerminals * linesPerTerminal;
+  let totalDiskUsage = 0;
+  for (const s of stores) {
+    totalDiskUsage += await s.diskUsageBytes();
+  }
+
+  // Concurrent read latency across all terminals
+  const readLatencies = [];
+  await Promise.all(stores.map(async (store) => {
+    for (let round = 0; round < 10; round++) {
+      const pageNum = round % 5;
+      const t0 = performance.now();
+      const page = await store.getPage(pageNum, 1000, 'backward');
+      const t1 = performance.now();
+      if (page.lines.length > 0) {
+        readLatencies.push(t1 - t0);
+      }
+    }
+  }));
+
+  for (const s of stores) {
+    await s.dispose();
+  }
+  await rm(baseDir, { recursive: true, force: true });
+
+  return {
+    numTerminals,
+    linesPerTerminal,
+    totalLines,
+    totalBytesPushed,
+    diskUsageBytes: totalDiskUsage,
+    diskUsageMb: Number((totalDiskUsage / (1024 * 1024)).toFixed(2)),
+    writeDurationMs: Number(writeDurationMs.toFixed(2)),
+    throughputLinesPerSec: Math.round(totalLines / (writeDurationMs / 1000)),
+    throughputMbPerSec: Number(((totalBytesPushed / (1024 * 1024)) / (writeDurationMs / 1000)).toFixed(2)),
+    heapUsedBeforeMb: Number((memBefore.heapUsed / (1024 * 1024)).toFixed(2)),
+    heapUsedAfterMb: Number((memAfter.heapUsed / (1024 * 1024)).toFixed(2)),
+    heapDeltaMb: Number(((memAfter.heapUsed - memBefore.heapUsed) / (1024 * 1024)).toFixed(2)),
+    rssDeltaMb: Number(((memAfter.rss - memBefore.rss) / (1024 * 1024)).toFixed(2)),
+    readLatencyMs: stats(readLatencies),
+  };
+}
+
 console.log('[Lane F Benchmark] Starting synthetic terminal history benchmarks...');
 console.log('Scale 1: 10,000 lines');
 const res10k = await runScaleBenchmark(10000);
@@ -163,6 +248,11 @@ const res1m = await runScaleBenchmark(1000000);
 console.log(` - 1M lines written in ${res1m.writeDurationMs}ms (${res1m.throughputLinesPerSec} lines/s, ${res1m.diskUsageMb} MB)`);
 console.log(` - Read latency p95: ${res1m.readLatencyMs.p95}ms, mean: ${res1m.readLatencyMs.mean}ms`);
 
+console.log('Scale 4: Multi-Terminal Concurrent (5 terminals x 20,000 lines = 100,000 lines)');
+const resMulti = await runMultiTerminalBenchmark(5, 20000);
+console.log(` - 5 concurrent terminals (100k total lines) completed in ${resMulti.writeDurationMs}ms (${resMulti.throughputLinesPerSec} lines/s, ${resMulti.diskUsageMb} MB)`);
+console.log(` - Concurrent read latency p95: ${resMulti.readLatencyMs.p95}ms, mean: ${resMulti.readLatencyMs.mean}ms`);
+
 const finalReport = {
   timestamp: new Date().toISOString(),
   environment: {
@@ -175,11 +265,13 @@ const finalReport = {
     scale10k: res10k,
     scale100k: res100k,
     scale1m: res1m,
+    multiTerminal5x20k: resMulti,
   },
   conclusion: {
     boundedMemoryVerified: true,
     millionLineScalabilityVerified: true,
     subFiveMsRetrievalVerified: res1m.readLatencyMs.p95 < 15,
+    multiTerminalConcurrencyVerified: resMulti.readLatencyMs.p95 < 15,
   },
 };
 

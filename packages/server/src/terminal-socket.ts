@@ -1223,6 +1223,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     const subscriptions = new Set<TerminalId>();
     const gitSubscriptions = new Set<TerminalId>();
     const memorySubscriptions = new Set<TerminalId>();
+    const attachedTerminals = new Set<TerminalId>();
     /*
       Los selectores de carpeta son **de este socket** y mueren con el. No hay
       nada que sobreviva a la conexion que los pidio: sin `pickerId` vivo, el
@@ -2313,6 +2314,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
               } catch (error) {
                 console.warn(`[terminal-history] Failed to create store for ${descriptor.terminalId}:`, error);
               }
+              attachedTerminals.add(descriptor.terminalId);
               send(socket, {
                 type: 'terminal.opened',
                 requestId: message.requestId,
@@ -2377,6 +2379,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
               sendError(socket, 'unknown-terminal', serverText('terminalGone'));
             } else {
               subscriptions.delete(message.terminalId);
+              attachedTerminals.delete(message.terminalId);
               backpressure.forget(message.terminalId);
               gitSubscriptions.delete(message.terminalId);
               memorySubscriptions.delete(message.terminalId);
@@ -2395,6 +2398,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
             sendError(socket, 'unknown-terminal', serverText('terminalGone'));
             break;
           }
+          attachedTerminals.add(message.terminalId);
           send(socket, {
             type: 'terminal.replay',
             terminalId: message.terminalId,
@@ -2412,6 +2416,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
 
         case 'terminal.detach':
           registry.detach(message.terminalId, listener);
+          attachedTerminals.delete(message.terminalId);
           backpressure.forget(message.terminalId);
           break;
 
@@ -2428,6 +2433,28 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
               reason: 'Terminal not found',
             });
             break;
+          }
+          if (!attachedTerminals.has(terminalId)) {
+            send(socket, {
+              type: 'terminal.history.error',
+              terminalId,
+              requestId,
+              reason: 'Unauthorized session history access',
+            });
+            break;
+          }
+          const agencySession = agencyRuntime.list().find((item) => item.terminalId === terminalId);
+          if (agencySession) {
+            const ws = agencyWorkspaceStore.getWorkspace(agencySession.workspaceId);
+            if (!ws || ws.status === 'archived') {
+              send(socket, {
+                type: 'terminal.history.error',
+                terminalId,
+                requestId,
+                reason: 'Unauthorized workspace session access',
+              });
+              break;
+            }
           }
           const store = getHistoryStore(terminalId);
           if (!store) {
@@ -3731,6 +3758,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         case 'agency.session.create': {
           try {
             const session = await tabCoordinator.createNative(message);
+            if (session.terminalId) attachedTerminals.add(session.terminalId);
             send(socket, { type: 'agency.session.created', requestId: message.requestId, session });
           } catch (error) {
             let code: AgencyErrorCode = 'internal-error';
@@ -3925,6 +3953,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
       globalSearch.cancel();
       pickers.closeAll();
       registry.detachAll(listener);
+      attachedTerminals.clear();
       for (const terminalId of subscriptions) conversations.unsubscribe(terminalId);
       subscriptions.clear();
       for (const terminalId of gitSubscriptions) repos.unsubscribe(terminalId);

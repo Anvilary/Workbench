@@ -148,6 +148,16 @@ export class TerminalHistoryStore {
     return this.index.totalLines;
   }
 
+  /** Total de lineas podadas por politica de retencion. */
+  get prunedLines(): number {
+    return this.index.prunedLines ?? 0;
+  }
+
+  /** Bytes de datos pendientes en la cola de memoria antes de persistir. */
+  get pendingQueueBytes(): number {
+    return this.queueBytes;
+  }
+
   /**
    * Agrega un fragmento de salida PTY. Encola los datos y programa o dispara
    * la persistencia a disco segun tiempo o volumen acumulado.

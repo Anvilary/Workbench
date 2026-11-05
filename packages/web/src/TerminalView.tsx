@@ -16,7 +16,7 @@
  * vuelve, se reengancha y repinta con el replay.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal } from '@xterm/xterm';
@@ -136,13 +136,27 @@ export interface TerminalHistoryHandlers {
 }
 
 function cleanAnsiForDisplay(text: string): string {
-  return text.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '');
+  const stripped = text
+    .replace(/\x1b\[[0-9;?<=>]*[a-zA-Z~]/g, '')
+    .replace(/\x1b\].*?(\x07|\x1b\\)/g, '');
+  if (stripped.includes('\r')) {
+    const parts = stripped.split('\r');
+    return parts[parts.length - 1] ?? '';
+  }
+  return stripped;
 }
 
 function containsTuiMarkers(lines: readonly string[]): boolean {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
-    if (line.includes('\x1b[?1049h') || line.includes('\x1b[2J') || line.includes('\x1b[H')) {
+    if (
+      line.includes('\x1b[?1049h') ||
+      line.includes('\x1b[?1049l') ||
+      line.includes('\x1b[2J') ||
+      line.includes('\x1b[3J') ||
+      line.includes('\x1b[H') ||
+      /\x1b\[[0-9]+;[0-9]+H/.test(line)
+    ) {
       return true;
     }
   }
@@ -230,6 +244,54 @@ export function TerminalView({
       });
     }
   }, [allHistoryLines]);
+
+  const historyScrollRef = useRef<HTMLDivElement | null>(null);
+  const prevScrollHeightRef = useRef<number>(0);
+  const prevScrollTopRef = useRef<number>(0);
+  const isAutoOpeningRef = useRef<boolean>(false);
+
+  const handleOpenHistory = useCallback(() => {
+    isAutoOpeningRef.current = true;
+    setHistoryOpen(true);
+    if (history.pages.length === 0) {
+      history.loadOlder();
+    }
+  }, [history]);
+
+  useLayoutEffect(() => {
+    const el = historyScrollRef.current;
+    if (!el || !historyOpen) return;
+
+    if (isAutoOpeningRef.current) {
+      el.scrollTop = el.scrollHeight;
+      isAutoOpeningRef.current = false;
+      prevScrollHeightRef.current = el.scrollHeight;
+      prevScrollTopRef.current = el.scrollTop;
+      return;
+    }
+
+    const prevHeight = prevScrollHeightRef.current;
+    const currentHeight = el.scrollHeight;
+    const diff = currentHeight - prevHeight;
+
+    if (diff > 0 && prevScrollTopRef.current !== undefined) {
+      el.scrollTop = prevScrollTopRef.current + diff;
+    }
+
+    prevScrollHeightRef.current = currentHeight;
+    prevScrollTopRef.current = el.scrollTop;
+  }, [allHistoryLines.length, historyOpen]);
+
+  const handleHistoryScroll = useCallback(() => {
+    const el = historyScrollRef.current;
+    if (!el) return;
+    prevScrollTopRef.current = el.scrollTop;
+    prevScrollHeightRef.current = el.scrollHeight;
+
+    if (el.scrollTop <= 10 && history.hasMore && !history.loading) {
+      history.loadOlder();
+    }
+  }, [history]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -851,15 +913,20 @@ export function TerminalView({
             </div>
           </div>
           <div
+            ref={historyScrollRef}
             className="terminal-history-lines"
+            onScroll={handleHistoryScroll}
             style={{
               flex: 1,
               overflowY: 'auto',
               padding: '8px 12px',
+              fontFamily: '"Cascadia Mono", "Consolas", "Menlo", "DejaVu Sans Mono", monospace',
+              fontSize: '13px',
+              lineHeight: '1.4',
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-all',
               userSelect: 'text',
-              maxHeight: '350px',
+              maxHeight: '380px',
             }}
           >
             {allHistoryLines.length === 0 ? (
@@ -893,10 +960,7 @@ export function TerminalView({
           <button
             type="button"
             className="link-button"
-            onClick={() => {
-              setHistoryOpen(true);
-              if (history.pages.length === 0) history.loadOlder();
-            }}
+            onClick={handleOpenHistory}
             style={{ fontWeight: 'bold' }}
           >
             Open Persistent History
