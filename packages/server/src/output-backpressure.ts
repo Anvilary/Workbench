@@ -33,6 +33,7 @@ export class OutputBackpressure {
   /** The client detached or closed this terminal: never resync it. */
   forget(terminalId: TerminalId): void {
     this.lagging.delete(terminalId);
+    if (this.lagging.size === 0) this.dispose();
   }
 
   isLagging(terminalId: TerminalId): boolean {

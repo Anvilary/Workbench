@@ -461,7 +461,8 @@ export class TerminalRegistry extends EventEmitter {
         stopWatchingActivity: null,
         launchHook: new LaunchHookSlot(),
         agencyLaunch: null,
-        agencyManaged: true,
+        // Missing legacy ownership remains quarantined until Agency reconciles it.
+        agencyManaged: session.agencyManaged !== false,
         launching: false,
         launchedAt: descriptor.launchedAt,
       };
@@ -933,6 +934,7 @@ export class TerminalRegistry extends EventEmitter {
           cols: entry.size.cols,
           rows: entry.size.rows,
           sessionId: launchedSessionId,
+          agencyManaged: entry.agencyManaged,
         });
         if (this.terminals.get(terminalId) !== entry) {
           void this.client.kill(terminalId, 'SIGTERM').catch(() => {});
@@ -1351,11 +1353,11 @@ export class TerminalRegistry extends EventEmitter {
     };
   }
 
-  async renderingReplay(terminalId: TerminalId, listener: OutputListener, sinceOffset?: number): Promise<(AttachResult & { cols?: number; rows?: number }) | null> {
+  async renderingReplay(terminalId: TerminalId, listener: OutputListener, sinceOffset?: number, signal?: AbortSignal): Promise<(AttachResult & { cols?: number; rows?: number }) | null> {
     const attached = this.attach(terminalId, listener, sinceOffset);
     const entry = this.terminals.get(terminalId);
     if (!attached || !entry || !attached.reset) return attached;
-    const checkpoint = await entry.buffer.checkpoint();
+    const checkpoint = await entry.buffer.checkpoint(signal);
     return { ...attached, replay: checkpoint.data, endOffset: checkpoint.endOffset,
       cols: checkpoint.cols, rows: checkpoint.rows };
   }

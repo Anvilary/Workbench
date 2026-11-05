@@ -234,9 +234,9 @@ export class OutputBuffer {
   }
 
   /** A rendering checkpoint and its raw byte watermark captured in one FIFO turn. */
-  async checkpoint(): Promise<TerminalCheckpoint & { endOffset: number }> {
+  async checkpoint(signal?: AbortSignal): Promise<TerminalCheckpoint & { endOffset: number }> {
     const endOffset = this.endOffset;
-    const snapshot = await this.state.snapshot();
+    const snapshot = await this.state.snapshot(signal);
     return { ...snapshot, endOffset };
   }
 

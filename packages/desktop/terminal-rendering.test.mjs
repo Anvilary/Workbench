@@ -144,7 +144,7 @@ window.ready = async () => {
     await delay(150);
     let normal = await read(0);
     assert.equal(normal.type, 'normal');
-    assert.equal(normal.length, 20000 + normal.rows);
+    assert.equal(normal.length, 5000 + normal.rows);
     assert.ok(normal.viewport.scrollHeight > normal.viewport.height);
     assert.ok(normal.viewport.width >= 8 && !normal.viewport.clipped);
     await page.evaluate(() => window.term(0).blur());
@@ -177,7 +177,7 @@ window.ready = async () => {
     await until(async()=>await page.evaluate(n=>window.messages.filter(m=>m.type==='terminal.replay').length>n,normalReplayCount),'normal-screen reconnect');
     const normalReconnected = await read(0);
     result.scenarios.normalReconnect = {length:normalReconnected.length, rows:normalReconnected.rows, viewport:normalReconnected.viewport};
-    if (!baseline) assert.equal(normalReconnected.length,20000+normalReconnected.rows);
+    if (!baseline) assert.equal(normalReconnected.length,5000+normalReconnected.rows);
 
     await page.screenshot({ path: path.join(evidence, baseline ? 'before-scrollbar.png' : 'after-scrollbar.png') });
 

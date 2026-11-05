@@ -114,14 +114,26 @@ export class TerminalState {
       }
     });
   }
-  snapshot() {
+  snapshot(signal) {
     if (this.disposed) return Promise.reject(new Error('Terminal state disposed'));
     const pending = this.continuation.pending;
     return new Promise((resolve, reject) => {
-      this.waiters.add(reject);
+      let settled = false;
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        this.waiters.delete(fail);
+        signal?.removeEventListener('abort', abort);
+        callback(value);
+      };
+      const fail = error => finish(reject, error);
+      const succeed = value => finish(resolve, value);
+      const abort = () => fail(signal.reason);
+      this.waiters.add(fail);
+      if (signal?.aborted) { abort(); return; }
+      signal?.addEventListener('abort', abort, { once: true });
       this.term.write('', () => {
-        this.waiters.delete(reject);
-        if (this.disposed) return;
+        if (settled || this.disposed) return;
         try {
           let data = this.serializer.serialize();
           const savedNormal = this.term.buffer.active.type === 'alternate' ? this.savedNormal : null;
@@ -132,17 +144,17 @@ export class TerminalState {
           if (savedNormal && data.startsWith(normalPrefix)) {
             const suffix = data.slice(normalPrefix.length);
             if (savedNormal.cols === cols && savedNormal.rows === rows) {
-              resolve({ data: savedNormal.data + suffix, cols, rows });
+              succeed({ data: savedNormal.data + suffix, cols, rows });
             } else {
               // Resize the saved normal buffer using the same public xterm API.
               const normal = new TerminalState(savedNormal.cols, savedNormal.rows);
               normal.push(savedNormal.data);
               normal.resize(cols, rows);
-              normal.snapshot().then((snapshot) => resolve({ data: snapshot.data + suffix, cols, rows }), reject)
+              normal.snapshot(signal).then((snapshot) => succeed({ data: snapshot.data + suffix, cols, rows }), fail)
                 .finally(() => normal.dispose());
             }
-          } else resolve({ data, cols, rows });
-        } catch (error) { reject(error); }
+          } else succeed({ data, cols, rows });
+        } catch (error) { fail(error); }
       });
     });
   }

@@ -48,3 +48,23 @@ for (const existing of [false, true]) test(`adoption stages output across snapsh
     PtyHostClient.connectOrSpawn = original;
   }
 });
+
+for (const agencyManaged of [false, true, undefined]) test(`adoption retains trusted ownership (${String(agencyManaged)})`, async () => {
+  const original = PtyHostClient.connectOrSpawn;
+  const fake = {
+    snapshot: { sessions: [{ id: 'ownership', alive: true, pid: 1, cwd: '/tmp', createdAt: new Date().toISOString(),
+      ...(agencyManaged === undefined ? {} : { agencyManaged }) }], tombstones: [] },
+    onData() {}, onExit() {}, detach() {},
+    async replay() { return { data: '', startOffset: 0, endOffset: 0, truncated: false }; },
+  };
+  PtyHostClient.connectOrSpawn = async () => fake as unknown as PtyHostClient;
+  const registry = new TerminalRegistry({} as never, null, {} as never, undefined, undefined, undefined, { persistentPty: true });
+  try {
+    await registry.initialize();
+    assert.equal(registry.nativeIdentityOf('ownership'), agencyManaged === false ? undefined : null,
+      'Only explicitly classic sessions may bypass Agency reconciliation');
+  } finally {
+    registry.disposeAll();
+    PtyHostClient.connectOrSpawn = original;
+  }
+});

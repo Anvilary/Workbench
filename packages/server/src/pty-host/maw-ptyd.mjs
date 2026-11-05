@@ -557,6 +557,9 @@ export class PtySupervisor {
 
   _handleSpawn(socket, msg) {
     const { reqId, id, sessionId, cmd, args = [], cwd, env = {}, cols = 80, rows = 24 } = msg;
+    if (Object.hasOwn(msg, 'agencyManaged') && typeof msg.agencyManaged !== 'boolean') {
+      return this._sendError(socket, reqId, 'INVALID_PARAMS', 'Invalid agencyManaged ownership metadata');
+    }
 
     if (!id || typeof id !== 'string') {
       return this._sendError(socket, reqId, 'INVALID_PARAMS', 'Missing or invalid session id');
@@ -606,6 +609,7 @@ export class PtySupervisor {
     const sessionRecord = {
       id,
       sessionId,
+      ...(Object.hasOwn(msg, 'agencyManaged') ? { agencyManaged: msg.agencyManaged } : {}),
       cmd,
       args,
       cwd,
@@ -817,6 +821,7 @@ export class PtySupervisor {
       result.push({
         id,
         sessionId: s.sessionId,
+        ...(Object.hasOwn(s, 'agencyManaged') ? { agencyManaged: s.agencyManaged } : {}),
         pid: s.pid,
         alive: true,
         startOffset: s.buffer.startOffset,

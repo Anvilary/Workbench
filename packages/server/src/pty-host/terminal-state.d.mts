@@ -7,6 +7,6 @@ export class TerminalState {
   constructor(cols?: number, rows?: number);
   push(data: string): void;
   resize(cols: number, rows: number): void;
-  snapshot(): Promise<TerminalCheckpoint>;
+  snapshot(signal?: AbortSignal): Promise<TerminalCheckpoint>;
   dispose(): void;
 }

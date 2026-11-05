@@ -123,3 +123,23 @@ test('long UTF-8 lines and a following write survive a checkpoint at wrapped-col
     } finally { state.dispose(); reference.dispose(); restored.dispose(); }
   }
 });
+
+test('snapshot cancellation releases waiters without disposing the terminal or other snapshots', async () => {
+  const state = new TerminalState(80, 24);
+  const abort = new AbortController();
+  try {
+    state.push('VALID');
+    const cancelled = state.snapshot(abort.signal);
+    const rejected = assert.rejects(cancelled, { name: 'AbortError' });
+    abort.abort();
+    await rejected;
+    assert.equal((state as any).waiters.size, 0, 'Cancelled snapshot owns no retained waiter');
+    const current = await state.snapshot();
+    assert.ok(current.data.includes('VALID'));
+    assert.equal((state as any).waiters.size, 0);
+    const alreadyAborted = new AbortController();
+    alreadyAborted.abort();
+    await assert.rejects(state.snapshot(alreadyAborted.signal), { name: 'AbortError' });
+    assert.equal((state as any).waiters.size, 0);
+  } finally { state.dispose(); }
+});

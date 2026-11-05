@@ -6,7 +6,7 @@
   "description": "Interfaz de Agent Workbench",
   "scripts": {
     "build": "vite build",
-    "test": "tsx --test src/terminal-output.test.mjs src/agency/model.test.mjs src/agency/notifications.test.mjs src/agency/notifications-browser-acceptance.test.mjs src/agency/editor-drafts.test.mjs src/agency/split/tab-geometry.test.mjs src/agency/split/terminal-path.test.mjs src/agency/split/tab-dnd-acceptance.test.mjs src/agency/split/terminal-input-isolation.test.mjs src/terminal-input-gate.test.mjs src/agency/split/terminal-buffer.test.mjs src/agency/split/terminal-clipboard-acceptance.test.mjs src/agency/performance-panel.test.mjs",
+    "test": "tsx --test src/terminal-output.test.mjs src/agency/model.test.mjs src/agency/notifications.test.mjs src/agency/notifications-browser-acceptance.test.mjs src/agency/editor-drafts.test.mjs src/agency/split/tab-geometry.test.mjs src/agency/split/terminal-path.test.mjs src/agency/split/tab-dnd-acceptance.test.mjs src/agency/split/terminal-input-isolation.test.mjs src/terminal-input-gate.test.mjs src/agency/split/terminal-buffer.test.mjs src/agency/split/terminal-clipboard-acceptance.test.mjs src/agency/performance-panel.test.mjs src/useTerminalHistory.test.mjs",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

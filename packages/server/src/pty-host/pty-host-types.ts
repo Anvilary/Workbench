@@ -25,6 +25,8 @@ export type PtyHostErrorCode =
 export interface PtyHostSessionInfo {
   readonly id: string;
   readonly sessionId?: string;
+  /** Trusted ownership classification; omission means unknown legacy metadata. */
+  readonly agencyManaged?: boolean;
   readonly pid: number;
   readonly alive: boolean;
   readonly startOffset: number;
@@ -62,6 +64,8 @@ export interface PtySpawnRequest {
   readonly reqId: string;
   readonly id: string;
   readonly sessionId?: string;
+  /** Trusted ownership classification; omitted by legacy clients. */
+  readonly agencyManaged?: boolean;
   readonly cmd: string;
   readonly args: readonly string[];
   readonly cwd: string;

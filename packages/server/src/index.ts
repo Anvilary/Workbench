@@ -728,7 +728,7 @@ async function main(): Promise<void> {
     console.log('\nClosing Agent Workbench...');
 
     classicLifecycle.dispose();
-    detachSocket();
+    const historyFlushed = detachSocket();
     conversations.disposeAll();
     /*
       Suelta los adaptadores ya, y la promesa espera lo que alguno tiene que
@@ -744,6 +744,7 @@ async function main(): Promise<void> {
     remote.dispose();
 
     void Promise.allSettled([
+      historyFlushed,
       agencyBrowserTabs.flush(),
       store.flush(),
       agencySessionStore.flush(),

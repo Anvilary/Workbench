@@ -336,6 +336,7 @@ export class PtyHostClient {
   async spawn(params: {
     id: string;
     sessionId?: string;
+    agencyManaged?: boolean;
     cmd: string;
     args?: readonly string[];
     cwd: string;
@@ -348,6 +349,7 @@ export class PtyHostClient {
       reqId: randomUUID(),
       id: params.id,
       sessionId: params.sessionId,
+      ...(params.agencyManaged !== undefined ? { agencyManaged: params.agencyManaged } : {}),
       cmd: params.cmd,
       args: params.args || [],
       cwd: params.cwd,
