@@ -164,6 +164,7 @@ export interface PtySpawnedResponse {
 }
 
 export interface PtyReplayDataResponse {
+  readonly screen?: { data: string; cols: number; rows: number };
   readonly op: 'replay_data';
   readonly reqId: string;
   readonly id: string;

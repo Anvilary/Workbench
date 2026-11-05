@@ -302,6 +302,7 @@ test('CLI ENTRYPOINT 9: Exact executable path used by rendered systemd unit', as
 
     const deployedSupervisor = path.join(releaseDistDir, 'maw-ptyd.mjs');
     await fs.promises.copyFile(SUPERVISOR_SRC, deployedSupervisor);
+    await fs.promises.copyFile(path.join(path.dirname(SUPERVISOR_SRC), 'terminal-state.mjs'), path.join(releaseDistDir, 'terminal-state.mjs'));
     await chmod(deployedSupervisor, 0o755);
 
     const currentSymlink = path.join(tmpState, 'current');

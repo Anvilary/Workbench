@@ -27,6 +27,7 @@ test('Prebuilt production server bundle: exists and starts cleanly under raw nod
       USERPROFILE: tempHome,
       XDG_CONFIG_HOME: path.join(tempHome, '.config'),
       XDG_DATA_HOME: path.join(tempHome, '.local/share'),
+      XDG_RUNTIME_DIR: path.join(tempHome, 'runtime'),
       AGENT_WORKBENCH_NO_OPEN: '1',
       AGENT_WORKBENCH_NO_RESTORE: '1',
       MAW_EAGER_CLASSIC: '0',

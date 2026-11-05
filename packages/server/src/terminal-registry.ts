@@ -265,6 +265,7 @@ export declare interface TerminalRegistry {
 
 export class TerminalRegistry extends EventEmitter {
   private readonly terminals = new Map<TerminalId, TerminalEntry>();
+  private readonly adopting = new Map<TerminalId, { frames: { chunk: string; offset: number }[]; bytes: number; overflow: boolean }>();
   private order: TerminalId[] = [];
   /** La ultima actividad avisada de cada pestana, para quien se conecta despues. */
   private readonly activity = new ActivityBook();
@@ -335,6 +336,15 @@ export class TerminalRegistry extends EventEmitter {
         });
 
         this.client.onData((id, chunk, offset) => {
+          const pending = this.adopting.get(id);
+          if (pending) {
+            pending.bytes += Buffer.byteLength(chunk);
+            if (pending.bytes > 8 * 1024 * 1024) {
+              pending.frames.length = 0;
+              pending.overflow = true;
+            } else pending.frames.push({ chunk, offset });
+            return;
+          }
           const target = this.terminals.get(id);
           if (target !== undefined) {
             target.buffer.push(chunk);
@@ -392,64 +402,91 @@ export class TerminalRegistry extends EventEmitter {
   }
 
   private async adoptSupervisorSession(session: PtyHostSessionInfo): Promise<void> {
-    let entry = this.terminals.get(session.id);
-    if (entry !== undefined) {
-      entry.session = new RemotePtySession(this.client!, session.id, session.pid, session.cwd);
-      entry.descriptor = {
-        ...entry.descriptor,
-        alive: true,
-        sleeping: false,
-      };
-      try {
-        const replay = await this.client!.replay(session.id);
-        entry.buffer.seed(replay.data, replay.startOffset, replay.endOffset, replay.truncated);
-      } catch {}
-      return;
-    }
-
-    const descriptor: TerminalDescriptor = {
-      terminalId: session.id,
-      kind: 'agent',
-      agent: null,
-      cwd: session.cwd,
-      sessionId: session.sessionId || '',
-      label: '',
-      resumed: true,
-      createdAt: new Date(session.createdAt).getTime() || Date.now(),
-      alive: true,
-      exitCode: null,
-      sleeping: false,
-      launchedAt: new Date(session.createdAt).getTime() || Date.now(),
-      worktree: null,
-      review: false,
-    };
-
-    const buffer = new OutputBuffer();
+    const pending = { frames: [] as { chunk: string; offset: number }[], bytes: 0, overflow: false };
+    this.adopting.set(session.id, pending);
     try {
-      const replay = await this.client!.replay(session.id);
-      buffer.seed(replay.data, replay.startOffset, replay.endOffset, replay.truncated);
-    } catch {}
+      // A host checkpoint is asynchronous. Keep every broadcast after its raw
+      // cutoff until seed is installed, including for entries not registered yet.
+      let replay = await this.client!.replay(session.id);
+      for (let attempt = 0; pending.overflow && attempt < 3; attempt++) {
+        pending.frames.length = 0;
+        pending.bytes = 0;
+        pending.overflow = false;
+        replay = await this.client!.replay(session.id);
+      }
+      if (pending.overflow) throw new Error('PTY adoption exceeded bounded recovery backlog');
+      let entry = this.terminals.get(session.id);
+      if (entry !== undefined) {
+        entry.session = new RemotePtySession(this.client!, session.id, session.pid, session.cwd);
+        entry.descriptor = {
+          ...entry.descriptor,
+          alive: true,
+          sleeping: false,
+        };
+        entry.buffer.seed(replay.data, replay.startOffset, replay.endOffset, replay.truncated, replay.screen);
+        return;
+      }
 
-    const remoteSession = new RemotePtySession(this.client!, session.id, session.pid, session.cwd);
-    const createdEntry: TerminalEntry = {
-      descriptor,
-      session: remoteSession,
-      buffer,
-      listeners: new Set(),
-      size: { cols: DEFAULT_COLS, rows: DEFAULT_ROWS },
-      stopWatchingActivity: null,
-      launchHook: new LaunchHookSlot(),
-      agencyLaunch: null,
-      agencyManaged: true,
-      launching: false,
-      launchedAt: descriptor.launchedAt,
-    };
+      const descriptor: TerminalDescriptor = {
+        terminalId: session.id,
+        kind: 'agent',
+        agent: null,
+        cwd: session.cwd,
+        sessionId: session.sessionId || '',
+        label: '',
+        resumed: true,
+        createdAt: new Date(session.createdAt).getTime() || Date.now(),
+        alive: true,
+        exitCode: null,
+        sleeping: false,
+        launchedAt: new Date(session.createdAt).getTime() || Date.now(),
+        worktree: null,
+        review: false,
+      };
 
-    this.terminals.set(session.id, createdEntry);
-    if (!this.order.includes(session.id)) {
-      this.order.push(session.id);
+      const buffer = new OutputBuffer();
+      buffer.seed(replay.data, replay.startOffset, replay.endOffset, replay.truncated, replay.screen);
+
+      const remoteSession = new RemotePtySession(this.client!, session.id, session.pid, session.cwd);
+      const createdEntry: TerminalEntry = {
+        descriptor,
+        session: remoteSession,
+        buffer,
+        listeners: new Set(),
+        size: { cols: DEFAULT_COLS, rows: DEFAULT_ROWS },
+        stopWatchingActivity: null,
+        launchHook: new LaunchHookSlot(),
+        agencyLaunch: null,
+        agencyManaged: true,
+        launching: false,
+        launchedAt: descriptor.launchedAt,
+      };
+
+      this.terminals.set(session.id, createdEntry);
+      if (!this.order.includes(session.id)) {
+        this.order.push(session.id);
+      }
+      this.emit('changed');
+    } finally {
+      this.adopting.delete(session.id);
+      const entry = this.terminals.get(session.id);
+      if (entry && !pending.overflow) {
+        for (const frame of pending.frames) {
+          if (frame.offset <= entry.buffer.endOffset) continue;
+          const bytes = Buffer.from(frame.chunk, 'utf8');
+          const overlap = entry.buffer.endOffset - (frame.offset - bytes.length);
+          const chunk = overlap > 0 ? bytes.subarray(overlap).toString('utf8') : frame.chunk;
+          entry.buffer.push(chunk);
+          for (const listener of entry.listeners) listener(session.id, chunk, frame.offset);
+          this.emit('output', session.id, chunk, frame.offset);
+        }
+        const exited = this.tombstones.get(session.id);
+        if (exited) {
+          entry.session = null;
+          entry.descriptor = { ...entry.descriptor, alive: false, exitCode: exited.exitCode, launchedAt: null };
+        }
+      }
     }
-    this.emit('changed');
   }
 
   /** La rama de una carpeta, sin que un fallo al leer `.git` frene una pestana. */
@@ -686,6 +723,7 @@ export class TerminalRegistry extends EventEmitter {
         entry.launchHook.cancel();
         entry.stopWatchingActivity?.();
         entry.session?.dispose();
+        entry.buffer.dispose();
         this.terminals.delete(terminalId);
       }
       throw error;
@@ -877,6 +915,7 @@ export class TerminalRegistry extends EventEmitter {
       if (this.terminals.get(terminalId) !== entry) return false;
     }
 
+    buffer.resize(entry.size.cols, entry.size.rows);
     const launchedAt = Date.now();
     let session: IPtySession;
     try {
@@ -912,9 +951,9 @@ export class TerminalRegistry extends EventEmitter {
               `output ${chunk.length} bytes from ${terminalId.slice(0, 8)}, ${listenerCount} listeners`,
             );
             if (target !== undefined) {
-              for (const listener of target.listeners) listener(terminalId, chunk);
+              for (const listener of target.listeners) listener(terminalId, chunk, buffer.endOffset);
             }
-            this.emit('output', terminalId, chunk);
+            this.emit('output', terminalId, chunk, buffer.endOffset);
           },
           onExit: (exitCode, signal) => {
             const target = this.terminals.get(terminalId);
@@ -1272,6 +1311,7 @@ export class TerminalRegistry extends EventEmitter {
     this.tombstones.delete(terminalId);
     this.client?.reapTombstone(terminalId);
     this.activity.delete(terminalId);
+    entry.buffer.dispose();
     this.terminals.delete(terminalId);
     this.order = this.order.filter((id) => id !== terminalId);
     this.persist();
@@ -1305,6 +1345,15 @@ export class TerminalRegistry extends EventEmitter {
       endOffset: sliced.endOffset,
       sinceOffset,
     };
+  }
+
+  async renderingReplay(terminalId: TerminalId, listener: OutputListener, sinceOffset?: number): Promise<(AttachResult & { cols?: number; rows?: number }) | null> {
+    const attached = this.attach(terminalId, listener, sinceOffset);
+    const entry = this.terminals.get(terminalId);
+    if (!attached || !entry || !attached.reset) return attached;
+    const checkpoint = await entry.buffer.checkpoint();
+    return { ...attached, replay: checkpoint.data, endOffset: checkpoint.endOffset,
+      cols: checkpoint.cols, rows: checkpoint.rows };
   }
 
   detach(terminalId: TerminalId, listener: OutputListener): void {
@@ -1375,6 +1424,7 @@ export class TerminalRegistry extends EventEmitter {
     const entry = this.terminals.get(terminalId);
     if (entry === undefined) return false;
     entry.size = { cols, rows };
+    entry.buffer.resize(cols, rows);
     if (entry.session === null) return false;
     entry.session.resize(cols, rows);
     return true;
@@ -1402,6 +1452,7 @@ export class TerminalRegistry extends EventEmitter {
   disposeAll(): void {
     for (const entry of this.terminals.values()) {
       entry.listeners.clear();
+      entry.buffer.dispose();
       // Sin pasada final: los adaptadores ya se liberaron (B4 del hito 25).
       entry.launchHook.cancel();
       entry.stopWatchingActivity?.();

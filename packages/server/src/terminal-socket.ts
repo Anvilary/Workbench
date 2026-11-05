@@ -1136,48 +1136,64 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     // sin que ninguna se entere de que hubo una reconexion.
     // A client that stops reading must not make the server buffer PTY output without bound (audit N-3):
     // over the high-water mark output is skipped, and once the socket drains the client gets the replay.
+    const sentOffsets = new Map<TerminalId, number>();
+    const replaying = new Map<TerminalId, { frames: { data: string; offset?: number }[]; bytes: number }>();
     const backpressure = new OutputBackpressure(socket, (terminalIds) => {
-      for (const terminalId of terminalIds) {
-        const attached = registry.attach(terminalId, listener);
-        if (attached !== null) {
-          send(socket, {
-            type: 'terminal.replay',
-            terminalId,
-            data: attached.replay,
-            truncated: attached.truncated,
-            reset: attached.reset,
-            startOffset: attached.startOffset,
-            endOffset: attached.endOffset,
-            offset: attached.endOffset,
-          });
-        }
-      }
+      for (const terminalId of terminalIds) void replayTerminal(terminalId, sentOffsets.get(terminalId));
     });
+    const sendOutput = (terminalId: TerminalId, data: string, offset?: number): void => {
+      send(socket, { type: 'terminal.output', terminalId, data,
+        ...(offset !== undefined ? { offset } : {}) });
+      if (offset !== undefined) sentOffsets.set(terminalId, offset);
+    };
     const outputBatcher = new TerminalOutputBatcher({
       maxWaitMs: 2,
       maxBatchBytes: 64 * 1024,
       onFlush: (terminalId, data, offset) => {
-        send(socket, {
-          type: 'terminal.output',
-          terminalId,
-          data,
-          ...(offset !== undefined ? { offset } : {}),
-        });
+        const pending = replaying.get(terminalId);
+        if (pending) {
+          pending.bytes += Buffer.byteLength(data);
+          if (pending.bytes > 8 * 1024 * 1024) {
+            // Bound recovery buffering. A new attachment gets a fresh checkpoint.
+            socket.close(1013, 'Terminal recovery backlog exceeded');
+            return;
+          }
+          pending.frames.push({ data, offset });
+        } else sendOutput(terminalId, data, offset);
       },
     });
-
     const listener: OutputListener = (terminalId, chunk, offset) => {
-      if (backpressure.shouldSend(terminalId)) {
-        if (process.env.MAW_OUTPUT_BATCHING === '0') {
-          send(socket, {
-            type: 'terminal.output',
-            terminalId,
-            data: chunk,
-            offset,
-          });
-        } else {
-          outputBatcher.push(terminalId, chunk, offset);
+      if (replaying.has(terminalId) || backpressure.shouldSend(terminalId)) {
+        outputBatcher.push(terminalId, chunk, offset);
+        if (process.env.MAW_OUTPUT_BATCHING === '0') outputBatcher.flush(terminalId);
+      }
+    };
+    const replayTerminal = async (terminalId: TerminalId, sinceOffset?: number): Promise<boolean | null> => {
+      outputBatcher.flush(terminalId);
+      const pending = { frames: [] as { data: string; offset?: number }[], bytes: 0 };
+      replaying.set(terminalId, pending);
+      try {
+        const attached = await registry.renderingReplay(terminalId, listener, sinceOffset);
+        if (replaying.get(terminalId) !== pending) return null;
+        if (!attached) return false;
+        send(socket, {
+          type: 'terminal.replay', terminalId, data: attached.replay,
+          truncated: attached.truncated, reset: attached.reset,
+          startOffset: attached.startOffset, endOffset: attached.endOffset,
+          offset: attached.endOffset, cols: attached.cols, rows: attached.rows,
+        });
+        sentOffsets.set(terminalId, attached.endOffset);
+        outputBatcher.flush(terminalId);
+        for (const frame of pending.frames) {
+          if (frame.offset !== undefined && frame.offset <= attached.endOffset) continue;
+          sendOutput(terminalId, frame.data, frame.offset);
         }
+        return true;
+      } catch (error) {
+        if (socket.readyState === socket.OPEN) console.warn('[terminal] Recovery failed:', String(error));
+        return false;
+      } finally {
+        if (replaying.get(terminalId) === pending) replaying.delete(terminalId);
       }
     };
 
@@ -2343,27 +2359,20 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           break;
 
         case 'terminal.attach': {
-          const attached = registry.attach(message.terminalId, listener, message.sinceOffset);
-          if (attached === null) {
+          const replayed = await replayTerminal(message.terminalId, message.sinceOffset);
+          if (replayed === null) break;
+          if (!replayed) {
             sendError(socket, 'unknown-terminal', serverText('terminalGone'));
             break;
           }
-          send(socket, {
-            type: 'terminal.replay',
-            terminalId: message.terminalId,
-            data: attached.replay,
-            truncated: attached.truncated,
-            reset: attached.reset,
-            startOffset: attached.startOffset,
-            endOffset: attached.endOffset,
-            offset: attached.endOffset,
-          });
-          // El tamano del cliente manda: el pty puede venir de otra ventana.
           registry.resize(message.terminalId, message.cols, message.rows);
           break;
         }
 
         case 'terminal.detach':
+          replaying.delete(message.terminalId);
+          outputBatcher.clear(message.terminalId);
+          sentOffsets.delete(message.terminalId);
           registry.detach(message.terminalId, listener);
           backpressure.forget(message.terminalId);
           break;
@@ -3817,7 +3826,9 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         tornDown = true;
         planLimits.release();
       }
+      replaying.clear();
       outputBatcher.dispose();
+      sentOffsets.clear();
       backpressure.dispose();
       if (phonePairingOwner === socket) {
         phonePairingOwner = null;

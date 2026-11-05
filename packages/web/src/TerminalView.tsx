@@ -20,6 +20,7 @@ import { useEffect, useRef } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal } from '@xterm/xterm';
+import { TerminalOutput } from './terminal-output.js';
 import type { TerminalId } from '@agent-workbench/shared';
 import type { AgentConnection } from './connection.js';
 import { isConsolePasteKey } from './console-paste.js';
@@ -131,6 +132,7 @@ export function TerminalView({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const restoringReplay = useRef(false);
   const onTerminalInstanceRef = useRef(onTerminalInstance);
   onTerminalInstanceRef.current = onTerminalInstance;
   const onClipboardErrorRef = useRef(onClipboardError);
@@ -248,7 +250,7 @@ export function TerminalView({
     let boxShown = hasBox();
 
     const fitAndReport = (): void => {
-      if (!hasBox()) return;
+      if (!hasBox() || restoringReplay.current) return;
       try {
         fitAddon.fit();
       } catch {
@@ -420,7 +422,7 @@ export function TerminalView({
       activar una pestana.
     */
     const reclaimSize = (): void => {
-      if (document.visibilityState !== 'visible' || !hasBox()) return;
+      if (restoringReplay.current || document.visibilityState !== 'visible' || !hasBox()) return;
       try {
         fitAddon.fit();
       } catch {
@@ -505,56 +507,28 @@ export function TerminalView({
       connection.send({ type: 'input', terminalId, data });
     });
 
-    let lastRenderedOffset: number | undefined = undefined;
-
+    const output = new TerminalOutput(terminal, (restoring) => {
+      restoringReplay.current = restoring;
+      if (!restoring) fitAndReport();
+    });
     const offMessage = connection.onMessage((message) => {
+      if (!('terminalId' in message) || message.terminalId !== terminalId) return;
       switch (message.type) {
         case 'terminal.output':
-          if (message.terminalId === terminalId) {
-            if (message.offset !== undefined && lastRenderedOffset !== undefined && message.offset <= lastRenderedOffset) {
-              // Deduplicate live output already rendered in historical replay or earlier chunk
-              break;
-            }
-            if (message.offset !== undefined) {
-              lastRenderedOffset = message.offset;
-            }
-            terminal.write(message.data);
-          }
+          output.output(message.data, message.offset);
           break;
         case 'terminal.replay':
-          if (message.terminalId !== terminalId) break;
-          // Si reset es false, es una reconexion delta sin perdida: preservamos
-          // los 20.000 renglones de scrollback en xterm y anexamos solo los bytes nuevos.
-          // Si reset es true (o no viene en servidores legacy), reseteamos terminal.
-          if (message.reset ?? true) {
-            terminal.reset();
-            if (message.truncated) {
-              terminal.write(`\x1b[90m-- ${t('terminal.replayTruncated')} --\x1b[0m\r\n`);
-            }
-          }
-          if (message.data.length > 0) {
-            terminal.write(message.data);
-          }
-          if (message.endOffset !== undefined) {
-            lastRenderedOffset = message.endOffset;
-          } else if (message.offset !== undefined) {
-            lastRenderedOffset = message.offset;
-          }
+          output.replay(message);
           break;
         case 'terminal.exit':
-          if (message.terminalId !== terminalId) break;
-          terminal.write(
-            `\r\n\x1b[90m-- ${t('terminal.exited', { code: message.exitCode })} --\x1b[0m\r\n`,
-          );
-          break;
-        default:
+          output.output(`\r\n\x1b[90m-- ${t('terminal.exited', { code: message.exitCode })} --\x1b[0m\r\n`);
           break;
       }
     });
 
     /** Pide el buffer y sincroniza el tamano. Corre al montar y al reconectar. */
     const attach = (): void => {
-      if (hasBox()) {
+      if (hasBox() && !restoringReplay.current) {
         try {
           fitAddon.fit();
         } catch {
@@ -569,7 +543,7 @@ export function TerminalView({
         terminalId,
         cols,
         rows,
-        ...(lastRenderedOffset !== undefined ? { sinceOffset: lastRenderedOffset } : {}),
+        ...(output.offset !== undefined ? { sinceOffset: output.offset } : {}),
       });
     };
 
@@ -595,6 +569,8 @@ export function TerminalView({
       // Desenganchar no mata el proceso: la pty sigue viva en el servidor.
       connection.send({ type: 'terminal.detach', terminalId });
       terminalDisposed = true;
+      output.dispose();
+      restoringReplay.current = false;
       terminal.dispose();
       terminalRef.current = null;
       fitRef.current = null;
@@ -623,7 +599,7 @@ export function TerminalView({
       // Mismo motivo que `hasBox()`: activar una pestana cuya solapa no esta
       // delante no puede terminar en un resize contra una caja vacia.
       const container = containerRef.current;
-      if (container === null || container.clientWidth === 0 || container.clientHeight === 0) {
+      if (restoringReplay.current || container === null || container.clientWidth === 0 || container.clientHeight === 0) {
         return;
       }
       try {
