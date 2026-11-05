@@ -26,3 +26,4 @@ export * from './browser-tabs.js';
 export * from './editor-tabs.js';
 export * from './notification-protocol.js';
 export * from './split-layout.js';
+export * from './performance.js';

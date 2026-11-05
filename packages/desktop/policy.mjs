@@ -130,6 +130,13 @@ export function validCommand(value) {
     return exact(value, ['type', 'text']) && typeof value.text === 'string' && value.text.length <= 25_000_000;
   }
   if (value.type === 'read-clipboard-text') return exact(value, ['type']);
+  if (
+    value.type === 'performance-subscribe' ||
+    value.type === 'performance-unsubscribe' ||
+    value.type === 'performance-pause' ||
+    value.type === 'performance-resume' ||
+    value.type === 'performance-refresh'
+  ) return exact(value, ['type']);
 
   if (value.type === 'layout') {
     // Single-view layout (legacy / simple)
