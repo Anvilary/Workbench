@@ -446,6 +446,14 @@ export function TerminalView({
     window.addEventListener('focus', reclaimSize);
     document.addEventListener('visibilitychange', reclaimSize);
 
+    // Clicking on container letterbox outside terminal text rows clears active selection
+    const onContainerPointerDown = (event: PointerEvent): void => {
+      if (event.target === container && terminal.hasSelection()) {
+        terminal.clearSelection();
+      }
+    };
+    container.addEventListener('pointerdown', onContainerPointerDown);
+
     /*
       Seguimiento semántico de comandos de shell mediante OSC 133.
       Permite identificar con precisión el inicio de la última salida en buffers normales.
@@ -481,6 +489,14 @@ export function TerminalView({
       const isCtrl = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
 
+      // Escape clears terminal selection if one is active, preventing accidental PTY escape
+      if (key === 'escape' && !isCtrl && !event.shiftKey && !event.altKey) {
+        if (terminal.hasSelection()) {
+          terminal.clearSelection();
+          return false;
+        }
+      }
+
       // Ctrl+Shift+A selects all accessible history in the active terminal buffer
       if (isCtrl && event.shiftKey && !event.altKey && key === 'a') {
         terminal.selectAll();
@@ -501,6 +517,7 @@ export function TerminalView({
                 }
               });
             }
+            terminal.clearSelection();
           } else {
             onClipboardErrorRef.current?.(new Error(t('agency.ui.nothingSelected')));
           }
@@ -651,6 +668,7 @@ export function TerminalView({
       container.removeEventListener('touchmove', onTouchMove, { capture: true });
       container.removeEventListener('touchend', onTouchEnd, { capture: true });
       container.removeEventListener('touchcancel', onTouchCancel, { capture: true });
+      container.removeEventListener('pointerdown', onContainerPointerDown);
       renderSubscription.dispose();
       scrollSubscription.dispose();
       dataSubscription.dispose();

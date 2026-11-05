@@ -130,6 +130,9 @@ export function SessionPane({
         } else {
           showFeedback(t('agency.ui.copied'), 'success');
         }
+        if (kind === 'selection') {
+          term.clearSelection();
+        }
       } else {
         showFeedback(t('agency.ui.clipboardUnavailable'), 'error');
       }

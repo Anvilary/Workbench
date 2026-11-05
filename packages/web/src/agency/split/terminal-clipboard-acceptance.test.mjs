@@ -285,4 +285,90 @@ test('terminal selection and clipboard acceptance: selection, copy all, copy las
     return target.dispatchEvent(evt);
   });
   assert.equal(handled, true, 'Ctrl+C in alternate screen must not be intercepted, reaching PTY as interrupt/cancel');
+
+  // 9. Test selection highlight DOM properties: pointer-events: none and multi-row coverage
+  await page.evaluate(() => {
+    const term = window.terminals[1];
+    term.select(2, 0, 80); // multi-line selection
+  });
+  await page.waitForTimeout(50);
+
+  const selInfo = await page.evaluate(() => {
+    const term = window.terminals[1];
+    const selEl = term.element.querySelector('.xterm-selection');
+    return {
+      hasSelection: term.hasSelection(),
+      pointerEvents: selEl ? window.getComputedStyle(selEl).pointerEvents : null,
+      divsCount: selEl ? selEl.querySelectorAll('div').length : 0,
+    };
+  });
+  assert.equal(selInfo.hasSelection, true, 'Terminal has active selection');
+  assert.equal(selInfo.pointerEvents, 'none', 'Selection container must have pointer-events: none so it does not block interactions');
+
+  // 10. Test Escape key clears selection
+  await page.evaluate(() => {
+    const term = window.terminals[1];
+    const target = term.textarea ?? term.element;
+    target.dispatchEvent(new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'Escape',
+      code: 'Escape',
+    }));
+  });
+  await page.waitForTimeout(50);
+
+  const hasSelAfterEscape = await page.evaluate(() => window.terminals[1].hasSelection());
+  assert.equal(hasSelAfterEscape, false, 'Pressing Escape must clear the active selection highlight');
+
+  // 11. Test Ctrl+Shift+C copies selection and immediately clears selection
+  await page.evaluate(() => {
+    const term = window.terminals[1];
+    term.select(0, 0, 10);
+    const target = term.textarea ?? term.element;
+    target.dispatchEvent(new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'c',
+      code: 'KeyC',
+      ctrlKey: true,
+      shiftKey: true,
+    }));
+  });
+  await page.waitForTimeout(50);
+
+  const hasSelAfterCopy = await page.evaluate(() => window.terminals[1].hasSelection());
+  assert.equal(hasSelAfterCopy, false, 'Ctrl+Shift+C must clear selection after copying to clipboard');
+
+  // 12. Test Context Menu "Copy selection" copies and clears selection
+  await page.evaluate(() => {
+    const term = window.terminals[1];
+    term.select(0, 1, 15);
+  });
+  await page.waitForTimeout(50);
+
+  await page.locator('.maw-session-pane:not([hidden])').click({ button: 'right', position: { x: 250, y: 250 } });
+  await page.waitForSelector('.maw-context-menu');
+  await page.getByRole('menuitem', { name: 'Copy selection' }).click();
+  await page.waitForTimeout(50);
+
+  const hasSelAfterMenuCopy = await page.evaluate(() => window.terminals[1].hasSelection());
+  assert.equal(hasSelAfterMenuCopy, false, 'Context menu Copy selection must clear selection after copying');
+
+  // 13. Test clicking container letterbox clears selection
+  await page.evaluate(() => {
+    const term = window.terminals[1];
+    term.select(0, 0, 10);
+  });
+  await page.waitForTimeout(50);
+
+  await page.evaluate(() => {
+    const term = window.terminals[1];
+    const container = term.element.parentElement;
+    container.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, target: container }));
+  });
+  await page.waitForTimeout(50);
+
+  const hasSelAfterContainerClick = await page.evaluate(() => window.terminals[1].hasSelection());
+  assert.equal(hasSelAfterContainerClick, false, 'Clicking container letterbox clears active selection');
 });
