@@ -590,8 +590,11 @@ async function main(): Promise<void> {
       return;
     }
     const reqAuth = (request as unknown as { mawCredential?: { kind: string } }).mawCredential;
-    if (reqAuth && reqAuth.kind === 'device') {
-      response.status(403).json({ ok: false, error: 'Forbidden' });
+    if (!reqAuth || (reqAuth.kind !== 'session' && reqAuth.kind !== 'local')) {
+      response.status(reqAuth?.kind === 'device' ? 403 : 401).json({
+        ok: false,
+        error: reqAuth?.kind === 'device' ? 'Forbidden: paired devices cannot inspect processes' : 'Unauthorized: valid local session required',
+      });
       return;
     }
 

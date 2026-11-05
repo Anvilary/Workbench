@@ -3,7 +3,7 @@ import test from 'node:test';
 import express, { type Request, type Response } from 'express';
 import { createServer } from 'node:http';
 
-test('performance administrative endpoint enforces loopback and session authorization', async () => {
+test('performance administrative endpoint enforces loopback, session authentication, and process sanitization', async () => {
   const app = express();
   const mockTerminals = [
     {
@@ -13,6 +13,9 @@ test('performance administrative endpoint enforces loopback and session authoriz
       kind: 'agent' as const,
       agent: 'codex' as const,
       cwd: '/workspace/proj',
+      env: { SECRET_TOKEN: 'leaked-token' },
+      argv: ['codex', '--api-key=supersecret'],
+      buffer: 'terminal output secret',
     },
     {
       terminalId: 'term-2',
@@ -31,7 +34,16 @@ test('performance administrative endpoint enforces loopback and session authoriz
     nativeIdentityOf: (id: string) => (id === 'term-1' ? { provider: 'codex', home: '/home/user' } : null),
   };
 
-  // Mock route matching the exact server handler logic
+  // Simulated middleware to test authorization states
+  let authKind: string | null = null;
+  app.use((req, _res, next) => {
+    if (authKind) {
+      (req as any).mawCredential = { kind: authKind };
+    }
+    next();
+  });
+
+  // Mock route matching the exact server handler logic in packages/server/src/index.ts
   app.get('/api/performance/terminals', (request: Request, response: Response) => {
     const clientIp = request.socket.remoteAddress;
     const isLoopback = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === '::ffff:127.0.0.1';
@@ -40,8 +52,11 @@ test('performance administrative endpoint enforces loopback and session authoriz
       return;
     }
     const reqAuth = (request as unknown as { mawCredential?: { kind: string } }).mawCredential;
-    if (reqAuth && reqAuth.kind === 'device') {
-      response.status(403).json({ ok: false, error: 'Forbidden' });
+    if (!reqAuth || (reqAuth.kind !== 'session' && reqAuth.kind !== 'local')) {
+      response.status(reqAuth?.kind === 'device' ? 403 : 401).json({
+        ok: false,
+        error: reqAuth?.kind === 'device' ? 'Forbidden: paired devices cannot inspect processes' : 'Unauthorized: valid local session required',
+      });
       return;
     }
 
@@ -74,7 +89,24 @@ test('performance administrative endpoint enforces loopback and session authoriz
   const port = (server.address() as { port: number }).port;
 
   try {
-    // 1. Success on loopback
+    // 1. Unauthenticated request must be rejected with 401
+    authKind = null;
+    const unauthRes = await fetch(`http://127.0.0.1:${port}/api/performance/terminals`);
+    assert.equal(unauthRes.status, 401);
+    const unauthData = (await unauthRes.json()) as any;
+    assert.equal(unauthData.ok, false);
+    assert.match(unauthData.error, /Unauthorized/);
+
+    // 2. Paired remote device credential must be rejected with 403
+    authKind = 'device';
+    const deviceRes = await fetch(`http://127.0.0.1:${port}/api/performance/terminals`);
+    assert.equal(deviceRes.status, 403);
+    const deviceData = (await deviceRes.json()) as any;
+    assert.equal(deviceData.ok, false);
+    assert.match(deviceData.error, /Forbidden/);
+
+    // 3. Authorized local session succeeds
+    authKind = 'session';
     const res = await fetch(`http://127.0.0.1:${port}/api/performance/terminals`);
     assert.equal(res.status, 200);
     const data = (await res.json()) as any;
@@ -95,12 +127,13 @@ test('performance administrative endpoint enforces loopback and session authoriz
     assert.equal(data.terminals[1].pid, 12346);
     assert.equal(data.terminals[1].provider, null);
 
-    // Security check: Verify no environment, credentials, or buffer output leaked
+    // Security check: Verify no environment variables, raw command arguments, or buffers leaked
     for (const term of data.terminals) {
       assert.equal(term.env, undefined);
       assert.equal(term.argv, undefined);
       assert.equal(term.buffer, undefined);
       assert.equal(term.token, undefined);
+      assert.equal(term.SECRET_TOKEN, undefined);
     }
   } finally {
     server.close();
