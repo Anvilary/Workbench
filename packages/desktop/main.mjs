@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs';
 import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl } from './policy.mjs';
 import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
 import { MemoryPressureTier, calculateResourceBudget, selectEvictionCandidate, isProtectedProvider } from './resource-budget.mjs';
+import { ResourceCollector } from './resource-monitor.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Deliberately distinct from both production MAW and any Brave/Neko profile.
@@ -98,6 +99,20 @@ async function start() {
   const zoomLevels = new Map(); // id -> number
   let shuttingDown = false;
   const send = state => { if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(CHANNEL + ':state', state); };
+
+  const resourceCollector = new ResourceCollector({
+    app,
+    win,
+    views,
+    providers,
+    urls,
+    attachedViews,
+    suspendedTabs,
+    getBackendReadiness: discoverBackendReadiness,
+    onState: (snapshot) => {
+      send({ type: 'performance-update', snapshot });
+    },
+  });
 
   // FEATURE 10: Official ChatGPT downloads with native Save As dialog and security validation
   chatSession.on('will-download', (event, item, webContents) => {
@@ -785,6 +800,26 @@ async function start() {
         return { ok: false, error: err.message };
       }
     }
+    if (command.type === 'performance-subscribe') {
+      const snapshot = await resourceCollector.subscribe();
+      return { ok: true, snapshot };
+    }
+    if (command.type === 'performance-unsubscribe') {
+      resourceCollector.unsubscribe();
+      return { ok: true };
+    }
+    if (command.type === 'performance-pause') {
+      resourceCollector.pause();
+      return { ok: true };
+    }
+    if (command.type === 'performance-resume') {
+      resourceCollector.resume();
+      return { ok: true };
+    }
+    if (command.type === 'performance-refresh') {
+      const snapshot = await resourceCollector.refresh();
+      return { ok: true, snapshot };
+    }
     if (command.type === 'open') open(command.id, command.url, command.provider ?? 'chatgpt', true);
     if (command.type === 'update') {
       if (views.has(command.id)) {
@@ -984,6 +1019,7 @@ async function start() {
     event.preventDefault();
     shuttingDown = true;
     clearInterval(checkInterval);
+    resourceCollector.dispose();
     hideAll();
     for (const popup of popups) popup.destroy();
     for (const view of views.values()) if (!view.webContents.isDestroyed()) view.webContents.close();

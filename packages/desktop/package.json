@@ -7,7 +7,7 @@
   "main": "main.mjs",
   "scripts": {
     "start": "electron .",
-    "test": "node --test policy.test.mjs file-clipboard.test.mjs resource-budget.test.mjs",
+    "test": "node --test policy.test.mjs file-clipboard.test.mjs resource-budget.test.mjs resource-monitor.test.mjs",
     "test:electron": "node --test --test-concurrency=1 smoke.test.mjs nautilus-clipboard.test.mjs download-smoke.test.mjs resource-tab-pool.test.mjs",
     "bench:webview": "node bench/webview-benchmarks.mjs all",
     "bench:lifecycle": "node bench/webview-benchmarks.mjs lifecycle",

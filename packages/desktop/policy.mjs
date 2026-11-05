@@ -126,6 +126,13 @@ export function validCommand(value) {
   }
   if (value.type === 'close' || value.type === 'capture') return exact(value, ['type', 'id']) && typeof value.id === 'string' && UUID.test(value.id);
   if (value.type === 'get-backend-endpoint') return exact(value, ['type']);
+  if (
+    value.type === 'performance-subscribe' ||
+    value.type === 'performance-unsubscribe' ||
+    value.type === 'performance-pause' ||
+    value.type === 'performance-resume' ||
+    value.type === 'performance-refresh'
+  ) return exact(value, ['type']);
 
   if (value.type === 'layout') {
     // Single-view layout (legacy / simple)

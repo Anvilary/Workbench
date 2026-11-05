@@ -1,0 +1,148 @@
+{
+  "timestamp": 1793877623025,
+  "isPaused": false,
+  "sampleDurationMs": 15.88,
+  "global": {
+    "cpuUsagePercent": 0.8,
+    "mawCpuPercent": 0.8,
+    "cpuCoreCount": 16,
+    "mawPssBytes": 99869696,
+    "mawRssBytes": 150093824,
+    "mawPrivateBytes": 95862784,
+    "mawSharedBytes": 54231040,
+    "systemTotalBytes": 30787805184,
+    "systemFreeBytes": 5606076416,
+    "systemAvailableBytes": 5606076416,
+    "systemMemoryPressure": "moderate",
+    "gpuProcessMetric": null,
+    "gpuHardwareUtilization": null,
+    "gpuVramBytes": null,
+    "gpuStatusNote": "Hardware VRAM & GPU engine telemetry unavailable without external driver polling",
+    "totalMawProcesses": 1,
+    "backendHealth": {
+      "status": "healthy",
+      "pid": 954506,
+      "type": "Node.js Express & WebSocket Backend"
+    },
+    "supervisorHealth": {
+      "status": "disabled",
+      "pid": null,
+      "type": "In-Process node-pty Fallback"
+    },
+    "desktopHealth": {
+      "status": "healthy",
+      "pid": 954506,
+      "type": "Electron 45.2.0 Main Process"
+    }
+  },
+  "infrastructure": {
+    "id": "infrastructure",
+    "label": "MAW Infrastructure",
+    "processCount": 0,
+    "totalCpuPercent": 0,
+    "totalPssBytes": 0,
+    "totalRssBytes": 0,
+    "totalPrivateBytes": 0,
+    "totalSharedBytes": 0,
+    "processes": []
+  },
+  "aiAgents": {
+    "totalCpuPercent": 0,
+    "totalPssBytes": 0,
+    "activeCount": 0,
+    "groups": []
+  },
+  "browserViews": {
+    "totalCpuPercent": 0.8,
+    "totalPssBytes": 99869696,
+    "totalCount": 1,
+    "activeCount": 1,
+    "backgroundCount": 0,
+    "suspendedCount": 0,
+    "views": [
+      {
+        "id": "chatgpt-tab-1",
+        "provider": "chatgpt",
+        "providerLabel": "ChatGPT",
+        "url": "https://chatgpt.com/",
+        "lifecycle": "active",
+        "rendererPid": 954506,
+        "isSharedRenderer": false,
+        "sharedTabCount": 1,
+        "cpuPercent": 0.8,
+        "pssBytes": 99869696,
+        "rssBytes": 150093824,
+        "privateBytes": 95862784,
+        "sharedBytes": 54231040
+      }
+    ]
+  },
+  "otherTerminals": {
+    "totalCpuPercent": 0,
+    "totalPssBytes": 0,
+    "count": 0,
+    "terminals": []
+  },
+  "unattributed": {
+    "id": "unattributed",
+    "label": "Unattributed",
+    "processCount": 0,
+    "totalCpuPercent": 0,
+    "totalPssBytes": 0,
+    "totalRssBytes": 0,
+    "totalPrivateBytes": 0,
+    "totalSharedBytes": 0,
+    "processes": []
+  },
+  "history": [
+    {
+      "timestamp": 1793877616859,
+      "mawCpuPercent": 0,
+      "systemCpuPercent": 0,
+      "mawPssBytes": 100591616,
+      "mawProcessCount": 1
+    },
+    {
+      "timestamp": 1793877618859,
+      "mawCpuPercent": 0,
+      "systemCpuPercent": 0,
+      "mawPssBytes": 100701184,
+      "mawProcessCount": 1
+    },
+    {
+      "timestamp": 1793877620859,
+      "mawCpuPercent": 0.1,
+      "systemCpuPercent": 0.1,
+      "mawPssBytes": 100987904,
+      "mawProcessCount": 1
+    },
+    {
+      "timestamp": 1793877622171,
+      "mawCpuPercent": 0.4,
+      "systemCpuPercent": 0.4,
+      "mawPssBytes": 98804736,
+      "mawProcessCount": 1
+    },
+    {
+      "timestamp": 1793877622605,
+      "mawCpuPercent": 0.4,
+      "systemCpuPercent": 0.4,
+      "mawPssBytes": 99660800,
+      "mawProcessCount": 1
+    },
+    {
+      "timestamp": 1793877622859,
+      "mawCpuPercent": 0.5,
+      "systemCpuPercent": 0.5,
+      "mawPssBytes": 99697664,
+      "mawProcessCount": 1
+    },
+    {
+      "timestamp": 1793877623025,
+      "mawCpuPercent": 0.8,
+      "systemCpuPercent": 0.8,
+      "mawPssBytes": 99869696,
+      "mawProcessCount": 1
+    }
+  ]
+}
