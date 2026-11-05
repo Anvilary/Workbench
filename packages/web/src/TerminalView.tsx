@@ -19,8 +19,9 @@
 import { useEffect, useRef } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { Terminal } from '@xterm/xterm';
+import { Terminal, type IMarker } from '@xterm/xterm';
 import type { TerminalId } from '@agent-workbench/shared';
+import { writeClipboard, readClipboard } from './agency/clipboard.js';
 import type { AgentConnection } from './connection.js';
 import { isConsolePasteKey } from './console-paste.js';
 import { t } from './i18n/index.js';
@@ -115,6 +116,14 @@ interface TerminalViewProps {
    * Notifica fallos al escribir en el portapapeles del sistema.
    */
   onClipboardError?: (error: Error) => void;
+  /**
+   * Notifica éxito al escribir en el portapapeles del sistema.
+   */
+  onClipboardSuccess?: (message?: string) => void;
+  /**
+   * Indica si la sesión proviene de un cliente remoto web.
+   */
+  isRemoteClient?: boolean;
 }
 
 export function TerminalView({
@@ -127,6 +136,8 @@ export function TerminalView({
   enableAgencyShortcuts = true,
   onTerminalInstance,
   onClipboardError,
+  onClipboardSuccess,
+  isRemoteClient = false,
 }: TerminalViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -135,6 +146,10 @@ export function TerminalView({
   onTerminalInstanceRef.current = onTerminalInstance;
   const onClipboardErrorRef = useRef(onClipboardError);
   onClipboardErrorRef.current = onClipboardError;
+  const onClipboardSuccessRef = useRef(onClipboardSuccess);
+  onClipboardSuccessRef.current = onClipboardSuccess;
+  const isRemoteClientRef = useRef(isRemoteClient);
+  isRemoteClientRef.current = isRemoteClient;
   // El tema entra por un ref para que cambiarlo no vuelva a correr el efecto de
   // montaje: recrear el terminal perderia la pantalla y reabriria el attach.
   const themeRef = useRef(theme);
@@ -432,11 +447,32 @@ export function TerminalView({
     document.addEventListener('visibilitychange', reclaimSize);
 
     /*
+      Seguimiento semántico de comandos de shell mediante OSC 133.
+      Permite identificar con precisión el inicio de la última salida en buffers normales.
+    */
+    let lastCommandStartMarker: IMarker | null = null;
+    let lastPromptStartMarker: IMarker | null = null;
+
+    const oscDisposable = terminal.parser.registerOscHandler(133, (data) => {
+      if (data.startsWith('C')) {
+        lastCommandStartMarker?.dispose();
+        lastCommandStartMarker = terminal.registerMarker(0);
+        (terminal as unknown as { __mawLastCommandMarker?: IMarker | null }).__mawLastCommandMarker = lastCommandStartMarker;
+      } else if (data.startsWith('A')) {
+        lastPromptStartMarker?.dispose();
+        lastPromptStartMarker = terminal.registerMarker(0);
+        (terminal as unknown as { __mawLastPromptMarker?: IMarker | null }).__mawLastPromptMarker = lastPromptStartMarker;
+      }
+      return true;
+    });
+
+    /*
       Atajos de teclado unificados:
       - Ctrl+Shift+A selecciona todo el buffer accesible (20.000 lineas).
       - Ctrl+A sin shift no se intercepta y llega intacto a la CLI/shell (inicio de linea, tmux, etc.).
       - Ctrl+Shift+C copia la seleccion como atajo convencional de terminal.
-      - Ctrl+C copia si hay seleccion; si no hay seleccion, envia ^C a la PTY (interrupcion).
+      - Ctrl+C: en pantalla alterna (Codex, htop, etc.) viaja al PTY; en buffer normal copia y deselecciona.
+      - Ctrl+Shift+V pega contenido del portapapeles hacia la PTY.
       - Ctrl+V en consolas con pasteOnCtrlV permite que el navegador pegue.
     */
     terminal.attachCustomKeyEventHandler((event) => {
@@ -457,26 +493,54 @@ export function TerminalView({
           if (terminal.hasSelection()) {
             const text = terminal.getSelection();
             if (text) {
-              navigator.clipboard.writeText(text).catch((err) => {
-                onClipboardErrorRef.current?.(err instanceof Error ? err : new Error(String(err)));
+              void writeClipboard(text, isRemoteClientRef.current).then((ok) => {
+                if (ok) {
+                  onClipboardSuccessRef.current?.(t('agency.ui.copied'));
+                } else {
+                  onClipboardErrorRef.current?.(new Error(t('agency.ui.clipboardUnavailable')));
+                }
               });
             }
+          } else {
+            onClipboardErrorRef.current?.(new Error(t('agency.ui.nothingSelected')));
           }
           return false;
         }
 
-        // Ctrl+C: copy if selection exists; if no selection, let ^C reach the PTY for interrupt
+        // Ctrl+C:
+        // In alternate-screen applications (like raw Codex, nano, vi, less, htop),
+        // pass Ctrl+C directly to the PTY so application interrupts/cancellations function reliably.
+        // In normal-screen shells, copy if selection exists and clear the selection,
+        // ensuring subsequent Ctrl+C presses reach the PTY for command interruption.
         if (isCtrl && !event.shiftKey && !event.altKey && key === 'c') {
+          if (terminal.buffer.active.type === 'alternate') {
+            return true;
+          }
           if (terminal.hasSelection()) {
             const text = terminal.getSelection();
             if (text) {
-              navigator.clipboard.writeText(text).catch((err) => {
-                onClipboardErrorRef.current?.(err instanceof Error ? err : new Error(String(err)));
+              void writeClipboard(text, isRemoteClientRef.current).then((ok) => {
+                if (ok) {
+                  onClipboardSuccessRef.current?.(t('agency.ui.copied'));
+                } else {
+                  onClipboardErrorRef.current?.(new Error(t('agency.ui.clipboardUnavailable')));
+                }
               });
             }
+            terminal.clearSelection();
             return false;
           }
           return true;
+        }
+
+        // Ctrl+Shift+V: conventional terminal paste
+        if (isCtrl && event.shiftKey && !event.altKey && key === 'v') {
+          void readClipboard(isRemoteClientRef.current).then((text) => {
+            if (text) {
+              connection.send({ type: 'input', terminalId, data: text });
+            }
+          });
+          return false;
         }
       }
 
@@ -590,6 +654,9 @@ export function TerminalView({
       renderSubscription.dispose();
       scrollSubscription.dispose();
       dataSubscription.dispose();
+      oscDisposable.dispose();
+      lastCommandStartMarker?.dispose();
+      lastPromptStartMarker?.dispose();
       offMessage();
       offReopen();
       // Desenganchar no mata el proceso: la pty sigue viva en el servidor.
