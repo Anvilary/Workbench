@@ -11,14 +11,14 @@ import { fileURLToPath } from 'node:url';
 
 function browserExecutable() {
   if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE) return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+  for (const bin of ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser']) {
+    if (existsSync(bin)) return bin;
+  }
   if (existsSync(chromium.executablePath())) return chromium.executablePath();
   const cache = homedir() + '/.cache/ms-playwright';
   for (const folder of existsSync(cache) ? readdirSync(cache).filter(name => name.startsWith('chromium_headless_shell-')).sort().reverse() : []) {
     const path = cache + '/' + folder + '/chrome-headless-shell-linux64/chrome-headless-shell';
     if (existsSync(path)) return path;
-  }
-  for (const bin of ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser']) {
-    if (existsSync(bin)) return bin;
   }
   return undefined;
 }
