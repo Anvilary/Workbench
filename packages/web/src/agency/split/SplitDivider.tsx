@@ -29,28 +29,58 @@ export function SplitDivider({
     parallelTargets: number[];
   } | null>(null);
   const rafRef = useRef<number | null>(null);
+  const initialRatioRef = useRef(ratio);
   const latestRatioRef = useRef(ratio);
-  latestRatioRef.current = ratio;
+  if (!dragRef.current) {
+    latestRatioRef.current = ratio;
+  }
 
   const stopDrag = useCallback(() => {
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
+    const finalRatio = latestRatioRef.current;
+    const parent = dividerRef.current?.parentElement;
+    if (parent) {
+      parent.style.removeProperty('--split-ratio-first');
+      parent.style.removeProperty('--split-ratio-second');
+      const firstChild = parent.firstElementChild as HTMLElement | null;
+      const lastChild = parent.lastElementChild as HTMLElement | null;
+      if (firstChild && lastChild) {
+        firstChild.style.flex = `var(--split-ratio-first, ${finalRatio}) 1 0px`;
+        lastChild.style.flex = `var(--split-ratio-second, ${1 - finalRatio}) 1 0px`;
+      }
+    }
     dragRef.current = null;
     setIsDragging(false);
     setSnapGuide(null);
     onDragStateChange?.(false);
-  }, [onDragStateChange]);
+    onRatioChange(finalRatio);
+  }, [onDragStateChange, onRatioChange]);
 
   useEffect(() => {
     const handleBlur = () => {
       if (dragRef.current) stopDrag();
     };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && dragRef.current) {
+        latestRatioRef.current = initialRatioRef.current;
+        stopDrag();
+      }
+    };
     window.addEventListener('blur', handleBlur);
+    window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('blur', handleBlur);
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      window.removeEventListener('keydown', handleKeyDown);
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (dragRef.current) {
+        stopDrag();
+      }
     };
   }, [stopDrag]);
 
@@ -74,6 +104,8 @@ export function SplitDivider({
       }
     }
 
+    initialRatioRef.current = ratio;
+    latestRatioRef.current = ratio;
     dragRef.current = {
       pointerId: e.pointerId,
       parentRect: parent.getBoundingClientRect(),
@@ -127,6 +159,20 @@ export function SplitDivider({
     const maxPx = totalPx - minPx;
     const clampedPx = Math.max(minPx, Math.min(maxPx, rawPx));
     const nextRatio = Math.round((clampedPx / totalPx) * 1000) / 1000;
+    latestRatioRef.current = nextRatio;
+
+    // Fast path: set CSS custom variables on split container and mutate sibling flex styles directly
+    const parent = dividerRef.current?.parentElement;
+    if (parent) {
+      parent.style.setProperty('--split-ratio-first', `${nextRatio}`);
+      parent.style.setProperty('--split-ratio-second', `${1 - nextRatio}`);
+      const firstChild = parent.firstElementChild as HTMLElement | null;
+      const lastChild = parent.lastElementChild as HTMLElement | null;
+      if (firstChild && lastChild) {
+        firstChild.style.flex = `var(--split-ratio-first, ${nextRatio}) 1 0px`;
+        lastChild.style.flex = `var(--split-ratio-second, ${1 - nextRatio}) 1 0px`;
+      }
+    }
 
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
@@ -136,7 +182,6 @@ export function SplitDivider({
       } else {
         setSnapGuide(null);
       }
-      onRatioChange(nextRatio);
     });
   };
 

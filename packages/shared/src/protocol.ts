@@ -1368,6 +1368,7 @@ export type ClientMessage =
   | ClientCloseTerminalMessage
   | ClientAttachTerminalMessage
   | ClientDetachTerminalMessage
+  | ClientTerminalHistoryPageMessage
   | ClientRenameTerminalMessage
   | ClientReorderTabsMessage
   | ClientRefreshIndexMessage
@@ -1562,6 +1563,9 @@ export interface ServerTerminalReplayMessage {
   startOffset?: number;
   endOffset?: number;
   offset?: number;
+  /** Dimensions at which a rendering checkpoint must be restored. */
+  cols?: number;
+  rows?: number;
 }
 
 /** El proceso termino. La pestana sigue abierta hasta que el usuario la cierre. */
@@ -1570,6 +1574,54 @@ export interface ServerTerminalExitMessage {
   terminalId: TerminalId;
   exitCode: number;
   signal: number | null;
+}
+
+/**
+ * El cliente pide una pagina del historial persistente de una terminal.
+ * Las paginas son 0-indexed; la 0 es la mas reciente.
+ */
+export interface ClientTerminalHistoryPageMessage {
+  type: 'terminal.history.page';
+  terminalId: TerminalId;
+  page: number;
+  pageSize?: number;
+  /** Direccion de la paginacion: backward (por omision, hacia el pasado) o forward. */
+  direction?: 'backward' | 'forward';
+  /** ID unico de esta solicitud para cancelacion y deduplicacion. */
+  requestId: string;
+}
+
+/**
+ * Respuesta a `terminal.history.page`.
+ */
+export interface ServerTerminalHistoryDataMessage {
+  type: 'terminal.history.data';
+  terminalId: TerminalId;
+  requestId: string;
+  page: number;
+  pageSize: number;
+  totalLines: number;
+  totalPages: number;
+  /** Lineas de salida, con ANSI preservado. Puede estar vacio si page >= totalPages. */
+  lines: string[];
+  hasMore: boolean;
+  /** Total de lineas podadas por politica de retencion. */
+  prunedLines?: number;
+  /** Bytes lost before persistence, separate from deliberate retention pruning. */
+  droppedBytes?: number;
+  /** Some output was lost or could not be read or recovered reliably. */
+  incomplete?: boolean;
+  direction?: 'backward' | 'forward';
+}
+
+/**
+ * El servidor no pudo atender la solicitud de historial.
+ */
+export interface ServerTerminalHistoryErrorMessage {
+  type: 'terminal.history.error';
+  terminalId: TerminalId;
+  requestId: string;
+  reason: string;
 }
 
 /** La pestana se cerro y ya no existe. */
@@ -2452,6 +2504,8 @@ export type ServerMessage =
   | ServerTerminalReplayMessage
   | ServerTerminalExitMessage
   | ServerTerminalClosedMessage
+  | ServerTerminalHistoryDataMessage
+  | ServerTerminalHistoryErrorMessage
   | ServerTerminalActivityMessage
   | ServerIndexStatusMessage
   | ServerIndexProjectsMessage
@@ -2728,6 +2782,18 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     case 'terminal.detach': {
       const terminalId = asNonEmptyString(record['terminalId']);
       return terminalId === null ? null : { type: 'terminal.detach', terminalId };
+    }
+    case 'terminal.history.page': {
+      const terminalId = asNonEmptyString(record['terminalId']);
+      const requestId = asNonEmptyString(record['requestId']);
+      const page = record['page'];
+      const pageSize = record['pageSize'] ?? 1000;
+      const direction = record['direction'] ?? 'backward';
+      if (terminalId === null || terminalId.length > 128 || requestId === null || requestId.length > 128 ||
+          typeof page !== 'number' || !Number.isSafeInteger(page) || page < 0 || page > 1_000_000 ||
+          typeof pageSize !== 'number' || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 1000 ||
+          (direction !== 'backward' && direction !== 'forward')) return null;
+      return { type: 'terminal.history.page', terminalId, requestId, page, pageSize, direction };
     }
     case 'terminal.rename': {
       const terminalId = asNonEmptyString(record['terminalId']);
@@ -3331,6 +3397,8 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       const startOffset = asNonNegativeInt(record['startOffset']);
       const endOffset = asNonNegativeInt(record['endOffset']);
       const offset = asNonNegativeInt(record['offset']);
+      const cols = asNonNegativeInt(record['cols']);
+      const rows = asNonNegativeInt(record['rows']);
       return terminalId === null || data === null
         ? null
         : {
@@ -3338,6 +3406,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
             terminalId,
             data,
             truncated: record['truncated'] === true,
+            ...(cols !== null && cols > 0 && rows !== null && rows > 0 ? { cols, rows } : {}),
             ...(reset !== null ? { reset } : {}),
             ...(startOffset !== null ? { startOffset } : {}),
             ...(endOffset !== null ? { endOffset } : {}),

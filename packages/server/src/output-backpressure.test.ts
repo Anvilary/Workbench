@@ -40,3 +40,15 @@ test('N-3: a detached terminal is never resynced; a closed socket stops the time
   assert.deepEqual(resynced, [[T1]], 'no resync onto a closed socket');
   assert.equal(bp.isLagging(T1), false);
 });
+
+test('forgetting the final lagging terminal releases the recovery timer immediately', () => {
+  const socket = { bufferedAmount: 1000, readyState: 1, OPEN: 1 };
+  const bp = new OutputBackpressure(socket, () => assert.fail('Revoked terminals cannot recover'), 100, 10, 5);
+  try {
+    assert.equal(bp.shouldSend(T1), false);
+    assert.ok((bp as any).timer);
+    bp.forget(T1);
+    assert.equal((bp as any).timer, null);
+    assert.equal(bp.isLagging(T1), false);
+  } finally { bp.dispose(); }
+});

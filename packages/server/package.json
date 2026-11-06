@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@agent-workbench/shared": "workspace:*",
+    "@xterm/addon-serialize": "0.13.0",
     "@xterm/headless": "5.5.0",
     "chokidar": "^5.0.0",
     "express": "^5.1.0",

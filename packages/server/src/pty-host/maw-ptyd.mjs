@@ -15,12 +15,14 @@
  */
 
 import net from 'node:net';
+import { StringDecoder } from 'node:string_decoder';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import pty from 'node-pty';
+import { TerminalState } from './terminal-state.mjs';
 
 const PROTOCOL_VERSION = 1;
 const DEFAULT_LIMIT_BYTES = 256 * 1024; // 256 KiB ring buffer por terminal
@@ -56,6 +58,7 @@ function suffixWithinBytes(value, budget) {
 class SupervisorOutputBuffer {
   constructor(limitBytes = DEFAULT_LIMIT_BYTES) {
     this.limitBytes = limitBytes;
+    this.state = new TerminalState();
     this.chunks = [];
     this.chunkSizes = [];
     this.sizeBytes = 0;
@@ -74,6 +77,7 @@ class SupervisorOutputBuffer {
 
   push(chunk) {
     if (!chunk || chunk.length === 0) return;
+    this.state.push(chunk);
 
     if (chunk.includes('\x1b[?1049h') || chunk.includes('\x1b[?47h')) {
       this.inAlternateScreen = true;
@@ -165,6 +169,10 @@ class SupervisorOutputBuffer {
       if (skipped < bytesToSkip) {
         const offsetWithinChunk = bytesToSkip - skipped;
         const buf = Buffer.from(chunk, 'utf8');
+        if ((buf[offsetWithinChunk] & 0xc0) === 0x80) {
+          return { reset: true, startOffset: start, endOffset: end, sinceOffset,
+            data: this.read(), truncated };
+        }
         resultParts.push(buf.subarray(offsetWithinChunk).toString('utf8'));
         skipped = chunkEnd;
       } else {
@@ -184,6 +192,8 @@ class SupervisorOutputBuffer {
   }
 
   clear() {
+    this.state.dispose();
+    this.state = new TerminalState();
     this.chunks = [];
     this.chunkSizes = [];
     this.sizeBytes = 0;
@@ -358,6 +368,7 @@ export class PtySupervisor {
     const now = Date.now();
     for (const [id, tombstone] of this.tombstones) {
       if (tombstone.expiresAt <= now) {
+        tombstone.buffer.state.dispose();
         this.tombstones.delete(id);
       }
     }
@@ -371,6 +382,7 @@ export class PtySupervisor {
 
     let authenticated = false;
     let lineBuffer = '';
+    const decoder = new StringDecoder('utf8');
 
     const handshakeTimer = setTimeout(() => {
       if (!authenticated) {
@@ -380,7 +392,7 @@ export class PtySupervisor {
     }, this.handshakeTimeoutMs);
 
     socket.on('data', (chunk) => {
-      lineBuffer += chunk.toString('utf8');
+      lineBuffer += decoder.write(chunk);
 
       if (lineBuffer.length > MAX_PAYLOAD_SIZE && !lineBuffer.includes('\n')) {
         this._sendError(socket, undefined, 'INVALID_PARAMS', 'Message size exceeds maximum allowed 1 MiB');
@@ -545,6 +557,9 @@ export class PtySupervisor {
 
   _handleSpawn(socket, msg) {
     const { reqId, id, sessionId, cmd, args = [], cwd, env = {}, cols = 80, rows = 24 } = msg;
+    if (Object.hasOwn(msg, 'agencyManaged') && typeof msg.agencyManaged !== 'boolean') {
+      return this._sendError(socket, reqId, 'INVALID_PARAMS', 'Invalid agencyManaged ownership metadata');
+    }
 
     if (!id || typeof id !== 'string') {
       return this._sendError(socket, reqId, 'INVALID_PARAMS', 'Missing or invalid session id');
@@ -570,9 +585,11 @@ export class PtySupervisor {
     }
 
     // Si habia un tombstone previo con este id, limpiarlo
+    this.tombstones.get(id)?.buffer.state.dispose();
     this.tombstones.delete(id);
 
     const buffer = new SupervisorOutputBuffer(DEFAULT_LIMIT_BYTES);
+    buffer.state.resize(cols, rows);
     let ptyProcess;
 
     try {
@@ -585,12 +602,14 @@ export class PtySupervisor {
         useConpty: process.platform === 'win32' ? true : undefined,
       });
     } catch (err) {
+      buffer.state.dispose();
       return this._sendError(socket, reqId, 'SPAWN_FAILED', `Failed to spawn process ${cmd}: ${err.message}`);
     }
 
     const sessionRecord = {
       id,
       sessionId,
+      ...(Object.hasOwn(msg, 'agencyManaged') ? { agencyManaged: msg.agencyManaged } : {}),
       cmd,
       args,
       cwd,
@@ -703,6 +722,7 @@ export class PtySupervisor {
     try {
       session.cols = cols;
       session.rows = rows;
+      session.buffer.state.resize(cols, rows);
       session.ptyProcess.resize(cols, rows);
       if (reqId) {
         this._send(socket, { op: 'ack', reqId, id });
@@ -712,7 +732,7 @@ export class PtySupervisor {
     }
   }
 
-  _handleReplay(socket, msg) {
+  async _handleReplay(socket, msg) {
     const { reqId, id, sinceOffset } = msg;
     const session = this.sessions.get(id);
     const tombstone = this.tombstones.get(id);
@@ -723,6 +743,13 @@ export class PtySupervisor {
     }
 
     const slice = buffer.sliceFrom(sinceOffset);
+    // Keep raw data/offsets compatible with existing hosts; checkpoints are
+    // separate generated VT bytes and must never enter the raw delta ring.
+    let screen;
+    if (slice.reset) {
+      try { screen = await buffer.state.snapshot(); }
+      catch { return; } // Host shutdown disposed this session.
+    }
     this._send(socket, {
       op: 'replay_data',
       reqId,
@@ -733,6 +760,7 @@ export class PtySupervisor {
       sinceOffset: slice.sinceOffset,
       dataB64: Buffer.from(slice.data, 'utf8').toString('base64'),
       truncated: slice.truncated,
+      ...(screen ? { screen } : {}),
     });
   }
 
@@ -742,6 +770,7 @@ export class PtySupervisor {
 
     if (!session) {
       // Si habia tombstone, eliminarlo en kill explicito
+      this.tombstones.get(id)?.buffer.state.dispose();
       this.tombstones.delete(id);
       return this._send(socket, { op: 'killed', reqId, id });
     }
@@ -772,6 +801,7 @@ export class PtySupervisor {
 
   _handleReapTombstone(socket, msg) {
     const { reqId, id } = msg;
+    this.tombstones.get(id)?.buffer.state.dispose();
     this.tombstones.delete(id);
     if (reqId) {
       this._send(socket, { op: 'ack', reqId, id });
@@ -791,6 +821,7 @@ export class PtySupervisor {
       result.push({
         id,
         sessionId: s.sessionId,
+        ...(Object.hasOwn(s, 'agencyManaged') ? { agencyManaged: s.agencyManaged } : {}),
         pid: s.pid,
         alive: true,
         startOffset: s.buffer.startOffset,
@@ -823,6 +854,8 @@ export class PtySupervisor {
   close({ killAll = false } = {}) {
     if (this.closing) return;
     this.closing = true;
+    for (const session of this.sessions.values()) session.buffer.state.dispose();
+    for (const tombstone of this.tombstones.values()) tombstone.buffer.state.dispose();
 
     if (this.sweeperTimer) {
       clearInterval(this.sweeperTimer);

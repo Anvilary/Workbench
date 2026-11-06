@@ -8,6 +8,7 @@ import { useAgencyStore } from './useAgencyStore.js';
 import { useNotificationStore } from './useNotificationStore.js';
 import { NotificationBell } from './NotificationBell.js';
 import { NotificationInbox, type DesktopPermission } from './NotificationInbox.js';
+import { PerformancePanel } from './PerformancePanel.js';
 import { NotificationToastContainer } from './NotificationToast.js';
 import { acknowledgeWorkspaceDraft, createAgencyTransport, putWorkspaceDraft, allWorkspaceTabs } from './model.js';
 import { t } from '../i18n/index.js';
@@ -79,6 +80,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   const { data, loaded, online, synchronized, notice } = store;
   useNativeChatGptTabs(data.webTabs, online && synchronized, store.request);
   const [inboxOpen, setInboxOpen] = useState(false);
+  const [performanceOpen, setPerformanceOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(readNotificationsEnabled);
   const [desktopPermission, setDesktopPermission] = useState<DesktopPermission>(readDesktopPermission);
@@ -100,6 +102,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
     return 240;
   });
   const [resizingSidebar, setResizingSidebar] = useState(false);
+  const sidebarRef = useRef<HTMLElement | null>(null);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [creatorProject, setCreatorProject] = useState<ProjectId | undefined>();
   const [creatingProject, setCreatingProject] = useState(false);
@@ -246,7 +249,11 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
       if (e.pointerId !== pointerId) return;
       const clamped = Math.max(180, Math.min(500, e.clientX));
       latestWidth = clamped;
-      setSidebarWidth(clamped);
+      // Fast path: bypass React render cycle during active dragging to avoid reconciliation overhead
+      if (sidebarRef.current) {
+        sidebarRef.current.style.width = `${clamped}px`;
+        sidebarRef.current.style.flexBasis = `${clamped}px`;
+      }
     };
 
     const cleanup = () => {
@@ -260,6 +267,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
         }
       } catch {}
       setResizingSidebar(false);
+      setSidebarWidth(latestWidth);
       try {
         localStorage.setItem(SIDEBAR_WIDTH_KEY, latestWidth.toString());
       } catch {}
@@ -349,6 +357,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   return (
     <div className="agency-app">
       <aside
+        ref={sidebarRef}
         className={
           'agency-sidebar' +
           (sidebarOpen ? '' : ' agency-sidebar-collapsed') +
@@ -497,6 +506,17 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
                 >
                   <span className="maw-menu-item-text">{t('agency.ui.newProject')}</span>
                 </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="agency-dropdown-item maw-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setPerformanceOpen(true);
+                  }}
+                >
+                  <span className="maw-menu-item-text">{t('performance.menuItem')}</span>
+                </button>
               </div>
             )}
           </div>
@@ -515,6 +535,9 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
             onMarkAllRead={() => { void notificationStore.markAllRead().catch(reason => setError(String(reason))); }}
             onDone={id => { void notificationStore.markDone(id).catch(reason => setError(String(reason))); }}
           />
+        )}
+        {performanceOpen && (
+          <PerformancePanel onClose={() => setPerformanceOpen(false)} />
         )}
         {error && <div role="alert" className="agency-error-bar">{error}
           <button type="button" onClick={() => setError(null)} aria-label={t('agency.ui.dismissError')}>×</button></div>}

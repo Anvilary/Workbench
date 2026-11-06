@@ -282,3 +282,84 @@ test('event-driven layout coordinator eliminates idle animation-frame loop and i
   });
   assert.equal(await page.evaluate(() => window.nativeLayoutCoordinator.isViewing('test-workspace-tab')), false, 'Workspace unmount cleanup must reset focused tab to null');
 });
+
+test('layout coordinator optimizes ready events and deduplicates style computations', { timeout: 60000 }, async (t) => {
+  const executablePath = browserExecutable();
+  if (!executablePath) {
+    t.skip('Chromium is not installed; set PLAYWRIGHT_CHROMIUM_EXECUTABLE');
+    return;
+  }
+  const bundle = await build({
+    stdin: { contents: fixture, loader: 'ts', resolveDir: process.cwd() + '/packages/web' },
+    bundle: true,
+    write: false,
+    format: 'esm',
+    logLevel: 'silent',
+  });
+  const server = createServer((req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+    if (url.pathname === '/bundle.js') {
+      res.setHeader('Content-Type', 'text/javascript');
+      res.end(bundle.outputFiles[0].text);
+      return;
+    }
+    res.setHeader('Content-Type', 'text/html');
+    res.end(`<!doctype html><html><body style="margin:0">
+      <div id="view" style="position:absolute;left:0;top:0;width:400px;height:300px"></div>
+      <div id="overlay" role="dialog" hidden style="position:absolute;left:20px;top:20px;width:160px;height:120px"></div>
+      <script type="module" src="/bundle.js"></script>
+    </body></html>`);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const browser = await chromium.launch({ headless: true, executablePath });
+  t.after(async () => {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  });
+  const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+  await page.goto('http://127.0.0.1:' + server.address().port);
+  await page.waitForFunction(() => typeof window.resizeView === 'function');
+
+  const frames = (count) => page.evaluate(async (n) => {
+    for (let i = 0; i < n; i += 1) await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  }, count);
+
+  await frames(5);
+
+  // 1. Initial ready event sets isReady and triggers layout
+  await page.evaluate(() => {
+    window.layoutHistory = [];
+    window.onState({ type: 'ready', id: 'view-1' });
+  });
+  await frames(3);
+  const layoutCount1 = await page.evaluate(() => window.layoutHistory.length);
+  assert.equal(layoutCount1, 1, 'Initial ready event schedules layout');
+
+  // 2. Duplicate ready event when view is ALREADY ready should NOT re-trigger layout IPC
+  await page.evaluate(() => {
+    window.onState({ type: 'ready', id: 'view-1' });
+  });
+  await frames(5);
+  const layoutCount2 = await page.evaluate(() => window.layoutHistory.length);
+  assert.equal(layoutCount2, 1, 'Duplicate ready event does not schedule redundant layout IPC');
+
+  // 3. Document hidden handling
+  await page.evaluate(() => {
+    window.layoutHistory = [];
+    // Mock document.hidden
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    window.nativeLayoutCoordinator.measure();
+  });
+  const hiddenLayouts = await page.evaluate(() => window.layoutHistory);
+  assert.equal(hiddenLayouts.length, 1, 'Hidden state emits empty layout');
+  assert.deepEqual(hiddenLayouts[0].views, [], 'Views are empty when document is hidden');
+
+  // Restore document.hidden
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+    window.nativeLayoutCoordinator.measure();
+  });
+  const visibleLayouts = await page.evaluate(() => window.layoutHistory);
+  assert.equal(visibleLayouts.length, 2, 'Restored visibility publishes active views');
+  assert.equal(visibleLayouts[1].views.length, 1);
+});

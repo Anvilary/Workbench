@@ -261,6 +261,27 @@ class WsClient {
     return this.replays[this.replays.length - 1];
   }
 
+  async waitForReplay(timeoutMs = 4000): Promise<NonNullable<ReturnType<WsClient['getLastReplay']>>> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const replay = this.getLastReplay();
+      if (replay) return replay;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error('Timeout waiting for terminal.replay');
+  }
+
+  async waitForError(code: string, timeoutMs = 4000): Promise<Extract<ServerMessage, { type: 'error' }>> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const error = this.messages.find((message): message is Extract<ServerMessage, { type: 'error' }> =>
+        message.type === 'error' && message.code === code);
+      if (error) return error;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`Timeout waiting for error ${code}`);
+  }
+
   clearOutput(): void {
     this.outputChunks = [];
     this.replays = [];
@@ -393,6 +414,17 @@ async function runTask5Acceptance() {
       `Child must continue executing and generating output while backend is down (prev: ${offsetBeforeRestart}, now: ${replayDuringDowntime.endOffset})`,
     );
 
+    // A legacy host may have a live PTY without ownership metadata. It must stay unknown.
+    const legacyTerminalId = randomUUID();
+    await supervisorClient.spawn({
+      id: legacyTerminalId,
+      cmd: process.execPath,
+      args: [SYNTHETIC_AGENT_PATH],
+      cwd: tmpBase,
+    });
+    const beforeRestart = await supervisorClient.list();
+    assert.equal(beforeRestart.sessions.find((session) => session.id === legacyTerminalId)?.agencyManaged, undefined, 'Legacy ownership omission must remain unknown on the supervisor wire');
+
     // 11. Restart the backend with a NEW process identity, NEW ephemeral port and NEW session token
     backend2 = await createDisposableBackend({
       runtimeDir,
@@ -412,6 +444,8 @@ async function runTask5Acceptance() {
     // 13. Reattach to the original child PID
     const adoptedPid = backend2.registry.pidOf(terminalId);
     assert.equal(adoptedPid, childPid, 'Backend 2 must preserve exact original OS child PID (no replacement process)');
+    assert.equal(backend2.registry.nativeIdentityOf(terminalId), undefined, 'Trusted classic PTY ownership must survive supervisor recovery');
+    assert.equal(backend2.registry.nativeIdentityOf(legacyTerminalId), null, 'Unknown legacy ownership must remain fail-closed after recovery');
 
     // 14. Verify terminal output continuity with sinceOffset (zero-reset delta replay)
     client.clearOutput();
@@ -423,10 +457,8 @@ async function runTask5Acceptance() {
       sinceOffset: offsetBeforeRestart,
     });
 
-    // Wait for replay message
-    await new Promise((r) => setTimeout(r, 150));
-    const replayMsg = client.getLastReplay();
-    assert.ok(replayMsg !== undefined, 'Client must receive terminal.replay');
+    // Observe graphical recovery separately from the synchronous attachment lease.
+    const replayMsg = await client.waitForReplay();
     assert.equal(replayMsg.reset, false, 'Replay with valid sinceOffset must specify reset: false (scrollback preserved)');
     assert.ok(replayMsg.endOffset! >= offsetBeforeRestart, 'Replay endOffset must be >= offsetBeforeRestart');
     assert.ok(!replayMsg.data.includes('AGENT_READY'), 'Delta replay must not repeat older data before sinceOffset');

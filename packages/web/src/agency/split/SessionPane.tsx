@@ -9,6 +9,8 @@ import type { useAgencyStore } from '../useAgencyStore.js';
 import { PaneContextMenu } from './PaneContextMenu.js';
 import { PaneFeedback } from './PaneFeedback.js';
 import { terminalPathCandidate } from './terminal-path.mjs';
+import { extractBufferText, extractLastOutput } from './terminal-buffer.js';
+import { writeClipboard, readClipboard } from '../clipboard.js';
 
 interface Props {
   session: AgencyRuntimeSession;
@@ -50,6 +52,7 @@ export function SessionPane({
     x: number;
     y: number;
     candidate: { relative: string; absolute: string } | null;
+    selectedText: string;
   } | null>(null);
   const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const feedbackTimer = useRef<number | null>(null);
@@ -95,35 +98,59 @@ export function SessionPane({
   const copy = async (kind: 'selection' | 'all' | 'last') => {
     const term = terminal.current;
     if (!term) return;
-    let text = term.getSelection();
-    if (kind !== 'selection') {
-      const buffer = kind === 'all'
-        ? (term.buffer.normal.length > term.rows ? term.buffer.normal : term.buffer.active)
-        : term.buffer.active;
-      const lines = Array.from({ length: buffer.length }, (_, index) =>
-        buffer.getLine(index)?.translateToString(true) ?? '',
-      );
-      while (lines.length && !lines.at(-1)?.trim()) lines.pop();
-      text = (kind === 'last' ? lines.slice(-60) : lines).join('\n');
+    const isRemote = connection.isRemoteClient ? connection.isRemoteClient() : false;
+    let text = '';
+    let isAlternate = false;
+
+    if (kind === 'selection') {
+      text = term.getSelection() || contextMenu?.selectedText || '';
+      if (!text) {
+        showFeedback(t('agency.ui.nothingSelected'), 'error');
+        return;
+      }
+    } else if (kind === 'all') {
+      const buffer = term.buffer.active;
+      isAlternate = buffer.type === 'alternate';
+      text = extractBufferText(buffer, 0, buffer.length - 1);
+    } else if (kind === 'last') {
+      const marker = (term as unknown as { __mawLastCommandMarker?: { line: number } | null }).__mawLastCommandMarker;
+      text = extractLastOutput(term, marker);
     }
-    if (!text) return;
+
+    if (!text) {
+      showFeedback(t('agency.ui.nothingSelected'), 'error');
+      return;
+    }
+
     try {
-      await navigator.clipboard.writeText(text);
-      showFeedback(t('agency.ui.copied'), 'success');
+      const ok = await writeClipboard(text, isRemote);
+      if (ok) {
+        if (kind === 'all' && isAlternate) {
+          showFeedback(t('agency.ui.availableBufferCopied'), 'success');
+        } else {
+          showFeedback(t('agency.ui.copied'), 'success');
+        }
+        if (kind === 'selection') {
+          term.clearSelection();
+        }
+      } else {
+        showFeedback(t('agency.ui.clipboardUnavailable'), 'error');
+      }
     } catch {
-      showFeedback(t('agency.ui.clipboardDenied'), 'error');
+      showFeedback(t('agency.ui.clipboardUnavailable'), 'error');
     }
   };
 
   const paste = async () => {
     if (!live || !session.terminalId) return;
     try {
-      const text = await navigator.clipboard.readText();
+      const isRemote = connection.isRemoteClient ? connection.isRemoteClient() : false;
+      const text = await readClipboard(isRemote);
       if (text) {
         sendImmediate({ type: 'input', terminalId: session.terminalId, data: text });
       }
     } catch {
-      showFeedback(t('agency.ui.clipboardDenied'), 'error');
+      showFeedback(t('agency.ui.clipboardUnavailable'), 'error');
     }
   };
 
@@ -155,13 +182,14 @@ export function SessionPane({
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    const selection = terminal.current?.getSelection()?.trim() || '';
+    const selection = terminal.current?.getSelection() || '';
+    const trimmed = selection.trim();
     let candidate: { relative: string; absolute: string } | null = null;
-    if (selection && workspaceCwd) {
-      const res = terminalPathCandidate(selection, workspaceCwd);
+    if (trimmed && workspaceCwd) {
+      const res = terminalPathCandidate(trimmed, workspaceCwd);
       if (res.ok) candidate = { relative: res.relative, absolute: res.absolute };
     }
-    setContextMenu({ x: e.clientX, y: e.clientY, candidate });
+    setContextMenu({ x: e.clientX, y: e.clientY, candidate, selectedText: selection });
   };
 
   const openFile = (relativePath: string) => {
@@ -202,20 +230,22 @@ export function SessionPane({
   };
 
   const copyAbsolutePath = async (absolute: string) => {
-    try {
-      await navigator.clipboard.writeText(absolute);
+    const isRemote = connection.isRemoteClient ? connection.isRemoteClient() : false;
+    const ok = await writeClipboard(absolute, isRemote);
+    if (ok) {
       showFeedback(t('agency.ui.copied'), 'success');
-    } catch {
-      showFeedback(t('agency.ui.clipboardDenied'), 'error');
+    } else {
+      showFeedback(t('agency.ui.clipboardUnavailable'), 'error');
     }
   };
 
   const copyRelativePath = async (relative: string) => {
-    try {
-      await navigator.clipboard.writeText(relative);
+    const isRemote = connection.isRemoteClient ? connection.isRemoteClient() : false;
+    const ok = await writeClipboard(relative, isRemote);
+    if (ok) {
       showFeedback(t('agency.ui.copied'), 'success');
-    } catch {
-      showFeedback(t('agency.ui.clipboardDenied'), 'error');
+    } else {
+      showFeedback(t('agency.ui.clipboardUnavailable'), 'error');
     }
   };
 
@@ -237,9 +267,13 @@ export function SessionPane({
         if (msg.preview.binary) {
           showFeedback(t('agency.terminal.binaryFileError'), 'error');
         } else {
-          void navigator.clipboard.writeText(msg.preview.text).then(
-            () => showFeedback(t('agency.ui.copied'), 'success'),
-            () => showFeedback(t('agency.ui.clipboardDenied'), 'error'),
+          const isRemote = connection.isRemoteClient ? connection.isRemoteClient() : false;
+          void writeClipboard(msg.preview.text, isRemote).then(
+            (ok) => {
+              if (ok) showFeedback(t('agency.ui.copied'), 'success');
+              else showFeedback(t('agency.ui.clipboardUnavailable'), 'error');
+            },
+            () => showFeedback(t('agency.ui.clipboardUnavailable'), 'error'),
           );
         }
       }
@@ -282,12 +316,14 @@ export function SessionPane({
               active={active}
               autoFocus={focusTerminal}
               enableAgencyShortcuts
+              isRemoteClient={connection.isRemoteClient ? connection.isRemoteClient() : false}
               onTerminalInstance={(instance) => {
                 terminal.current = instance;
                 if (instance) instance.onRender(() => setRendered(true));
                 else setRendered(false);
               }}
               onClipboardError={(err) => showFeedback(err.message, 'error')}
+              onClipboardSuccess={(msg) => showFeedback(msg || t('agency.ui.copied'), 'success')}
             />
           </div>
         ) : (
@@ -360,12 +396,15 @@ export function SessionPane({
         <PaneContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          hasSelection={!!terminal.current?.hasSelection()}
+          hasSelection={!!(terminal.current?.hasSelection() || (contextMenu ? contextMenu.selectedText.length > 0 : false))}
           isLive={live && !!session.terminalId}
           fileCandidate={contextMenu.candidate}
           canCopyNativeFile={canCopyNativeFile}
           onCopySelection={() => void copy('selection')}
-          onSelectAll={() => terminal.current?.selectAll()}
+          onSelectAll={() => {
+            terminal.current?.selectAll();
+            terminal.current?.focus();
+          }}
           onCopyAll={() => void copy('all')}
           onCopyLast={() => void copy('last')}
           onPaste={() => void paste()}

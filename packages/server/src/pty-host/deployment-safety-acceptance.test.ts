@@ -143,6 +143,15 @@ class WsClient {
     });
   }
 
+  async waitForReplay(timeoutMs = 4000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (this.messageBuffer.some((msg) => msg.type === 'terminal.replay')) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error('Timeout waiting for terminal.replay');
+  }
+
   close(): void {
     if (this.ws) {
       try { this.ws.close(); } catch {}
@@ -316,8 +325,15 @@ test('DEPLOYMENT SAFETY 1-12: Independent supervisor runtime, child survival, ba
   const socketPath = path.join(supervisorRuntimeDir, 'ptyd.sock');
   const authPath = path.join(supervisorRuntimeDir, 'ptyd.sock.auth');
 
+  let supervisor: PtySupervisor | null = null;
+  let backend1: DisposableBackend | null = null;
+  let backend2: DisposableBackend | null = null;
+  let ws1: WsClient | null = null;
+  let ws2: WsClient | null = null;
+
+  try {
   // 1. Start standalone supervisor in independent runtime directory
-  const supervisor = new PtySupervisor({
+  supervisor = new PtySupervisor({
     socketPath,
     authPath,
   });
@@ -326,7 +342,7 @@ test('DEPLOYMENT SAFETY 1-12: Independent supervisor runtime, child survival, ba
   assert.ok(fs.existsSync(authPath), 'Supervisor auth file must exist at configured path');
 
   // 2. Start disposable backend 1 (connects to running supervisor)
-  const backend1 = await createDisposableBackend({
+  backend1 = await createDisposableBackend({
     runtimeDir: backendRuntimeDir,
     configDir,
     socketPath,
@@ -344,14 +360,17 @@ test('DEPLOYMENT SAFETY 1-12: Independent supervisor runtime, child survival, ba
   assert.doesNotThrow(() => process.kill(originalPid, 0), 'PTY child process must be alive in OS');
 
   // Connect client to verify output flow
-  const ws1 = new WsClient();
+  ws1 = new WsClient();
   await ws1.connect(backend1.port, backend1.token);
   ws1.send({ type: 'terminal.attach', terminalId, cols: 80, rows: 24 });
   await ws1.waitForOutput(`AGENT_READY pid=${originalPid}`);
+  await ws1.waitForReplay();
   ws1.close();
+  ws1 = null;
 
   // 5. Stop disposable backend 1
   await backend1.shutdown();
+  backend1 = null;
 
   // 11. Backend runtime-directory cleanup: simulate systemd removing /run/user/<UID>/maw
   await rm(backendRuntimeDir, { recursive: true, force: true });
@@ -366,7 +385,7 @@ test('DEPLOYMENT SAFETY 1-12: Independent supervisor runtime, child survival, ba
 
   // 8. Re-create backend runtime directory and restart backend 2
   await fs.promises.mkdir(backendRuntimeDir, { recursive: true, mode: 0o700 });
-  const backend2 = await createDisposableBackend({
+  backend2 = await createDisposableBackend({
     runtimeDir: backendRuntimeDir,
     configDir,
     socketPath,
@@ -377,27 +396,38 @@ test('DEPLOYMENT SAFETY 1-12: Independent supervisor runtime, child survival, ba
   // 9. Reattach to original PID
   const reattachedPid = backend2.registry.pidOf(terminalId);
   assert.equal(reattachedPid, originalPid, 'Backend 2 must reattach to the exact same child PID');
+  assert.equal(backend2.registry.nativeIdentityOf(terminalId), undefined, 'Trusted classic PTY ownership must survive supervisor recovery');
 
   // 10. Verify terminal input/output through reattached backend
-  const ws2 = new WsClient();
+  ws2 = new WsClient();
   await ws2.connect(backend2.port, backend2.token);
   ws2.send({ type: 'terminal.attach', terminalId, cols: 80, rows: 24 });
+  await ws2.waitForReplay();
   ws2.send({ type: 'input', terminalId, data: 'PING deployment-test\n' });
   await ws2.waitForOutput(`PONG deployment-test pid=${originalPid}`);
   ws2.close();
+  ws2 = null;
 
   await backend2.shutdown();
+  backend2 = null;
 
   // 12. Verify correct supervisor shutdown cleanup
-  supervisor.close({ killAll: true }); // kill children on full shutdown
+  supervisor.close({ killAll: true });
+  supervisor = null; // kill children on full shutdown
   await new Promise((r) => setTimeout(r, 200));
   assert.ok(!fs.existsSync(socketPath), 'Supervisor socket must be removed on supervisor shutdown');
   assert.ok(!fs.existsSync(authPath), 'Supervisor auth file must be removed on supervisor shutdown');
 
   // Original child should be cleaned up by supervisor shutdown
   assert.throws(() => process.kill(originalPid, 0), 'Child process should be terminated after full supervisor shutdown');
-
-  await rm(tmpBase, { recursive: true, force: true });
+  } finally {
+    ws1?.close();
+    ws2?.close();
+    if (backend1) await backend1.shutdown().catch(() => {});
+    if (backend2) await backend2.shutdown().catch(() => {});
+    if (supervisor) supervisor.close({ killAll: true });
+    await rm(tmpBase, { recursive: true, force: true });
+  }
 });
 
 test('DEPLOYMENT SAFETY 13: Fresh installation unit rendering and validation', async () => {

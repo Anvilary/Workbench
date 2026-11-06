@@ -6,7 +6,8 @@ import { mkdir, readFile, lstat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl } from './policy.mjs';
 import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
-import { calculateResourceBudget, selectEvictionCandidate } from './resource-budget.mjs';
+import { MemoryPressureTier, calculateResourceBudget, selectEvictionCandidate, isProtectedProvider } from './resource-budget.mjs';
+import { ResourceCollector } from './resource-monitor.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Deliberately distinct from both production MAW and any Brave/Neko profile.
@@ -98,6 +99,20 @@ async function start() {
   const zoomLevels = new Map(); // id -> number
   let shuttingDown = false;
   const send = state => { if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(CHANNEL + ':state', state); };
+
+  const resourceCollector = new ResourceCollector({
+    app,
+    win,
+    views,
+    providers,
+    urls,
+    attachedViews,
+    suspendedTabs,
+    getBackendReadiness: discoverBackendReadiness,
+    onState: (snapshot) => {
+      send({ type: 'performance-update', snapshot });
+    },
+  });
 
   // FEATURE 10: Official ChatGPT downloads with native Save As dialog and security validation
   chatSession.on('will-download', (event, item, webContents) => {
@@ -497,7 +512,7 @@ async function start() {
     return chatUrlForPersistence(value);
   }
 
-  function canEvict(id) {
+  function canEvict(id, tier = MemoryPressureTier.NORMAL) {
     if (attachedViews.has(id)) return false;
     if (layoutFocusedId === id) return false;
     if ((activeDownloads.get(id) ?? 0) > 0) return false;
@@ -507,10 +522,21 @@ async function start() {
     const view = views.get(id);
     if (!view || view.webContents.isDestroyed()) return false;
     if (view.webContents.isLoading()) return false;
+
+    // Data-safety guard: Protect user-important generative AI surfaces (ChatGPT, Perplexity)
+    // from automatic silent renderer destruction under NORMAL, MODERATE, and HIGH memory pressure,
+    // as well as under standby count quotas (OVERRIDE).
+    // Under CRITICAL pressure (imminent risk of kernel OOM-killer), eviction of background AI tabs
+    // is permitted as an explicit emergency fallback to prevent uncontrolled process crash.
+    const provider = providers.get(id) ?? 'chatgpt';
+    if (isProtectedProvider(provider) && tier !== MemoryPressureTier.CRITICAL) {
+      return false;
+    }
+
     return true;
   }
 
-  function getResourceBudget() {
+  function getResourceBudgetInfo() {
     let tabWorkingSetBytes = 0;
     try {
       if (typeof app.getAppMetrics === 'function') {
@@ -532,7 +558,12 @@ async function start() {
       tabWorkingSetBytes,
       attachedCount: attachedViews.size,
       envOverride: process.env.MAW_MAX_RESIDENT_VIEWS,
-    }).budget;
+      tierOverride: process.env.MAW_MEMORY_PRESSURE_TIER,
+    });
+  }
+
+  function getResourceBudget() {
+    return getResourceBudgetInfo().budget;
   }
 
   function evictTab(id) {
@@ -574,12 +605,14 @@ async function start() {
   }
 
   function ensureCapacity(excludeId) {
-    const budget = getResourceBudget();
+    const { budget, tier, memoryTier } = getResourceBudgetInfo();
+    const effectiveTier = tier === MemoryPressureTier.OVERRIDE ? (memoryTier ?? MemoryPressureTier.NORMAL) : tier;
     while (views.size >= budget) {
       const candidateId = selectEvictionCandidate({
         residentIds: views.keys(),
         lastAccessedAt,
-        canEvict,
+        canEvict: (id) => canEvict(id, effectiveTier),
+        isProtected: (id) => isProtectedProvider(providers.get(id) ?? 'chatgpt'),
         excludeId,
       });
 
@@ -767,6 +800,26 @@ async function start() {
         return { ok: false, error: err.message };
       }
     }
+    if (command.type === 'performance-subscribe') {
+      const snapshot = await resourceCollector.subscribe();
+      return { ok: true, snapshot };
+    }
+    if (command.type === 'performance-unsubscribe') {
+      resourceCollector.unsubscribe();
+      return { ok: true };
+    }
+    if (command.type === 'performance-pause') {
+      resourceCollector.pause();
+      return { ok: true };
+    }
+    if (command.type === 'performance-resume') {
+      resourceCollector.resume();
+      return { ok: true };
+    }
+    if (command.type === 'performance-refresh') {
+      const snapshot = await resourceCollector.refresh();
+      return { ok: true, snapshot };
+    }
     if (command.type === 'open') open(command.id, command.url, command.provider ?? 'chatgpt', true);
     if (command.type === 'update') {
       if (views.has(command.id)) {
@@ -828,6 +881,24 @@ async function start() {
         return { ok: true, directory: resolved.directory };
       } catch (err) {
         console.error('[desktop] copy-file error:', err);
+        return { ok: false, error: 'unavailable' };
+      }
+    }
+    if (command.type === 'write-clipboard-text') {
+      try {
+        await clipboard.writeText(command.text);
+        return { ok: true };
+      } catch (err) {
+        console.error('[desktop] write-clipboard-text error:', err);
+        return { ok: false, error: 'unavailable' };
+      }
+    }
+    if (command.type === 'read-clipboard-text') {
+      try {
+        const text = await clipboard.readText();
+        return { ok: true, text: typeof text === 'string' ? text : '' };
+      } catch (err) {
+        console.error('[desktop] read-clipboard-text error:', err);
         return { ok: false, error: 'unavailable' };
       }
     }
@@ -966,6 +1037,7 @@ async function start() {
     event.preventDefault();
     shuttingDown = true;
     clearInterval(checkInterval);
+    resourceCollector.dispose();
     hideAll();
     for (const popup of popups) popup.destroy();
     for (const view of views.values()) if (!view.webContents.isDestroyed()) view.webContents.close();

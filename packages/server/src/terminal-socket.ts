@@ -129,6 +129,7 @@ import type { ClassicWorkbenchLifecycle } from './classic-workbench-lifecycle.js
 import { OutputBackpressure } from './output-backpressure.js';
 import { AppSettingsChangeError, type AppSettingsService } from './app-settings-service.js';
 import { TerminalOpenError, type OutputListener, type TerminalRegistry } from './terminal-registry.js';
+import { TerminalHistoryStore } from './terminal-history-store.js';
 import { TerminalWriteQueue, type PieceWriter } from './terminal-write-queue.js';
 import { VaultError, type VaultService } from './vault/service.js';
 import { GitMissingError } from './git-repo.js';
@@ -216,6 +217,8 @@ export interface TerminalSocketOptions {
   defaultCwd: string;
   /** Donde aterrizan las imagenes pegadas. Inyectable para las pruebas. */
   pasteStore?: PasteStore;
+  /** Injectable persistence factory for isolated history tests. */
+  historyStoreFactory?: (terminalId: TerminalId) => TerminalHistoryStore;
   /** La copia propia (`vault.*`, hito 28). */
   vault: VaultService;
   /** El acceso remoto (`remote.*`, hito 37): quien entra, y que se le niega al que entro como equipo. */
@@ -308,7 +311,7 @@ export function evaluateLayoutSave(
   return { ok: true, layout };
 }
 
-export function attachTerminalSocket(options: TerminalSocketOptions): () => void {
+export function attachTerminalSocket(options: TerminalSocketOptions): () => Promise<void> {
   const {
     httpServer,
     port,
@@ -368,6 +371,60 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
   */
   const queuedSubmits = new QueuedSubmitBook();
 
+  /*
+    Almacen de historial persistente por terminal (Lane F).
+  */
+  const historyStores = new Map<TerminalId, TerminalHistoryStore>();
+  const historyDisposals = new Set<Promise<void>>();
+  const closingTerminals = new Set<TerminalId>();
+  const historyBindings = new Map<WebSocket, { refresh(): void; clear(): void }>();
+  const refreshHistoryBindings = (): void => {
+    for (const binding of historyBindings.values()) binding.refresh();
+  };
+  let historyStopped = false;
+  const retireHistoryStore = (terminalId: TerminalId): void => {
+    const store = historyStores.get(terminalId);
+    if (!store) return;
+    historyStores.delete(terminalId);
+    const pending = store.dispose().catch(() => {
+      console.warn('[terminal-history] Failed to flush a retired store');
+    });
+    historyDisposals.add(pending);
+    void pending.finally(() => historyDisposals.delete(pending));
+  };
+
+  // MAW has one authenticated owner, including explicitly paired devices. An
+  // attachment is a socket binding, not a separate user or workspace credential.
+  const historyAccessReason = (terminalId: TerminalId): string | null => {
+    if (historyStopped || closingTerminals.has(terminalId) || !registry.has(terminalId)) return 'Terminal not found';
+    const session = agencyRuntime.list().find(item => item.terminalId === terminalId);
+    if (!session && registry.nativeIdentityOf(terminalId) !== undefined) return 'Unauthorized workspace session access';
+    if (session) {
+      const workspace = agencyWorkspaceStore.getWorkspace(session.workspaceId);
+      if (!workspace || workspace.status !== 'active' || session.lifecycle === 'stopping' || session.tab?.closedAt || session.tab?.current === false) {
+        return 'Unauthorized workspace session access';
+      }
+    }
+    return null;
+  };
+
+  /**
+   * Obtiene o instancia el almacen de historial persistente para una terminal activa.
+   */
+  const getHistoryStore = (terminalId: TerminalId): TerminalHistoryStore | null => {
+    if (historyStopped) return null;
+    let store = historyStores.get(terminalId);
+    if (!store && registry.has(terminalId)) {
+      try {
+        store = options.historyStoreFactory?.(terminalId) ?? new TerminalHistoryStore(terminalId);
+        historyStores.set(terminalId, store);
+      } catch {
+        return null;
+      }
+    }
+    return store ?? null;
+  };
+
   // noServer: manejamos el upgrade a mano para no pisarnos con el WebSocket de
   // HMR de Vite, que vive en el mismo servidor HTTP.
   const wss = new WebSocketServer({ noServer: true });
@@ -378,6 +435,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
   };
 
   const broadcast = (message: ServerMessage): void => {
+    if (message.type === 'agency.workspace.changed') refreshHistoryBindings();
     const payload = encodeServerMessage(message);
     for (const socket of clients) {
       if (socket.readyState === socket.OPEN) socket.send(payload);
@@ -536,7 +594,11 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
   // ---- eventos del registro y del indice, hacia todos los clientes ----
 
   const onRegistryChanged = (): void => {
+    refreshHistoryBindings();
     const terminals = registry.list();
+    for (const terminalId of historyStores.keys()) {
+      if (!registry.has(terminalId)) retireHistoryStore(terminalId);
+    }
     broadcast({ type: 'terminal.list', terminals, order: registry.getOrder() });
     const { appeared, moved } = draftTabs.update(terminals);
     for (const { from, to } of moved) drafts.move(from, to);
@@ -843,6 +905,8 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     repos.drop(terminalId);
     memory.drop(terminalId);
     queuedSubmits.drop(terminalId);
+    // Cierra y descarta el almacen de historial persistente de esta pestana.
+    retireHistoryStore(terminalId);
     // Las imagenes que se pegaron en esta pestana ya no le sirven a nadie: la
     // conversacion que las nombraba se fue con ella. Y el transcript de una
     // continuacion, tampoco (hito 29, D17).
@@ -909,6 +973,15 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     });
   };
 
+  // Almacena la salida del terminal en el historial persistente (Lane F).
+  const onRegistryOutput = (terminalId: TerminalId, chunk: string): void => {
+    const store = getHistoryStore(terminalId);
+    if (store) {
+      store.push(chunk);
+    }
+  };
+
+  registry.on('output', onRegistryOutput);
   registry.on('changed', onRegistryChanged);
   registry.on('exit', onRegistryExit);
   registry.on('activity', onRegistryActivity);
@@ -996,6 +1069,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
   }).catch(() => undefined);
 
   const onAgencySessionChanged = (session: any): void => {
+    refreshHistoryBindings();
     broadcast({ type: 'agency.session.changed', sessionId: session.id, session });
     void tabReady.then(async () => {
       const current = agencyRuntime.get(session.id);
@@ -1060,7 +1134,10 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
   */
   const stopRemoteRevoked = remote.onRevoked((deviceId) => {
     for (const [socket, id] of remoteSockets) {
-      if (deviceId === null || id === deviceId) socket.close(REMOTE_REVOKED_CLOSE_CODE, 'revoked');
+      if (deviceId === null || id === deviceId) {
+        historyBindings.get(socket)?.clear();
+        socket.close(REMOTE_REVOKED_CLOSE_CODE, 'revoked');
+      }
     }
   });
 
@@ -1136,48 +1213,120 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     // sin que ninguna se entere de que hubo una reconexion.
     // A client that stops reading must not make the server buffer PTY output without bound (audit N-3):
     // over the high-water mark output is skipped, and once the socket drains the client gets the replay.
+    const sentOffsets = new Map<TerminalId, number>();
+    const replaying = new Map<TerminalId, {
+      frames: { data: string; offset?: number }[]; bytes: number; abort: AbortController;
+    }>();
+    const cancelReplay = (terminalId: TerminalId): void => {
+      const pending = replaying.get(terminalId);
+      if (!pending) return;
+      replaying.delete(terminalId);
+      pending.frames.length = 0;
+      pending.abort.abort();
+    };
     const backpressure = new OutputBackpressure(socket, (terminalIds) => {
       for (const terminalId of terminalIds) {
-        const attached = registry.attach(terminalId, listener);
-        if (attached !== null) {
-          send(socket, {
-            type: 'terminal.replay',
-            terminalId,
-            data: attached.replay,
-            truncated: attached.truncated,
-            reset: attached.reset,
-            startOffset: attached.startOffset,
-            endOffset: attached.endOffset,
-            offset: attached.endOffset,
-          });
-        }
+        const grant = attachedTerminals.get(terminalId);
+        if (!grant) continue;
+
+        const canDeliver = (): boolean =>
+          socket.readyState === socket.OPEN &&
+          attachedTerminals.get(terminalId) === grant &&
+          historyAccessReason(terminalId) === null;
+
+        if (!canDeliver()) continue;
+        void replayTerminal(
+          terminalId,
+          sentOffsets.get(terminalId),
+          canDeliver,
+        ).catch(error => {
+          console.error('[terminal] Backpressure recovery failed:', String(error));
+        });
       }
     });
+    const sendOutput = (terminalId: TerminalId, data: string, offset?: number): void => {
+      send(socket, { type: 'terminal.output', terminalId, data,
+        ...(offset !== undefined ? { offset } : {}) });
+      if (offset !== undefined) sentOffsets.set(terminalId, offset);
+    };
     const outputBatcher = new TerminalOutputBatcher({
       maxWaitMs: 2,
       maxBatchBytes: 64 * 1024,
       onFlush: (terminalId, data, offset) => {
-        send(socket, {
-          type: 'terminal.output',
-          terminalId,
-          data,
-          ...(offset !== undefined ? { offset } : {}),
-        });
+        if (!attachedTerminals.has(terminalId) || socket.readyState !== socket.OPEN) return;
+        if (historyAccessReason(terminalId) !== null) {
+          revokeTerminalAttachment(terminalId);
+          return;
+        }
+        const pending = replaying.get(terminalId);
+        if (pending) {
+          pending.bytes += Buffer.byteLength(data);
+          if (pending.bytes > 8 * 1024 * 1024) {
+            // Bound recovery buffering. A new attachment gets a fresh checkpoint.
+            socket.close(1013, 'Terminal recovery backlog exceeded');
+            return;
+          }
+          pending.frames.push({ data, offset });
+        } else sendOutput(terminalId, data, offset);
       },
     });
-
     const listener: OutputListener = (terminalId, chunk, offset) => {
-      if (backpressure.shouldSend(terminalId)) {
-        if (process.env.MAW_OUTPUT_BATCHING === '0') {
-          send(socket, {
-            type: 'terminal.output',
-            terminalId,
-            data: chunk,
-            offset,
-          });
-        } else {
-          outputBatcher.push(terminalId, chunk, offset);
+      if (!attachedTerminals.has(terminalId) || socket.readyState !== socket.OPEN) return;
+      if (historyAccessReason(terminalId) !== null) {
+        revokeTerminalAttachment(terminalId);
+        return;
+      }
+      if (replaying.has(terminalId) || backpressure.shouldSend(terminalId)) {
+        outputBatcher.push(terminalId, chunk, offset);
+        if (process.env.MAW_OUTPUT_BATCHING === '0') outputBatcher.flush(terminalId);
+      }
+    };
+    const replayTerminal = async (
+      terminalId: TerminalId,
+      sinceOffset: number | undefined,
+      canDeliver: () => boolean,
+    ): Promise<boolean | null> => {
+      outputBatcher.flush(terminalId);
+      cancelReplay(terminalId);
+      const pending = { frames: [] as { data: string; offset?: number }[], bytes: 0, abort: new AbortController() };
+      // Cancellation settles the socket operation even if a checkpoint provider
+      // ignores AbortSignal. The real renderer also cancels its snapshot waiter.
+      const cancelled = new Promise<null>(resolve => {
+        pending.abort.signal.addEventListener('abort', () => resolve(null), { once: true });
+      });
+      replaying.set(terminalId, pending);
+      try {
+        const attached = await Promise.race([
+          registry.renderingReplay(terminalId, listener, sinceOffset, pending.abort.signal),
+          cancelled,
+        ]);
+        if (replaying.get(terminalId) !== pending) return null;
+        if (!canDeliver()) {
+          revokeTerminalAttachment(terminalId);
+          return null;
         }
+        if (!attached) return false;
+        send(socket, {
+          type: 'terminal.replay', terminalId, data: attached.replay,
+          truncated: attached.truncated, reset: attached.reset,
+          startOffset: attached.startOffset, endOffset: attached.endOffset,
+          offset: attached.endOffset, cols: attached.cols, rows: attached.rows,
+        });
+        sentOffsets.set(terminalId, attached.endOffset);
+        outputBatcher.flush(terminalId);
+        for (const frame of pending.frames) {
+          if (!canDeliver()) { revokeTerminalAttachment(terminalId); return null; }
+          if (frame.offset !== undefined && frame.offset <= attached.endOffset) continue;
+          sendOutput(terminalId, frame.data, frame.offset);
+        }
+        return true;
+      } catch (error) {
+        if (pending.abort.signal.aborted || replaying.get(terminalId) !== pending) return null;
+        if (socket.readyState === socket.OPEN) console.warn('[terminal] Recovery failed:', String(error));
+        return false;
+      } finally {
+        if (replaying.get(terminalId) === pending) replaying.delete(terminalId);
+        pending.abort.abort();
       }
     };
 
@@ -1186,6 +1335,33 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     const subscriptions = new Set<TerminalId>();
     const gitSubscriptions = new Set<TerminalId>();
     const memorySubscriptions = new Set<TerminalId>();
+    // A lease is established in command order, independently of graphical replay.
+    // Its identity protects pending history reads and stale replay completions.
+    const attachedTerminals = new Map<TerminalId, symbol>();
+    const historyReads = new Set<TerminalId>();
+    const revokeTerminalAttachment = (terminalId: TerminalId): void => {
+      attachedTerminals.delete(terminalId);
+      cancelReplay(terminalId);
+      outputBatcher.clear(terminalId);
+      sentOffsets.delete(terminalId);
+      registry.detach(terminalId, listener);
+      backpressure.forget(terminalId);
+    };
+
+    historyBindings.set(socket, {
+      refresh: () => {
+        for (const terminalId of attachedTerminals.keys()) {
+          if (historyAccessReason(terminalId) !== null) {
+            revokeTerminalAttachment(terminalId);
+          }
+        }
+      },
+      clear: () => {
+        for (const terminalId of attachedTerminals.keys()) {
+          revokeTerminalAttachment(terminalId);
+        }
+      },
+    });
     /*
       Los selectores de carpeta son **de este socket** y mueren con el. No hay
       nada que sobreviva a la conexion que los pidio: sin `pickerId` vivo, el
@@ -1344,12 +1520,15 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     const knownLimits = planLimits.snapshot();
     if (knownLimits.length > 0) send(socket, { type: 'plan.limits', limits: knownLimits });
 
-    socket.on('message', async (raw: Buffer | ArrayBuffer | Buffer[]) => {
+    const handleSocketMessage = async (
+      raw: Buffer | ArrayBuffer | Buffer[],
+      parsedMessage: ReturnType<typeof parseClientMessage>,
+    ): Promise<void> => {
       const text = Array.isArray(raw)
         ? Buffer.concat(raw).toString('utf8')
         : Buffer.from(raw as Buffer).toString('utf8');
 
-      const message = parseClientMessage(text);
+      const message = parsedMessage;
       if (message === null) {
         const rawObj = asRecord(parseJson(text));
         if (rawObj && typeof rawObj['type'] === 'string' && rawObj['type'].startsWith('agency.') && typeof rawObj['requestId'] === 'string') {
@@ -1391,6 +1570,11 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
           // de error quedaba arriba sin tener que ver con nada que el usuario
           // hubiera pedido. Que no hay CLI ya lo dicen el nombre tachado, el
           // punto y "Abrir CLI". El aviso sigue para lo que manda el cuadro.
+          if (socket.readyState !== socket.OPEN || !attachedTerminals.has(message.terminalId)) break;
+          if (historyAccessReason(message.terminalId) !== null) {
+            revokeTerminalAttachment(message.terminalId);
+            break;
+          }
           if (!registry.write(message.terminalId, message.data) && registry.get(message.terminalId) === null) {
             sendError(socket, 'unknown-terminal', serverText('terminalGone'));
           }
@@ -2271,6 +2455,8 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
                   : {}),
                 ...(message.label !== undefined ? { label: message.label } : {}),
               });
+              // Early PTY output may already have created this store. Reuse it.
+              getHistoryStore(descriptor.terminalId);
               send(socket, {
                 type: 'terminal.opened',
                 requestId: message.requestId,
@@ -2328,6 +2514,8 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         }
 
         case 'terminal.close':
+          revokeTerminalAttachment(message.terminalId);
+          closingTerminals.add(message.terminalId);
           void (async () => {
             const session = agencyRuntime.list().find(item => item.terminalId === message.terminalId);
             if (session) await agencyRuntime.stop(session.id);
@@ -2335,38 +2523,92 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
               sendError(socket, 'unknown-terminal', serverText('terminalGone'));
             } else {
               subscriptions.delete(message.terminalId);
+              attachedTerminals.delete(message.terminalId);
               backpressure.forget(message.terminalId);
               gitSubscriptions.delete(message.terminalId);
               memorySubscriptions.delete(message.terminalId);
+              retireHistoryStore(message.terminalId);
             }
-          })().catch(error => sendError(socket, 'unknown-terminal', serverText('terminalGone'), String(error)));
+          })().catch(error => sendError(socket, 'unknown-terminal', serverText('terminalGone'), String(error)))
+            .finally(() => closingTerminals.delete(message.terminalId));
           break;
 
         case 'terminal.attach': {
-          const attached = registry.attach(message.terminalId, listener, message.sinceOffset);
-          if (attached === null) {
+          const terminalId = message.terminalId;
+          revokeTerminalAttachment(terminalId);
+          if (socket.readyState !== socket.OPEN || historyAccessReason(terminalId) !== null) {
             sendError(socket, 'unknown-terminal', serverText('terminalGone'));
             break;
           }
-          send(socket, {
-            type: 'terminal.replay',
-            terminalId: message.terminalId,
-            data: attached.replay,
-            truncated: attached.truncated,
-            reset: attached.reset,
-            startOffset: attached.startOffset,
-            endOffset: attached.endOffset,
-            offset: attached.endOffset,
+
+          try {
+            registry.resize(terminalId, message.cols, message.rows);
+          } catch {
+            sendError(socket, 'unknown-terminal', serverText('terminalGone'));
+            break;
+          }
+          const grant = Symbol();
+          attachedTerminals.set(terminalId, grant);
+          const canDeliver = (): boolean =>
+            socket.readyState === socket.OPEN &&
+            attachedTerminals.get(terminalId) === grant &&
+            historyAccessReason(terminalId) === null;
+
+          void replayTerminal(terminalId, message.sinceOffset, canDeliver).then(replayed => {
+            // Cancellation belongs to the superseding operation. Only this lease's
+            // failed replay may revoke it; completion never establishes authority.
+            if (replayed === false && attachedTerminals.get(terminalId) === grant) {
+              revokeTerminalAttachment(terminalId);
+              sendError(socket, 'unknown-terminal', serverText('terminalGone'));
+            }
+          }).catch(error => {
+            if (attachedTerminals.get(terminalId) === grant) revokeTerminalAttachment(terminalId);
+            console.error('[terminal] Attachment failed:', String(error));
           });
-          // El tamano del cliente manda: el pty puede venir de otra ventana.
-          registry.resize(message.terminalId, message.cols, message.rows);
           break;
         }
 
         case 'terminal.detach':
-          registry.detach(message.terminalId, listener);
-          backpressure.forget(message.terminalId);
+          revokeTerminalAttachment(message.terminalId);
           break;
+
+        /*
+          El cliente pide una pagina del historial persistente de una terminal (Lane F).
+        */
+        case 'terminal.history.page': {
+          const { terminalId, page, pageSize, direction, requestId } = message;
+          const fail = (reason: string): void => send(socket, {
+            type: 'terminal.history.error', terminalId, requestId, reason,
+          });
+          const accessReason = historyAccessReason(terminalId);
+          if (accessReason !== null) { fail(accessReason); break; }
+          const grant = attachedTerminals.get(terminalId);
+          if (!grant) { fail('Unauthorized session history access'); break; }
+          if (historyReads.has(terminalId)) { fail('History request already in progress'); break; }
+          const store = getHistoryStore(terminalId);
+          if (!store) { fail('History store not available'); break; }
+          historyReads.add(terminalId);
+          try {
+            const historyPage = await store.getPage(page, pageSize ?? 1000, direction ?? 'backward');
+            // Detach, reattach, close and workspace changes invalidate a pending read.
+            // Checking just the terminal ID after await would revive an old grant.
+            const currentReason = historyAccessReason(terminalId);
+            if (currentReason !== null || attachedTerminals.get(terminalId) !== grant) {
+              fail(currentReason ?? 'Unauthorized session history access');
+              break;
+            }
+            send(socket, {
+              type: 'terminal.history.data', terminalId, requestId,
+              ...historyPage,
+            });
+          } catch {
+            // Filesystem errors can contain private paths. Return a stable reason.
+            fail('History read failed');
+          } finally {
+            historyReads.delete(terminalId);
+          }
+          break;
+        }
 
         case 'terminal.rename':
           if (!registry.rename(message.terminalId, message.label)) {
@@ -3807,6 +4049,94 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
             message: error instanceof Error ? error.message : String(error) });
         } else console.error('[socket] request failed:', String(error));
       }
+    };
+
+    // Preserve wire order for commands affecting the same terminal.
+    // Different terminals and sockets retain independent queues.
+    const terminalCommandQueues = new Map<
+      TerminalId,
+      { tail: Promise<void>; count: number; bytes: number }
+    >();
+
+    const MAX_TERMINAL_COMMANDS = 1024;
+    const MAX_TERMINAL_QUEUE_BYTES = 2 * 1024 * 1024;
+
+    socket.on('message', (raw: Buffer | ArrayBuffer | Buffer[]) => {
+      const text = Array.isArray(raw)
+        ? Buffer.concat(raw).toString('utf8')
+        : Buffer.from(raw as Buffer).toString('utf8');
+
+      const message = parseClientMessage(text);
+
+      if (
+        message === null ||
+        !(
+          message.type === 'input' ||
+          message.type === 'terminal.attach' ||
+          message.type === 'terminal.detach' ||
+          message.type === 'terminal.close' ||
+          message.type === 'terminal.history.page'
+        )
+      ) {
+        void handleSocketMessage(raw, message).catch(error => {
+          console.error('[socket] Message handler failed:', String(error));
+        });
+        return;
+      }
+
+      const terminalId = message.terminalId;
+      let queue = terminalCommandQueues.get(terminalId);
+
+      if (!queue) {
+        queue = { tail: Promise.resolve(), count: 0, bytes: 0 };
+        terminalCommandQueues.set(terminalId, queue);
+      }
+
+      const size = Buffer.byteLength(text);
+
+      if (
+        queue.count >= MAX_TERMINAL_COMMANDS ||
+        queue.bytes + size > MAX_TERMINAL_QUEUE_BYTES
+      ) {
+        socket.close(1009, 'Terminal command backlog exceeded');
+        return;
+      }
+
+      queue.count += 1;
+      queue.bytes += size;
+
+      const currentQueue = queue;
+
+      currentQueue.tail = currentQueue.tail
+        .catch(() => undefined)
+        .then(async () => {
+          if (socket.readyState !== socket.OPEN) return;
+
+          if (message.type === 'terminal.history.page') {
+            // Disk I/O cannot block revocation. The read captures the current
+            // lease synchronously and rechecks its identity before delivery.
+            void handleSocketMessage(raw, message).catch(error => {
+              console.error('[socket] Async terminal command failed:', String(error));
+            });
+            return;
+          }
+
+          await handleSocketMessage(raw, message);
+        })
+        .catch(error => {
+          console.error('[socket] Terminal command failed:', String(error));
+        })
+        .finally(() => {
+          currentQueue.count -= 1;
+          currentQueue.bytes -= size;
+
+          if (
+            currentQueue.count === 0 &&
+            terminalCommandQueues.get(terminalId) === currentQueue
+          ) {
+            terminalCommandQueues.delete(terminalId);
+          }
+        });
     });
 
     let tornDown = false;
@@ -3817,7 +4147,11 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
         tornDown = true;
         planLimits.release();
       }
+      for (const terminalId of attachedTerminals.keys()) revokeTerminalAttachment(terminalId);
+      for (const terminalId of replaying.keys()) cancelReplay(terminalId);
+      terminalCommandQueues.clear();
       outputBatcher.dispose();
+      sentOffsets.clear();
       backpressure.dispose();
       if (phonePairingOwner === socket) {
         phonePairingOwner = null;
@@ -3826,6 +4160,8 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
       globalSearch.cancel();
       pickers.closeAll();
       registry.detachAll(listener);
+      attachedTerminals.clear();
+      historyBindings.delete(socket);
       for (const terminalId of subscriptions) conversations.unsubscribe(terminalId);
       subscriptions.clear();
       for (const terminalId of gitSubscriptions) repos.unsubscribe(terminalId);
@@ -3842,8 +4178,10 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
   });
 
   return () => {
+    historyStopped = true;
     clearInterval(notificationRetry);
     httpServer.off('upgrade', onUpgrade);
+    registry.off('output', onRegistryOutput);
     registry.off('changed', onRegistryChanged);
     registry.off('activity', onRegistryActivity);
     registry.off('exit', onRegistryExit);
@@ -3879,7 +4217,9 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => void
     agencyNotificationStore.off('created', onNotificationCreated);
     agencyNotificationStore.off('changed', onNotificationChanged);
     agencyActivityManager.off('tabActivity', onTabActivity);
+    for (const terminalId of historyStores.keys()) retireHistoryStore(terminalId);
     for (const client of wss.clients) client.terminate();
     wss.close();
+    return Promise.all(historyDisposals).then(() => undefined);
   };
 }
