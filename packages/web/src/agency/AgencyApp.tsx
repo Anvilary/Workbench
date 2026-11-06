@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId } from '@agent-workbench/shared';
+import type { AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId, AgentInfo, ServerMessage } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import { AgencySidebar, AgencyDoneView, SidebarToggleIcon } from './AgencySidebar.js';
 import { AgencyWorkspaceCreator, AgencyProjectCreator } from './AgencyWorkspaceCreator.js';
@@ -17,7 +17,11 @@ import './agency.css';
 import { useDropdownDismissal } from './useDropdownDismissal.js';
 import { useNativeChatGptTabs } from './useNativeChatGptTabs.js';
 import { EmberBackground } from './EmberBackground.js';
-import { THEME_ICON, themeTitle, useTheme, type ThemeState } from '../useTheme.js';
+import { SettingsDialog } from '../SettingsDialog.js';
+import { useAppSettings } from '../useAppSettings.js';
+import { usePanelVisibility } from '../panel-visibility.js';
+import { useTerminalTheme } from '../useTerminalTheme.js';
+import { useTheme, type ThemeState } from '../useTheme.js';
 
 const DRAFT_KEY = 'agency-ui.workspace-drafts.v1';
 const SIDEBAR_WIDTH_KEY = 'agency-ui.sidebar-width.v1';
@@ -58,6 +62,15 @@ export function SettingsMenuIcon(): JSX.Element {
   );
 }
 
+export function GearIcon(): JSX.Element {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path d="M8 4.75a3.25 3.25 0 100 6.5 3.25 3.25 0 000-6.5zM9.5 8a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
+      <path fillRule="evenodd" d="M6.5 1a.75.75 0 00-.735.602l-.213 1.066a5.55 5.55 0 00-.916.53l-1.01-.413a.75.75 0 00-.91.378l-1.5 2.6a.75.75 0 00.174.966l.854.675a5.51 5.51 0 000 1.212l-.854.675a.75.75 0 00-.174.966l1.5 2.6a.75.75 0 00.91.378l1.01-.413c.284.21.59.387.916.53l.213 1.066A.75.75 0 006.5 15h3a.75.75 0 00.735-.602l.213-1.066c.326-.143.632-.32.916-.53l1.01.413a.75.75 0 00.91-.378l1.5-2.6a.75.75 0 00-.174-.966l-.854-.675a5.51 5.51 0 000-1.212l.854-.675a.75.75 0 00.174-.966l-1.5-2.6a.75.75 0 00-.91-.378l-1.01.413a5.55 5.55 0 00-.916-.53l-.213-1.066A.75.75 0 009.5 1h-3zm-1.393 2.502l.142-.712h2.502l.142.712.378.163c.36.155.694.36 1 .607l.327.247.7-.286 1.25 2.165-.591.468-.27.214a4.01 4.01 0 010 1.58l.27.214.592.468-1.25 2.165-.7-.286-.327.247c-.306.248-.64.452-1 .607l-.378.163-.142.712H5.25l-.142-.712-.378-.163a4.05 4.05 0 01-1-.607l-.327-.247-.7.286-1.25-2.165.591-.468.27-.214a4.01 4.01 0 010-1.58l-.27-.214-.592-.468 1.25-2.165.7.286.327-.247c.306-.248.64-.452 1-.607l.378-.163z" />
+    </svg>
+  );
+}
+
 function readDrafts(): Record<string, string> {
   try {
     const parsed: unknown = JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? '{}');
@@ -74,11 +87,10 @@ function readDrafts(): Record<string, string> {
  * non-queueing sendImmediate patch, on its existing authenticated /ws pipeline.
  * No separate socket, backend, process owner, or client-selected cwd is created here.
  */
-export function AgencyApp({ connection, theme: themeProp }: { connection: AgentConnection; theme?: ThemeState }): JSX.Element {
+export function AgencyApp({ connection, theme: _themeProp }: { connection: AgentConnection; theme?: ThemeState }): JSX.Element {
   useLocale();
   useDropdownDismissal();
-  const localTheme = useTheme();
-  const theme = themeProp ?? localTheme;
+  useTheme();
   const agencyTransport = useMemo(() => createAgencyTransport(connection), [connection]);
   const store = useAgencyStore(agencyTransport, connection);
   const { data, loaded, online, synchronized, notice } = store;
@@ -86,6 +98,30 @@ export function AgencyApp({ connection, theme: themeProp }: { connection: AgentC
   const [inboxOpen, setInboxOpen] = useState(false);
   const [performanceOpen, setPerformanceOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const appSettings = useAppSettings(connection);
+  const panelVisibility = usePanelVisibility();
+  const terminalTheme = useTerminalTheme('dark');
+  const [agents, setAgents] = useState<AgentInfo[]>([]);
+
+  useEffect(() => {
+    return connection.onMessage((message: ServerMessage) => {
+      if ((message.type === 'hello' || message.type === 'agents') && message.agents) {
+        setAgents(message.agents);
+      }
+    });
+  }, [connection]);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === ',') {
+        event.preventDefault();
+        setSettingsOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
   const [notificationsEnabled, setNotificationsEnabled] = useState(readNotificationsEnabled);
   const [desktopPermission, setDesktopPermission] = useState<DesktopPermission>(readDesktopPermission);
   const [selectedId, setSelectedId] = useState<WorkspaceId | null>(() => { try { return localStorage.getItem('agency-ui.selected-workspace.v1') as WorkspaceId | null; } catch { return null; } });
@@ -453,11 +489,16 @@ export function AgencyApp({ connection, theme: themeProp }: { connection: AgentC
           <button
             type="button"
             className="agency-icon-button"
-            onClick={theme.cycle}
-            title={themeTitle(theme.preference)}
-            aria-label={themeTitle(theme.preference)}
+            onClick={() => {
+              setMenuOpen(false);
+              setInboxOpen(false);
+              setPerformanceOpen(false);
+              setSettingsOpen(true);
+            }}
+            title={t('settings.open')}
+            aria-label={t('settings.open')}
           >
-            <span aria-hidden="true" style={{ fontSize: '13px' }}>{THEME_ICON[theme.preference]}</span>
+            <GearIcon />
           </button>
           <div className="agency-dropdown" onClick={(e) => e.stopPropagation()}>
             <button
@@ -540,11 +581,11 @@ export function AgencyApp({ connection, theme: themeProp }: { connection: AgentC
                   className="agency-dropdown-item maw-menu-item"
                   onClick={() => {
                     setMenuOpen(false);
-                    theme.cycle();
+                    setSettingsOpen(true);
                   }}
                 >
-                  <span className="maw-menu-item-text">{themeTitle(theme.preference)}</span>
-                  <span className="agency-count">{THEME_ICON[theme.preference]}</span>
+                  <span className="maw-menu-item-text">{t('settings.open')}</span>
+                  <span className="agency-count">⚙</span>
                 </button>
               </div>
             )}
@@ -662,6 +703,20 @@ export function AgencyApp({ connection, theme: themeProp }: { connection: AgentC
           await launch('terminal');
           if (failures.length) setLaunchErrors(prev => ({ ...prev, [newWorkspace.id]: failures.join(' · ') }));
         }} />}
+      {settingsOpen && (
+        <SettingsDialog
+          onClose={() => setSettingsOpen(false)}
+          terminalTheme={terminalTheme}
+          panels={panelVisibility}
+          consoleCount={0}
+          onHideConsole={() => {}}
+          appSettings={appSettings}
+          agents={agents}
+          remoteClient={connection.isRemoteClient ? connection.isRemoteClient() : false}
+          onOpenVault={null}
+          onOpenRemote={null}
+        />
+      )}
       {notificationsEnabled && (
         <NotificationToastContainer
           toasts={notificationStore.toasts}

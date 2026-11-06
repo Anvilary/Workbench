@@ -14,79 +14,46 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { t, type MessageKey } from './i18n/index.js';
-import { readStored, writeStored } from './window-prefs.js';
+import { writeStored } from './window-prefs.js';
 
-export type ThemePreference = 'system' | 'light' | 'dark';
-export type ResolvedTheme = 'light' | 'dark';
+export type ThemePreference = 'dark';
+export type ResolvedTheme = 'dark';
 
 const STORAGE_KEY = 'agent-workbench.theme';
 
-const ORDER: readonly ThemePreference[] = ['dark', 'light', 'system'];
-
 const THEME_KEYS: Readonly<Record<ThemePreference, MessageKey>> = {
-  system: 'theme.system',
-  light: 'theme.light',
   dark: 'theme.dark',
 };
 
 /** El titulo del boton: que tema hay puesto (§6.23). */
-export function themeTitle(preference: ThemePreference): string {
-  return t('theme.title', { theme: t(THEME_KEYS[preference]) });
+export function themeTitle(preference: ThemePreference = 'dark'): string {
+  return t('theme.title', { theme: t(THEME_KEYS[preference] ?? 'theme.dark') });
 }
 
 export const THEME_ICON: Readonly<Record<ThemePreference, string>> = {
-  system: '◐',
-  light: '☀',
   dark: '☾',
 };
-
-/** Sin nada guardado se arranca en oscuro, el look Anvilary por defecto de MAW. */
-function readPreference(): ThemePreference {
-  return readStored<ThemePreference>(STORAGE_KEY, 'dark', (raw) =>
-    raw === 'light' || raw === 'dark' || raw === 'system' ? raw : null,
-  );
-}
-
-function systemPrefersDark(): boolean {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches;
-}
 
 export interface ThemeState {
   preference: ThemePreference;
   resolved: ResolvedTheme;
-  /** Pasa al siguiente estado del ciclo. */
+  /** Pasa al siguiente estado del ciclo (no-op: MAW is strictly dark theme). */
   cycle: () => void;
 }
 
 export function useTheme(): ThemeState {
-  const [preference, setPreference] = useState<ThemePreference>(readPreference);
-  const [systemDark, setSystemDark] = useState(systemPrefersDark);
+  const [preference] = useState<ThemePreference>('dark');
+  const resolved: ResolvedTheme = 'dark';
 
-  // El sistema puede cambiar mientras la app esta abierta.
+  // Force dark theme attributes on <html> and overwrite any stale light preference.
   useEffect(() => {
-    const query = window.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = (event: MediaQueryListEvent): void => setSystemDark(event.matches);
-    query.addEventListener('change', onChange);
-    return () => query.removeEventListener('change', onChange);
+    writeStored(STORAGE_KEY, 'dark');
+    document.documentElement.dataset['theme'] = 'dark';
+    document.documentElement.style.colorScheme = 'dark';
   }, []);
 
-  const resolved: ResolvedTheme =
-    preference === 'system' ? (systemDark ? 'dark' : 'light') : preference;
-
-  // El atributo va en <html> y toda la hoja de estilos cuelga de el. Tambien se
-  // fija `color-scheme` para que las barras de desplazamiento y los controles
-  // nativos del navegador acompanien.
-  useEffect(() => {
-    document.documentElement.dataset['theme'] = resolved;
-    document.documentElement.style.colorScheme = resolved;
-  }, [resolved]);
-
   const cycle = useCallback(() => {
-    setPreference((current) => {
-      const next = ORDER[(ORDER.indexOf(current) + 1) % ORDER.length] ?? 'dark';
-      writeStored(STORAGE_KEY, next);
-      return next;
-    });
+    // Light theme removed; cockpit remains permanently dark
   }, []);
 
   return { preference, resolved, cycle };
