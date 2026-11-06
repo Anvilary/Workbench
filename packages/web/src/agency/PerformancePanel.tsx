@@ -222,7 +222,7 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                     data={cpuHistory}
                     min={0}
                     max={100}
-                    color="#38bdf8"
+                    color="#d97442"
                     width={100}
                     height={24}
                   />
@@ -246,7 +246,7 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                   </div>
                   <PerformanceSparkline
                     data={ramHistory}
-                    color="#34d399"
+                    color="#3d9e6b"
                     width={100}
                     height={24}
                   />
@@ -290,7 +290,7 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                   </div>
                   <PerformanceSparkline
                     data={procHistory}
-                    color="#a78bfa"
+                    color="#ec8a4a"
                     width={100}
                     height={24}
                   />

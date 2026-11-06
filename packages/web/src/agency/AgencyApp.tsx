@@ -16,6 +16,7 @@ import { useLocale } from '../i18n/useLocale.js';
 import './agency.css';
 import { useDropdownDismissal } from './useDropdownDismissal.js';
 import { useNativeChatGptTabs } from './useNativeChatGptTabs.js';
+import { EmberBackground } from './EmberBackground.js';
 
 const DRAFT_KEY = 'agency-ui.workspace-drafts.v1';
 const SIDEBAR_WIDTH_KEY = 'agency-ui.sidebar-width.v1';
@@ -356,6 +357,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
 
   return (
     <div className="agency-app">
+      <EmberBackground />
       <aside
         ref={sidebarRef}
         className={
@@ -407,15 +409,18 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
       <div className="agency-main">
         <div className="agency-topbar">
           {!sidebarOpen && (
-            <button
-              className="agency-icon-button"
-              onClick={() => setSidebarOpen(true)}
-              type="button"
-              aria-label={sidebarOpen ? t('agency.ui.collapseSidebar') : t('agency.ui.expandSidebar')}
-              aria-expanded={sidebarOpen}
-            >
-              <SidebarToggleIcon />
-            </button>
+            <div className="agency-topbar-collapsed-brand">
+              <button
+                className="agency-icon-button"
+                onClick={() => setSidebarOpen(true)}
+                type="button"
+                aria-label={sidebarOpen ? t('agency.ui.collapseSidebar') : t('agency.ui.expandSidebar')}
+                aria-expanded={sidebarOpen}
+              >
+                <SidebarToggleIcon />
+              </button>
+              <img src="/brand/maw-logo-64.png" alt="MAW" className="agency-topbar-logo" width="22" height="22" />
+            </div>
           )}
           <nav className="agency-breadcrumbs" aria-label={t('agency.ui.breadcrumbs')}>
             {selected ? (
@@ -545,7 +550,11 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
           <button type="button" aria-label={t('agency.ui.dismissNotification')} onClick={() => setStatusToast(null)}>×</button>
         </div>}
         {!loaded ? (
-          <div className="agency-welcome"><h1>{t('agency.ui.agency')}</h1><p>{t('agency.ui.loadingServerWorkspaceData')}</p></div>
+          <div className="agency-welcome">
+            <img src="/brand/maw-logo-256.png" className="agency-welcome-logo" alt="MAW" width="84" height="84" />
+            <h1>{t('agency.ui.agency')}</h1>
+            <p>{t('agency.ui.loadingServerWorkspaceData')}</p>
+          </div>
         ) : showingDone ? (
           <AgencyDoneView
             workspaces={data.workspaces}
@@ -591,7 +600,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
           />
         ) : (
           <div className="agency-welcome">
-            <div className="agency-welcome-icon" aria-hidden="true">◇</div>
+            <img src="/brand/maw-logo-256.png" className="agency-welcome-logo" alt="MAW" width="96" height="96" />
             <h1>{t('agency.ui.onePlaceForEveryDevelopmentLane')}</h1>
             <p>{t('agency.ui.createAProjectAndAWorkspaceAttachAn')}</p>
             <button type="button" className="agency-primary-button" onClick={() => openCreator()} disabled={!online}>

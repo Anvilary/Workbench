@@ -128,12 +128,23 @@ if [ "$mode" = --desktop ]; then
   mv -f "$lib_dir/desktop-runtime-version.tmp" "$lib_dir/desktop-runtime-version"
   desktop_apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
   install -d "$desktop_apps"
+  for s in 16 24 32 48 64 96 128 192 256 512; do
+    icon_dir="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/${s}x${s}/apps"
+    icon_src="$repo_dir/packages/desktop/assets/icons/maw-${s}.png"
+    if [ -f "$icon_src" ]; then
+      install -d "$icon_dir"
+      cp -f "$icon_src" "$icon_dir/maw.png"
+    fi
+  done
+  if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -q -t "${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor" 2>/dev/null || true
+  fi
   # Desktop Exec uses quoted absolute paths, independent of the graphical PATH.
   "$node_bin" -e '
     const fs=require("fs"); const command=process.argv[1];
     if (/[\n\r]/.test(command)) throw Error("Invalid launcher path");
     const escaped=command.replace(/([\\\"`$])/g,"\\$1").replace(/%/g,"%%");
-    fs.writeFileSync(process.argv[2], `[Desktop Entry]\nType=Application\nName=My Amazing Workspace\nExec="${escaped}" desktop\nTerminal=false\nCategories=Development;\n`);
+    fs.writeFileSync(process.argv[2], `[Desktop Entry]\nType=Application\nName=My Amazing Workspace\nExec="${escaped}" desktop\nIcon=maw\nTerminal=false\nCategories=Development;\n`);
   ' "$bin_dir/maw" "$desktop_apps/maw.desktop"
   printf '%s\n' 'Desktop installed. Start the existing service with maw start if needed, then launch: maw desktop'
 fi

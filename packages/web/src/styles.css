@@ -13,38 +13,78 @@
 
 :root,
 :root[data-theme='dark'] {
-  --surface: #12141a;
-  --chrome: #1a1d25;
-  --chrome-alt: #161920;
-  --raised: #1f232c;
-  --border: #272b35;
-  --text: #d8dee9;
-  --text-dim: #7c869b;
-  --accent: #5fb3a1;
-  --danger: #e06c75;
-  --warning: #d6a15e;
+  /* Anvilary Shared Design Tokens */
+  --bg: #0e0e10;
+  --bg-2: #141417;
+  --bg-3: #1a1a1e;
+  --panel: #16161a;
+  --card-surface: color-mix(in srgb, var(--panel) 58%, transparent);
+  --border: #25252b;
+  --border-strong: #2f2f36;
+  --border-faint: #1d1d22;
+  --ink: #ededea;
+  --ink-2: #b8b6b0;
+  --ink-3: #8a877f;
+  --ink-4: #5a5852;
+  --ember: #d97442;
+  --ember-2: #b8582a;
+  --molten: #ec8a4a;
+  --molten-dim: rgba(236, 138, 74, 0.16);
+  --lava-glow: rgba(217, 116, 66, 0.16);
+  --sage: #3d9e6b;
+  --sage-dim: rgba(61, 158, 107, 0.16);
+  --action-start: #b95725;
+  --action-end: #7f3214;
+  --action-text: #ffffff;
+  --accent-border-soft: rgba(217, 116, 66, 0.32);
+  --accent-border-strong: rgba(217, 116, 66, 0.56);
+  --accent-shadow: rgba(127, 50, 20, 0.28);
 
-  --hover: rgba(255, 255, 255, 0.05);
-  --diff-added: rgba(95, 179, 161, 0.13);
-  --diff-removed: rgba(224, 108, 117, 0.13);
-  --diff-hunk: rgba(124, 134, 155, 0.14);
-  --mark: rgba(214, 161, 94, 0.35);
+  --forge-glow-1: rgba(236, 138, 74, 0.13);
+  --forge-glow-2: rgba(168, 44, 26, 0.12);
+  --forge-glow-3: rgba(217, 116, 66, 0.06);
+  --forge-glow-opacity: 0.76;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 32px 80px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.5);
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  --font-sans: 'Lexend', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Lexend', serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+
+  /* MAW Semantic Aliases */
+  --surface: var(--bg);
+  --chrome: var(--panel);
+  --chrome-alt: var(--bg-2);
+  --raised: var(--bg-3);
+  --text: var(--ink);
+  --text-dim: var(--ink-3);
+  --accent: var(--ember);
+  --danger: #b13318;
+  --warning: var(--molten);
+
+  --hover: rgba(217, 116, 66, 0.07);
+  --diff-added: var(--sage-dim);
+  --diff-removed: rgba(177, 51, 24, 0.18);
+  --diff-hunk: rgba(138, 135, 127, 0.14);
+  --mark: rgba(236, 138, 74, 0.35);
 
   /* Resaltado de sintaxis. Pocos tonos, agrupados por rol. */
-  --code-keyword: #c792ea;
-  --code-string: #a3d18a;
-  --code-number: #e0a05f;
-  --code-comment: #6b7386;
-  --code-title: #82b8f0;
-  --code-attr: #7fd1c0;
-  --code-meta: #9aa3b5;
-  --code-danger: #e06c75;
+  --code-keyword: #e07a48;
+  --code-string: #68ba89;
+  --code-number: #ec8a4a;
+  --code-comment: #76746e;
+  --code-title: #e6a06c;
+  --code-attr: #d97442;
+  --code-meta: #a29f97;
+  --code-danger: #b13318;
 
-  /*
-    Saturacion y luminosidad del color de proyecto (ver `project-color.ts`). El
-    tono lo pone el hash del cwd; estas dos son fijas por tema, porque si
-    variaran algunos tonos saldrian ilegibles sobre este fondo.
-  */
   --project-color-s: 55%;
   --project-color-l: 58%;
 
@@ -52,31 +92,74 @@
 }
 
 :root[data-theme='light'] {
-  --surface: #fbfbfd;
-  --chrome: #eef0f5;
-  --chrome-alt: #f5f6fa;
+  --bg: #f8f8fa;
+  --bg-2: #f0f0f4;
+  --bg-3: #e6e6ed;
+  --panel: #ffffff;
+  --card-surface: color-mix(in srgb, var(--panel) 92%, transparent);
+  --border: #d4d4dc;
+  --border-strong: #bcbcc8;
+  --border-faint: #e6e6ee;
+  --ink: #141417;
+  --ink-2: #3e3e46;
+  --ink-3: #6c6b75;
+  --ink-4: #9c9aa5;
+  --ember: #b8582a;
+  --ember-2: #923e18;
+  --molten: #d97442;
+  --molten-dim: rgba(184, 88, 42, 0.12);
+  --lava-glow: rgba(184, 88, 42, 0.08);
+  --sage: #2a8352;
+  --sage-dim: rgba(42, 131, 82, 0.14);
+  --action-start: #b8582a;
+  --action-end: #853713;
+  --action-text: #ffffff;
+  --accent-border-soft: rgba(184, 88, 42, 0.28);
+  --accent-border-strong: rgba(184, 88, 42, 0.5);
+  --accent-shadow: rgba(133, 55, 19, 0.2);
+
+  --forge-glow-1: rgba(217, 116, 66, 0.08);
+  --forge-glow-2: rgba(184, 88, 42, 0.06);
+  --forge-glow-3: rgba(217, 116, 66, 0.04);
+  --forge-glow-opacity: 0.45;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  --font-sans: 'Lexend', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Lexend', serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+
+  --surface: var(--bg);
+  --chrome: var(--panel);
+  --chrome-alt: var(--bg-2);
   --raised: #ffffff;
-  --border: #d7dbe4;
-  --text: #22262e;
-  --text-dim: #6a7183;
-  --accent: #2c7f6c;
-  --danger: #c1382b;
-  --warning: #9a6414;
+  --text: var(--ink);
+  --text-dim: var(--ink-3);
+  --accent: var(--ember);
+  --danger: #b13318;
+  --warning: var(--ember);
 
-  --hover: rgba(0, 0, 0, 0.045);
-  --diff-added: rgba(44, 127, 108, 0.13);
-  --diff-removed: rgba(193, 56, 43, 0.11);
-  --diff-hunk: rgba(106, 113, 131, 0.13);
-  --mark: rgba(214, 161, 94, 0.45);
+  --hover: rgba(0, 0, 0, 0.04);
+  --diff-added: var(--sage-dim);
+  --diff-removed: rgba(177, 51, 24, 0.12);
+  --diff-hunk: rgba(108, 107, 117, 0.12);
+  --mark: rgba(217, 116, 66, 0.28);
 
-  --code-keyword: #8250c4;
-  --code-string: #2f7d3f;
-  --code-number: #a35a12;
-  --code-comment: #8a91a1;
-  --code-title: #2360b4;
-  --code-attr: #16736a;
-  --code-meta: #6a7183;
-  --code-danger: #c1382b;
+  --code-keyword: #853713;
+  --code-string: #2a8352;
+  --code-number: #b8582a;
+  --code-comment: #82818c;
+  --code-title: #a24b1f;
+  --code-attr: #b8582a;
+  --code-meta: #6c6b75;
+  --code-danger: #b13318;
 
   --project-color-s: 60%;
   --project-color-l: 42%;
@@ -84,19 +167,13 @@
   color-scheme: light;
 }
 
-/*
-  El fondo del marco de las terminales sigue al tema de la terminal, no al de la
-  app (0.5.0, `useTerminalTheme.ts`): por defecto es oscura siempre. Sin esto,
-  con la app en claro, el lienzo oscuro de xterm quedaba rodeado de blanco. Los
-  valores son los fondos de `TERMINAL_THEMES`, en `TerminalView.tsx`.
-*/
 :root,
 :root[data-terminal-theme='dark'] {
-  --terminal-bg: #12141a;
+  --terminal-bg: #0e0e10;
 }
 
 :root[data-terminal-theme='light'] {
-  --terminal-bg: #fbfbfd;
+  --terminal-bg: #f8f8fa;
 }
 
 * {
@@ -113,7 +190,7 @@ body,
 body {
   background: var(--surface);
   color: var(--text);
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans, "Lexend", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   font-size: 13px;
   overflow: hidden;
 }

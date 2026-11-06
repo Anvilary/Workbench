@@ -354,11 +354,14 @@ test('useTerminalHistory and TerminalView history pagination', { timeout: 60000 
   await page.evaluate(() => {
     // Fill buffer with enough lines to enable scrolling
     const lines = Array.from({ length: 50 }, (_, i) => 'Line ' + i).join('\r\n') + '\r\n';
-    window.terminalInstance.write(lines);
+    return new Promise((resolve) => window.terminalInstance.write(lines, resolve));
   });
-  // Scroll down then scroll to top
+  // Scroll down, ensure viewport moved away from top, then scroll back to top
   await page.evaluate(() => {
     window.terminalInstance.scrollToBottom();
+  });
+  await page.waitForFunction(() => (window.terminalInstance?.buffer?.active?.viewportY ?? 0) > 0);
+  await page.evaluate(() => {
     window.terminalInstance.scrollToTop();
   });
   await page.waitForFunction((initial) => window.topScrolledCount > initial, initialScrollCount);
