@@ -638,6 +638,18 @@ export function TerminalView({
       return true;
     });
 
+    // Teclas del usuario -> pty. Input isolation: keyboard-origin data (keys, IME, paste on the
+    // xterm textarea) is forwarded only while this terminal owns the keyboard; protocol replies
+    // and programmatic input are not keyboard input and pass untouched (see terminal-input-gate.ts).
+    let lastKeyboardGestureAt: number | null = null;
+    const markKeyboardGesture = (): void => {
+      lastKeyboardGestureAt = performance.now();
+    };
+    const gestureTarget = terminal.textarea ?? null;
+    if (gestureTarget !== null) {
+      for (const name of KEYBOARD_GESTURE_EVENTS) gestureTarget.addEventListener(name, markKeyboardGesture, true);
+    }
+
     /*
       Atajos de teclado unificados:
       - Ctrl+Shift+A selecciona todo el buffer accesible (5.000 lineas).
@@ -716,11 +728,22 @@ export function TerminalView({
 
         // Ctrl+Shift+V: conventional terminal paste
         if (isCtrl && event.shiftKey && !event.altKey && key === 'v') {
-          void readClipboard(isRemoteClientRef.current).then((text) => {
-            if (text) {
-              connection.send({ type: 'input', terminalId, data: text });
+          event.preventDefault();
+          if (activeRef.current) {
+            if (gestureTarget !== null && document.activeElement !== gestureTarget) {
+              terminal.focus();
             }
-          });
+            void readClipboard(isRemoteClientRef.current)
+              .then((text) => {
+                if (text && activeRef.current && terminalRef.current) {
+                  markKeyboardGesture();
+                  terminalRef.current.paste(text);
+                }
+              })
+              .catch((err) => {
+                onClipboardErrorRef.current?.(err instanceof Error ? err : new Error(String(err)));
+              });
+          }
           return false;
         }
       }
@@ -745,17 +768,6 @@ export function TerminalView({
       return true;
     });
 
-    // Teclas del usuario -> pty. Input isolation: keyboard-origin data (keys, IME, paste on the
-    // xterm textarea) is forwarded only while this terminal owns the keyboard; protocol replies
-    // and programmatic input are not keyboard input and pass untouched (see terminal-input-gate.ts).
-    let lastKeyboardGestureAt: number | null = null;
-    const markKeyboardGesture = (): void => {
-      lastKeyboardGestureAt = performance.now();
-    };
-    const gestureTarget = terminal.textarea ?? null;
-    if (gestureTarget !== null) {
-      for (const name of KEYBOARD_GESTURE_EVENTS) gestureTarget.addEventListener(name, markKeyboardGesture, true);
-    }
     const dataSubscription = terminal.onData((data) => {
       const forward = shouldForwardTerminalData({
         lastGestureAt: lastKeyboardGestureAt,
@@ -770,18 +782,26 @@ export function TerminalView({
       connection.send({ type: 'input', terminalId, data });
     });
 
-    const scrollSub = terminal.onScroll(() => {
-      if (restoringReplay.current) return;
+    const checkScrollbackPrompt = (): void => {
+      if (restoringReplay.current) {
+        setShowHistoryPrompt(false);
+        return;
+      }
       const inAlternateScreen = terminal.buffer.active.type === 'alternate';
-      if (terminal.buffer.active.viewportY === 0 && !inAlternateScreen) {
-        // El usuario llego al tope del scrollback en memoria de xterm (5.000 lineas).
-        // Se ofrece y habilita la carga del historial persistente.
+      if (inAlternateScreen) {
+        setShowHistoryPrompt(false);
+        return;
+      }
+      if (terminal.buffer.active.viewportY === 0 && terminal.buffer.active.baseY > 0) {
         onScrolledToTopRef.current?.();
         setShowHistoryPrompt(true);
-      } else if (terminal.buffer.active.viewportY > 15) {
+      } else {
         setShowHistoryPrompt(false);
       }
-    });
+    };
+
+    const scrollSub = terminal.onScroll(checkScrollbackPrompt);
+    const bufferSub = terminal.buffer.onBufferChange(checkScrollbackPrompt);
 
     const output = new TerminalOutput(terminal, (restoring) => {
       restoringReplay.current = restoring;
@@ -853,6 +873,7 @@ export function TerminalView({
       renderSubscription.dispose();
       scrollSubscription.dispose();
       scrollSub.dispose();
+      bufferSub.dispose();
       dataSubscription.dispose();
       if (gestureTarget !== null) {
         for (const name of KEYBOARD_GESTURE_EVENTS) gestureTarget.removeEventListener(name, markKeyboardGesture, true);
@@ -1044,25 +1065,41 @@ export function TerminalView({
           style={{
             position: 'absolute',
             top: '8px',
-            right: '16px',
+            right: '8px',
+            maxWidth: 'calc(100% - 16px)',
+            maxHeight: 'calc(100% - 16px)',
+            boxSizing: 'border-box',
+            overflow: 'hidden',
             zIndex: 15,
             backgroundColor: theme === 'dark' ? '#21262d' : '#ffffff',
             border: `1px solid ${theme === 'dark' ? '#30363d' : '#d0d7de'}`,
             borderRadius: '4px',
-            padding: '4px 10px',
+            padding: '4px 8px',
             fontSize: '12px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+            lineHeight: '1.4',
+            color: theme === 'dark' ? '#c9d1d9' : '#24292f',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
             display: 'flex',
+            flexWrap: 'wrap',
             alignItems: 'center',
-            gap: '8px',
+            justifyContent: 'flex-end',
+            gap: '6px 8px',
+            pointerEvents: 'auto',
           }}
         >
-          <span>Top of live scrollback reached</span>
+          <span style={{ minWidth: 0, overflowWrap: 'break-word' }}>Top of live scrollback reached</span>
           <button
             type="button"
             className="link-button"
             onClick={handleOpenHistory}
-            style={{ fontWeight: 'bold' }}
+            style={{
+              padding: '2px 8px',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
           >
             Open Persistent History
           </button>
