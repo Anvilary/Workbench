@@ -17,6 +17,7 @@ import './agency.css';
 import { useDropdownDismissal } from './useDropdownDismissal.js';
 import { useNativeChatGptTabs } from './useNativeChatGptTabs.js';
 import { EmberBackground } from './EmberBackground.js';
+import { THEME_ICON, themeTitle, useTheme, type ThemeState } from '../useTheme.js';
 
 const DRAFT_KEY = 'agency-ui.workspace-drafts.v1';
 const SIDEBAR_WIDTH_KEY = 'agency-ui.sidebar-width.v1';
@@ -73,9 +74,11 @@ function readDrafts(): Record<string, string> {
  * non-queueing sendImmediate patch, on its existing authenticated /ws pipeline.
  * No separate socket, backend, process owner, or client-selected cwd is created here.
  */
-export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.Element {
+export function AgencyApp({ connection, theme: themeProp }: { connection: AgentConnection; theme?: ThemeState }): JSX.Element {
   useLocale();
   useDropdownDismissal();
+  const localTheme = useTheme();
+  const theme = themeProp ?? localTheme;
   const agencyTransport = useMemo(() => createAgencyTransport(connection), [connection]);
   const store = useAgencyStore(agencyTransport, connection);
   const { data, loaded, online, synchronized, notice } = store;
@@ -447,6 +450,15 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
               setInboxOpen(!inboxOpen);
             }}
           />
+          <button
+            type="button"
+            className="agency-icon-button"
+            onClick={theme.cycle}
+            title={themeTitle(theme.preference)}
+            aria-label={themeTitle(theme.preference)}
+          >
+            <span aria-hidden="true" style={{ fontSize: '13px' }}>{THEME_ICON[theme.preference]}</span>
+          </button>
           <div className="agency-dropdown" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
@@ -521,6 +533,18 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
                   }}
                 >
                   <span className="maw-menu-item-text">{t('performance.menuItem')}</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="agency-dropdown-item maw-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    theme.cycle();
+                  }}
+                >
+                  <span className="maw-menu-item-text">{themeTitle(theme.preference)}</span>
+                  <span className="agency-count">{THEME_ICON[theme.preference]}</span>
                 </button>
               </div>
             )}

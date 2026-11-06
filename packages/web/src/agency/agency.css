@@ -21,7 +21,7 @@
   background: var(--agency-bg);
   color: var(--agency-text);
   font: 14px/1.5 var(--font-sans, 'Lexend', ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif);
-  color-scheme: dark;
+  color-scheme: inherit;
 }
 .agency-app *, .agency-app *::before, .agency-app *::after { box-sizing: border-box; }
 .agency-app button, .agency-app input, .agency-app select, .agency-app textarea {
@@ -855,10 +855,10 @@
   width: 380px;
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 70px);
-  background: #1a1d26;
-  border: 1px solid #32384a;
-  border-radius: 8px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm, 8px);
+  box-shadow: var(--shadow-lg);
   z-index: 200;
   display: flex;
   flex-direction: column;
@@ -870,8 +870,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  border-bottom: 1px solid #2e3444;
-  background: #151821;
+  border-bottom: 1px solid var(--border-faint);
+  background: var(--bg-2);
 }
 
 .maw-inbox-header-title {
@@ -883,13 +883,13 @@
 .maw-inbox-header-title h3 {
   font-size: 13px;
   font-weight: 600;
-  color: #f1f5f9;
+  color: var(--ink);
   margin: 0;
 }
 
 .maw-inbox-count-pill {
-  background: #334155;
-  color: #cbd5e1;
+  background: var(--bg-3);
+  color: var(--ink-2);
   font-size: 11px;
   font-weight: 600;
   padding: 1px 6px;
@@ -1140,7 +1140,7 @@
   min-height: 0;
   flex-direction: column;
   position: relative;
-  background: var(--terminal-bg, #0e0e10);
+  background: var(--bg);
   outline: none;
 }
 .maw-split-pane {

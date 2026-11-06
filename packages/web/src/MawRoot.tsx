@@ -24,7 +24,7 @@ export function MawRoot(): JSX.Element {
     connection.connect();
     return () => connection.close();
   }, [connection]);
-  return <AgencyApp connection={connection} />;
+  return <AgencyApp connection={connection} theme={theme} />;
 }
 
 /** The classic Workbench, fetched only when it is actually opened. */

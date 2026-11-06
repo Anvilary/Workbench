@@ -21,7 +21,7 @@ export type ResolvedTheme = 'light' | 'dark';
 
 const STORAGE_KEY = 'agent-workbench.theme';
 
-const ORDER: readonly ThemePreference[] = ['system', 'light', 'dark'];
+const ORDER: readonly ThemePreference[] = ['dark', 'light', 'system'];
 
 const THEME_KEYS: Readonly<Record<ThemePreference, MessageKey>> = {
   system: 'theme.system',
@@ -40,9 +40,9 @@ export const THEME_ICON: Readonly<Record<ThemePreference, string>> = {
   dark: '☾',
 };
 
-/** Sin nada guardado se arranca en automatico, que es el default de todos modos. */
+/** Sin nada guardado se arranca en oscuro, el look Anvilary por defecto de MAW. */
 function readPreference(): ThemePreference {
-  return readStored<ThemePreference>(STORAGE_KEY, 'system', (raw) =>
+  return readStored<ThemePreference>(STORAGE_KEY, 'dark', (raw) =>
     raw === 'light' || raw === 'dark' || raw === 'system' ? raw : null,
   );
 }
@@ -83,7 +83,7 @@ export function useTheme(): ThemeState {
 
   const cycle = useCallback(() => {
     setPreference((current) => {
-      const next = ORDER[(ORDER.indexOf(current) + 1) % ORDER.length] ?? 'system';
+      const next = ORDER[(ORDER.indexOf(current) + 1) % ORDER.length] ?? 'dark';
       writeStored(STORAGE_KEY, next);
       return next;
     });
