@@ -88,7 +88,7 @@ export function AgencySidebar({
       <nav className="agency-sidebar-nav" aria-label={t('agency.ui.projectsAndWorkspaces')}>
         <header className="agency-nav-head">
           <div className="agency-nav-brand">
-            <img src="/brand/maw-logo-64.png" alt="MAW" className="agency-nav-logo" width="26" height="26" />
+            <img src="/brand/maw-logo-64.png" alt="MAW" className="agency-nav-logo" width="34" height="34" />
             <strong>{t('agency.ui.agency')}</strong>
           </div>
           <button className="agency-icon-button" type="button" onClick={onCollapse} aria-label={t('agency.ui.collapseSidebar')} aria-expanded={true}>
