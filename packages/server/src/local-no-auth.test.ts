@@ -305,6 +305,7 @@ test('readiness and control script work with token-free localhost URL', async ()
   const clear = await publishReadiness(runtime, tokenFreeUrl);
   const env = {
     ...process.env,
+    MAW_RUNTIME_DIR: runtime,
     XDG_RUNTIME_DIR: temp,
     PATH: bin + ':' + process.env.PATH,
     MAW_TEST_PID: String(process.pid),
