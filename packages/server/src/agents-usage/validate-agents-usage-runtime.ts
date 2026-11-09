@@ -41,7 +41,7 @@ import { WorkspaceMutex } from '../agency/workspace-lock.js';
 import { AgentsUsageCollector } from './collector.js';
 
 const CHROMIUM_BIN = '/home/user/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome';
-const ARTIFACT_DIR = '/home/user/.gemini/antigravity-cli/brain/af7a00d3-7c48-439e-acd9-3e3a98b0d273';
+const ARTIFACT_DIR = process.env.MAW_ARTIFACT_DIR || '/home/user/.local/share/agy-5-profile/home/.gemini/antigravity-cli/brain/f0773a47-1405-4e18-b2a1-20552c87aeee';
 const TOKEN = 'maw-runtime-validation-token-2026';
 
 async function run() {

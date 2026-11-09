@@ -102,25 +102,32 @@ test('TERMINAL ENVIRONMENT 2: Supervisor spawns PTY children without adding user
 
 test('TERMINAL ENVIRONMENT 3: Clean systemd user execution validates normal namespace, root file ownership, and SSH', async () => {
   // Test transient systemd user service environment (how maw-ptyd.service runs without PrivateTmp and NoNewPrivileges)
-  const { stdout: uidMap } = await exec('systemd-run', ['--user', '--pipe', '-q', '/bin/sh', '-c', 'cat /proc/self/uid_map']);
+  const userBus = `/run/user/${process.getuid ? process.getuid() : 1000}/bus`;
+  const systemdEnv = {
+    ...process.env,
+    ...(fs.existsSync(userBus) ? { DBUS_SESSION_BUS_ADDRESS: `unix:path=${userBus}` } : {}),
+  };
+  const execSystemd = (args: string[]) => exec('systemd-run', args, { env: systemdEnv });
+
+  const { stdout: uidMap } = await execSystemd(['--user', '--pipe', '-q', '/bin/sh', '-c', 'cat /proc/self/uid_map']);
   assert.ok(!uidMap.includes('1000       1000          1'), 'Clean systemd user execution must not have single-UID map');
 
-  const { stdout: privs } = await exec('systemd-run', ['--user', '--pipe', '-q', '/bin/sh', '-c', 'cat /proc/self/status | grep NoNewPrivs']);
+  const { stdout: privs } = await execSystemd(['--user', '--pipe', '-q', '/bin/sh', '-c', 'cat /proc/self/status | grep NoNewPrivs']);
   assert.ok(privs.includes('NoNewPrivs:\t0'), 'Clean systemd user execution must have NoNewPrivs: 0');
 
   // Verify file ownership in clean user namespace
   const sshProxyConf = '/etc/ssh/ssh_config.d/20-systemd-ssh-proxy.conf';
   if (fs.existsSync(sshProxyConf)) {
-    const { stdout: lsOut } = await exec('systemd-run', ['--user', '--pipe', '-q', 'ls', '-l', sshProxyConf]);
+    const { stdout: lsOut } = await execSystemd(['--user', '--pipe', '-q', 'ls', '-l', sshProxyConf]);
     assert.ok(lsOut.includes('root root'), `${sshProxyConf} must appear owned by root root, not nobody nogroup`);
 
     // Verify OpenSSH client validates config cleanly
-    const { stdout: sshOut, stderr: sshErr } = await exec('systemd-run', ['--user', '--pipe', '-q', 'ssh', '-G', 'localhost']);
+    const { stdout: sshOut, stderr: sshErr } = await execSystemd(['--user', '--pipe', '-q', 'ssh', '-G', 'localhost']);
     assert.ok(!sshErr.includes('Bad owner or permissions'), 'SSH config validation must succeed without permission errors');
     assert.ok(sshOut.includes('hostname localhost'), 'SSH config parsed successfully');
 
     // Verify GitHub SSH authentication succeeds without permission/config rejection
-    const { stdout: ghOut } = await exec('systemd-run', ['--user', '--pipe', '-q', '/bin/sh', '-c',
+    const { stdout: ghOut } = await execSystemd(['--user', '--pipe', '-q', '/bin/sh', '-c',
       'ssh -T -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 -o BatchMode=yes git@github.com 2>&1 || true']);
     assert.ok(!ghOut.includes('Bad owner or permissions'), 'GitHub SSH must not fail with bad ownership/permissions');
     assert.ok(ghOut.includes('You\'ve successfully authenticated') || ghOut.includes('github.com'),
@@ -128,7 +135,7 @@ test('TERMINAL ENVIRONMENT 3: Clean systemd user execution validates normal name
   }
 
   // Verify sudo capability in clean execution (not blocked by NoNewPrivs)
-  const { stdout: sudoOut, stderr: sudoErr } = await exec('systemd-run', ['--user', '--pipe', '-q', '/bin/sh', '-c', 'sudo -n true 2>&1 || true']);
+  const { stdout: sudoOut, stderr: sudoErr } = await execSystemd(['--user', '--pipe', '-q', '/bin/sh', '-c', 'sudo -n true 2>&1 || true']);
   assert.ok(!sudoOut.includes('no new privileges') && !sudoErr.includes('no new privileges'),
     'sudo must not report "no new privileges flag is set"');
 });

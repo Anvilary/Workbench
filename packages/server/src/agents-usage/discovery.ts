@@ -29,6 +29,15 @@ export interface MonitoredProfileConfig {
   readonly profileDir?: string;
 }
 
+export function getUserHome(): string {
+  const raw = os.homedir();
+  const match = raw.match(/^(\/home\/[^/]+)\/\.local\/share\/agy\d+-profile\/home/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  return raw;
+}
+
 export const MONITORED_PROFILES: readonly MonitoredProfileConfig[] = [
   // Codex
   {
@@ -36,21 +45,21 @@ export const MONITORED_PROFILES: readonly MonitoredProfileConfig[] = [
     label: 'Codex 00',
     defaultProvider: 'OpenAI',
     binaryName: 'codex-0',
-    getProfileDir: () => process.env['CODEX_00_HOME'] || path.join(os.homedir(), '.codex-0'),
+    getProfileDir: () => process.env['CODEX_00_HOME'] || path.join(getUserHome(), '.codex-0'),
   },
   {
     profileId: 'codex-1',
     label: 'Codex 01',
     defaultProvider: 'OpenAI',
     binaryName: 'codex-1',
-    getProfileDir: () => process.env['CODEX_01_HOME'] || path.join(os.homedir(), '.codex-1'),
+    getProfileDir: () => process.env['CODEX_01_HOME'] || path.join(getUserHome(), '.codex-1'),
   },
   {
     profileId: 'codex-2',
     label: 'Codex 02',
     defaultProvider: 'OpenAI',
     binaryName: 'codex-2',
-    getProfileDir: () => process.env['CODEX_02_HOME'] || path.join(os.homedir(), '.codex-2'),
+    getProfileDir: () => process.env['CODEX_02_HOME'] || path.join(getUserHome(), '.codex-2'),
   },
 
   // AGY
@@ -59,56 +68,56 @@ export const MONITORED_PROFILES: readonly MonitoredProfileConfig[] = [
     label: 'AGY 00',
     defaultProvider: 'Google',
     binaryName: 'agy-0',
-    getProfileDir: () => process.env['AGY_00_HOME'] || os.homedir(),
+    getProfileDir: () => process.env['AGY_00_HOME'] || getUserHome(),
   },
   {
     profileId: 'agy-1',
     label: 'AGY 01',
     defaultProvider: 'Google',
     binaryName: 'agy-1',
-    getProfileDir: () => process.env['AGY_01_HOME'] || path.join(os.homedir(), '.local/share/agy-1-profile/home'),
+    getProfileDir: () => process.env['AGY_01_HOME'] || path.join(getUserHome(), '.local/share/agy-1-profile/home'),
   },
   {
     profileId: 'agy-2',
     label: 'AGY 02',
     defaultProvider: 'Anthropic',
     binaryName: 'agy-2',
-    getProfileDir: () => process.env['AGY_02_HOME'] || path.join(os.homedir(), '.local/share/agy-2-profile/home'),
+    getProfileDir: () => process.env['AGY_02_HOME'] || path.join(getUserHome(), '.local/share/agy-2-profile/home'),
   },
   {
     profileId: 'agy-3',
     label: 'AGY 03',
     defaultProvider: 'Google',
     binaryName: 'agy-3',
-    getProfileDir: () => process.env['AGY_03_HOME'] || path.join(os.homedir(), '.local/share/agy-3-profile/home'),
+    getProfileDir: () => process.env['AGY_03_HOME'] || path.join(getUserHome(), '.local/share/agy-3-profile/home'),
   },
   {
     profileId: 'agy-4',
     label: 'AGY 04',
     defaultProvider: 'Google',
     binaryName: 'agy-4',
-    getProfileDir: () => process.env['AGY_04_HOME'] || path.join(os.homedir(), '.local/share/agy-4-profile/home'),
+    getProfileDir: () => process.env['AGY_04_HOME'] || path.join(getUserHome(), '.local/share/agy-4-profile/home'),
   },
   {
     profileId: 'agy-5',
     label: 'AGY 05',
     defaultProvider: 'Google',
     binaryName: 'agy-5',
-    getProfileDir: () => process.env['AGY_05_HOME'] || path.join(os.homedir(), '.local/share/agy-5-profile/home'),
+    getProfileDir: () => process.env['AGY_05_HOME'] || path.join(getUserHome(), '.local/share/agy-5-profile/home'),
   },
   {
     profileId: 'agy-6',
     label: 'AGY 06',
     defaultProvider: 'Google',
     binaryName: 'agy-6',
-    getProfileDir: () => process.env['AGY_06_HOME'] || path.join(os.homedir(), '.local/share/agy-6-profile/home'),
+    getProfileDir: () => process.env['AGY_06_HOME'] || path.join(getUserHome(), '.local/share/agy-6-profile/home'),
   },
   {
     profileId: 'agy-7',
     label: 'AGY 07',
     defaultProvider: 'Anthropic',
     binaryName: 'agy-7',
-    getProfileDir: () => process.env['AGY_07_HOME'] || path.join(os.homedir(), '.local/share/agy-7-profile/home'),
+    getProfileDir: () => process.env['AGY_07_HOME'] || path.join(getUserHome(), '.local/share/agy-7-profile/home'),
   },
 
   // Claude
@@ -117,13 +126,13 @@ export const MONITORED_PROFILES: readonly MonitoredProfileConfig[] = [
     label: 'Claude Code',
     defaultProvider: 'Anthropic',
     binaryName: 'claude',
-    getProfileDir: () => process.env['CLAUDE_CONFIG_DIR'] || path.join(os.homedir(), '.claude'),
+    getProfileDir: () => process.env['CLAUDE_CONFIG_DIR'] || path.join(getUserHome(), '.claude'),
   },
 ];
 
 function resolveBinary(binaryName: string): string | null {
   // Check standard user bin directory first
-  const userBin = path.join(os.homedir(), '.local/bin', binaryName);
+  const userBin = path.join(getUserHome(), '.local/bin', binaryName);
   if (fs.existsSync(userBin)) return userBin;
 
   // Check PATH
