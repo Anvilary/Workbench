@@ -455,6 +455,8 @@ test('DEPLOYMENT SAFETY 13: Fresh installation unit rendering and validation', a
   assert.ok(ptydUnit.includes('Environment=MAW_PTYD_AUTH_FILE=%t/maw-ptyd/ptyd.sock.auth'), 'maw-ptyd.service must configure auth file under its own runtime dir');
   assert.ok(ptydUnit.includes(process.execPath), 'maw-ptyd.service ExecStart must use absolute node binary');
   assert.ok(!ptydUnit.includes('/usr/bin/env node'), 'maw-ptyd.service must not use /usr/bin/env node');
+  assert.ok(!ptydUnit.includes('PrivateTmp=true'), 'maw-ptyd.service must not set PrivateTmp=true (breaks user namespace and ssh config ownership)');
+  assert.ok(!ptydUnit.includes('NoNewPrivileges=true'), 'maw-ptyd.service must not set NoNewPrivileges=true (prohibits developer privilege escalation)');
 
   await rm(tmpState, { recursive: true, force: true });
 });

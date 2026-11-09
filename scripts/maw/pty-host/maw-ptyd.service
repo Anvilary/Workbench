@@ -30,8 +30,6 @@ Environment=MAW_PTYD_AUTH_FILE=%t/@PTYD_RUNTIME_NAME@/ptyd.sock.auth
 StandardOutput=append:%h/.local/state/maw/logs/maw-ptyd.stdout.log
 StandardError=append:%h/.local/state/maw/logs/maw-ptyd.stderr.log
 UMask=0077
-NoNewPrivileges=true
-PrivateTmp=true
 
 [Install]
 WantedBy=default.target
