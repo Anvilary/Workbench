@@ -1930,6 +1930,7 @@ export function App(): JSX.Element {
           appSettings={appSettings}
           agents={agents}
           remoteClient={remoteClient}
+          connection={connection}
           onOpenVault={() => {
             setSettingsVisible(false);
             setVaultDialogVisible(true);

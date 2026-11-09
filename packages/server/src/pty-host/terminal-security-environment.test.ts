@@ -67,7 +67,7 @@ test('TERMINAL ENVIRONMENT 2: Supervisor spawns PTY children without adding user
       cols: 80,
       rows: 24,
       cwd: tmpRuntime,
-      env: { ...process.env },
+      env: Object.fromEntries(Object.entries(process.env).filter(([, v]) => typeof v === 'string')) as Record<string, string>,
     });
 
     assert.ok(session.pid > 0, 'Spawned terminal process must have valid PID');

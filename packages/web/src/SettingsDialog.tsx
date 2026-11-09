@@ -28,6 +28,8 @@ import { HIDEABLE_PANELS, type HideablePanel, type PanelVisibility } from './pan
 import type { AppSettingsApi } from './useAppSettings.js';
 import type { TerminalThemePreference, TerminalThemeState } from './useTerminalTheme.js';
 import { vaultName } from './vault-ui.js';
+import type { AgentConnection } from './connection.js';
+import { AgentsUsageView } from './AgentsUsageView.js';
 
 /** Como se llama cada panel en la lista: el mismo nombre que tiene en la pantalla. */
 const PANEL_NAMES: Readonly<Record<HideablePanel, MessageKey>> = {
@@ -70,6 +72,10 @@ interface SettingsDialogProps {
   onOpenVault: (() => void) | null;
   /** null en una ventana remota, o con un servidor anterior al Hito 37. */
   onOpenRemote: (() => void) | null;
+  /** Conexion con el servidor para telemetria de agentes. */
+  connection?: AgentConnection;
+  /** Pestana inicial al abrir los ajustes. */
+  initialTab?: 'general' | 'agents-usage';
 }
 
 export function SettingsDialog({
@@ -83,7 +89,10 @@ export function SettingsDialog({
   remoteClient,
   onOpenVault,
   onOpenRemote,
+  connection,
+  initialTab = 'general',
 }: SettingsDialogProps): JSX.Element {
+  const [activeTab, setActiveTab] = useState<'general' | 'agents-usage'>(initialTab);
   const [confirmingConsole, setConfirmingConsole] = useState(false);
   const status = appSettings.status;
   const serverEditable = status !== null && !remoteClient;
@@ -138,19 +147,45 @@ export function SettingsDialog({
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
-        className="modal settings-dialog"
+        className={`modal settings-dialog ${activeTab === 'agents-usage' ? 'settings-dialog-wide' : ''}`}
         role="dialog"
-        aria-label={t('settings.title')}
+        aria-label={activeTab === 'agents-usage' ? 'Agents Usage' : t('settings.title')}
         onClick={(event) => event.stopPropagation()}
       >
         <header className="modal-header">
-          <span className="modal-title">{t('settings.title')}</span>
+          <span className="modal-title">
+            {activeTab === 'agents-usage' ? 'Agents Usage' : t('settings.title')}
+          </span>
           <button className="icon-button" onClick={onClose} title={t('common.closeEsc')}>
             ×
           </button>
         </header>
 
-        <div className="modal-body settings-body">
+        <div className="settings-tab-bar" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'general'}
+            className={`settings-tab-btn ${activeTab === 'general' ? 'active' : ''}`}
+            onClick={() => setActiveTab('general')}
+          >
+            {t('settings.title')}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'agents-usage'}
+            className={`settings-tab-btn ${activeTab === 'agents-usage' ? 'active' : ''}`}
+            onClick={() => setActiveTab('agents-usage')}
+          >
+            Agents Usage
+          </button>
+        </div>
+
+        {activeTab === 'agents-usage' ? (
+          <AgentsUsageView connection={connection} />
+        ) : (
+          <div className="modal-body settings-body">
           <h3 className="modal-section">{t('settings.section.appearance')}</h3>
           <div className="settings-row">
             <span className="settings-label">{t('settings.language')}</span>
@@ -298,6 +333,13 @@ export function SettingsDialog({
                 05-10-2026).
               */}
               <div className="settings-row settings-more">
+                <button
+                  type="button"
+                  className="primary-button primary-button-small"
+                  onClick={() => setActiveTab('agents-usage')}
+                >
+                  Agents Usage…
+                </button>
                 {onOpenVault !== null && (
                   <button className="primary-button primary-button-small" onClick={onOpenVault}>
                     {t('settings.more.open', { name: vaultName() })}
@@ -312,6 +354,7 @@ export function SettingsDialog({
             </>
           )}
         </div>
+        )}
       </div>
     </div>
   );

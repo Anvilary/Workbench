@@ -256,6 +256,8 @@ import {
   type AppSettingsChange,
   type AppSettingsStatus,
 } from './settings.js';
+import type { AgentsUsageSnapshot } from './agents-usage.js';
+export * from './agents-usage.js';
 
 /** Se incrementa cuando el contrato cambia de forma incompatible. */
 export const PROTOCOL_VERSION = 8;
@@ -1156,6 +1158,12 @@ export interface ClientCancelGlobalSearchMessage {
  */
 export type ClientSettingsUpdateMessage = { type: 'settings.update' } & AppSettingsChange;
 
+export interface ClientAgentsUsageGetMessage {
+  type: 'agents.usage.get';
+  requestId: string;
+  forceRefresh?: boolean;
+}
+
 export interface ClientComposerDraftMessage {
   type: 'composer.draft';
   terminalId: TerminalId;
@@ -1425,6 +1433,7 @@ export type ClientMessage =
   | ClientRemoteDeviceForgetSelfMessage
   | ClientComposerDraftMessage
   | ClientSettingsUpdateMessage
+  | ClientAgentsUsageGetMessage
   | ClientWorktreeInspectMessage
   | ClientWorktreeCreateMessage
   | ClientWorktreeStatusMessage
@@ -2146,6 +2155,18 @@ export interface ServerSettingsStatusMessage {
   settings: AppSettingsStatus;
 }
 
+export interface ServerAgentsUsageSnapshotMessage {
+  type: 'agents.usage.snapshot';
+  requestId: string;
+  usage: AgentsUsageSnapshot;
+}
+
+export interface ServerAgentsUsageFailedMessage {
+  type: 'agents.usage.failed';
+  requestId: string;
+  error: string;
+}
+
 /**
  * Los limites del plan de cada CLI que los publica (hito 47, §6.37). Al
  * conectar, si hay algo, y a todas las ventanas en cada cambio. Siempre la
@@ -2567,6 +2588,8 @@ export type ServerMessage =
   | ServerWorktreeIntegratedMessage
   | ServerWorktreeDeleteBranchPlanMessage
   | ServerWorktreeBranchDeletedMessage
+  | ServerAgentsUsageSnapshotMessage
+  | ServerAgentsUsageFailedMessage
   | ServerErrorMessage
   | AgencyServerMessage;
 
@@ -3148,6 +3171,12 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     case 'settings.update': {
       const change = parseAppSettingsChange(record);
       return change === null ? null : { type: 'settings.update', ...change };
+    }
+    case 'agents.usage.get': {
+      const requestId = asNonEmptyString(record['requestId']);
+      if (requestId === null) return null;
+      const forceRefresh = record['forceRefresh'] === true;
+      return { type: 'agents.usage.get', requestId, forceRefresh };
     }
     case 'worktree.inspect': {
       const requestId = asNonEmptyString(record['requestId']);
@@ -3947,6 +3976,16 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       return requestId === null || worktreeId === null || branch === null
         ? null
         : { type: 'worktree.branchDeleted', requestId, worktreeId, branch };
+    }
+    case 'agents.usage.snapshot': {
+      const requestId = asNonEmptyString(record['requestId']);
+      const usage = record['usage'] as AgentsUsageSnapshot | undefined;
+      return requestId === null || !usage ? null : { type: 'agents.usage.snapshot', requestId, usage };
+    }
+    case 'agents.usage.failed': {
+      const requestId = asNonEmptyString(record['requestId']);
+      const error = typeof record['error'] === 'string' ? record['error'] : 'Failed to collect agents usage';
+      return requestId === null ? null : { type: 'agents.usage.failed', requestId, error };
     }
     case 'error': {
       const text = parseServerText(record['text']);

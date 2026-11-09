@@ -137,6 +137,7 @@ import { WorktreeError, WorktreeInUseError, type WorktreeService } from './workt
 import { remoteRefusal } from './remote-access.js';
 import type { RemoteAccessService } from './remote-access-service.js';
 import { authorizeRequest, authorizeRequestNoAuth, type Credential } from './security.js';
+import { AgentsUsageCollector } from './agents-usage/index.js';
 
 /**
  * Cuanto se espera a que arranque la CLI de una pestana recien abierta antes de
@@ -235,6 +236,7 @@ export interface TerminalSocketOptions {
   agencyBrowserTabs?: BrowserTabAdapter;
   agencyEditorTabs?: EditorTabAdapter;
   agencyLayoutStore?: AgencyLayoutStore;
+  agentsUsageCollector?: AgentsUsageCollector;
 }
 
 export interface DoneHandlerContext {
@@ -347,6 +349,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
     workspaceStore: agencyWorkspaceStore,
     protectedDirsProvider: () => agents.protectedDirs(),
   });
+  const agentsUsageCollector = options.agentsUsageCollector ?? new AgentsUsageCollector();
   const agencyReady = Promise.all([
     agencyNotificationStore.initialize(),
     agencyActivityManager.initialize(),
@@ -4039,6 +4042,26 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
           if (layout) {
             send(socket, { type: 'agency.layout.changed', workspaceId: message.workspaceId, layout });
           }
+          break;
+        }
+
+        case 'agents.usage.get': {
+          void (async () => {
+            try {
+              const snapshot = await agentsUsageCollector.getSnapshot(message.forceRefresh);
+              send(socket, {
+                type: 'agents.usage.snapshot',
+                requestId: message.requestId,
+                usage: snapshot,
+              });
+            } catch (error) {
+              send(socket, {
+                type: 'agents.usage.failed',
+                requestId: message.requestId,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          })();
           break;
         }
       }

@@ -10,6 +10,7 @@ import { NotificationBell } from './NotificationBell.js';
 import { NotificationInbox, type DesktopPermission } from './NotificationInbox.js';
 import { PerformancePanel } from './PerformancePanel.js';
 import { NotificationToastContainer } from './NotificationToast.js';
+import { AgentsUsageView } from '../AgentsUsageView.js';
 import { acknowledgeWorkspaceDraft, createAgencyTransport, putWorkspaceDraft, allWorkspaceTabs } from './model.js';
 import { t } from '../i18n/index.js';
 import { useLocale } from '../i18n/useLocale.js';
@@ -81,6 +82,7 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
   useNativeChatGptTabs(data.webTabs, online && synchronized, store.request);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [performanceOpen, setPerformanceOpen] = useState(false);
+  const [agentsUsageOpen, setAgentsUsageOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(readNotificationsEnabled);
   const [desktopPermission, setDesktopPermission] = useState<DesktopPermission>(readDesktopPermission);
@@ -517,6 +519,17 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
                 >
                   <span className="maw-menu-item-text">{t('performance.menuItem')}</span>
                 </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="agency-dropdown-item maw-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setAgentsUsageOpen(true);
+                  }}
+                >
+                  <span className="maw-menu-item-text">Agents Usage</span>
+                </button>
               </div>
             )}
           </div>
@@ -538,6 +551,28 @@ export function AgencyApp({ connection }: { connection: AgentConnection }): JSX.
         )}
         {performanceOpen && (
           <PerformancePanel onClose={() => setPerformanceOpen(false)} />
+        )}
+        {agentsUsageOpen && (
+          <div className="modal-backdrop" onClick={() => setAgentsUsageOpen(false)}>
+            <div
+              className="modal settings-dialog settings-dialog-wide"
+              role="dialog"
+              aria-label="Agents Usage"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <header className="modal-header">
+                <span className="modal-title">Agents Usage</span>
+                <button
+                  className="icon-button"
+                  onClick={() => setAgentsUsageOpen(false)}
+                  title={t('common.closeEsc')}
+                >
+                  ×
+                </button>
+              </header>
+              <AgentsUsageView connection={connection} />
+            </div>
+          </div>
         )}
         {error && <div role="alert" className="agency-error-bar">{error}
           <button type="button" onClick={() => setError(null)} aria-label={t('agency.ui.dismissError')}>×</button></div>}
