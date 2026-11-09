@@ -392,6 +392,22 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
     } catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.ui.unableToRestore')); }
   }
 
+  async function reorderProjects(projectIds: readonly ProjectId[]) {
+    try {
+      await store.orderProjects(projectIds);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t('agency.errors.internalError'));
+    }
+  }
+
+  async function reorderWorkspaces(projectId: ProjectId, workspaceIds: readonly WorkspaceId[]) {
+    try {
+      await store.orderWorkspaces(projectId, workspaceIds);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t('agency.errors.internalError'));
+    }
+  }
+
   const doneCount = data.workspaces.filter((ws) => ws.status === 'done' || ws.status === 'archived').length;
 
   return (
@@ -426,6 +442,8 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
               onArchiveProject={(p) => { void archiveProject(p); }}
               onDeleteProject={(p) => { void deleteProject(p); }}
               onRestore={(ws) => { void restore(ws); }}
+              onReorderProjects={reorderProjects}
+              onReorderWorkspaces={reorderWorkspaces}
             />
             <div
               className="agency-sidebar-resizer"

@@ -186,9 +186,9 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
       } else if (message.type === 'agency.project.changed') {
         setData((old) => ({
           ...old,
-          projects: message.change === 'deleted'
+          projects: message.projects ?? (message.change === 'deleted'
             ? old.projects.filter((p) => p.id !== message.projectId)
-            : message.project ? replaceById(old.projects, message.project) : old.projects,
+            : message.project ? replaceById(old.projects, message.project) : old.projects),
         }));
       } else if (
         message.type === 'agency.workspace.created' || message.type === 'agency.workspace.updated' ||
@@ -210,9 +210,9 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
         });
       } else if (message.type === 'agency.workspace.changed') {
         setData((old) => ({
-          ...old, workspaces: message.change === 'deleted'
+          ...old, workspaces: message.workspaces ?? (message.change === 'deleted'
             ? old.workspaces.filter((w) => w.id !== message.workspaceId)
-            : message.workspace ? replaceById(old.workspaces, message.workspace) : old.workspaces,
+            : message.workspace ? replaceById(old.workspaces, message.workspace) : old.workspaces),
         }));
       } else if (message.type === 'agency.profile.configured' || message.type === 'agency.profile.changed') {
         setData((old) => ({ ...old, profiles: replaceById(old.profiles, message.profile) }));
@@ -286,8 +286,23 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
     request({ type: 'agency.project.unarchive', projectId });
   const deleteProject = (projectId: AgencyProject['id']) =>
     request({ type: 'agency.project.delete', projectId });
+  const orderProjects = (projectIds: readonly AgencyProject['id'][]) => {
+    setData((old) => {
+      const orderMap = new Map(projectIds.map((id, index) => [id, index]));
+      const sorted = [...old.projects].sort((a, b) => {
+        const aIdx = orderMap.has(a.id) ? orderMap.get(a.id)! : Number.MAX_SAFE_INTEGER;
+        const bIdx = orderMap.has(b.id) ? orderMap.get(b.id)! : Number.MAX_SAFE_INTEGER;
+        if (aIdx !== bIdx) return aIdx - bIdx;
+        return old.projects.indexOf(a) - old.projects.indexOf(b);
+      });
+      return { ...old, projects: sorted };
+    });
+    return request({ type: 'agency.projects.order', projectIds });
+  };
   const createWorkspace = (projectId: AgencyWorkspace['projectId'], name: string, pickerId: string) =>
     request({ type: 'agency.workspace.create', projectId, name, pickerId });
+  const renameWorkspace = (workspaceId: AgencyWorkspace['id'], name: string) =>
+    request({ type: 'agency.workspace.update', workspaceId, name });
   const archiveWorkspace = (workspaceId: AgencyWorkspace['id']) =>
     request({ type: 'agency.workspace.archive', workspaceId });
   const markDone = (workspaceId: AgencyWorkspace['id']) =>
@@ -296,6 +311,27 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
     request({ type: 'agency.workspace.restore', workspaceId });
   const deleteWorkspace = (workspaceId: AgencyWorkspace['id']) =>
     request({ type: 'agency.workspace.delete', workspaceId });
+  const orderWorkspaces = (projectId: AgencyWorkspace['projectId'], workspaceIds: readonly AgencyWorkspace['id'][]) => {
+    setData((old) => {
+      const orderMap = new Map(workspaceIds.map((id, index) => [id, index]));
+      const projectWorkspaces = old.workspaces.filter((w) => w.projectId === projectId);
+      const sortedProjectWorkspaces = [...projectWorkspaces].sort((a, b) => {
+        const aIdx = orderMap.has(a.id) ? orderMap.get(a.id)! : Number.MAX_SAFE_INTEGER;
+        const bIdx = orderMap.has(b.id) ? orderMap.get(b.id)! : Number.MAX_SAFE_INTEGER;
+        if (aIdx !== bIdx) return aIdx - bIdx;
+        return projectWorkspaces.indexOf(a) - projectWorkspaces.indexOf(b);
+      });
+      let sortedIdx = 0;
+      const nextWorkspaces = old.workspaces.map((w) => {
+        if (w.projectId === projectId) {
+          return sortedProjectWorkspaces[sortedIdx++]!;
+        }
+        return w;
+      });
+      return { ...old, workspaces: nextWorkspaces };
+    });
+    return request({ type: 'agency.workspaces.order', projectId, workspaceIds });
+  };
   const saveLayout = useCallback((workspaceId: WorkspaceId, layout: WorkspacePaneLayout) =>
     request({ type: 'agency.layout.save', workspaceId, layout }), [request]);
   const clearLayoutWarning = useCallback((workspaceId: WorkspaceId) => {
@@ -309,8 +345,8 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
 
   return {
     data, online, loaded, synchronized, notice, request, refresh,
-    createProject, renameProject, archiveProject, unarchiveProject, deleteProject,
-    createWorkspace, archiveWorkspace, markDone, restore, deleteWorkspace, saveLayout,
-    clearLayoutWarning,
+    createProject, renameProject, archiveProject, unarchiveProject, deleteProject, orderProjects,
+    createWorkspace, renameWorkspace, archiveWorkspace, markDone, restore, deleteWorkspace, orderWorkspaces,
+    saveLayout, clearLayoutWarning,
   };
 }

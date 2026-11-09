@@ -1,6 +1,6 @@
 import { t } from '../i18n/index.js';
 import { agencySessionText } from './agency-labels.js';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import type {
   AgencyProject, AgencyRuntimeSession, AgencyWorkspace, ProjectId, WorkspaceId, WebTab,
 } from '@agent-workbench/shared';
@@ -25,6 +25,8 @@ export interface AgencySidebarProps {
   onArchiveProject: (project: AgencyProject) => void;
   onDeleteProject: (project: AgencyProject) => void;
   onRestore: (workspace: AgencyWorkspace) => void;
+  onReorderProjects?: (projectIds: readonly ProjectId[]) => void;
+  onReorderWorkspaces?: (projectId: ProjectId, workspaceIds: readonly WorkspaceId[]) => void;
 }
 
 export function SidebarToggleIcon(): JSX.Element {
@@ -51,9 +53,15 @@ export function AgencySidebar({
   projects, workspaces, sessions, webTabs = [], selected, showingDone = false,
   onSelect, onCreate, onCreateProject, onDone, onArchiveWorkspace, onDeleteWorkspace,
   onRenameProject, onArchiveProject, onDeleteProject, onCollapse,
+  onReorderProjects, onReorderWorkspaces,
 }: AgencySidebarProps): JSX.Element {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [openMenu, setOpenMenu] = useState<{ type: 'project' | 'workspace'; id: string } | null>(null);
+  const [draggedProjectId, setDraggedProjectId] = useState<ProjectId | null>(null);
+  const [projectDropTarget, setProjectDropTarget] = useState<{ id: ProjectId; position: 'before' | 'after' } | null>(null);
+  const [draggedWorkspace, setDraggedWorkspace] = useState<{ id: WorkspaceId; projectId: ProjectId } | null>(null);
+  const [workspaceDropTarget, setWorkspaceDropTarget] = useState<{ id: WorkspaceId; position: 'before' | 'after' } | null>(null);
+  const suppressClickUntil = useRef<number>(0);
 
   // Modals state
   const [renamingProject, setRenamingProject] = useState<AgencyProject | null>(null);
@@ -103,11 +111,99 @@ export function AgencySidebar({
           {groups.length === 0 && <p className="agency-muted agency-empty-nav">{t('agency.ui.createAProjectToBegin')}</p>}
           {groups.map(({ project, items }) => {
             const isMenuOpen = openMenu?.type === 'project' && openMenu.id === project.id;
+            const isProjectDragging = draggedProjectId === project.id;
+            const isProjectTargetBefore = projectDropTarget?.id === project.id && projectDropTarget.position === 'before';
+            const isProjectTargetAfter = projectDropTarget?.id === project.id && projectDropTarget.position === 'after';
+            const projectClassName = [
+              'agency-project',
+              isProjectDragging ? 'agency-is-dragging' : '',
+              isProjectTargetBefore ? 'agency-drop-target-before' : '',
+              isProjectTargetAfter ? 'agency-drop-target-after' : '',
+            ].filter(Boolean).join(' ');
+
             return (
-              <section key={project.id} className="agency-project">
-                <div className="agency-project-row">
-                  <button type="button" className="agency-project-toggle" aria-expanded={!collapsed.has(project.id)}
-                    onClick={() => toggle(project.id)} title={project.name}>
+              <section
+                key={project.id}
+                className={projectClassName}
+                onDragOver={(e) => {
+                  if (e.dataTransfer.types.includes('application/maw-project-id') && draggedProjectId) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const pos = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+                    if (projectDropTarget?.id !== project.id || projectDropTarget?.position !== pos) {
+                      setProjectDropTarget({ id: project.id, position: pos });
+                    }
+                  }
+                }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    if (projectDropTarget?.id === project.id) {
+                      setProjectDropTarget(null);
+                    }
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const sourceId = (e.dataTransfer.getData('application/maw-project-id') || draggedProjectId) as ProjectId;
+                  if (sourceId && onReorderProjects) {
+                    suppressClickUntil.current = Date.now() + 300;
+                    const currentIds = groups.map((g) => g.project.id);
+                    const fromIdx = currentIds.indexOf(sourceId);
+                    const toIdx = currentIds.indexOf(project.id);
+                    if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
+                      const nextIds = [...currentIds];
+                      nextIds.splice(fromIdx, 1);
+                      const insertIdx = projectDropTarget?.position === 'after'
+                        ? (toIdx > fromIdx ? toIdx : toIdx + 1)
+                        : (toIdx > fromIdx ? toIdx - 1 : toIdx);
+                      nextIds.splice(Math.max(0, Math.min(nextIds.length, insertIdx)), 0, sourceId);
+                      onReorderProjects(nextIds);
+                    }
+                  }
+                  setDraggedProjectId(null);
+                  setProjectDropTarget(null);
+                }}
+              >
+                <div
+                  className="agency-project-row"
+                  draggable={!openMenu && !renamingProject}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('application/maw-project-id', project.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                    setDraggedProjectId(project.id);
+                  }}
+                  onDragEnd={() => {
+                    suppressClickUntil.current = Date.now() + 300;
+                    setDraggedProjectId(null);
+                    setProjectDropTarget(null);
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="agency-project-toggle"
+                    aria-expanded={!collapsed.has(project.id)}
+                    onClick={() => {
+                      if (Date.now() < suppressClickUntil.current) return;
+                      toggle(project.id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && onReorderProjects) {
+                        e.preventDefault();
+                        const currentIds = groups.map((g) => g.project.id);
+                        const idx = currentIds.indexOf(project.id);
+                        if (idx !== -1) {
+                          const targetIdx = e.key === 'ArrowUp' ? idx - 1 : idx + 1;
+                          if (targetIdx >= 0 && targetIdx < currentIds.length) {
+                            const nextIds = [...currentIds];
+                            [nextIds[idx], nextIds[targetIdx]] = [nextIds[targetIdx]!, nextIds[idx]!];
+                            onReorderProjects(nextIds);
+                          }
+                        }
+                      }
+                    }}
+                    title={project.name}
+                  >
                     <span aria-hidden="true" className={'agency-chevron' + (collapsed.has(project.id) ? '' : ' open')}>›</span>
                     <span className="agency-project-name">{project.name}</span>
                     <span className="agency-count">{items.length}</span>
@@ -173,12 +269,108 @@ export function AgencySidebar({
                       const attention = collection.some(item => isAttention(item.activity));
                       const working = collection.some(item => item.activity === 'working');
                       const isWsMenuOpen = openMenu?.type === 'workspace' && openMenu.id === workspace.id;
+                      const isWsDragging = draggedWorkspace?.id === workspace.id;
+                      const isWsTargetBefore = workspaceDropTarget?.id === workspace.id && workspaceDropTarget.position === 'before';
+                      const isWsTargetAfter = workspaceDropTarget?.id === workspace.id && workspaceDropTarget.position === 'after';
+                      const wsRowClassName = [
+                        'agency-workspace-nav-row',
+                        selected === workspace.id && !showingDone ? 'selected' : '',
+                        isWsDragging ? 'agency-is-dragging' : '',
+                        isWsTargetBefore ? 'agency-drop-target-before' : '',
+                        isWsTargetAfter ? 'agency-drop-target-after' : '',
+                      ].filter(Boolean).join(' ');
+
                       return (
-                        <div className={'agency-workspace-nav-row' + (selected === workspace.id && !showingDone ? ' selected' : '')}
-                          key={workspace.id}>
-                          <button className="agency-workspace-nav-button" type="button" onClick={() => onSelect(workspace.id)}
+                        <div
+                          className={wsRowClassName}
+                          key={workspace.id}
+                          draggable={!openMenu}
+                          onDragStart={(e) => {
+                            e.stopPropagation();
+                            e.dataTransfer.setData('application/maw-workspace-id', workspace.id);
+                            e.dataTransfer.setData('application/maw-workspace-project-id', workspace.projectId);
+                            e.dataTransfer.effectAllowed = 'move';
+                            setDraggedWorkspace({ id: workspace.id, projectId: workspace.projectId });
+                          }}
+                          onDragOver={(e) => {
+                            e.stopPropagation();
+                            if (e.dataTransfer.types.includes('application/maw-workspace-id') && draggedWorkspace) {
+                              if (draggedWorkspace.projectId !== workspace.projectId) {
+                                e.dataTransfer.dropEffect = 'none';
+                                return;
+                              }
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = 'move';
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              const pos = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+                              if (workspaceDropTarget?.id !== workspace.id || workspaceDropTarget?.position !== pos) {
+                                setWorkspaceDropTarget({ id: workspace.id, position: pos });
+                              }
+                            }
+                          }}
+                          onDragLeave={(e) => {
+                            e.stopPropagation();
+                            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                              if (workspaceDropTarget?.id === workspace.id) {
+                                setWorkspaceDropTarget(null);
+                              }
+                            }
+                          }}
+                          onDrop={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            const sourceId = (e.dataTransfer.getData('application/maw-workspace-id') || draggedWorkspace?.id) as WorkspaceId;
+                            const sourceProjectId = (e.dataTransfer.getData('application/maw-workspace-project-id') || draggedWorkspace?.projectId) as ProjectId;
+                            if (sourceId && sourceProjectId === workspace.projectId && onReorderWorkspaces) {
+                              suppressClickUntil.current = Date.now() + 300;
+                              const currentWsIds = items.map((w) => w.id);
+                              const fromIdx = currentWsIds.indexOf(sourceId);
+                              const toIdx = currentWsIds.indexOf(workspace.id);
+                              if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
+                                const nextIds = [...currentWsIds];
+                                nextIds.splice(fromIdx, 1);
+                                const insertIdx = workspaceDropTarget?.position === 'after'
+                                  ? (toIdx > fromIdx ? toIdx : toIdx + 1)
+                                  : (toIdx > fromIdx ? toIdx - 1 : toIdx);
+                                nextIds.splice(Math.max(0, Math.min(nextIds.length, insertIdx)), 0, sourceId);
+                                onReorderWorkspaces(workspace.projectId, nextIds);
+                              }
+                            }
+                            setDraggedWorkspace(null);
+                            setWorkspaceDropTarget(null);
+                          }}
+                          onDragEnd={(e) => {
+                            e.stopPropagation();
+                            suppressClickUntil.current = Date.now() + 300;
+                            setDraggedWorkspace(null);
+                            setWorkspaceDropTarget(null);
+                          }}
+                        >
+                          <button
+                            className="agency-workspace-nav-button"
+                            type="button"
+                            onClick={() => {
+                              if (Date.now() < suppressClickUntil.current) return;
+                              onSelect(workspace.id);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && onReorderWorkspaces) {
+                                e.preventDefault();
+                                const currentWsIds = items.map((w) => w.id);
+                                const idx = currentWsIds.indexOf(workspace.id);
+                                if (idx !== -1) {
+                                  const targetIdx = e.key === 'ArrowUp' ? idx - 1 : idx + 1;
+                                  if (targetIdx >= 0 && targetIdx < currentWsIds.length) {
+                                    const nextIds = [...currentWsIds];
+                                    [nextIds[idx], nextIds[targetIdx]] = [nextIds[targetIdx]!, nextIds[idx]!];
+                                    onReorderWorkspaces(workspace.projectId, nextIds);
+                                  }
+                                }
+                              }
+                            }}
                             aria-current={selected === workspace.id && !showingDone ? 'page' : undefined}
-                            title={workspace.cwd}>
+                            title={workspace.cwd}
+                          >
                             <span className={'agency-status-dot ' + (attention ? 'attention' : working ? 'working' : collection.some(item => item.lifecycle === 'running') ? 'idle' : 'muted')} title={collection.map(item => agencySessionText(item)).join(', ')} aria-label={t('agency.tabs.sessionCount', { count: collection.length })} />
                             <span className="agency-truncate">{workspace.name}</span>
                           </button>

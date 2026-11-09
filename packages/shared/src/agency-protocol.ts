@@ -179,6 +179,7 @@ export type AgencyClientMessage =
   | (AgencyClientRequest<'agency.project.archive'> & { projectId: ProjectId })
   | (AgencyClientRequest<'agency.project.unarchive'> & { projectId: ProjectId })
   | (AgencyClientRequest<'agency.project.delete'> & { projectId: ProjectId })
+  | (AgencyClientRequest<'agency.projects.order'> & { projectIds: readonly ProjectId[] })
   | (AgencyClientRequest<'agency.workspaces.list'> & { projectId?: ProjectId })
   | (AgencyClientRequest<'agency.workspace.create'> & {
       projectId: ProjectId;
@@ -191,6 +192,7 @@ export type AgencyClientMessage =
   | (AgencyClientRequest<'agency.workspace.done'> & { workspaceId: WorkspaceId })
   | (AgencyClientRequest<'agency.workspace.restore'> & { workspaceId: WorkspaceId })
   | (AgencyClientRequest<'agency.workspace.delete'> & { workspaceId: WorkspaceId })
+  | (AgencyClientRequest<'agency.workspaces.order'> & { projectId: ProjectId; workspaceIds: readonly WorkspaceId[] })
   | AgencyClientRequest<'agency.profiles.list'>
   | (AgencyClientRequest<'agency.profile.configure'> & {
       profileId: CliProfileId;
@@ -273,8 +275,8 @@ export type AgencyServerMessage =
   | { type: 'agency.session.selection'; requestId: RequestId; session: AgencyAgentSession }
   | { type: 'agency.error'; requestId: RequestId; code: AgencyErrorCode; message: string; workspaceId?: WorkspaceId; tabId?: string }
   /** Broadcasts are emitted to every authorized connected browser, not only the caller. */
-  | { type: 'agency.project.changed'; change: 'created' | 'updated' | 'archived' | 'unarchived' | 'deleted'; projectId: ProjectId; project?: AgencyProject }
-  | { type: 'agency.workspace.changed'; change: 'created' | 'updated' | 'done' | 'restored' | 'archived' | 'deleted'; workspaceId: WorkspaceId; workspace?: AgencyWorkspace }
+  | { type: 'agency.project.changed'; change: 'created' | 'updated' | 'archived' | 'unarchived' | 'deleted' | 'reordered'; projectId: ProjectId; project?: AgencyProject; projects?: readonly AgencyProject[] }
+  | { type: 'agency.workspace.changed'; change: 'created' | 'updated' | 'done' | 'restored' | 'archived' | 'deleted' | 'reordered'; workspaceId: WorkspaceId; workspace?: AgencyWorkspace; workspaces?: readonly AgencyWorkspace[] }
   | { type: 'agency.profile.changed'; profileId: CliProfileId; profile: AgencyCliProfile }
   | { type: 'agency.session.changed'; sessionId: RuntimeSessionId; session: AgencyRuntimeSession }
   | { type: 'agency.session.activity'; sessionId: RuntimeSessionId; workspaceId: WorkspaceId; activity: SessionActivity; lifecycle: SessionLifecycle }
@@ -359,6 +361,13 @@ export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | nu
       if (!hasOnlyKeys(raw, ['type', 'requestId', 'projectId']) || !isValidId(raw['projectId'])) return null;
       return { type: 'agency.project.delete', requestId, projectId: raw['projectId'] as ProjectId };
     }
+    case 'agency.projects.order': {
+      if (!hasOnlyKeys(raw, ['type', 'requestId', 'projectIds']) ||
+          !Array.isArray(raw['projectIds']) || raw['projectIds'].length > 10000 ||
+          !raw['projectIds'].every(isValidId) ||
+          new Set(raw['projectIds']).size !== raw['projectIds'].length) return null;
+      return { type: 'agency.projects.order', requestId, projectIds: raw['projectIds'] as ProjectId[] };
+    }
     case 'agency.workspaces.list': {
       if (!hasOnlyKeys(raw, ['type', 'requestId', 'projectId'])) return null;
       if (raw['projectId'] !== undefined && !isValidId(raw['projectId'])) return null;
@@ -404,6 +413,19 @@ export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | nu
     case 'agency.workspace.delete': {
       if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId']) || !isValidId(raw['workspaceId'])) return null;
       return { type: 'agency.workspace.delete', requestId, workspaceId: raw['workspaceId'] as WorkspaceId };
+    }
+    case 'agency.workspaces.order': {
+      if (!hasOnlyKeys(raw, ['type', 'requestId', 'projectId', 'workspaceIds']) ||
+          !isValidId(raw['projectId']) ||
+          !Array.isArray(raw['workspaceIds']) || raw['workspaceIds'].length > 10000 ||
+          !raw['workspaceIds'].every(isValidId) ||
+          new Set(raw['workspaceIds']).size !== raw['workspaceIds'].length) return null;
+      return {
+        type: 'agency.workspaces.order',
+        requestId,
+        projectId: raw['projectId'] as ProjectId,
+        workspaceIds: raw['workspaceIds'] as WorkspaceId[],
+      };
     }
     case 'agency.profiles.list': {
       if (!hasOnlyKeys(raw, ['type', 'requestId'])) return null;

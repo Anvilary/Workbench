@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { DirectoryPickers } from '../directory-picker.js';
 import { checkVaultTarget } from '../vault/move.js';
-import { handleAgencyDomainRequest, parseAgencyDomainRequest } from './domain-handler.js';
+import { handleAgencyDomainRequest, parseAgencyDomainRequest, type AgencyDomainContext } from './domain-handler.js';
 import { AgencyWorkspaceStore, parseAgencySnapshot } from './store.js';
 
 async function fixture(t: import('node:test').TestContext) {
@@ -382,4 +382,85 @@ test('workspace and project archive: distinct state, broadcasts, unarchive/resto
   assert.ok(types.includes('agency.workspace.changed:restored'));
   assert.ok(types.includes('agency.project.changed:archived'));
   assert.ok(types.includes('agency.project.changed:unarchived'));
+});
+
+test('project and workspace ordering: persistent, serialized and cross-project isolated', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'agency-order-test-'));
+  const targetDir1 = await mkdtemp(path.join(tmpdir(), 'agency-w1-'));
+  const targetDir2 = await mkdtemp(path.join(tmpdir(), 'agency-w2-'));
+  const targetDir3 = await mkdtemp(path.join(tmpdir(), 'agency-w3-'));
+  const store = new AgencyWorkspaceStore(path.join(dir, 'agency-state.json'));
+  await store.load();
+
+  const p1 = await store.createProject('Project 1');
+  const p2 = await store.createProject('Project 2');
+  const p3 = await store.createProject('Project 3');
+
+  const w1 = await store.createWorkspace(p1.id, 'Workspace 1', targetDir1);
+  const w2 = await store.createWorkspace(p1.id, 'Workspace 2', targetDir2);
+  const w3 = await store.createWorkspace(p1.id, 'Workspace 3', targetDir3);
+
+  // 1. Reorder projects
+  const orderedProjects = await store.orderProjects([p3.id, p1.id, p2.id]);
+  assert.deepEqual(orderedProjects.map((p) => p.id), [p3.id, p1.id, p2.id]);
+  assert.deepEqual(store.listProjects().map((p) => p.id), [p3.id, p1.id, p2.id]);
+
+  // Verify persistence across reload
+  const reloadedStore = new AgencyWorkspaceStore(path.join(dir, 'agency-state.json'));
+  await reloadedStore.load();
+  assert.deepEqual(reloadedStore.listProjects().map((p) => p.id), [p3.id, p1.id, p2.id]);
+
+  // 2. Reorder workspaces within parent project
+  const orderedWorkspaces = await store.orderWorkspaces(p1.id, [w3.id, w1.id, w2.id]);
+  assert.deepEqual(orderedWorkspaces.map((w) => w.id), [w3.id, w1.id, w2.id]);
+  assert.deepEqual(store.listWorkspaces(p1.id).map((w) => w.id), [w3.id, w1.id, w2.id]);
+
+  // Verify persistence across reload
+  const reloadedStore2 = new AgencyWorkspaceStore(path.join(dir, 'agency-state.json'));
+  await reloadedStore2.load();
+  assert.deepEqual(reloadedStore2.listWorkspaces(p1.id).map((w) => w.id), [w3.id, w1.id, w2.id]);
+
+  // 3. Domain handler requests & broadcasts
+  const broadcasts: any[] = [];
+  const pickers = new DirectoryPickers([]);
+  const ctx: AgencyDomainContext = {
+    store,
+    pickers,
+    publish: (msg: any) => broadcasts.push(msg),
+  };
+
+  const projectOrderRes = await handleAgencyDomainRequest({
+    type: 'agency.projects.order',
+    requestId: 'p-order-req',
+    projectIds: [p2.id, p3.id, p1.id],
+  }, ctx);
+  assert.equal(projectOrderRes?.type, 'agency.projects.snapshot');
+  assert.deepEqual((projectOrderRes as any).projects.map((p: any) => p.id), [p2.id, p3.id, p1.id]);
+  assert.ok(broadcasts.some((b) => b.type === 'agency.project.changed' && b.change === 'reordered'));
+
+  const workspaceOrderRes = await handleAgencyDomainRequest({
+    type: 'agency.workspaces.order',
+    requestId: 'w-order-req',
+    projectId: p1.id,
+    workspaceIds: [w2.id, w3.id, w1.id],
+  }, ctx);
+  assert.equal(workspaceOrderRes?.type, 'agency.workspaces.snapshot');
+  assert.ok(broadcasts.some((b) => b.type === 'agency.workspace.changed' && b.change === 'reordered'));
+
+  // 4. Reject cross-project workspace reorder
+  const p2Workspace = await store.createWorkspace(p2.id, 'P2 Workspace', targetDir1);
+  await assert.rejects(
+    () => store.orderWorkspaces(p1.id, [p2Workspace.id, w1.id]),
+    (err: any) => err.code === 'conflict',
+  );
+
+  // 5. Reject duplicate IDs
+  await assert.rejects(
+    () => store.orderProjects([p1.id, p1.id]),
+    (err: any) => err.code === 'invalid-request',
+  );
+  await assert.rejects(
+    () => store.orderWorkspaces(p1.id, [w1.id, w1.id]),
+    (err: any) => err.code === 'invalid-request',
+  );
 });

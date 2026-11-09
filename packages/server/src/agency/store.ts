@@ -298,6 +298,27 @@ export class AgencyWorkspaceStore {
     });
   }
 
+  async orderProjects(projectIds: readonly ProjectId[]): Promise<AgencyProject[]> {
+    return this.transact((state) => {
+      for (const id of projectIds) {
+        if (!state.projects.some((p) => p.id === id)) {
+          throw new AgencyStoreError('not-found', `Project ${id} not found`);
+        }
+      }
+      if (new Set(projectIds).size !== projectIds.length) {
+        throw new AgencyStoreError('invalid-request', 'Duplicate project IDs');
+      }
+      const orderMap = new Map(projectIds.map((id, index) => [id, index]));
+      const sorted = [...state.projects].sort((a, b) => {
+        const aIdx = orderMap.has(a.id) ? orderMap.get(a.id)! : Number.MAX_SAFE_INTEGER;
+        const bIdx = orderMap.has(b.id) ? orderMap.get(b.id)! : Number.MAX_SAFE_INTEGER;
+        if (aIdx !== bIdx) return aIdx - bIdx;
+        return state.projects.indexOf(a) - state.projects.indexOf(b);
+      });
+      return [{ ...state, projects: sorted }, sorted.map((p) => ({ ...p }))];
+    });
+  }
+
   /**
    * cwd must come from DirectoryPickers.selectedDirectory() on the CALLING
    * authenticated socket, never from a client request. The server integration
@@ -357,6 +378,42 @@ export class AgencyWorkspaceStore {
         archivedAt: null,
         updatedAt: new Date().toISOString(),
       });
+  }
+
+  async orderWorkspaces(projectId: ProjectId, workspaceIds: readonly WorkspaceId[]): Promise<AgencyWorkspace[]> {
+    return this.transact((state) => {
+      if (!state.projects.some((p) => p.id === projectId)) {
+        throw new AgencyStoreError('not-found', `Project ${projectId} not found`);
+      }
+      for (const id of workspaceIds) {
+        const ws = state.workspaces.find((w) => w.id === id);
+        if (!ws) {
+          throw new AgencyStoreError('not-found', `Workspace ${id} not found`);
+        }
+        if (ws.projectId !== projectId) {
+          throw new AgencyStoreError('conflict', `Workspace ${id} does not belong to project ${projectId}`);
+        }
+      }
+      if (new Set(workspaceIds).size !== workspaceIds.length) {
+        throw new AgencyStoreError('invalid-request', 'Duplicate workspace IDs');
+      }
+      const orderMap = new Map(workspaceIds.map((id, index) => [id, index]));
+      const projectWorkspaces = state.workspaces.filter((w) => w.projectId === projectId);
+      const sortedProjectWorkspaces = [...projectWorkspaces].sort((a, b) => {
+        const aIdx = orderMap.has(a.id) ? orderMap.get(a.id)! : Number.MAX_SAFE_INTEGER;
+        const bIdx = orderMap.has(b.id) ? orderMap.get(b.id)! : Number.MAX_SAFE_INTEGER;
+        if (aIdx !== bIdx) return aIdx - bIdx;
+        return projectWorkspaces.indexOf(a) - projectWorkspaces.indexOf(b);
+      });
+      let sortedIdx = 0;
+      const nextWorkspaces = state.workspaces.map((w) => {
+        if (w.projectId === projectId) {
+          return sortedProjectWorkspaces[sortedIdx++]!;
+        }
+        return w;
+      });
+      return [{ ...state, workspaces: nextWorkspaces }, nextWorkspaces.filter((w) => w.projectId === projectId).map((w) => ({ ...w }))];
+    });
   }
 
   private updateWorkspace(id: WorkspaceId, fn: (w: AgencyWorkspace) => AgencyWorkspace): Promise<AgencyWorkspace> {
