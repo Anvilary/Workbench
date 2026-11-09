@@ -76,16 +76,16 @@ function preferredRenderer(): 'webgl' | 'canvas' {
  */
 const TERMINAL_THEMES = {
   dark: {
-    background: '#12141a',
-    foreground: '#d8dee9',
-    cursor: '#d8dee9',
-    selectionBackground: '#2f3542',
+    background: '#0e0e10',
+    foreground: '#ededea',
+    cursor: '#d97442',
+    selectionBackground: 'rgba(217, 116, 66, 0.28)',
   },
   light: {
-    background: '#fbfbfd',
-    foreground: '#22262e',
-    cursor: '#22262e',
-    selectionBackground: '#cfd8e3',
+    background: '#f8f8fa',
+    foreground: '#141417',
+    cursor: '#b8582a',
+    selectionBackground: 'rgba(184, 88, 42, 0.2)',
   },
 } as const;
 
@@ -952,12 +952,12 @@ export function TerminalView({
             zIndex: 20,
             display: 'flex',
             flexDirection: 'column',
-            backgroundColor: theme === 'dark' ? '#181b22' : '#f0f3f6',
-            borderBottom: `1px solid ${theme === 'dark' ? '#30363d' : '#d0d7de'}`,
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)',
-            fontFamily: '"Cascadia Mono", "Consolas", "Menlo", monospace',
+            backgroundColor: theme === 'dark' ? '#16161a' : '#f0f0f4',
+            borderBottom: `1px solid ${theme === 'dark' ? '#2f2f36' : '#d4d4dc'}`,
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.45)',
+            fontFamily: '"JetBrains Mono", "Cascadia Mono", "Consolas", "Menlo", monospace',
             fontSize: '13px',
-            color: theme === 'dark' ? '#c9d1d9' : '#24292f',
+            color: theme === 'dark' ? '#ededea' : '#141417',
           }}
           role="region"
           aria-label="Terminal History Viewport"
@@ -969,8 +969,8 @@ export function TerminalView({
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: '6px 12px',
-              backgroundColor: theme === 'dark' ? '#0d1117' : '#e6ebf1',
-              borderBottom: `1px solid ${theme === 'dark' ? '#21262d' : '#d8dee4'}`,
+              backgroundColor: theme === 'dark' ? '#141417' : '#e6e6ed',
+              borderBottom: `1px solid ${theme === 'dark' ? '#25252b' : '#d4d4dc'}`,
               fontSize: '12px',
               gap: '8px',
             }}
@@ -981,22 +981,22 @@ export function TerminalView({
                 {allHistoryLines.length} lines loaded ({history.totalLines} on disk)
               </span>
               {history.prunedLines > 0 && (
-                <span style={{ color: '#d29922' }}>
+                <span style={{ color: '#ec8a4a' }}>
                   ({history.prunedLines} pruned)
                 </span>
               )}
               {history.incomplete && (
-                <span role="status" className="terminal-history-loss" style={{ color: '#d29922' }}>
+                <span role="status" className="terminal-history-loss" style={{ color: '#ec8a4a' }}>
                   History is incomplete{history.droppedBytes > 0 ? ` (${history.droppedBytes} bytes lost)` : ''}.
                 </span>
               )}
               {history.error && (
-                <span role="alert" style={{ color: '#f85149' }}>{history.error}</span>
+                <span role="alert" style={{ color: '#b13318' }}>{history.error}</span>
               )}
               {hasTuiMarkers && (
                 <span
                   title="Output contains cursor addressing or alternate screen sequences that may not render as linear text"
-                  style={{ color: '#f0883e', cursor: 'help' }}
+                  style={{ color: '#d97442', cursor: 'help' }}
                 >
                   [TUI screen fidelity limited]
                 </span>
@@ -1042,7 +1042,7 @@ export function TerminalView({
               flex: 1,
               overflowY: 'auto',
               padding: '8px 12px',
-              fontFamily: '"Cascadia Mono", "Consolas", "Menlo", "DejaVu Sans Mono", monospace',
+              fontFamily: '"JetBrains Mono", "Cascadia Mono", "Consolas", "Menlo", "DejaVu Sans Mono", monospace',
               fontSize: '13px',
               lineHeight: '1.4',
               whiteSpace: 'pre-wrap',
@@ -1071,14 +1071,15 @@ export function TerminalView({
             boxSizing: 'border-box',
             overflow: 'hidden',
             zIndex: 15,
-            backgroundColor: theme === 'dark' ? '#21262d' : '#ffffff',
-            border: `1px solid ${theme === 'dark' ? '#30363d' : '#d0d7de'}`,
-            borderRadius: '4px',
+            backgroundColor: theme === 'dark' ? '#16161a' : '#ffffff',
+            border: `1px solid ${theme === 'dark' ? '#2f2f36' : '#d4d4dc'}`,
+            borderTop: '2px solid #d97442',
+            borderRadius: '6px',
             padding: '4px 8px',
             fontSize: '12px',
             lineHeight: '1.4',
-            color: theme === 'dark' ? '#c9d1d9' : '#24292f',
-            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+            color: theme === 'dark' ? '#ededea' : '#141417',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.45)',
             display: 'flex',
             flexWrap: 'wrap',
             alignItems: 'center',
@@ -1099,6 +1100,7 @@ export function TerminalView({
               cursor: 'pointer',
               whiteSpace: 'nowrap',
               flexShrink: 0,
+              color: '#d97442',
             }}
           >
             Open Persistent History

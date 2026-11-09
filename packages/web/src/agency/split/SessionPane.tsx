@@ -312,7 +312,7 @@ export function SessionPane({
               key={session.terminalId}
               terminalId={session.terminalId}
               connection={connection}
-              theme="dark"
+              theme={typeof document !== 'undefined' && document.documentElement.dataset['terminalTheme'] === 'light' ? 'light' : 'dark'}
               active={active}
               autoFocus={focusTerminal}
               enableAgencyShortcuts

@@ -14,6 +14,12 @@ test('tab operations validate explicit workspace/tab IDs, duplicate orders and f
   }
   assert.equal(parseAgencyClientMessage({type:'agency.tabs.order',requestId:'order',workspaceId,tabIds:[tabId,tabId]}),null);
   assert.ok(parseAgencyClientMessage({type:'agency.tabs.order',requestId:'order',workspaceId,tabIds:[tabId,randomUUID()]}));
+  const pId1=randomUUID(),pId2=randomUUID();
+  assert.equal(parseAgencyClientMessage({type:'agency.projects.order',requestId:'p-ord',projectIds:[pId1,pId1]}),null);
+  assert.ok(parseAgencyClientMessage({type:'agency.projects.order',requestId:'p-ord',projectIds:[pId1,pId2]}));
+  const wId1=randomUUID(),wId2=randomUUID();
+  assert.equal(parseAgencyClientMessage({type:'agency.workspaces.order',requestId:'w-ord',projectId:pId1,workspaceIds:[wId1,wId1]}),null);
+  assert.ok(parseAgencyClientMessage({type:'agency.workspaces.order',requestId:'w-ord',projectId:pId1,workspaceIds:[wId1,wId2]}));
   const legacy={type:'agency.session.create',requestId:'old',workspaceId,kind:'terminal',cols:80,rows:24};
   assert.deepEqual(parseAgencyClientMessage(legacy),legacy);
   const current={...legacy,launchId:randomUUID()};assert.deepEqual(parseAgencyClientMessage(current),current);

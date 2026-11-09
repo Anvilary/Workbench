@@ -3775,13 +3775,15 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
         case 'agency.project.delete':
         case 'agency.project.archive':
         case 'agency.project.unarchive':
+        case 'agency.projects.order':
         case 'agency.workspaces.list':
         case 'agency.workspace.create':
         case 'agency.workspace.update':
         case 'agency.workspace.done':
         case 'agency.workspace.restore':
         case 'agency.workspace.delete':
-        case 'agency.workspace.archive': {
+        case 'agency.workspace.archive':
+        case 'agency.workspaces.order': {
           const domainContext: AgencyDomainContext = {
             store: agencyWorkspaceStore,
             pickers,

@@ -61,22 +61,32 @@ export function parseClaudeStatsCache(filePath: string): {
     let totalCostUSD = 0;
     let topModel: string | null = null;
     let maxModelTokens = 0;
+    let hasTokenData = false;
+    let hasCostData = false;
 
     if (data.modelUsage && typeof data.modelUsage === 'object') {
       for (const [modelName, usage] of Object.entries(data.modelUsage)) {
-        const inp = usage.inputTokens ?? 0;
-        const out = usage.outputTokens ?? 0;
-        const cached = usage.cacheReadInputTokens ?? 0;
-        const creation = usage.cacheCreationInputTokens ?? 0;
-        const cost = usage.costUSD ?? 0;
+        if (!usage || typeof usage !== 'object') continue;
+        const inp = usage.inputTokens;
+        const out = usage.outputTokens;
+        const cached = usage.cacheReadInputTokens;
+        const creation = usage.cacheCreationInputTokens;
+        const cost = usage.costUSD;
 
-        totalInput += inp;
-        totalOutput += out;
-        totalCached += cached;
-        totalCreation += creation;
-        totalCostUSD += cost;
+        if (inp !== undefined || out !== undefined || cached !== undefined || creation !== undefined) {
+          hasTokenData = true;
+          totalInput += inp ?? 0;
+          totalOutput += out ?? 0;
+          totalCached += cached ?? 0;
+          totalCreation += creation ?? 0;
+        }
 
-        const modelTotal = inp + out + cached + creation;
+        if (typeof cost === 'number') {
+          hasCostData = true;
+          totalCostUSD += cost;
+        }
+
+        const modelTotal = (inp ?? 0) + (out ?? 0) + (cached ?? 0) + (creation ?? 0);
         if (modelTotal > maxModelTokens) {
           maxModelTokens = modelTotal;
           topModel = modelName;
@@ -85,19 +95,23 @@ export function parseClaudeStatsCache(filePath: string): {
     }
 
     const grandTotal = totalInput + totalOutput + totalCached + totalCreation;
-    const tokens: TokenUsageMetrics = {
-      status: grandTotal === 0 ? 'zero' : 'available',
-      inputTokens: totalInput,
-      outputTokens: totalOutput,
-      cachedInputTokens: totalCached,
-      totalTokens: grandTotal,
-    };
+    const tokens: TokenUsageMetrics = hasTokenData
+      ? {
+          status: grandTotal === 0 ? 'zero' : 'available',
+          inputTokens: totalInput,
+          outputTokens: totalOutput,
+          cachedInputTokens: totalCached,
+          totalTokens: grandTotal,
+        }
+      : { status: 'unavailable' };
 
-    const cost: CostMetrics = {
-      status: totalCostUSD === 0 ? 'zero' : 'available',
-      currency: 'USD',
-      amount: totalCostUSD,
-    };
+    const cost: CostMetrics = hasCostData
+      ? {
+          status: totalCostUSD === 0 ? 'zero' : 'available',
+          currency: 'USD',
+          amount: totalCostUSD,
+        }
+      : { status: 'unavailable' };
 
     let observedAt: number | undefined;
     if (data.lastComputedDate) {

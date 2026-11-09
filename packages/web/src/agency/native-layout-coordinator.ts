@@ -24,17 +24,29 @@ export interface ClippingAncestor {
 
 function collectActiveOverlayRects(): OverlayRect[] {
   const items = document.querySelectorAll<HTMLElement>(
-    '[role="dialog"], [role="menu"], .agency-modal-backdrop, .agency-dropdown-menu, .maw-toast-item, .context-menu, .agency-dialog, .maw-context-menu, .maw-pane-drag-shield'
+    '[role="dialog"], [role="menu"], .agency-modal-backdrop, .modal-backdrop, .agency-dropdown-menu, .maw-toast-item, .context-menu, .agency-dialog, .settings-dialog, .maw-performance-panel, .maw-notification-inbox, .maw-context-menu, .maw-pane-drag-shield'
   );
   if (items.length === 0) return [];
 
   const rects: OverlayRect[] = [];
   for (let i = 0; i < items.length; i++) {
     const item = items[i]!;
-    const clientRects = item.getClientRects();
-    if (clientRects.length === 0) continue;
     const style = window.getComputedStyle(item);
     if (style.visibility === 'hidden' || style.display === 'none' || style.opacity === '0') continue;
+
+    // Fullscreen backdrops immediately cover the entire viewport
+    if (item.classList.contains('agency-modal-backdrop') || item.classList.contains('modal-backdrop')) {
+      rects.push({
+        left: 0,
+        top: 0,
+        right: window.innerWidth,
+        bottom: window.innerHeight,
+      });
+      continue;
+    }
+
+    const clientRects = item.getClientRects();
+    if (clientRects.length === 0) continue;
     for (let j = 0; j < clientRects.length; j++) {
       const r = clientRects[j]!;
       if (r.width > 0 && r.height > 0) {

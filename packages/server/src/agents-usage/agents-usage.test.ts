@@ -233,6 +233,82 @@ describe('Agents Usage Backend', () => {
         await rm(tempDir, { recursive: true, force: true });
       }
     });
+
+    it('marks cost as unavailable when costUSD is missing rather than fabricating zero', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'maw-claude-test-missing-cost-'));
+      try {
+        const statsFile = join(tempDir, 'stats-cache.json');
+        await writeFile(
+          statsFile,
+          JSON.stringify({
+            modelUsage: {
+              'claude-sonnet-4-6': {
+                inputTokens: 5000,
+                outputTokens: 1000,
+              },
+            },
+          }),
+        );
+
+        const usage = await collectClaudeUsage({
+          profileId: 'claude-test',
+          label: 'Test Claude',
+          defaultProvider: 'Anthropic',
+          provider: 'Anthropic',
+          binaryName: 'claude',
+          executablePath: null,
+          profileDir: tempDir,
+          canonicalDir: tempDir,
+          availability: 'available',
+          isSharedStorage: false,
+        });
+
+        assert.equal(usage.tokens.status, 'available');
+        assert.equal(usage.tokens.totalTokens, 6000);
+        assert.equal(usage.cost.status, 'unavailable', 'Missing costUSD must be marked unavailable');
+        assert.equal(usage.cost.amount, undefined);
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('records zero cost when costUSD is explicitly 0 from local subscription cache', async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), 'maw-claude-test-zero-cost-'));
+      try {
+        const statsFile = join(tempDir, 'stats-cache.json');
+        await writeFile(
+          statsFile,
+          JSON.stringify({
+            modelUsage: {
+              'claude-sonnet-4-6': {
+                inputTokens: 5000,
+                outputTokens: 1000,
+                costUSD: 0,
+              },
+            },
+          }),
+        );
+
+        const usage = await collectClaudeUsage({
+          profileId: 'claude-test',
+          label: 'Test Claude',
+          defaultProvider: 'Anthropic',
+          provider: 'Anthropic',
+          binaryName: 'claude',
+          executablePath: null,
+          profileDir: tempDir,
+          canonicalDir: tempDir,
+          availability: 'available',
+          isSharedStorage: false,
+        });
+
+        assert.equal(usage.tokens.status, 'available');
+        assert.equal(usage.cost.status, 'zero', 'Explicit costUSD: 0 must be marked zero');
+        assert.equal(usage.cost.amount, 0);
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    });
   });
 
   describe('Telemetry Parsing: Antigravity', () => {

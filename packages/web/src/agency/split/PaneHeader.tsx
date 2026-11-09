@@ -548,6 +548,7 @@ export function PaneHeader({
                   }}
                   onClose={(restore) => {
                     setRenamingTabId(null);
+                    setRenameWidth(null);
                     if (restore) {
                       requestAnimationFrame(() => {
                         const active = document.activeElement;

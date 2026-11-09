@@ -6,7 +6,7 @@
  * protocol validator. A client-supplied cwd is always an invalid request.
  */
 import type {
-  AgencyClientMessage, AgencyServerMessage, AgencyErrorCode, WorkspaceId,
+  AgencyClientMessage, AgencyServerMessage, AgencyErrorCode, ProjectId, WorkspaceId,
 } from '@agent-workbench/shared';
 import { DirectoryPickers, DirectoryPickerError } from '../directory-picker.js';
 import { AgencyWorkspaceStore, AgencyStoreError, type HasBlockingWorkspaceSessions } from './store.js';
@@ -16,9 +16,10 @@ import { EditorTabStoreError } from './editor-tabs/editor-tab-store.js';
 
 type DomainType =
   | 'agency.projects.list' | 'agency.project.create' | 'agency.project.update' | 'agency.project.delete'
-  | 'agency.project.archive' | 'agency.project.unarchive'
+  | 'agency.project.archive' | 'agency.project.unarchive' | 'agency.projects.order'
   | 'agency.workspaces.list' | 'agency.workspace.create' | 'agency.workspace.update'
-  | 'agency.workspace.archive' | 'agency.workspace.done' | 'agency.workspace.restore' | 'agency.workspace.delete';
+  | 'agency.workspace.archive' | 'agency.workspace.done' | 'agency.workspace.restore' | 'agency.workspace.delete'
+  | 'agency.workspaces.order';
 export type AgencyDomainRequest = Extract<AgencyClientMessage, { type: DomainType }>;
 type DomainBroadcast = Extract<AgencyServerMessage, { type: 'agency.project.changed' | 'agency.workspace.changed' }>;
 
@@ -29,6 +30,7 @@ const fields: Record<DomainType, readonly string[]> = {
   'agency.project.archive': ['projectId'],
   'agency.project.unarchive': ['projectId'],
   'agency.project.delete': ['projectId'],
+  'agency.projects.order': ['projectIds'],
   'agency.workspaces.list': ['projectId'],
   'agency.workspace.create': ['projectId', 'name', 'pickerId'],
   'agency.workspace.update': ['workspaceId', 'name'],
@@ -36,6 +38,7 @@ const fields: Record<DomainType, readonly string[]> = {
   'agency.workspace.done': ['workspaceId'],
   'agency.workspace.restore': ['workspaceId'],
   'agency.workspace.delete': ['workspaceId'],
+  'agency.workspaces.order': ['projectId', 'workspaceIds'],
 };
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -65,6 +68,11 @@ export function parseAgencyDomainRequest(value: unknown): AgencyDomainRequest | 
       if (typeof value[key] !== 'string') bad('Invalid Agency name');
     } else if (key === 'pickerId') {
       if (typeof value[key] !== 'string' || !uuid.test(value[key])) bad('Invalid directory picker ID');
+    } else if (key === 'projectIds' || key === 'workspaceIds') {
+      const arr = value[key];
+      if (!Array.isArray(arr) || arr.length > 10000 || !arr.every((id) => typeof id === 'string' && uuid.test(id)) || new Set(arr).size !== arr.length) {
+        bad(`Invalid Agency ${key} list`);
+      }
     }
   }
   return value as unknown as AgencyDomainRequest;
@@ -144,6 +152,16 @@ export async function handleAgencyDomainRequest(
         await context.store.deleteProject(request.projectId);
         publishSafely(context, { type: 'agency.project.changed', change: 'deleted', projectId: request.projectId });
         return { type: 'agency.project.deleted', requestId, projectId: request.projectId };
+      case 'agency.projects.order': {
+        const projects = await context.store.orderProjects(request.projectIds);
+        publishSafely(context, {
+          type: 'agency.project.changed',
+          change: 'reordered',
+          projectId: request.projectIds[0] ?? ('' as ProjectId),
+          projects,
+        });
+        return { type: 'agency.projects.snapshot', requestId, projects };
+      }
       case 'agency.workspaces.list':
         return { type: 'agency.workspaces.snapshot', requestId, workspaces: context.store.listWorkspaces(request.projectId) };
       case 'agency.workspace.create': {
@@ -191,6 +209,17 @@ export async function handleAgencyDomainRequest(
           context.store.deleteWorkspace(request.workspaceId, context.hasBlockingSessions!));
         publishSafely(context, { type: 'agency.workspace.changed', change: 'deleted', workspaceId: request.workspaceId });
         return { type: 'agency.workspace.deleted', requestId, workspaceId: request.workspaceId };
+      }
+      case 'agency.workspaces.order': {
+        await context.store.orderWorkspaces(request.projectId, request.workspaceIds);
+        const workspaces = context.store.listWorkspaces();
+        publishSafely(context, {
+          type: 'agency.workspace.changed',
+          change: 'reordered',
+          workspaceId: request.workspaceIds[0] ?? ('' as WorkspaceId),
+          workspaces,
+        });
+        return { type: 'agency.workspaces.snapshot', requestId, workspaces };
       }
     }
   } catch (error) {

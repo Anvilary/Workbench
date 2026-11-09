@@ -80,7 +80,9 @@ async function start() {
     permission === 'clipboard-sanitized-write' && perplexityClipboard(contents, requestingOrigin)
   );
 
+  const iconPath = path.join(here, 'icon.png');
   const win = new BrowserWindow({ width: 1280, height: 860, title: 'MAW · ChatGPT feasibility prototype', autoHideMenuBar: true,
+    icon: iconPath,
     webPreferences: { ...secure, partition: 'persist:maw-shell-prototype', preload: path.join(here, 'preload.cjs') } });
   const views = new Map();
   const urls = new Map();

@@ -14,7 +14,7 @@ export function PerformanceSparkline({
   data,
   width = 110,
   height = 26,
-  color = '#38bdf8',
+  color = '#d97442',
   min: explicitMin,
   max: explicitMax,
   className = '',

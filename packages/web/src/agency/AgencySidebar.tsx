@@ -1,6 +1,6 @@
 import { t } from '../i18n/index.js';
 import { agencySessionText } from './agency-labels.js';
-import { useState } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import type {
   AgencyProject, AgencyRuntimeSession, AgencyWorkspace, ProjectId, WorkspaceId, WebTab,
 } from '@agent-workbench/shared';
@@ -22,9 +22,12 @@ export interface AgencySidebarProps {
   onArchiveWorkspace: (workspace: AgencyWorkspace) => void;
   onDeleteWorkspace: (workspace: AgencyWorkspace) => Promise<void> | void;
   onRenameProject: (project: AgencyProject, newName: string) => void;
+  onRenameWorkspace?: (workspace: AgencyWorkspace, newName: string) => void;
   onArchiveProject: (project: AgencyProject) => void;
   onDeleteProject: (project: AgencyProject) => void;
   onRestore: (workspace: AgencyWorkspace) => void;
+  onReorderProjects?: (projectIds: readonly ProjectId[]) => void;
+  onReorderWorkspaces?: (projectId: ProjectId, workspaceIds: readonly WorkspaceId[]) => void;
 }
 
 export function SidebarToggleIcon(): JSX.Element {
@@ -50,19 +53,168 @@ export function SidebarToggleIcon(): JSX.Element {
 export function AgencySidebar({
   projects, workspaces, sessions, webTabs = [], selected, showingDone = false,
   onSelect, onCreate, onCreateProject, onDone, onArchiveWorkspace, onDeleteWorkspace,
-  onRenameProject, onArchiveProject, onDeleteProject, onCollapse,
+  onRenameProject, onRenameWorkspace, onArchiveProject, onDeleteProject, onCollapse,
+  onReorderProjects, onReorderWorkspaces,
 }: AgencySidebarProps): JSX.Element {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
-  const [openMenu, setOpenMenu] = useState<{ type: 'project' | 'workspace'; id: string } | null>(null);
+  const [openMenu, setOpenMenu] = useState<{ type: 'project' | 'workspace'; id: string; trigger: 'click' | 'hover' } | null>(null);
+  const [draggedProjectId, setDraggedProjectId] = useState<ProjectId | null>(null);
+  const [projectDropTarget, setProjectDropTarget] = useState<{ id: ProjectId; position: 'before' | 'after' } | null>(null);
+  const [draggedWorkspace, setDraggedWorkspace] = useState<{ id: WorkspaceId; projectId: ProjectId } | null>(null);
+  const [workspaceDropTarget, setWorkspaceDropTarget] = useState<{ id: WorkspaceId; position: 'before' | 'after' } | null>(null);
+  const suppressClickUntil = useRef<number>(0);
+
+  // Inline renaming state
+  const [inlineRenamingProjectId, setInlineRenamingProjectId] = useState<ProjectId | null>(null);
+  const [inlineRenameProjectValue, setInlineRenameProjectValue] = useState<string>('');
+  const [inlineRenamingWorkspaceId, setInlineRenamingWorkspaceId] = useState<WorkspaceId | null>(null);
+  const [inlineRenameWorkspaceValue, setInlineRenameWorkspaceValue] = useState<string>('');
 
   // Modals state
-  const [renamingProject, setRenamingProject] = useState<AgencyProject | null>(null);
-  const [renameValue, setRenameValue] = useState('');
   const [archivingProject, setArchivingProject] = useState<AgencyProject | null>(null);
   const [deletingProject, setDeletingProject] = useState<AgencyProject | null>(null);
   const [projectDeleteBlocked, setProjectDeleteBlocked] = useState<AgencyProject | null>(null);
   const [archivingWorkspace, setArchivingWorkspace] = useState<AgencyWorkspace | null>(null);
   const [deletingWorkspace, setDeletingWorkspace] = useState<AgencyWorkspace | null>(null);
+
+  // Context menu lifecycle refs & handlers
+  const graceTimerRef = useRef<number | null>(null);
+  const activeTriggerRef = useRef<HTMLElement | null>(null);
+  const activeMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const clearGraceTimer = useCallback(() => {
+    if (graceTimerRef.current !== null) {
+      window.clearTimeout(graceTimerRef.current);
+      graceTimerRef.current = null;
+    }
+  }, []);
+
+  const closeMenu = useCallback(() => {
+    clearGraceTimer();
+    setOpenMenu(null);
+  }, [clearGraceTimer]);
+
+  useEffect(() => {
+    if (!openMenu) return;
+
+    function handlePointerDown(e: PointerEvent) {
+      const target = e.target as Node;
+      if (
+        activeMenuRef.current?.contains(target) ||
+        activeTriggerRef.current?.contains(target)
+      ) {
+        return;
+      }
+      closeMenu();
+    }
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        const trigger = activeTriggerRef.current;
+        closeMenu();
+        trigger?.focus();
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+      clearGraceTimer();
+    };
+  }, [openMenu, closeMenu, clearGraceTimer]);
+
+  useEffect(() => {
+    if (!openMenu || !activeMenuRef.current || !activeTriggerRef.current) return;
+    const menuEl = activeMenuRef.current;
+    const triggerRect = activeTriggerRef.current.getBoundingClientRect();
+    const menuRect = menuEl.getBoundingClientRect();
+
+    if (triggerRect.bottom + menuRect.height > window.innerHeight - 8) {
+      menuEl.style.top = 'auto';
+      menuEl.style.bottom = '100%';
+      menuEl.style.marginTop = '0';
+      menuEl.style.marginBottom = '4px';
+    } else {
+      menuEl.style.top = '100%';
+      menuEl.style.bottom = 'auto';
+      menuEl.style.marginTop = '4px';
+      menuEl.style.marginBottom = '0';
+    }
+
+    if (menuRect.left < 8) {
+      menuEl.style.left = '0';
+      menuEl.style.right = 'auto';
+    }
+  }, [openMenu]);
+
+  const handleTriggerClick = (type: 'project' | 'workspace', id: string, e: React.MouseEvent<HTMLElement>) => {
+    e.stopPropagation();
+    clearGraceTimer();
+    if (openMenu?.type === type && openMenu.id === id) {
+      closeMenu();
+    } else {
+      activeTriggerRef.current = e.currentTarget;
+      setOpenMenu({ type, id, trigger: 'click' });
+    }
+  };
+
+  const handleTriggerMouseEnter = (type: 'project' | 'workspace', id: string, e: React.MouseEvent<HTMLElement>) => {
+    clearGraceTimer();
+    if (openMenu && openMenu.trigger === 'hover' && (openMenu.type !== type || openMenu.id !== id)) {
+      activeTriggerRef.current = e.currentTarget;
+      setOpenMenu({ type, id, trigger: 'hover' });
+    }
+  };
+
+  const handleTriggerMouseLeave = () => {
+    if (openMenu?.trigger === 'hover') {
+      clearGraceTimer();
+      graceTimerRef.current = window.setTimeout(() => {
+        closeMenu();
+      }, 700);
+    }
+  };
+
+  const handleMenuMouseEnter = () => {
+    clearGraceTimer();
+  };
+
+  const handleMenuMouseLeave = () => {
+    if (openMenu?.trigger === 'hover') {
+      clearGraceTimer();
+      graceTimerRef.current = window.setTimeout(() => {
+        closeMenu();
+      }, 700);
+    }
+  };
+
+  const handleMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = activeMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
+    if (!items || items.length === 0) return;
+    const itemsArray = Array.from(items);
+    const currentIndex = itemsArray.indexOf(document.activeElement as HTMLButtonElement);
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const nextIndex = currentIndex === -1 || currentIndex === itemsArray.length - 1 ? 0 : currentIndex + 1;
+      itemsArray[nextIndex]?.focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prevIndex = currentIndex <= 0 ? itemsArray.length - 1 : currentIndex - 1;
+      itemsArray[prevIndex]?.focus();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      itemsArray[0]?.focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      itemsArray[itemsArray.length - 1]?.focus();
+    } else if (e.key === 'Tab') {
+      closeMenu();
+    }
+  };
 
   const groups = activeByProject(projects, workspaces);
 
@@ -88,9 +240,7 @@ export function AgencySidebar({
       <nav className="agency-sidebar-nav" aria-label={t('agency.ui.projectsAndWorkspaces')}>
         <header className="agency-nav-head">
           <div className="agency-nav-brand">
-            <svg className="agency-nav-diamond" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 2.5 21.5 12 12 21.5 2.5 12Z" />
-            </svg>
+            <img src="/brand/maw-logo-64.png" alt="MAW" className="agency-nav-logo" width="34" height="34" />
             <strong>{t('agency.ui.agency')}</strong>
           </div>
           <button className="agency-icon-button" type="button" onClick={onCollapse} aria-label={t('agency.ui.collapseSidebar')} aria-expanded={true}>
@@ -105,39 +255,189 @@ export function AgencySidebar({
           {groups.length === 0 && <p className="agency-muted agency-empty-nav">{t('agency.ui.createAProjectToBegin')}</p>}
           {groups.map(({ project, items }) => {
             const isMenuOpen = openMenu?.type === 'project' && openMenu.id === project.id;
+            const isProjectDragging = draggedProjectId === project.id;
+            const isProjectTargetBefore = projectDropTarget?.id === project.id && projectDropTarget.position === 'before';
+            const isProjectTargetAfter = projectDropTarget?.id === project.id && projectDropTarget.position === 'after';
+            const projectClassName = [
+              'agency-project',
+              isProjectDragging ? 'agency-is-dragging' : '',
+              isProjectTargetBefore ? 'agency-drop-target-before' : '',
+              isProjectTargetAfter ? 'agency-drop-target-after' : '',
+            ].filter(Boolean).join(' ');
+
             return (
-              <section key={project.id} className="agency-project">
-                <div className="agency-project-row">
-                  <button type="button" className="agency-project-toggle" aria-expanded={!collapsed.has(project.id)}
-                    onClick={() => toggle(project.id)} title={project.name}>
+              <section
+                key={project.id}
+                className={projectClassName}
+                onDragOver={(e) => {
+                  if (e.dataTransfer.types.includes('application/maw-project-id') && draggedProjectId) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const pos = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+                    if (projectDropTarget?.id !== project.id || projectDropTarget?.position !== pos) {
+                      setProjectDropTarget({ id: project.id, position: pos });
+                    }
+                  }
+                }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    if (projectDropTarget?.id === project.id) {
+                      setProjectDropTarget(null);
+                    }
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const sourceId = (e.dataTransfer.getData('application/maw-project-id') || draggedProjectId) as ProjectId;
+                  if (sourceId && onReorderProjects) {
+                    suppressClickUntil.current = Date.now() + 300;
+                    const currentIds = groups.map((g) => g.project.id);
+                    const fromIdx = currentIds.indexOf(sourceId);
+                    const toIdx = currentIds.indexOf(project.id);
+                    if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
+                      const nextIds = [...currentIds];
+                      nextIds.splice(fromIdx, 1);
+                      const insertIdx = projectDropTarget?.position === 'after'
+                        ? (toIdx > fromIdx ? toIdx : toIdx + 1)
+                        : (toIdx > fromIdx ? toIdx - 1 : toIdx);
+                      nextIds.splice(Math.max(0, Math.min(nextIds.length, insertIdx)), 0, sourceId);
+                      onReorderProjects(nextIds);
+                    }
+                  }
+                  setDraggedProjectId(null);
+                  setProjectDropTarget(null);
+                }}
+              >
+                <div
+                  className="agency-project-row"
+                  draggable={!openMenu && inlineRenamingProjectId !== project.id}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('application/maw-project-id', project.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                    setDraggedProjectId(project.id);
+                  }}
+                  onDragEnd={() => {
+                    suppressClickUntil.current = Date.now() + 300;
+                    setDraggedProjectId(null);
+                    setProjectDropTarget(null);
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="agency-project-toggle"
+                    aria-expanded={!collapsed.has(project.id)}
+                    onClick={() => {
+                      if (Date.now() < suppressClickUntil.current) return;
+                      if (inlineRenamingProjectId === project.id) return;
+                      toggle(project.id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (inlineRenamingProjectId === project.id) return;
+                      if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && onReorderProjects) {
+                        e.preventDefault();
+                        const currentIds = groups.map((g) => g.project.id);
+                        const idx = currentIds.indexOf(project.id);
+                        if (idx !== -1) {
+                          const targetIdx = e.key === 'ArrowUp' ? idx - 1 : idx + 1;
+                          if (targetIdx >= 0 && targetIdx < currentIds.length) {
+                            const nextIds = [...currentIds];
+                            [nextIds[idx], nextIds[targetIdx]] = [nextIds[targetIdx]!, nextIds[idx]!];
+                            onReorderProjects(nextIds);
+                          }
+                        }
+                      }
+                    }}
+                    title={project.name}
+                  >
                     <span aria-hidden="true" className={'agency-chevron' + (collapsed.has(project.id) ? '' : ' open')}>›</span>
-                    <span className="agency-project-name">{project.name}</span>
-                    <span className="agency-count">{items.length}</span>
+                    {inlineRenamingProjectId === project.id ? (
+                      <input
+                        type="text"
+                        className="agency-inline-rename-input"
+                        value={inlineRenameProjectValue}
+                        autoFocus
+                        maxLength={120}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => setInlineRenameProjectValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const clean = inlineRenameProjectValue.trim();
+                            if (clean && clean !== project.name) {
+                              onRenameProject(project, clean);
+                            }
+                            setInlineRenamingProjectId(null);
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            setInlineRenamingProjectId(null);
+                          }
+                        }}
+                        onBlur={() => {
+                          const clean = inlineRenameProjectValue.trim();
+                          if (clean && clean !== project.name) {
+                            onRenameProject(project, clean);
+                          }
+                          setInlineRenamingProjectId(null);
+                        }}
+                        ref={(input) => {
+                          if (input) {
+                            input.select();
+                          }
+                        }}
+                        aria-label={t('agency.ui.renameProject')}
+                      />
+                    ) : (
+                      <span className="agency-project-name">{project.name}</span>
+                    )}
                   </button>
-                  <button type="button" className="agency-icon-button agency-project-add" title={t('agency.ui.newWorkspaceIn', { name: project.name })}
-                    aria-label={t('agency.ui.newWorkspaceIn', { name: project.name })} onClick={() => onCreate(project.id)}>+</button>
                   <div className="agency-dropdown" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
-                      className="agency-icon-button agency-project-add"
+                      className="agency-row-action"
                       title={t('agency.ui.projectActions')}
                       aria-label={t('agency.ui.projectActions')}
                       aria-haspopup="true"
                       aria-expanded={isMenuOpen}
-                      onClick={() => setOpenMenu(isMenuOpen ? null : { type: 'project', id: project.id })}
+                      onClick={(e) => handleTriggerClick('project', project.id, e)}
+                      onMouseEnter={(e) => handleTriggerMouseEnter('project', project.id, e)}
+                      onMouseLeave={handleTriggerMouseLeave}
                     >
                       ⋯
                     </button>
                     {isMenuOpen && (
-                      <div className="agency-dropdown-menu" role="menu">
+                      <div
+                        className="agency-dropdown-menu"
+                        role="menu"
+                        ref={(el) => {
+                          if (el) {
+                            activeMenuRef.current = el;
+                          }
+                        }}
+                        onMouseEnter={handleMenuMouseEnter}
+                        onMouseLeave={handleMenuMouseLeave}
+                        onKeyDown={handleMenuKeyDown}
+                      >
                         <button
                           type="button"
                           role="menuitem"
                           className="agency-dropdown-item"
                           onClick={() => {
-                            setOpenMenu(null);
-                            setRenameValue(project.name);
-                            setRenamingProject(project);
+                            closeMenu();
+                            onCreate(project.id);
+                          }}
+                        >
+                          {t('agency.ui.addWorkspace')}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="agency-dropdown-item"
+                          onClick={() => {
+                            closeMenu();
+                            setInlineRenamingProjectId(project.id);
+                            setInlineRenameProjectValue(project.name);
                           }}
                         >
                           {t('agency.ui.renameProject')}
@@ -147,7 +447,7 @@ export function AgencySidebar({
                           role="menuitem"
                           className="agency-dropdown-item"
                           onClick={() => {
-                            setOpenMenu(null);
+                            closeMenu();
                             setArchivingProject(project);
                           }}
                         >
@@ -158,7 +458,7 @@ export function AgencySidebar({
                           role="menuitem"
                           className="agency-dropdown-item agency-text-danger"
                           onClick={() => {
-                            setOpenMenu(null);
+                            closeMenu();
                             handleProjectDeleteClick(project);
                           }}
                         >
@@ -175,14 +475,151 @@ export function AgencySidebar({
                       const attention = collection.some(item => isAttention(item.activity));
                       const working = collection.some(item => item.activity === 'working');
                       const isWsMenuOpen = openMenu?.type === 'workspace' && openMenu.id === workspace.id;
+                      const isWsDragging = draggedWorkspace?.id === workspace.id;
+                      const isWsTargetBefore = workspaceDropTarget?.id === workspace.id && workspaceDropTarget.position === 'before';
+                      const isWsTargetAfter = workspaceDropTarget?.id === workspace.id && workspaceDropTarget.position === 'after';
+                      const wsRowClassName = [
+                        'agency-workspace-nav-row',
+                        selected === workspace.id && !showingDone ? 'selected' : '',
+                        isWsDragging ? 'agency-is-dragging' : '',
+                        isWsTargetBefore ? 'agency-drop-target-before' : '',
+                        isWsTargetAfter ? 'agency-drop-target-after' : '',
+                      ].filter(Boolean).join(' ');
+
                       return (
-                        <div className={'agency-workspace-nav-row' + (selected === workspace.id && !showingDone ? ' selected' : '')}
-                          key={workspace.id}>
-                          <button className="agency-workspace-nav-button" type="button" onClick={() => onSelect(workspace.id)}
+                        <div
+                          className={wsRowClassName}
+                          key={workspace.id}
+                          draggable={!openMenu && inlineRenamingWorkspaceId !== workspace.id}
+                          onDragStart={(e) => {
+                            e.stopPropagation();
+                            e.dataTransfer.setData('application/maw-workspace-id', workspace.id);
+                            e.dataTransfer.setData('application/maw-workspace-project-id', workspace.projectId);
+                            e.dataTransfer.effectAllowed = 'move';
+                            setDraggedWorkspace({ id: workspace.id, projectId: workspace.projectId });
+                          }}
+                          onDragOver={(e) => {
+                            e.stopPropagation();
+                            if (e.dataTransfer.types.includes('application/maw-workspace-id') && draggedWorkspace) {
+                              if (draggedWorkspace.projectId !== workspace.projectId) {
+                                e.dataTransfer.dropEffect = 'none';
+                                return;
+                              }
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = 'move';
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              const pos = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+                              if (workspaceDropTarget?.id !== workspace.id || workspaceDropTarget?.position !== pos) {
+                                setWorkspaceDropTarget({ id: workspace.id, position: pos });
+                              }
+                            }
+                          }}
+                          onDragLeave={(e) => {
+                            e.stopPropagation();
+                            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                              if (workspaceDropTarget?.id === workspace.id) {
+                                setWorkspaceDropTarget(null);
+                              }
+                            }
+                          }}
+                          onDrop={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            const sourceId = (e.dataTransfer.getData('application/maw-workspace-id') || draggedWorkspace?.id) as WorkspaceId;
+                            const sourceProjectId = (e.dataTransfer.getData('application/maw-workspace-project-id') || draggedWorkspace?.projectId) as ProjectId;
+                            if (sourceId && sourceProjectId === workspace.projectId && onReorderWorkspaces) {
+                              suppressClickUntil.current = Date.now() + 300;
+                              const currentWsIds = items.map((w) => w.id);
+                              const fromIdx = currentWsIds.indexOf(sourceId);
+                              const toIdx = currentWsIds.indexOf(workspace.id);
+                              if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
+                                const nextIds = [...currentWsIds];
+                                nextIds.splice(fromIdx, 1);
+                                const insertIdx = workspaceDropTarget?.position === 'after'
+                                  ? (toIdx > fromIdx ? toIdx : toIdx + 1)
+                                  : (toIdx > fromIdx ? toIdx - 1 : toIdx);
+                                nextIds.splice(Math.max(0, Math.min(nextIds.length, insertIdx)), 0, sourceId);
+                                onReorderWorkspaces(workspace.projectId, nextIds);
+                              }
+                            }
+                            setDraggedWorkspace(null);
+                            setWorkspaceDropTarget(null);
+                          }}
+                          onDragEnd={(e) => {
+                            e.stopPropagation();
+                            suppressClickUntil.current = Date.now() + 300;
+                            setDraggedWorkspace(null);
+                            setWorkspaceDropTarget(null);
+                          }}
+                        >
+                          <button
+                            className="agency-workspace-nav-button"
+                            type="button"
+                            onClick={() => {
+                              if (Date.now() < suppressClickUntil.current) return;
+                              if (inlineRenamingWorkspaceId === workspace.id) return;
+                              onSelect(workspace.id);
+                            }}
+                            onKeyDown={(e) => {
+                              if (inlineRenamingWorkspaceId === workspace.id) return;
+                              if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && onReorderWorkspaces) {
+                                e.preventDefault();
+                                const currentWsIds = items.map((w) => w.id);
+                                const idx = currentWsIds.indexOf(workspace.id);
+                                if (idx !== -1) {
+                                  const targetIdx = e.key === 'ArrowUp' ? idx - 1 : idx + 1;
+                                  if (targetIdx >= 0 && targetIdx < currentWsIds.length) {
+                                    const nextIds = [...currentWsIds];
+                                    [nextIds[idx], nextIds[targetIdx]] = [nextIds[targetIdx]!, nextIds[idx]!];
+                                    onReorderWorkspaces(workspace.projectId, nextIds);
+                                  }
+                                }
+                              }
+                            }}
                             aria-current={selected === workspace.id && !showingDone ? 'page' : undefined}
-                            title={workspace.cwd}>
+                            title={workspace.cwd}
+                          >
                             <span className={'agency-status-dot ' + (attention ? 'attention' : working ? 'working' : collection.some(item => item.lifecycle === 'running') ? 'idle' : 'muted')} title={collection.map(item => agencySessionText(item)).join(', ')} aria-label={t('agency.tabs.sessionCount', { count: collection.length })} />
-                            <span className="agency-truncate">{workspace.name}</span>
+                            {inlineRenamingWorkspaceId === workspace.id ? (
+                              <input
+                                type="text"
+                                className="agency-inline-rename-input"
+                                value={inlineRenameWorkspaceValue}
+                                autoFocus
+                                maxLength={120}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => setInlineRenameWorkspaceValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  e.stopPropagation();
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    const clean = inlineRenameWorkspaceValue.trim();
+                                    if (clean && clean !== workspace.name && onRenameWorkspace) {
+                                      onRenameWorkspace(workspace, clean);
+                                    }
+                                    setInlineRenamingWorkspaceId(null);
+                                  } else if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    setInlineRenamingWorkspaceId(null);
+                                  }
+                                }}
+                                onBlur={() => {
+                                  const clean = inlineRenameWorkspaceValue.trim();
+                                  if (clean && clean !== workspace.name && onRenameWorkspace) {
+                                    onRenameWorkspace(workspace, clean);
+                                  }
+                                  setInlineRenamingWorkspaceId(null);
+                                }}
+                                ref={(input) => {
+                                  if (input) {
+                                    input.select();
+                                  }
+                                }}
+                                aria-label={t('agency.ui.renameWorkspace')}
+                              />
+                            ) : (
+                              <span className="agency-truncate">{workspace.name}</span>
+                            )}
                           </button>
                           <div className="agency-dropdown" onClick={(e) => e.stopPropagation()}>
                             <button
@@ -192,19 +629,44 @@ export function AgencySidebar({
                               aria-label={t('agency.ui.workspaceActions')}
                               aria-haspopup="true"
                               aria-expanded={isWsMenuOpen}
-                              onClick={() => setOpenMenu(isWsMenuOpen ? null : { type: 'workspace', id: workspace.id })}
+                              onClick={(e) => handleTriggerClick('workspace', workspace.id, e)}
+                              onMouseEnter={(e) => handleTriggerMouseEnter('workspace', workspace.id, e)}
+                              onMouseLeave={handleTriggerMouseLeave}
                             >
                               ⋯
                             </button>
                             {isWsMenuOpen && (
-                              <div className="agency-dropdown-menu" role="menu">
+                              <div
+                                className="agency-dropdown-menu"
+                                role="menu"
+                                ref={(el) => {
+                                  if (el) {
+                                    activeMenuRef.current = el;
+                                  }
+                                }}
+                                onMouseEnter={handleMenuMouseEnter}
+                                onMouseLeave={handleMenuMouseLeave}
+                                onKeyDown={handleMenuKeyDown}
+                              >
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  className="agency-dropdown-item"
+                                  onClick={() => {
+                                    closeMenu();
+                                    setInlineRenamingWorkspaceId(workspace.id);
+                                    setInlineRenameWorkspaceValue(workspace.name);
+                                  }}
+                                >
+                                  {t('agency.ui.renameWorkspace')}
+                                </button>
                                 <button
                                   type="button"
                                   role="menuitem"
                                   className="agency-dropdown-item"
                                   title={t('agency.ui.markNamedDone', { name: workspace.name })}
                                   onClick={() => {
-                                    setOpenMenu(null);
+                                    closeMenu();
                                     onDone(workspace);
                                   }}
                                 >
@@ -215,7 +677,7 @@ export function AgencySidebar({
                                   role="menuitem"
                                   className="agency-dropdown-item"
                                   onClick={() => {
-                                    setOpenMenu(null);
+                                    closeMenu();
                                     setArchivingWorkspace(workspace);
                                   }}
                                 >
@@ -226,7 +688,7 @@ export function AgencySidebar({
                                   role="menuitem"
                                   className="agency-dropdown-item agency-text-danger"
                                   onClick={() => {
-                                    setOpenMenu(null);
+                                    closeMenu();
                                     setDeletingWorkspace(workspace);
                                   }}
                                 >
@@ -246,50 +708,6 @@ export function AgencySidebar({
           })}
         </div>
       </nav>
-
-      {/* Rename Project Modal */}
-      {renamingProject && (
-        <div className="agency-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setRenamingProject(null); }}>
-          <div className="agency-dialog" role="dialog" aria-modal="true" aria-labelledby="agency-rename-project-title">
-            <div className="agency-dialog-head">
-              <h2 id="agency-rename-project-title">{t('agency.ui.editProjectName')}</h2>
-              <button type="button" className="agency-icon-button" onClick={() => setRenamingProject(null)}>×</button>
-            </div>
-            <label className="agency-field">
-              <span>{t('agency.ui.name')}</span>
-              <input
-                autoFocus
-                value={renameValue}
-                maxLength={120}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && renameValue.trim()) {
-                    onRenameProject(renamingProject, renameValue.trim());
-                    setRenamingProject(null);
-                  }
-                  if (e.key === 'Escape') setRenamingProject(null);
-                }}
-              />
-            </label>
-            <div className="agency-dialog-actions">
-              <button type="button" className="agency-secondary-button" onClick={() => setRenamingProject(null)}>
-                {t('common.cancel')}
-              </button>
-              <button
-                type="button"
-                className="agency-primary-button"
-                disabled={!renameValue.trim()}
-                onClick={() => {
-                  onRenameProject(renamingProject, renameValue.trim());
-                  setRenamingProject(null);
-                }}
-              >
-                {t('common.save')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Archive Project Confirmation */}
       {archivingProject && (
