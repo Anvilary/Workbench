@@ -640,10 +640,34 @@
 }
 .maw-session-tab button { border:0; background:transparent; color: var(--ink-3); cursor:pointer; }
 .maw-session-tab [role=tab] { display:flex; gap:8px; align-items:center; flex:1; min-width:0; height:100%; padding:8px; }
+.maw-session-tab [role=tab]:focus-visible { outline: 1px solid var(--ember); outline-offset: -2px; border-radius: var(--radius-sm, 3px); }
 .maw-session-tab [data-close] { padding:8px; }
 .maw-session-tab.active [role=tab] { color: var(--ink); }
-.maw-tab-name-input { width:auto; min-width:0; max-width:100%; flex:1; height:22px; margin:0 4px; padding:0 6px; border:0; border-radius:3px; background:transparent; color: var(--ink); font:inherit; line-height:22px; box-shadow:inset 0 0 0 1px var(--accent-border-soft); outline:none; user-select:text; }
-.maw-tab-name-input:focus, .maw-tab-name-input:focus-visible { outline:none; box-shadow:inset 0 0 0 1px var(--ember); }
+.maw-tab-name-input {
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  flex: 1;
+  height: 22px;
+  margin: 0 4px;
+  padding: 0 6px;
+  border: 1px solid var(--ember);
+  border-radius: 3px;
+  background: var(--bg-1, #121316);
+  color: var(--ink);
+  font: inherit;
+  line-height: 20px;
+  box-shadow: 0 0 0 1px var(--accent-border-soft);
+  outline: none;
+  user-select: text;
+  box-sizing: border-box;
+}
+.agency-app .maw-tab-name-input:focus,
+.agency-app .maw-tab-name-input:focus-visible {
+  outline: none;
+  border-color: var(--ember);
+  box-shadow: 0 0 0 1px var(--ember), 0 0 6px var(--ember-glow);
+}
 .maw-tab-name-input[aria-invalid=true] { border-color: var(--danger); }
 .maw-add-tab { flex:none; }
 .maw-session-content { flex:1; min-height:0; position:relative; display:flex; }
