@@ -216,8 +216,32 @@
 .agency-project-add, .agency-row-action { opacity: 0; transition: opacity .12s ease; }
 .agency-project-row:hover .agency-project-add,
 .agency-project-row:focus-within .agency-project-add,
+.agency-project-row:hover .agency-row-action,
+.agency-project-row:focus-within .agency-row-action,
 .agency-workspace-nav-row:hover .agency-row-action,
 .agency-workspace-nav-row:focus-within .agency-row-action { opacity: 1; }
+.agency-inline-rename-input {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  margin: 0;
+  border: 1px solid var(--ember);
+  box-shadow: 0 0 0 1px var(--accent-border-soft);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--bg-1, #121316);
+  color: var(--ink, #fff);
+  font: inherit;
+  font-size: 12px;
+  line-height: 20px;
+  outline: none;
+}
+.agency-app .agency-inline-rename-input:focus,
+.agency-app .agency-inline-rename-input:focus-visible {
+  outline: none;
+  border-color: var(--ember);
+  box-shadow: 0 0 0 1px var(--ember), 0 0 6px var(--ember-glow);
+}
 .agency-project-children { padding-left: 17px; }
 .agency-workspace-nav-row { border-radius: var(--radius-sm, 6px); margin: 3px 0; border: 1px solid transparent; transition: all 160ms ease; }
 .agency-workspace-nav-row.selected, .agency-history-toggle.selected {

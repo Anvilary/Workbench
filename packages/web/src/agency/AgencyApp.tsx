@@ -366,6 +366,14 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
     } catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.errors.internalError')); }
   }
 
+  async function renameWorkspace(workspace: AgencyWorkspace, newName: string) {
+    setError(null);
+    try {
+      const answer = await store.renameWorkspace(workspace.id, newName);
+      if (answer.type !== 'agency.workspace.updated') throw new Error(t('agency.errors.internalError'));
+    } catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.errors.internalError')); }
+  }
+
   async function archiveProject(project: AgencyProject) {
     setError(null);
     try {
@@ -439,6 +447,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
               onArchiveWorkspace={(ws) => { void archiveWorkspace(ws); }}
               onDeleteWorkspace={deleteWorkspace}
               onRenameProject={(p, n) => { void renameProject(p, n); }}
+              onRenameWorkspace={(ws, n) => { void renameWorkspace(ws, n); }}
               onArchiveProject={(p) => { void archiveProject(p); }}
               onDeleteProject={(p) => { void deleteProject(p); }}
               onRestore={(ws) => { void restore(ws); }}
