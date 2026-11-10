@@ -69,6 +69,7 @@ probe() {
 
 # start_and_verify DIR -> 0 when the service started from DIR reports DIR's release ID.
 fail_reason=""
+backend_stopped=false
 start_and_verify() {
   _id=$(maw_release_id "$1")
   sctl reset-failed "$unit" "${MAW_PTYD_UNIT:-maw-ptyd.service}" >/dev/null 2>&1 || true
@@ -79,10 +80,18 @@ start_and_verify() {
     fi
     restart_ptyd=false
   fi
-  if ! sctl restart "$unit"; then
-    # Type=exec: ExecStartPre failure, missing binary, start-limit-hit or unit errors.
-    fail_reason="systemctl restart failed"
-    return 1
+  if [ "$backend_stopped" = true ]; then
+    if ! sctl start "$unit"; then
+      fail_reason="systemctl start failed after PTY supervisor promotion"
+      return 1
+    fi
+    backend_stopped=false
+  else
+    if ! sctl restart "$unit"; then
+      # Type=exec: ExecStartPre failure, missing binary, start-limit-hit or unit errors.
+      fail_reason="systemctl restart failed"
+      return 1
+    fi
   fi
   _i=0
   while [ "$_i" -lt "$timeout_seconds" ]; do
@@ -95,6 +104,21 @@ start_and_verify() {
     fi
   done
   fail_reason="readiness timeout after ${timeout_seconds}s"
+  return 1
+}
+
+restore_backend() {
+  [ "$backend_stopped" = true ] || return 0
+  if ! sctl start "$unit"; then return 1; fi
+  backend_stopped=false
+  _restore_id=$(maw_release_id "$current_raw")
+  _restore_i=0
+  while [ "$_restore_i" -lt "$timeout_seconds" ]; do
+    sleep 1
+    _restore_i=$((_restore_i + 1))
+    if probe "$_restore_id"; then return 0; fi
+    [ "$(unit_state)" = failed ] && return 1
+  done
   return 1
 }
 
@@ -149,6 +173,7 @@ fi
 # confirms there are no live PTYs; authentication or snapshot failures defer
 # the activation before any release pointer or service is changed.
 restart_ptyd=false
+quiesce_backend=false
 if [ "$managed" = true ] && maw_valid_release "$current_raw" &&
   ! cmp -s "$current_raw/packages/server/dist/maw-ptyd.mjs" "$target/packages/server/dist/maw-ptyd.mjs" &&
   [ "$(ptyd_unit_state)" = active ]; then
@@ -159,6 +184,15 @@ if [ "$managed" = true ] && maw_valid_release "$current_raw" &&
     exit 1
   fi
   restart_ptyd=true
+  if [ "$(unit_state)" = active ]; then
+    _backend_mode=$("$node_bin" "$control_script" backend-mode 2>/dev/null) || {
+      maw_log activation-blocked target "$target_name" reason 'could not determine backend PTY mode'
+      printf '%s\n' 'Activation deferred: could not determine whether the active backend owns in-process PTYs.' \
+        'No release pointer or service was changed.' >&2
+      exit 1
+    }
+    [ "$_backend_mode" = persistent ] && quiesce_backend=true
+  fi
 fi
 
 maw_log activation-start target "$target_name" mode "$mode" from "$(basename "$current_raw")" healthy "$(basename "${healthy:-none}")"
@@ -171,6 +205,28 @@ if [ "$force" != true ] && [ -x "$guard_script" ]; then
     maw_log activation-blocked target "$target_name" reason 'active coding agents in unit cgroup'
     printf '%s\n' 'Activation refused: active coding agents detected in service cgroup.' \
       'Wait for tasks to finish, or pass --force (e.g. maw restart --force) to override.' >&2
+    exit 1
+  fi
+fi
+
+# Prevent the persistent backend from creating a PTY between the empty snapshot
+# and supervisor restart. The first check above avoids stopping MAW on the
+# normal refusal path; this second check happens only after MAW is quiesced.
+if [ "$quiesce_backend" = true ]; then
+  backend_stopped=true
+  if ! sctl stop "$unit"; then
+    restore_backend || true
+    maw_log activation-blocked target "$target_name" reason 'could not quiesce backend before supervisor promotion'
+    printf '%s\n' 'Activation deferred: MAW could not be stopped safely for supervisor promotion.' >&2
+    exit 1
+  fi
+  if ! "$node_bin" "$control_script" ptyd-empty >/dev/null 2>&1; then
+    _restored=false
+    restore_backend && _restored=true
+    maw_log activation-blocked target "$target_name" reason 'PTY sessions appeared while backend was quiesced'
+    printf '%s\n' 'Activation deferred: PTY sessions appeared before the supervisor could be restarted.' \
+      'The previous backend was restarted; no release pointer was changed.' >&2
+    [ "$_restored" = true ] || printf '%s\n' 'Warning: previous backend readiness was not restored; inspect maw status.' >&2
     exit 1
   fi
 fi

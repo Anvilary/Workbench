@@ -106,9 +106,11 @@ case "$cmd" in
     echo ActiveState=active; exit 0 ;;
   restart|start)
     case "$*" in *maw-ptyd.service*) n=$(( $(cat "$F/ptyd-restarts" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$F/ptyd-restarts"; exit 0 ;; esac
+    case "$cmd" in start) n=$(( $(cat "$F/backend-starts" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$F/backend-starts" ;; esac
     n=$(( $(cat "$F/restarts" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$F/restarts"
     if [ -e "$F/restart-fail-$n" ]; then : > "$F/running"; echo "Job failed: Start request repeated too quickly." >&2; exit 1; fi
     readlink -f "${stateDir}/current" > "$F/running"; exit 0 ;;
+  stop) : > "$F/backend-stops"; exit 0 ;;
 esac
 exit 0
 `, { mode: 0o755 });
@@ -129,7 +131,14 @@ if (process.argv[2] === 'check-data') {
 }
 if (process.argv[2] === 'ptyd-empty') {
   if (fs.existsSync(F + '/ptyd-auth-fail')) process.exit(1);
+  const checks = Number(fs.existsSync(F + '/ptyd-checks') ? fs.readFileSync(F + '/ptyd-checks', 'utf8') : 0) + 1;
+  fs.writeFileSync(F + '/ptyd-checks', String(checks));
+  if (fs.existsSync(F + '/ptyd-live-after-first') && checks > 1) process.exit(3);
   if (fs.existsSync(F + '/ptyd-live')) process.exit(3);
+  process.exit(0);
+}
+if (process.argv[2] === 'backend-mode') {
+  console.log(fs.existsSync(F + '/backend-persistent') ? 'persistent' : 'in-process');
   process.exit(0);
 }
 let running = ''; try { running = fs.readFileSync(F + '/running', 'utf8').trim(); } catch {}
@@ -322,6 +331,23 @@ test('supervisor code promotion fails closed on auth/list failure without switch
   assert.equal(result.code, 1);
   assert.deepEqual(await pointers(f), before);
   assert.ok(!existsSync(path.join(f.root, 'restarts')));
+  assert.ok(!existsSync(path.join(f.root, 'ptyd-restarts')));
+}));
+
+test('TOCTOU: backend is quiesced and rechecked; a newly live PTY restores old backend without pointer change', () => withFixture(async f => {
+  await pushUpstream(f, 'ptyd-toctou');
+  await update(f);
+  await changeStagedSupervisor(f);
+  await writeFile(path.join(f.root, 'backend-persistent'), '');
+  await writeFile(path.join(f.root, 'ptyd-live-after-first'), '');
+  const before = await pointers(f);
+  const result = await helper(f);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /PTY sessions appeared/);
+  assert.deepEqual(await pointers(f), before);
+  assert.equal((await readFile(path.join(f.root, 'ptyd-checks'), 'utf8')).trim(), '2');
+  assert.equal((await readFile(path.join(f.root, 'backend-stops'), 'utf8')).trim(), '');
+  assert.equal((await readFile(path.join(f.root, 'backend-starts'), 'utf8')).trim(), '1');
   assert.ok(!existsSync(path.join(f.root, 'ptyd-restarts')));
 }));
 

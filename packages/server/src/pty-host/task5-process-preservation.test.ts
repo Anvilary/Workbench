@@ -13,6 +13,8 @@ import { TerminalRegistry } from '../terminal-registry.js';
 import { WorkspaceStore } from '../workspace-store.js';
 import { createAgentRegistry } from '../agents/registry.js';
 import { PtyHostClient } from './pty-host-client.js';
+// @ts-expect-error - standalone pure-ESM supervisor script
+import { PtySupervisor } from './maw-ptyd.mjs';
 import { attachTerminalSocket } from '../terminal-socket.js';
 import { publishReadiness } from '../maw-host.js';
 import { SettingsStore } from '../settings-store.js';
@@ -527,6 +529,68 @@ test('TASK 5 CONCURRENCY & UNGRACEFUL RECOVERY: multiple concurrent sessions sur
   } catch (err: any) {
     console.error('TASK 5 CONCURRENCY FAILED WITH ERROR:', err?.stack || err);
     throw err;
+  }
+});
+
+test('registry reconnects to the real supervisor after socket loss and keeps the same live PTY ID and PID', async () => {
+  const tmpBase = await mkdtemp(path.join(os.tmpdir(), 'maw-registry-reconnect-'));
+  const runtimeDir = path.join(tmpBase, 'runtime');
+  const configDir = path.join(tmpBase, 'config');
+  const socketPath = path.join(runtimeDir, 'ptyd.sock');
+  const authPath = path.join(runtimeDir, 'ptyd.auth');
+  await fs.promises.mkdir(runtimeDir, { recursive: true, mode: 0o700 });
+  await fs.promises.mkdir(configDir, { recursive: true, mode: 0o700 });
+
+  const supervisor = new PtySupervisor({ socketPath, authPath });
+  let backend: DisposableBackend | null = null;
+  let audit: PtyHostClient | null = null;
+  try {
+    await supervisor.listen();
+    backend = await createDisposableBackend({ runtimeDir, configDir, socketPath, authPath, shellScript: SYNTHETIC_AGENT_PATH });
+    audit = await PtyHostClient.connectOrSpawn({ socketPath, authPath, autoSpawn: false });
+    const descriptor = await backend.registry.open({ cwd: tmpBase, kind: 'shell' });
+    const terminalId = descriptor.terminalId;
+    const pid = backend.registry.pidOf(terminalId);
+    assert.ok(pid && pid > 0);
+
+    const output: string[] = [];
+    const attached = backend.registry.attach(terminalId, (_id, chunk) => output.push(chunk));
+    assert.ok(attached);
+    const readyDeadline = Date.now() + 3000;
+    while (Date.now() < readyDeadline && !`${attached.replay}${output.join('')}`.includes(`AGENT_READY pid=${pid}`)) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.ok(`${attached.replay}${output.join('')}`.includes(`AGENT_READY pid=${pid}`), 'the real PTY emitted its initial identity');
+
+    const registryClient = (backend.registry as any).client as PtyHostClient;
+    (registryClient as any).socket.destroy();
+
+    const unavailableDeadline = Date.now() + 1000;
+    while (Date.now() < unavailableDeadline && backend.registry.pidOf(terminalId) === pid) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(backend.registry.pidOf(terminalId), null, 'the registry marks the remote PTY unavailable during disconnect');
+
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline && backend.registry.pidOf(terminalId) !== pid) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.equal(backend.registry.pidOf(terminalId), pid, 'the registry reattached the original process');
+    assert.equal(backend.registry.list().find((item) => item.terminalId === terminalId)?.alive, true);
+
+    assert.equal(backend.registry.write(terminalId, 'PING recovery-check\n'), true);
+    const outputDeadline = Date.now() + 3000;
+    while (Date.now() < outputDeadline && !output.join('').includes(`PONG recovery-check pid=${pid}`)) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.ok(output.join('').includes(`PONG recovery-check pid=${pid}`), 'output continues through the recovered registry client');
+    const sessions = await audit.list();
+    assert.equal(sessions.sessions.filter((session) => session.id === terminalId).length, 1, 'recovery did not spawn a duplicate');
+  } finally {
+    audit?.detach();
+    await backend?.shutdown();
+    supervisor.close({ killAll: true });
+    await rm(tmpBase, { recursive: true, force: true });
   }
 });
 

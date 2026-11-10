@@ -27,6 +27,17 @@ function supervisorConfig() {
   };
 }
 
+function unitEnvironment(unit) {
+  const pid = Number(execFileSync('systemctl', ['--user', 'show', unit, '--property=MainPID', '--value'], { encoding: 'utf8' }).trim());
+  if (!Number.isInteger(pid) || pid <= 0) throw new Error(`${unit} has no active MainPID`);
+  return readFileSync(`/proc/${pid}/environ`).toString().split('\0');
+}
+
+function isPersistentBackend() {
+  const env = unitEnvironment(process.env.MAW_UNIT || 'maw.service');
+  return env.includes('MAW_PERSISTENT_PTY=1') && !env.includes('MAW_DISABLE_PTYD=1');
+}
+
 async function supervisorIsEmpty() {
   const { socketPath, authPath } = supervisorConfig();
   const dirStat = lstatSync(path.dirname(authPath));
@@ -102,6 +113,10 @@ try {
     checkDataCompatibility(process.argv[3]);
     process.exit(0);
   }
+  if (process.argv[2] === 'backend-mode') {
+    console.log(isPersistentBackend() ? 'persistent' : 'in-process');
+    process.exit(0);
+  }
   const { url, state, pid, noAuth } = await readyService();
   const release = typeof state.releaseId === 'string' ? `; release ${state.releaseId}` : '';
   const modeLabel = noAuth ? '; token-free local mode (MAW_UNSAFE_LOCAL_NO_AUTH=1)' : '';
@@ -117,7 +132,7 @@ try {
     child.on('exit', code => { process.exitCode = code === 0 ? 0 : 1; });
   } else throw new Error('Unknown control command');
 } catch (err) {
-  if (process.argv[2] === 'check-data' || process.argv[2] === 'ptyd-empty') console.error(err instanceof Error ? err.message : String(err));
+  if (process.argv[2] === 'check-data' || process.argv[2] === 'ptyd-empty' || process.argv[2] === 'backend-mode') console.error(err instanceof Error ? err.message : String(err));
   else console.error('MAW is not ready. Use maw status and maw logs to inspect startup.');
   process.exitCode = 1;
 }
