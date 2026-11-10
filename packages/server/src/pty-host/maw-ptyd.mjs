@@ -285,7 +285,12 @@ export class PtySupervisor {
       throw new Error(`Security violation: auth path ${this.authPath} cannot be a symbolic link`);
     }
 
-    // Escribir token de autenticacion en archivo efimero con permisos 0600
+  }
+
+  _writeAuthFile() {
+    if (fs.existsSync(this.authPath) && fs.lstatSync(this.authPath).isSymbolicLink()) {
+      throw new Error(`Security violation: auth path ${this.authPath} cannot be a symbolic link`);
+    }
     const tempAuthPath = `${this.authPath}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
     fs.writeFileSync(tempAuthPath, this.authToken.toString('hex') + '\n', { mode: 0o600 });
     fs.renameSync(tempAuthPath, this.authPath);
@@ -325,31 +330,43 @@ export class PtySupervisor {
    */
   async listen() {
     this._setupSecurityContext();
-
-    const probeStatus = await this._probeExistingSocket();
-    if (probeStatus === 'ACTIVE') {
-      throw new Error(`EADDRINUSE: active maw-ptyd instance already listening on ${this.socketPath}`);
-    }
-
-    // Si el archivo del socket existe pero la conexion fue rechazada, esta huerfano
-    try {
-      if (fs.existsSync(this.socketPath)) {
-        fs.unlinkSync(this.socketPath);
-      }
-    } catch {}
-
     this.server = net.createServer((socket) => this._handleClient(socket));
     this.server.maxConnections = 32;
 
     // Crear socket con permisos 0600 garantizados usando umask(0o177)
     const oldUmask = process.umask(0o177);
     try {
-      await new Promise((resolve, reject) => {
-        this.server.listen(this.socketPath, resolve);
-        this.server.once('error', reject);
-      });
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await new Promise((resolve, reject) => {
+            this.server.listen(this.socketPath, resolve);
+            this.server.once('error', reject);
+          });
+          break;
+        } catch (error) {
+          if (error.code !== 'EADDRINUSE' || attempt > 0) throw error;
+          let before;
+          try { before = fs.lstatSync(this.socketPath); } catch { continue; }
+          if (before.isSymbolicLink() || await this._probeExistingSocket() === 'ACTIVE') throw error;
+          try {
+            const after = fs.lstatSync(this.socketPath);
+            if (before.dev === after.dev && before.ino === after.ino) fs.unlinkSync(this.socketPath);
+          } catch (unlinkError) {
+            if (unlinkError.code !== 'ENOENT') throw unlinkError;
+          }
+        }
+      }
     } finally {
       process.umask(oldUmask);
+    }
+
+    // Binding the socket elects the owner. A losing concurrent starter must not
+    // publish its token over the winner's credentials.
+    try {
+      this._writeAuthFile();
+    } catch (error) {
+      await new Promise((resolve) => this.server.close(resolve));
+      throw error;
     }
 
     // Iniciar temporizador de limpieza de tombstones vencidos
@@ -479,7 +496,6 @@ export class PtySupervisor {
     if (socket.destroyed) return;
 
     if (socket.writableLength > MAX_CLIENT_WRITE_BUFFER) {
-      this._sendError(socket, undefined, 'BACKPRESSURE_OVERFLOW', 'Client write buffer exceeded 16 MiB quota');
       socket.destroy();
       return;
     }

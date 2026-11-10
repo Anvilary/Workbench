@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import express, { type Request, type Response } from 'express';
 import { createServer } from 'node:http';
+import { createNoAuthMiddleware } from './no-auth-middleware.js';
 
 test('performance administrative endpoint enforces loopback, session authentication, and process sanitization', async () => {
   const app = express();
@@ -137,5 +138,23 @@ test('performance administrative endpoint enforces loopback, session authenticat
     }
   } finally {
     server.close();
+  }
+});
+
+test('real no-auth middleware grants the local credential used by the performance endpoint', async () => {
+  const app = express();
+  const server = createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as { port: number }).port;
+  try {
+    app.use(createNoAuthMiddleware(port));
+    app.get('/api/performance/terminals', (request, response) => {
+      response.json({ kind: (request as typeof request & { mawCredential?: { kind: string } }).mawCredential?.kind });
+    });
+    const result = await fetch(`http://127.0.0.1:${port}/api/performance/terminals`);
+    assert.equal(result.status, 200);
+    assert.deepEqual(await result.json(), { kind: 'local' });
+  } finally {
+    if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });

@@ -27,13 +27,13 @@ import { RemoteDevicesStore } from './remote-devices-store.js';
 import {
   LOOPBACK_HOST,
   authorizeRequest,
-  authorizeRequestNoAuth,
   isLocalNoAuthEnabled,
   buildDeviceCookie,
   buildTokenCookie,
   createSessionToken,
   readPairingCode,
 } from './security.js';
+import { createNoAuthMiddleware } from './no-auth-middleware.js';
 import { appConfigDir } from './paths.js';
 import { RepoHub } from './repo-hub.js';
 import { MemoryHub } from './memory-hub.js';
@@ -199,23 +199,6 @@ function createAuthMiddleware(port: number, token: string, remote: RemoteAccessS
       .status(401)
       .type('text/plain')
       .send(remote.verifier() === null ? TOKEN_MISSING_TEXT : TOKEN_MISSING_TEXT + PAIRING_HINT_TEXT);
-  };
-}
-
-/**
- * Middleware for MAW_UNSAFE_LOCAL_NO_AUTH=1 mode.
- *
- * Host and Origin are still checked. Token is never required.
- * Remote access must have been rejected at startup before this middleware runs.
- */
-function createNoAuthMiddleware(port: number) {
-  return (request: Request, response: Response, next: NextFunction): void => {
-    const authorization = authorizeRequestNoAuth(request, port);
-    if (authorization.ok) {
-      next();
-      return;
-    }
-    response.status(403).type('text/plain').send(ORIGIN_REFUSED_TEXT);
   };
 }
 

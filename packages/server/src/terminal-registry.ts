@@ -389,6 +389,17 @@ export class TerminalRegistry extends EventEmitter {
           this.emit('changed');
         });
 
+        const attachedClient = this.client;
+        attachedClient.onDisconnect(() => {
+          for (const [id, entry] of this.terminals) {
+            if (!(entry.session instanceof RemotePtySession)) continue;
+            entry.descriptor = { ...entry.descriptor, alive: false, sleeping: false };
+            this.setActivity(id, 'offline');
+          }
+          this.emit('changed');
+          void this.recoverSupervisor(attachedClient);
+        });
+
         const snapshot = this.client.snapshot ?? await this.client.list();
         for (const session of snapshot.sessions) {
           if (session.alive) {
@@ -401,6 +412,29 @@ export class TerminalRegistry extends EventEmitter {
       } catch (err) {
         console.warn('[registry] Failed connecting to pty supervisor, using in-process pty:', err);
         this.client = null;
+      }
+    }
+  }
+
+  private async recoverSupervisor(client: PtyHostClient): Promise<void> {
+    for (let attempt = 0; attempt < 10 && this.client === client; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(250 * (attempt + 1), 2000)));
+      try {
+        const snapshot = await client.reconnect();
+        const liveIds = new Set(snapshot.sessions.filter((session) => session.alive).map((session) => session.id));
+        for (const id of this.order) {
+          const entry = this.terminals.get(id);
+          if (entry?.session instanceof RemotePtySession && !liveIds.has(id)) {
+            entry.session = null;
+            entry.descriptor = { ...entry.descriptor, alive: false, sleeping: false };
+          }
+        }
+        for (const session of snapshot.sessions) if (session.alive) await this.adoptSupervisorSession(session);
+        for (const tombstone of snapshot.tombstones) this.tombstones.set(tombstone.id, tombstone);
+        this.emit('changed');
+        return;
+      } catch {
+        // Keep existing entries unavailable while retrying the same supervisor.
       }
     }
   }

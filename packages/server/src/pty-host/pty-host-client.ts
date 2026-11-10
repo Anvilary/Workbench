@@ -70,6 +70,7 @@ export class PtyHostClient {
   private disconnectListeners = new Set<PtyDisconnectCallback>();
   private closed = false;
   private _snapshot: PtySnapshotResponse | null = null;
+  private reconnecting = false;
 
   readonly socketPath: string;
   readonly authPath: string;
@@ -474,6 +475,18 @@ export class PtyHostClient {
   onDisconnect(listener: PtyDisconnectCallback): () => void {
     this.disconnectListeners.add(listener);
     return () => this.disconnectListeners.delete(listener);
+  }
+
+  async reconnect(): Promise<PtySnapshotResponse> {
+    if (this.reconnecting) throw new Error('Supervisor reconnect is already in progress');
+    this.reconnecting = true;
+    try {
+      const snapshot = await this._connect();
+      this._snapshot = snapshot;
+      return snapshot;
+    } finally {
+      this.reconnecting = false;
+    }
   }
 
   get supervisorPid(): number | null {
