@@ -26,6 +26,38 @@ function createIsolatedEnv() {
   };
 }
 
+test('over-quota direct response destroys the slow socket without recursive error delivery', () => {
+  const supervisor = Object.create(PtySupervisor.prototype);
+  const socket = { destroyed: false, writableLength: 16 * 1024 * 1024 + 1,
+    destroy() { this.destroyed = true; }, write() { assert.fail('Must not write to an over-quota socket'); } };
+  assert.doesNotThrow(() => supervisor._send(socket, { op: 'ack' }));
+  assert.equal(socket.destroyed, true);
+});
+
+test('concurrent supervisor startup elects one owner and losing cleanup preserves its authentication', async () => {
+  const env = createIsolatedEnv();
+  const mask = process.umask();
+  const options = { socketPath: env.socketPath, authPath: env.authPath };
+  const contenders = [new PtySupervisor(options), new PtySupervisor(options)];
+  let client: PtyHostClient | undefined;
+  try {
+    const starts = await Promise.allSettled(contenders.map(supervisor => supervisor.listen()));
+    assert.equal(starts.filter(result => result.status === 'fulfilled').length, 1);
+    const winnerIndex = starts.findIndex(result => result.status === 'fulfilled');
+    const token = fs.readFileSync(env.authPath, 'utf8');
+    contenders[1 - winnerIndex].close();
+    assert.equal(fs.readFileSync(env.authPath, 'utf8'), token);
+    client = await PtyHostClient.connectOrSpawn({ ...options, autoSpawn: false });
+    assert.equal(client.supervisorPid, process.pid);
+    assert.deepEqual((await client.list()).sessions, []);
+  } finally {
+    client?.detach();
+    for (const supervisor of contenders) supervisor.close({ killAll: true });
+    process.umask(mask);
+    env.cleanup();
+  }
+});
+
 test('Failure Injection: Client crash and sudden socket termination during high-rate output', async () => {
   const env = createIsolatedEnv();
   const supervisor = new PtySupervisor({

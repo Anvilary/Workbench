@@ -24,10 +24,11 @@ export function TabNameInput({ name, onSave, onClose, report }: {
     committed.current = true;
     setSaving(true);
     const clean = value.trim();
-    onClose(true);
     try {
       if (clean !== name) await onSave(clean);
+      onClose(true);
     } catch (error) {
+      committed.current = false;
       report(String(error));
     } finally {
       flight.current = false;
@@ -70,7 +71,6 @@ export function TabNameInput({ name, onSave, onClose, report }: {
         if (event.nativeEvent.isComposing) return;
         if (event.key === 'Enter') {
           event.preventDefault();
-          event.currentTarget.blur();
           void save();
         }
         if (event.key === 'Escape' && !flight.current) {

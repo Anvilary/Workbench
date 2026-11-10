@@ -137,7 +137,7 @@ test('TASK B: 5,000-line scrollback, Ctrl+Shift+A, Ctrl+A/C semantics, and scrol
   await page.goto('http://127.0.0.1:' + server.address().port);
   await page.waitForFunction(() => window.terminals?.length === 3);
 
-  // 1. Verify all 3 terminals have scrollback configured to 20,000
+  // 1. Verify all 3 terminals have scrollback configured to 5,000
   const scrollbacks = await page.evaluate(() => window.terminals.map((t) => t.options.scrollback));
   assert.deepEqual(scrollbacks, [5000, 5000, 5000], 'All terminals must have 5,000-line scrollback');
 
@@ -261,13 +261,13 @@ test('TASK B: 5,000-line scrollback, Ctrl+Shift+A, Ctrl+A/C semantics, and scrol
   assert.equal(handled, true, 'Ctrl+C without selection must not be intercepted');
 
   // 7. Test scroll stability while new output arrives:
-  // Scroll up to line 5,000
+  // Scroll above the live viewport.
   await page.evaluate(() => {
     const term = window.terminals[0];
-    term.scrollToLine(5000);
+    term.scrollToLine(1000);
   });
   const scrollPosBefore = await page.evaluate(() => window.terminals[0].buffer.active.viewportY);
-  assert.equal(scrollPosBefore, 5000, 'Viewport scrolled to line 5000');
+  assert.equal(scrollPosBefore, 1000, 'Viewport scrolled above live output');
 
   // Stream another 500 lines of output
   await page.evaluate(async () => {
@@ -290,7 +290,7 @@ test('TASK B: 5,000-line scrollback, Ctrl+Shift+A, Ctrl+A/C semantics, and scrol
     normalLength: window.terminals[0].buffer.normal.length,
   }));
   assert.equal(inAltBuffer.altActive, true, 'Alternate buffer is active');
-  assert.ok(inAltBuffer.normalLength >= 20000, 'Normal buffer retained full 20,000 lines during TUI session');
+  assert.ok(inAltBuffer.normalLength === 5000 + bufferStats.rows, 'Normal buffer retains the full configured history during TUI session');
 
   // Exit alternate screen (\x1b[?1049l)
   await page.evaluate(async () => {

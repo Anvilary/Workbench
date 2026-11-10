@@ -245,6 +245,7 @@ export class PtySupervisor {
     this.subscribers = new Set();
 
     this.server = null;
+    this.ownsSocket = false;
     this.closing = false;
     this.sweeperTimer = null;
   }
@@ -360,6 +361,7 @@ export class PtySupervisor {
       process.umask(oldUmask);
     }
 
+    this.ownsSocket = true;
     // Binding the socket elects the owner. A losing concurrent starter must not
     // publish its token over the winner's credentials.
     try {
@@ -901,12 +903,16 @@ export class PtySupervisor {
       this.server = null;
     }
 
-    try {
-      if (fs.existsSync(this.socketPath)) fs.unlinkSync(this.socketPath);
-    } catch {}
-    try {
-      if (fs.existsSync(this.authPath)) fs.unlinkSync(this.authPath);
-    } catch {}
+    if (this.ownsSocket) {
+      try {
+        if (fs.existsSync(this.socketPath)) fs.unlinkSync(this.socketPath);
+      } catch {}
+      try {
+        if (fs.existsSync(this.authPath) && !fs.lstatSync(this.authPath).isSymbolicLink() &&
+            fs.readFileSync(this.authPath, 'utf8').trim() === this.authToken.toString('hex')) fs.unlinkSync(this.authPath);
+      } catch {}
+      this.ownsSocket = false;
+    }
   }
 }
 

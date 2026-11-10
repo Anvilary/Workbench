@@ -138,7 +138,7 @@ export class PtyHostClient {
         await new Promise((r) => setTimeout(r, 100));
 
         // Re-leer token si no lo teniamos
-        if (!client.authToken && fs.existsSync(authPath)) {
+        if (!options.authToken && fs.existsSync(authPath)) {
           try {
             client.authToken = safeReadAuthToken(authPath);
           } catch (err) {
@@ -223,7 +223,8 @@ export class PtyHostClient {
 
       sock.on('close', () => {
         clearTimeout(connectTimer);
-        if (this.socket === sock) this.socket = null;
+        if (this.socket !== sock) return;
+        this.socket = null;
         for (const [, req] of this.pendingRequests) {
           clearTimeout(req.timer);
           req.reject(new Error('Connection closed by supervisor'));

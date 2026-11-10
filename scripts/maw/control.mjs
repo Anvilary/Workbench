@@ -63,7 +63,8 @@ async function supervisorIsEmpty() {
       clearTimeout(timer);
       try {
         const response = JSON.parse(pending.slice(0, newline));
-        if (response.reqId !== reqId || response.op !== 'snapshot' || !Array.isArray(response.sessions)) {
+        if (response.reqId !== reqId || response.op !== 'snapshot' || !Array.isArray(response.sessions) ||
+            response.sessions.some(session => !session || typeof session.alive !== 'boolean')) {
           throw new Error(response.message || 'Invalid PTY supervisor snapshot');
         }
         resolve(response);
