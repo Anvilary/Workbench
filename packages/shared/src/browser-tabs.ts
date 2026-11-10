@@ -268,14 +268,15 @@ export function validateOtherWebUrl(rawUrl: string): UrlValidationResult {
   if (typeof rawUrl !== 'string' || !rawUrl.trim() || rawUrl.length > 2048 || /[\u0000-\u001f\u007f]/.test(rawUrl)) return { valid: false, error: 'Invalid URL' };
   let url: URL;
   try { url = new URL(rawUrl.trim()); } catch { return { valid: false, error: 'Invalid URL format' }; }
-  const host = url.hostname.toLowerCase().replace(/\.+$/, '');
+  const host = url.hostname.toLowerCase();
   const ipv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
   const ipv6 = host.startsWith('[') || host.endsWith(']');
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return { valid: false, error: 'Only HTTP and HTTPS URLs are allowed' };
   if (url.username || url.password) return { valid: false, error: 'URLs with user credentials are not allowed' };
-  if (!host || ipv4 || ipv6 || host === 'localhost' || ['.localhost', '.local', '.internal', '.lan', '.home', '.home.arpa', '.test', '.invalid', '.example'].some(suffix => host === suffix.slice(1) || host.endsWith(suffix)) || !host.includes('.')) return { valid: false, error: 'Local, private, and IP addresses are not allowed' };
-  const octets = ipv4 ? host.split('.').map(Number) : [];
-  if (ipv4 || ipv6 || /^(10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(host) || octets.some(n => n > 255)) return { valid: false, error: 'Local, private, and IP addresses are not allowed' };
+  if (ipv4 || ipv6 || !host.includes('.') || host.endsWith('.') ||
+      ['localhost', 'local', 'internal', 'lan', 'home', 'home.arpa', 'test', 'invalid', 'example'].some(suffix => host === suffix || host.endsWith('.' + suffix))) {
+    return { valid: false, error: 'Enter a public hostname without a trailing dot' };
+  }
   return { valid: true, normalizedUrl: url.toString() };
 }
 
