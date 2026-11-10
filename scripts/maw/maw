@@ -67,6 +67,8 @@ run_activation() {   # extra helper args...
         --setenv=MAW_LOG_FILE="$log_file" \
         --setenv=MAW_UPDATE_LOCK="$update_lock" \
         --setenv=MAW_RUNTIME_DIR="$runtime_dir" \
+        --setenv=MAW_PTYD_UNIT="$ptyd_unit" \
+        --setenv=XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
         --setenv=MAW_RESTART_LOCK="$restart_lock" \
         --setenv=MAW_NODE_BIN="$node_bin" \
         --setenv=MAW_CONTROL_SCRIPT="$control_script" \

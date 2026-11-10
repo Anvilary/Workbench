@@ -27,6 +27,11 @@ const SCRIPT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 const SERVER_SRC = path.dirname(fileURLToPath(import.meta.url));
 const TSX = await realpath(path.resolve(SERVER_SRC, '../node_modules/tsx')).catch(() => null);
 
+// The production template names the real PTY unit. A fixture must never pull it in.
+function isolateUnit(rendered: string) {
+  return rendered.replace(/^Wants=maw-ptyd\.service\n/m, '').replace(/^After=network\.target maw-ptyd\.service$/m, 'After=network.target');
+}
+
 const HEALTHY_SERVER = `
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
@@ -76,6 +81,7 @@ test('real systemd: crash-looping candidate hits start-limit, is detected, and t
   const env = {
     ...process.env, MAW_STATE_DIR: state, MAW_UNIT: unit, MAW_RUNTIME_DIR: path.join(process.env['XDG_RUNTIME_DIR']!, runtimeName),
     MAW_NODE_BIN: process.execPath, MAW_READY_TIMEOUT: '25', MAW_CGROUP_FILE: path.join(root, 'none'),
+    MAW_PTYD_UNIT: `maw-test-ptyd-${suffix}.service`, XDG_CONFIG_HOME: path.join(root, 'config'), MAW_ENV_FILE: path.join(root, 'no-environment'),
   };
   const helper = async (): Promise<{ code: number; out: string }> => {
     try { const r = await exec(path.join(SCRIPT_DIR, 'maw-restart-helper.sh'), ['--unit', unit], { env }); return { code: 0, out: r.stdout + r.stderr }; }
@@ -89,7 +95,7 @@ test('real systemd: crash-looping candidate hits start-limit, is detected, and t
     assert.ok(!existsSync(unitFile));
     const rendered = await exec('/bin/sh', [path.join(SCRIPT_DIR, 'maw-render-unit.sh')],
       { env: { ...env, MAW_RUNTIME_NAME: runtimeName, MAW_BIN_DIR: path.join(root, 'bin') } });
-    await writeFile(unitFile, rendered.stdout);
+    await writeFile(unitFile, isolateUnit(rendered.stdout));
 
     // First verified start: no healthy yet; success makes H healthy.
     let r = await helper();
@@ -160,7 +166,8 @@ test('real systemd: a release built from this repository activates, is verified 
   const sandbox = path.join(root, 'sandbox');
   const repoRoot = path.resolve(SCRIPT_DIR, '../..');
   const env = { ...process.env, MAW_STATE_DIR: state, MAW_UNIT: unit, MAW_RUNTIME_DIR: path.join(process.env['XDG_RUNTIME_DIR']!, runtimeName),
-    MAW_NODE_BIN: process.execPath, MAW_READY_TIMEOUT: '20', MAW_CGROUP_FILE: path.join(root, 'none'), MAW_ENV_FILE: path.join(root, 'no-environment') };
+    MAW_NODE_BIN: process.execPath, MAW_READY_TIMEOUT: '20', MAW_CGROUP_FILE: path.join(root, 'none'), MAW_ENV_FILE: path.join(root, 'no-environment'),
+    MAW_PTYD_UNIT: `maw-test-ptyd-${suffix}.service`, XDG_CONFIG_HOME: path.join(sandbox, 'config') };
   try {
     const built = await exec('/bin/sh', [path.join(SCRIPT_DIR, 'maw-update.sh'), '--initial', '--source', repoRoot, '--ref', 'HEAD', '--allow-unapproved-ref'],
       { env, maxBuffer: 64 * 1024 * 1024, timeout: 600_000 });
@@ -175,7 +182,7 @@ test('real systemd: a release built from this repository activates, is verified 
     await mkdir(unitDir, { recursive: true });
     assert.ok(!existsSync(unitFile));
     const rendered = await exec('/bin/sh', [path.join(SCRIPT_DIR, 'maw-render-unit.sh')], { env: { ...env, MAW_RUNTIME_NAME: runtimeName, MAW_BIN_DIR: path.join(root, 'bin') } });
-    await writeFile(unitFile, rendered.stdout);
+    await writeFile(unitFile, isolateUnit(rendered.stdout));
     await mkdir(dropIn, { recursive: true });
     for (const dir of ['home', 'config', 'data', 'state', 'cache']) await mkdir(path.join(sandbox, dir), { recursive: true });
     await writeFile(path.join(dropIn, 'isolation.conf'), [
@@ -267,6 +274,9 @@ test('real systemd: in-app lifecycle commands and restart delegation succeed und
     MAW_STATE_DIR: state,
     MAW_UNIT: unit,
     MAW_HELPER_UNIT: helperUnit,
+    MAW_PTYD_UNIT: `maw-test-ptyd-${suffix}.service`,
+    XDG_CONFIG_HOME: path.join(root, 'config'),
+    MAW_ENV_FILE: path.join(root, 'no-environment'),
     MAW_RUNTIME_DIR: runtimeDir,
     MAW_NODE_BIN: process.execPath,
     MAW_READY_TIMEOUT: '25',
@@ -275,7 +285,7 @@ test('real systemd: in-app lifecycle commands and restart delegation succeed und
   try {
     const rendered = await exec('/bin/sh', [path.join(SCRIPT_DIR, 'maw-render-unit.sh')],
       { env: { ...baseEnv, MAW_RUNTIME_NAME: runtimeName, MAW_BIN_DIR: path.join(root, 'bin') } });
-    await writeFile(unitFile, rendered.stdout);
+    await writeFile(unitFile, isolateUnit(rendered.stdout));
 
     const H = await makeRelease(releases, '20261029000001-aaaaaaa', HEALTHY_SERVER);
     await symlink(H, path.join(state, 'current'));

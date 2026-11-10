@@ -351,6 +351,21 @@ test('TOCTOU: backend is quiesced and rechecked; a newly live PTY restores old b
   assert.ok(!existsSync(path.join(f.root, 'ptyd-restarts')));
 }));
 
+test('a failed pointer switch restores the quiesced backend without restarting the supervisor', () => withFixture(async f => {
+  await pushUpstream(f, 'ptyd-pointer-failure');
+  await update(f);
+  await changeStagedSupervisor(f);
+  await writeFile(path.join(f.root, 'backend-persistent'), '');
+  await writeFile(path.join(f.binDir, 'mv'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  const before = await pointers(f);
+  const result = await helper(f);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /previous backend is healthy/);
+  assert.deepEqual(await pointers(f), before);
+  assert.equal((await readFile(path.join(f.root, 'backend-starts'), 'utf8')).trim(), '1');
+  assert.ok(!existsSync(path.join(f.root, 'ptyd-restarts')));
+}));
+
 test('empty authenticated supervisor is restarted to load the staged PTY host code', () => withFixture(async f => {
   await pushUpstream(f, 'ptyd-empty');
   await update(f);
@@ -392,6 +407,27 @@ test('target that supports browser store v2 passes the read-only compatibility p
   const result = await helper(f, { XDG_CONFIG_HOME: configHome });
   assert.equal(result.code, 0, result.stderr);
   assert.equal(await pointer(f, 'current'), target);
+}));
+
+test('failed activation cannot automatically roll back to an incompatible browser store reader', () => withFixture(async f => {
+  await pushUpstream(f, 'automatic-rollback-from-v2');
+  await update(f);
+  await setBrowserStoreCompatibility(f, 2);
+  const target = (await pointers(f)).staged!;
+  await writeFile(path.join(f.root, 'broken', target), '');
+  const configHome = path.join(f.root, 'config');
+  const configDir = path.join(configHome, 'agent-workbench');
+  await mkdir(configDir, { recursive: true });
+  const backup = path.join(configDir, 'agency-web-tabs.json.bak');
+  const data = JSON.stringify({ version: 2, tabs: [] });
+  await writeFile(backup, data);
+  const result = await helper(f, { XDG_CONFIG_HOME: configHome });
+  assert.equal(result.code, 3);
+  assert.match(result.stderr, /automatic rollback .* was blocked to protect browser tab data/);
+  assert.equal(await pointer(f, 'current'), target);
+  assert.equal(await pointer(f, 'healthy'), f.initialId);
+  assert.equal(await readFile(backup, 'utf8'), data);
+  assert.equal((await readFile(path.join(f.root, 'restarts'), 'utf8')).trim(), '1');
 }));
 
 test('maw rollback refuses an older target before mutating current or staged pointers', () => withFixture(async f => {

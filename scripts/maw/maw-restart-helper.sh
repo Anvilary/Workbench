@@ -225,8 +225,12 @@ if [ "$quiesce_backend" = true ]; then
     restore_backend && _restored=true
     maw_log activation-blocked target "$target_name" reason 'PTY sessions appeared while backend was quiesced'
     printf '%s\n' 'Activation deferred: PTY sessions appeared before the supervisor could be restarted.' \
-      'The previous backend was restarted; no release pointer was changed.' >&2
-    [ "$_restored" = true ] || printf '%s\n' 'Warning: previous backend readiness was not restored; inspect maw status.' >&2
+      'No release pointer was changed.' >&2
+    if [ "$_restored" = true ]; then
+      printf '%s\n' 'The previous backend is healthy.' >&2
+    else
+      printf '%s\n' 'Warning: previous backend readiness was not restored; inspect maw status.' >&2
+    fi
     exit 1
   fi
 fi
@@ -235,7 +239,14 @@ phase=switch
 if [ "$managed" = true ] && [ "$target" != "$current_raw" ]; then
   if ! maw_set_pointer current "$target"; then
     maw_log activation-failure target "$target_name" reason 'could not switch current'
-    printf '%s\n' 'Error: could not switch the current release pointer; nothing was restarted.' >&2
+    printf '%s\n' 'Error: could not switch the current release pointer.' >&2
+    if [ "$backend_stopped" = true ]; then
+      if restore_backend; then
+        printf '%s\n' 'The previous backend is healthy; the supervisor was not restarted.' >&2
+      else
+        printf '%s\n' 'Warning: previous backend readiness was not restored; inspect maw status.' >&2
+      fi
+    fi
     exit 1
   fi
 fi
@@ -276,6 +287,12 @@ printf '%s\n' "Error: release $target_name failed activation: $failed_reason." >
 phase=rollback
 if [ -n "$healthy" ] && [ "$healthy" != "$target" ]; then
   healthy_name=$(basename "$healthy")
+  if ! "$node_bin" "$control_script" check-data "$healthy"; then
+    maw_log rollback-failure release "$healthy_name" failed "$target_name" reason 'target release cannot read existing browser tab data'
+    printf '%s\n' "CRITICAL: automatic rollback to $healthy_name was blocked to protect browser tab data." \
+      'The browser tab store was preserved. Inspect maw status and maw logs before choosing a compatible release.' >&2
+    exit 3
+  fi
   printf '%s\n' "Rolling back to last verified healthy release $healthy_name..." >&2
   printf '%s\n' 'Executable rollback does not guarantee historical-data compatibility; older releases cannot display split session history.' >&2
   if maw_set_pointer current "$healthy" && start_and_verify "$healthy"; then
