@@ -279,6 +279,7 @@ export class TerminalRegistry extends EventEmitter {
   private foreignTabs: ForeignTab[] = [];
   private client: PtyHostClient | null = null;
   private readonly tombstones = new Map<TerminalId, PtyHostTombstoneInfo>();
+  private readonly recoveringClients = new Set<PtyHostClient>();
   private readonly persistentPty: boolean;
   private readonly supervisorScriptPath?: string;
   private readonly socketPath?: string;
@@ -393,6 +394,7 @@ export class TerminalRegistry extends EventEmitter {
         attachedClient.onDisconnect(() => {
           for (const [id, entry] of this.terminals) {
             if (!(entry.session instanceof RemotePtySession)) continue;
+            entry.session = null;
             entry.descriptor = { ...entry.descriptor, alive: false, sleeping: false };
             this.setActivity(id, 'offline');
           }
@@ -417,25 +419,52 @@ export class TerminalRegistry extends EventEmitter {
   }
 
   private async recoverSupervisor(client: PtyHostClient): Promise<void> {
-    for (let attempt = 0; attempt < 10 && this.client === client; attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, Math.min(250 * (attempt + 1), 2000)));
-      try {
-        const snapshot = await client.reconnect();
-        const liveIds = new Set(snapshot.sessions.filter((session) => session.alive).map((session) => session.id));
-        for (const id of this.order) {
-          const entry = this.terminals.get(id);
-          if (entry?.session instanceof RemotePtySession && !liveIds.has(id)) {
-            entry.session = null;
-            entry.descriptor = { ...entry.descriptor, alive: false, sleeping: false };
+    if (this.recoveringClients.has(client)) return;
+    this.recoveringClients.add(client);
+    try {
+      for (let attempt = 0; attempt < 10 && this.client === client; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, Math.min(250 * (attempt + 1), 2000)));
+        try {
+          const snapshot = await client.reconnect();
+          const liveIds = new Set(snapshot.sessions.filter((session) => session.alive).map((session) => session.id));
+          for (const id of this.order) {
+            const entry = this.terminals.get(id);
+            if (entry?.session instanceof RemotePtySession && !liveIds.has(id)) {
+              entry.session = null;
+              entry.descriptor = { ...entry.descriptor, alive: false, sleeping: false };
+            }
           }
+          for (const session of snapshot.sessions) if (session.alive) await this.adoptSupervisorSession(session);
+          for (const tombstone of snapshot.tombstones) {
+            this.tombstones.set(tombstone.id, tombstone);
+            const entry = this.terminals.get(tombstone.id);
+            if (entry) {
+              const needsExit = entry.descriptor.exitCode === null;
+              entry.session = null;
+              entry.descriptor = {
+                ...entry.descriptor,
+                alive: false,
+                sleeping: false,
+                exitCode: tombstone.exitCode,
+                launchedAt: null,
+              };
+              entry.stopWatchingActivity?.();
+              entry.stopWatchingActivity = null;
+              this.setActivity(tombstone.id, 'offline');
+              if (needsExit) {
+                entry.launchHook.exit();
+                this.emit('exit', tombstone.id, tombstone.exitCode, tombstone.signal);
+              }
+            }
+          }
+          this.emit('changed');
+          return;
+        } catch {
+          // Keep existing entries unavailable while retrying the same supervisor.
         }
-        for (const session of snapshot.sessions) if (session.alive) await this.adoptSupervisorSession(session);
-        for (const tombstone of snapshot.tombstones) this.tombstones.set(tombstone.id, tombstone);
-        this.emit('changed');
-        return;
-      } catch {
-        // Keep existing entries unavailable while retrying the same supervisor.
       }
+    } finally {
+      this.recoveringClients.delete(client);
     }
   }
 
@@ -1501,7 +1530,9 @@ export class TerminalRegistry extends EventEmitter {
       }
     }
     if (this.client) {
-      this.client.detach();
+      const client = this.client;
+      this.client = null;
+      client.detach();
     }
     this.terminals.clear();
     this.activity.clear();

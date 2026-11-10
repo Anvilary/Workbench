@@ -223,7 +223,7 @@ export class PtyHostClient {
 
       sock.on('close', () => {
         clearTimeout(connectTimer);
-        this.socket = null;
+        if (this.socket === sock) this.socket = null;
         for (const [, req] of this.pendingRequests) {
           clearTimeout(req.timer);
           req.reject(new Error('Connection closed by supervisor'));
@@ -478,9 +478,12 @@ export class PtyHostClient {
   }
 
   async reconnect(): Promise<PtySnapshotResponse> {
+    if (this.closed) throw new Error('Supervisor client is detached');
     if (this.reconnecting) throw new Error('Supervisor reconnect is already in progress');
     this.reconnecting = true;
     try {
+      this.authToken = safeReadAuthToken(this.authPath);
+      if (!this.authToken) throw new Error('Supervisor auth file is unavailable during reconnect');
       const snapshot = await this._connect();
       this._snapshot = snapshot;
       return snapshot;

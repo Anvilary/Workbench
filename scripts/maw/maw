@@ -115,6 +115,10 @@ case "$command_name" in
     previous=$(maw_pointer previous)
     [ -n "$previous" ] || { printf '%s\n' 'No verified previous release is available.' >&2; exit 1; }
     printf '%s\n' 'Executable rollback does not guarantee historical-data compatibility; older releases cannot display split session history.' >&2
+    if ! "$node_bin" "$control_script" check-data "$previous"; then
+      printf '%s\n' 'Rollback refused to protect browser tab data. Archive the v2 browser tab store and perform an explicit data migration before using this older release. No release pointer was changed.' >&2
+      exit 1
+    fi
     maw_lock_update 0 || { printf '%s\n' 'An update or activation is in progress.' >&2; exit 1; }
     maw_set_pointer staged "$previous"
     exec 9>&-

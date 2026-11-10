@@ -18,6 +18,8 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
+import net from 'node:net';
+import { randomBytes } from 'node:crypto';
 
 const exec = promisify(execFile);
 
@@ -103,6 +105,7 @@ case "$cmd" in
     esac
     echo ActiveState=active; exit 0 ;;
   restart|start)
+    case "$*" in *maw-ptyd.service*) n=$(( $(cat "$F/ptyd-restarts" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$F/ptyd-restarts"; exit 0 ;; esac
     n=$(( $(cat "$F/restarts" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$F/restarts"
     if [ -e "$F/restart-fail-$n" ]; then : > "$F/running"; echo "Job failed: Start request repeated too quickly." >&2; exit 1; fi
     readlink -f "${stateDir}/current" > "$F/running"; exit 0 ;;
@@ -114,6 +117,21 @@ exit 0
   await writeFile(mockControl, `
 import fs from 'node:fs';
 const F = ${JSON.stringify(root)};
+if (process.argv[2] === 'check-data') {
+  const target = process.argv[3];
+  let supported = 1;
+  try { supported = JSON.parse(fs.readFileSync(target + '/package.json', 'utf8')).mawCompatibility?.browserTabStore || 1; } catch {}
+  const config = process.env.XDG_CONFIG_HOME || process.env.HOME + '/.config';
+  for (const file of [config + '/agent-workbench/agency-web-tabs.json', config + '/agent-workbench/agency-web-tabs.json.bak']) {
+    try { if (JSON.parse(fs.readFileSync(file, 'utf8')).version > supported) process.exit(3); } catch (error) { if (error.code !== 'ENOENT') process.exit(1); }
+  }
+  process.exit(0);
+}
+if (process.argv[2] === 'ptyd-empty') {
+  if (fs.existsSync(F + '/ptyd-auth-fail')) process.exit(1);
+  if (fs.existsSync(F + '/ptyd-live')) process.exit(3);
+  process.exit(0);
+}
 let running = ''; try { running = fs.readFileSync(F + '/running', 'utf8').trim(); } catch {}
 const id = running.split('/').pop();
 const expected = process.env.MAW_EXPECT_RELEASE_ID || '';
@@ -138,6 +156,8 @@ console.log('Healthy; release ' + id);
 }
 
 async function makeRelease(dir: string, id: string, commit: string): Promise<void> {
+  await mkdir(dir, { recursive: true });
+  await writeFile(path.join(dir, 'package.json'), JSON.stringify({ name: 'agent-workbench', version: '1.0.0' }) + '\n');
   await mkdir(path.join(dir, 'packages/server/src'), { recursive: true });
   await mkdir(path.join(dir, 'packages/server/dist'), { recursive: true });
   await mkdir(path.join(dir, 'packages/server/node_modules/tsx/dist'), { recursive: true });
@@ -201,9 +221,174 @@ async function withFixture(body: (f: Fixture) => Promise<void>): Promise<void> {
   try { await body(f); } finally { await rm(f.root, { recursive: true, force: true }); }
 }
 
+async function changeStagedSupervisor(f: Fixture): Promise<void> {
+  const staged = await pointer(f, 'staged');
+  assert.ok(staged);
+  await writeFile(path.join(f.releasesDir, staged!, 'packages/server/dist/maw-ptyd.mjs'), '#!/usr/bin/env node\n// changed supervisor\n');
+}
+
+async function setBrowserStoreCompatibility(f: Fixture, version: number): Promise<void> {
+  const target = await pointer(f, 'staged');
+  assert.ok(target);
+  const manifestPath = path.join(f.releasesDir, target!, 'package.json');
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  manifest.mawCompatibility = { browserTabStore: version };
+  await writeFile(manifestPath, JSON.stringify(manifest) + '\n');
+}
+
 // ---------------------------------------------------------------------------
 // Staging
 // ---------------------------------------------------------------------------
+test('supervisor code promotion refuses live PTYs before changing release pointers or restarting services', () => withFixture(async f => {
+  await pushUpstream(f, 'ptyd-live');
+  await update(f);
+  await changeStagedSupervisor(f);
+  await writeFile(path.join(f.root, 'ptyd-live'), '');
+  const before = await pointers(f);
+  const result = await helper(f);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Activation deferred/);
+  assert.deepEqual(await pointers(f), before);
+  assert.ok(!existsSync(path.join(f.root, 'restarts')));
+  assert.ok(!existsSync(path.join(f.root, 'ptyd-restarts')));
+}));
+
+test('control ptyd-empty authenticates over the supervisor socket and checks live sessions', () => withFixture(async f => {
+  const runtime = path.join(f.root, 'ptyd-runtime');
+  await mkdir(runtime, { mode: 0o700 });
+  const socketPath = path.join(runtime, 'ptyd.sock');
+  const authPath = `${socketPath}.auth`;
+  const token = randomBytes(32).toString('hex');
+  await writeFile(authPath, `${token}\n`, { mode: 0o600 });
+  let live = false;
+  const server = net.createServer((socket) => {
+    let input = '';
+    socket.on('data', (chunk) => {
+      input += chunk.toString();
+      const newline = input.indexOf('\n');
+      if (newline < 0) return;
+      const request = JSON.parse(input.slice(0, newline));
+      if (request.authToken !== token) {
+        socket.write(`${JSON.stringify({ op: 'error', reqId: request.reqId, message: 'invalid authentication' })}\n`);
+        return;
+      }
+      socket.write(`${JSON.stringify({ op: 'snapshot', reqId: request.reqId, sessions: live ? [{ id: 'live', alive: true }] : [], tombstones: [], pid: process.pid })}\n`);
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+  const run = () => exec(process.execPath, [path.join(SCRIPT_DIR, 'control.mjs'), 'ptyd-empty'], {
+    env: { ...f.env, MAW_PTYD_SOCKET: socketPath, MAW_PTYD_AUTH_FILE: authPath },
+  });
+  try {
+    const empty = await run();
+    assert.match(empty.stdout, /no live sessions/);
+    live = true;
+    await assert.rejects(run());
+    await writeFile(authPath, `${'0'.repeat(64)}\n`, { mode: 0o600 });
+    await assert.rejects(run());
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}));
+
+test('control check-data reads compatibility metadata and refuses a v2-to-v1 downgrade without writes', () => withFixture(async f => {
+  const target = path.join(f.root, 'target');
+  const configHome = path.join(f.root, 'config');
+  const configDir = path.join(configHome, 'agent-workbench');
+  await mkdir(target, { recursive: true });
+  await mkdir(configDir, { recursive: true });
+  const manifest = path.join(target, 'package.json');
+  const store = path.join(configDir, 'agency-web-tabs.json');
+  await writeFile(manifest, JSON.stringify({ mawCompatibility: { browserTabStore: 1 } }));
+  const original = JSON.stringify({ version: 2, tabs: [], keep: true });
+  await writeFile(store, original);
+  const run = () => exec(process.execPath, [path.join(SCRIPT_DIR, 'control.mjs'), 'check-data', target], {
+    env: { ...f.env, XDG_CONFIG_HOME: configHome },
+  });
+  await assert.rejects(run(), (error: { stderr: string }) => /supports browser tab store v1.*v2/.test(error.stderr));
+  assert.equal(await readFile(store, 'utf8'), original);
+  await writeFile(manifest, JSON.stringify({ mawCompatibility: { browserTabStore: 2 } }));
+  await run();
+  assert.equal(await readFile(store, 'utf8'), original);
+}));
+
+test('supervisor code promotion fails closed on auth/list failure without switching current', () => withFixture(async f => {
+  await pushUpstream(f, 'ptyd-auth-failure');
+  await update(f);
+  await changeStagedSupervisor(f);
+  await writeFile(path.join(f.root, 'ptyd-auth-fail'), '');
+  const before = await pointers(f);
+  const result = await helper(f);
+  assert.equal(result.code, 1);
+  assert.deepEqual(await pointers(f), before);
+  assert.ok(!existsSync(path.join(f.root, 'restarts')));
+  assert.ok(!existsSync(path.join(f.root, 'ptyd-restarts')));
+}));
+
+test('empty authenticated supervisor is restarted to load the staged PTY host code', () => withFixture(async f => {
+  await pushUpstream(f, 'ptyd-empty');
+  await update(f);
+  await changeStagedSupervisor(f);
+  const result = await helper(f);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal((await readFile(path.join(f.root, 'ptyd-restarts'), 'utf8')).trim(), '1');
+  assert.equal((await readFile(path.join(f.root, 'restarts'), 'utf8')).trim(), '1');
+}));
+
+test('restart refuses a browser store downgrade before changing current or restarting MAW', () => withFixture(async f => {
+  await pushUpstream(f, 'browser-data-downgrade');
+  await update(f);
+  await setBrowserStoreCompatibility(f, 1);
+  const configHome = path.join(f.root, 'config');
+  const configDir = path.join(configHome, 'agent-workbench');
+  await mkdir(configDir, { recursive: true });
+  const storePath = path.join(configDir, 'agency-web-tabs.json');
+  const original = JSON.stringify({ version: 2, tabs: [], migrationData: 'preserve' });
+  await writeFile(storePath, original);
+  const before = await pointers(f);
+  const result = await helper(f, { XDG_CONFIG_HOME: configHome });
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Activation refused to protect browser tab data/);
+  assert.deepEqual(await pointers(f), before);
+  assert.equal(await readFile(storePath, 'utf8'), original);
+  assert.ok(!existsSync(path.join(f.root, 'restarts')));
+}));
+
+test('target that supports browser store v2 passes the read-only compatibility preflight', () => withFixture(async f => {
+  await pushUpstream(f, 'browser-data-compatible');
+  await update(f);
+  await setBrowserStoreCompatibility(f, 2);
+  const configHome = path.join(f.root, 'config');
+  const configDir = path.join(configHome, 'agent-workbench');
+  await mkdir(configDir, { recursive: true });
+  await writeFile(path.join(configDir, 'agency-web-tabs.json'), JSON.stringify({ version: 2, tabs: [] }));
+  const target = await pointer(f, 'staged');
+  const result = await helper(f, { XDG_CONFIG_HOME: configHome });
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(await pointer(f, 'current'), target);
+}));
+
+test('maw rollback refuses an older target before mutating current or staged pointers', () => withFixture(async f => {
+  await pushUpstream(f, 'rollback-from-v2');
+  await update(f);
+  await setBrowserStoreCompatibility(f, 2);
+  assert.equal((await helper(f)).code, 0);
+  const before = await pointers(f);
+  assert.ok(before.previous);
+  const configHome = path.join(f.root, 'config');
+  const configDir = path.join(configHome, 'agent-workbench');
+  await mkdir(configDir, { recursive: true });
+  await writeFile(path.join(configDir, 'agency-web-tabs.json'), JSON.stringify({ version: 2, tabs: [] }));
+  const result = await exec(MAW_BIN, ['rollback'], { env: { ...f.env, XDG_CONFIG_HOME: configHome } }).then(
+    (value) => ({ code: 0, ...value }),
+    (error: { code: number; stderr: string }) => ({ code: error.code, stderr: error.stderr }),
+  );
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Rollback refused to protect browser tab data/);
+  assert.deepEqual(await pointers(f), before);
+  assert.ok(!existsSync(path.join(f.root, 'restarts')) || (await readFile(path.join(f.root, 'restarts'), 'utf8')).trim() === '1');
+}));
+
 test('1. staging builds an isolated release and changes ONLY the staged pointer (U-4)', () => withFixture(async f => {
   const commit = await pushUpstream(f, 'v2');
   const res = await update(f);

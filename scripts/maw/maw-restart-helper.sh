@@ -59,6 +59,7 @@ trap 'on_signal TERM' TERM
 sctl() { maw_sctl "$@"; }
 
 unit_state() { sctl show "$unit" --property=ActiveState --value 2>/dev/null || true; }
+ptyd_unit_state() { sctl show "${MAW_PTYD_UNIT:-maw-ptyd.service}" --property=ActiveState --value 2>/dev/null || true; }
 
 # probe RELEASE_ID -> authenticated readiness of the unit's MainPID, serving exactly RELEASE_ID
 # (empty RELEASE_ID = unmanaged legacy target; readiness only).
@@ -71,6 +72,13 @@ fail_reason=""
 start_and_verify() {
   _id=$(maw_release_id "$1")
   sctl reset-failed "$unit" "${MAW_PTYD_UNIT:-maw-ptyd.service}" >/dev/null 2>&1 || true
+  if [ "$restart_ptyd" = true ]; then
+    if ! sctl restart "${MAW_PTYD_UNIT:-maw-ptyd.service}"; then
+      fail_reason="PTY supervisor restart failed"
+      return 1
+    fi
+    restart_ptyd=false
+  fi
   if ! sctl restart "$unit"; then
     # Type=exec: ExecStartPre failure, missing binary, start-limit-hit or unit errors.
     fail_reason="systemctl restart failed"
@@ -128,6 +136,30 @@ fi
 target_name=$(basename "$target")
 managed=true
 maw_valid_release "$target" || managed=false
+
+if ! "$node_bin" "$control_script" check-data "$target"; then
+  maw_log activation-blocked target "$target_name" reason 'target release cannot read existing browser tab data'
+  printf '%s\n' 'Activation refused to protect browser tab data. Archive the v2 browser tab store and perform an explicit data migration before using this older release.' \
+    'No release pointer or service was changed.' >&2
+  exit 1
+fi
+
+# The supervisor is an independent service, so restarting MAW does not load a
+# changed supervisor binary. Promote it only after its authenticated snapshot
+# confirms there are no live PTYs; authentication or snapshot failures defer
+# the activation before any release pointer or service is changed.
+restart_ptyd=false
+if [ "$managed" = true ] && maw_valid_release "$current_raw" &&
+  ! cmp -s "$current_raw/packages/server/dist/maw-ptyd.mjs" "$target/packages/server/dist/maw-ptyd.mjs" &&
+  [ "$(ptyd_unit_state)" = active ]; then
+  if ! "$node_bin" "$control_script" ptyd-empty >/dev/null 2>&1; then
+    maw_log activation-blocked target "$target_name" reason 'PTY supervisor is not authenticated or has live sessions'
+    printf '%s\n' 'Activation deferred: the PTY supervisor could not be authenticated or still has live sessions.' \
+      'Close all MAW terminal sessions, then run maw restart again. No release pointer or service was changed.' >&2
+    exit 1
+  fi
+  restart_ptyd=true
+fi
 
 maw_log activation-start target "$target_name" mode "$mode" from "$(basename "$current_raw")" healthy "$(basename "${healthy:-none}")"
 printf '%s\n' "Activating $target_name on $unit..."
