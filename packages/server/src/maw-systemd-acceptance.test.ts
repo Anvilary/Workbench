@@ -148,8 +148,8 @@ test('real systemd: crash-looping candidate hits start-limit, is detected, and t
 
 /**
  * A REAL release of this repository: built by maw-update.sh (--initial, isolated worktree, frozen install,
- * typecheck, build, profile tests), booted by the production unit template under a disposable unit with an
- * isolated HOME/XDG drop-in, verified by the restart helper and the authenticated readiness probe, and serving
+ * typecheck, build, profile tests), booted by both production unit templates under disposable names with
+ * isolated HOME/XDG, verified by the restart helper and the authenticated readiness probe, and serving
  * its own built UI. Opt-in and slow: MAW_REAL_SYSTEMD=1 MAW_REAL_RELEASE=1 (needs a clean checkout).
  */
 test('real systemd: a release built from this repository activates, is verified by release ID and serves its UI', {
@@ -158,8 +158,11 @@ test('real systemd: a release built from this repository activates, is verified 
   const suffix = randomBytes(4).toString('hex');
   const unit = `maw-test-${suffix}.service`;
   const runtimeName = `maw-test-${suffix}`;
+  const ptydRuntime = `maw-test-ptyd-${suffix}`;
+  const ptydUnit = `${ptydRuntime}.service`;
   const unitDir = path.join(process.env['XDG_RUNTIME_DIR']!, 'systemd/user');
   const unitFile = path.join(unitDir, unit);
+  const ptydUnitFile = path.join(unitDir, ptydUnit);
   const dropIn = path.join(unitDir, unit + '.d');
   const root = await realpath(await mkdtemp(path.join(tmpdir(), 'maw-real-release-')));
   const state = path.join(root, '.local/share/maw');
@@ -167,7 +170,7 @@ test('real systemd: a release built from this repository activates, is verified 
   const repoRoot = path.resolve(SCRIPT_DIR, '../..');
   const env = { ...process.env, MAW_STATE_DIR: state, MAW_UNIT: unit, MAW_RUNTIME_DIR: path.join(process.env['XDG_RUNTIME_DIR']!, runtimeName),
     MAW_NODE_BIN: process.execPath, MAW_READY_TIMEOUT: '20', MAW_CGROUP_FILE: path.join(root, 'none'), MAW_ENV_FILE: path.join(root, 'no-environment'),
-    MAW_PTYD_UNIT: `maw-test-ptyd-${suffix}.service`, XDG_CONFIG_HOME: path.join(sandbox, 'config') };
+    MAW_PTYD_UNIT: ptydUnit, XDG_CONFIG_HOME: path.join(sandbox, 'config') };
   try {
     const built = await exec('/bin/sh', [path.join(SCRIPT_DIR, 'maw-update.sh'), '--initial', '--source', repoRoot, '--ref', 'HEAD', '--allow-unapproved-ref'],
       { env, maxBuffer: 64 * 1024 * 1024, timeout: 600_000 });
@@ -181,14 +184,23 @@ test('real systemd: a release built from this repository activates, is verified 
 
     await mkdir(unitDir, { recursive: true });
     assert.ok(!existsSync(unitFile));
+    assert.ok(!existsSync(ptydUnitFile));
     const rendered = await exec('/bin/sh', [path.join(SCRIPT_DIR, 'maw-render-unit.sh')], { env: { ...env, MAW_RUNTIME_NAME: runtimeName, MAW_BIN_DIR: path.join(root, 'bin') } });
-    await writeFile(unitFile, isolateUnit(rendered.stdout));
+    await writeFile(unitFile, rendered.stdout.replaceAll('maw-ptyd.service', ptydUnit));
+    const ptyd = await exec('/bin/sh', [path.join(SCRIPT_DIR, 'maw-render-ptyd-unit.sh')], {
+      env: { ...env, MAW_PTYD_RUNTIME_NAME: ptydRuntime, MAW_BIN_DIR: path.join(root, 'bin') },
+    });
+    await writeFile(ptydUnitFile, ptyd.stdout
+      .replace('Environment=HOME=%h', `Environment=HOME=${sandbox}/home`)
+      .replace(/^Standard(Output|Error)=append:.+$/gm, 'Standard$1=journal'));
     await mkdir(dropIn, { recursive: true });
     for (const dir of ['home', 'config', 'data', 'state', 'cache']) await mkdir(path.join(sandbox, dir), { recursive: true });
     await writeFile(path.join(dropIn, 'isolation.conf'), [
       '[Service]',
       `Environment=HOME=${sandbox}/home`, `Environment=XDG_CONFIG_HOME=${sandbox}/config`, `Environment=XDG_DATA_HOME=${sandbox}/data`,
       `Environment=XDG_STATE_HOME=${sandbox}/state`, `Environment=XDG_CACHE_HOME=${sandbox}/cache`, `Environment=CODEX_HOME=${sandbox}/home/.codex`,
+      'Environment=MAW_PERSISTENT_PTY=1', `Environment=MAW_PTYD_SOCKET=%t/${ptydRuntime}/ptyd.sock`,
+      `Environment=MAW_PTYD_AUTH_FILE=%t/${ptydRuntime}/ptyd.sock.auth`,
       'Environment=AGENT_WORKBENCH_NO_RESTORE=1', 'Environment=SHELL=/bin/bash',
       `Environment=PATH=${sandbox}/bin:/usr/bin:/bin`, '',
     ].join('\n'));
@@ -198,6 +210,8 @@ test('real systemd: a release built from this repository activates, is verified 
     try { const r = await exec(path.join(SCRIPT_DIR, 'maw'), ['start'], { env }); out = r.stdout + r.stderr; }
     catch (e) { const x = e as { stdout: string; stderr: string }; assert.fail('activation failed: ' + x.stdout + x.stderr); }
     assert.match(out, new RegExp(`healthy on release ${id}`));
+    const supervisor = await exec(process.execPath, [path.join(SCRIPT_DIR, 'control.mjs'), 'ptyd-empty'], { env });
+    assert.match(supervisor.stdout, /no live sessions/);
     assert.equal(path.basename(await readlink(path.join(state, 'healthy'))), id);
     const status = await exec(process.execPath, [path.join(SCRIPT_DIR, 'control.mjs'), 'status'], { env: { ...env, MAW_EXPECT_RELEASE_ID: id } });
     assert.match(status.stdout, new RegExp(`release ${id}`));
@@ -226,8 +240,11 @@ test('real systemd: a release built from this repository activates, is verified 
     console.log(`# real release ${id} built and activated; ready ${Date.now() - started} ms after activation start`);
   } finally {
     await exec('systemctl', ['--user', 'stop', unit]).catch(() => undefined);
+    await exec('systemctl', ['--user', 'stop', ptydUnit]).catch(() => undefined);
     await exec('systemctl', ['--user', 'reset-failed', unit]).catch(() => undefined);
+    await exec('systemctl', ['--user', 'reset-failed', ptydUnit]).catch(() => undefined);
     if (path.basename(unitFile).startsWith('maw-test-')) { await rm(unitFile, { force: true }); await rm(dropIn, { recursive: true, force: true }); }
+    await rm(ptydUnitFile, { force: true });
     await rm(root, { recursive: true, force: true });
   }
 });
