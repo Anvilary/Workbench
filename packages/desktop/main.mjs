@@ -14,6 +14,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // Deliberately distinct from both production MAW and any Brave/Neko profile.
 app.setPath('userData', path.resolve(process.env.MAW_DESKTOP_DATA_DIR || path.join(app.getPath('appData'), 'maw-desktop-prototype')));
 app.setName(process.env.MAW_DESKTOP_PRODUCTION === '1' ? 'My Amazing Workspace' : 'MAW ChatGPT Prototype');
+if (process.platform === 'linux') app.setDesktopName('maw.desktop');
 if (app.commandLine.hasSwitch('no-sandbox')) throw new Error('MAW desktop requires Chromium sandboxing');
 app.enableSandbox();
 let local = serviceUrl(process.env.MAW_DESKTOP_URL || '');
@@ -111,6 +112,7 @@ async function start() {
   const interactionProtected = new Set();
   const zoomLevels = new Map(); // id -> number
   let shuttingDown = false;
+  let pendingShellStorage = null;
   const send = state => { if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(CHANNEL + ':state', state); };
 
   const resourceCollector = new ResourceCollector({
@@ -427,7 +429,7 @@ async function start() {
           return;
         }
       } else {
-        if (requestedUrls.get(id) !== url) {
+        if (!explicit && requestedUrls.get(id) !== url) {
           requestedUrls.set(id, url);
           if (urls.get(id) !== url && contents.getURL() !== url) {
             urls.set(id, url);
@@ -439,7 +441,7 @@ async function start() {
         if (!contents.isLoading() && durablePage(provider, contents.getURL())) {
           send({ type: 'ready', id });
           reportNavigation(id);
-          if (urls.get(id) !== contents.getURL()) {
+          if (urls.get(id) !== contents.getURL() || contents.getURL() !== url) {
             urls.set(id, contents.getURL());
             send({ type: 'committed', id, url: contents.getURL() });
           }
@@ -595,6 +597,15 @@ async function start() {
   let performanceSubscribed = false;
   ipcMain.handle(CHANNEL, async (event, command) => {
     if (!trustedSender(event, win.webContents, local.origin) || !validCommand(command)) throw new Error('Invalid desktop request');
+    if (command.type === 'restore-shell-storage') {
+      const storage = pendingShellStorage;
+      pendingShellStorage = null;
+      const browserTabs = [
+        ...[...views].map(([id, view]) => ({ id, provider: providers.get(id), url: !view.webContents.isDestroyed() ? view.webContents.getURL() : '' })),
+        ...suspendedTabs.values(),
+      ].filter(tab => durablePage(tab.provider, tab.url)).map(({ id, provider, url }) => ({ id, provider, url }));
+      return { ...storage, browserTabs };
+    }
     if (command.type === 'get-backend-endpoint') {
       try {
         const found = await discoverBackendReadiness();
@@ -832,8 +843,19 @@ async function start() {
       try {
         const discovered = await discoverBackendReadiness();
         if (discovered.url.href !== local.href) {
+          const originChanged = discovered.url.origin !== local.origin;
+          if (originChanged) {
+            // Only MAW's own renderer storage crosses a loopback-port change.
+            // Website sessions and live views stay in their existing partitions.
+            pendingShellStorage = await win.webContents.executeJavaScript('({ local: Object.entries(localStorage), session: Object.entries(sessionStorage) })');
+          }
           local = discovered.url;
           backendFailureCount = 0;
+          if (originChanged) {
+            hideAll();
+            await win.loadURL(local.href);
+            return;
+          }
           send({
             type: 'backend-reconnected',
             url: discovered.url.href,

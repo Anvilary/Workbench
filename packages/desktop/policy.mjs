@@ -140,6 +140,7 @@ export function validCommand(value) {
   }
   if (value.type === 'close' || value.type === 'capture') return exact(value, ['type', 'id']) && typeof value.id === 'string' && UUID.test(value.id);
   if (value.type === 'get-backend-endpoint') return exact(value, ['type']);
+  if (value.type === 'restore-shell-storage') return exact(value, ['type']);
   if (value.type === 'write-clipboard-text') {
     return exact(value, ['type', 'text']) && typeof value.text === 'string' && value.text.length <= 25_000_000;
   }

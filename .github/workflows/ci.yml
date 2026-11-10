@@ -92,6 +92,10 @@ jobs:
           mv "$maw_sandbox_helper.maw-ci" "$maw_sandbox_helper"
           GSK_RENDERER=cairo LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a dbus-run-session env MAW_NAUTILUS_TEST_ISOLATED=1 pnpm test:electron
       - run: pnpm build
+      - name: Built MAW desktop and backend recovery
+        if: runner.os == 'Linux'
+        working-directory: packages/desktop
+        run: xvfb-run -a pnpm test:staging
 
   package:
     name: Package contents

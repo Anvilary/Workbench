@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { embeddedUrl, externalUrl, otherUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl, githubUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl } from './policy.mjs';
 const id = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
 test('general web URLs cannot name local services or privileged protocols', () => {
+  assert.equal(validCommand({ type: 'restore-shell-storage' }), true);
+  assert.equal(validCommand({ type: 'restore-shell-storage', origin: 'https://attacker.com' }), false);
   for (const url of ['https://www.wikipedia.org/wiki/Browser', 'http://example.com:8080/', 'https://github.com/']) {
     assert.equal(otherUrl(url), true, url);
     assert.equal(validCommand({ type: 'open', id, url, provider: 'other' }), true, url);

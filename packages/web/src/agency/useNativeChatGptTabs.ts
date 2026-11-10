@@ -26,6 +26,20 @@ export function useNativeChatGptTabs(
 
   useEffect(() => {
     mounted.current = true;
+    // The desktop retains native pages across a shell-origin change. Their URLs
+    // take precedence over the older backend snapshot until checkpointed.
+    try {
+      const restored = window.mawRestoredBrowserTabs;
+      delete window.mawRestoredBrowserTabs;
+      if (Array.isArray(restored)) for (const entry of restored) {
+        if (!entry || typeof entry !== 'object') continue;
+        const tab = entry as Partial<WebTab>;
+        if (typeof tab.id !== 'string' || typeof tab.url !== 'string' || !nativeWorkspaceUrl(tab.url, tab.provider)) continue;
+        const provider = nativeWebProvider(tab.url, tab.provider);
+        pendingCheckpoints.current.set(tab.id, { url: tab.url, provider, seq: ++seqCounter.current });
+        confirmedTabs.current.set(tab.id, { url: tab.url, provider });
+      }
+    } catch {}
     return () => {
       mounted.current = false;
       if (retryTimeout.current !== null) {

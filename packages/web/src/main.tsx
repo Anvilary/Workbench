@@ -1,5 +1,4 @@
 import { createRoot } from 'react-dom/client';
-import { ClassicRoot, MawRoot, isClassicView } from './MawRoot.js';
 import { initLocale } from './i18n/useLocale.js';
 import './styles.css';
 import '@xterm/xterm/css/xterm.css';
@@ -7,6 +6,10 @@ import '@xterm/xterm/css/xterm.css';
 const container = document.getElementById('root');
 if (container === null) throw new Error('Falta el contenedor #root.');
 const root = createRoot(container);
+
+declare global {
+  interface Window { mawRestoredBrowserTabs?: unknown[]; }
+}
 
 // El idioma se carga antes de pintar nada (§6.23): una primera pantalla en
 // inglés que salta al español es peor que unos milisegundos de espera. Sin
@@ -18,5 +21,16 @@ const root = createRoot(container);
 //
 // La interfaz MAW no carga el Workbench clasico: ese codigo (y sus hooks, que escuchan el socket) llega en un
 // fragmento aparte solo con `?view=workbench`.
-const classic = isClassicView(window.location.search);
-void initLocale().then(() => root.render(classic ? <ClassicRoot /> : <MawRoot />));
+async function start(): Promise<void> {
+  const storage = await window.mawChatGpt?.command({ type: 'restore-shell-storage' }).catch(() => null) as {
+    local?: [string, string][]; session?: [string, string][]; browserTabs?: unknown[];
+  } | null | undefined;
+  for (const [key, value] of storage?.local ?? []) localStorage.setItem(key, value);
+  for (const [key, value] of storage?.session ?? []) sessionStorage.setItem(key, value);
+  window.mawRestoredBrowserTabs = storage?.browserTabs ?? [];
+  // Draft stores initialize during module evaluation, after storage restoration.
+  const { ClassicRoot, MawRoot, isClassicView } = await import('./MawRoot.js');
+  await initLocale();
+  root.render(isClassicView(window.location.search) ? <ClassicRoot /> : <MawRoot />);
+}
+void start();
