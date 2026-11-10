@@ -15,6 +15,7 @@ export interface PerformanceProcessMetric {
   privateBytes: number;
   sharedBytes: number;
   isAvailable: boolean;
+  swapPssBytes?: number;
   sharedWithPids?: number[];
 }
 
@@ -103,6 +104,7 @@ export interface PerformanceGlobalOverview {
   mawRssBytes: number; // Raw RSS sum (displayed for comparison, not as actual physical consumption)
   mawPrivateBytes: number;
   mawSharedBytes: number;
+  mawSwapPssBytes?: number;
   systemTotalBytes: number;
   systemFreeBytes: number;
   systemAvailableBytes: number;

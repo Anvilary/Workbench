@@ -16,6 +16,7 @@ const here = path.dirname(new URL(import.meta.url).pathname);
 const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
   ? '/opt/maw-electron/45.2.0/electron'
   : require('electron');
+const browserCss = fs.readFileSync(path.join(here, '../web/src/agency/agency.css'), 'utf8');
 const ids = ['8e4fefc1-e565-40cc-b85b-f7d43a16b1df', 'f52e047f-d947-426c-a0fa-c349d035d338'];
 const fixture = `import React, {useState} from 'react';
 import {createRoot} from 'react-dom/client';
@@ -45,7 +46,7 @@ test('native attachment, retention, overlay safety, security and cold cookie sto
   const bundle = await build({ stdin: { contents: fixture, resolveDir: path.join(here, '../web'), loader: 'tsx' }, bundle: true, write: false, format: 'esm', jsx: 'automatic', logLevel: 'silent' });
   const server = createServer((request, response) => {
     if (request.url === '/bundle.js') { response.setHeader('Content-Type', 'text/javascript'); response.end(bundle.outputFiles[0].text); }
-    else response.end('<!doctype html><html><style>body{margin:0}nav{height:60px}aside{position:absolute;top:60px;left:0;width:200px;bottom:0}.agency-dropdown-menu{position:absolute;z-index:2;top:30px;left:10px;width:150px;background:white}main{position:absolute;top:60px;left:210px;right:0;bottom:0}.maw-browser-viewer{height:100%;width:100%}[role=menu]:not(.agency-dropdown-menu){position:absolute;z-index:2;top:60px;left:220px;background:white}</style><div id="root"></div><script type="module" src="/bundle.js"></script></html>');
+    else response.end('<!doctype html><html><style>' + browserCss + 'body{margin:0}nav{height:60px}aside{position:absolute;top:60px;left:0;width:200px;bottom:0}.agency-dropdown-menu{position:absolute;z-index:2;top:30px;left:10px;width:150px;background:white}main{position:absolute;top:60px;left:210px;right:0;bottom:0}.maw-browser-pane{height:100%}.maw-browser-viewer{width:100%}[role=menu]:not(.agency-dropdown-menu){position:absolute;z-index:2;top:160px;left:220px;background:white}</style><div id="root"></div><script type="module" src="/bundle.js"></script></html>');
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const data = await mkdtemp(path.join(tmpdir(), 'maw-electron-smoke-'));
@@ -92,7 +93,19 @@ test('native attachment, retention, overlay safety, security and cold cookie sto
       const win = BrowserWindow.getAllWindows()[0];
       return { size: win.getContentSize(), bounds: win.contentView.children.find(view => view.webContents).getBounds() };
     });
-    assert.deepEqual(geometry, { size: [1010, 720], bounds: { x: 210, y: 60, width: 800, height: 660 } });
+    assert.deepEqual(geometry.size, [1010, 720]);
+    const content = await page.locator('.maw-browser-viewer').boundingBox();
+    const toolbar = await page.locator('.maw-browser-toolbar').boundingBox();
+    assert.equal(geometry.bounds.x, Math.ceil(content.x));
+    assert.equal(geometry.bounds.y, Math.ceil(content.y));
+    assert.equal(geometry.bounds.width, 800);
+    assert.ok(geometry.bounds.y >= toolbar.y + toolbar.height, 'native page never covers navigation controls');
+    const address = page.getByRole('textbox', { name: 'Address' });
+    await address.click();
+    await address.fill('https://chatgpt.com/c/toolbar-test');
+    await address.press('Enter');
+    await eventually(async () => desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.find(v => v.webContents)?.webContents.getURL().includes('/toolbar-test')));
+
     const prefs = await desktop.evaluate(({ webContents, session }) => webContents.getAllWebContents().filter(w => w.session === session.fromPartition('persist:maw-chatgpt')).map(w => {
       const p = w.getLastWebPreferences();
       return { node: p.nodeIntegration, isolated: p.contextIsolation, sandbox: p.sandbox, security: p.webSecurity, preload: p.preload, partition: w.session.getStoragePath() };

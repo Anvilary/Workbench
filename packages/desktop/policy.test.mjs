@@ -1,7 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { embeddedUrl, externalUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl, githubUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl } from './policy.mjs';
+import { embeddedUrl, externalUrl, otherUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl, githubUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl } from './policy.mjs';
 const id = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
+test('general web URLs cannot name local services or privileged protocols', () => {
+  for (const url of ['https://www.wikipedia.org/wiki/Browser', 'http://example.com:8080/', 'https://github.com/']) {
+    assert.equal(otherUrl(url), true, url);
+    assert.equal(validCommand({ type: 'open', id, url, provider: 'other' }), true, url);
+  }
+  for (const url of ['http://127.0.0.1:3000/', 'http://2130706433/', 'http://[::1]/', 'http://localhost/', 'http://localhost.:3000/', 'http://router.local./', 'http://host.local/', 'https://host.home.arpa/', 'https://host.internal/', 'file:///etc/passwd', 'javascript:alert(1)', 'https://u:p@example.com/', 'https://example.com/\n']) {
+    assert.equal(otherUrl(url), false, url);
+    assert.equal(validCommand({ type: 'open', id, url, provider: 'other' }), false, url);
+  }
+});
 test('exact HTTPS navigation and initial ChatGPT URL allowlist', () => {
   for (const url of ['https://chatgpt.com/', 'https://auth.openai.com/log-in', 'https://accounts.google.com/o/oauth2/auth', 'https://appleid.apple.com/auth/authorize']) assert.equal(embeddedUrl(url), true, url);
   for (const url of ['http://chatgpt.com/', 'https://chatgpt.com.evil.com', 'https://evil.com/?chatgpt.com', 'https://chatgpt.com:444/', 'https://user@chatgpt.com/', 'javascript:alert(1)', 'file:///etc/passwd', 'https://chatgpt.com./', 'https://127.0.0.1/']) assert.equal(embeddedUrl(url), false, url);

@@ -12,6 +12,34 @@ import {
   calculateProcessCpuDelta,
   ResourceCollector,
 } from './resource-monitor.mjs';
+import { readSystemMemory, calculateResourceBudget } from './resource-budget.mjs';
+
+test('concurrent first sample, refresh and subscription share a complete snapshot', async () => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const collector = new ResourceCollector({ getBackendReadiness: async () => { await gate; return null; } });
+  try {
+    const first = collector.sample(), refresh = collector.refresh(), subscribed = collector.subscribe();
+    release();
+    const snapshots = await Promise.all([first, refresh, subscribed]);
+    assert.equal(snapshots[0], snapshots[1]);
+    assert.equal(snapshots[0], snapshots[2]);
+    assert.ok(snapshots[0].global.cpuCoreCount > 0);
+    assert.equal(collector.getLatestSnapshot(), snapshots[0]);
+    assert.equal(snapshots[0].history.length, 1);
+  } finally { collector.dispose(); }
+});
+
+test('Linux memory pressure uses available memory rather than unused cache pages', async () => {
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'maw-meminfo-'));
+  try {
+    await fs.promises.writeFile(path.join(dir, 'meminfo'), 'MemTotal: 16777216 kB\nMemFree: 131072 kB\nMemAvailable: 10485760 kB\n');
+    const memory = readSystemMemory(dir);
+    assert.equal(memory.availableBytes, 10 * 1024 ** 3);
+    assert.equal(memory.freeBytes, 128 * 1024 ** 2);
+    assert.equal(calculateResourceBudget(memory).memoryTier, 'normal');
+  } finally { await fs.promises.rm(dir, { recursive: true, force: true }); }
+});
 
 test('CPU calculation: accurate delta across sampling interval', () => {
   const result = calculateProcessCpuDelta({

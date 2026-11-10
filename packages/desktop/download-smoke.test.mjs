@@ -375,12 +375,12 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
     await eventually(async () => {
       const events = (await page.textContent('#all-events')) || '[]';
       const parsed = JSON.parse(events);
-      const last = parsed[parsed.length - 1];
+      const last = parsed.filter(state => ['error', 'ready', 'loading'].includes(state.type)).at(-1);
       return last?.type === 'error' && last.message?.includes('failed to load (-105)');
     });
     // Verify no 'ready' event followed the error
     const eventsAfterStop = JSON.parse((await page.textContent('#all-events')) || '[]');
-    assert.equal(eventsAfterStop[eventsAfterStop.length - 1]?.type, 'error');
+    assert.equal(eventsAfterStop.filter(state => ['error', 'ready', 'loading'].includes(state.type)).at(-1)?.type, 'error');
 
     // 8. Verify recovery via reload
     await desktop.evaluate(async ({ BrowserWindow }, tabId) => {
@@ -390,7 +390,7 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
     await eventually(async () => {
       const events = (await page.textContent('#all-events')) || '[]';
       const parsed = JSON.parse(events);
-      const last = parsed[parsed.length - 1];
+      const last = parsed.filter(state => ['error', 'ready', 'loading'].includes(state.type)).at(-1);
       return last?.type === 'ready';
     });
 

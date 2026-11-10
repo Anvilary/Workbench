@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+
 /**
  * Resource Budget & Resident Tab Pool Policy
  *
@@ -14,6 +17,17 @@ export const MemoryPressureTier = {
 };
 
 const GB = 1024 * 1024 * 1024;
+
+export function readSystemMemory(procRoot = '/proc') {
+  const fallback = { freeBytes: os.freemem(), availableBytes: os.freemem(), totalBytes: os.totalmem() };
+  try {
+    const info = fs.readFileSync(`${procRoot}/meminfo`, 'utf8');
+    const value = (name) => Number(info.match(new RegExp(`^${name}:\\s+(\\d+)\\s+kB`, 'm'))?.[1]) * 1024;
+    const freeBytes = value('MemFree'), totalBytes = value('MemTotal'), availableBytes = value('MemAvailable');
+    if (Number.isFinite(freeBytes) && totalBytes > 0 && Number.isFinite(availableBytes)) return { freeBytes, totalBytes, availableBytes };
+  } catch {}
+  return fallback;
+}
 
 /**
  * Checks whether a provider represents a generative AI surface with unpersisted
@@ -42,6 +56,7 @@ export function isProtectedProvider(provider) {
  */
 export function calculateResourceBudget({
   freeBytes,
+  availableBytes = freeBytes,
   totalBytes,
   tabWorkingSetBytes = 0,
   attachedCount = 0,
@@ -50,14 +65,15 @@ export function calculateResourceBudget({
 }) {
   const safeAttached = Math.max(0, Number(attachedCount) || 0);
   const freeRatio = totalBytes > 0 ? freeBytes / totalBytes : 0;
+  const availableRatio = totalBytes > 0 ? availableBytes / totalBytes : 0;
 
   // 1. Determine physical memory pressure tier based on system RAM and Tab working set
   let memoryTier = MemoryPressureTier.NORMAL;
-  if (freeBytes < 1 * GB || freeRatio < 0.08 || tabWorkingSetBytes >= 4 * GB) {
+  if (availableBytes < 1 * GB || availableRatio < 0.08 || tabWorkingSetBytes >= 4 * GB) {
     memoryTier = MemoryPressureTier.CRITICAL;
-  } else if (freeBytes < 2 * GB || freeRatio < 0.15 || tabWorkingSetBytes >= 2.5 * GB) {
+  } else if (availableBytes < 2 * GB || availableRatio < 0.15 || tabWorkingSetBytes >= 2.5 * GB) {
     memoryTier = MemoryPressureTier.HIGH;
-  } else if (freeBytes < 4 * GB || freeRatio < 0.25 || tabWorkingSetBytes >= 1.5 * GB) {
+  } else if (availableBytes < 4 * GB || availableRatio < 0.25 || tabWorkingSetBytes >= 1.5 * GB) {
     memoryTier = MemoryPressureTier.MODERATE;
   }
 

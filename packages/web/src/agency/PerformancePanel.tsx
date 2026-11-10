@@ -241,7 +241,8 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                   <div className="maw-perf-card-val-row">
                     <span className="maw-perf-card-val">{formatBytes(snapshot.global.mawPssBytes)}</span>
                     <span className="maw-perf-card-note">
-                      {formatBytes(snapshot.global.systemFreeBytes)} {t('performance.free')}
+                      {formatBytes(snapshot.global.systemAvailableBytes)} {t('performance.available')}
+                      {' · '}{formatBytes(snapshot.global.mawSwapPssBytes ?? 0)} {t('performance.swap')}
                     </span>
                   </div>
                   <PerformanceSparkline

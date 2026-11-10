@@ -21,7 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { calculateResourceBudget, MemoryPressureTier } from './resource-budget.mjs';
+import { calculateResourceBudget, MemoryPressureTier, readSystemMemory } from './resource-budget.mjs';
 
 const CLK_TCK = 100; // Standard Linux jiffies per second
 const MAX_HISTORY_POINTS = 30; // 30 points @ 2s = 60 seconds
@@ -388,6 +388,7 @@ export class ResourceCollector {
     this.timer = null;
     this.isPaused = false;
     this.isSampling = false;
+    this.inFlightSample = null;
 
     // Previous CPU state: Map<pid, { utime, stime, starttime, timestampNs }>
     this.lastProcessCpu = new Map();
@@ -474,17 +475,27 @@ export class ResourceCollector {
    *
    * @returns {Promise<object>} Complete PerformanceSnapshot
    */
-  async sample() {
-    if (this.isSampling) return this.getLatestSnapshot();
+  sample() {
+    if (this.inFlightSample) return this.inFlightSample;
+    this.inFlightSample = this.collectSample().finally(() => { this.inFlightSample = null; });
+    return this.inFlightSample;
+  }
+
+  async collectSample() {
     this.isSampling = true;
     const startNs = process.hrtime.bigint();
 
     try {
       const nowMs = Date.now();
-      const numCores = os.cpus().length || 1;
+      const cpus = os.cpus();
+      const numCores = cpus.length || 1;
+      const systemCpu = cpus.reduce((sum, cpu) => ({ idle: sum.idle + cpu.times.idle, total: sum.total + Object.values(cpu.times).reduce((a, b) => a + b, 0) }), { idle: 0, total: 0 });
+      const systemDelta = this.lastSystemCpu ? systemCpu.total - this.lastSystemCpu.total : 0;
+      const systemCpuPercent = systemDelta > 0 ? Math.max(0, Math.min(100, 100 * (1 - (systemCpu.idle - this.lastSystemCpu.idle) / systemDelta))) : 0;
+      this.lastSystemCpu = systemCpu;
 
       // 1. Discover Backend & Terminals
-      let backendInfo = null;
+      let backendInventoryAvailable = false;
       let backendTerminals = [];
       let supervisorPid = null;
       let backendPid = null;
@@ -507,6 +518,7 @@ export class ResourceCollector {
               if (resp.ok) {
                 const termData = await resp.json();
                 if (termData.ok) {
+                  backendInventoryAvailable = true;
                   backendTerminals = termData.terminals || [];
                   supervisorPid = termData.supervisorPid || null;
                 }
@@ -590,6 +602,7 @@ export class ResourceCollector {
           rssBytes: smaps.rssBytes,
           privateBytes: smaps.privateBytes,
           sharedBytes: smaps.sharedBytes,
+          swapPssBytes: smaps.swapPssBytes,
           isAvailable: smaps.isAvailable,
           ...(sharedWith.length > 0 ? { sharedWithPids: sharedWith } : {}),
         };
@@ -617,7 +630,7 @@ export class ResourceCollector {
 
       for (const [id, view] of this.views.entries()) {
         const provider = this.providers.get(id) || 'chatgpt';
-        const providerLabel = provider === 'github' ? 'GitHub' : provider === 'perplexity' ? 'Perplexity' : 'ChatGPT';
+        const providerLabel = provider === 'github' ? 'GitHub' : provider === 'perplexity' ? 'Perplexity' : provider === 'other' ? 'Browser' : 'ChatGPT';
         const url = this.urls.get(id) || '';
         const isAttached = this.attachedViews.has(id);
         const lifecycle = isAttached ? 'active' : 'background';
@@ -677,7 +690,7 @@ export class ResourceCollector {
       // Suspended/Hibernated tabs
       for (const [id, record] of this.suspendedTabs.entries()) {
         const provider = record.provider || 'chatgpt';
-        const providerLabel = provider === 'github' ? 'GitHub' : provider === 'perplexity' ? 'Perplexity' : 'ChatGPT';
+        const providerLabel = provider === 'github' ? 'GitHub' : provider === 'perplexity' ? 'Perplexity' : provider === 'other' ? 'Browser' : 'ChatGPT';
         browserViewMetrics.push({
           id,
           provider,
@@ -848,6 +861,14 @@ export class ResourceCollector {
         }
       }
 
+      // Authentication popups and site-isolated renderers may not be owned by a tab.
+      for (const pid of electronRendererPids) {
+        if (!claimedPids.has(pid)) {
+          claimedPids.add(pid);
+          infraProcesses.push(measureProcess(pid, 'Additional Browser Renderer', 'browser-renderer'));
+        }
+      }
+
       // Backend Server
       if (backendPid && !claimedPids.has(backendPid)) {
         const backendSubtree = collectSubtreePids([backendPid], processTree, claimedPids);
@@ -883,14 +904,14 @@ export class ResourceCollector {
       // -------------------------------------------------------------
       // Global Overview & Memory Pressure Tier
       // -------------------------------------------------------------
-      const freeBytes = typeof os.freemem === 'function' ? os.freemem() : 4 * 1024 * 1024 * 1024;
-      const totalBytes = typeof os.totalmem === 'function' ? os.totalmem() : 16 * 1024 * 1024 * 1024;
+      const { freeBytes, availableBytes, totalBytes } = readSystemMemory(this.procRoot);
 
       // Calculate Tab working set for memory tier calculation
       const tabWorkingSetBytes = browserViewMetrics.reduce((acc, v) => acc + v.pssBytes, 0);
 
       const budgetInfo = calculateResourceBudget({
         freeBytes,
+        availableBytes,
         totalBytes,
         tabWorkingSetBytes,
         attachedCount: this.attachedViews.size,
@@ -927,16 +948,17 @@ export class ResourceCollector {
         isPaused: this.isPaused,
         sampleDurationMs: Number(this.lastSampleDurationMs.toFixed(2)),
         global: {
-          cpuUsagePercent: totalMawCpu,
+          cpuUsagePercent: Number(systemCpuPercent.toFixed(1)),
           mawCpuPercent: totalMawCpu,
           cpuCoreCount: numCores,
           mawPssBytes: totalMawPss,
           mawRssBytes: totalMawRss,
           mawPrivateBytes: totalMawPrivate,
           mawSharedBytes: totalMawShared,
+          mawSwapPssBytes: allMeasuredProcesses.reduce((acc, p) => acc + p.swapPssBytes, 0),
           systemTotalBytes: totalBytes,
           systemFreeBytes: freeBytes,
-          systemAvailableBytes: freeBytes,
+          systemAvailableBytes: availableBytes,
           systemMemoryPressure: budgetInfo.tier || MemoryPressureTier.NORMAL,
           gpuProcessMetric: infraProcesses.find((p) => p.role === 'electron-gpu') || null,
           gpuHardwareUtilization: null, // Explicit unavailable state without external driver polling
@@ -944,7 +966,8 @@ export class ResourceCollector {
           gpuStatusNote: 'Hardware VRAM & GPU engine telemetry unavailable without external driver polling',
           totalMawProcesses: allMeasuredProcesses.length,
           backendHealth: {
-            status: backendPid ? 'healthy' : 'unreachable',
+            status: backendPid ? (backendInventoryAvailable ? 'healthy' : 'degraded') : 'unreachable',
+            ...(!backendInventoryAvailable ? { details: 'Terminal inventory unavailable; process totals are incomplete' } : {}),
             pid: backendPid,
             type: 'Node.js Express & WebSocket Backend',
           },
@@ -1028,9 +1051,6 @@ export class ResourceCollector {
   }
 
   getLatestSnapshot() {
-    if (this.history.length > 0) {
-      return { history: [...this.history] };
-    }
-    return null;
+    return this.lastSnapshot;
   }
 }

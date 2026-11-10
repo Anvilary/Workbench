@@ -4,10 +4,11 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { mkdir, readFile, lstat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl } from './policy.mjs';
+import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, BROWSER_PARTITION, otherUrl, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl } from './policy.mjs';
 import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
-import { MemoryPressureTier, calculateResourceBudget, selectEvictionCandidate, isProtectedProvider } from './resource-budget.mjs';
+import { calculateResourceBudget, selectEvictionCandidate, isProtectedProvider, readSystemMemory } from './resource-budget.mjs';
 import { ResourceCollector } from './resource-monitor.mjs';
+import { browserDownloadHandler } from './browser-downloads.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Deliberately distinct from both production MAW and any Brave/Neko profile.
@@ -28,6 +29,15 @@ async function start() {
   const chatSession = session.fromPartition(PARTITION);
   const githubSession = session.fromPartition(GITHUB_PARTITION);
   const perplexitySession = session.fromPartition(PERPLEXITY_PARTITION);
+  const browserSession = session.fromPartition(BROWSER_PARTITION);
+  browserSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  browserSession.setPermissionCheckHandler(() => false);
+  browserSession.webRequest.onBeforeRequest((details, callback) => {
+    // Block direct local-network URLs, including subframes and fetches, in general web pages.
+    const network = /^(https?|wss?):/.test(details.url);
+    const checked = details.url.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
+    callback({ cancel: network && !otherUrl(checked) });
+  });
   // Permit clipboard writing only from the official ChatGPT origin.
   // Clipboard reading and all unrelated permissions remain denied.
   const canWriteClipboard = (contents, requestingUrl) => {
@@ -98,6 +108,7 @@ async function start() {
   const suspendedTabs = new Map(); // id -> { id, provider, url, requestedUrl, zoomLevel, suspendedAt }
   const lastAccessedAt = new Map(); // id -> number (timestamp)
   const activeDownloads = new Map(); // id -> number (count)
+  const interactionProtected = new Set();
   const zoomLevels = new Map(); // id -> number
   let shuttingDown = false;
   const send = state => { if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(CHANNEL + ':state', state); };
@@ -116,121 +127,35 @@ async function start() {
     },
   });
 
-  // FEATURE 10: Official ChatGPT downloads with native Save As dialog and security validation
-  chatSession.on('will-download', (event, item, webContents) => {
-    // 1. Verify that download originates from an authorized WebContents (view or popup)
-    let tabEntry = [...views.entries()].find(([, v]) => v.webContents === webContents);
-    let tabId = tabEntry?.[0];
-    if (!tabEntry) {
-      const ownerId = popupOwners.get(webContents);
-      if (ownerId && views.has(ownerId)) {
-        tabId = ownerId;
-        tabEntry = [ownerId, views.get(ownerId)];
-      }
-    }
-    if (!tabEntry) {
-      event.preventDefault();
-      return;
-    }
-    if (tabId) {
-      activeDownloads.set(tabId, (activeDownloads.get(tabId) || 0) + 1);
-    }
-
-    // 2. Verify initiator origin (Electron 45 getInitiatorOrigin)
-    const initiator = typeof item.getInitiatorOrigin === 'function' ? item.getInitiatorOrigin() : null;
-    if (initiator) {
-      try {
-        const origin = new URL(initiator).origin;
-        if (origin !== 'https://chatgpt.com' && origin !== 'https://chat.openai.com') {
-          event.preventDefault();
-          return;
-        }
-      } catch {
-        event.preventDefault();
-        return;
-      }
-    }
-
-    // 3. Verify destination URL and URL chain
-    const destinationUrls = [item.getURL(), ...(typeof item.getURLChain === 'function' ? item.getURLChain() : [])];
-    const destinationAllowed = destinationUrls.every(u => isDownloadOrFileDeliveryUrl(u) || chatUrl(u));
-    if (!destinationAllowed) {
-      event.preventDefault();
-      return;
-    }
-
-    // If download originated from a popup window, safely hide and close when download completes
-    const popupWin = BrowserWindow.fromWebContents(webContents);
-    if (popupWin && popups.has(popupWin)) {
-      try { popupWin.hide(); } catch {}
-      item.once('done', () => {
-        if (!popupWin.isDestroyed()) {
-          popupWin.close();
-        }
-      });
-    }
-
-    // 4. Sanitize suggested filename
-    let rawFilename = item.getFilename() || 'download';
-    let baseFilename = path.basename(rawFilename).replace(/[\u0000-\u001f\u007f\\/:]/g, '_').trim();
-    if (!baseFilename || baseFilename === '.' || baseFilename === '..') {
-      baseFilename = 'download';
-    }
-
-    // 4. Default to Ubuntu Downloads directory and prompt native Save As dialog
-    let downloadsDir;
-    try {
-      downloadsDir = app.getPath('downloads');
-    } catch {
-      downloadsDir = process.env.HOME ? path.join(process.env.HOME, 'Downloads') : '/tmp';
-    }
-    const defaultPath = path.join(downloadsDir, baseFilename);
-    if (process.env.MAW_DOWNLOAD_AUTO_SAVE === '1') {
-      item.setSavePath(defaultPath);
-    } else {
-      item.setSaveDialogOptions({
-        defaultPath,
-        title: 'Save File',
-      });
-    }
-
-    send({ type: 'download-start', id: tabId, filename: baseFilename });
-
-    item.on('updated', (_event, state) => {
-      if (state === 'progressing') {
-        const total = item.getTotalBytes();
-        const received = item.getReceivedBytes();
-        const percent = total > 0 ? Math.round((received / total) * 100) : null;
-        send({ type: 'download-progress', id: tabId, filename: baseFilename, percent });
-      } else if (state === 'interrupted') {
-        if (!item.canResume()) {
-          item.cancel();
-        }
-      }
-    });
-
-    item.once('done', (_event, state) => {
-      if (tabId) {
-        const remaining = (activeDownloads.get(tabId) || 1) - 1;
-        if (remaining <= 0) activeDownloads.delete(tabId);
-        else activeDownloads.set(tabId, remaining);
-      }
-      if (state === 'completed') {
-        send({ type: 'download-complete', id: tabId, filename: baseFilename, savePath: item.getSavePath() });
-      } else if (state === 'cancelled') {
-        // Clean cancellation - no error message
-        send({ type: 'download-cancelled', id: tabId, filename: baseFilename });
-      } else {
-        // Interrupted or failed
-        send({ type: 'download-failed', id: tabId, filename: baseFilename, message: 'Download interrupted.' });
-      }
-      const view = views.get(tabId);
-      const viewContents = view?.webContents;
-      if (viewContents && !viewContents.isDestroyed() && !viewContents.isLoading() && !failures.has(tabId) && durablePage(providers.get(tabId) ?? 'chatgpt', viewContents.getURL())) {
-        send({ type: 'ready', id: tabId });
-      }
-    });
-  });
+  const browserSessions = { chatgpt: chatSession, github: githubSession, perplexity: perplexitySession, other: browserSession };
+  for (const [provider, browser] of Object.entries(browserSessions)) {
+    browser.on('will-download', browserDownloadHandler({
+      provider, views, providers, popupOwners, popups, activeDownloads,
+      allowedOrigin: (value) => {
+        try {
+          const url = new URL(value);
+          if (provider === 'chatgpt') return chatUrl(url.origin);
+          if (provider === 'perplexity') return ['https://perplexity.ai', 'https://www.perplexity.ai'].includes(url.origin);
+          if (provider === 'github') return url.protocol === 'https:' && (url.hostname === 'github.com' || url.hostname.endsWith('.github.com') || url.hostname.endsWith('.githubusercontent.com'));
+          return otherUrl(value);
+        } catch { return false; }
+      },
+      allowedDestination: (value) => {
+        if (provider === 'chatgpt') return isDownloadOrFileDeliveryUrl(value) || chatUrl(value);
+        if (provider === 'other' && value.startsWith('blob:')) return otherUrl(value.slice(5));
+        return navigationAllowed(provider, value);
+      },
+      windowForContents: (contents) => BrowserWindow.fromWebContents(contents),
+      downloadsDirectory: () => app.getPath('downloads'),
+      autoSave: () => process.env.MAW_DOWNLOAD_AUTO_SAVE === '1',
+      send,
+      ready: (id) => {
+        const contents = views.get(id)?.webContents;
+        if (contents && !contents.isDestroyed() && !contents.isLoading() && !failures.has(id) && durablePage(providers.get(id), contents.getURL())) send({ type: 'ready', id });
+        trimCapacity();
+      },
+    }));
+  }
 
   function hideAll() {
     for (const [id, view] of attachedViews) {
@@ -257,151 +182,6 @@ async function start() {
     }
   }
 
-  githubSession.on('will-download', (event, item, webContents) => {
-    let tabEntry = [...views.entries()].find(([, view]) => view.webContents === webContents);
-    if (!tabEntry) {
-      const ownerId = popupOwners.get(webContents);
-      if (ownerId && views.has(ownerId)) {
-        tabEntry = [ownerId, views.get(ownerId)];
-      }
-    }
-    if (!tabEntry || providers.get(tabEntry[0]) !== 'github') {
-      event.preventDefault();
-      return;
-    }
-    const tabId = tabEntry[0];
-    if (tabId) {
-      activeDownloads.set(tabId, (activeDownloads.get(tabId) || 0) + 1);
-    }
-    const initiator = typeof item.getInitiatorOrigin === 'function' ? item.getInitiatorOrigin() : null;
-    if (initiator) {
-      try {
-        const host = new URL(initiator).hostname;
-        const allowed = host === 'github.com' || host.endsWith('.github.com') || host.endsWith('.githubusercontent.com');
-        if (!allowed) {
-          event.preventDefault();
-          if (tabId) activeDownloads.delete(tabId);
-          return;
-        }
-      } catch {
-        event.preventDefault();
-        if (tabId) activeDownloads.delete(tabId);
-        return;
-      }
-    }
-    const destinationUrls = [item.getURL(), ...(typeof item.getURLChain === 'function' ? item.getURLChain() : [])];
-    if (!destinationUrls.every(u => githubEmbeddedUrl(u))) {
-      event.preventDefault();
-      if (tabId) activeDownloads.delete(tabId);
-      return;
-    }
-    const popupWin = BrowserWindow.fromWebContents(webContents);
-    if (popupWin && popups.has(popupWin)) {
-      try { popupWin.hide(); } catch {}
-    }
-    item.once('done', () => {
-      if (tabId) {
-        const remaining = (activeDownloads.get(tabId) || 1) - 1;
-        if (remaining <= 0) activeDownloads.delete(tabId);
-        else activeDownloads.set(tabId, remaining);
-      }
-      if (popupWin && popups.has(popupWin) && !popupWin.isDestroyed()) {
-        popupWin.close();
-      }
-    });
-  });
-
-  perplexitySession.on('will-download', (event, item, webContents) => {
-    let tabEntry = [...views.entries()].find(([, view]) => view.webContents === webContents);
-    if (!tabEntry) {
-      const ownerId = popupOwners.get(webContents);
-      if (ownerId && views.has(ownerId)) {
-        tabEntry = [ownerId, views.get(ownerId)];
-      }
-    }
-    if (!tabEntry || providers.get(tabEntry[0]) !== 'perplexity') {
-      event.preventDefault();
-      return;
-    }
-    const initiator = typeof item.getInitiatorOrigin === 'function' ? item.getInitiatorOrigin() : null;
-    if (initiator) {
-      try {
-        const origin = new URL(initiator).origin;
-        if (origin !== 'https://www.perplexity.ai' && origin !== 'https://perplexity.ai') {
-          event.preventDefault();
-          return;
-        }
-      } catch {
-        event.preventDefault();
-        return;
-      }
-    }
-    const destinationUrls = [item.getURL(), ...(typeof item.getURLChain === 'function' ? item.getURLChain() : [])];
-    if (!destinationUrls.every(u => perplexityEmbeddedUrl(u))) {
-      event.preventDefault();
-      return;
-    }
-    const popupWin = BrowserWindow.fromWebContents(webContents);
-    if (popupWin && popups.has(popupWin)) {
-      try { popupWin.hide(); } catch {}
-      item.once('done', () => {
-        if (!popupWin.isDestroyed()) {
-          popupWin.close();
-        }
-      });
-    }
-    let rawFilename = item.getFilename() || 'download';
-    let baseFilename = path.basename(rawFilename).replace(/[\u0000-\u001f\u007f\\/:]/g, '_').trim();
-    if (!baseFilename || baseFilename === '.' || baseFilename === '..') {
-      baseFilename = 'download';
-    }
-    let downloadsDir;
-    try {
-      downloadsDir = app.getPath('downloads');
-    } catch {
-      downloadsDir = process.env.HOME ? path.join(process.env.HOME, 'Downloads') : '/tmp';
-    }
-    const defaultPath = path.join(downloadsDir, baseFilename);
-    if (process.env.MAW_DOWNLOAD_AUTO_SAVE === '1') {
-      item.setSavePath(defaultPath);
-    } else {
-      item.setSaveDialogOptions({ defaultPath, title: 'Save File' });
-    }
-    const tabId = tabEntry[0];
-    if (tabId) {
-      activeDownloads.set(tabId, (activeDownloads.get(tabId) || 0) + 1);
-    }
-    send({ type: 'download-start', id: tabId, filename: baseFilename });
-    item.on('updated', (_event, state) => {
-      if (state === 'progressing') {
-        const total = item.getTotalBytes();
-        const received = item.getReceivedBytes();
-        const percent = total > 0 ? Math.round((received / total) * 100) : null;
-        send({ type: 'download-progress', id: tabId, filename: baseFilename, percent });
-      } else if (state === 'interrupted') {
-        if (!item.canResume()) item.cancel();
-      }
-    });
-    item.once('done', (_event, state) => {
-      if (tabId) {
-        const remaining = (activeDownloads.get(tabId) || 1) - 1;
-        if (remaining <= 0) activeDownloads.delete(tabId);
-        else activeDownloads.set(tabId, remaining);
-      }
-      if (state === 'completed') {
-        send({ type: 'download-complete', id: tabId, filename: baseFilename, savePath: item.getSavePath() });
-      } else if (state === 'cancelled') {
-        send({ type: 'download-cancelled', id: tabId, filename: baseFilename });
-      } else {
-        send({ type: 'download-failed', id: tabId, filename: baseFilename, message: 'Download interrupted.' });
-      }
-      const view = views.get(tabId);
-      const viewContents = view?.webContents;
-      if (viewContents && !viewContents.isDestroyed() && !viewContents.isLoading() && !failures.has(tabId) && durablePage(providers.get(tabId) ?? 'chatgpt', viewContents.getURL())) {
-        send({ type: 'ready', id: tabId });
-      }
-    });
-  });
 
   function invalidate() { hideAll(); send({ type: 'layout-needed' }); }
 
@@ -414,6 +194,7 @@ async function start() {
   }
 
   function navigationAllowed(provider, url) {
+    if (provider === 'other') return otherUrl(url);
     if (provider === 'github') return githubEmbeddedUrl(url);
     if (provider === 'perplexity') return perplexityEmbeddedUrl(url);
     return embeddedUrl(url);
@@ -445,7 +226,7 @@ async function start() {
       }
       if (allowPopup && navigationAllowed(provider, url) && popups.size < 1) return { action: 'allow', overrideBrowserWindowOptions: {
         parent: win, autoHideMenuBar: true, width: 640, height: 760,
-        webPreferences: { ...secure, session: provider === 'github' ? githubSession : provider === 'perplexity' ? perplexitySession : chatSession, preload: '' },
+        webPreferences: { ...secure, session: browserSessions[provider] ?? chatSession, preload: '' },
       } };
       void openExternal(url).catch(() => {});
       return { action: 'deny' };
@@ -462,7 +243,14 @@ async function start() {
         invalidate();
       });
     });
-    contents.on('before-input-event', desktopShortcut);
+    contents.on('before-input-event', (event, input) => {
+      const id = getTabId();
+      if (id && input.type === 'keyDown') interactionProtected.add(id);
+      if (input.type === 'keyDown' && input.control && input.key.toLowerCase() === 'l') {
+        event.preventDefault(); send({ type: 'address-shortcut', id }); return;
+      }
+      desktopShortcut(event, input);
+    });
     contents.on('context-menu', (event, params) => {
       if (typeof event.preventDefault === 'function') event.preventDefault();
       const id = [...views.entries()].find(([, view]) => view.webContents === contents)?.[0];
@@ -498,6 +286,12 @@ async function start() {
   }
 
   function durablePage(provider, value) {
+    if (provider === 'other') {
+      try {
+        const url = new URL(value);
+        return otherUrl(value) && !/^\/(api|auth)(\/|$)/.test(url.pathname) && ![...url.searchParams.keys()].some(key => /token|code|state|session/i.test(key));
+      } catch { return false; }
+    }
     if (provider === 'github') {
       try {
         const url = new URL(value);
@@ -514,7 +308,7 @@ async function start() {
     return chatUrlForPersistence(value);
   }
 
-  function canEvict(id, tier = MemoryPressureTier.NORMAL) {
+  function canEvict(id) {
     if (attachedViews.has(id)) return false;
     if (layoutFocusedId === id) return false;
     if ((activeDownloads.get(id) ?? 0) > 0) return false;
@@ -525,15 +319,9 @@ async function start() {
     if (!view || view.webContents.isDestroyed()) return false;
     if (view.webContents.isLoading()) return false;
 
-    // Data-safety guard: Protect user-important generative AI surfaces (ChatGPT, Perplexity)
-    // from automatic silent renderer destruction under NORMAL, MODERATE, and HIGH memory pressure,
-    // as well as under standby count quotas (OVERRIDE).
-    // Under CRITICAL pressure (imminent risk of kernel OOM-killer), eviction of background AI tabs
-    // is permitted as an explicit emergency fallback to prevent uncontrolled process crash.
-    const provider = providers.get(id) ?? 'chatgpt';
-    if (isProtectedProvider(provider) && tier !== MemoryPressureTier.CRITICAL) {
-      return false;
-    }
+    // A budget is soft when a page may hold unsaved input. Never trade drafts for RAM.
+    if (interactionProtected.has(id) || isProtectedProvider(providers.get(id) ?? 'chatgpt')) return false;
+    if (!durablePage(providers.get(id), view.webContents.getURL())) return false;
 
     return true;
   }
@@ -551,21 +339,17 @@ async function start() {
       }
     } catch {}
 
-    const freeBytes = typeof os.freemem === 'function' ? os.freemem() : 4 * 1024 * 1024 * 1024;
-    const totalBytes = typeof os.totalmem === 'function' ? os.totalmem() : 16 * 1024 * 1024 * 1024;
+    const { freeBytes, availableBytes, totalBytes } = readSystemMemory();
 
     return calculateResourceBudget({
       freeBytes,
+      availableBytes,
       totalBytes,
       tabWorkingSetBytes,
       attachedCount: attachedViews.size,
       envOverride: process.env.MAW_MAX_RESIDENT_VIEWS,
       tierOverride: process.env.MAW_MEMORY_PRESSURE_TIER,
     });
-  }
-
-  function getResourceBudget() {
-    return getResourceBudgetInfo().budget;
   }
 
   function evictTab(id) {
@@ -592,6 +376,7 @@ async function start() {
       requestedUrl: requestedUrls.get(id) || currentUrl,
       zoomLevel,
       suspendedAt: Date.now(),
+      history: { entries: view.webContents.navigationHistory.getAllEntries(), index: view.webContents.navigationHistory.getActiveIndex() },
     });
 
     hide(id);
@@ -606,14 +391,13 @@ async function start() {
     send({ type: 'suspended', id });
   }
 
-  function ensureCapacity(excludeId) {
-    const { budget, tier, memoryTier } = getResourceBudgetInfo();
-    const effectiveTier = tier === MemoryPressureTier.OVERRIDE ? (memoryTier ?? MemoryPressureTier.NORMAL) : tier;
-    while (views.size >= budget) {
+  function trimCapacity(excludeId, reserve = 0) {
+    const { budget } = getResourceBudgetInfo();
+    while (views.size > Math.max(0, budget - reserve)) {
       const candidateId = selectEvictionCandidate({
         residentIds: views.keys(),
         lastAccessedAt,
-        canEvict: (id) => canEvict(id, effectiveTier),
+        canEvict,
         isProtected: (id) => isProtectedProvider(providers.get(id) ?? 'chatgpt'),
         excludeId,
       });
@@ -624,8 +408,8 @@ async function start() {
   }
 
   function open(id, url, provider = 'chatgpt', explicit = true) {
-    const providerName = provider === 'github' ? 'GitHub' : provider === 'perplexity' ? 'Perplexity' : 'ChatGPT';
-    const targetSession = provider === 'github' ? githubSession : provider === 'perplexity' ? perplexitySession : chatSession;
+    const providerName = provider === 'other' ? 'Browser' : provider === 'github' ? 'GitHub' : provider === 'perplexity' ? 'Perplexity' : 'ChatGPT';
+    const targetSession = browserSessions[provider] ?? chatSession;
     if (views.has(id)) {
       lastAccessedAt.set(id, Date.now());
       if ((providers.get(id) ?? 'chatgpt') !== provider) {
@@ -654,6 +438,7 @@ async function start() {
         }
         if (!contents.isLoading() && durablePage(provider, contents.getURL())) {
           send({ type: 'ready', id });
+          reportNavigation(id);
           if (urls.get(id) !== contents.getURL()) {
             urls.set(id, contents.getURL());
             send({ type: 'committed', id, url: contents.getURL() });
@@ -665,6 +450,7 @@ async function start() {
 
     let targetUrl = url;
     let initialZoom = 0;
+    let history = null;
     if (suspendedTabs.has(id)) {
       const suspended = suspendedTabs.get(id);
       suspendedTabs.delete(id);
@@ -673,11 +459,12 @@ async function start() {
           targetUrl = suspended.url;
         }
         initialZoom = suspended.zoomLevel ?? 0;
+        history = suspended.history ?? null;
         send({ type: 'restoring', id });
       }
     }
 
-    ensureCapacity(id);
+    trimCapacity(id, 1);
     const view = new WebContentsView({ webPreferences: { ...secure, session: targetSession, backgroundThrottling: true } });
     view.setVisible(false);
     view.setBackgroundColor('#212121');
@@ -700,14 +487,16 @@ async function start() {
     // Observe native pointer activation without cancelling page input. Bare focus events
     // also occur during attachment and programmatic focus, so they are not user intent.
     view.webContents.on('before-mouse-event', (_event, mouse) => {
-      if (mouse.type === 'mouseDown') reportFocus();
+      if (mouse.type === 'mouseDown') { interactionProtected.add(id); reportFocus(); }
     });
     const committed = (_event, url, isMainFrame = true) => {
-      if (!isMainFrame || !durablePage(provider, url)) return;
+      if (!isMainFrame) return;
+      reportNavigation(id);
+      if (!durablePage(provider, url)) return;
       urls.set(id, url);
       send({ type: 'committed', id, url });
     };
-    view.webContents.on('did-navigate', committed);
+    view.webContents.on('did-navigate', (event, url) => { interactionProtected.delete(id); committed(event, url); });
     view.webContents.on('did-navigate-in-page', committed);
     view.webContents.on('did-start-loading', () => { failures.delete(id); send({ type: 'loading', id }); });
     view.webContents.on('did-finish-load', () => {
@@ -716,7 +505,12 @@ async function start() {
       }
       if (!failures.has(id) && durablePage(provider, view.webContents.getURL())) send({ type: 'ready', id });
     });
-    view.webContents.on('did-stop-loading', () => { if (!failures.has(id) && durablePage(provider, view.webContents.getURL())) send({ type: 'ready', id }); });
+    view.webContents.on('did-stop-loading', () => {
+      if (views.get(id) !== view) return;
+      if (!failures.has(id) && durablePage(provider, view.webContents.getURL())) send({ type: 'ready', id });
+      reportNavigation(id);
+      trimCapacity(id);
+    });
     view.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => {
       if (mainFrame) {
         if (code === -3) {
@@ -736,19 +530,31 @@ async function start() {
       if (attachedViews.has(id)) hide(id);
       send({ type: 'error', id, message });
     });
-    void view.webContents.loadURL(targetUrl).catch(() => {});
+    if (history?.entries?.length) {
+      void view.webContents.navigationHistory.restore(history).catch(() => {
+        if (!view.webContents.isDestroyed()) void view.webContents.loadURL(targetUrl).catch(() => {});
+      });
+    } else void view.webContents.loadURL(targetUrl).catch(() => {});
   }
 
   function closeView(id) {
     suspendedTabs.delete(id);
+    interactionProtected.delete(id);
     lastAccessedAt.delete(id);
     zoomLevels.delete(id);
     activeDownloads.delete(id);
     const view = views.get(id);
-    if (!view) return;
-    hide(id);
-    if (!view.webContents.isDestroyed()) view.webContents.close();
+    if (view) {
+      hide(id);
+      if (!view.webContents.isDestroyed()) view.webContents.close();
+    }
     views.delete(id); urls.delete(id); providers.delete(id); requestedUrls.delete(id); failures.delete(id);
+  }
+
+  function reportNavigation(id) {
+    const contents = views.get(id)?.webContents;
+    if (!contents || contents.isDestroyed() || !navigationAllowed(providers.get(id), contents.getURL())) return;
+    send({ type: 'navigation', id, url: contents.getURL(), canGoBack: contents.navigationHistory.canGoBack(), canGoForward: contents.navigationHistory.canGoForward() });
   }
 
   async function discoverBackendReadiness() {
@@ -786,6 +592,7 @@ async function start() {
     return { url: parsedUrl, pid: state.pid, state };
   }
 
+  let performanceSubscribed = false;
   ipcMain.handle(CHANNEL, async (event, command) => {
     if (!trustedSender(event, win.webContents, local.origin) || !validCommand(command)) throw new Error('Invalid desktop request');
     if (command.type === 'get-backend-endpoint') {
@@ -803,11 +610,12 @@ async function start() {
       }
     }
     if (command.type === 'performance-subscribe') {
-      const snapshot = await resourceCollector.subscribe();
+      const snapshot = await (performanceSubscribed ? resourceCollector.refresh() : (performanceSubscribed = true, resourceCollector.subscribe()));
       return { ok: true, snapshot };
     }
     if (command.type === 'performance-unsubscribe') {
-      resourceCollector.unsubscribe();
+      if (performanceSubscribed) resourceCollector.unsubscribe();
+      performanceSubscribed = false;
       return { ok: true };
     }
     if (command.type === 'performance-pause') {
@@ -829,6 +637,11 @@ async function start() {
       } else if (suspendedTabs.has(command.id)) {
         const item = suspendedTabs.get(command.id);
         if (item) {
+          if (command.provider && command.provider !== item.provider) throw new Error('This tab cannot change browser provider.');
+          if (item.url !== command.url && item.history?.entries?.length) {
+            const entries = [...item.history.entries.slice(0, item.history.index + 1), { url: command.url, title: '' }];
+            item.history = { entries, index: entries.length - 1 };
+          }
           item.url = command.url;
           item.requestedUrl = command.url;
           if (command.provider) item.provider = command.provider;
@@ -907,7 +720,7 @@ async function start() {
     if (command.type === 'close') closeView(command.id);
     if (command.type === 'retain') {
       for (const id of views.keys()) if (!command.ids.includes(id)) closeView(id);
-      for (const id of [...suspendedTabs.keys()]) if (!command.ids.includes(id)) suspendedTabs.delete(id);
+      for (const id of [...suspendedTabs.keys()]) if (!command.ids.includes(id)) closeView(id);
     }
 
     // FEATURE 4: In-memory visual capture fallback for overlapping overlays
@@ -990,7 +803,11 @@ async function start() {
     event.preventDefault();
   });
   win.webContents.on('will-redirect', (event, url) => { if (new URL(url).origin !== local.origin) event.preventDefault(); });
-  win.webContents.on('did-start-loading', hideAll);
+  win.webContents.on('did-start-loading', () => {
+    hideAll();
+    if (performanceSubscribed) resourceCollector.unsubscribe();
+    performanceSubscribed = false;
+  });
   win.webContents.on('render-process-gone', hideAll);
   for (const event of ['minimize', 'restore', 'enter-full-screen', 'leave-full-screen']) win.on(event, invalidate);
   win.on('resize', () => send({ type: 'layout-needed' }));
@@ -999,12 +816,14 @@ async function start() {
   let backendFailureCount = 0;
   const checkInterval = setInterval(async () => {
     if (shuttingDown) return;
+    trimCapacity();
     try {
       const probe = await fetch(local, { signal: AbortSignal.timeout(1200), redirect: 'error' });
       if (probe.ok || probe.status === 401) {
         backendFailureCount = 0;
         return;
       }
+      backendFailureCount++;
     } catch {
       backendFailureCount++;
     }
@@ -1046,15 +865,18 @@ async function start() {
     views.clear();
     suspendedTabs.clear();
     lastAccessedAt.clear();
+    interactionProtected.clear();
     zoomLevels.clear();
     activeDownloads.clear();
     chatSession.flushStorageData();
     githubSession.flushStorageData();
     perplexitySession.flushStorageData();
+    browserSession.flushStorageData();
     void Promise.allSettled([
       chatSession.cookies.flushStore(),
       githubSession.cookies.flushStore(),
       perplexitySession.cookies.flushStore(),
+      browserSession.cookies.flushStore(),
     ]).finally(() => win.close());
   });
   app.on('window-all-closed', () => app.quit());

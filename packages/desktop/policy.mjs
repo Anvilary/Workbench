@@ -3,6 +3,7 @@ import { isIP } from 'node:net';
 export const PARTITION = 'persist:maw-chatgpt';
 export const GITHUB_PARTITION = 'persist:maw-github';
 export const PERPLEXITY_PARTITION = 'persist:maw-perplexity';
+export const BROWSER_PARTITION = 'persist:maw-browser';
 export const CHANNEL = 'maw:chatgpt';
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const authHosts = new Set(['auth.openai.com', 'auth0.openai.com', 'accounts.google.com', 'appleid.apple.com', 'login.microsoftonline.com', 'login.live.com']);
@@ -85,6 +86,18 @@ export function externalUrl(value) {
     !['localhost', 'local', 'internal', 'test', 'invalid', 'example'].some(suffix => host === suffix || host.endsWith('.' + suffix));
 }
 
+/** General web pages get their own session, never the shell's local origin. */
+export function otherUrl(value) {
+  if (typeof value !== 'string' || value.length > 2048 || /[\u0000-\u0020\u007f]/.test(value)) return false;
+  try {
+    const url = new URL(value);
+    const host = url.hostname;
+    return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password &&
+      !isIP(host.replace(/^\[|\]$/g, '')) && host.includes('.') && !host.endsWith('.') &&
+      !['localhost', 'local', 'internal', 'lan', 'home', 'home.arpa', 'test', 'invalid', 'example'].some(suffix => host === suffix || host.endsWith('.' + suffix));
+  } catch { return false; }
+}
+
 export function serviceUrl(value) {
   const url = new URL(value);
   if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port || url.pathname !== '/' || url.username || url.password || url.hash) throw new Error('MAW_DESKTOP_URL must be the local MAW http://127.0.0.1:PORT/ URL');
@@ -113,6 +126,7 @@ export function validCommand(value) {
     if (value.provider === 'chatgpt') return chatUrl(value.url);
     if (value.provider === 'github') return githubUrl(value.url);
     if (value.provider === 'perplexity') return perplexityUrl(value.url);
+    if (value.provider === 'other') return otherUrl(value.url);
     return false;
   }
   if (value.type === 'browser-action') {
