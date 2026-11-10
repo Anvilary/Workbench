@@ -171,9 +171,12 @@ serve the compiled interface. One process serves the interface and the
 WebSocket on the same port, so the `Origin` check and the token work the same
 in development and production.
 
-There is no Electron or Tauri. The UI avoids browser APIs with no webview
-equivalent and talks only over the WebSocket, so wrapping it later is a
-packaging change, not an architectural one.
+The optional Ubuntu Electron shell in `packages/desktop` uses the same local
+service and workspace UI. It owns the native Browser views and their cookie
+partitions. Remote pages run with a separate sandbox and no workspace preload.
+The service remains the source of truth for tab identity, layout and durable
+navigation. In persistent PTY mode an independent user service owns the actual
+terminal processes so they can survive a backend restart.
 
 **Protocol:** one WebSocket, JSON messages discriminated by `type`, types in
 `shared/`. No `any` at the edges: whatever arrives is `unknown` until a parser
