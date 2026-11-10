@@ -366,7 +366,9 @@ test('useTerminalHistory and TerminalView history pagination', { timeout: 60000 
   await page.evaluate(() => {
     window.terminalInstance.scrollToBottom();
   });
-  await page.waitForFunction(() => (window.terminalInstance?.buffer?.active?.viewportY ?? 0) > 0);
+  // xterm updates its buffer before the DOM viewport catches up on a render.
+  await page.waitForFunction(() => (window.terminalInstance?.buffer?.active?.viewportY ?? 0) > 0 &&
+    (document.querySelector('.xterm-viewport')?.scrollTop ?? 0) > 0);
   await page.evaluate(() => {
     window.terminalInstance.scrollToTop();
   });
