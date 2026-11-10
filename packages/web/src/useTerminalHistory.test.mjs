@@ -28,6 +28,7 @@ import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { useTerminalHistory, HISTORY_PAGE_SIZE, MAX_CACHED_PAGES } from './src/useTerminalHistory.ts';
 import { TerminalView } from './src/TerminalView.tsx';
+import '@xterm/xterm/css/xterm.css';
 
 window.HISTORY_PAGE_SIZE = HISTORY_PAGE_SIZE;
 window.MAX_CACHED_PAGES = MAX_CACHED_PAGES;
@@ -106,9 +107,9 @@ test('useTerminalHistory and TerminalView history pagination', { timeout: 60000 
     stdin: { contents: fixture, loader: 'tsx', resolveDir: fileURLToPath(new URL('../', import.meta.url)) },
     bundle: true,
     write: false,
+    outfile: 'history-fixture.js',
     format: 'esm',
     jsx: 'automatic',
-    loader: { '.css': 'empty' },
     logLevel: 'silent',
   });
 
@@ -116,11 +117,16 @@ test('useTerminalHistory and TerminalView history pagination', { timeout: 60000 
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname === '/bundle.js') {
       res.setHeader('Content-Type', 'text/javascript');
-      res.end(bundle.outputFiles[0].text);
+      res.end(bundle.outputFiles.find(file => file.path.endsWith('.js')).text);
+      return;
+    }
+    if (url.pathname === '/bundle.css') {
+      res.setHeader('Content-Type', 'text/css');
+      res.end(bundle.outputFiles.find(file => file.path.endsWith('.css')).text);
       return;
     }
     res.setHeader('Content-Type', 'text/html');
-    res.end('<!doctype html><html><head><style>html,body,#root{height:100%;margin:0}</style></head><body><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>');
+    res.end('<!doctype html><html><head><link rel="stylesheet" href="/bundle.css"><style>html,body,#root{height:100%;margin:0}</style></head><body><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>');
   });
 
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
