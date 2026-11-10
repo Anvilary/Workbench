@@ -18,16 +18,19 @@ if (!executablePath) throw new Error('An installed Chromium is required; no brow
 const results = { method: 'Actual MAW root, production React, disconnected local fixture, 1280x860 DPR 1.5; fresh Chromium per sample, 1s warmup and 5s measured. CPU is CDP renderer task time, memory is unique Chromium-process PSS/SwapPss. No real agents or website workloads.', samples: [] };
 for (const [label, root] of [['baseline', baseline], ['candidate', candidate], ['baseline', baseline], ['candidate', candidate]]) {
   const bundle = await build({ entryPoints: [path.join(root, 'packages/web/src/main.tsx')], bundle: true, splitting: true,
-    format: 'esm', write: false, outdir: '/maw-bench', jsx: 'automatic', minify: true,
+    format: 'esm', write: false, metafile: true, outdir: '/maw-bench', jsx: 'automatic', minify: true,
     define: { __APP_VERSION__: '"benchmark"', 'process.env.NODE_ENV': '"production"' },
     loader: { '.svg': 'dataurl', '.png': 'dataurl', '.woff2': 'dataurl', '.woff': 'dataurl', '.mp3': 'dataurl', '.wav': 'dataurl' }, logLevel: 'silent' });
   const files = new Map(bundle.outputFiles.map(file => [file.path.replace('/maw-bench', ''), file.contents]));
+  const styles = [...new Set(Object.values(bundle.metafile.outputs)
+    .filter(entry => /\/(?:main|MawRoot)\.tsx$/.test(entry.entryPoint ?? '') && entry.cssBundle)
+    .map(entry => `<link rel="stylesheet" href="/${path.basename(entry.cssBundle)}">`))].join('');
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost');
     if (files.has(url.pathname)) {
       res.setHeader('Content-Type', url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript');
       res.end(files.get(url.pathname));
-    } else res.end('<!doctype html><html><link rel="stylesheet" href="/main.css"><div id="root"></div><script type="module" src="/main.js"></script></html>');
+    } else res.end(`<!doctype html><html>${styles}<div id="root"></div><script type="module" src="/main.js"></script></html>`);
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ headless: true, chromiumSandbox: true, executablePath });
@@ -44,7 +47,10 @@ for (const [label, root] of [['baseline', baseline], ['candidate', candidate], [
     await session.send('Performance.enable');
     const start = performance.now();
     await page.goto(base);
-    await page.waitForSelector('.agency-app');
+    await page.waitForFunction(() => {
+      const app = document.querySelector('.agency-app');
+      return app && getComputedStyle(app).display === 'flex';
+    });
     const readyMs = performance.now() - start;
     await page.waitForTimeout(1000);
     const before = Object.fromEntries((await session.send('Performance.getMetrics')).metrics.map(m => [m.name, m.value]));
