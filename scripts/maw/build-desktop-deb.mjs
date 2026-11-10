@@ -45,6 +45,9 @@ Description: Versioned Chromium sandbox runtime for My Amazing Workspace
   await mkdir(path.join(stage, 'etc/apparmor.d'), { recursive: true });
   await writeFile(path.join(stage, `etc/apparmor.d/maw-electron-${version}`), profile);
   await writeFile(path.join(stage, 'DEBIAN/postinst'), `#!/bin/sh\nset -e\nif command -v apparmor_parser >/dev/null 2>&1 && test -d /sys/kernel/security/apparmor; then apparmor_parser -r /etc/apparmor.d/maw-electron-${version}; fi\n`, { mode: 0o755 });
+  // Package permissions must not inherit a private developer umask.
+  await normalize(path.join(stage, 'DEBIAN'));
+  await normalize(path.join(stage, 'etc'));
   const file = path.join(out, `maw-electron-${version}_${arch}.deb`);
   execFileSync('dpkg-deb', ['--root-owner-group', '--build', stage, file], { stdio: 'inherit' });
 } finally { await rm(stage, { recursive: true, force: true }); }

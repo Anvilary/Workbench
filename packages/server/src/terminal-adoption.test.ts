@@ -11,7 +11,7 @@ for (const existing of [false, true]) test(`adoption stages output across snapsh
   const observed: object[] = [];
   const fake = {
     snapshot: { sessions: [{ id: 'adopt', alive: true, pid: 1, cwd: '/tmp', createdAt: new Date().toISOString() }], tombstones: [] },
-    onData(fn: typeof emitData) { emitData = fn; }, onExit() {}, detach() {},
+    onData(fn: typeof emitData) { emitData = fn; }, onExit() {}, onDisconnect() {}, detach() {},
     replay() { return new Promise<object>(resolve => { resolveReplay = resolve; }); },
   };
   // Deliberately fake the host boundary only. initialize/adoption and both replay
@@ -54,7 +54,7 @@ for (const agencyManaged of [false, true, undefined]) test(`adoption retains tru
   const fake = {
     snapshot: { sessions: [{ id: 'ownership', alive: true, pid: 1, cwd: '/tmp', createdAt: new Date().toISOString(),
       ...(agencyManaged === undefined ? {} : { agencyManaged }) }], tombstones: [] },
-    onData() {}, onExit() {}, detach() {},
+    onData() {}, onExit() {}, onDisconnect() {}, detach() {},
     async replay() { return { data: '', startOffset: 0, endOffset: 0, truncated: false }; },
   };
   PtyHostClient.connectOrSpawn = async () => fake as unknown as PtyHostClient;
