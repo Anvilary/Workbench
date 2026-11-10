@@ -17,7 +17,7 @@
  * 13. Verify fresh installation unit rendering.
  * 14. Verify upgrade and rollback compatibility.
  * 15. Verify rollback compatibility when supervisor absent.
- * 16. Verify missing supervisor behavior (fallback to classic).
+ * 16. Verify missing supervisor behavior (fail promptly).
  * 17. Verify permissions and symlink rejection.
  */
 
@@ -528,7 +528,7 @@ test('DEPLOYMENT SAFETY 14-15: Upgrade and rollback preserve independent supervi
   await rm(tmpBase, { recursive: true, force: true });
 });
 
-test('DEPLOYMENT SAFETY 16: Missing supervisor falls back gracefully to in-process PTY without hanging', async () => {
+test('DEPLOYMENT SAFETY 16: Missing supervisor fails promptly when auto-spawn is disabled', async () => {
   const tmpBase = await mkdtemp(path.join(os.tmpdir(), 'maw-fallback-test-'));
   const nonExistentSocket = path.join(tmpBase, 'does-not-exist.sock');
   const nonExistentAuth = path.join(tmpBase, 'does-not-exist.sock.auth');

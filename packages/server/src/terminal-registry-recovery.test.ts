@@ -60,3 +60,19 @@ test('registry reconnect marks snapshot tombstones dead instead of preserving st
   assert.equal(exited, true);
   registry.disposeAll();
 });
+
+test('an authenticated empty snapshot settles an unconfirmed PTY without inventing an exit code', async () => {
+  const client = {
+    reconnect: async () => ({ sessions: [], tombstones: [] }),
+    detach: () => {},
+  };
+  const { registry, entry, internal } = registryWithEntry(client, null);
+  Object.assign(entry, { supervisorUnconfirmed: true });
+  let result: number | null | undefined;
+  registry.on('exit', (_id, code) => { result = code; });
+  assert.equal(registry.isSupervisorSessionUnconfirmed('terminal-1'), true);
+  await internal.recoverSupervisor(client);
+  assert.equal(registry.isSupervisorSessionUnconfirmed('terminal-1'), false);
+  assert.equal(result, null);
+  registry.disposeAll();
+});

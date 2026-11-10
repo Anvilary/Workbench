@@ -195,6 +195,8 @@ interface TerminalEntry {
    * la entrada lanzando devuelve el descriptor sin lanzar nada.
    */
   launching: boolean;
+  /** The supervisor transport is down; only an authenticated snapshot can settle this PTY. */
+  supervisorUnconfirmed?: boolean;
   /** Internal Agency ownership, never restored as an upstream native tab. */
   agencyManaged: boolean;
   /** Explicit validated profile launch, retained only in memory. */
@@ -230,7 +232,7 @@ export { TerminalOpenError } from './terminal-open-error.js';
 
 export interface TerminalRegistryEvents {
   output: (terminalId: TerminalId, chunk: string, offset?: number) => void;
-  exit: (terminalId: TerminalId, exitCode: number, signal: number | null) => void;
+  exit: (terminalId: TerminalId, exitCode: number | null, signal: number | null) => void;
   changed: () => void;
   /**
    * Cambio lo que esta haciendo la CLI de esa pestana.
@@ -316,6 +318,10 @@ export class TerminalRegistry extends EventEmitter {
     return this.terminals.get(terminalId)?.session?.pid ?? null;
   }
 
+  isSupervisorSessionUnconfirmed(terminalId: TerminalId): boolean {
+    return this.terminals.get(terminalId)?.supervisorUnconfirmed === true;
+  }
+
   get supervisorPid(): number | null {
     return this.client?.supervisorPid ?? null;
   }
@@ -364,6 +370,7 @@ export class TerminalRegistry extends EventEmitter {
           const target = this.terminals.get(event.id);
           if (target !== undefined) {
             target.session = null;
+            target.supervisorUnconfirmed = false;
             target.descriptor = {
               ...target.descriptor,
               alive: false,
@@ -392,9 +399,11 @@ export class TerminalRegistry extends EventEmitter {
 
         const attachedClient = this.client;
         attachedClient.onDisconnect(() => {
+          if (this.client !== attachedClient) return;
           for (const [id, entry] of this.terminals) {
             if (!(entry.session instanceof RemotePtySession)) continue;
             entry.session = null;
+            entry.supervisorUnconfirmed = true;
             entry.descriptor = { ...entry.descriptor, alive: false, sleeping: false };
             this.setActivity(id, 'offline');
           }
@@ -412,8 +421,12 @@ export class TerminalRegistry extends EventEmitter {
           this.tombstones.set(tombstone.id, tombstone);
         }
       } catch (err) {
-        console.warn('[registry] Failed connecting to pty supervisor, using in-process pty:', err);
+        // Without an authenticated inventory, existing PTYs may still be live.
+        // Fail startup before session recovery can launch replacements for them.
+        const client = this.client;
         this.client = null;
+        client?.detach();
+        throw new Error('Persistent PTY supervisor unavailable; session recovery was not started', { cause: err });
       }
     }
   }
@@ -427,13 +440,6 @@ export class TerminalRegistry extends EventEmitter {
         try {
           const snapshot = await client.reconnect();
           const liveIds = new Set(snapshot.sessions.filter((session) => session.alive).map((session) => session.id));
-          for (const id of this.order) {
-            const entry = this.terminals.get(id);
-            if (entry?.session instanceof RemotePtySession && !liveIds.has(id)) {
-              entry.session = null;
-              entry.descriptor = { ...entry.descriptor, alive: false, sleeping: false };
-            }
-          }
           for (const session of snapshot.sessions) if (session.alive) await this.adoptSupervisorSession(session);
           for (const tombstone of snapshot.tombstones) {
             this.tombstones.set(tombstone.id, tombstone);
@@ -441,6 +447,7 @@ export class TerminalRegistry extends EventEmitter {
             if (entry) {
               const needsExit = entry.descriptor.exitCode === null;
               entry.session = null;
+              entry.supervisorUnconfirmed = false;
               entry.descriptor = {
                 ...entry.descriptor,
                 alive: false,
@@ -456,6 +463,16 @@ export class TerminalRegistry extends EventEmitter {
                 this.emit('exit', tombstone.id, tombstone.exitCode, tombstone.signal);
               }
             }
+          }
+          for (const [id, entry] of this.terminals) {
+            if (!entry.supervisorUnconfirmed || liveIds.has(id)) continue;
+            // A new supervisor may have no tombstone for a process it never owned.
+            entry.supervisorUnconfirmed = false;
+            entry.descriptor = { ...entry.descriptor, launchedAt: null };
+            entry.stopWatchingActivity?.();
+            entry.stopWatchingActivity = null;
+            entry.launchHook.exit();
+            this.emit('exit', id, null, null);
           }
           this.emit('changed');
           return;
@@ -485,12 +502,15 @@ export class TerminalRegistry extends EventEmitter {
       let entry = this.terminals.get(session.id);
       if (entry !== undefined) {
         entry.session = new RemotePtySession(this.client!, session.id, session.pid, session.cwd);
+        const wasUnconfirmed = entry.supervisorUnconfirmed;
+        entry.supervisorUnconfirmed = false;
         entry.descriptor = {
           ...entry.descriptor,
           alive: true,
           sleeping: false,
         };
         entry.buffer.seed(replay.data, replay.startOffset, replay.endOffset, replay.truncated, replay.screen);
+        if (wasUnconfirmed) this.setActivity(session.id, 'unknown');
         return;
       }
 
@@ -722,7 +742,7 @@ export class TerminalRegistry extends EventEmitter {
         [...this.terminals.values()].some((other) =>
           other.descriptor.kind === 'agent' && other.descriptor.agent === agent &&
           other.descriptor.sessionId === requestedNative &&
-          (other.descriptor.alive || other.launching))) {
+          (other.descriptor.alive || other.launching || other.supervisorUnconfirmed))) {
       throw new TerminalOpenError('spawn-failed', serverText('terminalOpenFailed'), 'Native conversation already controlled');
     }
 
@@ -818,7 +838,7 @@ export class TerminalRegistry extends EventEmitter {
     const entry = this.terminals.get(terminalId);
     if (entry === undefined) return null;
     // An Agency session must never be independently relaunched by upstream terminal.wake.
-    if (entry.agencyManaged) return null;
+    if (entry.agencyManaged || entry.supervisorUnconfirmed) return null;
     /*
       Ya se esta lanzando (hito 29, D23): un segundo pedido no lanza otro
       proceso. Con la CLI corriendo no hay nada que despertar, salvo que su
@@ -1005,6 +1025,7 @@ export class TerminalRegistry extends EventEmitter {
         }
         session = new RemotePtySession(this.client, terminalId, spawned.pid, cwd);
       } else {
+        if (this.persistentPty) throw new Error('Persistent PTY supervisor unavailable');
         session = new PtySession({
           launch,
           cwd,

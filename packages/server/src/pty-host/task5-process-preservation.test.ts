@@ -553,6 +553,17 @@ test('registry reconnects to the real supervisor after socket loss and keeps the
     const pid = backend.registry.pidOf(terminalId);
     assert.ok(pid && pid > 0);
 
+    const unsafeAuthPath = path.join(runtimeDir, 'unsafe-ptyd.auth');
+    await fs.promises.symlink(authPath, unsafeAuthPath);
+    // A second backend must not continue into startup recovery with no authenticated inventory.
+    const unverified = new TerminalRegistry(
+      createAgentRegistry([]), { file: process.execPath, args: [SYNTHETIC_AGENT_PATH], name: 'synthetic-shell' },
+      new WorkspaceStore(), undefined, undefined, undefined,
+      { persistentPty: true, socketPath, authPath: unsafeAuthPath },
+    );
+    await assert.rejects(unverified.initialize(), /Persistent PTY supervisor unavailable; session recovery was not started/);
+    assert.deepEqual((await audit.list()).sessions.map(session => [session.id, session.pid]), [[terminalId, pid]]);
+
     const output: string[] = [];
     const attached = backend.registry.attach(terminalId, (_id, chunk) => output.push(chunk));
     assert.ok(attached);

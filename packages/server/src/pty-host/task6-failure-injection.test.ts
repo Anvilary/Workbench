@@ -426,9 +426,8 @@ test('FAILURE INJECTION: wrong authentication token is rejected on WebSocket upg
   }
 });
 
-test('FAILURE INJECTION: supervisor unreachable falls back gracefully to in-process PTY without hanging', async () => {
+test('FAILURE INJECTION: explicit in-process mode needs no supervisor', async () => {
   const harness = await createHarness();
-  // Pass nonexistent socket path and disable autoSpawn by setting invalid script
   const backend = await createTestBackend(harness, {
     persistentPty: false,
   });
@@ -438,7 +437,7 @@ test('FAILURE INJECTION: supervisor unreachable falls back gracefully to in-proc
 
     // Spawning must succeed using standard in-process node-pty
     const desc = await backend.registry.open({ cwd: harness.tmpBase, kind: 'shell' });
-    assert.ok(desc.terminalId, 'Terminal must spawn successfully in fallback mode');
+    assert.ok(desc.terminalId, 'Terminal must spawn successfully in in-process mode');
     assert.ok(desc.alive, 'Terminal must be marked alive');
 
     const pid = backend.registry.pidOf(desc.terminalId);

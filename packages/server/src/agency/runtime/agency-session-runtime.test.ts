@@ -28,6 +28,8 @@ import {
 
 class FakeTerminals extends EventEmitter {
   private readonly descriptors = new Map<TerminalId, TerminalDescriptor>();
+  readonly unconfirmed = new Set<TerminalId>();
+  isSupervisorSessionUnconfirmed(id: TerminalId): boolean { return this.unconfirmed.has(id); }
   readonly opens: Array<{ cwd: string; kind?: string; agent?: string; agencyLaunch?: { file: string; args: readonly string[]; env: Record<string, string>; acceptNativeSessionId?: (id: TerminalId, nativeId: string) => boolean } }> = [];
   readonly writes: string[] = [];
   readonly sizes: Array<[number, number]> = [];
@@ -719,7 +721,7 @@ test('real disposable node-pty shell: cwd, input, resize, replay, detach, Ctrl+C
     assert.notEqual(replay, null);
     assert.ok(replay!.replay.includes(cwd));
     assert.equal(registry.get(id)?.terminalId, id);
-    const exited = new Promise<{ code: number; signal: number | null }>((resolve, reject) => {
+    const exited = new Promise<{ code: number | null; signal: number | null }>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Timed out waiting for PTY exit')), 7000);
       registry.on('exit', (terminalId, code, signal) => {
         if (terminalId !== id) return;
@@ -887,6 +889,28 @@ test('startup recovery is single-flight and preserves native ID through a replac
     assert.equal(live?.nativeSessionId, nativeId);
     assert.equal(live?.recovery?.status, 'resumed');
     assert.notEqual(live?.terminalId, store.data[0]?.terminalId);
+  } finally { f.runtime.dispose(); await rm(cwd, { recursive: true, force: true }); }
+});
+
+test('startup recovery retains an unconfirmed live identity instead of starting another agent', async () => {
+  const cwd = await mkdtemp(path.join(tmpdir(), 'maw-unconfirmed-'));
+  const store = new MemoryStore();
+  const f = fixture(cwd, { store });
+  const now = new Date().toISOString();
+  const id = randomUUID() as AgencyRuntimeSession['id'];
+  const terminalId = randomUUID();
+  store.data = [{ id, workspaceId: f.one.id, kind: 'agent', profileId: agentProfile,
+    nativeSessionId: randomUUID(), nativeIdentity: { provider: 'codex', home: path.join(cwd, 'fixture-native-home') },
+    terminalId, lifecycle: 'running', activity: 'unknown', createdAt: now, updatedAt: now,
+    startedAt: now, stoppedAt: null, exitCode: null, selectedModel: null, selectedEffort: null }];
+  f.terminals.unconfirmed.add(terminalId);
+  try {
+    await f.runtime.initialize();
+    await f.runtime.recoverActive(() => true);
+    assert.equal(f.terminals.opens.length, 0);
+    assert.equal(f.runtime.get(id)?.terminalId, terminalId);
+    assert.equal(f.runtime.get(id)?.lifecycle, 'running');
+    assert.throws(() => f.runtime.liveTerminal(id), /No live PTY to reattach/);
   } finally { f.runtime.dispose(); await rm(cwd, { recursive: true, force: true }); }
 });
 

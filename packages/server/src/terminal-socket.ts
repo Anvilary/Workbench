@@ -612,9 +612,12 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
 
   const onRegistryExit = (
     terminalId: TerminalId,
-    exitCode: number,
+    exitCode: number | null,
     signal: number | null,
-  ): void => broadcast({ type: 'terminal.exit', terminalId, exitCode, signal });
+  ): void => {
+    // A lost supervisor cannot supply a real exit code. The following list snapshot marks it unavailable.
+    if (exitCode !== null) broadcast({ type: 'terminal.exit', terminalId, exitCode, signal });
+  };
 
   /*
     Que esta haciendo la CLI de cada pestana. Va a todos los clientes y no solo

@@ -102,7 +102,7 @@ export interface AgencyWorkspaceSource {
 export type AgencyTerminalRegistry = Pick<
   TerminalRegistry,
   'open' | 'get' | 'list' | 'has' | 'close' | 'activityOf' | 'on' | 'off'
-> & Partial<Pick<TerminalRegistry, 'consumeTombstone' | 'isPersistent' | 'pidOf'>>;
+> & Partial<Pick<TerminalRegistry, 'consumeTombstone' | 'isPersistent' | 'pidOf' | 'isSupervisorSessionUnconfirmed'>>;
 
 export interface AgencyRuntimeOptions {
   registry: AgencyTerminalRegistry;
@@ -202,8 +202,10 @@ export class AgencySessionRuntime extends EventEmitter {
     let changed = false;
     for (const previous of migrateSessionTabs(await this.store.load())) {
       const liveDescriptor = previous.terminalId ? this.registry.get(previous.terminalId) : null;
-      if (liveDescriptor && liveDescriptor.alive && (ACTIVE.has(previous.lifecycle) || previous.recovery?.status === 'resuming')) {
-        // Child PTY survived backend restart!
+      const mayStillBeLive = liveDescriptor?.alive ||
+        (previous.terminalId && this.registry.isSupervisorSessionUnconfirmed?.(previous.terminalId));
+      if (mayStillBeLive && (ACTIVE.has(previous.lifecycle) || previous.recovery?.status === 'resuming')) {
+        // Keep the original session association until the supervisor confirms an exit.
         const session: AgencyRuntimeSession = {
           ...previous,
           lifecycle: 'running',
@@ -276,6 +278,7 @@ export class AgencySessionRuntime extends EventEmitter {
     for (const previous of [...this.sessions.values()]) {
       if (this.disposed) return;
       if (previous.recovery?.status !== 'pending' || previous.stoppedByUser || previous.tab?.closedAt || previous.tab?.current === false) continue;
+      if (previous.terminalId && this.registry.isSupervisorSessionUnconfirmed?.(previous.terminalId)) continue;
       const recordOutcome = async (status: 'resuming' | 'resumed' | 'manual' | 'failed' | 'superseded', message: string | null) => {
         const current = this.sessions.get(previous.id) ?? previous;
         const next = { ...current, ...(status === 'superseded' && current.tab ? { tab: { ...current.tab, current: false } } : {}), recovery: { status, message }, updatedAt: NOW() };
@@ -811,7 +814,7 @@ export class AgencySessionRuntime extends EventEmitter {
     this.removeAllListeners();
   }
 
-  private readonly onExit = (terminalId: TerminalId, code: number): void => {
+  private readonly onExit = (terminalId: TerminalId, code: number | null): void => {
     const id = this.byTerminal.get(terminalId);
     if (id === undefined) return;
     this.byTerminal.delete(terminalId);
