@@ -7,8 +7,8 @@ const menu=(page,n)=>pane(page,n).locator('.maw-pane-add-tab');
 const paneAction=(page,n)=>pane(page,n).locator('.maw-pane-menu-toggle');
 const create=async(page,n,kind)=>{
  await menu(page,n).click();
- await page.getByRole('menuitem',{name:kind==='terminal'?'New Terminal':kind==='web'?'New ChatGPT tab':'Open File...',exact:true}).click();
- if(kind==='web')await page.getByRole('dialog').getByRole('button',{name:'New ChatGPT tab',exact:true}).click();
+ await page.getByRole('menuitem',{name:kind==='terminal'?'New Terminal':kind==='web'?'Browser':'Open File...',exact:true}).click();
+ if(kind==='web')await page.getByRole('dialog').getByRole('button',{name:'Browser',exact:true}).click();
  if(kind==='file'){
    await page.getByRole('dialog').locator('input').fill('src/index.ts');
    await page.getByRole('dialog').getByRole('button',{name:'Open',exact:true}).click();
@@ -131,9 +131,9 @@ test('launch errors surface error banner and web validation prevents unwanted la
  await create(page,2,'terminal');await page.getByRole('alert').filter({hasText:'Fixture launch failed'}).waitFor();
  await page.locator('.agency-error-bar button').click();await frames(page);
  assert.equal(await page.locator('.agency-error-bar').count(),0);
- await menu(page,1).click();await page.getByRole('menuitem',{name:'New ChatGPT tab',exact:true}).click();
- await page.getByRole('dialog').getByLabel('ChatGPT URL',{exact:true}).fill('https://example.com/');
- await page.getByRole('dialog').getByRole('button',{name:'New ChatGPT tab',exact:true}).click();
+ await menu(page,1).click();await page.getByRole('menuitem',{name:'Browser',exact:true}).click();
+ await page.getByRole('dialog').getByLabel('Website URL',{exact:true}).fill('https://example.com/');
+ await page.getByRole('dialog').getByRole('button',{name:'Browser',exact:true}).click();
  await page.getByRole('dialog').getByRole('alert').waitFor();
  assert.equal(await page.evaluate(()=>window.fixture.requests.filter(m=>m.type==='agency.webTab.create').length),0);
  await page.keyboard.press('Escape');

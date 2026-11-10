@@ -85,6 +85,7 @@ class MockConnection {
     const msg = typeof data === 'string' ? JSON.parse(data) : data;
     requests.push(msg);
     this.handleClientMessage(msg);
+    return true;
   }
   send(data) {
     this.sendImmediate(data);
@@ -376,7 +377,7 @@ test('sidebar ux & branding acceptance suite: drag-and-drop, controls, lifecycle
   await tabInput.fill('Renamed Terminal');
   await tabInput.press('Enter');
 
-  // Input must unmount immediately
+  // Input closes after the server acknowledges the rename.
   await tabInput.waitFor({ state: 'detached' });
 
   // Focus restored to tab button with inset outline

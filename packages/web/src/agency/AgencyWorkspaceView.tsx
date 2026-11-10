@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AgencyCliProfile, AgencyRuntimeSession, AgencyWorkspace, CliProfileId,
-  EditorTab, MawActivityState, SplitDirection, WebTab, WorkspaceId, WorkspacePaneLayout,
+  EditorTab, MawActivityState, SplitDirection, WebTab, WebTabProvider, WorkspaceId, WorkspacePaneLayout,
 } from '@agent-workbench/shared';
 import {
   assignCreatedTab, swapPanes, countLeaves, createDefaultLayout, findPaneNode, getPaneNodes, moveTabBetweenPanes,
@@ -48,6 +48,12 @@ interface Props {
 }
 
 const EMPTY_EDITOR_TABS: readonly EditorTab[] = [];
+const BROWSER_HOME: Record<WebTabProvider, string> = {
+  chatgpt: 'https://chatgpt.com/', perplexity: 'https://www.perplexity.ai/', github: 'https://github.com/', other: 'https://',
+};
+const BROWSER_TITLE = {
+  chatgpt: 'agency.tabs.chatgpt', perplexity: 'agency.tabs.perplexity', github: 'agency.tabs.github', other: 'agency.web.newTab',
+} as const;
 
 export function AgencyWorkspaceView({
   workspace,
@@ -121,7 +127,7 @@ export function AgencyWorkspaceView({
   const [workspaceMenu, setWorkspaceMenu] = useState(false);
   const [webDialog, setWebDialog] = useState<'create' | 'navigate' | null>(null);
   const [webUrl, setWebUrl] = useState('https://chatgpt.com/');
-  const [webProvider, setWebProvider] = useState<'chatgpt' | 'github' | 'perplexity' | 'other'>('chatgpt');
+  const [webProvider, setWebProvider] = useState<WebTabProvider>('chatgpt');
   const [webTitle, setWebTitle] = useState('');
   const [configuringProfile, setConfiguringProfile] = useState<AgencyCliProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -678,8 +684,8 @@ export function AgencyWorkspaceView({
     const activeTab = tabs.find((t) => t.id === activeTabId);
     const provider = activeTab?.kind === 'web' && mode !== 'create' ? (activeTab.web.provider ?? 'chatgpt') : 'chatgpt';
     setWebProvider(provider);
-    setWebUrl(activeTab?.kind === 'web' && mode !== 'create' ? activeTab.web.url : provider === 'other' ? 'https://example.com/' : 'https://chatgpt.com/');
-    setWebTitle(activeTab?.kind === 'web' && mode !== 'create' ? activeTab.web.title : t('agency.web.defaultTitle'));
+    setWebUrl(activeTab?.kind === 'web' && mode !== 'create' ? activeTab.web.url : BROWSER_HOME[provider]);
+    setWebTitle(activeTab?.kind === 'web' && mode !== 'create' ? activeTab.web.title : t(BROWSER_TITLE[provider]));
   }
 
   async function saveWeb() {
@@ -984,9 +990,10 @@ export function AgencyWorkspaceView({
                   <label className="agency-field">
                     <span>{t('agency.web.provider')}</span>
                     <select value={webProvider} onChange={(event) => {
-                      const provider = event.target.value as typeof webProvider;
+                      const provider = event.target.value as WebTabProvider;
+                      if (webTitle === t(BROWSER_TITLE[webProvider])) setWebTitle(t(BROWSER_TITLE[provider]));
                       setWebProvider(provider);
-                      setWebUrl(provider === 'github' ? 'https://github.com/' : provider === 'perplexity' ? 'https://www.perplexity.ai/' : provider === 'other' ? 'https://' : 'https://chatgpt.com/');
+                      setWebUrl(BROWSER_HOME[provider]);
                     }}>
                       <option value="chatgpt">{t('agency.tabs.chatgpt')}</option><option value="perplexity">{t('agency.tabs.perplexity')}</option><option value="github">{t('agency.tabs.github')}</option><option value="other">{t('agency.tabs.other')}</option>
                     </select>

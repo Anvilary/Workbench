@@ -6,11 +6,18 @@ const menu = (page, n) => pane(page, n).locator('.maw-pane-add-tab');
 const create = async (page, n, kind) => {
   await menu(page, n).click();
   await page.getByRole('menuitem', {
-    name: kind === 'agent' ? 'New CLI' : kind === 'terminal' ? 'New Terminal' : kind === 'web' ? 'New ChatGPT tab' : 'Open File...',
+    name: kind === 'agent' ? 'New CLI' : kind === 'terminal' ? 'New Terminal' : kind === 'web' ? 'Browser' : 'Open File...',
     exact: true,
   }).click();
   if (kind === 'agent') await page.getByRole('dialog').getByRole('button', { name: /^(Create|Launch|Start)/ }).click();
-  if (kind === 'web') await page.getByRole('dialog').getByRole('button', { name: 'New ChatGPT tab', exact: true }).click();
+  if (kind === 'web') {
+    const dialog = page.getByRole('dialog', { name: 'Browser' });
+    assert.deepEqual(await dialog.getByLabel('Browser provider').locator('option').allTextContents(), ['ChatGPT', 'Perplexity', 'GitHub', 'Other']);
+    await dialog.getByLabel('Browser provider').selectOption('github');
+    assert.equal(await dialog.getByLabel('Tab title').inputValue(), 'GitHub');
+    await dialog.getByRole('button', { name: 'Browser', exact: true }).click();
+    await pane(page, n).getByRole('tab', { name: 'GitHub' }).waitFor();
+  }
   if (kind === 'file') {
     await page.getByRole('dialog').locator('input').fill('src/index.ts');
     await page.getByRole('dialog').getByRole('button', { name: 'Open', exact: true }).click();

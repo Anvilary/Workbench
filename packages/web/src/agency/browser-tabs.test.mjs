@@ -103,7 +103,7 @@ test('Browser compatibility preserves CLI input, mixed tabs and external ChatGPT
   assert.equal(await page.evaluate(() => window.agencyTest.requests.filter(m=>m.type==='agency.tab.acknowledge'||m.type==='agency.notification.markRead').length),0);
   await page.evaluate(() => {window.agencyTest.failSelect=false;});
   await page.getByRole('article').filter({hasText:'Research'}).click();
-  await page.getByRole('link',{name:'Open ChatGPT',exact:true}).waitFor();
+  await page.getByRole('link',{name:'Open website',exact:true}).waitFor();
   assert.equal(await page.locator('iframe').count(),0);
   assert.equal(await page.evaluate(() => window.agencyTest.requests.filter(m=>m.type==='agency.tab.acknowledge'||m.type==='agency.notification.markRead').length),0,'an external link is not evidence of viewing a conversation');
   await page.getByRole('tab',{name:'Research'}).press('F2');
