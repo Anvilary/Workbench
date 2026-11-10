@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isAllowedChatGptUrl, validateChatGptUrl, validatePerplexityUrl, validateGithubUrl, classifyWebTabUrl, webTabProviderFor } from '@agent-workbench/shared';
+import { isAllowedChatGptUrl, validateChatGptUrl, validatePerplexityUrl, validateGithubUrl, validateOtherWebUrl, classifyWebTabUrl, webTabProviderFor } from '@agent-workbench/shared';
+
+test('Other tabs accept public HTTP(S) while rejecting local, IP, credential, and privileged URLs', () => {
+  for (const url of ['http://example.org:8080/path', 'https://github.com/owner/repo', 'https://service.example.org/']) assert.equal(validateOtherWebUrl(url).valid, true, url);
+  for (const url of ['file:///etc/passwd', 'javascript:alert(1)', 'http://127.0.0.1/', 'http://10.0.0.1/', 'http://[::1]/', 'http://localhost/', 'http://router.home/', 'https://u:p@example.org/', 'https://example.org/\n']) assert.equal(validateOtherWebUrl(url).valid, false, url);
+});
 
 test('URL validation: accepts canonical and valid ChatGPT URLs', () => {
   const validCases = [

@@ -64,6 +64,7 @@ export interface WebTab {
 export interface CreateWebTabInput {
   workspaceId: WorkspaceId;
   url: string;
+  provider?: WebTabProvider;
   title?: string;
   order?: number;
   select?: boolean;
@@ -166,7 +167,7 @@ export function isAllowedChatGptUrl(rawUrl: string): boolean {
   return validateChatGptUrl(rawUrl).valid;
 }
 
-export type WebTabProvider = 'chatgpt' | 'github' | 'perplexity';
+export type WebTabProvider = 'chatgpt' | 'github' | 'perplexity' | 'other';
 
 const GITHUB_ROOT_HOSTS = new Set(['github.com']);
 
@@ -262,8 +263,24 @@ export function classifyWebTabUrl(rawUrl: string): UrlValidationResult & { provi
   return { valid: false, error: 'URL is not an allowed ChatGPT, GitHub, or Perplexity address' };
 }
 
+/** Public HTTP(S) URLs for explicitly user-created Other tabs. */
+export function validateOtherWebUrl(rawUrl: string): UrlValidationResult {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim() || rawUrl.length > 2048 || /[\u0000-\u001f\u007f]/.test(rawUrl)) return { valid: false, error: 'Invalid URL' };
+  let url: URL;
+  try { url = new URL(rawUrl.trim()); } catch { return { valid: false, error: 'Invalid URL format' }; }
+  const host = url.hostname.toLowerCase().replace(/\.+$/, '');
+  const ipv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+  const ipv6 = host.startsWith('[') || host.endsWith(']');
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return { valid: false, error: 'Only HTTP and HTTPS URLs are allowed' };
+  if (url.username || url.password) return { valid: false, error: 'URLs with user credentials are not allowed' };
+  if (!host || ipv4 || ipv6 || host === 'localhost' || ['.localhost', '.local', '.internal', '.lan', '.home', '.home.arpa', '.test', '.invalid', '.example'].some(suffix => host === suffix.slice(1) || host.endsWith(suffix)) || !host.includes('.')) return { valid: false, error: 'Local, private, and IP addresses are not allowed' };
+  const octets = ipv4 ? host.split('.').map(Number) : [];
+  if (ipv4 || ipv6 || /^(10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(host) || octets.some(n => n > 255)) return { valid: false, error: 'Local, private, and IP addresses are not allowed' };
+  return { valid: true, normalizedUrl: url.toString() };
+}
+
 export function webTabProviderFor(tab: Pick<WebTab, 'url' | 'provider'>): WebTabProvider {
-  if (tab.provider === 'github' || tab.provider === 'chatgpt' || tab.provider === 'perplexity') return tab.provider;
+  if (tab.provider === 'github' || tab.provider === 'chatgpt' || tab.provider === 'perplexity' || tab.provider === 'other') return tab.provider;
   if (validateGithubUrl(tab.url).valid) return 'github';
   if (validatePerplexityUrl(tab.url).valid) return 'perplexity';
   return 'chatgpt';
@@ -296,9 +313,9 @@ export function isWebTab(value: unknown): value is WebTab {
   if (typeof tab.workspaceId !== 'string' || !UUID_RE.test(tab.workspaceId)) return false;
   if (!validateWebTabTitle(tab.title)) return false;
   if (typeof tab.url !== 'string') return false;
-  if (tab.provider !== undefined && tab.provider !== 'chatgpt' && tab.provider !== 'github' && tab.provider !== 'perplexity') return false;
+  if (tab.provider !== undefined && tab.provider !== 'chatgpt' && tab.provider !== 'github' && tab.provider !== 'perplexity' && tab.provider !== 'other') return false;
   const provider = tab.provider ?? (validateGithubUrl(tab.url).valid ? 'github' : validatePerplexityUrl(tab.url).valid ? 'perplexity' : 'chatgpt');
-  const urlOk = provider === 'github' ? validateGithubUrl(tab.url).valid : provider === 'perplexity' ? validatePerplexityUrl(tab.url).valid : validateChatGptUrl(tab.url).valid;
+  const urlOk = provider === 'other' ? validateOtherWebUrl(tab.url).valid : provider === 'github' ? validateGithubUrl(tab.url).valid : provider === 'perplexity' ? validatePerplexityUrl(tab.url).valid : validateChatGptUrl(tab.url).valid;
   if (!urlOk) return false;
   if (!Number.isSafeInteger(tab.order) || (tab.order as number) < 0) return false;
   if (typeof tab.selected !== 'boolean') return false;
@@ -317,7 +334,7 @@ export function isWebTab(value: unknown): value is WebTab {
 // ---------------------------------------------------------------------------
 
 export type WebTabClientMessage =
-  | { type: 'agency.webTab.create'; requestId: RequestId; workspaceId: WorkspaceId; url: string; title?: string; order?: number; select?: boolean; launchId?: string; targetPaneId?: string; unloaded?: boolean }
+  | { type: 'agency.webTab.create'; requestId: RequestId; workspaceId: WorkspaceId; url: string; provider?: WebTabProvider; title?: string; order?: number; select?: boolean; launchId?: string; targetPaneId?: string; unloaded?: boolean }
   | { type: 'agency.webTab.select'; requestId: RequestId; workspaceId: WorkspaceId; tabId: string }
   | { type: 'agency.webTab.navigate'; requestId: RequestId; workspaceId: WorkspaceId; tabId: string; url: string }
   | { type: 'agency.webTab.rename'; requestId: RequestId; workspaceId: WorkspaceId; tabId: string; title: string }
@@ -343,7 +360,7 @@ function isValidRequestId(v: unknown): v is RequestId {
 export function parseWebTabClientMessage(raw: unknown): WebTabClientMessage | null {
   if (!isRecord(raw) || typeof raw.type !== 'string') return null;
   const fields: Record<string, readonly string[]> = {
-    'agency.webTab.create': ['workspaceId', 'url', 'title', 'order', 'select', 'launchId', 'targetPaneId', 'unloaded'],
+    'agency.webTab.create': ['workspaceId', 'url', 'provider', 'title', 'order', 'select', 'launchId', 'targetPaneId', 'unloaded'],
     'agency.webTab.select': ['workspaceId', 'tabId'],
     'agency.webTab.navigate': ['workspaceId', 'tabId', 'url'],
     'agency.webTab.rename': ['workspaceId', 'tabId', 'title'],
@@ -360,7 +377,9 @@ export function parseWebTabClientMessage(raw: unknown): WebTabClientMessage | nu
     case 'agency.webTab.create': {
       if (typeof raw.workspaceId !== 'string' || !UUID_RE.test(raw.workspaceId)) return null;
       if (typeof raw.url !== 'string') return null;
-      const val = classifyWebTabUrl(raw.url);
+      const provider = raw.provider;
+      if (provider !== undefined && !['chatgpt', 'github', 'perplexity', 'other'].includes(String(provider))) return null;
+      const val = provider === 'other' ? validateOtherWebUrl(raw.url) : classifyWebTabUrl(raw.url);
       if (!val.valid || !val.normalizedUrl) return null;
       let title: string | undefined;
       if (raw.title !== undefined) {
@@ -393,6 +412,7 @@ export function parseWebTabClientMessage(raw: unknown): WebTabClientMessage | nu
         requestId,
         workspaceId: raw.workspaceId as WorkspaceId,
         url: val.normalizedUrl!,
+        ...(provider === 'other' ? { provider: 'other' as const } : {}),
         ...(title !== undefined ? { title } : {}),
         ...(order !== undefined ? { order } : {}),
         ...(select !== undefined ? { select } : {}),
@@ -416,13 +436,14 @@ export function parseWebTabClientMessage(raw: unknown): WebTabClientMessage | nu
       if (typeof raw.tabId !== 'string' || !UUID_RE.test(raw.tabId)) return null;
       if (typeof raw.url !== 'string') return null;
       const val = classifyWebTabUrl(raw.url);
-      if (!val.valid || !val.normalizedUrl) return null;
+      const other = validateOtherWebUrl(raw.url);
+      if ((!val.valid || !val.normalizedUrl) && (!other.valid || !other.normalizedUrl)) return null;
       return {
         type: 'agency.webTab.navigate',
         requestId,
         workspaceId: raw.workspaceId as WorkspaceId,
         tabId: raw.tabId,
-        url: val.normalizedUrl!,
+        url: val.normalizedUrl ?? other.normalizedUrl!,
       };
     }
     case 'agency.webTab.rename': {

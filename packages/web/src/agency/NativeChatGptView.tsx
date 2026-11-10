@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { WebTab } from '@agent-workbench/shared';
+import { validateOtherWebUrl } from '@agent-workbench/shared';
 import { t } from '../i18n/index.js';
 import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
 
@@ -32,7 +33,8 @@ export function nativePerplexityUrl(value: string): boolean {
   }
 }
 
-export function nativeWorkspaceUrl(value: string): boolean {
+export function nativeWorkspaceUrl(value: string, provider?: WebTab['provider']): boolean {
+  if (provider === 'other') return validateOtherWebUrl(value).valid;
   if (nativeChatGptUrl(value)) return true;
   if (nativePerplexityUrl(value)) return true;
   try {
@@ -43,7 +45,8 @@ export function nativeWorkspaceUrl(value: string): boolean {
   }
 }
 
-export function nativeWebProvider(value: string): 'chatgpt' | 'github' | 'perplexity' {
+export function nativeWebProvider(value: string, storedProvider?: WebTab['provider']): 'chatgpt' | 'github' | 'perplexity' | 'other' {
+  if (storedProvider) return storedProvider;
   if (nativeChatGptUrl(value)) return 'chatgpt';
   if (nativePerplexityUrl(value)) return 'perplexity';
   return 'github';
@@ -59,7 +62,7 @@ export function NativeChatGptView({
   onFocused?: () => void;
 }): JSX.Element {
   const { id } = tab;
-  const supported = nativeWorkspaceUrl(tab.url);
+  const supported = nativeWorkspaceUrl(tab.url, tab.provider);
   const callback = useRef(onDisplayed);
   callback.current = onDisplayed;
   const focusCallback = useRef(onFocused);
@@ -71,6 +74,12 @@ export function NativeChatGptView({
   const [restoring, setRestoring] = useState(false);
   const [captureBackdrop, setCaptureBackdrop] = useState<string | null>(null);
   const [downloadFeedback, setDownloadFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [address, setAddress] = useState(tab.url);
+  const [history, setHistory] = useState({ canGoBack: false, canGoForward: false });
+  const addressInput = useRef<HTMLInputElement>(null);
+  const provider = tab.provider ?? nativeWebProvider(tab.url);
+
+  useEffect(() => setAddress(tab.url), [tab.url]);
 
   useEffect(() => {
     const bridge = window.mawChatGpt;
@@ -78,6 +87,18 @@ export function NativeChatGptView({
 
     void bridge.command({ type: 'open', id, url: url.current, provider: tab.provider ?? nativeWebProvider(url.current) }).catch((err) => {
       setError(String(err));
+    });
+    const unsubscribe = bridge.subscribe((state) => {
+      if (state.id !== id) return;
+      if (state.type === 'address-shortcut') {
+        addressInput.current?.focus();
+        addressInput.current?.select();
+      }
+      if (state.type === 'navigation' && state.url) {
+        setAddress(state.url);
+        setHistory({ canGoBack: !!state.canGoBack, canGoForward: !!state.canGoForward });
+      }
+      if (state.type === 'committed' && state.url) setAddress(state.url);
     });
 
     const unregister = nativeLayoutCoordinator.register({
@@ -107,12 +128,21 @@ export function NativeChatGptView({
     });
 
     return () => {
+      unsubscribe();
       unregister();
     };
   }, [id, supported]);
 
   return (
     <div ref={host} className="maw-browser-viewer" data-native-id={id}>
+      {window.mawChatGpt && supported && <div className="maw-browser-toolbar">
+        <button type="button" aria-label={t('agency.browser.back')} disabled={!history.canGoBack} onClick={() => void window.mawChatGpt?.command({ type: 'browser-action', id, action: 'back' })}>‹</button>
+        <button type="button" aria-label={t('agency.browser.forward')} disabled={!history.canGoForward} onClick={() => void window.mawChatGpt?.command({ type: 'browser-action', id, action: 'forward' })}>›</button>
+        <button type="button" aria-label={t('agency.browser.reload')} onClick={() => void window.mawChatGpt?.command({ type: 'browser-action', id, action: 'reload' })}>↻</button>
+        <form onSubmit={(event) => { event.preventDefault(); const value = address.trim(); if (validateOtherWebUrl(value).valid || provider !== 'other' && nativeWorkspaceUrl(value, provider)) void window.mawChatGpt?.command({ type: 'update', id, url: value, provider }); }}>
+          <input ref={addressInput} aria-label={t('agency.browser.address')} value={address} onChange={(event) => setAddress(event.target.value)} onKeyDown={(event) => { if (event.ctrlKey && event.key.toLowerCase() === 'l') { event.preventDefault(); event.currentTarget.select(); } }} />
+        </form>
+      </div>}
       {!window.mawChatGpt || !supported ? (
         <div className="agency-shell-placeholder">
           <p>{t('agency.web.externalHint')}</p>

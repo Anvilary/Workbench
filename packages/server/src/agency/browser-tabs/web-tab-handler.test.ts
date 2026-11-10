@@ -29,6 +29,17 @@ async function createFixture(t: import('node:test').TestContext) {
 const WS1 = '00000000-0000-4000-8000-000000000001' as WorkspaceId;
 const WS2 = '00000000-0000-4000-8000-000000000002' as WorkspaceId;
 
+test('Other tab keeps its provider while visiting known providers', async t => {
+  const { adapter } = await createFixture(t);
+  const created = await handleWebTabMessage({ type: 'agency.webTab.create', requestId: 'other-create', workspaceId: WS1, url: 'http://example.com:8080/', provider: 'other' }, { adapter });
+  assert.equal(created?.type, 'agency.webTab.created');
+  if (created?.type !== 'agency.webTab.created') return;
+  assert.equal(created.tab.provider, 'other');
+  const navigated = await handleWebTabMessage({ type: 'agency.webTab.navigate', requestId: 'other-nav', workspaceId: WS1, tabId: created.tab.id, url: 'https://github.com/' }, { adapter });
+  assert.equal(navigated?.type, 'agency.webTab.updated');
+  assert.equal(navigated?.tab.provider, 'other');
+});
+
 test('web-tab-handler: creates, selects, renames, reorders, navigates, and closes tabs via protocol messages', async (t) => {
   const { adapter, published, publish } = await createFixture(t);
 

@@ -1,7 +1,7 @@
 /** Durable logical ChatGPT tabs. Native Chromium views belong exclusively to the desktop. */
 import { randomUUID } from 'node:crypto';
 import type { CreateWebTabInput, WebTab, WorkspaceId } from '@agent-workbench/shared';
-import { classifyWebTabUrl, validateWebTabTitle, webTabProviderFor } from '@agent-workbench/shared';
+import { classifyWebTabUrl, validateOtherWebUrl, validateWebTabTitle, webTabProviderFor } from '@agent-workbench/shared';
 import { BrowserTabStore, BrowserTabStoreError } from './browser-tab-store.js';
 import type { AgencyWorkspaceStore } from '../store.js';
 import { WorkspaceMutex } from '../workspace-lock.js';
@@ -129,11 +129,13 @@ export class BrowserTabAdapter {
         const existing = this.listTabs(input.workspaceId, { includeClosed: true }).find(tab => tab.launchId === input.launchId);
         if (existing) return existing;
       }
-      const valid = classifyWebTabUrl(input.url);
-      if (!valid.valid || !valid.provider) throw new BrowserTabStoreError('invalid-request', valid.error ?? 'Invalid URL');
+      const classified = classifyWebTabUrl(input.url);
+      const other = input.provider === 'other' ? validateOtherWebUrl(input.url) : null;
+      const valid = other?.valid ? { ...other, provider: 'other' as const } : classified;
+      if (!valid.valid || !valid.provider || (input.provider && valid.provider !== input.provider)) throw new BrowserTabStoreError('invalid-request', valid.error ?? 'Invalid URL');
       if (input.title !== undefined && !validateWebTabTitle(input.title)) throw new BrowserTabStoreError('invalid-request', 'Invalid title');
       const now = new Date().toISOString();
-      const tab: WebTab = { id: randomUUID(), workspaceId: input.workspaceId, kind: 'web', title: input.title?.trim() ?? (valid.provider === 'github' ? 'GitHub' : valid.provider === 'perplexity' ? 'Perplexity' : 'ChatGPT'), url: valid.normalizedUrl!, provider: valid.provider,
+      const tab: WebTab = { id: randomUUID(), workspaceId: input.workspaceId, kind: 'web', title: input.title?.trim() ?? (valid.provider === 'github' ? 'GitHub' : valid.provider === 'perplexity' ? 'Perplexity' : valid.provider === 'other' ? 'Other' : 'ChatGPT'), url: valid.normalizedUrl!, provider: valid.provider,
         order: input.order !== undefined && Number.isSafeInteger(input.order) && input.order >= 0 ? input.order : Math.max(-1, ...this.listTabs(input.workspaceId).map(tab => tab.order)) + 1,
         selected: input.select !== false, closedAt: null, createdAt: now, updatedAt: now, runtimeState: 'client-managed', targetRef: null, cleanupRequired: false, launchId: input.launchId };
       this.tabs.set(tab.id, tab);
@@ -146,10 +148,10 @@ export class BrowserTabAdapter {
   }
   async navigateTab(workspaceId: WorkspaceId, tabId: string, url: string): Promise<WebTab> {
     return this.change(workspaceId, () => {
-      const tab = this.tab(workspaceId, tabId), valid = classifyWebTabUrl(url);
-      if (!valid.valid || !valid.provider) throw new BrowserTabStoreError('invalid-request', valid.error ?? 'Invalid URL');
-      if (valid.provider !== webTabProviderFor(tab)) throw new BrowserTabStoreError('invalid-request', 'Navigation must stay on the tab provider');
-      tab.url = valid.normalizedUrl!; tab.provider = valid.provider; tab.updatedAt = new Date().toISOString(); return { ...tab };
+      const tab = this.tab(workspaceId, tabId), provider = webTabProviderFor(tab);
+      const valid = provider === 'other' ? validateOtherWebUrl(url) : classifyWebTabUrl(url);
+      if (!valid.valid || (provider !== 'other' && (!('provider' in valid) || valid.provider !== provider))) throw new BrowserTabStoreError('invalid-request', valid.error ?? 'Navigation must stay on the tab provider');
+      tab.url = valid.normalizedUrl!; tab.provider = provider; tab.updatedAt = new Date().toISOString(); return { ...tab };
     });
   }
   async renameTab(workspaceId: WorkspaceId, tabId: string, title: string): Promise<WebTab> {

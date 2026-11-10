@@ -6,7 +6,7 @@ import type {
 import {
   assignCreatedTab, swapPanes, countLeaves, createDefaultLayout, findPaneNode, getPaneNodes, moveTabBetweenPanes,
   reconcileLayout, splitPane, closePane, updatePaneNode, updateSplitRatio, MAX_LEAVES,
-  validateChatGptUrl, validateWebTabTitle, classifyWebTabUrl,
+  validateChatGptUrl, validateGithubUrl, validatePerplexityUrl, validateOtherWebUrl, validateWebTabTitle,
 } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import { t } from '../i18n/index.js';
@@ -121,6 +121,7 @@ export function AgencyWorkspaceView({
   const [workspaceMenu, setWorkspaceMenu] = useState(false);
   const [webDialog, setWebDialog] = useState<'create' | 'navigate' | null>(null);
   const [webUrl, setWebUrl] = useState('https://chatgpt.com/');
+  const [webProvider, setWebProvider] = useState<'chatgpt' | 'github' | 'perplexity' | 'other'>('chatgpt');
   const [webTitle, setWebTitle] = useState('');
   const [configuringProfile, setConfiguringProfile] = useState<AgencyCliProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -675,13 +676,15 @@ export function AgencyWorkspaceView({
     setError(null);
     setWebDialog(mode);
     const activeTab = tabs.find((t) => t.id === activeTabId);
-    setWebUrl(activeTab?.kind === 'web' && mode !== 'create' ? activeTab.web.url : 'https://chatgpt.com/');
+    const provider = activeTab?.kind === 'web' && mode !== 'create' ? (activeTab.web.provider ?? 'chatgpt') : 'chatgpt';
+    setWebProvider(provider);
+    setWebUrl(activeTab?.kind === 'web' && mode !== 'create' ? activeTab.web.url : provider === 'other' ? 'https://example.com/' : 'https://chatgpt.com/');
     setWebTitle(activeTab?.kind === 'web' && mode !== 'create' ? activeTab.web.title : t('agency.web.defaultTitle'));
   }
 
   async function saveWeb() {
     if (flight.current || !online || !webDialog) return;
-    const url = validateChatGptUrl(webUrl);
+    const url = webProvider === 'github' ? validateGithubUrl(webUrl) : webProvider === 'perplexity' ? validatePerplexityUrl(webUrl) : webProvider === 'other' ? validateOtherWebUrl(webUrl) : validateChatGptUrl(webUrl);
     if (!url.valid) {
       setError(t('agency.web.invalidUrl'));
       return;
@@ -705,6 +708,7 @@ export function AgencyWorkspaceView({
           type: 'agency.webTab.create',
           workspaceId: workspace.id,
           url: url.normalizedUrl!,
+          provider: webProvider,
           title: webTitle.trim(),
           select: true,
           targetPaneId,
@@ -723,82 +727,6 @@ export function AgencyWorkspaceView({
         }
       }
       setWebDialog(null);
-    } catch (reason) {
-      if (placed.created) rollbackPane(placed.paneId);
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      creatingLaunch.current = null;
-      flight.current = false;
-      setBusy(false);
-    }
-  }
-
-  async function createGithub() {
-    if (flight.current || !online) {
-      pendingSplit.current = null;
-      return;
-    }
-    const placed = takeSplitPane(creationTarget.current ?? layoutRef.current.focusedPaneId);
-    const url = classifyWebTabUrl('https://github.com/');
-    if (!url.valid || !url.normalizedUrl) {
-      if (placed.created) rollbackPane(placed.paneId);
-      setError(t('agency.web.invalidUrl'));
-      return;
-    }
-    flight.current = true;
-    const launchId = crypto.randomUUID();
-    creatingLaunch.current = launchId;
-    setBusy(true);
-    setError(null);
-    try {
-      const response = await request({
-        type: 'agency.webTab.create',
-        workspaceId: workspace.id,
-        url: url.normalizedUrl,
-        title: t('agency.tabs.github'),
-        select: true,
-        targetPaneId: placed.paneId,
-        launchId,
-      });
-      completeCreation(response, placed.paneId);
-    } catch (reason) {
-      if (placed.created) rollbackPane(placed.paneId);
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      creatingLaunch.current = null;
-      flight.current = false;
-      setBusy(false);
-    }
-  }
-
-  async function createPerplexity() {
-    if (flight.current || !online) {
-      pendingSplit.current = null;
-      return;
-    }
-    const placed = takeSplitPane(creationTarget.current ?? layoutRef.current.focusedPaneId);
-    const url = classifyWebTabUrl('https://www.perplexity.ai/');
-    if (!url.valid || !url.normalizedUrl) {
-      if (placed.created) rollbackPane(placed.paneId);
-      setError(t('agency.web.invalidUrl'));
-      return;
-    }
-    flight.current = true;
-    const launchId = crypto.randomUUID();
-    creatingLaunch.current = launchId;
-    setBusy(true);
-    setError(null);
-    try {
-      const response = await request({
-        type: 'agency.webTab.create',
-        workspaceId: workspace.id,
-        url: url.normalizedUrl,
-        title: t('agency.tabs.perplexity'),
-        select: true,
-        targetPaneId: placed.paneId,
-        launchId,
-      });
-      completeCreation(response, placed.paneId);
     } catch (reason) {
       if (placed.created) rollbackPane(placed.paneId);
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -924,14 +852,6 @@ export function AgencyWorkspaceView({
             creationTarget.current = paneId;
             webEditor('create');
           }}
-          onAddGithubClick={(paneId) => {
-            creationTarget.current = paneId;
-            void createGithub();
-          }}
-          onAddPerplexityClick={(paneId) => {
-            creationTarget.current = paneId;
-            void createPerplexity();
-          }}
           onOpenFileClick={(paneId) => {
             creationTarget.current = paneId;
             setFileDialog({ paneId });
@@ -945,8 +865,6 @@ export function AgencyWorkspaceView({
             pendingSplit.current = { paneId, direction };
             creationTarget.current = paneId;
             if (action === 'terminal') void add('terminal', paneId);
-            else if (action === 'github') void createGithub();
-            else if (action === 'perplexity') void createPerplexity();
             else if (action === 'web') webEditor('create');
             else if (action === 'file') setFileDialog({ paneId, direction });
           }}
@@ -1064,9 +982,21 @@ export function AgencyWorkspaceView({
               >
                 {webDialog !== 'navigate' && (
                   <label className="agency-field">
+                    <span>{t('agency.web.provider')}</span>
+                    <select value={webProvider} onChange={(event) => {
+                      const provider = event.target.value as typeof webProvider;
+                      setWebProvider(provider);
+                      setWebUrl(provider === 'github' ? 'https://github.com/' : provider === 'perplexity' ? 'https://www.perplexity.ai/' : provider === 'other' ? 'https://' : 'https://chatgpt.com/');
+                    }}>
+                      <option value="chatgpt">{t('agency.tabs.chatgpt')}</option><option value="perplexity">{t('agency.tabs.perplexity')}</option><option value="github">{t('agency.tabs.github')}</option><option value="other">{t('agency.tabs.other')}</option>
+                    </select>
+                  </label>
+                )}
+                {webDialog !== 'navigate' && (
+                  <label className="agency-field">
                     <span>{t('agency.web.title')}</span>
                     <input
-                      autoFocus
+                  autoFocus
                       value={webTitle}
                       maxLength={120}
                       required

@@ -35,6 +35,7 @@ export async function handleWebTabMessage(
         const tab = await context.adapter.createTab({
           workspaceId: message.workspaceId,
           url: message.url,
+          provider: message.provider,
           title: message.title,
           order: message.order,
           select: message.select,

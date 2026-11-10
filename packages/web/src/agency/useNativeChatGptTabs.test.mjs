@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 
@@ -52,6 +53,7 @@ function TestHarness() {
 const root = createRoot(document.getElementById('root'));
 root.render(React.createElement(TestHarness));
 `;
+const webRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 function browserExecutable() {
   if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE) return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
@@ -75,7 +77,7 @@ test('useNativeChatGptTabs eliminates redundant update and retain IPC', { timeou
   }
 
   const bundle = await build({
-    stdin: { contents: fixture, loader: 'tsx', resolveDir: process.cwd() + '/packages/web' },
+    stdin: { contents: fixture, loader: 'tsx', resolveDir: webRoot },
     bundle: true,
     write: false,
     format: 'esm',
@@ -226,7 +228,7 @@ test('useNativeChatGptTabs eliminates redundant update and retain IPC', { timeou
   assert.equal(errors.length, 0, 'no page errors during execution');
 });
 
-test('useNativeChatGptTabs handles failure, retry, and backend persistence rollback', { timeout: 60000 }, async (t) => {
+test('useNativeChatGptTabs preserves committed navigation until durable checkpoint acknowledgement', { timeout: 60000 }, async (t) => {
   const executablePath = browserExecutable();
   if (!executablePath) {
     t.skip('Chromium is not installed');
@@ -234,7 +236,7 @@ test('useNativeChatGptTabs handles failure, retry, and backend persistence rollb
   }
 
   const bundle = await build({
-    stdin: { contents: fixture, loader: 'tsx', resolveDir: process.cwd() + '/packages/web' },
+    stdin: { contents: fixture, loader: 'tsx', resolveDir: webRoot },
     bundle: true,
     write: false,
     format: 'esm',
@@ -286,30 +288,34 @@ test('useNativeChatGptTabs handles failure, retry, and backend persistence rollb
   let commands = await page.evaluate(() => window.ipcCommands);
   assert(commands.some((c) => c.type === 'update' && c.id === 'tab-fail'), 'update was retried and succeeded');
 
-  // Test Case B: Committed navigation where backend persistence fails rolls back optimistic confirmation
+  // Test Case B: A failed durable checkpoint must not let a stale snapshot restore the old URL.
   await page.evaluate(() => {
     window.ipcCommands = [];
     window.navigateRequests = [];
-    // Configure backend request to fail for tab-fail
-    window.navigateFailFilter = (req) => req.tabId === 'tab-fail';
-    window.onBridgeState({ type: 'committed', id: 'tab-fail', url: 'https://chatgpt.com/c/rejected-nav' });
+    window.navigateFailFilter = () => true;
+    window.onBridgeState({ type: 'committed', id: 'tab-fail', url: 'https://chatgpt.com/c/committed-nav' });
   });
-
   await page.waitForFunction(() => window.navigateRequests.length === 1);
-  await new Promise((resolve) => setTimeout(resolve, 100));
-
-  // Since backend persistence failed, the store still has old url 'https://chatgpt.com/'
-  // When a store snapshot arrives with the old url, synchronization MUST NOT be suppressed
   await page.evaluate(() => {
     window.ipcCommands = [];
-    window.failFilter = null;
     window.setTabs([
-      { id: 'tab-fail', workspaceId: 'ws-1', url: 'https://chatgpt.com/c/authoritative-nav', title: 'Authoritative', runtimeState: 'client-managed', closedAt: null },
+      { id: 'tab-fail', workspaceId: 'ws-1', url: 'https://chatgpt.com/', title: 'Stale snapshot', runtimeState: 'client-managed', closedAt: null },
     ]);
   });
-
-  await page.waitForFunction(() => window.ipcCommands.some((c) => c.type === 'update' && c.id === 'tab-fail' && c.url === 'https://chatgpt.com/c/authoritative-nav'));
+  await page.waitForFunction(() => window.ipcCommands.some((c) => c.type === 'update' && c.url === 'https://chatgpt.com/c/committed-nav'));
   commands = await page.evaluate(() => window.ipcCommands);
-  const authUpdate = commands.find((c) => c.id === 'tab-fail' && c.url === 'https://chatgpt.com/c/authoritative-nav');
-  assert(authUpdate, 'subsequent authoritative update was NOT suppressed after backend persistence failure');
+  assert(commands.every((c) => c.url !== 'https://chatgpt.com/'), 'stale store URL is never sent back to the desktop');
+
+  // Reconnect / retry completes checkpoint; pending committed URL remains desired until its snapshot arrives.
+  await page.evaluate(() => { window.navigateFailFilter = null; });
+  await page.waitForFunction(() => window.navigateRequests.length >= 2, { timeout: 10000 });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await page.evaluate(() => {
+    window.ipcCommands = [];
+    window.setSynchronized(false);
+  });
+  await page.evaluate(() => window.setSynchronized(true));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  commands = await page.evaluate(() => window.ipcCommands);
+  assert(commands.every((c) => c.url !== 'https://chatgpt.com/'), 'reconnect does not resurrect the obsolete checkpoint URL');
 });

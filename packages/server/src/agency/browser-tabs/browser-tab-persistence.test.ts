@@ -160,6 +160,17 @@ test('persistence: rejects duplicate tab IDs and invalid versions', () => {
   });
 });
 
+test('persistence: migrates v1 snapshots to v2 without changing tab identity or order', async t => {
+  const { store, filePath } = await createFixture(t);
+  const ws = 'a0000000-0000-4000-8000-000000000001';
+  const tab = makeTab('b0000000-0000-4000-8000-000000000001', ws, 3, true);
+  await writeFile(filePath, JSON.stringify({ version: 1, tabs: [tab] }));
+  const restored = await store.load();
+  assert.equal(restored[0]?.id, tab.id);
+  assert.equal(restored[0]?.order, 3);
+  assert.equal(JSON.parse(await readFile(filePath, 'utf8')).version, 2);
+});
+
 test('persistence: normalizes multiple selections to lowest order', () => {
   const ws1 = 'a0000000-0000-4000-8000-000000000001';
   const t1 = makeTab('b0000000-0000-4000-8000-000000000001', ws1, 2, true);
