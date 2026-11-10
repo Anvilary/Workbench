@@ -32,6 +32,12 @@ node_bin="${MAW_NODE_BIN:-$node_bin}"
 mode="${1:---commands-only}"
 case "$mode" in
   --commands-only) ;;
+  --desktop-assets) ;;
+  --integrate-desktop)
+    for installed_unit in "$unit_name" "$ptyd_unit_name"; do
+      [ -f "$unit_dir/$installed_unit" ] || { printf '%s\n' "Missing $installed_unit. Install user services first with --service." >&2; exit 1; }
+    done
+    ;;
   --desktop)
     [ -n "$node_bin" ] && [ -x "$node_bin" ] || { printf '%s\n' 'Node is required to build the desktop package.' >&2; exit 1; }
     test -f "$repo_dir/packages/desktop/package.json" || { printf '%s\n' 'Desktop source is missing.' >&2; exit 1; }
@@ -43,7 +49,7 @@ case "$mode" in
     }
     [ -n "$node_bin" ] && [ -x "$node_bin" ] || { printf '%s\n' 'node not found; set MAW_NODE_BIN.' >&2; exit 1; }
     ;;
-  *) printf '%s\n' 'Usage: install.sh [--commands-only|--service|--desktop]' >&2; exit 2 ;;
+  *) printf '%s\n' 'Usage: install.sh [--commands-only|--service|--desktop|--desktop-assets|--integrate-desktop]' >&2; exit 2 ;;
 esac
 
 install -d -m 700 "$lib_dir" "$state_dir" "$state_dir/releases"
@@ -74,6 +80,8 @@ install -m 644 "$script_dir/pty-host/maw-ptyd.service" "$lib_dir/pty-host/maw-pt
 install -m 755 "$script_dir/maw" "$lib_dir/maw"
 install -m 755 "$script_dir/maw" "$bin_dir/maw"
 printf '1\n' > "$lib_dir/desktop-launcher-api"
+printf '2\n' > "$lib_dir/activation-helper-api.tmp"
+mv -f "$lib_dir/activation-helper-api.tmp" "$lib_dir/activation-helper-api"
 
 if [ "$mode" = --service ]; then
   install -d "$unit_dir"
@@ -126,6 +134,9 @@ if [ "$mode" = --desktop ]; then
   sudo apt-get install "$repo_dir/dist-desktop/maw-electron-${desktop_version}_${desktop_arch}.deb"
   printf '%s' "$desktop_target_version" > "$lib_dir/desktop-runtime-version.tmp"
   mv -f "$lib_dir/desktop-runtime-version.tmp" "$lib_dir/desktop-runtime-version"
+fi
+
+if [ "$mode" = --desktop ] || [ "$mode" = --desktop-assets ] || [ "$mode" = --integrate-desktop ]; then
   desktop_apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
   install -d "$desktop_apps"
   for s in 16 24 32 48 64 96 128 192 256 512; do
@@ -133,18 +144,25 @@ if [ "$mode" = --desktop ]; then
     icon_src="$repo_dir/packages/desktop/assets/icons/maw-${s}.png"
     if [ -f "$icon_src" ]; then
       install -d "$icon_dir"
-      cp -f "$icon_src" "$icon_dir/maw.png"
+      install -m 644 "$icon_src" "$icon_dir/maw-workspace.png"
     fi
   done
   if command -v gtk-update-icon-cache >/dev/null 2>&1; then
-    gtk-update-icon-cache -q -t "${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor" 2>/dev/null || true
+    gtk-update-icon-cache -q -f -t "${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor" 2>/dev/null || true
   fi
   # Desktop Exec uses quoted absolute paths, independent of the graphical PATH.
   "$node_bin" -e '
     const fs=require("fs"); const command=process.argv[1];
     if (/[\n\r]/.test(command)) throw Error("Invalid launcher path");
     const escaped=command.replace(/([\\\"`$])/g,"\\$1").replace(/%/g,"%%");
-    fs.writeFileSync(process.argv[2], `[Desktop Entry]\nType=Application\nName=My Amazing Workspace\nExec="${escaped}" desktop\nIcon=maw\nTerminal=false\nCategories=Development;\n`);
+    fs.writeFileSync(process.argv[2], `[Desktop Entry]\nType=Application\nName=MaW\nGenericName=My Amazing Workspace\nExec="${escaped}" desktop\nIcon=maw-workspace\nTerminal=false\nCategories=Development;\nKeywords=MAW;MaW;Workspace;Terminal;ChatGPT;GitHub;\n`);
   ' "$bin_dir/maw" "$desktop_apps/maw.desktop"
+  if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database "$desktop_apps" 2>/dev/null || true; fi
   printf '%s\n' 'Desktop installed. Start the existing service with maw start if needed, then launch: maw desktop'
+fi
+
+if [ "$mode" = --integrate-desktop ]; then
+  # Enable login/cold-boot startup without restarting either live service.
+  maw_sctl enable "$unit_name" "$ptyd_unit_name"
+  printf '%s\n' 'MaW user services enabled for login. Existing services were not restarted.'
 fi

@@ -1,13 +1,24 @@
-// Production only: no backend startup, browser credentials on argv, or development profile.
+// Production only: use the existing user unit and profile, without passing credentials on argv.
 import { realpath, readFile, mkdir, lstat, chmod } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readyService } from './service-readiness.mjs';
+import { readyService, startCurrentService } from './service-readiness.mjs';
 import { assertRuntime } from './desktop-runtime.mjs';
-export async function launchProduction({ ready = readyService, runtime = assertRuntime, background = false, dataHome = process.env.XDG_DATA_HOME || path.join(homedir(), '.local/share') } = {}) {
-  const { url, state, pid } = await ready();
+export async function launchProduction({ ready = readyService, startService = startCurrentService, runtime = assertRuntime, background = false, dataHome = process.env.XDG_DATA_HOME || path.join(homedir(), '.local/share') } = {}) {
+  let serving;
+  try { serving = await ready(); }
+  catch {
+    await startService();
+    const deadline = Date.now() + 20_000;
+    while (!serving && Date.now() < deadline) {
+      try { serving = await ready(); }
+      catch { await new Promise(resolve => setTimeout(resolve, 250)); }
+    }
+    if (!serving) throw new Error('MaW service did not become ready');
+  }
+  const { url, state, pid } = serving;
   const release = await realpath(`/proc/${pid}/cwd`);
   const metadata = JSON.parse(await readFile(path.join(release, '.maw-release-meta.json'), 'utf8'));
   if (metadata.releaseId !== state.releaseId || path.basename(release) !== state.releaseId) throw new Error('Service release identity mismatch');

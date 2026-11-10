@@ -203,9 +203,9 @@ test('sidebar ux & branding acceptance suite: drag-and-drop, controls, lifecycle
     if (req.url === '/bundle.js') {
       res.writeHead(200, { 'Content-Type': 'application/javascript' });
       res.end(bundleJs);
-    } else if (req.url === '/brand/maw-logo-64.png') {
+    } else if (req.url === '/brand/maw-logo-128.png') {
       res.writeHead(200, { 'Content-Type': 'image/png' });
-      res.end(readFileSync(path.join(webRoot, 'public/brand/maw-logo-64.png')));
+      res.end(readFileSync(path.join(webRoot, 'public/brand/maw-logo-128.png')));
     } else {
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(`<!DOCTYPE html>
@@ -388,5 +388,10 @@ test('sidebar ux & branding acceptance suite: drag-and-drop, controls, lifecycle
   const navLogo = page.locator('.agency-nav-logo');
   await navLogo.waitFor({ state: 'visible' });
   const logoSrc = await navLogo.getAttribute('src');
-  assert.ok(logoSrc?.includes('maw-logo-64.png'), 'Sidebar logo must reference maw-logo-64.png');
+  assert.ok(logoSrc?.includes('maw-logo-128.png'), 'Sidebar logo must reference maw-logo-128.png');
+  const brand = page.locator('.agency-nav-brand');
+  await brand.getByText('MaW', { exact: true }).waitFor();
+  const logoBox = await navLogo.boundingBox(), brandBox = await brand.boundingBox(), headBox = await page.locator('.agency-nav-head').boundingBox();
+  assert.ok(logoBox?.width >= 56, 'Sidebar logo is visibly larger');
+  assert.ok(Math.abs(brandBox.x + brandBox.width / 2 - headBox.x - headBox.width / 2) <= 1, 'Logo and MaW title are centered together');
 });

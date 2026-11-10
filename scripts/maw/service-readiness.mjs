@@ -1,5 +1,6 @@
 import { readFile, realpath, lstat } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
@@ -35,6 +36,12 @@ function systemdEnv() {
     delete env.DBUS_SESSION_BUS_ADDRESS;
   }
   return env;
+}
+
+/** A launcher can start the current release; staging and promotion stay explicit. */
+export async function startCurrentService() {
+  await promisify(execFile)('systemctl', ['--user', 'start', '--no-block', process.env.MAW_UNIT || 'maw.service'],
+    { env: systemdEnv(), timeout: 5000 });
 }
 
 export async function readyService() {

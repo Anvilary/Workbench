@@ -485,7 +485,8 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
               >
                 <SidebarToggleIcon />
               </button>
-              <img src="/brand/maw-logo-64.png" alt="MAW" className="agency-topbar-logo" width="22" height="22" />
+              <img src="/brand/maw-logo-128.png" alt="" className="agency-topbar-logo" width="36" height="36" />
+              <strong>{t('agency.ui.agency')}</strong>
             </div>
           )}
           <nav className="agency-breadcrumbs" aria-label={t('agency.ui.breadcrumbs')}>

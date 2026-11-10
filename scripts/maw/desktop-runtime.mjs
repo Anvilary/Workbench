@@ -24,3 +24,8 @@ export async function assertLauncher() {
     if (!(await lstat(path.join(lib, file))).isFile()) throw new Error('Desktop launcher installation is incomplete');
   }
 }
+
+export async function assertActivationHelper() {
+  const lib = process.env.MAW_LIB_DIR || path.join(homedir(), '.local/lib/maw');
+  if ((await readFile(path.join(lib, 'activation-helper-api'), 'utf8')).trim() !== '2') throw new Error('Safe activation helpers require a bootstrap');
+}

@@ -1,5 +1,6 @@
 // All application state, sockets and downloads are private to this validation run.
 import { spawn } from 'node:child_process';
+import { chromium } from 'playwright';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { existsSync, readdirSync, createWriteStream } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
@@ -21,9 +22,11 @@ Object.assign(env, { HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(h
   ELECTRON_OVERRIDE_DIST_PATH: '/opt/maw-electron/45.2.0' });
 await mkdir(env.XDG_RUNTIME_DIR, { recursive: true, mode: 0o700 });
 const cache = path.join(homedir(), '.cache/ms-playwright');
-env.PLAYWRIGHT_CHROMIUM_EXECUTABLE = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ?? (existsSync(cache) ? readdirSync(cache)
-  .filter(name => name.startsWith('chromium_headless_shell-')).sort().reverse()
-  .map(name => path.join(cache, name, 'chrome-headless-shell-linux64/chrome-headless-shell')).find(file => existsSync(file)) : undefined);
+env.PLAYWRIGHT_CHROMIUM_EXECUTABLE = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ?? [
+  chromium.executablePath(), '/usr/bin/chromium', '/usr/bin/google-chrome', '/usr/bin/brave-browser',
+  ...(existsSync(cache) ? readdirSync(cache).filter(name => name.startsWith('chromium_headless_shell-')).sort().reverse()
+    .map(name => path.join(cache, name, 'chrome-headless-shell-linux64/chrome-headless-shell')) : []),
+].find(file => existsSync(file));
 if (!env.PLAYWRIGHT_CHROMIUM_EXECUTABLE) delete env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
 const results = [];
 async function run(name, command, cwd = root) {
@@ -44,6 +47,7 @@ async function run(name, command, cwd = root) {
   console.log(JSON.stringify(result));
 }
 try {
+  if (['all', 'build'].includes(phase)) await run('build', 'corepack pnpm build');
   if (['all', 'unit', 'server', 'web'].includes(phase)) {
     if (['all', 'unit'].includes(phase)) await run('typecheck', 'corepack pnpm typecheck');
     for (const pkg of ['desktop', 'server', 'web']) {
@@ -53,7 +57,6 @@ try {
     }
   }
   if (['all', 'build'].includes(phase)) {
-    await run('build', 'corepack pnpm build');
     await run('checks', 'corepack pnpm check');
     await run('desktop-package', 'node scripts/maw/build-desktop-deb.mjs');
     await run('desktop-production', 'node --test --test-concurrency=1 packages/desktop/production.test.mjs');
@@ -63,6 +66,7 @@ try {
     if (phase !== 'acceptance') await run('electron', `GSK_RENDERER=cairo LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a dbus-run-session env MAW_NAUTILUS_TEST_ISOLATED=1 ${desktop.scripts['test:electron']}`, path.join(root, 'packages/desktop'));
     await run('browser-acceptance', 'node --test --test-concurrency=1 packages/web/src/agency/browser-tabs.test.mjs packages/web/src/maw-root.test.mjs packages/web/src/terminal-webgl.test.mjs packages/web/src/agency/native-layout-coordinator.test.mjs packages/web/src/agency/split/terminal-scrollback-20k.test.mjs');
   }
+  if (['all', 'desktop', 'staging'].includes(phase)) await run('staging', 'xvfb-run -a node --test packages/desktop/staging-release.test.mjs');
 } finally {
   await writeFile(path.join(evidence, `${phase}.json`), JSON.stringify({ phase, results }, null, 2) + '\n');
   await rm(home, { recursive: true, force: true });

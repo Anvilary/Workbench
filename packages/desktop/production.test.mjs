@@ -65,6 +65,19 @@ test('production launch uses the serving release and existing service URL withou
   assert.equal(result.profile,path.join(dir,'maw-desktop'));
   assert.equal(result.runAsNode,undefined);
   assert.equal(await readFile(sentinel,'utf8'),'unchanged');
+
+  let starts = 0, probes = 0;
+  const cold = await launchProduction({
+    ready: async () => {
+      if (++probes < 3) throw new Error('User service is still starting');
+      return { pid: service.pid, state: { releaseId: 'verified-release' }, url: new URL('http://127.0.0.1:34567/') };
+    },
+    startService: async () => { starts++; },
+    runtime: async () => ({ directory: runtime }), dataHome: dir,
+  });
+  await new Promise(resolve => cold.once('exit', resolve));
+  assert.equal(starts, 1, 'cold launch requests one start of the current release');
+  assert.equal(probes, 3, 'launcher waits for verified readiness');
 });
 
 test('commands installation preserves existing user state and is repeatable', async t => {
@@ -90,6 +103,27 @@ test('desktop installer creates a graphical entry without service activation (ap
   const env={...process.env,PATH:tools+':'+process.env.PATH,MAW_STATE_DIR:path.join(dir,'state'),MAW_LIB_DIR:path.join(dir,'lib'),MAW_BIN_DIR:path.join(dir,'bin with spaces'),MAW_NODE_BIN:nodeWrapper,XDG_DATA_HOME:path.join(dir,'data')};
   await exec('/bin/sh',[path.join(root,'scripts/maw/install.sh'),'--desktop'],{env});
   const entry=await readFile(path.join(dir,'data/applications/maw.desktop'),'utf8');
-  assert.match(entry,/Name=My Amazing Workspace/);assert.ok(entry.includes('Exec="'+path.join(dir,'bin with spaces/maw')+'" desktop'));
+  assert.match(entry,/^Name=MaW$/m);assert.match(entry,/^GenericName=My Amazing Workspace$/m);assert.ok(entry.includes('Exec="'+path.join(dir,'bin with spaces/maw')+'" desktop'));
+  assert.match(entry,/^Icon=maw-workspace$/m);
   assert.match(await readFile(path.join(dir,'apt-args'),'utf8'),/^apt-get\ninstall\n/);
+});
+
+test('desktop integration enables login startup and refreshes search assets without restarting', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'maw-desktop-integration-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const units = path.join(dir, 'units'), tools = path.join(dir, 'tools'), calls = path.join(dir, 'systemctl.log');
+  await mkdir(units); await mkdir(tools);
+  for (const name of ['maw.service', 'maw-ptyd.service']) await writeFile(path.join(units, name), `installed ${name}`);
+  await writeFile(path.join(tools, 'systemctl'), '#!/bin/sh\nprintf "%s\\n" "$*" >> '+JSON.stringify(calls)+'\n', { mode: 0o755 });
+  await writeFile(path.join(tools, 'sudo'), '#!/bin/sh\nexit 99\n', { mode: 0o755 });
+  const env = { ...process.env, HOME: dir, PATH: tools+':'+process.env.PATH, MAW_STATE_DIR: path.join(dir, 'state'),
+    MAW_SYSTEMD_USER_DIR: units, MAW_LIB_DIR: path.join(dir, 'lib'), MAW_BIN_DIR: path.join(dir, 'bin'),
+    MAW_NODE_BIN: process.execPath, XDG_DATA_HOME: path.join(dir, 'data') };
+  await exec('/bin/sh', [path.join(root, 'scripts/maw/install.sh'), '--integrate-desktop'], { env });
+  assert.equal((await readFile(calls, 'utf8')).trim(), '--user enable maw.service maw-ptyd.service');
+  for (const name of ['maw.service', 'maw-ptyd.service']) assert.equal(await readFile(path.join(units, name), 'utf8'), `installed ${name}`);
+  assert.equal((await readFile(path.join(env.MAW_LIB_DIR, 'activation-helper-api'), 'utf8')).trim(), '2');
+  assert.match(await readFile(path.join(env.XDG_DATA_HOME, 'applications/maw.desktop'), 'utf8'), /^Name=MaW$/m);
+  assert.deepEqual(await readFile(path.join(env.XDG_DATA_HOME, 'icons/hicolor/256x256/apps/maw-workspace.png')),
+    await readFile(path.join(root, 'packages/desktop/assets/icons/maw-256.png')));
 });
