@@ -208,6 +208,7 @@ test('useNativeChatGptTabs eliminates redundant update and retain IPC', { timeou
     window.ipcCommands = [];
     window.onBridgeState({ type: 'committed', id: 'tab-3', url: 'https://chatgpt.com/c/chat-session-xyz' });
   });
+  await page.waitForFunction(() => window.navigateRequests.length === 1);
   const navigateRequests = await page.evaluate(() => window.navigateRequests);
   assert.equal(navigateRequests.length, 1);
   assert.equal(navigateRequests[0].tabId, 'tab-3');
@@ -302,9 +303,19 @@ test('useNativeChatGptTabs preserves committed navigation until durable checkpoi
       { id: 'tab-fail', workspaceId: 'ws-1', url: 'https://chatgpt.com/', title: 'Stale snapshot', runtimeState: 'client-managed', closedAt: null },
     ]);
   });
-  await page.waitForFunction(() => window.ipcCommands.some((c) => c.type === 'update' && c.url === 'https://chatgpt.com/c/committed-nav'));
+  await page.waitForTimeout(50);
   commands = await page.evaluate(() => window.ipcCommands);
   assert(commands.every((c) => c.url !== 'https://chatgpt.com/'), 'stale store URL is never sent back to the desktop');
+
+  // A newer committed page supersedes A while A has a retry pending.
+  await page.evaluate(() => {
+    window.navigateFailFilter = null;
+    window.onBridgeState({ type: 'committed', id: 'tab-fail', url: 'https://chatgpt.com/c/newer-nav' });
+  });
+  await page.waitForFunction(() => window.navigateRequests.some(r => r.url.endsWith('/newer-nav')));
+  const afterNewer = await page.evaluate(() => window.navigateRequests.length);
+  await page.waitForTimeout(700);
+  assert.equal(await page.evaluate(() => window.navigateRequests.length), afterNewer, 'superseded A retry cannot overwrite B');
 
   // Reconnect / retry completes checkpoint; pending committed URL remains desired until its snapshot arrives.
   await page.evaluate(() => { window.navigateFailFilter = null; });
@@ -319,3 +330,5 @@ test('useNativeChatGptTabs preserves committed navigation until durable checkpoi
   commands = await page.evaluate(() => window.ipcCommands);
   assert(commands.every((c) => c.url !== 'https://chatgpt.com/'), 'reconnect does not resurrect the obsolete checkpoint URL');
 });
+
+// The checkpoint retry timer must never send an older URL after a newer commit.

@@ -16,6 +16,8 @@ export function useNativeChatGptTabs(
   const confirmedTabs = useRef<Map<string, { url: string; provider: string }>>(new Map());
   const inFlightUpdates = useRef<Map<string, { seq: number; url: string; provider: string }>>(new Map());
   const pendingCheckpoints = useRef<Map<string, { url: string; provider: string; seq: number; acknowledged?: boolean }>>(new Map());
+  const checkpointInFlight = useRef<Map<string, number>>(new Map());
+  const mounted = useRef(true);
   const confirmedRetainedKey = useRef<string | null>(null);
   const inFlightRetainKey = useRef<string | null>(null);
   const seqCounter = useRef(0);
@@ -23,7 +25,9 @@ export function useNativeChatGptTabs(
   const [retryEpoch, setRetryEpoch] = useState(0);
 
   useEffect(() => {
+    mounted.current = true;
     return () => {
+      mounted.current = false;
       if (retryTimeout.current !== null) {
         window.clearTimeout(retryTimeout.current);
         retryTimeout.current = null;
@@ -43,30 +47,14 @@ export function useNativeChatGptTabs(
     }
     if (state.type !== 'committed' || !state.id || !state.url) return;
     const tab = current.current.tabs.find(t => t.id === state.id && !t.closedAt && t.runtimeState === 'client-managed');
-    if (!tab || tab.url === state.url) return;
-
-    // Electron has committed this navigation; mark it confirmed for the native surface
-    // so subsequent store updates reflecting this committed URL do not echo duplicate IPC.
-    const committedUrl = state.url;
-    const provider = nativeWebProvider(committedUrl, tab.provider);
-    const seq = ++seqCounter.current;
-    pendingCheckpoints.current.set(tab.id, { url: committedUrl, provider, seq });
+    if (!tab || !nativeWorkspaceUrl(state.url, tab.provider)) return;
+    if (tab.url === state.url && !pendingCheckpoints.current.has(tab.id)) return;
+    const provider = nativeWebProvider(state.url, tab.provider);
+    pendingCheckpoints.current.set(tab.id, { url: state.url, provider, seq: ++seqCounter.current, acknowledged: tab.url === state.url });
+    confirmedTabs.current.set(tab.id, { url: state.url, provider });
     inFlightUpdates.current.delete(tab.id);
+    setRetryEpoch(e => e + 1);
 
-    // Persist durable navigation to the backend store
-    const checkpoint = () => {
-      void current.current.request({ type: 'agency.webTab.navigate', workspaceId: tab.workspaceId, tabId: tab.id, url: committedUrl })
-        .then(() => {
-          if (pendingCheckpoints.current.get(tab.id)?.seq !== seq) return;
-          const pending = pendingCheckpoints.current.get(tab.id);
-          if (pending?.seq === seq) pending.acknowledged = true;
-          confirmedTabs.current.set(tab.id, { url: committedUrl, provider });
-          setRetryEpoch(e => e + 1);
-        }).catch(() => {
-          if (pendingCheckpoints.current.get(tab.id)?.seq === seq) window.setTimeout(checkpoint, 500);
-        });
-    };
-    checkpoint();
   }), []);
 
   useEffect(() => {
@@ -99,6 +87,20 @@ export function useNativeChatGptTabs(
       if (pending?.acknowledged && pending.url === tab.url) {
         pendingCheckpoints.current.delete(tab.id);
         pending = undefined;
+      }
+      if (pending && !pending.acknowledged && !checkpointInFlight.current.has(tab.id)) {
+        const checkpoint = pending;
+        checkpointInFlight.current.set(tab.id, checkpoint.seq);
+        void request({ type: 'agency.webTab.navigate', workspaceId: tab.workspaceId, tabId: tab.id, url: checkpoint.url })
+          .then(() => {
+            const latest = pendingCheckpoints.current.get(tab.id);
+            if (latest?.seq === checkpoint.seq) latest.acknowledged = true;
+          }).catch(() => { if (mounted.current) scheduleRetry(); })
+          .finally(() => {
+            if (checkpointInFlight.current.get(tab.id) === checkpoint.seq) checkpointInFlight.current.delete(tab.id);
+            const latest = pendingCheckpoints.current.get(tab.id);
+            if (mounted.current && latest && (latest.acknowledged || latest.seq !== checkpoint.seq)) setRetryEpoch(e => e + 1);
+          });
       }
       const desiredUrl = pending?.url ?? tab.url;
       const provider = pending?.provider ?? nativeWebProvider(desiredUrl, tab.provider);

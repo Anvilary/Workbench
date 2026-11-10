@@ -17,7 +17,6 @@ import { useLocale } from '../i18n/useLocale.js';
 import './agency.css';
 import { useDropdownDismissal } from './useDropdownDismissal.js';
 import { useNativeChatGptTabs } from './useNativeChatGptTabs.js';
-import { EmberBackground } from './EmberBackground.js';
 import { SettingsDialog } from '../SettingsDialog.js';
 import { useAppSettings } from '../useAppSettings.js';
 import { usePanelVisibility } from '../panel-visibility.js';
@@ -422,7 +421,6 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
 
   return (
     <div className="agency-app">
-      <EmberBackground />
       <aside
         ref={sidebarRef}
         className={

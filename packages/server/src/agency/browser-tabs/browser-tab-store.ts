@@ -171,12 +171,10 @@ export class BrowserTabStore {
     let primaryMissing = false;
     let primaryFailure: unknown = null;
     let loadedTabs: WebTab[] | null = null;
-    let migrate = false;
 
     try {
       const raw = await readFile(this.filePath, 'utf8');
       loadedTabs = parseBrowserTabSnapshot(raw);
-      migrate = JSON.parse(raw).version === 1;
     } catch (error) {
       if (error instanceof UnsupportedBrowserTabSchemaError) throw error;
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -190,7 +188,6 @@ export class BrowserTabStore {
       try {
         const rawBackup = await readFile(this.filePath + '.bak', 'utf8');
         loadedTabs = parseBrowserTabSnapshot(rawBackup);
-        migrate = JSON.parse(rawBackup).version === 1;
       } catch (backupError) {
         if (backupError instanceof UnsupportedBrowserTabSchemaError) throw backupError;
         const backupMissing = (backupError as NodeJS.ErrnoException).code === 'ENOENT';
@@ -220,7 +217,6 @@ export class BrowserTabStore {
       this.inMemoryTabs.set(tab.id, tab);
     }
     this.loaded = true;
-    if (migrate) await this.save();
     return this.listTabs(undefined, { includeClosed: true });
   }
 
@@ -253,7 +249,7 @@ export class BrowserTabStore {
     const sanitized = normalizeWorkspaceSelections(allTabs.map(sanitizeForDurableStorage));
 
     const snapshot: BrowserTabSnapshot = {
-      version: BROWSER_TAB_STORE_VERSION,
+      version: sanitized.some(tab => tab.provider === 'other') ? BROWSER_TAB_STORE_VERSION : 1,
       tabs: sanitized,
     };
 

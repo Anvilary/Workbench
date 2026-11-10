@@ -160,15 +160,21 @@ test('persistence: rejects duplicate tab IDs and invalid versions', () => {
   });
 });
 
-test('persistence: migrates v1 snapshots to v2 without changing tab identity or order', async t => {
+test('persistence: preserves v1 compatibility until Other tabs require v2', async t => {
   const { store, filePath } = await createFixture(t);
   const ws = 'a0000000-0000-4000-8000-000000000001';
   const tab = makeTab('b0000000-0000-4000-8000-000000000001', ws, 3, true);
-  await writeFile(filePath, JSON.stringify({ version: 1, tabs: [tab] }));
+  const original = JSON.stringify({ version: 1, tabs: [tab] });
+  await writeFile(filePath, original);
   const restored = await store.load();
   assert.equal(restored[0]?.id, tab.id);
   assert.equal(restored[0]?.order, 3);
+  assert.equal(await readFile(filePath, 'utf8'), original, 'read does not migrate or alter rollback data');
+  await store.save([{ ...tab, title: 'Updated legacy tab' }]);
+  assert.equal(JSON.parse(await readFile(filePath, 'utf8')).version, 1);
+  await store.save([{ ...tab, provider: 'other', url: 'https://www.wikipedia.org/' }]);
   assert.equal(JSON.parse(await readFile(filePath, 'utf8')).version, 2);
+  assert.equal((await new BrowserTabStore(filePath).load())[0]?.provider, 'other');
 });
 
 test('persistence: normalizes multiple selections to lowest order', () => {

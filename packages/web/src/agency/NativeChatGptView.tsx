@@ -34,12 +34,13 @@ export function nativePerplexityUrl(value: string): boolean {
 }
 
 export function nativeWorkspaceUrl(value: string, provider?: WebTab['provider']): boolean {
+  if (typeof value !== 'string' || value.length > 2048 || /[\u0000-\u0020\u007f]/.test(value)) return false;
   if (provider === 'other') return validateOtherWebUrl(value).valid;
-  if (nativeChatGptUrl(value)) return true;
-  if (nativePerplexityUrl(value)) return true;
+  if (nativeChatGptUrl(value)) return provider === undefined || provider === 'chatgpt';
+  if (nativePerplexityUrl(value)) return provider === undefined || provider === 'perplexity';
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' && (url.hostname === 'github.com' || url.hostname.endsWith('.github.com')) && !url.username && !url.password && !url.port;
+    return (provider === undefined || provider === 'github') && url.protocol === 'https:' && (url.hostname === 'github.com' || url.hostname.endsWith('.github.com')) && !url.username && !url.password && !url.port;
   } catch {
     return false;
   }
@@ -134,15 +135,16 @@ export function NativeChatGptView({
   }, [id, supported]);
 
   return (
-    <div ref={host} className="maw-browser-viewer" data-native-id={id}>
+    <div className="maw-browser-pane">
       {window.mawChatGpt && supported && <div className="maw-browser-toolbar">
         <button type="button" aria-label={t('agency.browser.back')} disabled={!history.canGoBack} onClick={() => void window.mawChatGpt?.command({ type: 'browser-action', id, action: 'back' })}>‹</button>
         <button type="button" aria-label={t('agency.browser.forward')} disabled={!history.canGoForward} onClick={() => void window.mawChatGpt?.command({ type: 'browser-action', id, action: 'forward' })}>›</button>
         <button type="button" aria-label={t('agency.browser.reload')} onClick={() => void window.mawChatGpt?.command({ type: 'browser-action', id, action: 'reload' })}>↻</button>
-        <form onSubmit={(event) => { event.preventDefault(); const value = address.trim(); if (validateOtherWebUrl(value).valid || provider !== 'other' && nativeWorkspaceUrl(value, provider)) void window.mawChatGpt?.command({ type: 'update', id, url: value, provider }); }}>
-          <input ref={addressInput} aria-label={t('agency.browser.address')} value={address} onChange={(event) => setAddress(event.target.value)} onKeyDown={(event) => { if (event.ctrlKey && event.key.toLowerCase() === 'l') { event.preventDefault(); event.currentTarget.select(); } }} />
+        <form onSubmit={(event) => { event.preventDefault(); const value = address.trim(); if (nativeWorkspaceUrl(value, provider)) { void window.mawChatGpt?.command({ type: 'update', id, url: value, provider }).catch(reason => setError(String(reason))); } else { addressInput.current?.setCustomValidity(t('agency.web.invalidUrl')); addressInput.current?.reportValidity(); } }}>
+          <input ref={addressInput} aria-label={t('agency.browser.address')} value={address} onChange={(event) => { event.currentTarget.setCustomValidity(''); setAddress(event.target.value); }} onKeyDown={(event) => { if (event.ctrlKey && event.key.toLowerCase() === 'l') { event.preventDefault(); event.currentTarget.select(); } }} />
         </form>
       </div>}
+      <div ref={host} className="maw-browser-viewer" data-native-id={id}>
       {!window.mawChatGpt || !supported ? (
         <div className="agency-shell-placeholder">
           <p>{t('agency.web.externalHint')}</p>
@@ -176,6 +178,7 @@ export function NativeChatGptView({
           )}
         </>
       )}
+      </div>
     </div>
   );
 }
