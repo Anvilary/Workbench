@@ -50,6 +50,72 @@ export function SidebarToggleIcon(): JSX.Element {
   );
 }
 
+function InlineRenameInput({
+  initialValue,
+  onCommit,
+  onCancel,
+  ariaLabel,
+}: {
+  initialValue: string;
+  onCommit: (cleanValue: string) => void;
+  onCancel: () => void;
+  ariaLabel: string;
+}): JSX.Element {
+  const [value, setValue] = useState(initialValue);
+  const committedRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, []);
+
+  const handleCommit = () => {
+    if (committedRef.current) return;
+    committedRef.current = true;
+    const clean = value.trim();
+    if (clean) {
+      onCommit(clean);
+    } else {
+      onCancel();
+    }
+  };
+
+  const handleCancel = () => {
+    if (committedRef.current) return;
+    committedRef.current = true;
+    onCancel();
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      className="agency-inline-rename-input"
+      value={value}
+      maxLength={120}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handleCommit();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          handleCancel();
+        }
+      }}
+      onBlur={() => {
+        handleCommit();
+      }}
+      aria-label={ariaLabel}
+    />
+  );
+}
+
 export function AgencySidebar({
   projects, workspaces, sessions, webTabs = [], selected, showingDone = false,
   onSelect, onCreate, onCreateProject, onDone, onArchiveWorkspace, onDeleteWorkspace,
@@ -352,41 +418,18 @@ export function AgencySidebar({
                   >
                     <span aria-hidden="true" className={'agency-chevron' + (collapsed.has(project.id) ? '' : ' open')}>›</span>
                     {inlineRenamingProjectId === project.id ? (
-                      <input
-                        type="text"
-                        className="agency-inline-rename-input"
-                        value={inlineRenameProjectValue}
-                        autoFocus
-                        maxLength={120}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => setInlineRenameProjectValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          e.stopPropagation();
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            const clean = inlineRenameProjectValue.trim();
-                            if (clean && clean !== project.name) {
-                              onRenameProject(project, clean);
-                            }
-                            setInlineRenamingProjectId(null);
-                          } else if (e.key === 'Escape') {
-                            e.preventDefault();
-                            setInlineRenamingProjectId(null);
-                          }
-                        }}
-                        onBlur={() => {
-                          const clean = inlineRenameProjectValue.trim();
-                          if (clean && clean !== project.name) {
+                      <InlineRenameInput
+                        initialValue={inlineRenameProjectValue}
+                        onCommit={(clean) => {
+                          if (clean !== project.name) {
                             onRenameProject(project, clean);
                           }
                           setInlineRenamingProjectId(null);
                         }}
-                        ref={(input) => {
-                          if (input) {
-                            input.select();
-                          }
+                        onCancel={() => {
+                          setInlineRenamingProjectId(null);
                         }}
-                        aria-label={t('agency.ui.renameProject')}
+                        ariaLabel={t('agency.ui.renameProject')}
                       />
                     ) : (
                       <span className="agency-project-name">{project.name}</span>
@@ -581,41 +624,18 @@ export function AgencySidebar({
                           >
                             <span className={'agency-status-dot ' + (attention ? 'attention' : working ? 'working' : collection.some(item => item.lifecycle === 'running') ? 'idle' : 'muted')} title={collection.map(item => agencySessionText(item)).join(', ')} aria-label={t('agency.tabs.sessionCount', { count: collection.length })} />
                             {inlineRenamingWorkspaceId === workspace.id ? (
-                              <input
-                                type="text"
-                                className="agency-inline-rename-input"
-                                value={inlineRenameWorkspaceValue}
-                                autoFocus
-                                maxLength={120}
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) => setInlineRenameWorkspaceValue(e.target.value)}
-                                onKeyDown={(e) => {
-                                  e.stopPropagation();
-                                  if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    const clean = inlineRenameWorkspaceValue.trim();
-                                    if (clean && clean !== workspace.name && onRenameWorkspace) {
-                                      onRenameWorkspace(workspace, clean);
-                                    }
-                                    setInlineRenamingWorkspaceId(null);
-                                  } else if (e.key === 'Escape') {
-                                    e.preventDefault();
-                                    setInlineRenamingWorkspaceId(null);
-                                  }
-                                }}
-                                onBlur={() => {
-                                  const clean = inlineRenameWorkspaceValue.trim();
-                                  if (clean && clean !== workspace.name && onRenameWorkspace) {
+                              <InlineRenameInput
+                                initialValue={inlineRenameWorkspaceValue}
+                                onCommit={(clean) => {
+                                  if (clean !== workspace.name && onRenameWorkspace) {
                                     onRenameWorkspace(workspace, clean);
                                   }
                                   setInlineRenamingWorkspaceId(null);
                                 }}
-                                ref={(input) => {
-                                  if (input) {
-                                    input.select();
-                                  }
+                                onCancel={() => {
+                                  setInlineRenamingWorkspaceId(null);
                                 }}
-                                aria-label={t('agency.ui.renameWorkspace')}
+                                ariaLabel={t('agency.ui.renameWorkspace')}
                               />
                             ) : (
                               <span className="agency-truncate">{workspace.name}</span>

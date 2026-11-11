@@ -37,7 +37,7 @@ const open=Terminal.prototype.open,dispose=Terminal.prototype.dispose;
 window.terminals=[];window.disposed=0;
 Terminal.prototype.open=function(element){window.terminals.push(this);return open.call(this,element)};
 Terminal.prototype.dispose=function(){window.disposed++;return dispose.call(this)};
-if(!window.mawChatGpt){let onState;window.mawChatGpt={subscribe(fn){onState=fn;return()=>{}},async command(m){if(m.type==='open')setTimeout(()=>onState?.({type:'ready',id:m.id}),0);return {ok:true}}}}
+if(!window.mawChatGpt){let onState;window.fixtureBridgeSend=(s)=>onState?.(s);window.mawChatGpt={subscribe(fn){onState=fn;return()=>{}},async command(m){if(m.type==='open')setTimeout(()=>onState?.({type:'ready',id:m.id}),0);return {ok:true}}}}
 async function request(m){
  requests.push(m);
  if(m.type==='agency.session.create'||m.type==='agency.webTab.create'||m.type==='agency.editorTab.open'){

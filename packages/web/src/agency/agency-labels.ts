@@ -104,6 +104,7 @@ export const PRESERVED_AGENCY_I18N_KEYS = [
   'agency.ui.terminalOnlyWorkspace',
   'agency.ui.thisCLIProfileIsUnavailable',
   'agency.ui.unavailableSuffix',
+  'agency.ui.workspaceOptions',
   'agency.ui.workspaceType',
   'common.save',
   'terminal.replayTruncated',

@@ -102,19 +102,19 @@
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   height: var(--maw-topbar-h);
   min-height: var(--maw-topbar-h);
   flex: 0 0 var(--maw-topbar-h);
   box-sizing: border-box;
-  padding: 0 44px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--border-faint);
 }
 .agency-nav-head > .agency-icon-button { position: absolute; right: 12px; }
 .agency-nav-brand {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
   min-width: 0;
 }
 .agency-nav-logo {

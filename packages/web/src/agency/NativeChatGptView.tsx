@@ -6,7 +6,7 @@ import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
 
 export interface DesktopBridge {
   command: (command: unknown) => Promise<unknown>;
-  subscribe: (callback: (state: { type: string; id?: string; url?: string; token?: string; port?: string; message?: string; direction?: number; filename?: string; percent?: number | null; linkURL?: string; canGoBack?: boolean; canGoForward?: boolean; selection?: boolean; x?: number; y?: number }) => void) => () => void;
+  subscribe: (callback: (state: { type: string; id?: string; sourceTabId?: string; url?: string; token?: string; port?: string; message?: string; direction?: number; filename?: string; percent?: number | null; linkURL?: string; canGoBack?: boolean; canGoForward?: boolean; selection?: boolean; x?: number; y?: number }) => void) => () => void;
 }
 
 declare global {
@@ -50,7 +50,11 @@ export function nativeWebProvider(value: string, storedProvider?: WebTab['provid
   if (storedProvider) return storedProvider;
   if (nativeChatGptUrl(value)) return 'chatgpt';
   if (nativePerplexityUrl(value)) return 'perplexity';
-  return 'github';
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:' && (url.hostname === 'github.com' || url.hostname.endsWith('.github.com'))) return 'github';
+  } catch {}
+  return 'other';
 }
 
 export function NativeChatGptView({

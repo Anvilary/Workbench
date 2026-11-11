@@ -394,5 +394,5 @@ test('sidebar ux & branding acceptance suite: drag-and-drop, controls, lifecycle
   await brand.getByText('MaW', { exact: true }).waitFor();
   const logoBox = await navLogo.boundingBox(), brandBox = await brand.boundingBox(), headBox = await page.locator('.agency-nav-head').boundingBox();
   assert.ok(logoBox?.width >= 56, 'Sidebar logo is visibly larger');
-  assert.ok(Math.abs(brandBox.x + brandBox.width / 2 - headBox.x - headBox.width / 2) <= 1, 'Logo and MaW title are centered together');
+  assert.ok(brandBox.x - headBox.x <= 20, 'Logo and MaW title are left-aligned near the left edge');
 });

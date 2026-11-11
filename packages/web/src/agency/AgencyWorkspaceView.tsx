@@ -7,6 +7,7 @@ import {
   assignCreatedTab, swapPanes, countLeaves, createDefaultLayout, findPaneNode, getPaneNodes, moveTabBetweenPanes,
   reconcileLayout, splitPane, closePane, updatePaneNode, updateSplitRatio, MAX_LEAVES,
   validateChatGptUrl, validateGithubUrl, validatePerplexityUrl, validateOtherWebUrl, validateWebTabTitle,
+  classifyWebTabUrl,
 } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import { t } from '../i18n/index.js';
@@ -496,6 +497,59 @@ export function AgencyWorkspaceView({
     }
     save(assignCreatedTab(layoutRef.current, targetPaneId, created.id), true);
   }
+
+  useEffect(() => {
+    const bridge = window.mawChatGpt;
+    if (!bridge) return;
+    return bridge.subscribe((state) => {
+      if (state.type === 'open-web-tab' && state.url && state.sourceTabId) {
+        const sourceTabId = state.sourceTabId;
+        const targetUrl = state.url;
+        const sourceTab = tabs.find((t) => t.id === sourceTabId);
+        if (!sourceTab) return;
+
+        const panes = getPaneNodes(layoutRef.current.tree);
+        const sourcePane = panes.find((pane) => pane.tabIds.includes(sourceTabId));
+        const targetPaneId = sourcePane?.id ?? layoutRef.current.focusedPaneId;
+
+        const classification = classifyWebTabUrl(targetUrl);
+        if (!classification.valid && !validateOtherWebUrl(targetUrl).valid) {
+          setError(t('agency.web.invalidUrl'));
+          return;
+        }
+
+        const provider: WebTabProvider = classification.provider ?? 'other';
+        const urlToOpen = classification.normalizedUrl ?? targetUrl;
+        let title = '';
+        try {
+          if (provider === 'github') title = 'GitHub';
+          else if (provider === 'chatgpt') title = 'ChatGPT';
+          else if (provider === 'perplexity') title = 'Perplexity';
+          else title = new URL(urlToOpen).hostname;
+        } catch {
+          title = provider;
+        }
+
+        const launchId = crypto.randomUUID();
+        void request({
+          type: 'agency.webTab.create',
+          workspaceId: workspace.id,
+          url: urlToOpen,
+          provider,
+          title,
+          select: true,
+          targetPaneId,
+          launchId,
+        })
+          .then((response) => {
+            completeCreation(response, targetPaneId);
+          })
+          .catch((reason) => {
+            setError(reason instanceof Error ? reason.message : String(reason));
+          });
+      }
+    });
+  }, [tabs, workspace.id, request]);
 
   function handleSwapPane(source: string, target: string) {
     const current = layoutRef.current;

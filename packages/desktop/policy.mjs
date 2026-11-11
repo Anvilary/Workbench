@@ -61,6 +61,42 @@ export function webProvider(value) {
   return null;
 }
 
+export function targetWebProvider(value) {
+  const p = webProvider(value);
+  if (p) return p;
+  if (otherUrl(value)) return 'other';
+  return null;
+}
+
+export function isSameSite(url1, url2) {
+  if (typeof url1 !== 'string' || typeof url2 !== 'string') return false;
+  try {
+    const u1 = new URL(url1);
+    const u2 = new URL(url2);
+    if (u1.protocol !== u2.protocol) return false;
+    const h1 = u1.hostname.toLowerCase();
+    const h2 = u2.hostname.toLowerCase();
+    if (h1 === h2) return true;
+    const parts1 = h1.split('.');
+    const parts2 = h2.split('.');
+    if (parts1.length >= 2 && parts2.length >= 2) {
+      const s1 = parts1.slice(-2).join('.');
+      const s2 = parts2.slice(-2).join('.');
+      const multiTlds = new Set(['co.uk', 'com.br', 'co.jp', 'com.au', 'co.nz', 'co.za']);
+      if (multiTlds.has(s1) || multiTlds.has(s2)) {
+        if (parts1.length >= 3 && parts2.length >= 3) {
+          return parts1.slice(-3).join('.') === parts2.slice(-3).join('.');
+        }
+        return false;
+      }
+      return s1 === s2;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export function isFileDeliveryHost(hostname) {
   if (!hostname || typeof hostname !== 'string') return false;
   return fileDeliveryHosts.has(hostname) || hostname.endsWith('.oaiusercontent.com') || hostname.endsWith('.oaistatic.com');

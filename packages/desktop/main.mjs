@@ -4,7 +4,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { mkdir, readFile, lstat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, BROWSER_PARTITION, otherUrl, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl } from './policy.mjs';
+import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, BROWSER_PARTITION, otherUrl, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, targetWebProvider, isSameSite } from './policy.mjs';
 import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
 import { calculateResourceBudget, selectEvictionCandidate, isProtectedProvider, readSystemMemory } from './resource-budget.mjs';
 import { ResourceCollector } from './resource-monitor.mjs';
@@ -115,6 +115,15 @@ async function start() {
   let shuttingDown = false;
   let pendingShellStorage = null;
   const send = state => { if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(CHANNEL + ':state', state); };
+  const linkOpenHistory = new Map();
+  function allowLinkOpen(tabId) {
+    const now = Date.now();
+    const history = (linkOpenHistory.get(tabId) || []).filter(t => now - t < 2000);
+    if (history.length >= 5) return false;
+    history.push(now);
+    linkOpenHistory.set(tabId, history);
+    return true;
+  }
 
   const resourceCollector = new ResourceCollector({
     app,
@@ -213,14 +222,35 @@ async function start() {
       }
       return false;
     };
+    const isSameSiteOrAllowed = (url) => {
+      if (provider === 'other') {
+        const currentUrl = contents.getURL();
+        if (!currentUrl || currentUrl === 'about:blank' || urls.get(getTabId()) === url) return otherUrl(url);
+        return otherUrl(url) && isSameSite(currentUrl, url);
+      }
+      return navigationAllowed(provider, url);
+    };
     const navigation = (event, url) => {
+      if (handleFileDelivery(event, url)) return;
+      if (isSameSiteOrAllowed(url)) return;
+      event.preventDefault();
+      const id = getTabId();
+      if (id && targetWebProvider(url)) {
+        if (allowLinkOpen(id)) {
+          send({ type: 'open-web-tab', sourceTabId: id, url });
+        }
+        return;
+      }
+      void openExternal(url).catch(() => send({ type: 'error', message: 'Could not open external browser.' }));
+    };
+    const redirect = (event, url) => {
       if (handleFileDelivery(event, url)) return;
       if (navigationAllowed(provider, url)) return;
       event.preventDefault();
       void openExternal(url).catch(() => send({ type: 'error', message: 'Could not open external browser.' }));
     };
     contents.on('will-navigate', navigation);
-    contents.on('will-redirect', navigation);
+    contents.on('will-redirect', redirect);
     contents.on('will-attach-webview', event => event.preventDefault());
     contents.setWindowOpenHandler(({ url }) => {
       if (provider === 'chatgpt' && isDownloadOrFileDeliveryUrl(url)) {
@@ -231,7 +261,16 @@ async function start() {
         parent: win, autoHideMenuBar: true, width: 640, height: 760,
         webPreferences: { ...secure, session: browserSessions[provider] ?? chatSession, preload: '' },
       } };
-      void openExternal(url).catch(() => {});
+      const id = getTabId();
+      if (id && targetWebProvider(url)) {
+        if (allowLinkOpen(id)) {
+          send({ type: 'open-web-tab', sourceTabId: id, url });
+        }
+        return { action: 'deny' };
+      }
+      if (externalUrl(url)) {
+        void openExternal(url).catch(() => {});
+      }
       return { action: 'deny' };
     });
     contents.on('did-create-window', popup => {
@@ -674,7 +713,14 @@ async function start() {
       if (command.action === 'copy-url') clipboard.writeText(contents.getURL());
       if (command.action === 'copy-selection') contents.copy();
       if (command.action === 'open-page') void openExternal(contents.getURL());
-      if (command.action === 'open-link') void openExternal(command.url);
+      if (command.action === 'open-link') {
+        const target = targetWebProvider(command.url);
+        if (target) {
+          send({ type: 'open-web-tab', sourceTabId: command.id, url: command.url });
+        } else if (externalUrl(command.url)) {
+          void openExternal(command.url);
+        }
+      }
       if (command.action === 'zoom-in') {
         const lvl = Math.min(3, contents.getZoomLevel() + 0.5);
         contents.setZoomLevel(lvl);

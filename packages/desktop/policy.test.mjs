@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { embeddedUrl, externalUrl, otherUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl, githubUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl } from './policy.mjs';
+import { embeddedUrl, externalUrl, otherUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl, githubUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, isSameSite, targetWebProvider } from './policy.mjs';
 const id = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
 test('general web URLs cannot name local services or privileged protocols', () => {
   assert.equal(validCommand({ type: 'restore-shell-storage' }), true);
@@ -155,4 +155,33 @@ test('endpoint rediscovery command validation', () => {
   assert.equal(validCommand({ type: 'get-backend-endpoint' }), true);
   assert.equal(validCommand({ type: 'get-backend-endpoint', extra: 'unauthorized' }), false);
   assert.equal(validCommand({ type: 'close', id }), true);
+});
+
+test('FEATURE: isSameSite evaluation', () => {
+  assert.equal(isSameSite('https://example.com/page1', 'https://example.com/page2'), true);
+  assert.equal(isSameSite('https://sub.example.com/a', 'https://api.example.com/b'), true);
+  assert.equal(isSameSite('https://docs.python.org/3/tutorial/', 'https://docs.python.org/3/library/'), true);
+  assert.equal(isSameSite('https://example.com/', 'https://other.com/'), false);
+  assert.equal(isSameSite('https://example.com/', 'http://example.com/'), false);
+  assert.equal(isSameSite('https://attacker.co.uk/', 'https://victim.co.uk/'), false);
+  assert.equal(isSameSite('https://sub.victim.co.uk/', 'https://api.victim.co.uk/'), true);
+  assert.equal(isSameSite('not a url', 'https://example.com'), false);
+});
+
+test('FEATURE: targetWebProvider classification and boundary safety', () => {
+  assert.equal(targetWebProvider('https://chatgpt.com/'), 'chatgpt');
+  assert.equal(targetWebProvider('https://chat.openai.com/'), 'chatgpt');
+  assert.equal(targetWebProvider('https://github.com/microsoft/vscode'), 'github');
+  assert.equal(targetWebProvider('https://perplexity.ai/search'), 'perplexity');
+  assert.equal(targetWebProvider('https://en.wikipedia.org/wiki/Main_Page'), 'other');
+  assert.equal(targetWebProvider('https://docs.anthropic.com/en/docs'), 'other');
+
+  // Blocked / non-embeddable destinations
+  assert.equal(targetWebProvider('http://localhost:3000/'), null);
+  assert.equal(targetWebProvider('http://127.0.0.1:8080/'), null);
+  assert.equal(targetWebProvider('http://192.168.1.1/'), null);
+  assert.equal(targetWebProvider('file:///etc/passwd'), null);
+  assert.equal(targetWebProvider('javascript:alert(1)'), null);
+  assert.equal(targetWebProvider('data:text/html,<h1>hi</h1>'), null);
+  assert.equal(targetWebProvider('mailto:alice@example.com'), null);
 });
