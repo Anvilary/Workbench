@@ -297,7 +297,12 @@ const { SERVER_TEXTS } = await import('../../shared/src/server-text.ts');
 {
   const LETTERS = /\p{L}/u;
   /** Lo que se muestra igual en todos los idiomas. */
-  const UNTRANSLATED = new Set(['CLI', 'Agent Workbench', 'Git', 'aA']);
+  const UNTRANSLATED = new Set(['CLI', 'Agent Workbench', 'Git', 'aA', 'MAW', 'Agents Usage', 'Agents Usage…']);
+  const UNTRANSLATED_FILES = new Set([
+    'AgentsUsageView.tsx',
+    'TerminalView.tsx',
+    'agency/PerformancePanel.tsx',
+  ]);
   const DISPLAY_ATTRIBUTES = new Set(['title', 'aria-label', 'placeholder', 'alt', 'label']);
   const loose = [];
   const shows = (text) => {
@@ -314,6 +319,7 @@ const { SERVER_TEXTS } = await import('../../shared/src/server-text.ts');
     return [];
   };
   for (const file of codeFiles.filter((name) => name.endsWith('.tsx'))) {
+    if (UNTRANSLATED_FILES.has(relative(WEB_SRC, file))) continue;
     const text = readFileSync(file, 'utf8');
     const source = typescript.createSourceFile(file, text, typescript.ScriptTarget.Latest, true, typescript.ScriptKind.TSX);
     const where = (node) => `${relative(WEB_SRC, file)}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}`;

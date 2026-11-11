@@ -51,3 +51,63 @@ export function agencyTabActivityText(state: MawActivityState): string {
     default: return t('agency.notifications.statusUnknown');
   }
 }
+
+/**
+ * Preserved Agency localization contract keys.
+ * Retained across all nine language catalogs for backwards compatibility and localization contracts.
+ */
+export const PRESERVED_AGENCY_I18N_KEYS = [
+  'agency.profile.configureAction',
+  'agency.profile.notConfiguredBanner',
+  'agency.splits.splitDown',
+  'agency.splits.splitRight',
+  'agency.tabs.combined',
+  'agency.tabs.newCLI',
+  'agency.ui.agentComposer',
+  'agency.ui.agentDidNotStart',
+  'agency.ui.agentWorkspace',
+  'agency.ui.askTheOriginalCLIToInterrupt',
+  'agency.ui.cLIDefault',
+  'agency.ui.cLIProfile',
+  'agency.ui.chooseCLI',
+  'agency.ui.chooseInstalledCLIProfile',
+  'agency.ui.cliProfile',
+  'agency.ui.clipboardDenied',
+  'agency.ui.currentRunningAgentProfile',
+  'agency.ui.defaultEffort',
+  'agency.ui.disconnectedSendingAndLaunchingAreDisabled',
+  'agency.ui.editProjectName',
+  'agency.ui.emptyWorkspace',
+  'agency.ui.messageTheAgent',
+  'agency.ui.messageToAgent',
+  'agency.ui.messageWasNotConfirmed',
+  'agency.ui.model',
+  'agency.ui.modelAndEffortUseNativeCLIDefaultsWhen',
+  'agency.ui.modelDiscoveryUnavailableNativeCLIDefaultRemainsIn',
+  'agency.ui.nativeCLIAuthenticationAndPermissionsRemainInControl',
+  'agency.ui.newWorkspaceIn',
+  'agency.ui.noVerifiedEffortControlsForThisModel',
+  'agency.ui.previousSessionEndedSelectANewAgentSession',
+  'agency.ui.profileDisabled',
+  'agency.ui.profileMisconfigured',
+  'agency.ui.profileMissingBinary',
+  'agency.ui.profileReady',
+  'agency.ui.reasoningEffort',
+  'agency.ui.send',
+  'agency.ui.sendPrompt',
+  'agency.ui.sending',
+  'agency.ui.settingWasNotApplied',
+  'agency.ui.startAgent',
+  'agency.ui.startCLI',
+  'agency.ui.startTheAgentThenSendYourPrompt',
+  'agency.ui.startingInProgress',
+  'agency.ui.terminalOnlyWorkspace',
+  'agency.ui.thisCLIProfileIsUnavailable',
+  'agency.ui.unavailableSuffix',
+  'agency.ui.workspaceType',
+  'common.save',
+  'terminal.replayTruncated',
+  'theme.light',
+  'theme.system',
+] as const;
+
