@@ -124,7 +124,6 @@ export function AgencyWorkspaceView({
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
 
-  const [workspaceMenu, setWorkspaceMenu] = useState(false);
   const [webDialog, setWebDialog] = useState<'create' | 'navigate' | null>(null);
   const [webUrl, setWebUrl] = useState('https://chatgpt.com/');
   const [webProvider, setWebProvider] = useState<WebTabProvider>('chatgpt');
@@ -762,35 +761,6 @@ export function AgencyWorkspaceView({
 
   return (
     <section className="agency-workspace-view" aria-label={t('agency.ui.workspaceNamed', { name: workspace.name })}>
-      <header className="maw-workspace-topbar">
-        <span className="maw-workspace-title">{workspace.name}</span>
-        <div className="agency-flex-spacer" />
-        <div className="agency-dropdown">
-          <button
-            type="button"
-            className="agency-icon-button"
-            aria-label={t('agency.ui.workspaceOptions')}
-            aria-haspopup="menu"
-            aria-expanded={workspaceMenu}
-            onClick={() => setWorkspaceMenu((open) => !open)}
-          >
-            ···
-          </button>
-          {workspaceMenu && (
-            <div className="agency-dropdown-menu maw-shell-menu" role="menu">
-              {leafCount > 1 && (
-                <button type="button" role="menuitem" className="agency-dropdown-item" onClick={() => { setWorkspaceMenu(false); handleSinglePane(); }}>
-                  {t('agency.splits.singlePane')}
-                </button>
-              )}
-              <button type="button" role="menuitem" className="agency-dropdown-item" onClick={() => { setWorkspaceMenu(false); onDone(); }}>
-                {t('agency.ui.markDone')}
-              </button>
-            </div>
-          )}
-        </div>
-      </header>
-
       {placementWarning && (
         <div className="agency-notice-bar" role="status">
           <span>{placementWarning}</span>
@@ -833,6 +803,9 @@ export function AgencyWorkspaceView({
           request={request}
           reportError={setError}
           getTabActivity={getTabActivity}
+          onMarkDone={onDone}
+          onSinglePane={handleSinglePane}
+          showSinglePane={leafCount > 1}
           onSelectTab={handleSelectTab}
           onCloseTab={(tab) => {
             const session = tab.kind === 'native' ? tab.session : undefined;

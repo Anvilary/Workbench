@@ -46,6 +46,9 @@ interface Props {
   onRenameTab: (tab: WorkspaceTab, title: string) => Promise<void>;
   isTabUnsaved?: (tabId: string) => boolean;
   reportError: (error: string) => void;
+  onMarkDone?: () => void;
+  onSinglePane?: () => void;
+  showSinglePane?: boolean;
 }
 
 export function PaneHeader({
@@ -84,6 +87,9 @@ export function PaneHeader({
   onRenameTab,
   isTabUnsaved,
   reportError,
+  onMarkDone,
+  onSinglePane,
+  showSinglePane,
 }: Props): JSX.Element {
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -722,6 +728,32 @@ export function PaneHeader({
             >
               <span className="agency-dropdown-label">{t('agency.splits.closePane')}</span>
             </button>
+            {showSinglePane && onSinglePane && (
+              <button
+                type="button"
+                role="menuitem"
+                className="agency-dropdown-item"
+                onClick={() => {
+                  setPaneActionsOpen(false);
+                  onSinglePane();
+                }}
+              >
+                <span className="agency-dropdown-label">{t('agency.splits.singlePane')}</span>
+              </button>
+            )}
+            {onMarkDone && (
+              <button
+                type="button"
+                role="menuitem"
+                className="agency-dropdown-item"
+                onClick={() => {
+                  setPaneActionsOpen(false);
+                  onMarkDone();
+                }}
+              >
+                <span className="agency-dropdown-label">{t('agency.ui.markDone')}</span>
+              </button>
+            )}
           </PaneMenu>
         )}
         <PaneGrip paneId={paneId} workspaceId={workspaceId} disabled={moveDisabled} destinations={destinations} onSwap={onSwapPane} />

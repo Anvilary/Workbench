@@ -64,6 +64,9 @@ interface Props {
   onFocusPane: (paneId: string) => void;
   onTabDisplayed: (id: string, ready: boolean) => void;
   onPaneHost: (paneId: string, element: HTMLElement | null) => void;
+  onMarkDone?: () => void;
+  onSinglePane?: () => void;
+  showSinglePane?: boolean;
 }
 
 function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
@@ -187,6 +190,9 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
         onRenameTab={onRenameTab}
         isTabUnsaved={props.isTabUnsaved}
         reportError={reportError}
+        onMarkDone={props.onMarkDone}
+        onSinglePane={props.onSinglePane}
+        showSinglePane={props.showSinglePane}
       />
 
       <PaneBody paneId={node.id} onPaneHost={onPaneHost}>
