@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { embeddedUrl, externalUrl, otherUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl, githubUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, isSameSite, targetWebProvider } from './policy.mjs';
+import { embeddedUrl, externalUrl, otherUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl, githubUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, isSameSite, targetWebProvider, authenticationUrl, decideWindowOpen } from './policy.mjs';
 const id = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
 test('general web URLs cannot name local services or privileged protocols', () => {
   assert.equal(validCommand({ type: 'restore-shell-storage' }), true);
@@ -184,4 +184,69 @@ test('FEATURE: targetWebProvider classification and boundary safety', () => {
   assert.equal(targetWebProvider('javascript:alert(1)'), null);
   assert.equal(targetWebProvider('data:text/html,<h1>hi</h1>'), null);
   assert.equal(targetWebProvider('mailto:alice@example.com'), null);
+});
+
+test('authentication URLs stay distinguishable from ordinary pages and private hosts', () => {
+  const longAuth = 'https://accounts.google.com/o/oauth2/v2/auth?state=' + 'a'.repeat(2500);
+  assert.equal(longAuth.length > 2048, true);
+  assert.equal(authenticationUrl(longAuth), true);
+  assert.equal(otherUrl(longAuth), false);
+  assert.equal(authenticationUrl('https://accounts.google.com/o/oauth2/v2/auth?state=' + 'a'.repeat(9000)), false);
+  for (const url of [
+    'https://accounts.google.com/gsi/select?client_id=fixture',
+    'https://accounts.youtube.com/',
+    'https://myaccount.google.com/',
+    'https://appleid.apple.com/auth/authorize',
+    'https://login.microsoftonline.com/',
+    'https://login.live.com/',
+    'https://login.microsoft.com/',
+    'https://auth.openai.com/authorize',
+    'https://auth0.openai.com/',
+    'https://acme.okta.com/login',
+    'https://tenant.auth0.com/authorize',
+    'https://corp.onelogin.com/trust',
+    'https://login.example.com/oauth/authorize',
+    'https://idp.example.com/oauth/authorize/extra',
+    'https://idp.example.com/oauth/v2/authorize',
+    'https://idp.example.com/oauth2/authorize',
+    'https://idp.example.com/o/oauth2/v2/auth',
+    'https://idp.example.com/signin/oauth/consent',
+    'https://idp.example.com/login/oauth/authorize',
+    'https://idp.example.com/saml/SSO',
+    'https://idp.example.com/saml2/acs',
+    'https://idp.example.com/openid-connect/auth',
+  ]) assert.equal(authenticationUrl(url), true, url);
+  for (const url of [
+    'https://accounts.google.com.evil.com/gsi/select',
+    'https://evil.com/gsi/select',
+    'https://evil.com/oauth/callback',
+    'https://evil.com/oauth/authorized',
+    'https://okta.com/login',
+    'https://notokta.com/login',
+    'https://login.example/oauth/authorize',
+    'http://accounts.google.com/o/oauth2/v2/auth',
+    'https://user:pass@accounts.google.com/',
+    'https://accounts.google.com:444/',
+    'https://127.0.0.1/oauth/authorize',
+    'https://localhost/oauth/authorize',
+    'javascript:alert(1)',
+    'file:///etc/passwd',
+  ]) assert.equal(authenticationUrl(url), false, url);
+});
+
+test('window.open keeps authentication popups out of workspace tabs', () => {
+  const auth = 'https://accounts.google.com/gsi/select?client_id=fixture';
+  assert.equal(decideWindowOpen({ url: auth, allowPopup: true, permitted: true, tabbable: true, external: true }), 'popup');
+  assert.equal(decideWindowOpen({ url: auth, allowPopup: true, popupOpen: true, permitted: true, tabbable: true, external: true }), 'external');
+  assert.equal(decideWindowOpen({ url: auth, allowPopup: false, permitted: true, tabbable: true, external: true }), 'external');
+  assert.equal(decideWindowOpen({ url: 'about:blank', features: 'width=480,height=640', allowPopup: true }), 'popup');
+  assert.equal(decideWindowOpen({ url: '', disposition: 'new-window', allowPopup: true }), 'popup');
+  assert.equal(decideWindowOpen({ url: 'about:blank', allowPopup: true }), 'deny');
+  assert.equal(decideWindowOpen({ url: 'https://github.com/openai/openai-python', allowPopup: true, permitted: false, tabbable: true, external: true }), 'tab');
+  assert.equal(decideWindowOpen({ url: 'https://docs.python.org/3/', allowPopup: true, permitted: true, tabbable: true, external: true }), 'popup');
+  assert.equal(decideWindowOpen({ url: 'https://docs.python.org/3/', allowPopup: false, permitted: true, tabbable: true, external: true }), 'tab');
+  assert.equal(decideWindowOpen({ url: 'javascript:alert(1)', allowPopup: true }), 'deny');
+  const longAuth = 'https://accounts.google.com/o/oauth2/v2/auth?state=' + 'a'.repeat(2500);
+  assert.equal(decideWindowOpen({ url: longAuth, allowPopup: true, permitted: false, tabbable: false, external: true }), 'popup');
+  assert.equal(decideWindowOpen({ url: longAuth, allowPopup: true, popupOpen: true, permitted: false, tabbable: false, external: true }), 'external');
 });

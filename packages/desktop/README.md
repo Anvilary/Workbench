@@ -119,11 +119,14 @@ confirmation; custom protocols, credentials, IP literals, private/local host nam
 and custom ports are rejected. This is URL validation, not DNS-based network
 isolation. Subresources follow normal Chromium web security.
 
-Login may create one temporary, parented, sandboxed native authentication popup
-with the same session and no preload or browser toolbar. Nested popups are denied.
-This is a transient exception to the single main application window, not a second
-tab system. Embedded-provider compatibility remains provider policy dependent;
-rejected flows receive no workaround. All web permission requests/checks are
+Sign-in navigations stay in the browsing context that started them. A site may
+also open one temporary, parented, sandboxed popup, including a blank popup
+window aimed at a provider. That popup uses the opener session, has no preload
+or browser toolbar, and is not turned into a workspace tab. A second sign-in
+window, and a sign-in document that fails to load, ask before opening the system
+browser. Ordinary cross-site document links still open as workspace tabs. Nested
+popups are not created. Embedded authentication remains provider policy
+dependent. All web permission requests/checks are
 denied, and downloads are disabled for this pilot. Voice, microphone, screen
 capture and download workflows are therefore outside its scope. Native clipboard
 keyboard operations and user-selected uploads use normal Chromium facilities.

@@ -97,6 +97,66 @@ export function isSameSite(url1, url2) {
   }
 }
 
+const AUTH_URL_MAX = 8192;
+const authenticationHosts = new Set([
+  'accounts.google.com',
+  'accounts.youtube.com',
+  'myaccount.google.com',
+  'appleid.apple.com',
+  'login.microsoftonline.com',
+  'login.live.com',
+  'login.microsoft.com',
+  'auth.openai.com',
+  'auth0.openai.com',
+]);
+const authenticationSuffixes = ['.okta.com', '.auth0.com', '.onelogin.com'];
+const authenticationPath = /^\/(?:o\/oauth2\/|oauth2\/|oauth\/authorize(?:\/|$)|oauth\/v2\/|signin\/oauth|saml2?\/|openid-connect\/|login\/oauth\/)/i;
+const blockedPublicSuffixes = ['localhost', 'local', 'internal', 'lan', 'home', 'home.arpa', 'test', 'invalid', 'example'];
+
+function publicHttps(value, maxLength) {
+  if (typeof value !== 'string' || value.length === 0 || value.length > maxLength || /[\u0000-\u0020\u007f]/.test(value)) return null;
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    if (url.protocol !== 'https:' || url.username || url.password || url.port) return null;
+    if (isIP(host.replace(/^\[|\]$/g, '')) || !host.includes('.') || host.endsWith('.')) return null;
+    if (blockedPublicSuffixes.some(suffix => host === suffix || host.endsWith('.' + suffix))) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+/** Provider sign-in documents, including OAuth URLs that exceed the ordinary address limit. */
+export function authenticationUrl(value) {
+  const url = publicHttps(value, AUTH_URL_MAX);
+  if (!url) return false;
+  const host = url.hostname.toLowerCase();
+  if (authenticationHosts.has(host)) return true;
+  if (authenticationSuffixes.some(suffix => host.endsWith(suffix) && host.length > suffix.length)) return true;
+  return authenticationPath.test(url.pathname);
+}
+
+function popupShaped(disposition, features) {
+  if (disposition === 'new-window') return true;
+  return /(?:^|[,\s])(?:popup|width|height)(?:\s*=|\s*,|\s*$)/i.test(typeof features === 'string' ? features : '');
+}
+
+/**
+ * How window.open is hosted.
+ * Authentication popups stay native windows. They are never turned into workspace tabs:
+ * a tab has no opener, drops form bodies, and leaves Google's sign-in document empty.
+ */
+export function decideWindowOpen({ url, disposition = '', features = '', allowPopup = false, popupOpen = false, permitted = false, tabbable = false, external = false }) {
+  const blank = url === 'about:blank' || url === '';
+  const auth = authenticationUrl(url);
+  if (allowPopup && !popupOpen && (permitted || auth || (popupShaped(disposition, features) && blank))) return 'popup';
+  if (auth) return 'external';
+  if (tabbable) return 'tab';
+  if (external) return 'external';
+  return 'deny';
+}
+
 export function isFileDeliveryHost(hostname) {
   if (!hostname || typeof hostname !== 'string') return false;
   return fileDeliveryHosts.has(hostname) || hostname.endsWith('.oaiusercontent.com') || hostname.endsWith('.oaistatic.com');

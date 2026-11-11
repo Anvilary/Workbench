@@ -4,7 +4,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { mkdir, readFile, lstat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, BROWSER_PARTITION, otherUrl, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, targetWebProvider, isSameSite } from './policy.mjs';
+import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, BROWSER_PARTITION, otherUrl, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, targetWebProvider, isSameSite, authenticationUrl, decideWindowOpen } from './policy.mjs';
 import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
 import { calculateResourceBudget, selectEvictionCandidate, isProtectedProvider, readSystemMemory } from './resource-budget.mjs';
 import { ResourceCollector } from './resource-monitor.mjs';
@@ -37,7 +37,7 @@ async function start() {
     // Block direct local-network URLs, including subframes and fetches, in general web pages.
     const network = /^(https?|wss?):/.test(details.url);
     const checked = details.url.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
-    callback({ cancel: network && !otherUrl(checked) });
+    callback({ cancel: network && !otherUrl(checked) && !(details.url.startsWith('https:') && authenticationUrl(details.url)) });
   });
   // Permit clipboard writing only from the official ChatGPT origin.
   // Clipboard reading and all unrelated permissions remain denied.
@@ -106,6 +106,7 @@ async function start() {
   let reportedFocusedId = null;
   const popups = new Set();
   const popupOwners = new Map(); // popup WebContents -> tabId
+  const authEntryUrls = new WeakMap(); // WebContents -> relying-party URL before sign-in
   const attachedViews = new Map(); // id -> WebContentsView (up to 4 simultaneously visible)
   const suspendedTabs = new Map(); // id -> { id, provider, url, requestedUrl, zoomLevel, suspendedAt }
   const lastAccessedAt = new Map(); // id -> number (timestamp)
@@ -197,10 +198,14 @@ async function start() {
 
   function invalidate() { hideAll(); send({ type: 'layout-needed' }); }
 
-  async function openExternal(url) {
-    if (!externalUrl(url) || win.isDestroyed()) return;
+  async function openExternal(url, reason) {
+    if (!(externalUrl(url) || authenticationUrl(url)) || win.isDestroyed()) return;
+    if (process.env.MAW_EXTERNAL_POLICY === 'deny') {
+      send({ type: 'error', message: reason || 'External browser opening was cancelled.' });
+      return;
+    }
     hideAll();
-    const answer = await dialog.showMessageBox(win, { type: 'question', message: 'Open this destination in your browser?', detail: new URL(url).origin, buttons: ['Cancel', 'Open browser'], defaultId: 0, cancelId: 0 });
+    const answer = await dialog.showMessageBox(win, { type: 'question', message: reason || 'Open this destination in your browser?', detail: new URL(url).origin, buttons: ['Cancel', 'Open browser'], defaultId: 0, cancelId: 0 });
     if (answer.response === 1) await shell.openExternal(url);
     send({ type: 'layout-needed' });
   }
@@ -223,8 +228,25 @@ async function start() {
       return false;
     };
     const isSameSiteOrAllowed = (url) => {
+      // Sign-in stays in this browsing context. A workspace tab has no opener,
+      // drops a form body, and leaves the provider document empty.
+      let currentUrl = '';
+      try { currentUrl = contents.getURL() || ''; } catch { currentUrl = ''; }
+      if (authenticationUrl(url)) {
+        if (!authEntryUrls.has(contents) && currentUrl && currentUrl !== 'about:blank' && !authenticationUrl(currentUrl)) authEntryUrls.set(contents, currentUrl);
+        return true;
+      }
+      // Leave the identity provider only for the site that started sign-in, or the popup opener.
+      if (authenticationUrl(currentUrl) && navigationAllowed(provider, url)) {
+        const entry = authEntryUrls.get(contents) || '';
+        if (entry && isSameSite(entry, url)) return true;
+        const openerId = getTabId();
+        const opener = openerId ? views.get(openerId)?.webContents : null;
+        if (opener && opener !== contents && !opener.isDestroyed()) {
+          try { if (isSameSite(opener.getURL(), url)) return true; } catch { /* opener is gone */ }
+        }
+      }
       if (provider === 'other') {
-        const currentUrl = contents.getURL();
         if (!currentUrl || currentUrl === 'about:blank' || urls.get(getTabId()) === url) return otherUrl(url);
         return otherUrl(url) && isSameSite(currentUrl, url);
       }
@@ -245,42 +267,58 @@ async function start() {
     };
     const redirect = (event, url) => {
       if (handleFileDelivery(event, url)) return;
-      if (navigationAllowed(provider, url)) return;
+      if (navigationAllowed(provider, url) || authenticationUrl(url)) return;
       event.preventDefault();
       void openExternal(url).catch(() => send({ type: 'error', message: 'Could not open external browser.' }));
     };
     contents.on('will-navigate', navigation);
     contents.on('will-redirect', redirect);
     contents.on('will-attach-webview', event => event.preventDefault());
-    contents.setWindowOpenHandler(({ url }) => {
+    const popupWindow = () => ({ action: 'allow', overrideBrowserWindowOptions: {
+      parent: win, autoHideMenuBar: true, width: 640, height: 760,
+      webPreferences: { ...secure, session: browserSessions[provider] ?? chatSession, preload: '' },
+    } });
+    contents.setWindowOpenHandler(({ url, disposition, features }) => {
       if (provider === 'chatgpt' && isDownloadOrFileDeliveryUrl(url)) {
         contents.downloadURL(url);
         return { action: 'deny' };
       }
-      if (allowPopup && navigationAllowed(provider, url) && popups.size < 1) return { action: 'allow', overrideBrowserWindowOptions: {
-        parent: win, autoHideMenuBar: true, width: 640, height: 760,
-        webPreferences: { ...secure, session: browserSessions[provider] ?? chatSession, preload: '' },
-      } };
-      const id = getTabId();
-      if (id && targetWebProvider(url)) {
-        if (allowLinkOpen(id)) {
-          send({ type: 'open-web-tab', sourceTabId: id, url });
-        }
+      const decision = decideWindowOpen({
+        url, disposition, features, allowPopup, popupOpen: popups.size >= 1,
+        permitted: navigationAllowed(provider, url),
+        tabbable: !!(getTabId() && targetWebProvider(url)),
+        external: externalUrl(url) || authenticationUrl(url),
+      });
+      if (decision === 'popup') return popupWindow();
+      if (decision === 'tab') {
+        const id = getTabId();
+        if (id && allowLinkOpen(id)) send({ type: 'open-web-tab', sourceTabId: id, url });
         return { action: 'deny' };
       }
-      if (externalUrl(url)) {
-        void openExternal(url).catch(() => {});
+      if (decision === 'external') {
+        const reason = authenticationUrl(url) ? 'This sign-in cannot continue inside the workspace. Open it in your system browser?' : undefined;
+        void openExternal(url, reason).catch(() => send({ type: 'error', message: 'Could not open external browser.' }));
       }
       return { action: 'deny' };
     });
     contents.on('did-create-window', popup => {
       popups.add(popup);
+      // Capture the contents now. After 'closed', popup.webContents throws
+      // "Object has been destroyed" and would skip removing this popup.
+      const popupContents = popup.webContents;
       const tabId = getTabId();
-      if (tabId) popupOwners.set(popup.webContents, tabId);
+      if (tabId) popupOwners.set(popupContents, tabId);
       popup.setMenu(null);
-      guard(popup.webContents, provider, false);
+      guard(popupContents, provider, false);
+      let authLoadFailed = false;
+      popupContents.on('did-fail-load', (_event, code, _description, failedUrl, isMainFrame) => {
+        if (authLoadFailed || !isMainFrame || code === -3 || !authenticationUrl(failedUrl)) return;
+        authLoadFailed = true;
+        if (!popup.isDestroyed()) popup.close();
+        void openExternal(failedUrl, 'This sign-in could not be opened inside MAW. Open it in your system browser?').catch(() => {});
+      });
       popup.on('closed', () => {
-        popupOwners.delete(popup.webContents);
+        popupOwners.delete(popupContents);
         popups.delete(popup);
         invalidate();
       });
@@ -553,18 +591,18 @@ async function start() {
       reportNavigation(id);
       trimCapacity(id);
     });
-    view.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => {
-      if (mainFrame) {
-        if (code === -3) {
-          if (!failures.has(id) && durablePage(provider, view.webContents.getURL())) {
-            send({ type: 'ready', id });
-          }
-        } else {
-          const message = `${providerName} failed to load (${code}). Use Reload page to retry.`;
-          failures.set(id, message);
-          send({ type: 'error', id, message });
-        }
+    view.webContents.on('did-fail-load', (_event, code, _description, failedUrl, mainFrame) => {
+      if (!mainFrame) return;
+      if (code === -3) {
+        if (!failures.has(id) && durablePage(provider, view.webContents.getURL())) send({ type: 'ready', id });
+        return;
       }
+      if (authenticationUrl(failedUrl)) {
+        void openExternal(failedUrl, 'This sign-in could not be opened inside MAW. Open it in your system browser?').catch(() => {});
+      }
+      const message = `${providerName} failed to load (${code}). Use Reload page to retry.`;
+      failures.set(id, message);
+      send({ type: 'error', id, message });
     });
     view.webContents.on('render-process-gone', () => {
       const message = `${providerName} renderer stopped. Use Reload page to retry.`;
@@ -595,8 +633,10 @@ async function start() {
 
   function reportNavigation(id) {
     const contents = views.get(id)?.webContents;
-    if (!contents || contents.isDestroyed() || !navigationAllowed(providers.get(id), contents.getURL())) return;
-    send({ type: 'navigation', id, url: contents.getURL(), canGoBack: contents.navigationHistory.canGoBack(), canGoForward: contents.navigationHistory.canGoForward() });
+    if (!contents || contents.isDestroyed()) return;
+    const current = contents.getURL();
+    if (!(navigationAllowed(providers.get(id), current) || authenticationUrl(current))) return;
+    send({ type: 'navigation', id, url: current, canGoBack: contents.navigationHistory.canGoBack(), canGoForward: contents.navigationHistory.canGoForward() });
   }
 
   async function discoverBackendReadiness() {
@@ -714,6 +754,14 @@ async function start() {
       if (command.action === 'copy-selection') contents.copy();
       if (command.action === 'open-page') void openExternal(contents.getURL());
       if (command.action === 'open-link') {
+        if (authenticationUrl(command.url)) {
+          try {
+            const current = contents.getURL();
+            if (current && current !== 'about:blank' && !authenticationUrl(current)) authEntryUrls.set(contents, current);
+          } catch { /* the current document is already gone */ }
+          void contents.loadURL(command.url).catch(() => {});
+          return;
+        }
         const target = targetWebProvider(command.url);
         if (target) {
           send({ type: 'open-web-tab', sourceTabId: command.id, url: command.url });
