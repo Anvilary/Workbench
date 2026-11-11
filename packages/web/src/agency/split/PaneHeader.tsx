@@ -49,6 +49,8 @@ interface Props {
   onMarkDone?: () => void;
   onSinglePane?: () => void;
   showSinglePane?: boolean;
+  browserToolbarOpen?: boolean;
+  onToggleBrowserToolbar?: () => void;
 }
 
 export function PaneHeader({
@@ -90,7 +92,11 @@ export function PaneHeader({
   onMarkDone,
   onSinglePane,
   showSinglePane,
+  browserToolbarOpen,
+  onToggleBrowserToolbar,
 }: Props): JSX.Element {
+  const selectedTab = tabs.find((tab) => tab.id === selectedTabId);
+  const isWebTab = selectedTab?.kind === 'web';
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -653,6 +659,23 @@ export function PaneHeader({
         </div>
 
       <div className="maw-pane-actions">
+        {isWebTab && (
+          <button
+            type="button"
+            className={`maw-pane-action-button maw-browser-toolbar-toggle ${browserToolbarOpen ? 'active' : ''}`}
+            title={browserToolbarOpen ? t('agency.browser.hideToolbar') : t('agency.browser.showToolbar')}
+            aria-label={browserToolbarOpen ? t('agency.browser.hideToolbar') : t('agency.browser.showToolbar')}
+            aria-expanded={browserToolbarOpen}
+            onClick={onToggleBrowserToolbar}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="1.5" y="2" width="13" height="12" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
+              <path d="M1.5 5.5h13" stroke="currentColor" strokeWidth="1.2" />
+              <circle cx="4" cy="3.75" r="0.75" fill="currentColor" />
+              <circle cx="6.5" cy="3.75" r="0.75" fill="currentColor" />
+            </svg>
+          </button>
+        )}
         <button
           ref={paneActionBtn}
           type="button"

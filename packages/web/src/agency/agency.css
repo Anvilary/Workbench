@@ -1276,6 +1276,11 @@
   opacity: 0.35;
   cursor: default;
 }
+.maw-browser-toolbar-toggle.active,
+.maw-browser-toolbar-toggle[aria-expanded="true"] {
+  background: var(--hover);
+  color: var(--ink);
+}
 
 .maw-pane-body {
   flex: 1;

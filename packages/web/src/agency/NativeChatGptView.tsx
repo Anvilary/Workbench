@@ -55,10 +55,14 @@ export function nativeWebProvider(value: string, storedProvider?: WebTab['provid
 
 export function NativeChatGptView({
   tab,
+  toolbarOpen = false,
+  onExpandToolbar,
   onDisplayed,
   onFocused,
 }: {
   tab: WebTab;
+  toolbarOpen?: boolean;
+  onExpandToolbar?: () => void;
   onDisplayed: (id: string, ready: boolean) => void;
   onFocused?: () => void;
 }): JSX.Element {
@@ -68,6 +72,8 @@ export function NativeChatGptView({
   callback.current = onDisplayed;
   const focusCallback = useRef(onFocused);
   focusCallback.current = onFocused;
+  const expandCallback = useRef(onExpandToolbar);
+  expandCallback.current = onExpandToolbar;
   const url = useRef(tab.url);
   url.current = tab.url;
   const host = useRef<HTMLDivElement>(null);
@@ -92,8 +98,11 @@ export function NativeChatGptView({
     const unsubscribe = bridge.subscribe((state) => {
       if (state.id !== id) return;
       if (state.type === 'address-shortcut') {
-        addressInput.current?.focus();
-        addressInput.current?.select();
+        expandCallback.current?.();
+        setTimeout(() => {
+          addressInput.current?.focus();
+          addressInput.current?.select();
+        }, 0);
       }
       if (state.type === 'navigation' && state.url) {
         setAddress(state.url);
@@ -136,7 +145,7 @@ export function NativeChatGptView({
 
   return (
     <div className="maw-browser-pane">
-      {window.mawChatGpt && supported && <div className="maw-browser-toolbar">
+      {window.mawChatGpt && supported && toolbarOpen && <div className="maw-browser-toolbar">
         <button type="button" aria-label={t('agency.browser.back')} disabled={!history.canGoBack} onClick={() => void window.mawChatGpt?.command({ type: 'browser-action', id, action: 'back' })}>‹</button>
         <button type="button" aria-label={t('agency.browser.forward')} disabled={!history.canGoForward} onClick={() => void window.mawChatGpt?.command({ type: 'browser-action', id, action: 'forward' })}>›</button>
         <button type="button" aria-label={t('agency.browser.reload')} onClick={() => void window.mawChatGpt?.command({ type: 'browser-action', id, action: 'reload' })}>↻</button>

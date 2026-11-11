@@ -136,6 +136,13 @@ export function AgencyWorkspaceView({
   const [unsavedTabIds, setUnsavedTabIds] = useState<ReadonlySet<string>>(
     () => new Set(editorDraftStore.listDirtyTabIds()),
   );
+  const [browserToolbarOpen, setBrowserToolbarOpen] = useState<Record<string, boolean>>({});
+  const handleToggleBrowserToolbar = useCallback((tabId: string) => {
+    setBrowserToolbarOpen((prev) => ({ ...prev, [tabId]: !(prev[tabId] ?? false) }));
+  }, []);
+  const handleExpandBrowserToolbar = useCallback((tabId: string) => {
+    setBrowserToolbarOpen((prev) => ({ ...prev, [tabId]: true }));
+  }, []);
   useEffect(() => {
     const sync = () => {
       const dirtyIds = editorDraftStore.listDirtyTabIds();
@@ -859,6 +866,9 @@ export function AgencyWorkspaceView({
           onFocusPane={handleFocusPane}
           onTabDisplayed={reportDisplayed}
           onPaneHost={registerPaneHost}
+          browserToolbarOpen={browserToolbarOpen}
+          onToggleBrowserToolbar={handleToggleBrowserToolbar}
+          onExpandBrowserToolbar={handleExpandBrowserToolbar}
         />
         <PersistentSessionPanes
           tabs={tabs}

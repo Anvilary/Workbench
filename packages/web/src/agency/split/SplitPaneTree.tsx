@@ -67,6 +67,9 @@ interface Props {
   onMarkDone?: () => void;
   onSinglePane?: () => void;
   showSinglePane?: boolean;
+  browserToolbarOpen?: Record<string, boolean>;
+  onToggleBrowserToolbar?: (tabId: string) => void;
+  onExpandBrowserToolbar?: (tabId: string) => void;
 }
 
 function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
@@ -137,6 +140,7 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
   const isFocused = layout.focusedPaneId === node.id;
   const isMaximized = layout.maximizedPaneId === node.id;
   const selectedTab = tabs.find((t) => t.id === node.selectedTabId);
+  const toolbarOpen = node.selectedTabId ? (props.browserToolbarOpen?.[node.selectedTabId] ?? false) : false;
 
   return (
     <div
@@ -193,6 +197,8 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
         onMarkDone={props.onMarkDone}
         onSinglePane={props.onSinglePane}
         showSinglePane={props.showSinglePane}
+        browserToolbarOpen={toolbarOpen}
+        onToggleBrowserToolbar={node.selectedTabId && props.onToggleBrowserToolbar ? () => props.onToggleBrowserToolbar?.(node.selectedTabId!) : undefined}
       />
 
       <PaneBody paneId={node.id} onPaneHost={onPaneHost}>
@@ -200,6 +206,8 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
           <NativeChatGptView
             key={selectedTab.id}
             tab={selectedTab.web}
+            toolbarOpen={toolbarOpen}
+            onExpandToolbar={props.onExpandBrowserToolbar ? () => props.onExpandBrowserToolbar?.(selectedTab.id) : undefined}
             onDisplayed={onTabDisplayed}
             onFocused={() => onFocusPane(node.id)}
           />
