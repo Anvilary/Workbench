@@ -514,20 +514,6 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
               setInboxOpen(!inboxOpen);
             }}
           />
-          <button
-            type="button"
-            className="agency-icon-button"
-            onClick={() => {
-              setMenuOpen(false);
-              setInboxOpen(false);
-              setPerformanceOpen(false);
-              setSettingsOpen(true);
-            }}
-            title={t('settings.open')}
-            aria-label={t('settings.open')}
-          >
-            <GearIcon />
-          </button>
           <div className="agency-dropdown" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"

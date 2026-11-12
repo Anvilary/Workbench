@@ -263,18 +263,68 @@ export function classifyWebTabUrl(rawUrl: string): UrlValidationResult & { provi
   return { valid: false, error: 'URL is not an allowed ChatGPT, GitHub, or Perplexity address' };
 }
 
-/** Public HTTP(S) URLs for explicitly user-created Other tabs. */
+/** Returns true if the host is a local loopback address (localhost, 127.0.0.0/8, ::1). */
+export function isLoopbackHost(host: string): boolean {
+  if (typeof host !== 'string') return false;
+  let clean = host.trim().toLowerCase();
+  if (clean.startsWith('[') && clean.includes(']')) {
+    const closeIdx = clean.indexOf(']');
+    clean = clean.slice(0, closeIdx + 1);
+  } else if (!clean.includes(':') || clean.indexOf(':') === clean.lastIndexOf(':')) {
+    clean = clean.split(':')[0] ?? clean;
+  }
+  if (clean === 'localhost' || clean.endsWith('.localhost')) return true;
+  const unbracketed = clean.startsWith('[') && clean.endsWith(']') ? clean.slice(1, -1) : clean;
+  if (unbracketed === '::1') return true;
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(clean);
+  if (match) {
+    const octets = [Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4])];
+    if (octets.every(o => o >= 0 && o <= 255)) {
+      return octets[0] === 127;
+    }
+  }
+  return false;
+}
+
+/** Public HTTP(S) or local loopback URLs for explicitly user-created Other tabs. */
 export function validateOtherWebUrl(rawUrl: string): UrlValidationResult {
-  if (typeof rawUrl !== 'string' || !rawUrl.trim() || rawUrl.length > 2048 || /[\u0000-\u001f\u007f]/.test(rawUrl)) return { valid: false, error: 'Invalid URL' };
+  if (typeof rawUrl !== 'string' || !rawUrl.trim() || rawUrl.length > 2048 || /[\u0000-\u001f\u007f]/.test(rawUrl)) {
+    return { valid: false, error: 'Invalid URL' };
+  }
+  let trimmed = rawUrl.trim();
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
+    const candidateHost = trimmed.split('/')[0] ?? '';
+    if (isLoopbackHost(candidateHost)) {
+      trimmed = 'http://' + trimmed;
+    }
+  }
   let url: URL;
-  try { url = new URL(rawUrl.trim()); } catch { return { valid: false, error: 'Invalid URL format' }; }
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return { valid: false, error: 'Invalid URL format' };
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return { valid: false, error: 'Only HTTP and HTTPS URLs are allowed' };
+  }
+  if (url.username || url.password) {
+    return { valid: false, error: 'URLs with user credentials are not allowed' };
+  }
   const host = url.hostname.toLowerCase();
+  if (isLoopbackHost(host)) {
+    return { valid: true, normalizedUrl: url.toString() };
+  }
   const ipv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
   const ipv6 = host.startsWith('[') || host.endsWith(']');
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return { valid: false, error: 'Only HTTP and HTTPS URLs are allowed' };
-  if (url.username || url.password) return { valid: false, error: 'URLs with user credentials are not allowed' };
-  if (ipv4 || ipv6 || !host.includes('.') || host.endsWith('.') ||
-      ['localhost', 'local', 'internal', 'lan', 'home', 'home.arpa', 'test', 'invalid', 'example'].some(suffix => host === suffix || host.endsWith('.' + suffix))) {
+  if (
+    ipv4 ||
+    ipv6 ||
+    !host.includes('.') ||
+    host.endsWith('.') ||
+    ['localhost', 'local', 'internal', 'lan', 'home', 'home.arpa', 'test', 'invalid', 'example'].some(
+      suffix => host === suffix || host.endsWith('.' + suffix),
+    )
+  ) {
     return { valid: false, error: 'Enter a public hostname without a trailing dot' };
   }
   return { valid: true, normalizedUrl: url.toString() };

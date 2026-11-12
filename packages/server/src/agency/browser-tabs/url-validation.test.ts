@@ -1,10 +1,48 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isAllowedChatGptUrl, validateChatGptUrl, validatePerplexityUrl, validateGithubUrl, validateOtherWebUrl, classifyWebTabUrl, webTabProviderFor } from '@agent-workbench/shared';
+import { isAllowedChatGptUrl, validateChatGptUrl, validatePerplexityUrl, validateGithubUrl, validateOtherWebUrl, classifyWebTabUrl, webTabProviderFor, isLoopbackHost } from '@agent-workbench/shared';
 
-test('Other tabs accept public HTTP(S) while rejecting local, IP, credential, and privileged URLs', () => {
-  for (const url of ['http://example.org:8080/path', 'https://github.com/owner/repo', 'https://10.example.org/']) assert.equal(validateOtherWebUrl(url).valid, true, url);
-  for (const url of ['file:///etc/passwd', 'javascript:alert(1)', 'http://127.0.0.1/', 'http://10.0.0.1/', 'http://[::1]/', 'http://localhost/', 'http://router.home/', 'https://u:p@example.org/', 'https://example.org/\n', 'https://example.org./']) assert.equal(validateOtherWebUrl(url).valid, false, url);
+test('Other tabs accept public HTTP(S) and local loopback while rejecting non-loopback private IPs, credentials, and privileged schemes', () => {
+  for (const url of [
+    'http://example.org:8080/path',
+    'https://github.com/owner/repo',
+    'https://10.example.org/',
+    'http://127.0.0.1/',
+    'http://[::1]/',
+    'http://localhost/',
+    'localhost:7012',
+    'http://127.0.0.1:7012/',
+  ]) {
+    assert.equal(validateOtherWebUrl(url).valid, true, url);
+  }
+  for (const url of [
+    'file:///etc/passwd',
+    'javascript:alert(1)',
+    'http://10.0.0.1/',
+    'https://192.168.1.1/',
+    'http://router.home/',
+    'https://u:p@example.org/',
+    'https://example.org/\n',
+    'https://example.org./',
+  ]) {
+    assert.equal(validateOtherWebUrl(url).valid, false, url);
+  }
+});
+
+test('isLoopbackHost identifies loopback addresses accurately', () => {
+  assert.equal(isLoopbackHost('localhost'), true);
+  assert.equal(isLoopbackHost('127.0.0.1'), true);
+  assert.equal(isLoopbackHost('[::1]'), true);
+  assert.equal(isLoopbackHost('::1'), true);
+  assert.equal(isLoopbackHost('localhost:7012'), true);
+  assert.equal(isLoopbackHost('127.0.0.1:7012'), true);
+  assert.equal(isLoopbackHost('[::1]:7012'), true);
+  assert.equal(isLoopbackHost('sub.localhost'), true);
+  assert.equal(isLoopbackHost('192.168.1.1'), false);
+  assert.equal(isLoopbackHost('10.0.0.1'), false);
+  assert.equal(isLoopbackHost('172.16.0.1'), false);
+  assert.equal(isLoopbackHost('example.org'), false);
+  assert.equal(isLoopbackHost('router.home'), false);
 });
 
 test('URL validation: accepts canonical and valid ChatGPT URLs', () => {
