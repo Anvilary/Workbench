@@ -693,7 +693,8 @@ test('real disposable node-pty shell: cwd, input, resize, replay, detach, Ctrl+C
 }, async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'agency-live-pty-'));
   const registry = new TerminalRegistry(new AgentRegistry([]),
-    { file: '/bin/sh', args: ['-i'], name: 'sh' }, new DisposableWorkspaceStore());
+    { file: '/bin/sh', args: ['-i'], name: 'sh' }, new DisposableWorkspaceStore(),
+    undefined, undefined, undefined, { persistentPty: false });
   try {
     const shell = await registry.open({ cwd, kind: 'shell', cols: 80, rows: 24, agencyManaged: true });
     const id = shell.terminalId;
@@ -771,7 +772,7 @@ test('native adapter onSpawned is invoked exactly once by real registry PTY', {
     }),
   } as unknown as AgentAdapter;
   const registry = new TerminalRegistry(new AgentRegistry([fakeAdapter]), null,
-    new DisposableWorkspaceStore());
+    new DisposableWorkspaceStore(), undefined, undefined, undefined, { persistentPty: false });
   try {
     const created = await registry.open({
       cwd, kind: 'agent', agent: 'codex', cols: 80, rows: 24, agencyManaged: true,
@@ -1006,7 +1007,7 @@ test('mixed CLI profiles, repeated profile conversations and shell tabs coexist;
   } finally {f.runtime.dispose();await rm(cwd,{recursive:true,force:true});}
 });
 
-test('launch operation IDs are single-flight and durable; logical tab count is independent of the 24-process limit', async () => {
+test('launch operation IDs are single-flight and durable; logical tab count is independent of the 42-process limit', async () => {
   const cwd=await mkdtemp(path.join(tmpdir(),'maw-tab-launch-'));const store=new MemoryStore();const f=fixture(cwd,{store});
   try {
     await f.runtime.initialize();const launchId=randomUUID();
@@ -1015,8 +1016,8 @@ test('launch operation IDs are single-flight and durable; logical tab count is i
     await f.runtime.tabAction(f.one.id,results[0]!.tab!.id,'close');
     assert.equal((await f.runtime.create({kind:'terminal',workspaceId:f.one.id,launchId,cols:80,rows:24})).id,results[0]!.id);
     assert.equal(f.terminals.opens.length,1,'Closed duplicate request must not resurrect');
-    const many=await Promise.allSettled(Array.from({length:25},()=>f.runtime.create({kind:'terminal',workspaceId:f.one.id,cols:80,rows:24})));
-    assert.equal(many.filter(r=>r.status==='fulfilled').length,24);assert.equal(many.filter(r=>r.status==='rejected').length,1);
+    const many=await Promise.allSettled(Array.from({length:43},()=>f.runtime.create({kind:'terminal',workspaceId:f.one.id,cols:80,rows:24})));
+    assert.equal(many.filter(r=>r.status==='fulfilled').length,42);assert.equal(many.filter(r=>r.status==='rejected').length,1);
   } finally {f.runtime.dispose();await rm(cwd,{recursive:true,force:true});}
 });
 
@@ -1088,7 +1089,7 @@ test('closing all tabs resolves workspace deletion blockers without erasing hist
 
 test('three real same-directory PTYs keep input, output, dimensions and close independent', {skip:process.platform!=='linux',timeout:15000}, async () => {
   const cwd=await mkdtemp(path.join(tmpdir(),'maw-three-pty-'));
-  const registry=new TerminalRegistry(new AgentRegistry([]),{file:'/bin/sh',args:['-i'],name:'sh'},new DisposableWorkspaceStore());
+  const registry=new TerminalRegistry(new AgentRegistry([]),{file:'/bin/sh',args:['-i'],name:'sh'},new DisposableWorkspaceStore(), undefined, undefined, undefined, { persistentPty: false });
   try {
     const shells=await Promise.all(Array.from({length:3},()=>registry.open({cwd,kind:'shell',agencyManaged:true,cols:80,rows:24})));
     const output=['','',''];shells.forEach((shell,index)=>registry.attach(shell.terminalId,(_id,chunk)=>{output[index]+=chunk;}));
@@ -1104,11 +1105,11 @@ test('three real same-directory PTYs keep input, output, dimensions and close in
 
 test('the registry process limit remains atomic across concurrent raw and managed opens', {skip:process.platform!=='linux',timeout:15000}, async () => {
   const cwd=await mkdtemp(path.join(tmpdir(),'maw-pty-limit-'));
-  const registry=new TerminalRegistry(new AgentRegistry([]),{file:'/bin/sh',args:['-i'],name:'sh'},new DisposableWorkspaceStore());
+  const registry=new TerminalRegistry(new AgentRegistry([]),{file:'/bin/sh',args:['-i'],name:'sh'},new DisposableWorkspaceStore(), undefined, undefined, undefined, { persistentPty: false });
   try {
-    const results=await Promise.allSettled(Array.from({length:25},(_,index)=>registry.open({cwd,kind:'shell',agencyManaged:index%2===0,cols:80,rows:24})));
-    assert.equal(results.filter(result=>result.status==='fulfilled').length,24);
-    assert.equal(results.filter(result=>result.status==='rejected').length,1);assert.equal(registry.list().length,24);
+    const results=await Promise.allSettled(Array.from({length:43},(_,index)=>registry.open({cwd,kind:'shell',agencyManaged:index%2===0,cols:80,rows:24})));
+    assert.equal(results.filter(result=>result.status==='fulfilled').length,42);
+    assert.equal(results.filter(result=>result.status==='rejected').length,1);assert.equal(registry.list().length,42);
   } finally {registry.disposeAll();await rm(cwd,{recursive:true,force:true});}
 });
 
@@ -1129,18 +1130,18 @@ test('multiple native conversations recover into their own tabs; one unavailable
   } finally {first.runtime.dispose();second?.runtime.dispose();await rm(cwd,{recursive:true,force:true});}
 });
 
-test('more than 24 logical exited tabs can be retained while completed PTYs release registry capacity', {skip:process.platform!=='linux',timeout:15000}, async () => {
+test('more than 42 logical exited tabs can be retained while completed PTYs release registry capacity', {skip:process.platform!=='linux',timeout:15000}, async () => {
   const cwd=await mkdtemp(path.join(tmpdir(),'maw-logical-history-'));const row=workspace(cwd);
-  const registry=new TerminalRegistry(new AgentRegistry([]),{file:'/bin/sh',args:['-c','exit 0'],name:'sh'},new DisposableWorkspaceStore());
+  const registry=new TerminalRegistry(new AgentRegistry([]),{file:'/bin/sh',args:['-c','exit 0'],name:'sh'},new DisposableWorkspaceStore(), undefined, undefined, undefined, { persistentPty: false });
   const runtime=new AgencySessionRuntime({registry,store:new MemoryStore(),workspaces:{protectedDirectories:()=>[],withSessionReservation:async(_id,action)=>action(row)},profiles:{resolveLaunch:async()=>{throw new Error('No agent in shell fixture');}}});
   try {
     await runtime.initialize();
-    for(let index=0;index<26;index++) {
+    for(let index=0;index<44;index++) {
       const session=await runtime.create({kind:'terminal',workspaceId:row.id,cols:80,rows:24});
       await until(()=>runtime.get(session.id)?.lifecycle==='exited' && registry.list().length===0);
     }
     const tabs=runtime.list(row.id).filter(session=>session.tab?.current && !session.tab.closedAt);
-    assert.equal(tabs.length,26);assert.ok(tabs.every(session=>session.exitCode===0));assert.equal(registry.list().length,0);
+    assert.equal(tabs.length,44);assert.ok(tabs.every(session=>session.exitCode===0));assert.equal(registry.list().length,0);
   } finally {runtime.dispose();registry.disposeAll();await rm(cwd,{recursive:true,force:true});}
 });
 

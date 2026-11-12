@@ -182,7 +182,7 @@ for (const shell of ['bash', 'zsh']) test(`real ${shell} PTY through Agency runt
   await writeFile(configPath, config);
   const adapter = { id: 'codex', environment: () => ({ env: { HOME: home, XDG_CONFIG_HOME: app, PATH: '/usr/bin:/bin', TERM: 'xterm-256color' }, notice: null }) } as unknown as AgentAdapter;
   const agents = new AgentRegistry([adapter]);
-  const registry = new TerminalRegistry(agents, { file: '/bin/' + shell, args: [], name: shell }, new MemoryTerminals(), () => null, async () => null, () => path.join(root, 'integration'));
+  const registry = new TerminalRegistry(agents, { file: '/bin/' + shell, args: [], name: shell }, new MemoryTerminals(), () => null, async () => null, () => path.join(root, 'integration'), { persistentPty: false });
   const rows = new MemorySessions(); const now = new Date().toISOString();
   const ws: AgencyWorkspace = { id: randomUUID() as WorkspaceId, projectId: randomUUID() as AgencyWorkspace['projectId'], cwd: root, name: 'fixture', status: 'active', createdAt: now, updatedAt: now, doneAt: null };
   const runtime = new AgencySessionRuntime({ registry, workspaces: { protectedDirectories: () => [], withSessionReservation: async (id, action) => action(id === ws.id ? ws : null) }, profiles: { resolveLaunch: async () => { throw new Error('No real CLI launch allowed'); } }, store: rows });

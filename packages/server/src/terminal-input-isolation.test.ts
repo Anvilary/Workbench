@@ -89,6 +89,7 @@ async function harness() {
     () => null,
     async () => null,
     () => path.join(tempDir, 'shell-integration'),
+    { persistentPty: false },
   );
   const worktrees = new WorktreeService({
     store: worktreeStore,

@@ -379,7 +379,15 @@ test('WebSocket upgrade: connects without token in no-auth mode, rejects foreign
   const catalog = new VaultCatalog();
   const index = new SessionIndex(agents, archived, catalog, worktreeLinks);
   const vault = new VaultService({ agents, index, archived, settings, catalog, platform: process.platform });
-  const registry = new TerminalRegistry(agents, null, store, () => null, async () => null);
+  const registry = new TerminalRegistry(
+    agents,
+    null,
+    store,
+    () => null,
+    async () => null,
+    undefined,
+    { persistentPty: false },
+  );
   const worktrees = new WorktreeService({
     store: worktreeStore,
     registry,

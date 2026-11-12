@@ -77,6 +77,7 @@ async function createHarness(): Promise<TestHarness> {
     () => null,
     async () => null,
     () => path.join(tempDir, 'shell-integration'),
+    { persistentPty: false },
   );
   await registry.initialize();
 

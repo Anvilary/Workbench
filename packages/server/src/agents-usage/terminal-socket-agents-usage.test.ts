@@ -64,6 +64,7 @@ async function createTestHarness(mockCollector: AgentsUsageCollector) {
     () => null,
     async () => null,
     () => path.join(tempDir, 'shell-integration'),
+    { persistentPty: false },
   );
   const worktrees = new WorktreeService({
     store: worktreeStore,

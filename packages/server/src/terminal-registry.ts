@@ -40,7 +40,7 @@ import { createPtyScreen, type PtyScreen } from './pty-screen.js';
 import type { ShellLocation } from './shell-locator.js';
 import { prepareIntegratedShell } from './agency/shell-integration.js';
 import { integrationsDir } from './paths.js';
-import { PtyHostClient } from './pty-host/pty-host-client.js';
+import { PtyHostClient, isTestExecution } from './pty-host/pty-host-client.js';
 import type { PtyHostSessionInfo, PtyHostTombstoneInfo } from './pty-host/pty-host-types.js';
 
 import { ActivityBook, wakeActionFor, type ActivityEntry } from './terminal-activity.js';
@@ -56,7 +56,7 @@ import {
 } from './workspace-store.js';
 
 /** Tope defensivo: cada pestana es un proceso real. */
-const MAX_TERMINALS = 24;
+const MAX_TERMINALS = 42;
 
 /** Cuanto se espera a que termine la CLI de una pestana que se relanza. */
 const RESTART_EXIT_TIMEOUT_MS = 10_000;
@@ -281,7 +281,8 @@ export class TerminalRegistry extends EventEmitter {
   private foreignTabs: ForeignTab[] = [];
   private client: PtyHostClient | null = null;
   private readonly tombstones = new Map<TerminalId, PtyHostTombstoneInfo>();
-  private readonly recoveringClients = new Set<PtyHostClient>();
+  private readonly recoveringClients = new Map<PtyHostClient, Promise<void>>();
+  private readonly autoSpawn?: boolean;
   private readonly persistentPty: boolean;
   private readonly supervisorScriptPath?: string;
   private readonly socketPath?: string;
@@ -302,10 +303,15 @@ export class TerminalRegistry extends EventEmitter {
     private readonly tabWorktreeOf: TabWorktreeLookup = () => Promise.resolve(null),
     /** Disposable integration directory for fixture PTYs. */
     private readonly shellIntegrationDir: () => string = () => integrationsDir() + '/shell',
-    options?: { persistentPty?: boolean; supervisorScriptPath?: string; socketPath?: string; authPath?: string },
+    options?: { autoSpawn?: boolean; persistentPty?: boolean; supervisorScriptPath?: string; socketPath?: string; authPath?: string },
   ) {
     super();
-    this.persistentPty = options?.persistentPty ?? (process.env.MAW_PERSISTENT_PTY === '1' && process.env.MAW_DISABLE_PTYD !== '1');
+    this.autoSpawn = options?.autoSpawn;
+    this.persistentPty = options?.persistentPty ?? (
+      process.env.MAW_PERSISTENT_PTY === '1' &&
+      process.env.MAW_DISABLE_PTYD !== '1' &&
+      !isTestExecution()
+    );
     this.supervisorScriptPath = options?.supervisorScriptPath ?? process.env.MAW_PTYD_SCRIPT;
     this.socketPath = options?.socketPath;
     this.authPath = options?.authPath;
@@ -353,7 +359,7 @@ export class TerminalRegistry extends EventEmitter {
   async initialize(): Promise<void> {
     if (this.persistentPty && !this.client) {
       try {
-        const autoSpawn = process.env.MAW_AUTO_SPAWN_PTYD !== '0';
+        const autoSpawn = this.autoSpawn ?? (this.socketPath ? true : process.env.MAW_AUTO_SPAWN_PTYD !== '0');
         this.client = await PtyHostClient.connectOrSpawn({
           autoSpawn,
           supervisorScriptPath: this.supervisorScriptPath,
@@ -446,70 +452,69 @@ export class TerminalRegistry extends EventEmitter {
     }
   }
 
-  private async recoverSupervisor(client: PtyHostClient): Promise<void> {
-    if (this.recoveringClients.has(client)) return;
-    this.recoveringClients.add(client);
-    try {
-      for (let attempt = 0; attempt < 10 && this.client === client; attempt++) {
-        await new Promise((resolve) => setTimeout(resolve, Math.min(250 * (attempt + 1), 2000)));
-        try {
-          const snapshot = await client.reconnect();
-          const liveIds = new Set(snapshot.sessions.filter((session) => session.alive).map((session) => session.id));
-          for (const session of snapshot.sessions) if (session.alive) await this.adoptSupervisorSession(session);
-          for (const tombstone of snapshot.tombstones) {
-            this.tombstones.set(tombstone.id, tombstone);
-            const entry = this.terminals.get(tombstone.id);
-            if (entry) {
-              const needsExit = entry.descriptor.exitCode === null;
-              entry.session = null;
-              entry.supervisorUnconfirmed = false;
-              entry.descriptor = {
-                ...entry.descriptor,
-                alive: false,
-                sleeping: false,
-                exitCode: tombstone.exitCode,
-                launchedAt: null,
-              };
-              entry.stopWatchingActivity?.();
-              entry.stopWatchingActivity = null;
-              this.setActivity(tombstone.id, 'offline');
-              if (needsExit) {
-                entry.launchHook.exit();
-                this.emit('exit', tombstone.id, tombstone.exitCode, tombstone.signal);
+  async reconnectSupervisor(): Promise<void> {
+    if (!this.client) return;
+    return this.recoverSupervisor(this.client);
+  }
+
+  private recoverSupervisor(client: PtyHostClient): Promise<void> {
+    const existing = this.recoveringClients.get(client);
+    if (existing) return existing;
+    const task = (async () => {
+      try {
+        for (let attempt = 0; attempt < 10 && this.client === client; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, Math.min(250 * (attempt + 1), 2000)));
+          try {
+            const snapshot = await client.reconnect();
+            const liveIds = new Set(snapshot.sessions.filter((session) => session.alive).map((session) => session.id));
+            for (const session of snapshot.sessions) if (session.alive) await this.adoptSupervisorSession(session);
+            for (const tombstone of snapshot.tombstones) {
+              this.tombstones.set(tombstone.id, tombstone);
+              const entry = this.terminals.get(tombstone.id);
+              if (entry) {
+                const needsExit = entry.descriptor.exitCode === null;
+                entry.session = null;
+                entry.supervisorUnconfirmed = false;
+                entry.descriptor = {
+                  ...entry.descriptor,
+                  alive: false,
+                  sleeping: false,
+                  exitCode: tombstone.exitCode,
+                  launchedAt: null,
+                };
+                entry.stopWatchingActivity?.();
+                entry.stopWatchingActivity = null;
+                this.setActivity(tombstone.id, 'offline');
+                if (needsExit) {
+                  entry.launchHook.exit();
+                  this.emit('exit', tombstone.id, tombstone.exitCode, tombstone.signal);
+                }
               }
             }
+            for (const [id, entry] of this.terminals) {
+              if (!entry.supervisorUnconfirmed || liveIds.has(id)) continue;
+              // A new supervisor may have no tombstone for a process it never owned.
+              entry.supervisorUnconfirmed = false;
+              entry.descriptor = { ...entry.descriptor, launchedAt: null };
+              entry.stopWatchingActivity?.();
+              entry.stopWatchingActivity = null;
+              entry.launchHook.exit();
+              this.emit('exit', id, null, null);
+            }
+            this.emit('changed');
+            return;
+          } catch {
+            // Keep existing entries unavailable while retrying the same supervisor.
           }
-          for (const [id, entry] of this.terminals) {
-            if (!entry.supervisorUnconfirmed || liveIds.has(id)) continue;
-            // A new supervisor may have no tombstone for a process it never owned.
-            entry.supervisorUnconfirmed = false;
-            entry.descriptor = { ...entry.descriptor, launchedAt: null };
-            entry.stopWatchingActivity?.();
-            entry.stopWatchingActivity = null;
-            entry.launchHook.exit();
-            this.emit('exit', id, null, null);
-          }
-          this.emit('changed');
-          return;
-        } catch {
-          // Keep existing entries unavailable while retrying the same supervisor.
         }
+        // Exhausting the retry budget must not automatically prove terminal termination.
+        // Unconfirmed entries remain preserved until an authoritative observation occurs.
+      } finally {
+        this.recoveringClients.delete(client);
       }
-      if (this.client === client) {
-        for (const [id, entry] of this.terminals) {
-          if (!entry.supervisorUnconfirmed) continue;
-          entry.supervisorUnconfirmed = false;
-          entry.descriptor = { ...entry.descriptor, alive: false, launchedAt: null };
-          entry.stopWatchingActivity?.();
-          entry.stopWatchingActivity = null;
-          entry.launchHook.exit();
-          this.emit('exit', id, null, null);
-        }
-        this.emit('changed');
-      }
-    } finally {
-      this.recoveringClients.delete(client);
-    }
+    })();
+    this.recoveringClients.set(client, task);
+    return task;
   }
 
   private async adoptSupervisorSession(session: PtyHostSessionInfo): Promise<void> {

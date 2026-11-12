@@ -127,6 +127,7 @@ test('Session Authorization: terminal.history.page rejects unauthorized access a
     () => null,
     async () => null,
     () => tempDir,
+    { persistentPty: false },
   );
   await registry.initialize();
 

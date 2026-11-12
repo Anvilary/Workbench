@@ -60,6 +60,23 @@ function safeReadAuthToken(authPath: string): string {
   }
 }
 
+/**
+ * Detects whether execution is running inside a test runner environment.
+ */
+export function isTestExecution(): boolean {
+  if (process.env.NODE_ENV === 'test') return true;
+  if (process.env.npm_lifecycle_event === 'test') return true;
+  if (typeof process.env.NODE_TEST_CONTEXT !== 'undefined') return true;
+  if (typeof process.env.VITEST !== 'undefined' || typeof process.env.JEST_WORKER_ID !== 'undefined') return true;
+  const args = [...process.execArgv, ...process.argv];
+  return args.some((arg) =>
+    arg === '--test' ||
+    arg.startsWith('--test=') ||
+    arg.includes('node:test') ||
+    /\.test\.[cm]?[jt]sx?$/.test(arg),
+  );
+}
+
 export class PtyHostClient {
   private socket: net.Socket | null = null;
   private lineBuffer = '';
@@ -90,6 +107,17 @@ export class PtyHostClient {
    * Conecta a un demonio `maw-ptyd` existente o lanza uno en segundo plano si no existe.
    */
   static async connectOrSpawn(options: PtyHostClientOptions = {}): Promise<PtyHostClient> {
+    if (
+      isTestExecution() &&
+      !options.socketPath &&
+      !process.env.MAW_PTYD_SOCKET &&
+      !process.env.MAW_PTYD_RUNTIME_DIR
+    ) {
+      throw new Error(
+        'Refusing to connect to production PTY supervisor socket in test environment without explicit socketPath or MAW_PTYD_RUNTIME_DIR',
+      );
+    }
+
     const baseRuntime = process.env.XDG_RUNTIME_DIR ||
       (typeof process.getuid === 'function' ? `/run/user/${process.getuid()}` : os.tmpdir());
 

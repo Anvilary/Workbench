@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { AgencyWorkspace, ProjectId, WorkspaceId } from '@agent-workbench/shared';
 import { TerminalRegistry } from './terminal-registry.js';
 import { AgencySessionRuntime, type AgencyWorkspaceSource } from './agency/agency-session-runtime.js';
+import { PtyHostClient } from './pty-host/pty-host-client.js';
 
 function createMockStore() {
   return {
@@ -113,8 +114,8 @@ test('open rejects when active capacity is full, but allows opening when slots a
   const registry = createMockRegistry();
   const internal = registry as any;
 
-  // Populate 24 terminals where 23 are exited and 1 is active
-  for (let i = 0; i < 23; i++) {
+  // Populate 42 terminals where 41 are exited and 1 is active
+  for (let i = 0; i < 41; i++) {
     const id = `dead-${i}`;
     internal.terminals.set(id, createMockEntry({
       descriptor: { terminalId: id, alive: false, sleeping: false, exitCode: 0, launchedAt: null, kind: 'shell' },
@@ -126,11 +127,11 @@ test('open rejects when active capacity is full, but allows opening when slots a
     session: { pid: 9999, dispose: () => {} },
   }));
 
-  assert.equal(internal.terminals.size, 24);
+  assert.equal(internal.terminals.size, 42);
   assert.equal(registry.activeCount(), 1);
 
-  // Now populate up to 24 active terminals
-  for (let i = 1; i < 24; i++) {
+  // Now populate up to 42 active terminals
+  for (let i = 1; i < 42; i++) {
     const id = `live-${i}`;
     internal.terminals.set(id, createMockEntry({
       descriptor: { terminalId: id, alive: true, sleeping: false, exitCode: null, launchedAt: Date.now(), kind: 'shell' },
@@ -138,9 +139,9 @@ test('open rejects when active capacity is full, but allows opening when slots a
     }));
   }
 
-  assert.equal(registry.activeCount(), 24);
+  assert.equal(registry.activeCount(), 42);
 
-  // Attempting to open when activeCount is 24 must throw too-many-terminals
+  // Attempting to open when activeCount is 42 must throw too-many-terminals
   await assert.rejects(
     registry.open({ cwd: process.cwd(), kind: 'shell' }),
     (err: any) => err.code === 'too-many-terminals',
@@ -153,8 +154,8 @@ test('wake rejects with too-many-terminals when active count is at maximum', asy
   const registry = createMockRegistry();
   const internal = registry as any;
 
-  // Add 24 active terminals
-  for (let i = 0; i < 24; i++) {
+  // Add 42 active terminals
+  for (let i = 0; i < 42; i++) {
     const id = `live-${i}`;
     internal.terminals.set(id, createMockEntry({
       descriptor: { terminalId: id, alive: true, sleeping: false, exitCode: null, launchedAt: Date.now(), kind: 'agent' },
@@ -176,7 +177,7 @@ test('wake rejects with too-many-terminals when active count is at maximum', asy
   registry.disposeAll();
 });
 
-test('recoverSupervisor settles unconfirmed terminals to dead when all retries fail', async () => {
+test('recoverSupervisor preserves unconfirmed terminals on retry exhaustion, preventing duplicate native sessions until authoritative observation or closure', async () => {
   const registry = createMockRegistry();
   const internal = registry as any;
 
@@ -192,10 +193,20 @@ test('recoverSupervisor settles unconfirmed terminals to dead when all retries f
   let exitedEmitted = false;
   let exitSignalEmitted = false;
   internal.terminals.set(terminalId, createMockEntry({
-    descriptor: { terminalId, alive: true, sleeping: false, exitCode: null, launchedAt: Date.now(), kind: 'agent' },
+    descriptor: {
+      terminalId,
+      alive: false,
+      sleeping: false,
+      exitCode: null,
+      launchedAt: Date.now(),
+      kind: 'agent',
+      sessionId: 'conv-1234',
+      agent: 'codex',
+    },
     supervisorUnconfirmed: true,
     launchHook: { exit: () => { exitedEmitted = true; }, cancel: () => {} },
   }));
+  internal.order.push(terminalId);
 
   registry.on('exit', (id) => {
     if (id === terminalId) exitSignalEmitted = true;
@@ -211,11 +222,37 @@ test('recoverSupervisor settles unconfirmed terminals to dead when all retries f
   }
 
   const entry = internal.terminals.get(terminalId);
+  // Must preserve unconfirmed state; not falsely marked dead
+  assert.equal(entry.supervisorUnconfirmed, true);
+  assert.equal(entry.descriptor.alive, false);
+  assert.equal(exitedEmitted, false);
+  assert.equal(exitSignalEmitted, false);
+  assert.equal(registry.activeCount(), 1);
+
+  // Unconfirmed terminal must prevent duplicate native conversation controller adoption
+  const hasController = registry.list().some((term) =>
+    (term.alive || registry.isSupervisorSessionUnconfirmed?.(term.terminalId)) &&
+    term.kind === 'agent' && term.agent === 'codex' && term.sessionId === 'conv-1234',
+  );
+  assert.equal(hasController, true, 'Unconfirmed session must block duplicate native conversation controller');
+
+  // Authoritative observation via successful reconnect settling the session
+  const authoritativeClient = {
+    reconnect: async () => ({
+      sessions: [],
+      tombstones: [{ id: terminalId, pid: 12345, exitCode: 137, signal: 9, exitedAt: new Date().toISOString() }],
+    }),
+    detach: () => {},
+  };
+  internal.client = authoritativeClient;
+  await internal.recoverSupervisor(authoritativeClient);
+
   assert.equal(entry.supervisorUnconfirmed, false);
   assert.equal(entry.descriptor.alive, false);
-  assert.equal(entry.descriptor.launchedAt, null);
+  assert.equal(entry.descriptor.exitCode, 137);
   assert.equal(exitedEmitted, true);
   assert.equal(exitSignalEmitted, true);
+  assert.equal(registry.activeCount(), 0, 'Capacity reclaimed once exit is authoritatively confirmed');
 
   registry.disposeAll();
 });
@@ -530,8 +567,8 @@ test('inFlightOpens reserves capacity atomically across concurrent open calls', 
   const registry = createMockRegistry();
   const internal = registry as any;
 
-  // Add 23 active terminals (limit is 24)
-  for (let i = 0; i < 23; i++) {
+  // Add 41 active terminals (limit is 42)
+  for (let i = 0; i < 41; i++) {
     const id = `live-${i}`;
     internal.terminals.set(id, createMockEntry({
       descriptor: { terminalId: id, alive: true, sleeping: false, exitCode: null, launchedAt: Date.now(), kind: 'shell' },
@@ -539,7 +576,7 @@ test('inFlightOpens reserves capacity atomically across concurrent open calls', 
     }));
   }
 
-  assert.equal(registry.activeCount(), 23);
+  assert.equal(registry.activeCount(), 41);
 
   // Intercept worktreeFor to add an async yield
   const originalWorktree = internal.worktreeFor.bind(internal);
@@ -569,5 +606,71 @@ test('inFlightOpens reserves capacity atomically across concurrent open calls', 
   assert.equal((rejected[0] as PromiseRejectedResult).reason?.code, 'too-many-terminals');
 
   registry.disposeAll();
+});
+
+test('closing an unconfirmed supervisor terminal immediately reclaims terminal capacity', () => {
+  const registry = createMockRegistry();
+  const internal = registry as any;
+
+  const terminalId = 'unconfirmed-close-test';
+  internal.terminals.set(terminalId, createMockEntry({
+    descriptor: { terminalId, alive: false, sleeping: false, exitCode: null, launchedAt: Date.now(), kind: 'agent' },
+    supervisorUnconfirmed: true,
+  }));
+  internal.order.push(terminalId);
+
+  assert.equal(registry.activeCount(), 1);
+
+  // Closing unconfirmed terminal immediately removes it and reclaims capacity
+  const closed = registry.close(terminalId);
+  assert.equal(closed, true);
+  assert.equal(registry.activeCount(), 0);
+  assert.equal(internal.terminals.has(terminalId), false);
+
+  registry.disposeAll();
+});
+
+test('PtyHostClient.connectOrSpawn rejects connecting to production supervisor socket in test environment without isolated path', async () => {
+  const savedSocket = process.env.MAW_PTYD_SOCKET;
+  const savedRuntimeDir = process.env.MAW_PTYD_RUNTIME_DIR;
+  delete process.env.MAW_PTYD_SOCKET;
+  delete process.env.MAW_PTYD_RUNTIME_DIR;
+
+  try {
+    await assert.rejects(
+      PtyHostClient.connectOrSpawn({}),
+      (err: any) => {
+        assert.match(err.message, /Refusing to connect to production PTY supervisor socket in test environment/);
+        return true;
+      },
+    );
+  } finally {
+    if (savedSocket !== undefined) process.env.MAW_PTYD_SOCKET = savedSocket;
+    if (savedRuntimeDir !== undefined) process.env.MAW_PTYD_RUNTIME_DIR = savedRuntimeDir;
+  }
+});
+
+test('TerminalRegistry constructor defaults persistentPty to false in test runner even if MAW_PERSISTENT_PTY is set', () => {
+  const savedPersistent = process.env.MAW_PERSISTENT_PTY;
+  process.env.MAW_PERSISTENT_PTY = '1';
+
+  try {
+    const registry = new TerminalRegistry(
+      createMockAgents() as any,
+      null,
+      createMockStore() as any,
+      () => null,
+      async () => null,
+      () => '',
+    );
+    assert.equal((registry as any).persistentPty, false);
+    registry.disposeAll();
+  } finally {
+    if (savedPersistent !== undefined) {
+      process.env.MAW_PERSISTENT_PTY = savedPersistent;
+    } else {
+      delete process.env.MAW_PERSISTENT_PTY;
+    }
+  }
 });
 

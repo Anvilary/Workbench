@@ -23,6 +23,7 @@ import { CodexTurnWatcher } from '../agents/codex/turn-watcher.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ACTIVE = new Set(['starting', 'running', 'stopping']);
+const MAX_ACTIVE_SESSIONS = 42;
 const NOW = (): string => new Date().toISOString();
 
 export type AgencySessionCreateInput =
@@ -393,7 +394,7 @@ export class AgencySessionRuntime extends EventEmitter {
       }
       if (row.status !== 'active') throw new AgencyRuntimeError('conflict', 'Workspace is Done');
       await this.assertSafeDirectory(row.cwd);
-      if (this.list().filter(s => ACTIVE.has(s.lifecycle)).length >= 24) throw new AgencyRuntimeError('conflict', 'Active process limit reached (24)');
+      if (this.list().filter(s => ACTIVE.has(s.lifecycle)).length >= MAX_ACTIVE_SESSIONS) throw new AgencyRuntimeError('conflict', `Active process limit reached (${MAX_ACTIVE_SESSIONS})`);
       const original = input.tabId ? this.list().find(s => s.workspaceId === input.workspaceId && s.tab?.id === input.tabId && s.tab?.current) : undefined;
       if (input.tabId && (!original || original.tab?.closedAt || ACTIVE.has(original.lifecycle))) throw new AgencyRuntimeError('conflict', 'Tab is closed or already active');
       const tab = original?.tab ? { ...original.tab } : { id: randomUUID(), name: null, ...(input.kind === 'terminal' ? { terminalNumber: new Set(this.list(input.workspaceId).filter(s => s.kind === 'terminal').map(s => s.tab?.id)).size + 1 } : {}), order: Math.max(-1, ...this.list(input.workspaceId).map(s => s.tab?.order ?? -1)) + 1, selected: true, closedAt: null, current: true };
@@ -509,7 +510,8 @@ export class AgencySessionRuntime extends EventEmitter {
         const provider = native.provider;
         if (initialNative !== null) {
           if (this.registry.list().some((terminal) =>
-            terminal.alive && terminal.kind === 'agent' && terminal.agent === provider &&
+            (terminal.alive || this.registry.isSupervisorSessionUnconfirmed?.(terminal.terminalId)) &&
+            terminal.kind === 'agent' && terminal.agent === provider &&
             terminal.sessionId === initialNative)) {
             throw new AgencyRuntimeError('conflict', 'Native conversation already has a terminal controller');
           }
@@ -534,7 +536,7 @@ export class AgencySessionRuntime extends EventEmitter {
             if (this.registry.list().some((terminal) =>
               terminal.terminalId !== terminalId && terminal.kind === 'agent' &&
               terminal.agent === provider && terminal.sessionId === discovered &&
-              terminal.alive)) return false;
+              (terminal.alive || this.registry.isSupervisorSessionUnconfirmed?.(terminal.terminalId)))) return false;
             try {
               this.claimNative('provider:' + provider + ':' + discovered, id);
             } catch {
