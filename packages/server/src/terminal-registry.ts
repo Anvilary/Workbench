@@ -286,6 +286,7 @@ export class TerminalRegistry extends EventEmitter {
   private readonly supervisorScriptPath?: string;
   private readonly socketPath?: string;
   private readonly authPath?: string;
+  private inFlightOpens = 0;
 
   constructor(
     private readonly agents: AgentRegistry,
@@ -320,6 +321,20 @@ export class TerminalRegistry extends EventEmitter {
 
   isSupervisorSessionUnconfirmed(terminalId: TerminalId): boolean {
     return this.terminals.get(terminalId)?.supervisorUnconfirmed === true;
+  }
+
+  isAgencyManaged(terminalId: TerminalId): boolean {
+    return this.terminals.get(terminalId)?.agencyManaged === true;
+  }
+
+  activeCount(): number {
+    let count = 0;
+    for (const entry of this.terminals.values()) {
+      if (entry.descriptor.alive || entry.launching || entry.supervisorUnconfirmed === true) {
+        count++;
+      }
+    }
+    return count;
   }
 
   get supervisorPid(): number | null {
@@ -479,6 +494,18 @@ export class TerminalRegistry extends EventEmitter {
         } catch {
           // Keep existing entries unavailable while retrying the same supervisor.
         }
+      }
+      if (this.client === client) {
+        for (const [id, entry] of this.terminals) {
+          if (!entry.supervisorUnconfirmed) continue;
+          entry.supervisorUnconfirmed = false;
+          entry.descriptor = { ...entry.descriptor, alive: false, launchedAt: null };
+          entry.stopWatchingActivity?.();
+          entry.stopWatchingActivity = null;
+          entry.launchHook.exit();
+          this.emit('exit', id, null, null);
+        }
+        this.emit('changed');
       }
     } finally {
       this.recoveringClients.delete(client);
@@ -723,107 +750,119 @@ export class TerminalRegistry extends EventEmitter {
       throw new Error('Invalid prepared Agency native launch');
     }
 
-    if (this.terminals.size >= MAX_TERMINALS) {
+    if (this.activeCount() + this.inFlightOpens >= MAX_TERMINALS) {
       throw new TerminalOpenError(
         'too-many-terminals',
         serverText('tooManyTabs', { max: MAX_TERMINALS }),
       );
     }
 
-    await this.assertDirectory(options.cwd);
-    const worktree = await this.worktreeFor(kind, options.cwd);
-    // Registration happens synchronously after the final await; concurrent opens share this limit.
-    if (this.terminals.size >= MAX_TERMINALS) throw new TerminalOpenError('too-many-terminals', serverText('tooManyTabs', { max: MAX_TERMINALS }));
-    const requestedNative = options.agencyLaunch?.session.kind === 'known'
-      ? options.agencyLaunch.session.sessionId : options.resumeSessionId;
-    // Registry-local synchronous gate after the final await before registration.
-    // Also covers ordinary Workbench terminals that resume the same ID.
-    if (kind === 'agent' && agent !== null && requestedNative !== undefined &&
-        [...this.terminals.values()].some((other) =>
-          other.descriptor.kind === 'agent' && other.descriptor.agent === agent &&
-          other.descriptor.sessionId === requestedNative &&
-          (other.descriptor.alive || other.launching || other.supervisorUnconfirmed))) {
-      throw new TerminalOpenError('spawn-failed', serverText('terminalOpenFailed'), 'Native conversation already controlled');
-    }
-
-    const resumed = kind === 'agent' && options.resumeSessionId !== undefined;
-    const terminalId = randomUUID();
-    const descriptor: TerminalDescriptor = {
-      terminalId,
-      kind,
-      agent,
-      cwd: options.cwd,
-      // Provisional: `spawn` lo confirma con lo que diga el adaptador.
-      sessionId: kind === 'agent' ? (options.resumeSessionId ?? options.agencyLaunch?.proposedSessionId ?? randomUUID()) : '',
-      // Una consola lleva el nombre de la suya: desde el Hito 41 pueden convivir
-      // PowerShell y Git Bash, y el nombre de la consola nueva ya no es el de todas.
-      label: options.label ?? (kind === 'shell' ? (this.shell?.name ?? '') : ''),
-      resumed,
-      createdAt: Date.now(),
-      // Lo pone `spawn`. Una entrada que no llega a tener proceso no queda en
-      // el registro: el catch de abajo la saca.
-      alive: false,
-      exitCode: null,
-      sleeping: true,
-      launchedAt: null,
-      worktree,
-      review: kind === 'agent' && options.review === true,
-    };
-
-    const entry: TerminalEntry = {
-      descriptor,
-      session: null,
-      buffer: new OutputBuffer(),
-      listeners: new Set(),
-      size: { cols: options.cols ?? DEFAULT_COLS, rows: options.rows ?? DEFAULT_ROWS },
-      launchHook: new LaunchHookSlot(),
-      launchedAt: null,
-      stopWatchingActivity: null,
-      launching: true,
-      agencyManaged: options.agencyManaged === true,
-      agencyLaunch: options.agencyLaunch === undefined ? null : {
-        nativeIdentity: options.agencyLaunch.nativeIdentity == null ? null :
-          Object.freeze({ ...options.agencyLaunch.nativeIdentity }),
-        file: options.agencyLaunch.file,
-        args: [...options.agencyLaunch.args],
-        env: { ...options.agencyLaunch.env },
-        session: options.agencyLaunch.session,
-        launchToken: options.agencyLaunch.launchToken,
-        proposedSessionId: options.agencyLaunch.proposedSessionId,
-        acceptNativeSessionId: options.agencyLaunch.acceptNativeSessionId,
-      },
-    };
-    this.terminals.set(terminalId, entry);
-
+    this.inFlightOpens++;
+    let inFlightReserved = true;
     try {
-      /*
-        `spawn` espera al adaptador. Con Claude Code `launch` devuelve un valor y
-        el `await` no cambia nada que se vea: `open` ya era asincrono. Una
-        entrada que se solto mientras tanto (el apagado) no lanza nada, y eso
-        para quien abre es un fallo: no hay pestana.
-      */
-      const spawned = await this.spawn(entry, { resume: resumed });
-      if (!spawned || this.terminals.get(terminalId) !== entry) {
-        throw new TerminalOpenError('spawn-failed', serverText('tabClosedWhileOpening'));
+      await this.assertDirectory(options.cwd);
+      const worktree = await this.worktreeFor(kind, options.cwd);
+      // Registration happens synchronously after the final await; concurrent opens share this limit.
+      if (this.activeCount() + this.inFlightOpens - 1 >= MAX_TERMINALS) {
+        throw new TerminalOpenError('too-many-terminals', serverText('tooManyTabs', { max: MAX_TERMINALS }));
       }
-    } catch (error) {
-      if (this.terminals.get(terminalId) === entry) {
-        entry.launchHook.cancel();
-        entry.stopWatchingActivity?.();
-        entry.session?.dispose();
-        entry.buffer.dispose();
-        this.terminals.delete(terminalId);
+      const requestedNative = options.agencyLaunch?.session.kind === 'known'
+        ? options.agencyLaunch.session.sessionId : options.resumeSessionId;
+      // Registry-local synchronous gate after the final await before registration.
+      // Also covers ordinary Workbench terminals that resume the same ID.
+      if (kind === 'agent' && agent !== null && requestedNative !== undefined &&
+          [...this.terminals.values()].some((other) =>
+            other.descriptor.kind === 'agent' && other.descriptor.agent === agent &&
+            other.descriptor.sessionId === requestedNative &&
+            (other.descriptor.alive || other.launching || other.supervisorUnconfirmed))) {
+        throw new TerminalOpenError('spawn-failed', serverText('terminalOpenFailed'), 'Native conversation already controlled');
       }
-      throw error;
+
+      const resumed = kind === 'agent' && options.resumeSessionId !== undefined;
+      const terminalId = randomUUID();
+      const descriptor: TerminalDescriptor = {
+        terminalId,
+        kind,
+        agent,
+        cwd: options.cwd,
+        // Provisional: `spawn` lo confirma con lo que diga el adaptador.
+        sessionId: kind === 'agent' ? (options.resumeSessionId ?? options.agencyLaunch?.proposedSessionId ?? randomUUID()) : '',
+        // Una consola lleva el nombre de la suya: desde el Hito 41 pueden convivir
+        // PowerShell y Git Bash, y el nombre de la consola nueva ya no es el de todas.
+        label: options.label ?? (kind === 'shell' ? (this.shell?.name ?? '') : ''),
+        resumed,
+        createdAt: Date.now(),
+        // Lo pone `spawn`. Una entrada que no llega a tener proceso no queda en
+        // el registro: el catch de abajo la saca.
+        alive: false,
+        exitCode: null,
+        sleeping: true,
+        launchedAt: null,
+        worktree,
+        review: kind === 'agent' && options.review === true,
+      };
+
+      const entry: TerminalEntry = {
+        descriptor,
+        session: null,
+        buffer: new OutputBuffer(),
+        listeners: new Set(),
+        size: { cols: options.cols ?? DEFAULT_COLS, rows: options.rows ?? DEFAULT_ROWS },
+        launchHook: new LaunchHookSlot(),
+        launchedAt: null,
+        stopWatchingActivity: null,
+        launching: true,
+        agencyManaged: options.agencyManaged === true,
+        agencyLaunch: options.agencyLaunch === undefined ? null : {
+          nativeIdentity: options.agencyLaunch.nativeIdentity == null ? null :
+            Object.freeze({ ...options.agencyLaunch.nativeIdentity }),
+          file: options.agencyLaunch.file,
+          args: [...options.agencyLaunch.args],
+          env: { ...options.agencyLaunch.env },
+          session: options.agencyLaunch.session,
+          launchToken: options.agencyLaunch.launchToken,
+          proposedSessionId: options.agencyLaunch.proposedSessionId,
+          acceptNativeSessionId: options.agencyLaunch.acceptNativeSessionId,
+        },
+      };
+      this.terminals.set(terminalId, entry);
+      this.inFlightOpens--;
+      inFlightReserved = false;
+
+      try {
+        /*
+          `spawn` espera al adaptador. Con Claude Code `launch` devuelve un valor y
+          el `await` no cambia nada que se vea: `open` ya era asincrono. Una
+          entrada que se solto mientras tanto (el apagado) no lanza nada, y eso
+          para quien abre es un fallo: no hay pestana.
+        */
+        const spawned = await this.spawn(entry, { resume: resumed });
+        if (!spawned || this.terminals.get(terminalId) !== entry) {
+          throw new TerminalOpenError('spawn-failed', serverText('tabClosedWhileOpening'));
+        }
+      } catch (error) {
+        if (this.terminals.get(terminalId) === entry) {
+          entry.launchHook.cancel();
+          entry.stopWatchingActivity?.();
+          entry.session?.dispose();
+          entry.buffer.dispose();
+          this.terminals.delete(terminalId);
+        }
+        throw error;
+      } finally {
+        entry.launching = false;
+      }
+
+      this.insertInOrder(terminalId, entry.descriptor);
+      this.persist();
+      this.emit('changed');
+
+      return entry.descriptor;
     } finally {
-      entry.launching = false;
+      if (inFlightReserved) {
+        this.inFlightOpens--;
+      }
     }
-
-    this.insertInOrder(terminalId, entry.descriptor);
-    this.persist();
-    this.emit('changed');
-
-    return entry.descriptor;
   }
 
   /**
@@ -851,6 +890,13 @@ export class TerminalRegistry extends EventEmitter {
       offlineReason: this.activity.offlineReasonOf(terminalId),
     });
     if (action === 'none') return entry.descriptor;
+
+    if (this.activeCount() >= MAX_TERMINALS) {
+      throw new TerminalOpenError(
+        'too-many-terminals',
+        serverText('tooManyTabs', { max: MAX_TERMINALS }),
+      );
+    }
 
     entry.launching = true;
     try {
@@ -1313,7 +1359,7 @@ export class TerminalRegistry extends EventEmitter {
         this.unavailableTabs.push({ position, tab });
         continue;
       }
-      if (this.terminals.size >= MAX_TERMINALS) continue;
+      if (this.activeCount() >= MAX_TERMINALS) continue;
       try {
         await this.assertDirectory(tab.cwd);
       } catch (error) {

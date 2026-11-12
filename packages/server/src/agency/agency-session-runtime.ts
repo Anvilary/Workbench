@@ -102,7 +102,7 @@ export interface AgencyWorkspaceSource {
 export type AgencyTerminalRegistry = Pick<
   TerminalRegistry,
   'open' | 'get' | 'list' | 'has' | 'close' | 'activityOf' | 'on' | 'off'
-> & Partial<Pick<TerminalRegistry, 'consumeTombstone' | 'isPersistent' | 'pidOf' | 'isSupervisorSessionUnconfirmed'>>;
+> & Partial<Pick<TerminalRegistry, 'consumeTombstone' | 'isPersistent' | 'pidOf' | 'isSupervisorSessionUnconfirmed' | 'isAgencyManaged' | 'activeCount'>>;
 
 export interface AgencyRuntimeOptions {
   registry: AgencyTerminalRegistry;
@@ -237,6 +237,9 @@ export class AgencySessionRuntime extends EventEmitter {
         };
         changed = true;
         this.sessions.set(session.id, session);
+        if (previous.terminalId) {
+          this.registry.close(previous.terminalId);
+        }
         continue;
       }
 
@@ -253,6 +256,18 @@ export class AgencySessionRuntime extends EventEmitter {
       } : previous;
       changed ||= needsRecovery;
       this.sessions.set(session.id, session);
+      if (previous.terminalId && !mayStillBeLive) {
+        this.registry.close(previous.terminalId);
+      }
+    }
+    const liveTerminalIds = new Set(this.byTerminal.keys());
+    for (const terminal of this.registry.list()) {
+      if (this.registry.isAgencyManaged?.(terminal.terminalId) &&
+          !liveTerminalIds.has(terminal.terminalId) &&
+          !terminal.alive &&
+          !this.registry.isSupervisorSessionUnconfirmed?.(terminal.terminalId)) {
+        this.registry.close(terminal.terminalId);
+      }
     }
     if (changed || this.sessions.size > 0) await this.persist();
     this.registry.on('exit', this.onExit);
@@ -439,6 +454,7 @@ export class AgencySessionRuntime extends EventEmitter {
       return row;
     });
     let observedNativeId: string | null = null;
+    let openedTerminalId: TerminalId | null = null;
 
     try {
       const options: OpenTerminalOptions = {
@@ -543,6 +559,7 @@ export class AgencySessionRuntime extends EventEmitter {
       // asynchronous named-profile launch plan was prepared.
       await this.assertSafeDirectory(workspace.cwd);
       const terminal = await this.registry.open(options);
+      openedTerminalId = terminal.terminalId;
       this.byTerminal.set(terminal.terminalId, id);
       // An extremely short-lived process may exit before its open promise
       // resolves, before byTerminal exists to correlate the exit event.
@@ -573,13 +590,17 @@ export class AgencySessionRuntime extends EventEmitter {
       if (stopping) this.registry.close(terminal.terminalId);
       await this.publish(next);
       return this.sessions.get(id) ?? next;
-    } catch (error) {
-      const current = this.sessions.get(id);
-      if (current?.terminalId !== null && current?.terminalId !== undefined) {
-        this.registry.close(current.terminalId);
+      } catch (error) {
+        if (openedTerminalId !== null) {
+          this.byTerminal.delete(openedTerminalId);
+          this.registry.close(openedTerminalId);
+        }
+        const current = this.sessions.get(id);
+        if (current?.terminalId !== null && current?.terminalId !== undefined) {
+          this.registry.close(current.terminalId);
+        }
+        return await this.fail(id, error);
       }
-      return await this.fail(id, error);
-    }
   }
 
   private async assertSafeDirectory(cwd: string): Promise<void> {
@@ -680,6 +701,10 @@ export class AgencySessionRuntime extends EventEmitter {
               if (Date.now() >= deadline) throw new AgencyRuntimeError('session-unavailable', 'Termination not confirmed; tab remains visible');
               await new Promise(resolve => setTimeout(resolve, 20));
             }
+          }
+          if (source.terminalId) {
+            this.byTerminal.delete(source.terminalId);
+            this.registry.close(source.terminalId);
           }
           await this.workspaces.withSessionReservation(workspaceId, async () => {
             const rows = this.list(workspaceId);
@@ -816,11 +841,20 @@ export class AgencySessionRuntime extends EventEmitter {
 
   private readonly onExit = (terminalId: TerminalId, code: number | null): void => {
     const id = this.byTerminal.get(terminalId);
-    if (id === undefined) return;
+    if (id === undefined) {
+      if (this.registry.isAgencyManaged?.(terminalId)) {
+        this.registry.close(terminalId);
+      }
+      return;
+    }
     this.byTerminal.delete(terminalId);
-    void this.finish(id, code, 'exited').then(() => { this.registry.close(terminalId); }).catch((error: unknown) => {
-      console.warn('[agency] failed persisting PTY exit: ' + String(error));
-    });
+    void this.finish(id, code, 'exited')
+      .catch((error: unknown) => {
+        console.warn('[agency] failed persisting PTY exit: ' + String(error));
+      })
+      .finally(() => {
+        this.registry.close(terminalId);
+      });
   };
 
   private readonly onActivity = (terminalId: TerminalId, activity: TerminalActivity): void => {
