@@ -20,6 +20,28 @@ app.enableSandbox();
 let local = serviceUrl(process.env.MAW_DESKTOP_URL || '');
 delete process.env.MAW_DESKTOP_URL;
 if (!app.requestSingleInstanceLock({ serviceUrl: local.href })) app.exit(0);
+
+export function isOAuthLoopbackCallback(value) {
+  if (typeof value !== 'string' || value.length > 4096 || /[\u0000-\u0020\u007f]/.test(value)) return false;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'http:' || url.username || url.password) return false;
+    const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') return false;
+    const hasCode = url.searchParams.has('code');
+    const hasError = url.searchParams.has('error');
+    if (!hasCode && !hasError) return false;
+    const normPath = url.pathname.toLowerCase().replace(/\/+$/, '');
+    const isCallbackPath = normPath === '/callback' || normPath.endsWith('/callback') ||
+      normPath === '/oauth/callback' || normPath.endsWith('/oauth/callback') ||
+      normPath === '/auth/callback' || normPath.endsWith('/auth/callback');
+    if (!isCallbackPath && !hasCode) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Do not await app.whenReady() at module scope: Electron waits for ESM
 // evaluation before emitting ready, which would deadlock initialization.
 async function start() {
@@ -219,6 +241,19 @@ async function start() {
 
   function guard(contents, provider = 'chatgpt', allowPopup = true) {
     const getTabId = () => [...views.entries()].find(([, v]) => v.webContents === contents)?.[0] || popupOwners.get(contents);
+    const isAuthFlow = () => {
+      if (!allowPopup || popupOwners.has(contents)) return true;
+      try {
+        const parentWin = BrowserWindow.fromWebContents(contents);
+        if (parentWin && popups.has(parentWin)) return true;
+      } catch {}
+      if (authEntryUrls.has(contents)) return true;
+      let currentUrl = '';
+      try { currentUrl = contents.getURL() || ''; } catch {}
+      if (currentUrl && (authenticationUrl(currentUrl) || authEntryUrls.has(contents))) return true;
+      if (provider === 'chatgpt' || provider === 'github' || provider === 'perplexity') return true;
+      return false;
+    };
     const handleFileDelivery = (event, url) => {
       if (provider === 'chatgpt' && isDownloadOrFileDeliveryUrl(url)) {
         event.preventDefault();
@@ -255,6 +290,11 @@ async function start() {
     };
     const navigation = (event, url) => {
       if (handleFileDelivery(event, url)) return;
+      if (isOAuthLoopbackCallback(url) && isAuthFlow()) {
+        event.preventDefault();
+        void shell.openExternal(url).catch(() => {});
+        return;
+      }
       if (isSameSiteOrAllowed(url)) return;
       event.preventDefault();
       const id = getTabId();
@@ -268,6 +308,11 @@ async function start() {
     };
     const redirect = (event, url) => {
       if (handleFileDelivery(event, url)) return;
+      if (isOAuthLoopbackCallback(url) && isAuthFlow()) {
+        event.preventDefault();
+        void shell.openExternal(url).catch(() => {});
+        return;
+      }
       if (navigationAllowed(provider, url) || authenticationUrl(url)) return;
       event.preventDefault();
       void openExternal(url).catch(() => send({ type: 'error', message: 'Could not open external browser.' }));
@@ -282,6 +327,10 @@ async function start() {
     contents.setWindowOpenHandler(({ url, disposition, features }) => {
       if (provider === 'chatgpt' && isDownloadOrFileDeliveryUrl(url)) {
         contents.downloadURL(url);
+        return { action: 'deny' };
+      }
+      if (isOAuthLoopbackCallback(url) && isAuthFlow()) {
+        void shell.openExternal(url).catch(() => {});
         return { action: 'deny' };
       }
       const decision = decideWindowOpen({
@@ -755,6 +804,10 @@ async function start() {
       if (command.action === 'copy-selection') contents.copy();
       if (command.action === 'open-page') void openExternal(contents.getURL());
       if (command.action === 'open-link') {
+        if (isOAuthLoopbackCallback(command.url)) {
+          void shell.openExternal(command.url).catch(() => {});
+          return;
+        }
         if (authenticationUrl(command.url)) {
           try {
             const current = contents.getURL();
@@ -904,12 +957,31 @@ async function start() {
     }
   });
 
-  win.webContents.setWindowOpenHandler(({ url }) => { void openExternal(url).catch(() => {}); return { action: 'deny' }; });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (isOAuthLoopbackCallback(url)) {
+      void shell.openExternal(url).catch(() => {});
+      return { action: 'deny' };
+    }
+    void openExternal(url).catch(() => {});
+    return { action: 'deny' };
+  });
   win.webContents.on('will-navigate', (event, url) => {
+    if (isOAuthLoopbackCallback(url)) {
+      event.preventDefault();
+      void shell.openExternal(url).catch(() => {});
+      return;
+    }
     try { if (new URL(url).origin === local.origin && new URL(url).pathname === '/') return; } catch {}
     event.preventDefault();
   });
-  win.webContents.on('will-redirect', (event, url) => { if (new URL(url).origin !== local.origin) event.preventDefault(); });
+  win.webContents.on('will-redirect', (event, url) => {
+    if (isOAuthLoopbackCallback(url)) {
+      event.preventDefault();
+      void shell.openExternal(url).catch(() => {});
+      return;
+    }
+    if (new URL(url).origin !== local.origin) event.preventDefault();
+  });
   win.webContents.on('did-start-loading', () => {
     hideAll();
     if (performanceSubscribed) resourceCollector.unsubscribe();
