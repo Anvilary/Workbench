@@ -137,8 +137,8 @@ export function authenticationUrl(value) {
   return authenticationPath.test(url.pathname);
 }
 
-function popupShaped(disposition, features) {
-  if (disposition === 'new-window') return true;
+export function popupShaped(dispositionOrFeatures, maybeFeatures) {
+  const features = maybeFeatures !== undefined ? maybeFeatures : dispositionOrFeatures;
   return /(?:^|[,\s])(?:popup|width|height)(?:\s*=|\s*,|\s*$)/i.test(typeof features === 'string' ? features : '');
 }
 
@@ -147,10 +147,24 @@ function popupShaped(disposition, features) {
  * Authentication popups stay native windows. They are never turned into workspace tabs:
  * a tab has no opener, drops form bodies, and leaves Google's sign-in document empty.
  */
-export function decideWindowOpen({ url, disposition = '', features = '', allowPopup = false, popupOpen = false, permitted = false, tabbable = false, external = false }) {
+export function decideWindowOpen({
+  url,
+  disposition = 'new-window',
+  features = '',
+  allowPopup = false,
+  popupOpen = false,
+  permitted = false,
+  tabbable = false,
+  external = false,
+}) {
   const blank = url === 'about:blank' || url === '';
   const auth = authenticationUrl(url);
-  if (allowPopup && !popupOpen && (permitted || auth || (popupShaped(disposition, features) && blank))) return 'popup';
+  const shaped = popupShaped(features);
+  const isNewWindow = disposition === 'new-window';
+  const isPopupCandidate = isNewWindow && (auth || shaped);
+  const validDestination = blank || auth || permitted || tabbable || external;
+
+  if (allowPopup && !popupOpen && isPopupCandidate && validDestination) return 'popup';
   if (auth) return 'external';
   if (tabbable) return 'tab';
   if (external) return 'external';
@@ -171,7 +185,7 @@ export function isDownloadOrFileDeliveryUrl(value) {
 
 export function embeddedUrl(value) {
   const url = httpsUrl(value);
-  return !!url && (chatUrl(value) || authHosts.has(url.hostname));
+  return !!url && (chatUrl(value) || authHosts.has(url.hostname) || isFileDeliveryHost(url.hostname));
 }
 
 export function externalUrl(value) {

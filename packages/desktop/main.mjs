@@ -238,6 +238,7 @@ async function start() {
       }
       // Leave the identity provider only for the site that started sign-in, or the popup opener.
       if (authenticationUrl(currentUrl) && navigationAllowed(provider, url)) {
+        if (provider !== 'other') return true;
         const entry = authEntryUrls.get(contents) || '';
         if (entry && isSameSite(entry, url)) return true;
         const openerId = getTabId();
@@ -977,7 +978,13 @@ async function start() {
     clearInterval(checkInterval);
     resourceCollector.dispose();
     hideAll();
-    for (const popup of popups) popup.destroy();
+    for (const popup of popups) {
+      try {
+        if (!popup.isDestroyed()) popup.destroy();
+      } catch {}
+    }
+    popups.clear();
+    popupOwners.clear();
     for (const view of views.values()) if (!view.webContents.isDestroyed()) view.webContents.close();
     views.clear();
     suspendedTabs.clear();

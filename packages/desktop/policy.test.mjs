@@ -237,15 +237,24 @@ test('authentication URLs stay distinguishable from ordinary pages and private h
 test('window.open keeps authentication popups out of workspace tabs', () => {
   const auth = 'https://accounts.google.com/gsi/select?client_id=fixture';
   assert.equal(decideWindowOpen({ url: auth, allowPopup: true, permitted: true, tabbable: true, external: true }), 'popup');
+  assert.equal(decideWindowOpen({ url: auth, disposition: 'new-window', allowPopup: true, permitted: true, tabbable: true, external: true }), 'popup');
+  assert.equal(decideWindowOpen({ url: auth, disposition: 'foreground-tab', allowPopup: true, permitted: true, tabbable: true, external: true }), 'external');
+  assert.equal(decideWindowOpen({ url: auth, disposition: 'background-tab', allowPopup: true, permitted: true, tabbable: true, external: true }), 'external');
   assert.equal(decideWindowOpen({ url: auth, allowPopup: true, popupOpen: true, permitted: true, tabbable: true, external: true }), 'external');
   assert.equal(decideWindowOpen({ url: auth, allowPopup: false, permitted: true, tabbable: true, external: true }), 'external');
   assert.equal(decideWindowOpen({ url: 'about:blank', features: 'width=480,height=640', allowPopup: true }), 'popup');
-  assert.equal(decideWindowOpen({ url: '', disposition: 'new-window', allowPopup: true }), 'popup');
+  assert.equal(decideWindowOpen({ url: '', disposition: 'new-window', features: 'width=480,height=640', allowPopup: true }), 'popup');
+  assert.equal(decideWindowOpen({ url: '', disposition: 'new-window', allowPopup: true }), 'deny');
   assert.equal(decideWindowOpen({ url: 'about:blank', allowPopup: true }), 'deny');
   assert.equal(decideWindowOpen({ url: 'https://github.com/openai/openai-python', allowPopup: true, permitted: false, tabbable: true, external: true }), 'tab');
-  assert.equal(decideWindowOpen({ url: 'https://docs.python.org/3/', allowPopup: true, permitted: true, tabbable: true, external: true }), 'popup');
+  assert.equal(decideWindowOpen({ url: 'https://docs.python.org/3/', allowPopup: true, permitted: true, tabbable: true, external: true }), 'tab');
+  assert.equal(decideWindowOpen({ url: 'https://docs.python.org/3/', disposition: 'foreground-tab', allowPopup: true, permitted: true, tabbable: true, external: true }), 'tab');
+  assert.equal(decideWindowOpen({ url: 'https://docs.python.org/3/', disposition: 'background-tab', allowPopup: true, permitted: true, tabbable: true, external: true }), 'tab');
+  assert.equal(decideWindowOpen({ url: 'https://docs.python.org/3/', disposition: 'new-window', allowPopup: true, permitted: true, tabbable: true, external: true }), 'tab');
+  assert.equal(decideWindowOpen({ url: 'https://docs.python.org/3/', disposition: 'new-window', features: 'width=600,height=500', allowPopup: true, permitted: true, tabbable: true, external: true }), 'popup');
   assert.equal(decideWindowOpen({ url: 'https://docs.python.org/3/', allowPopup: false, permitted: true, tabbable: true, external: true }), 'tab');
   assert.equal(decideWindowOpen({ url: 'javascript:alert(1)', allowPopup: true }), 'deny');
+  assert.equal(decideWindowOpen({ url: 'javascript:alert(1)', features: 'width=480,height=640', allowPopup: true }), 'deny');
   const longAuth = 'https://accounts.google.com/o/oauth2/v2/auth?state=' + 'a'.repeat(2500);
   assert.equal(decideWindowOpen({ url: longAuth, allowPopup: true, permitted: false, tabbable: false, external: true }), 'popup');
   assert.equal(decideWindowOpen({ url: longAuth, allowPopup: true, popupOpen: true, permitted: false, tabbable: false, external: true }), 'external');
