@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -252,7 +252,7 @@ test('TerminalRegistry assigns historyId to shell terminal descriptor and entry'
     const registry = new TerminalRegistry(
       new AgentRegistry([]),
       { file: '/bin/sh', args: ['-i'], name: 'sh' },
-      new MemoryWorkspaceStore(path.join(dir, 'workspace.json')),
+      new MemoryWorkspaceStore(),
       undefined,
       undefined,
       undefined,
