@@ -198,9 +198,6 @@ export function AgentsUsageView({ connection }: AgentsUsageViewProps): JSX.Eleme
             <h3 className="section-title">Providers Overview</h3>
             <div className="agents-usage-providers-row">
               {snapshot.providers.map((p) => {
-                const quota = p.windowUtilization
-                  ? `${p.windowUtilization.usedPercent}% (${formatReset(p.windowUtilization)})`
-                  : p.status === 'ok' ? 'Normal' : p.status;
                 return (
                   <div key={p.provider} className={`provider-summary-item provider-${p.provider.toLowerCase()}`}>
                     <div className="provider-summary-name-row">
@@ -210,7 +207,9 @@ export function AgentsUsageView({ connection }: AgentsUsageViewProps): JSX.Eleme
                     <div className="provider-summary-details">
                       <span><strong>Profiles:</strong> {p.availableCount} / {p.profileCount}</span>
                       <span><strong>Tokens:</strong> {formatTokens(p.totalTokens)}</span>
-                      <span><strong>Quota:</strong> {quota}</span>
+                      {p.totalCostUSD !== undefined && p.totalCostUSD > 0 && (
+                        <span><strong>Cost:</strong> ${p.totalCostUSD.toFixed(2)}</span>
+                      )}
                     </div>
                   </div>
                 );
@@ -341,13 +340,17 @@ function ProfileUsageCard({ profile }: { profile: AgentProfileUsage }): JSX.Elem
       )}
 
       {/* Quota window metrics */}
-      {profile.quotaWindows && profile.quotaWindows.length > 0 && (
+      {((profile.fiveHourUtilization?.status === 'available' || profile.fiveHourUtilization?.status === 'zero') ||
+        (profile.weeklyUtilization?.status === 'available' || profile.weeklyUtilization?.status === 'zero')) && (
         <div className="profile-card-quotas">
           <span className="sub-heading">Quota Windows</span>
           <div className="quota-bars">
-            {profile.quotaWindows.map((qw) => (
-              <QuotaBar key={qw.label} window={qw} />
-            ))}
+            {(profile.fiveHourUtilization?.status === 'available' || profile.fiveHourUtilization?.status === 'zero') && (
+              <QuotaBar label="5-Hour Quota" window={profile.fiveHourUtilization} />
+            )}
+            {(profile.weeklyUtilization?.status === 'available' || profile.weeklyUtilization?.status === 'zero') && (
+              <QuotaBar label="Weekly Quota" window={profile.weeklyUtilization} />
+            )}
           </div>
         </div>
       )}
@@ -361,18 +364,18 @@ function ProfileUsageCard({ profile }: { profile: AgentProfileUsage }): JSX.Elem
       )}
 
       {/* Cost metrics */}
-      {profile.cost && profile.cost.totalUSD !== undefined && profile.cost.totalUSD > 0 && (
+      {profile.cost && profile.cost.amount !== undefined && profile.cost.amount > 0 && (
         <div className="profile-card-cost">
           <span className="sub-heading">Estimated Cost</span>
-          <CostMetricsRow cost={profile.cost} />
+          <CostMetricsRow cost={profile.cost} model={profile.model} />
         </div>
       )}
     </div>
   );
 }
 
-function QuotaBar({ window }: { window: WindowUtilization }): JSX.Element {
-  const pct = Math.min(100, Math.max(0, window.usedPercent));
+function QuotaBar({ label, window }: { label: string; window: WindowUtilization }): JSX.Element {
+  const pct = Math.min(100, Math.max(0, window.usedPercent ?? 0));
   let fillClass = '';
   if (pct >= 80) fillClass = 'fill-high';
   else if (pct >= 50) fillClass = 'fill-medium';
@@ -380,9 +383,9 @@ function QuotaBar({ window }: { window: WindowUtilization }): JSX.Element {
   return (
     <div className="quota-bar-item">
       <div className="quota-bar-label-row">
-        <span className="quota-label">{window.label}</span>
+        <span className="quota-label">{label}</span>
         <span className="quota-values">
-          {window.usedPercent}%
+          {window.usedPercent ?? 0}%
           {formatReset(window) ? <span className="quota-reset"> · resets {formatReset(window)}</span> : null}
         </span>
       </div>
@@ -414,19 +417,19 @@ function TokenMetricsRow({ metrics }: { metrics: TokenUsageMetrics }): JSX.Eleme
           {formatTokens(metrics.outputTokens)}
         </span>
       </div>
-      {metrics.cacheReadTokens !== undefined && metrics.cacheReadTokens > 0 && (
+      {metrics.cachedInputTokens !== undefined && metrics.cachedInputTokens > 0 && (
         <div className="token-stat">
           <span className="token-stat-label">Cached</span>
-          <span className="token-stat-val" title={formatExactNumber(metrics.cacheReadTokens)}>
-            {formatTokens(metrics.cacheReadTokens)}
+          <span className="token-stat-val" title={formatExactNumber(metrics.cachedInputTokens)}>
+            {formatTokens(metrics.cachedInputTokens)}
           </span>
         </div>
       )}
-      {metrics.reasoningTokens !== undefined && metrics.reasoningTokens > 0 && (
+      {metrics.reasoningOutputTokens !== undefined && metrics.reasoningOutputTokens > 0 && (
         <div className="token-stat">
           <span className="token-stat-label">Reasoning</span>
-          <span className="token-stat-val" title={formatExactNumber(metrics.reasoningTokens)}>
-            {formatTokens(metrics.reasoningTokens)}
+          <span className="token-stat-val" title={formatExactNumber(metrics.reasoningOutputTokens)}>
+            {formatTokens(metrics.reasoningOutputTokens)}
           </span>
         </div>
       )}
@@ -434,13 +437,13 @@ function TokenMetricsRow({ metrics }: { metrics: TokenUsageMetrics }): JSX.Eleme
   );
 }
 
-function CostMetricsRow({ cost }: { cost: CostMetrics }): JSX.Element {
+function CostMetricsRow({ cost, model }: { cost: CostMetrics; model?: string | null }): JSX.Element {
   return (
     <div className="cost-metrics-row">
-      <span className="cost-val">${(cost.totalUSD ?? 0).toFixed(2)}</span>
-      <span className="cost-currency">{cost.currency}</span>
-      {cost.breakdown?.model && (
-        <span className="cost-model">({cost.breakdown.model})</span>
+      <span className="cost-val">${(cost.amount ?? 0).toFixed(2)}</span>
+      <span className="cost-currency">{cost.currency || 'USD'}</span>
+      {model && (
+        <span className="cost-model">({model})</span>
       )}
     </div>
   );
