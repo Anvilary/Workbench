@@ -53,13 +53,19 @@ async function start() {
   const githubSession = session.fromPartition(GITHUB_PARTITION);
   const perplexitySession = session.fromPartition(PERPLEXITY_PARTITION);
   const browserSession = session.fromPartition(BROWSER_PARTITION);
-  browserSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  browserSession.setPermissionCheckHandler(() => false);
+  const isInteractivePermission = (permission) => permission === 'fullscreen' || permission === 'pointerLock';
+
+  browserSession.setPermissionRequestHandler((_contents, permission, callback) => {
+    callback(isInteractivePermission(permission) || permission === 'clipboard-sanitized-write');
+  });
+  browserSession.setPermissionCheckHandler((_contents, permission) => {
+    return isInteractivePermission(permission) || permission === 'automatic-fullscreen' || permission === 'clipboard-sanitized-write';
+  });
   browserSession.webRequest.onBeforeRequest((details, callback) => {
     // Block direct local-network URLs, including subframes and fetches, in general web pages.
     const network = /^(https?|wss?):/.test(details.url);
     const checked = details.url.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
-    callback({ cancel: network && !otherUrl(checked) && !(details.url.startsWith('https:') && authenticationUrl(details.url)) });
+    callback({ cancel: network && !otherUrl(checked, 8192) && !(details.url.startsWith('https:') && authenticationUrl(details.url)) });
   });
   // Permit clipboard writing only from the official ChatGPT origin.
   // Clipboard reading and all unrelated permissions remain denied.
@@ -75,14 +81,15 @@ async function start() {
 
   chatSession.setPermissionRequestHandler((contents, permission, callback, details) => {
     callback(
-      permission === 'clipboard-sanitized-write' &&
-      canWriteClipboard(contents, details?.requestingUrl)
+      isInteractivePermission(permission) ||
+      (permission === 'clipboard-sanitized-write' && canWriteClipboard(contents, details?.requestingUrl))
     );
   });
 
   chatSession.setPermissionCheckHandler((contents, permission, requestingOrigin) =>
-    permission === 'clipboard-sanitized-write' &&
-    canWriteClipboard(contents, requestingOrigin)
+    isInteractivePermission(permission) ||
+    permission === 'automatic-fullscreen' ||
+    (permission === 'clipboard-sanitized-write' && canWriteClipboard(contents, requestingOrigin))
   );
   const githubClipboard = (contents, requestingUrl) => {
     try {
@@ -92,10 +99,15 @@ async function start() {
     } catch { return false; }
   };
   githubSession.setPermissionRequestHandler((contents, permission, callback, details) => {
-    callback(permission === 'clipboard-sanitized-write' && githubClipboard(contents, details?.requestingUrl));
+    callback(
+      isInteractivePermission(permission) ||
+      (permission === 'clipboard-sanitized-write' && githubClipboard(contents, details?.requestingUrl))
+    );
   });
   githubSession.setPermissionCheckHandler((contents, permission, requestingOrigin) =>
-    permission === 'clipboard-sanitized-write' && githubClipboard(contents, requestingOrigin)
+    isInteractivePermission(permission) ||
+    permission === 'automatic-fullscreen' ||
+    (permission === 'clipboard-sanitized-write' && githubClipboard(contents, requestingOrigin))
   );
   const perplexityClipboard = (contents, requestingUrl) => {
     try {
@@ -107,10 +119,15 @@ async function start() {
     } catch { return false; }
   };
   perplexitySession.setPermissionRequestHandler((contents, permission, callback, details) => {
-    callback(permission === 'clipboard-sanitized-write' && perplexityClipboard(contents, details?.requestingUrl));
+    callback(
+      isInteractivePermission(permission) ||
+      (permission === 'clipboard-sanitized-write' && perplexityClipboard(contents, details?.requestingUrl))
+    );
   });
   perplexitySession.setPermissionCheckHandler((contents, permission, requestingOrigin) =>
-    permission === 'clipboard-sanitized-write' && perplexityClipboard(contents, requestingOrigin)
+    isInteractivePermission(permission) ||
+    permission === 'automatic-fullscreen' ||
+    (permission === 'clipboard-sanitized-write' && perplexityClipboard(contents, requestingOrigin))
   );
 
   const iconPath = path.join(here, 'icon.png');
@@ -288,7 +305,8 @@ async function start() {
       }
       return navigationAllowed(provider, url);
     };
-    const navigation = (event, url) => {
+    const navigation = (event, url, isInPlace, isMainFrame) => {
+      if (isMainFrame === false) return;
       if (handleFileDelivery(event, url)) return;
       if (isOAuthLoopbackCallback(url) && isAuthFlow()) {
         event.preventDefault();
@@ -306,7 +324,8 @@ async function start() {
       }
       void openExternal(url).catch(() => send({ type: 'error', message: 'Could not open external browser.' }));
     };
-    const redirect = (event, url) => {
+    const redirect = (event, url, isInPlace, isMainFrame) => {
+      if (isMainFrame === false) return;
       if (handleFileDelivery(event, url)) return;
       if (isOAuthLoopbackCallback(url) && isAuthFlow()) {
         event.preventDefault();
@@ -322,7 +341,7 @@ async function start() {
     contents.on('will-attach-webview', event => event.preventDefault());
     const popupWindow = () => ({ action: 'allow', overrideBrowserWindowOptions: {
       parent: win, autoHideMenuBar: true, width: 640, height: 760,
-      webPreferences: { ...secure, session: browserSessions[provider] ?? chatSession, preload: '' },
+      webPreferences: { ...secure, session: browserSessions[provider] ?? chatSession, preload: '', backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required' },
     } });
     contents.setWindowOpenHandler(({ url, disposition, features }) => {
       if (provider === 'chatgpt' && isDownloadOrFileDeliveryUrl(url)) {
@@ -595,7 +614,7 @@ async function start() {
     }
 
     trimCapacity(id, 1);
-    const view = new WebContentsView({ webPreferences: { ...secure, session: targetSession, backgroundThrottling: true } });
+    const view = new WebContentsView({ webPreferences: { ...secure, session: targetSession, backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required', webgl: true } });
     view.setVisible(false);
     view.setBackgroundColor('#212121');
     views.set(id, view);

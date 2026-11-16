@@ -34,7 +34,7 @@ function App(){
       {sidebarMenu&&<div className="agency-dropdown-menu" role="menu"><button onClick={()=>setSidebarMenu(false)}>SidebarAction1</button></div>}
     </aside>
     {overlay&&<div role="menu"><button onClick={()=>setOverlay(false)}>Dismiss</button></div>}
-    <main>{id?<NativeChatGptView tab={{id,url:'https://chatgpt.com/'}} onDisplayed={()=>{}}/>:<input aria-label="CLI fixture"/>}</main>
+    <main>{id?<NativeChatGptView tab={{id,url:'https://chatgpt.com/'}} toolbarOpen={true} onDisplayed={()=>{}}/>:<input aria-label="CLI fixture"/>}</main>
   </>;
 };
 createRoot(document.getElementById('root')).render(<App/>);`;

@@ -9,8 +9,8 @@ export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}
 const authHosts = new Set(['auth.openai.com', 'auth0.openai.com', 'accounts.google.com', 'appleid.apple.com', 'login.microsoftonline.com', 'login.live.com']);
 const fileDeliveryHosts = new Set(['files.oaiusercontent.com', 'oaistatic.com']);
 
-function httpsUrl(value) {
-  if (typeof value !== 'string' || value.length > 2048 || /[\u0000-\u0020\u007f]/.test(value)) return null;
+function httpsUrl(value, maxLength = 8192) {
+  if (typeof value !== 'string' || value.length > maxLength || /[\u0000-\u0020\u007f]/.test(value)) return null;
   try {
     const url = new URL(value);
     return url.protocol === 'https:' && !url.username && !url.password && !url.port ? url : null;
@@ -197,8 +197,8 @@ export function externalUrl(value) {
 }
 
 /** General web pages get their own session, never the shell's local origin. */
-export function otherUrl(value) {
-  if (typeof value !== 'string' || value.length > 2048 || /[\u0000-\u0020\u007f]/.test(value)) return false;
+export function otherUrl(value, maxLength = 2048) {
+  if (typeof value !== 'string' || value.length > maxLength || /[\u0000-\u0020\u007f]/.test(value)) return false;
   try {
     const url = new URL(value);
     const host = url.hostname;
