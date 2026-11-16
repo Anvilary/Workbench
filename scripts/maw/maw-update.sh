@@ -30,7 +30,7 @@ need_value() { [ "$#" -ge 2 ] && [ -n "$2" ] || { printf '%s\n' "Option $1 requi
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --restart) restart_mode="yes"; shift ;;
-    --no-restart) restart_mode="no"; shift ;;
+    --no-restart|--norestart) restart_mode="no"; shift ;;
     --ref) need_value "$@"; target_ref_opt="$2"; shift 2 ;;
     --source) need_value "$@"; source_dir_opt="$2"; shift 2 ;;
     --allow-unapproved-ref) allow_unapproved=true; shift ;;
