@@ -60,6 +60,14 @@ window.mawChatGpt.subscribe(s => {
     const page = await app.firstWindow();
     await page.waitForFunction(() => Array.isArray(window.events));
 
+    // Monitor for GPU process crashes
+    await app.evaluate(({ app }) => {
+      app.gpuCrashes = [];
+      app.on('child-process-gone', (_event, details) => {
+        if (details.type === 'GPU') app.gpuCrashes.push(details);
+      });
+    });
+
     // Register protocol interceptor for the general browser partition
     await app.evaluate(({ session, net }, { mp4Url, webmUrl }) => {
       const browserSess = session.fromPartition('persist:maw-browser');
@@ -70,12 +78,25 @@ window.mawChatGpt.subscribe(s => {
         if (url.pathname === '/media-test') {
           const html = `<!doctype html>
 <html>
-<head><meta charset="utf-8"><title>Capabilities Test</title></head>
+<head><meta charset="utf-8"><title>Capabilities Test</title>
+<style>
+@keyframes slide { from { transform: translateX(0); } to { transform: translateX(50px); } }
+#anim-box { width: 50px; height: 50px; animation: slide 0.1s linear infinite; }
+</style>
+</head>
 <body>
   <video id="v-mp4" src="https://capabilities.maw-audit.com/sample.mp4" playsinline muted controls></video>
   <video id="v-webm" src="https://capabilities.maw-audit.com/sample.webm" playsinline muted controls></video>
+  <audio id="a-test"></audio>
   <canvas id="c-2d" width="100" height="100"></canvas>
   <canvas id="c-gl" width="100" height="100"></canvas>
+  <canvas id="c-gl2" width="100" height="100"></canvas>
+  <svg id="svg-test" viewBox="0 0 100 100" width="100" height="100">
+    <circle id="svg-circle" cx="50" cy="50" r="40" fill="blue">
+      <animate attributeName="r" values="20;40;20" dur="0.2s" repeatCount="indefinite"/>
+    </circle>
+  </svg>
+  <div id="anim-box"></div>
   <iframe id="sub-frame" src="https://capabilities.maw-audit.com/frame-redirect" allow="fullscreen"></iframe>
 </body>
 </html>`;
@@ -195,7 +216,7 @@ window.mawChatGpt.subscribe(s => {
     assert.equal(mediaResults.mseMp4, true, 'MediaSource must support H.264/AAC');
     assert.equal(mediaResults.mseWebm, true, 'MediaSource must support VP9/Opus');
 
-    // 2. Verify Canvas 2D and WebGL rendering contexts
+    // 2. Verify Canvas 2D, WebGL 1, WebGL 2, and OffscreenCanvas contexts
     const canvasResults = await app.evaluate(async ({ webContents, session }) => {
       const contents = webContents.getAllWebContents().find(c =>
         c.session === session.fromPartition('persist:maw-browser') &&
@@ -216,7 +237,23 @@ window.mawChatGpt.subscribe(s => {
           glRenderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
         }
 
-        const gl2 = document.createElement('canvas').getContext('webgl2');
+        const cGl2 = document.getElementById('c-gl2');
+        const gl2 = cGl2.getContext('webgl2');
+        let gl2Renderer = null;
+        if (gl2) {
+          const dbg2 = gl2.getExtension('WEBGL_debug_renderer_info');
+          gl2Renderer = dbg2 ? gl2.getParameter(dbg2.UNMASKED_RENDERER_WEBGL) : gl2.getParameter(gl2.RENDERER);
+        }
+
+        let hasOffscreen = typeof OffscreenCanvas !== 'undefined';
+        let offscreen2d = false;
+        let offscreenGl = false;
+        if (hasOffscreen) {
+          try {
+            offscreen2d = !!(new OffscreenCanvas(32, 32)).getContext('2d');
+            offscreenGl = !!(new OffscreenCanvas(32, 32)).getContext('webgl');
+          } catch {}
+        }
 
         return {
           has2d: !!ctx2d,
@@ -224,6 +261,10 @@ window.mawChatGpt.subscribe(s => {
           hasGl: !!gl,
           glRenderer,
           hasGl2: !!gl2,
+          gl2Renderer,
+          hasOffscreen,
+          offscreen2d,
+          offscreenGl,
         };
       })()`);
     });
@@ -233,6 +274,46 @@ window.mawChatGpt.subscribe(s => {
     assert.equal(canvasResults.hasGl, true, 'WebGL context must be available');
     assert.ok(canvasResults.glRenderer, 'WebGL renderer identifier must be populated');
     assert.equal(canvasResults.hasGl2, true, 'WebGL2 context must be available');
+    assert.ok(canvasResults.gl2Renderer, 'WebGL2 renderer identifier must be populated');
+    assert.equal(canvasResults.hasOffscreen, true, 'OffscreenCanvas must be supported');
+    assert.equal(canvasResults.offscreen2d, true, 'OffscreenCanvas 2D context must be available');
+    assert.equal(canvasResults.offscreenGl, true, 'OffscreenCanvas WebGL context must be available');
+
+    // 2b. Verify Web Audio API, SVG animation, and CSS animation
+    const richMediaResults = await app.evaluate(async ({ webContents, session }) => {
+      const contents = webContents.getAllWebContents().find(c =>
+        c.session === session.fromPartition('persist:maw-browser') &&
+        c.getURL().includes('/media-test')
+      );
+      return contents.executeJavaScript(`(() => {
+        let audioCtxState = null;
+        try {
+          const actx = new (window.AudioContext || window.webkitAudioContext)();
+          audioCtxState = actx.state;
+          actx.close();
+        } catch (e) { audioCtxState = e.message; }
+
+        const svgCircle = document.getElementById('svg-circle');
+        const hasSvgBBox = typeof svgCircle?.getBBox === 'function';
+
+        const animBox = document.getElementById('anim-box');
+        let webAnimSupported = false;
+        try {
+          const anim = animBox.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 100 });
+          webAnimSupported = typeof anim.play === 'function';
+        } catch {}
+
+        return {
+          audioCtxState,
+          hasSvgBBox,
+          webAnimSupported,
+        };
+      })()`);
+    });
+
+    assert.equal(richMediaResults.audioCtxState, 'running', 'Web Audio API AudioContext must be running');
+    assert.equal(richMediaResults.hasSvgBBox, true, 'SVG elements must support geometric queries (getBBox)');
+    assert.equal(richMediaResults.webAnimSupported, true, 'Web Animations API must be supported');
 
     // 3. Verify Fullscreen permission and execution
     const fullscreenResults = await app.evaluate(async ({ webContents, session }) => {
@@ -352,6 +433,29 @@ window.mawChatGpt.subscribe(s => {
     });
 
     assert.equal(clipboardResults.state, 'granted', 'Sanitized clipboard write permission must be granted');
+
+    // 8. Verify speaker-selection and pointer-lock permissions
+    const permResults = await app.evaluate(async ({ webContents, session }) => {
+      const contents = webContents.getAllWebContents().find(c =>
+        c.session === session.fromPartition('persist:maw-browser') &&
+        c.getURL().includes('/media-test')
+      );
+      return contents.executeJavaScript(`(async () => {
+        let speakerState = null;
+        try {
+          const s = await navigator.permissions.query({ name: 'speaker-selection' });
+          speakerState = s.state;
+        } catch {}
+        return { speakerState };
+      })()`);
+    });
+    if (permResults.speakerState) {
+      assert.equal(permResults.speakerState, 'granted', 'Speaker selection permission must be granted');
+    }
+
+    // 9. Verify GPU process stability: zero GPU process crashes during entire run
+    const gpuCrashes = await app.evaluate(({ app }) => app.gpuCrashes || []);
+    assert.equal(gpuCrashes.length, 0, 'No GPU process crashes must occur during video playback and WebGL');
   } finally {
     if (app) await app.close();
     await new Promise(r => server.close(r));

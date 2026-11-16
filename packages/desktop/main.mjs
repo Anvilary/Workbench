@@ -17,6 +17,14 @@ app.setName(process.env.MAW_DESKTOP_PRODUCTION === '1' ? 'My Amazing Workspace' 
 if (process.platform === 'linux') app.setDesktopName('maw.desktop');
 if (app.commandLine.hasSwitch('no-sandbox')) throw new Error('MAW desktop requires Chromium sandboxing');
 app.enableSandbox();
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+app.commandLine.appendSwitch('enable-webgl');
+app.commandLine.appendSwitch('disable-accelerated-video-decode');
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+if (!process.env.DRI_PRIME) process.env.DRI_PRIME = '0';
+if (!process.env.VK_DRIVER_FILES && !process.env.VK_ICD_FILENAMES && existsSync('/usr/share/vulkan/icd.d/radeon_icd.json')) {
+  process.env.VK_DRIVER_FILES = '/usr/share/vulkan/icd.d/radeon_icd.json';
+}
 let local = serviceUrl(process.env.MAW_DESKTOP_URL || '');
 delete process.env.MAW_DESKTOP_URL;
 if (!app.requestSingleInstanceLock({ serviceUrl: local.href })) app.exit(0);
@@ -53,7 +61,7 @@ async function start() {
   const githubSession = session.fromPartition(GITHUB_PARTITION);
   const perplexitySession = session.fromPartition(PERPLEXITY_PARTITION);
   const browserSession = session.fromPartition(BROWSER_PARTITION);
-  const isInteractivePermission = (permission) => permission === 'fullscreen' || permission === 'pointerLock';
+  const isInteractivePermission = (permission) => permission === 'fullscreen' || permission === 'pointerLock' || permission === 'speaker-selection';
 
   browserSession.setPermissionRequestHandler((_contents, permission, callback) => {
     callback(isInteractivePermission(permission) || permission === 'clipboard-sanitized-write');
@@ -80,17 +88,34 @@ async function start() {
   };
 
   chatSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    if (permission === 'media' && details?.mediaTypes?.includes('audio') && !details?.mediaTypes?.includes('video')) {
+      try {
+        const origin = contents ? new URL(contents.getURL()).origin : '';
+        const reqOrigin = details?.requestingUrl ? new URL(details.requestingUrl).origin : '';
+        if (origin === 'https://chatgpt.com' && reqOrigin === 'https://chatgpt.com') {
+          callback(true);
+          return;
+        }
+      } catch {}
+    }
     callback(
       isInteractivePermission(permission) ||
       (permission === 'clipboard-sanitized-write' && canWriteClipboard(contents, details?.requestingUrl))
     );
   });
 
-  chatSession.setPermissionCheckHandler((contents, permission, requestingOrigin) =>
-    isInteractivePermission(permission) ||
-    permission === 'automatic-fullscreen' ||
-    (permission === 'clipboard-sanitized-write' && canWriteClipboard(contents, requestingOrigin))
-  );
+  chatSession.setPermissionCheckHandler((contents, permission, requestingOrigin) => {
+    if (permission === 'media') {
+      try {
+        const origin = contents ? new URL(contents.getURL()).origin : '';
+        const reqOrigin = requestingOrigin ? new URL(requestingOrigin).origin : '';
+        return origin === 'https://chatgpt.com' && reqOrigin === 'https://chatgpt.com';
+      } catch { return false; }
+    }
+    return isInteractivePermission(permission) ||
+      permission === 'automatic-fullscreen' ||
+      (permission === 'clipboard-sanitized-write' && canWriteClipboard(contents, requestingOrigin));
+  });
   const githubClipboard = (contents, requestingUrl) => {
     try {
       return !!contents &&
@@ -341,7 +366,7 @@ async function start() {
     contents.on('will-attach-webview', event => event.preventDefault());
     const popupWindow = () => ({ action: 'allow', overrideBrowserWindowOptions: {
       parent: win, autoHideMenuBar: true, width: 640, height: 760,
-      webPreferences: { ...secure, session: browserSessions[provider] ?? chatSession, preload: '', backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required' },
+      webPreferences: { ...secure, session: browserSessions[provider] ?? chatSession, preload: '', backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required', webgl: true },
     } });
     contents.setWindowOpenHandler(({ url, disposition, features }) => {
       if (provider === 'chatgpt' && isDownloadOrFileDeliveryUrl(url)) {
