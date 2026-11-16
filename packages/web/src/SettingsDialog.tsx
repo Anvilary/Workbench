@@ -239,7 +239,6 @@ export function SettingsDialog({
               </button>
             </div>
           )}
-          <p className="modal-hint">{t('settings.panels.cliAlways')}</p>
 
           {status === null ? (
             <p className="modal-hint">{t('settings.oldServer')}</p>

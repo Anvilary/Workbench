@@ -139,3 +139,19 @@ test('strictly distinguishes metric statuses without inventing numbers', () => {
   assert.equal(unsupportedQuota.status, 'unsupported');
   assert.equal(unsupportedQuota.usedPercent, undefined);
 });
+
+test('getProfileFamily correctly maps profiles to Codex, AGY, and Claude families', async () => {
+  const { getProfileFamily } = await import('./AgentsUsageView.js');
+
+  assert.equal(getProfileFamily({ profileId: 'codex-0', provider: 'OpenAI' }), 'Codex');
+  assert.equal(getProfileFamily({ profileId: 'codex-3', provider: 'OpenAI' }), 'Codex');
+  assert.equal(getProfileFamily({ profileId: 'custom-openai', provider: 'OpenAI' }), 'Codex');
+
+  assert.equal(getProfileFamily({ profileId: 'agy-1', provider: 'Google' }), 'AGY');
+  assert.equal(getProfileFamily({ profileId: 'agy-7', provider: 'Anthropic' }), 'AGY');
+  assert.equal(getProfileFamily({ profileId: 'antigravity-dev', provider: 'Custom' }), 'AGY');
+
+  assert.equal(getProfileFamily({ profileId: 'claude-code', provider: 'Anthropic' }), 'Claude');
+  assert.equal(getProfileFamily({ profileId: 'claude02', provider: 'Anthropic' }), 'Claude');
+});
+

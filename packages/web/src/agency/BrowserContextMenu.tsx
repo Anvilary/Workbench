@@ -1,7 +1,120 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { WebTab } from '@agent-workbench/shared';
 import { t } from '../i18n/index.js';
 import type { useAgencyStore } from './useAgencyStore.js';
+
+export interface BoundingBox {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+export function getBrowserContentBounds(tabId: string): { bounds: BoundingBox; originX: number; originY: number } {
+  if (typeof document === 'undefined') {
+    return {
+      bounds: { left: 0, top: 0, right: 1200, bottom: 800 },
+      originX: 0,
+      originY: 0,
+    };
+  }
+
+  const viewer =
+    document.querySelector<HTMLElement>(`[data-native-id="${tabId}"]`) ||
+    document.querySelector<HTMLElement>('.maw-browser-pane') ||
+    document.querySelector<HTMLElement>('.agency-workspace-content');
+
+  if (!viewer) {
+    return {
+      bounds: {
+        left: 0,
+        top: 0,
+        right: window.innerWidth || 1200,
+        bottom: window.innerHeight || 800,
+      },
+      originX: 0,
+      originY: 0,
+    };
+  }
+
+  const rect = viewer.getBoundingClientRect();
+  let left = rect.left;
+  let top = rect.top;
+  let right = rect.right;
+  let bottom = rect.bottom;
+
+  for (let parent = viewer.parentElement; parent; parent = parent.parentElement) {
+    const style = window.getComputedStyle(parent);
+    const clipsX = style.overflowX !== 'visible' && style.overflowX !== '';
+    const clipsY = style.overflowY !== 'visible' && style.overflowY !== '';
+    if (clipsX || clipsY) {
+      const pRect = parent.getBoundingClientRect();
+      if (clipsX) {
+        left = Math.max(left, pRect.left);
+        right = Math.min(right, pRect.right);
+      }
+      if (clipsY) {
+        top = Math.max(top, pRect.top);
+        bottom = Math.min(bottom, pRect.bottom);
+      }
+    }
+  }
+
+  left = Math.max(0, left);
+  top = Math.max(0, top);
+  right = Math.min(window.innerWidth, right);
+  bottom = Math.min(window.innerHeight, bottom);
+
+  return {
+    bounds: { left, top, right, bottom },
+    originX: rect.left,
+    originY: rect.top,
+  };
+}
+
+export function calculateMenuPosition(params: {
+  pointerX: number;
+  pointerY: number;
+  bounds: BoundingBox;
+  menuWidth: number;
+  menuHeight: number;
+  padding?: number;
+}): { x: number; y: number } {
+  const { pointerX, pointerY, bounds, menuWidth, menuHeight } = params;
+  const padding = params.padding ?? 6;
+
+  const contentLeft = bounds.left + padding;
+  const contentRight = Math.max(contentLeft, bounds.right - padding);
+  const contentTop = bounds.top + padding;
+  const contentBottom = Math.max(contentTop, bounds.bottom - padding);
+
+  // Horizontal positioning:
+  let x = pointerX;
+  if (x + menuWidth > contentRight) {
+    x = contentRight - menuWidth;
+  }
+  if (x < contentLeft) {
+    x = contentLeft;
+  }
+
+  // Vertical positioning:
+  let y = pointerY;
+  if (y + menuHeight > contentBottom) {
+    // Attempt flip upwards above pointer
+    const flippedY = pointerY - menuHeight;
+    if (flippedY >= contentTop) {
+      y = flippedY;
+    } else {
+      // Shift to stay inside bounds
+      y = Math.max(contentTop, contentBottom - menuHeight);
+    }
+  }
+  if (y < contentTop) {
+    y = contentTop;
+  }
+
+  return { x: Math.round(x), y: Math.round(y) };
+}
 
 interface MenuState {
   id: string;
@@ -30,6 +143,8 @@ export function BrowserContextMenu({
   onDuplicate: (tab: WebTab) => void;
 }): JSX.Element | null {
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [measuredSize, setMeasuredSize] = useState<{ width: number; height: number }>({ width: 190, height: 320 });
 
   useEffect(() => window.mawChatGpt?.subscribe((state) => {
     if (state.type !== 'browser-context' || !state.id) return;
@@ -44,6 +159,14 @@ export function BrowserContextMenu({
     });
   }), []);
 
+  useLayoutEffect(() => {
+    if (!menuRef.current) return;
+    const rect = menuRef.current.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0 && (rect.width !== measuredSize.width || rect.height !== measuredSize.height)) {
+      setMeasuredSize({ width: rect.width, height: rect.height });
+    }
+  }, [menu, measuredSize.width, measuredSize.height]);
+
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
@@ -52,9 +175,13 @@ export function BrowserContextMenu({
     };
     window.addEventListener('pointerdown', close);
     window.addEventListener('keydown', onKey);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
     return () => {
       window.removeEventListener('pointerdown', close);
       window.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', close, true);
     };
   }, [menu]);
 
@@ -82,16 +209,24 @@ export function BrowserContextMenu({
     { label: t('agency.browser.close'), disabled: !tab, run: () => { if (tab) onCloseTab(tab); setMenu(null); } },
   ];
 
-  const menuWidth = 190;
-  const menuHeight = 320;
-  const clampedX = Math.max(8, Math.min(menu.x, window.innerWidth - menuWidth - 8));
-  const clampedY = Math.max(8, Math.min(menu.y, window.innerHeight - menuHeight - 8));
+  const { bounds, originX, originY } = getBrowserContentBounds(menu.id);
+  const pointerX = originX + menu.x;
+  const pointerY = originY + menu.y;
+
+  const { x: finalX, y: finalY } = calculateMenuPosition({
+    pointerX,
+    pointerY,
+    bounds,
+    menuWidth: measuredSize.width,
+    menuHeight: measuredSize.height,
+  });
 
   return (
     <div
+      ref={menuRef}
       className="maw-context-menu"
       role="menu"
-      style={{ left: clampedX, top: clampedY }}
+      style={{ left: `${finalX}px`, top: `${finalY}px` }}
       onPointerDown={(event) => event.stopPropagation()}
     >
       {items.map((item) => (

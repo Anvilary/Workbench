@@ -366,6 +366,37 @@ export function isWorkspacePaneLayout(value: unknown): value is WorkspacePaneLay
   );
 }
 
+export function pruneEmptyPanes(
+  node: LayoutNode,
+  canPrune?: (pane: LayoutPaneNode) => boolean,
+): LayoutNode {
+  if (node.type === 'pane') {
+    return node;
+  }
+
+  const first = pruneEmptyPanes(node.first, canPrune);
+  const second = pruneEmptyPanes(node.second, canPrune);
+
+  const firstIsEmpty = first.type === 'pane' && first.tabIds.length === 0 && (!canPrune || canPrune(first));
+  const secondIsEmpty = second.type === 'pane' && second.tabIds.length === 0 && (!canPrune || canPrune(second));
+
+  if (firstIsEmpty && secondIsEmpty) {
+    return first;
+  }
+  if (firstIsEmpty) {
+    return second;
+  }
+  if (secondIsEmpty) {
+    return first;
+  }
+
+  return {
+    ...node,
+    first,
+    second,
+  };
+}
+
 export function reconcileLayout(
   saved: WorkspacePaneLayout | null | undefined,
   workspaceId: WorkspaceId,
@@ -385,12 +416,17 @@ export function reconcileLayout(
 
   const openSet = new Set(openTabIds);
   const assignedTabs = new Set<string>();
+  const closedPanes = new Set<string>();
   let modified = false;
 
   // 1. Prune closed/stale tabs from each pane
   function cleanNode(node: LayoutNode): LayoutNode {
     if (node.type === 'pane') {
+      const hadTabs = node.tabIds.length > 0;
       const validTabs = node.tabIds.filter((id) => openSet.has(id));
+      if (hadTabs && validTabs.length === 0) {
+        closedPanes.add(node.id);
+      }
       if (validTabs.length !== node.tabIds.length) modified = true;
       for (const t of validTabs) assignedTabs.add(t);
       const selected = validTabs.includes(node.selectedTabId ?? '')
@@ -416,7 +452,7 @@ export function reconcileLayout(
   tree = cleanNode(tree);
 
   // 2. Determine target pane for unassigned tabs
-  const panes = getPaneNodes(tree);
+  let panes = getPaneNodes(tree);
   let focusedPane = panes.find((p) => p.id === saved.focusedPaneId) ?? panes[0];
   if (!focusedPane) {
     return createDefaultLayout(workspaceId, openTabIds, defaultSelectedTabId);
@@ -434,6 +470,17 @@ export function reconcileLayout(
         selectedTabId: p.selectedTabId ?? combined[0] ?? null,
       };
     });
+  }
+
+  // 4. Automatically close empty panes and expand adjacent panes
+  const prunedTree = pruneEmptyPanes(tree, (pane) => closedPanes.has(pane.id) || openTabIds.length === 0);
+  if (countLeaves(prunedTree) !== countLeaves(tree)) modified = true;
+  tree = prunedTree;
+
+  panes = getPaneNodes(tree);
+  focusedPane = panes.find((p) => p.id === saved.focusedPaneId) ?? panes[0];
+  if (!focusedPane) {
+    return createDefaultLayout(workspaceId, openTabIds, defaultSelectedTabId);
   }
 
   // 4. Validate maximizedPaneId if set

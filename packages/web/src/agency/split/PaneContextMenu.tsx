@@ -5,6 +5,8 @@ interface Props {
   x: number;
   y: number;
   hasSelection: boolean;
+  canCopyLast?: boolean;
+  canCopyAll?: boolean;
   isLive: boolean;
   fileCandidate?: { relative: string; absolute: string } | null;
   canCopyNativeFile?: boolean;
@@ -12,6 +14,7 @@ interface Props {
   onSelectAll?: () => void;
   onCopyAll: () => void;
   onCopyLast: () => void;
+  onOpenSearch?: () => void;
   onPaste: () => void;
   onInterrupt: () => void;
   onClear: () => void;
@@ -27,6 +30,8 @@ export function PaneContextMenu({
   x,
   y,
   hasSelection,
+  canCopyLast,
+  canCopyAll,
   isLive,
   fileCandidate,
   canCopyNativeFile,
@@ -34,6 +39,7 @@ export function PaneContextMenu({
   onSelectAll,
   onCopyAll,
   onCopyLast,
+  onOpenSearch,
   onPaste,
   onInterrupt,
   onClear,
@@ -72,7 +78,7 @@ export function PaneContextMenu({
 
   // Clamp menu coordinates inside the viewport
   const menuWidth = 190;
-  const menuHeight = fileCandidate ? 360 : 220;
+  const menuHeight = fileCandidate ? 380 : 250;
   const clampedX = Math.max(10, Math.min(x, window.innerWidth - menuWidth - 10));
   const clampedY = Math.max(10, Math.min(y, window.innerHeight - menuHeight - 10));
 
@@ -96,6 +102,40 @@ export function PaneContextMenu({
       >
         {t('agency.ui.copySelection')}
       </button>
+      <button
+        type="button"
+        role="menuitem"
+        disabled={canCopyLast === false}
+        onClick={() => {
+          onCopyLast();
+          onClose();
+        }}
+      >
+        {t('agency.ui.copyLastOutput')}
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        disabled={canCopyAll === false}
+        onClick={() => {
+          onCopyAll();
+          onClose();
+        }}
+      >
+        {t('agency.ui.copyAll')}
+      </button>
+      {onOpenSearch && (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            onOpenSearch();
+            onClose();
+          }}
+        >
+          {t('agency.terminal.search')}
+        </button>
+      )}
       {onSelectAll && (
         <button
           type="button"
@@ -108,26 +148,6 @@ export function PaneContextMenu({
           {t('agency.ui.selectAll')}
         </button>
       )}
-      <button
-        type="button"
-        role="menuitem"
-        onClick={() => {
-          onCopyAll();
-          onClose();
-        }}
-      >
-        {t('agency.ui.copyAll')}
-      </button>
-      <button
-        type="button"
-        role="menuitem"
-        onClick={() => {
-          onCopyLast();
-          onClose();
-        }}
-      >
-        {t('agency.ui.copyLastOutput')}
-      </button>
       <button
         type="button"
         role="menuitem"

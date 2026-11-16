@@ -182,12 +182,13 @@ test('split layout: reconcile handles deleted tabs, missing tabs, and malformed 
   );
 
   const p1 = findPaneNode(reconciled.tree, 'pane-1')!;
-  const p2 = findPaneNode(reconciled.tree, 'pane-2')!;
+  const p2 = findPaneNode(reconciled.tree, 'pane-2');
 
-  // t2 is removed from pane-2
-  assert.ok(!p2.tabIds.includes('t2'));
+  // t2 is removed; pane-2 became empty and was automatically closed
+  assert.equal(p2, null);
   // t4 was added to focused pane
-  assert.ok(p1.tabIds.includes('t4') || p2.tabIds.includes('t4'));
+  assert.ok(p1.tabIds.includes('t4'));
+  assert.equal(countLeaves(reconciled.tree), 1);
 
   // Corrupted / malformed layout fallback
   const fallback = reconcileLayout(null, wsId, ['t1']);
@@ -285,3 +286,95 @@ test('split layout: layout ownership validates mixed native, browser, and editor
     'Layout tab does not belong to the requested workspace',
   );
 });
+
+test('split layout: pruneEmptyPanes automatically collapses empty panes and expands siblings', async () => {
+  const { pruneEmptyPanes } = await import('@agent-workbench/shared');
+
+  // 1. Horizontal split: pane-2 is empty -> collapses to pane-1
+  const hSplit = {
+    type: 'split' as const,
+    id: 's1',
+    direction: 'row' as const,
+    ratio: 0.5,
+    first: { type: 'pane' as const, id: 'p1', tabIds: ['t1'], selectedTabId: 't1' },
+    second: { type: 'pane' as const, id: 'p2', tabIds: [], selectedTabId: null },
+  };
+  const res1 = pruneEmptyPanes(hSplit);
+  assert.equal(res1.type, 'pane');
+  assert.equal(res1.id, 'p1');
+
+  // 2. Vertical split: pane-1 is empty -> collapses to pane-2
+  const vSplit = {
+    type: 'split' as const,
+    id: 's2',
+    direction: 'column' as const,
+    ratio: 0.5,
+    first: { type: 'pane' as const, id: 'p1', tabIds: [], selectedTabId: null },
+    second: { type: 'pane' as const, id: 'p2', tabIds: ['t2'], selectedTabId: 't2' },
+  };
+  const res2 = pruneEmptyPanes(vSplit);
+  assert.equal(res2.type, 'pane');
+  assert.equal(res2.id, 'p2');
+
+  // 3. Nested split: p3 is empty -> collapses s2 to (s1 = p1 | p2)
+  const nestedSplit = {
+    type: 'split' as const,
+    id: 's-outer',
+    direction: 'row' as const,
+    ratio: 0.7,
+    first: {
+      type: 'split' as const,
+      id: 's-inner',
+      direction: 'column' as const,
+      ratio: 0.5,
+      first: { type: 'pane' as const, id: 'p1', tabIds: ['t1'], selectedTabId: 't1' },
+      second: { type: 'pane' as const, id: 'p2', tabIds: ['t2'], selectedTabId: 't2' },
+    },
+    second: { type: 'pane' as const, id: 'p3', tabIds: [], selectedTabId: null },
+  };
+  const res3 = pruneEmptyPanes(nestedSplit);
+  assert.equal(res3.type, 'split');
+  assert.equal(res3.id, 's-inner');
+  assert.equal(countLeaves(res3), 2);
+
+  // 4. All panes empty -> collapses to a single minimal empty pane
+  const allEmpty = {
+    type: 'split' as const,
+    id: 's-all',
+    direction: 'row' as const,
+    ratio: 0.5,
+    first: { type: 'pane' as const, id: 'p1', tabIds: [], selectedTabId: null },
+    second: { type: 'pane' as const, id: 'p2', tabIds: [], selectedTabId: null },
+  };
+  const res4 = pruneEmptyPanes(allEmpty);
+  assert.equal(res4.type, 'pane');
+  assert.deepEqual((res4 as any).tabIds, []);
+});
+
+test('split layout: reconcileLayout automatically prunes empty panes when tabs close', () => {
+  const ws = '11111111-1111-4111-8111-111111111111' as WorkspaceId;
+  const layout: WorkspacePaneLayout = {
+    version: 1,
+    workspaceId: ws,
+    focusedPaneId: 'p2',
+    maximizedPaneId: null,
+    updatedAt: new Date().toISOString(),
+    tree: {
+      type: 'split',
+      id: 'split-1',
+      direction: 'row',
+      ratio: 0.5,
+      first: { type: 'pane', id: 'p1', tabIds: ['t1'], selectedTabId: 't1' },
+      second: { type: 'pane', id: 'p2', tabIds: ['t2'], selectedTabId: 't2' },
+    },
+  };
+
+  // When t2 closes, openTabIds is only ['t1'].
+  // p2 becomes empty and reconcileLayout must prune it, expanding p1 to full space.
+  const reconciled = reconcileLayout(layout, ws, ['t1']);
+  assert.equal(countLeaves(reconciled.tree), 1);
+  assert.equal(reconciled.tree.type, 'pane');
+  assert.equal(reconciled.tree.id, 'p1');
+  assert.equal(reconciled.focusedPaneId, 'p1');
+});
+

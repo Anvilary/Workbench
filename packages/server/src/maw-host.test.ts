@@ -68,6 +68,7 @@ test('control uses current private readiness, refuses stale PIDs and never print
   const runtime=path.join(temp,'maw');
   const clear=await publishReadiness(runtime,`http://127.0.0.1:${address.port}/?token=disposable-secret`);
   const environment={...process.env,XDG_RUNTIME_DIR:temp,PATH:bin+':'+process.env.PATH,MAW_TEST_PID:String(process.pid)};
+  delete environment.MAW_RUNTIME_DIR;
   try {
     const status=await run(process.execPath,[control,'status'],{cwd:'/',env:environment});
     assert.match(status.stdout,/Healthy/); assert.ok(!status.stdout.includes('disposable-secret'));
@@ -103,6 +104,7 @@ test('control url outputs authenticated loopback URL and open launches specified
   const expectedUrl = `http://127.0.0.1:${address.port}/?token=disposable-secret`;
   const clear = await publishReadiness(runtime, expectedUrl);
   const environment = { ...process.env, XDG_RUNTIME_DIR: temp, PATH: bin + ':' + process.env.PATH, MAW_TEST_PID: String(process.pid) };
+  delete environment.MAW_RUNTIME_DIR;
   try {
     const urlOut = await run(process.execPath, [control, 'url'], { cwd: '/', env: environment });
     assert.equal(urlOut.stdout.trim(), expectedUrl);

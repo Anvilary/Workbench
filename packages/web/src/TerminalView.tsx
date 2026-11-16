@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { SearchAddon } from '@xterm/addon-search';
 import { Terminal, type IMarker } from '@xterm/xterm';
 import { TerminalOutput } from './terminal-output.js';
 import type { TerminalId } from '@agent-workbench/shared';
@@ -144,6 +145,14 @@ interface TerminalViewProps {
    * Habilita el viewport de historial persistente integrado (Lane F).
    */
   enablePersistentHistory?: boolean;
+  /**
+   * Callback invocado al presionar el atajo de buscar en terminal (Ctrl+Shift+F).
+   */
+  onOpenSearch?: () => void;
+  /**
+   * Provee acceso al SearchAddon de la terminal para controladores externos.
+   */
+  onSearchAddon?: (addon: SearchAddon | null) => void;
 }
 
 export interface TerminalHistoryHandlers {
@@ -194,6 +203,8 @@ export function TerminalView({
   onScrolledToTop,
   historyHandlers: historyHandlersProp,
   enablePersistentHistory = true,
+  onOpenSearch,
+  onSearchAddon,
 }: TerminalViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -209,6 +220,10 @@ export function TerminalView({
   isRemoteClientRef.current = isRemoteClient;
   const onScrolledToTopRef = useRef(onScrolledToTop);
   onScrolledToTopRef.current = onScrolledToTop;
+  const onOpenSearchRef = useRef(onOpenSearch);
+  onOpenSearchRef.current = onOpenSearch;
+  const onSearchAddonRef = useRef(onSearchAddon);
+  onSearchAddonRef.current = onSearchAddon;
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [showHistoryPrompt, setShowHistoryPrompt] = useState(false);
@@ -340,6 +355,10 @@ export function TerminalView({
     fitRef.current = fitAddon;
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(new WebLinksAddon());
+    const searchAddon = new SearchAddon();
+    terminal.loadAddon(searchAddon);
+    (terminal as unknown as { __mawSearchAddon?: SearchAddon }).__mawSearchAddon = searchAddon;
+    onSearchAddonRef.current?.(searchAddon);
     terminal.open(container);
     onTerminalInstanceRef.current?.(terminal);
 
@@ -680,6 +699,12 @@ export function TerminalView({
       }
 
       if (enableAgencyShortcuts) {
+        // Ctrl+Shift+F: search terminal output
+        if (isCtrl && event.shiftKey && !event.altKey && key === 'f') {
+          onOpenSearchRef.current?.();
+          return false;
+        }
+
         // Ctrl+Shift+C: conventional terminal copy
         if (isCtrl && event.shiftKey && !event.altKey && key === 'c') {
           if (terminal.hasSelection()) {
@@ -892,6 +917,8 @@ export function TerminalView({
       terminalRef.current = null;
       fitRef.current = null;
       onTerminalInstanceRef.current?.(null);
+      onSearchAddonRef.current?.(null);
+      searchAddon.dispose();
     };
     // `pasteOnCtrlV` y `enableAgencyShortcuts` no cambian en la vida de una vista.
   }, [terminalId, connection, pasteOnCtrlV, enableAgencyShortcuts]);

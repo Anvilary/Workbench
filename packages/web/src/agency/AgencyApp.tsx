@@ -6,7 +6,6 @@ import { AgencyWorkspaceCreator, AgencyProjectCreator } from './AgencyWorkspaceC
 import { AgencyWorkspaceView } from './AgencyWorkspaceView.js';
 import { useAgencyStore } from './useAgencyStore.js';
 import { useNotificationStore } from './useNotificationStore.js';
-import { NotificationBell } from './NotificationBell.js';
 import { NotificationInbox, type DesktopPermission } from './NotificationInbox.js';
 import { PerformancePanel } from './PerformancePanel.js';
 import { NotificationToastContainer } from './NotificationToast.js';
@@ -503,17 +502,11 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
             )}
           </nav>
           <span className="agency-flex-spacer" />
-          <span className={'agency-connection-state' + (online ? ' connected' : '')}>
-            <span className="agency-status-dot" />{online ? t('app.status.open') : t('agency.ui.disconnected')}
-          </span>
-          <NotificationBell
-            unreadCount={notificationStore.unreadCount}
-            open={inboxOpen}
-            onToggle={() => {
-              if (!inboxOpen) setMenuOpen(false);
-              setInboxOpen(!inboxOpen);
-            }}
-          />
+          {!online && (
+            <span className="agency-connection-state disconnected" role="alert">
+              <span className="agency-status-dot" />{t('agency.ui.disconnected')}
+            </span>
+          )}
           <div className="agency-dropdown" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
@@ -523,7 +516,6 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
               aria-expanded={menuOpen}
               title={t('agency.ui.workspaceMenu')}
               onClick={() => {
-                if (!menuOpen) setInboxOpen(false);
                 setMenuOpen(!menuOpen);
               }}
             >

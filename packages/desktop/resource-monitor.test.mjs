@@ -413,6 +413,68 @@ test('Performance snapshot preserves strict single ownership across all groups',
   await fs.promises.rm(tmpDir, { recursive: true, force: true });
 });
 
+test('Accounting separation: MaW application overhead is separated from managed workloads without double-counting', async () => {
+  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'maw-acct-'));
+
+  const makeMockProc = async (pid, comm, pssKb = 10000, rssKb = 20000) => {
+    const dir = path.join(tmpDir, String(pid));
+    await fs.promises.mkdir(dir, { recursive: true });
+    await fs.promises.writeFile(path.join(dir, 'comm'), comm + '\n');
+    await fs.promises.writeFile(path.join(dir, 'stat'), `${pid} (${comm}) S 1 0 0 0 0 0 0 0 0 0 10 10 0 0 0 0 0 0 1000 0 0\n`);
+    await fs.promises.writeFile(
+      path.join(dir, 'smaps_rollup'),
+      `Rss: ${rssKb} kB\nPss: ${pssKb} kB\nPrivate_Clean: 0 kB\nPrivate_Dirty: ${pssKb} kB\nShared_Clean: 0 kB\nShared_Dirty: 0 kB\n`
+    );
+  };
+
+  // Infrastructure: Backend (PID 2001, 15MB PSS), PTY Supervisor (PID 2002, 5MB PSS)
+  await makeMockProc(2001, 'node', 15000, 30000);
+  await makeMockProc(2002, 'maw-ptyd', 5000, 10000);
+
+  // Managed workload: Terminal 1 running shell (PID 2003, 8MB PSS)
+  await makeMockProc(2003, 'bash', 8000, 12000);
+
+  // Managed workload: Terminal 2 running shell + AI agent (PID 2004, 10MB PSS; child PID 2005, 50MB PSS)
+  await makeMockProc(2004, 'zsh', 10000, 15000);
+  await makeMockProc(2005, 'codex', 50000, 80000);
+  await fs.promises.writeFile(path.join(tmpDir, '2005', 'stat'), `2005 (codex) S 2004 0 0 0 0 0 0 0 0 0 10 10 0 0 0 0 0 0 1000 0 0\n`);
+
+  const collector = new ResourceCollector({
+    procRoot: tmpDir,
+    getBackendReadiness: async () => ({
+      pid: 2001,
+      supervisorPid: 2002,
+      terminals: [
+        { terminalId: 't1', pid: 2003, title: 'Bash Shell', kind: 'terminal' },
+        { terminalId: 't2', pid: 2004, title: 'Codex Session', kind: 'agent', provider: 'codex' },
+      ],
+    }),
+  });
+
+  const snapshot = await collector.sample();
+  assert.ok(snapshot);
+  assert.ok(snapshot.global);
+
+  // MaW Application processes: Backend (15MB) + Supervisor (5MB) = 20MB PSS
+  const expectedAppPss = (15000 + 5000) * 1024;
+  // Workload processes: bash (8MB) + zsh (10MB) + codex (50MB) = 68MB PSS
+  const expectedWorkloadPss = (8000 + 10000 + 50000) * 1024;
+  const expectedTotalPss = expectedAppPss + expectedWorkloadPss;
+
+  assert.equal(snapshot.global.appMawPssBytes, expectedAppPss, 'MaW application memory should only count app processes');
+  assert.equal(snapshot.global.mawPssBytes, expectedAppPss, 'mawPssBytes must reflect application overhead');
+  assert.equal(snapshot.global.workloadPssBytes, expectedWorkloadPss, 'workloadPssBytes must track managed agents and shells');
+  assert.equal(snapshot.global.totalCombinedPssBytes, expectedTotalPss, 'totalCombinedPssBytes must equal app + workload');
+
+  // Verify supervisor only counts its own daemon process, not its descendants
+  const supervisorMetric = snapshot.infrastructure.processes.find((p) => p.role === 'pty-supervisor');
+  assert.ok(supervisorMetric);
+  assert.equal(supervisorMetric.pssBytes, 5000 * 1024, 'PTY supervisor must not attribute descendants to supervisor executable');
+
+  collector.dispose();
+  await fs.promises.rm(tmpDir, { recursive: true, force: true });
+});
+
 test('Overhead measurement: live /proc collection executes in under 20ms and reports latency', async () => {
   const collector = new ResourceCollector({
     procRoot: '/proc',

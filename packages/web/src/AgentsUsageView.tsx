@@ -20,7 +20,7 @@ interface AgentsUsageViewProps {
   connection?: AgentConnection;
 }
 
-function formatTokens(n: number | undefined): string {
+export function formatTokens(n: number | undefined): string {
   if (n === undefined || n === null) return '—';
   if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`;
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
@@ -28,12 +28,12 @@ function formatTokens(n: number | undefined): string {
   return n.toLocaleString();
 }
 
-function formatExactNumber(n: number | undefined): string {
+export function formatExactNumber(n: number | undefined): string {
   if (n === undefined || n === null) return '—';
   return n.toLocaleString();
 }
 
-function formatReset(window: WindowUtilization): string {
+export function formatReset(window: WindowUtilization): string {
   if (window.resetsInSeconds !== undefined && window.resetsInSeconds > 0) {
     const hours = Math.floor(window.resetsInSeconds / 3600);
     const mins = Math.floor((window.resetsInSeconds % 3600) / 60);
@@ -47,7 +47,7 @@ function formatReset(window: WindowUtilization): string {
   return '';
 }
 
-function formatPath(p: string): string {
+export function formatPath(p: string): string {
   const home = '/home/' + (p.split('/')[2] || '');
   if (p.startsWith(home)) {
     return '~' + p.slice(home.length);
@@ -55,10 +55,20 @@ function formatPath(p: string): string {
   return p;
 }
 
+export function getProfileFamily(profile: AgentProfileUsage): 'Codex' | 'AGY' | 'Claude' | 'Other' {
+  const prov = (profile.provider || '').toLowerCase();
+  const id = (profile.profileId || '').toLowerCase();
+  if (prov === 'openai' || id.startsWith('codex')) return 'Codex';
+  if (prov === 'google' || id.startsWith('agy') || id.startsWith('antigravity')) return 'AGY';
+  if (prov === 'anthropic' || id.startsWith('claude')) return 'Claude';
+  return 'Other';
+}
+
 export function AgentsUsageView({ connection }: AgentsUsageViewProps): JSX.Element {
   const { snapshot, loading, refreshing, error, refresh } = useAgentsUsage(connection, true);
   const [providerFilter, setProviderFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   const profiles = useMemo(() => {
     if (!snapshot) return [];
@@ -78,6 +88,34 @@ export function AgentsUsageView({ connection }: AgentsUsageViewProps): JSX.Eleme
     }
     return list;
   }, [snapshot, providerFilter, searchQuery]);
+
+  const groupedProfiles = useMemo(() => {
+    const families: Array<'Codex' | 'AGY' | 'Claude' | 'Other'> = ['Codex', 'AGY', 'Claude'];
+    const groups: Record<string, { family: string; profiles: AgentProfileUsage[]; totalTokens: number }> = {
+      Codex: { family: 'Codex', profiles: [], totalTokens: 0 },
+      AGY: { family: 'AGY', profiles: [], totalTokens: 0 },
+      Claude: { family: 'Claude', profiles: [], totalTokens: 0 },
+    };
+
+    for (const p of profiles) {
+      const fam = getProfileFamily(p);
+      if (!groups[fam]) {
+        groups[fam] = { family: fam, profiles: [], totalTokens: 0 };
+        families.push(fam);
+      }
+      groups[fam]!.profiles.push(p);
+      groups[fam]!.totalTokens += p.tokens?.totalTokens ?? 0;
+    }
+
+    return families.map((fam) => groups[fam]!).filter((g) => g.profiles.length > 0);
+  }, [profiles]);
+
+  const toggleGroup = (group: string) => {
+    setExpandedGroups((prev) => ({
+      ...prev,
+      [group]: !prev[group],
+    }));
+  };
 
   return (
     <div className="agents-usage-view">
@@ -127,8 +165,8 @@ export function AgentsUsageView({ connection }: AgentsUsageViewProps): JSX.Eleme
 
       {snapshot && (
         <>
-          {/* Aggregated summary row */}
-          <div className="agents-usage-summary-grid">
+          {/* Aggregated summary row - simplified to 2 cards */}
+          <div className="agents-usage-summary-grid two-cards">
             <div className="agents-usage-summary-card">
               <span className="summary-label">Profiles Monitored</span>
               <div className="summary-value">
@@ -153,54 +191,30 @@ export function AgentsUsageView({ connection }: AgentsUsageViewProps): JSX.Eleme
                   : 'No token telemetry available'}
               </span>
             </div>
-
-            <div className="agents-usage-summary-card">
-              <span className="summary-label">Recorded Cost</span>
-              <div className="summary-value value-highlight">
-                ${snapshot.aggregated.totalCostUSD.toFixed(2)}
-              </div>
-              <span className="summary-sub">Authoritative provider telemetry</span>
-            </div>
-
-            <div className="agents-usage-summary-card">
-              <span className="summary-label">Collector Health</span>
-              <div className="summary-value">
-                <span className={`status-pill pill-${snapshot.aggregated.status}`}>
-                  {snapshot.aggregated.status === 'ok' ? 'Healthy' : snapshot.aggregated.status.toUpperCase()}
-                </span>
-              </div>
-              <span className="summary-sub">Lightweight local read-only</span>
-            </div>
           </div>
 
-          {/* Provider summaries */}
+          {/* Provider summaries - single horizontal row */}
           <div className="agents-usage-providers-section">
             <h3 className="section-title">Providers Overview</h3>
-            <div className="agents-usage-providers-grid">
-              {snapshot.providers.map((p) => (
-                <div key={p.provider} className={`provider-card provider-${p.provider.toLowerCase()}`}>
-                  <div className="provider-header">
-                    <span className="provider-name">{p.provider}</span>
-                    <span className={`provider-status status-${p.status}`}>{p.status}</span>
-                  </div>
-                  <div className="provider-metrics">
-                    <div className="provider-metric">
-                      <span className="metric-label">Profiles:</span>
-                      <span className="metric-val">{p.availableCount} / {p.profileCount}</span>
+            <div className="agents-usage-providers-row">
+              {snapshot.providers.map((p) => {
+                const quota = p.windowUtilization
+                  ? `${p.windowUtilization.usedPercent}% (${formatReset(p.windowUtilization)})`
+                  : p.status === 'ok' ? 'Normal' : p.status;
+                return (
+                  <div key={p.provider} className={`provider-summary-item provider-${p.provider.toLowerCase()}`}>
+                    <div className="provider-summary-name-row">
+                      <span className="provider-name">{p.provider}</span>
+                      <span className={`provider-status status-${p.status}`}>{p.status}</span>
                     </div>
-                    <div className="provider-metric">
-                      <span className="metric-label">Tokens:</span>
-                      <span className="metric-val">{formatTokens(p.totalTokens)}</span>
-                    </div>
-                    <div className="provider-metric">
-                      <span className="metric-label">Cost:</span>
-                      <span className="metric-val">
-                        {p.totalCostUSD !== undefined ? `$${p.totalCostUSD.toFixed(2)}` : 'Unsupported'}
-                      </span>
+                    <div className="provider-summary-details">
+                      <span><strong>Profiles:</strong> {p.availableCount} / {p.profileCount}</span>
+                      <span><strong>Tokens:</strong> {formatTokens(p.totalTokens)}</span>
+                      <span><strong>Quota:</strong> {quota}</span>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -234,14 +248,42 @@ export function AgentsUsageView({ connection }: AgentsUsageViewProps): JSX.Eleme
             </div>
           </div>
 
-          {/* Profile Cards */}
+          {/* Profile Groups: Collapsible groups collapsed by default */}
           <div className="agents-usage-profiles-list">
-            {profiles.length === 0 ? (
+            {groupedProfiles.length === 0 ? (
               <div className="agents-usage-empty">No agent profiles match current filter.</div>
             ) : (
-              profiles.map((profile) => (
-                <ProfileUsageCard key={profile.profileId} profile={profile} />
-              ))
+              groupedProfiles.map((group) => {
+                const isSearching = searchQuery.trim().length > 0;
+                const isExpanded = isSearching ? true : !!expandedGroups[group.family];
+
+                return (
+                  <div key={group.family} className="profile-family-group">
+                    <button
+                      type="button"
+                      className="profile-family-header"
+                      onClick={() => toggleGroup(group.family)}
+                      aria-expanded={isExpanded}
+                    >
+                      <div className="profile-family-title-group">
+                        <span className={`profile-family-chevron ${isExpanded ? 'expanded' : ''}`}>▶</span>
+                        <span>{group.family} ({group.profiles.length})</span>
+                      </div>
+                      <span className="profile-family-stats">
+                        {group.profiles.filter((p) => p.availability === 'available').length} available &bull; {formatTokens(group.totalTokens)} tokens
+                      </span>
+                    </button>
+
+                    {isExpanded && (
+                      <div className="profile-family-content">
+                        {group.profiles.map((profile) => (
+                          <ProfileUsageCard key={profile.profileId} profile={profile} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
             )}
           </div>
         </>
@@ -298,149 +340,108 @@ function ProfileUsageCard({ profile }: { profile: AgentProfileUsage }): JSX.Elem
         </div>
       )}
 
-      {profile.availabilityMessage && profile.availability !== 'available' && (
-        <div className="profile-card-notice">{profile.availabilityMessage}</div>
+      {/* Quota window metrics */}
+      {profile.quotaWindows && profile.quotaWindows.length > 0 && (
+        <div className="profile-card-quotas">
+          <span className="sub-heading">Quota Windows</span>
+          <div className="quota-bars">
+            {profile.quotaWindows.map((qw) => (
+              <QuotaBar key={qw.label} window={qw} />
+            ))}
+          </div>
+        </div>
       )}
 
-      <div className="profile-utilization-row">
-        {/* 5-Hour Utilization */}
-        <div className="utilization-col">
-          <div className="utilization-header">
-            <span className="utilization-title">5-Hour Quota</span>
-            {renderWindowBadge(profile.fiveHourUtilization)}
-          </div>
-          {renderProgressBar(profile.fiveHourUtilization)}
+      {/* Token breakdown */}
+      {profile.tokens && (
+        <div className="profile-card-tokens">
+          <span className="sub-heading">Token Breakdown</span>
+          <TokenMetricsRow metrics={profile.tokens} />
         </div>
+      )}
 
-        {/* Weekly Utilization */}
-        <div className="utilization-col">
-          <div className="utilization-header">
-            <span className="utilization-title">Weekly Quota</span>
-            {renderWindowBadge(profile.weeklyUtilization)}
-          </div>
-          {renderProgressBar(profile.weeklyUtilization)}
+      {/* Cost metrics */}
+      {profile.cost && profile.cost.totalUSD !== undefined && profile.cost.totalUSD > 0 && (
+        <div className="profile-card-cost">
+          <span className="sub-heading">Estimated Cost</span>
+          <CostMetricsRow cost={profile.cost} />
         </div>
-      </div>
-
-      <div className="profile-metrics-footer">
-        <div className="metric-group">
-          <span className="metric-group-title">Tokens</span>
-          {renderTokenMetrics(profile.tokens)}
-        </div>
-        <div className="metric-group">
-          <span className="metric-group-title">Cost</span>
-          {renderCostMetrics(profile.cost, profile.credits)}
-        </div>
-      </div>
+      )}
     </div>
   );
 }
 
-function renderWindowBadge(w: WindowUtilization): JSX.Element {
-  if (w.status === 'available' || w.status === 'zero') {
-    const pct = w.usedPercent !== undefined ? Math.round(w.usedPercent) : 0;
-    const reset = formatReset(w);
-    return (
-      <span className="utilization-stat">
-        <strong>{pct}%</strong> used {reset ? `(${reset})` : ''}
-      </span>
-    );
-  }
-  if (w.status === 'unavailable') {
-    return <span className="utilization-stat stat-dim">Telemetry unavailable</span>;
-  }
-  if (w.status === 'unsupported') {
-    return <span className="utilization-stat stat-dim">Unsupported metric</span>;
-  }
-  return <span className="utilization-stat stat-error">Error</span>;
-}
+function QuotaBar({ window }: { window: WindowUtilization }): JSX.Element {
+  const pct = Math.min(100, Math.max(0, window.usedPercent));
+  let fillClass = '';
+  if (pct >= 80) fillClass = 'fill-high';
+  else if (pct >= 50) fillClass = 'fill-medium';
 
-function renderProgressBar(w: WindowUtilization): JSX.Element {
-  if (w.status === 'available' || w.status === 'zero') {
-    const pct = Math.min(100, Math.max(0, w.usedPercent ?? 0));
-    const isHigh = pct >= 80;
-    const isMedium = pct >= 50 && pct < 80;
-    return (
-      <div className="quota-bar-track">
-        <div
-          className={`quota-bar-fill ${isHigh ? 'fill-high' : isMedium ? 'fill-medium' : ''}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    );
-  }
-  if (w.status === 'unavailable') {
-    return (
-      <div className="quota-bar-track track-unavailable" title="Telemetry not reported by agent runtime">
-        <span className="track-dim-label">Telemetry unavailable</span>
-      </div>
-    );
-  }
   return (
-    <div className="quota-bar-track track-unsupported" title="Provider does not publish window quota telemetry">
-      <span className="track-dim-label">Unsupported by provider</span>
+    <div className="quota-bar-item">
+      <div className="quota-bar-label-row">
+        <span className="quota-label">{window.label}</span>
+        <span className="quota-values">
+          {window.usedPercent}%
+          {formatReset(window) ? <span className="quota-reset"> · resets {formatReset(window)}</span> : null}
+        </span>
+      </div>
+      <div className="progress-track" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+        <div className={`progress-fill ${fillClass}`} style={{ width: `${pct}%` }} />
+      </div>
     </div>
   );
 }
 
-function renderTokenMetrics(tokens: TokenUsageMetrics): JSX.Element {
-  if (tokens.status === 'available' || tokens.status === 'zero') {
-    return (
-      <div className="metric-items">
-        <span className="metric-detail" title={formatExactNumber(tokens.totalTokens)}>
-          Total: <strong>{formatTokens(tokens.totalTokens)}</strong>
+function TokenMetricsRow({ metrics }: { metrics: TokenUsageMetrics }): JSX.Element {
+  return (
+    <div className="token-metrics-row">
+      <div className="token-stat">
+        <span className="token-stat-label">Total</span>
+        <span className="token-stat-val" title={formatExactNumber(metrics.totalTokens)}>
+          {formatTokens(metrics.totalTokens)}
         </span>
-        {tokens.inputTokens !== undefined && (
-          <span className="metric-detail-dim" title={formatExactNumber(tokens.inputTokens)}>
-            In: {formatTokens(tokens.inputTokens)}
-          </span>
-        )}
-        {tokens.outputTokens !== undefined && (
-          <span className="metric-detail-dim" title={formatExactNumber(tokens.outputTokens)}>
-            Out: {formatTokens(tokens.outputTokens)}
-          </span>
-        )}
-        {tokens.cachedInputTokens !== undefined && tokens.cachedInputTokens > 0 && (
-          <span className="metric-detail-dim" title={formatExactNumber(tokens.cachedInputTokens)}>
-            Cache: {formatTokens(tokens.cachedInputTokens)}
-          </span>
-        )}
       </div>
-    );
-  }
-  if (tokens.status === 'unavailable') {
-    return <span className="metric-status-dim">Telemetry unavailable</span>;
-  }
-  return <span className="metric-status-dim">Unsupported metric</span>;
+      <div className="token-stat">
+        <span className="token-stat-label">Input</span>
+        <span className="token-stat-val" title={formatExactNumber(metrics.inputTokens)}>
+          {formatTokens(metrics.inputTokens)}
+        </span>
+      </div>
+      <div className="token-stat">
+        <span className="token-stat-label">Output</span>
+        <span className="token-stat-val" title={formatExactNumber(metrics.outputTokens)}>
+          {formatTokens(metrics.outputTokens)}
+        </span>
+      </div>
+      {metrics.cacheReadTokens !== undefined && metrics.cacheReadTokens > 0 && (
+        <div className="token-stat">
+          <span className="token-stat-label">Cached</span>
+          <span className="token-stat-val" title={formatExactNumber(metrics.cacheReadTokens)}>
+            {formatTokens(metrics.cacheReadTokens)}
+          </span>
+        </div>
+      )}
+      {metrics.reasoningTokens !== undefined && metrics.reasoningTokens > 0 && (
+        <div className="token-stat">
+          <span className="token-stat-label">Reasoning</span>
+          <span className="token-stat-val" title={formatExactNumber(metrics.reasoningTokens)}>
+            {formatTokens(metrics.reasoningTokens)}
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }
 
-function renderCostMetrics(
-  cost: CostMetrics,
-  credits?: { hasCredits: boolean; balance?: string; unlimited?: boolean },
-): JSX.Element {
-  if (cost.status === 'available' || cost.status === 'zero') {
-    return (
-      <div className="metric-items">
-        <span className="metric-detail">
-          <strong>${(cost.amount ?? 0).toFixed(2)}</strong> {cost.currency || 'USD'}
-        </span>
-        {credits?.hasCredits && (
-          <span className="metric-detail-dim">
-            Credits: {credits.unlimited ? 'Unlimited' : credits.balance || 'Active'}
-          </span>
-        )}
-      </div>
-    );
-  }
-  if (credits?.hasCredits) {
-    return (
-      <span className="metric-detail">
-        Credits: <strong>{credits.unlimited ? 'Unlimited' : credits.balance || 'Active'}</strong>
-      </span>
-    );
-  }
-  if (cost.status === 'unsupported') {
-    return <span className="metric-status-dim">Unsupported by provider</span>;
-  }
-  return <span className="metric-status-dim">Cost unavailable</span>;
+function CostMetricsRow({ cost }: { cost: CostMetrics }): JSX.Element {
+  return (
+    <div className="cost-metrics-row">
+      <span className="cost-val">${(cost.totalUSD ?? 0).toFixed(2)}</span>
+      <span className="cost-currency">{cost.currency}</span>
+      {cost.breakdown?.model && (
+        <span className="cost-model">({cost.breakdown.model})</span>
+      )}
+    </div>
+  );
 }

@@ -337,6 +337,17 @@
 .agency-topbar-count { font-size: 11px; }
 .agency-connection-state { display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--agency-dim); }
 .agency-connection-state.connected .agency-status-dot { background: var(--sage); }
+.agency-connection-state.disconnected {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+}
+.agency-connection-state.disconnected .agency-status-dot {
+  background: #ef4444;
+}
 .agency-secondary-button {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1771,6 +1782,16 @@
   border-radius: 3px;
 }
 
+.maw-perf-accounting-note {
+  font-size: 10px;
+  color: var(--ink-4);
+  line-height: 1.4;
+  padding: 5px 8px;
+  background: var(--bg-1);
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+}
+
 .maw-perf-health-row {
   display: flex;
   gap: 8px;
@@ -2279,3 +2300,79 @@
   border-color: var(--ember);
   outline: 1px solid var(--ember);
 }
+
+/* Floating Terminal Search Bar */
+.maw-terminal-search-bar {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: radial-gradient(400px 180px at 80% 0%, var(--forge-glow-1), transparent 70%), var(--panel);
+  border: 1px solid var(--border-strong);
+  border-top: 2px solid var(--accent-border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 4px 8px;
+  font-size: 12px;
+  animation: maw-fade-in 0.12s ease-out;
+}
+
+.maw-terminal-search-input {
+  background: var(--bg-1, #141417);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  padding: 4px 8px;
+  font-size: 12px;
+  width: 200px;
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.maw-terminal-search-input:focus {
+  border-color: var(--accent);
+}
+
+.maw-terminal-search-counter {
+  font-size: 11px;
+  color: var(--ink-dim);
+  min-width: 32px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.maw-terminal-search-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 120ms ease;
+}
+
+.maw-terminal-search-btn:hover:not(:disabled) {
+  background: var(--agency-hover);
+  color: var(--ink);
+  border-color: var(--border);
+}
+
+.maw-terminal-search-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.maw-terminal-search-close {
+  font-size: 14px;
+  margin-left: 2px;
+}
+

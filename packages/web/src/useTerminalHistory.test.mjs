@@ -369,16 +369,18 @@ test('useTerminalHistory and TerminalView history pagination', { timeout: 60000 
   // xterm updates its buffer before the DOM viewport catches up on a render.
   await page.waitForFunction(() => (window.terminalInstance?.buffer?.active?.viewportY ?? 0) > 0 &&
     (document.querySelector('.xterm-viewport')?.scrollTop ?? 0) > 0);
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
+    window.terminalInstance.scrollToTop();
+    await new Promise((r) => setTimeout(r, 50));
     window.terminalInstance.scrollToTop();
   });
   await page.waitForFunction((initial) => window.topScrolledCount > initial, initialScrollCount);
-  const finalScrollCount = await page.evaluate(() => window.topScrolledCount);
-  assert.ok(finalScrollCount > initialScrollCount, 'onScrolledToTop must be triggered when scrolling to viewportY === 0');
-
-  // Persistent loss must be visible in the drawer, not only in hook state.
-  await page.evaluate(() => { window.sent.length = 0; });
-  await page.getByRole('button', { name: 'Open Persistent History' }).click();
+  await page.waitForSelector('.terminal-history-prompt button', { state: 'visible', timeout: 5000 });
+  await page.evaluate(() => {
+    window.sent.length = 0;
+    window.historyHook.reset();
+  });
+  await page.locator('.terminal-history-prompt button').click();
   await page.waitForFunction(() => window.sent.some(m => m.type === 'terminal.history.page'));
   const drawerRequest = await page.evaluate(() => window.sent.find(m => m.type === 'terminal.history.page'));
   await page.evaluate(requestId => window.emitServerMessage({

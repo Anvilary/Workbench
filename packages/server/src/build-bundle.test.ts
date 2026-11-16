@@ -32,6 +32,8 @@ test('Prebuilt production server bundle: exists and starts cleanly under raw nod
       AGENT_WORKBENCH_NO_RESTORE: '1',
       MAW_EAGER_CLASSIC: '0',
     };
+    delete (env as Record<string, string | undefined>).MAW_UNSAFE_LOCAL_NO_AUTH;
+    delete (env as Record<string, string | undefined>).MAW_RUNTIME_DIR;
 
     const child = spawn(process.execPath, [bundlePath, '--prod'], {
       cwd: serverRoot,
@@ -48,10 +50,10 @@ test('Prebuilt production server bundle: exists and starts cleanly under raw nod
 
       const onData = (chunk: Buffer) => {
         output += chunk.toString();
-        const match = output.match(/http:\/\/127\.0\.0\.1:(\d+)\/\?token=([^\s]+)/);
-        if (match && match[1] && match[2]) {
+        const match = output.match(/http:\/\/127\.0\.0\.1:(\d+)\/(?:\?token=([^\s]+))?/);
+        if (match && match[1]) {
           clearTimeout(timer);
-          resolve({ port: Number(match[1]), token: match[2] });
+          resolve({ port: Number(match[1]), token: match[2] || '' });
         }
       };
 

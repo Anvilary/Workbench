@@ -98,13 +98,22 @@ export interface PerformanceServiceHealth {
 
 export interface PerformanceGlobalOverview {
   cpuUsagePercent: number; // Normalized total system CPU usage (0-100%)
-  mawCpuPercent: number; // CPU used by MAW processes combined (0-100%)
+  mawCpuPercent: number; // CPU used by MAW application overhead (0-100%)
+  appMawCpuPercent?: number; // Explicit MAW application CPU (0-100%)
+  workloadCpuPercent?: number; // CPU used by managed workloads (agents + shells) (0-100%)
+  totalCombinedCpuPercent?: number; // Combined total CPU (0-100%)
   cpuCoreCount: number;
-  mawPssBytes: number; // Physical RAM actually held by MAW processes
+  mawPssBytes: number; // Physical RAM actually held by MAW application processes (PSS)
+  appMawPssBytes?: number; // Explicit MAW application memory (PSS)
+  workloadPssBytes?: number; // Physical RAM held by managed workloads (PSS)
+  totalCombinedPssBytes?: number; // Combined total RAM (PSS)
   mawRssBytes: number; // Raw RSS sum (displayed for comparison, not as actual physical consumption)
   mawPrivateBytes: number;
   mawSharedBytes: number;
   mawSwapPssBytes?: number;
+  workloadRssBytes?: number;
+  workloadPrivateBytes?: number;
+  workloadSharedBytes?: number;
   systemTotalBytes: number;
   systemFreeBytes: number;
   systemAvailableBytes: number;
@@ -114,6 +123,7 @@ export interface PerformanceGlobalOverview {
   gpuVramBytes: number | null; // Null indicates explicit unavailable state
   gpuStatusNote: string;
   totalMawProcesses: number;
+  totalWorkloadProcesses?: number;
   backendHealth: PerformanceServiceHealth;
   supervisorHealth: PerformanceServiceHealth;
   desktopHealth: PerformanceServiceHealth;

@@ -205,18 +205,20 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
           <>
             {/* Global Overview Grid */}
             <div className="maw-perf-grid">
-              {/* CPU Metric Card */}
+              {/* Card 1: MaW App CPU */}
               <div className="maw-perf-card">
                 <div className="maw-perf-card-header">
-                  <span className="maw-perf-card-label">{t('performance.cpuUtilization')}</span>
+                  <span className="maw-perf-card-label">{t('performance.mawAppCpu')}</span>
                   <span className="maw-perf-card-sub">
                     {snapshot.global.cpuCoreCount} {t('performance.cores')}
                   </span>
                 </div>
                 <div className="maw-perf-card-body">
                   <div className="maw-perf-card-val-row">
-                    <span className="maw-perf-card-val">{snapshot.global.mawCpuPercent}%</span>
-                    <span className="maw-perf-card-note">{t('performance.normalizedTotal')}</span>
+                    <span className="maw-perf-card-val">{snapshot.global.appMawCpuPercent ?? snapshot.global.mawCpuPercent}%</span>
+                    <span className="maw-perf-card-note">
+                      System: {snapshot.global.cpuUsagePercent}% · Workloads: {snapshot.global.workloadCpuPercent ?? Number(snapshot.aiAgents.totalCpuPercent + snapshot.otherTerminals.totalCpuPercent).toFixed(1)}%
+                    </span>
                   </div>
                   <PerformanceSparkline
                     data={cpuHistory}
@@ -229,20 +231,22 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                 </div>
               </div>
 
-              {/* RAM Metric Card */}
+              {/* Card 2: MaW App RAM */}
               <div className="maw-perf-card">
                 <div className="maw-perf-card-header">
-                  <span className="maw-perf-card-label">{t('performance.ramPhysicalPss')}</span>
-                  <span className={`maw-perf-pressure-badge tier-${snapshot.global.systemMemoryPressure}`}>
+                  <span className="maw-perf-card-label">{t('performance.mawAppRam')}</span>
+                  <span
+                    className={`maw-perf-pressure-badge tier-${snapshot.global.systemMemoryPressure}`}
+                    title={`System memory pressure: ${snapshot.global.systemMemoryPressure.toUpperCase()}`}
+                  >
                     {snapshot.global.systemMemoryPressure.toUpperCase()}
                   </span>
                 </div>
                 <div className="maw-perf-card-body">
                   <div className="maw-perf-card-val-row">
-                    <span className="maw-perf-card-val">{formatBytes(snapshot.global.mawPssBytes)}</span>
+                    <span className="maw-perf-card-val">{formatBytes(snapshot.global.appMawPssBytes ?? snapshot.global.mawPssBytes)}</span>
                     <span className="maw-perf-card-note">
-                      {formatBytes(snapshot.global.systemAvailableBytes)} {t('performance.available')}
-                      {' · '}{formatBytes(snapshot.global.mawSwapPssBytes ?? 0)} {t('performance.swap')}
+                      Workloads: {formatBytes(snapshot.global.workloadPssBytes ?? (snapshot.aiAgents.totalPssBytes + snapshot.otherTerminals.totalPssBytes))} · Available: {formatBytes(snapshot.global.systemAvailableBytes)}
                     </span>
                   </div>
                   <PerformanceSparkline
@@ -254,39 +258,39 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                 </div>
               </div>
 
-              {/* GPU Metric Card */}
+              {/* Card 3: Embedded Browsers */}
               <div className="maw-perf-card">
                 <div className="maw-perf-card-header">
-                  <span className="maw-perf-card-label">{t('performance.gpuProcess')}</span>
-                  <span className="maw-perf-unavailable-badge">{t('performance.vramUnavailable')}</span>
+                  <span className="maw-perf-card-label">{t('performance.embeddedBrowsers')}</span>
+                  <span className="maw-perf-card-sub">
+                    {snapshot.browserViews.activeCount} active · {snapshot.browserViews.suspendedCount} hibernated
+                  </span>
                 </div>
                 <div className="maw-perf-card-body">
                   <div className="maw-perf-card-val-row">
-                    <span className="maw-perf-card-val">
-                      {snapshot.global.gpuProcessMetric
-                        ? formatBytes(snapshot.global.gpuProcessMetric.pssBytes)
-                        : t('performance.idle')}
-                    </span>
-                    <span className="maw-perf-card-note" title={snapshot.global.gpuStatusNote}>
-                      {snapshot.global.gpuProcessMetric
-                        ? `${snapshot.global.gpuProcessMetric.cpuPercent}% CPU`
-                        : t('performance.notActive')}
+                    <span className="maw-perf-card-val">{snapshot.browserViews.totalCount} {t('performance.tabs')}</span>
+                    <span className="maw-perf-card-note">
+                      {formatBytes(snapshot.browserViews.totalPssBytes)} PSS · {snapshot.browserViews.totalCpuPercent}% CPU
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* MAW Processes Card */}
+              {/* Card 4: Managed Workloads */}
               <div className="maw-perf-card">
                 <div className="maw-perf-card-header">
-                  <span className="maw-perf-card-label">{t('performance.mawProcesses')}</span>
-                  <span className="maw-perf-card-sub">{t('performance.trackedSingleOwner')}</span>
+                  <span className="maw-perf-card-label">{t('performance.managedWorkloads')}</span>
+                  <span className="maw-perf-card-sub">
+                    {snapshot.aiAgents.activeCount} agents · {snapshot.otherTerminals.count} shells
+                  </span>
                 </div>
                 <div className="maw-perf-card-body">
                   <div className="maw-perf-card-val-row">
-                    <span className="maw-perf-card-val">{snapshot.global.totalMawProcesses}</span>
+                    <span className="maw-perf-card-val">
+                      {formatBytes(snapshot.global.workloadPssBytes ?? (snapshot.aiAgents.totalPssBytes + snapshot.otherTerminals.totalPssBytes))}
+                    </span>
                     <span className="maw-perf-card-note">
-                      RSS: {formatBytes(snapshot.global.mawRssBytes)}
+                      {snapshot.global.workloadCpuPercent ?? Number(snapshot.aiAgents.totalCpuPercent + snapshot.otherTerminals.totalCpuPercent).toFixed(1)}% CPU · {snapshot.global.totalWorkloadProcesses ?? (snapshot.aiAgents.groups.reduce((a, g) => a + g.instances.reduce((b, i) => b + i.pids.length, 0), 0) + snapshot.otherTerminals.terminals.reduce((a, t) => a + t.pids.length, 0))} procs
                     </span>
                   </div>
                   <PerformanceSparkline
@@ -297,6 +301,11 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                   />
                 </div>
               </div>
+            </div>
+
+            {/* Accounting Note */}
+            <div className="maw-perf-accounting-note">
+              <span>{t('performance.accountingNote')}</span>
             </div>
 
             {/* Service Health Line */}

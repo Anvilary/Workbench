@@ -505,6 +505,13 @@ export class ResourceCollector {
           const readiness = await this.getBackendReadiness();
           if (readiness && readiness.pid) {
             backendPid = readiness.pid;
+            if (readiness.terminals) {
+              backendInventoryAvailable = true;
+              backendTerminals = readiness.terminals;
+            }
+            if (readiness.supervisorPid) {
+              supervisorPid = readiness.supervisorPid;
+            }
             // Fetch live terminals from the administrative loopback endpoint
             if (readiness.url) {
               const termUrl = new URL('/api/performance/terminals', readiness.url);
@@ -919,19 +926,46 @@ export class ResourceCollector {
         tierOverride: process.env.MAW_MEMORY_PRESSURE_TIER,
       });
 
-      // Total MAW resources
-      const allMeasuredProcesses = [
+      // -------------------------------------------------------------
+      // Resource Separation: MaW Application vs Managed Workloads
+      // -------------------------------------------------------------
+      // Browser renderers (attached tabs)
+      const browserRendererProcesses = [...measuredRenderers.values()];
+
+      // MaW Application processes: infrastructure + browser renderers
+      const appProcesses = [
         ...infraProcesses,
-        ...agentInstances.flatMap((a) => a.processes),
-        ...otherTerminalMetrics.flatMap((t) => t.processes),
-        ...measuredRenderers.values(),
+        ...browserRendererProcesses,
       ];
 
-      const totalMawPss = allMeasuredProcesses.reduce((acc, p) => acc + p.pssBytes, 0);
-      const totalMawRss = allMeasuredProcesses.reduce((acc, p) => acc + p.rssBytes, 0);
-      const totalMawPrivate = allMeasuredProcesses.reduce((acc, p) => acc + p.privateBytes, 0);
-      const totalMawShared = allMeasuredProcesses.reduce((acc, p) => acc + p.sharedBytes, 0);
-      const totalMawCpu = Number(allMeasuredProcesses.reduce((acc, p) => acc + p.cpuPercent, 0).toFixed(1));
+      // Managed workloads: AI coding agents + shells and terminal subprocesses
+      const workloadProcesses = [
+        ...agentInstances.flatMap((a) => a.processes),
+        ...otherTerminalMetrics.flatMap((t) => t.processes),
+      ];
+
+      const allMeasuredProcesses = [
+        ...appProcesses,
+        ...workloadProcesses,
+      ];
+
+      // MaW Application Overhead
+      const appMawPss = appProcesses.reduce((acc, p) => acc + p.pssBytes, 0);
+      const appMawRss = appProcesses.reduce((acc, p) => acc + p.rssBytes, 0);
+      const appMawPrivate = appProcesses.reduce((acc, p) => acc + p.privateBytes, 0);
+      const appMawShared = appProcesses.reduce((acc, p) => acc + p.sharedBytes, 0);
+      const appMawCpu = Number(appProcesses.reduce((acc, p) => acc + p.cpuPercent, 0).toFixed(1));
+
+      // Managed Workloads
+      const workloadPss = workloadProcesses.reduce((acc, p) => acc + p.pssBytes, 0);
+      const workloadRss = workloadProcesses.reduce((acc, p) => acc + p.rssBytes, 0);
+      const workloadPrivate = workloadProcesses.reduce((acc, p) => acc + p.privateBytes, 0);
+      const workloadShared = workloadProcesses.reduce((acc, p) => acc + p.sharedBytes, 0);
+      const workloadCpu = Number(workloadProcesses.reduce((acc, p) => acc + p.cpuPercent, 0).toFixed(1));
+
+      // Combined totals
+      const totalCombinedPss = appMawPss + workloadPss;
+      const totalCombinedCpu = Number((appMawCpu + workloadCpu).toFixed(1));
 
       // Clean up terminated PIDs from lastProcessCpu map
       for (const p of this.lastProcessCpu.keys()) {
@@ -949,13 +983,22 @@ export class ResourceCollector {
         sampleDurationMs: Number(this.lastSampleDurationMs.toFixed(2)),
         global: {
           cpuUsagePercent: Number(systemCpuPercent.toFixed(1)),
-          mawCpuPercent: totalMawCpu,
+          mawCpuPercent: appMawCpu,
+          appMawCpuPercent: appMawCpu,
+          workloadCpuPercent: workloadCpu,
+          totalCombinedCpuPercent: totalCombinedCpu,
           cpuCoreCount: numCores,
-          mawPssBytes: totalMawPss,
-          mawRssBytes: totalMawRss,
-          mawPrivateBytes: totalMawPrivate,
-          mawSharedBytes: totalMawShared,
-          mawSwapPssBytes: allMeasuredProcesses.reduce((acc, p) => acc + p.swapPssBytes, 0),
+          mawPssBytes: appMawPss,
+          appMawPssBytes: appMawPss,
+          workloadPssBytes: workloadPss,
+          totalCombinedPssBytes: totalCombinedPss,
+          mawRssBytes: appMawRss,
+          mawPrivateBytes: appMawPrivate,
+          mawSharedBytes: appMawShared,
+          mawSwapPssBytes: appProcesses.reduce((acc, p) => acc + (p.swapPssBytes || 0), 0),
+          workloadRssBytes: workloadRss,
+          workloadPrivateBytes: workloadPrivate,
+          workloadSharedBytes: workloadShared,
           systemTotalBytes: totalBytes,
           systemFreeBytes: freeBytes,
           systemAvailableBytes: availableBytes,
@@ -964,7 +1007,8 @@ export class ResourceCollector {
           gpuHardwareUtilization: null, // Explicit unavailable state without external driver polling
           gpuVramBytes: null, // Explicit unavailable state: dedicated VRAM cannot be inferred from RSS
           gpuStatusNote: 'Hardware VRAM & GPU engine telemetry unavailable without external driver polling',
-          totalMawProcesses: allMeasuredProcesses.length,
+          totalMawProcesses: appProcesses.length,
+          totalWorkloadProcesses: workloadProcesses.length,
           backendHealth: {
             status: backendPid ? (backendInventoryAvailable ? 'healthy' : 'degraded') : 'unreachable',
             ...(!backendInventoryAvailable ? { details: 'Terminal inventory unavailable; process totals are incomplete' } : {}),

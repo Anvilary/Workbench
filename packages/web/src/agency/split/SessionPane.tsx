@@ -3,10 +3,12 @@ import type { AgencyCliProfile, AgencyRuntimeSession } from '@agent-workbench/sh
 import type { Terminal } from '@xterm/xterm';
 import type { AgentConnection } from '../../connection.js';
 import { TerminalView } from '../../TerminalView.js';
+import type { SearchAddon } from '@xterm/addon-search';
 import { t } from '../../i18n/index.js';
 import { canLaunchAgent, type AgencyTransport } from '../model.js';
 import type { useAgencyStore } from '../useAgencyStore.js';
 import { PaneContextMenu } from './PaneContextMenu.js';
+import { TerminalSearchBar } from './TerminalSearchBar.js';
 import { PaneFeedback } from './PaneFeedback.js';
 import { terminalPathCandidate } from './terminal-path.mjs';
 import { extractBufferText, extractLastOutput } from './terminal-buffer.js';
@@ -46,8 +48,11 @@ export function SessionPane({
   workspaceCwd,
 }: Props): JSX.Element {
   const terminal = useRef<Terminal | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
   const [rendered, setRendered] = useState(false);
   const [resuming, setResuming] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -56,6 +61,12 @@ export function SessionPane({
   } | null>(null);
   const [feedback, setFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const feedbackTimer = useRef<number | null>(null);
+
+  const openSearch = (initial?: string) => {
+    const q = initial !== undefined ? initial : (terminal.current?.getSelection() || '');
+    setSearchQuery(q);
+    setSearchOpen(true);
+  };
 
   const live = ['starting', 'running', 'stopping'].includes(session.lifecycle);
 
@@ -303,11 +314,26 @@ export function SessionPane({
       id={'pane-' + session.tab?.id}
       aria-labelledby={'tab-' + session.tab?.id}
       onContextMenu={handleContextMenu}
+      onKeyDown={(e) => {
+        if (e.ctrlKey && e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F')) {
+          e.preventDefault();
+          e.stopPropagation();
+          openSearch();
+        }
+      }}
       title={shellRestartedTitle}
     >
       <div className="agency-agent-body">
         {live && session.terminalId ? (
           <div className="agency-xterm-host">
+            {searchOpen && (
+              <TerminalSearchBar
+                terminal={terminal.current}
+                searchAddon={searchAddonRef.current}
+                initialQuery={searchQuery}
+                onClose={() => setSearchOpen(false)}
+              />
+            )}
             <TerminalView
               key={session.terminalId}
               terminalId={session.terminalId}
@@ -322,6 +348,10 @@ export function SessionPane({
                 if (instance) instance.onRender(() => setRendered(true));
                 else setRendered(false);
               }}
+              onSearchAddon={(addon) => {
+                searchAddonRef.current = addon;
+              }}
+              onOpenSearch={() => openSearch()}
               onClipboardError={(err) => showFeedback(err.message, 'error')}
               onClipboardSuccess={(msg) => showFeedback(msg || t('agency.ui.copied'), 'success')}
             />
@@ -392,32 +422,42 @@ export function SessionPane({
 
       {feedback && <PaneFeedback message={feedback.message} type={feedback.type} />}
 
-      {contextMenu && (
-        <PaneContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          hasSelection={!!(terminal.current?.hasSelection() || (contextMenu ? contextMenu.selectedText.length > 0 : false))}
-          isLive={live && !!session.terminalId}
-          fileCandidate={contextMenu.candidate}
-          canCopyNativeFile={canCopyNativeFile}
-          onCopySelection={() => void copy('selection')}
-          onSelectAll={() => {
-            terminal.current?.selectAll();
-            terminal.current?.focus();
-          }}
-          onCopyAll={() => void copy('all')}
-          onCopyLast={() => void copy('last')}
-          onPaste={() => void paste()}
-          onInterrupt={interrupt}
-          onClear={clear}
-          onOpenFile={contextMenu.candidate ? () => openFile(contextMenu.candidate!.relative) : undefined}
-          onCopyFile={contextMenu.candidate ? () => void copyFile(contextMenu.candidate!.relative) : undefined}
-          onCopyAbsolutePath={contextMenu.candidate ? () => void copyAbsolutePath(contextMenu.candidate!.absolute) : undefined}
-          onCopyRelativePath={contextMenu.candidate ? () => void copyRelativePath(contextMenu.candidate!.relative) : undefined}
-          onCopyFileContents={contextMenu.candidate ? () => copyFileContents(contextMenu.candidate!.relative) : undefined}
-          onClose={() => setContextMenu(null)}
-        />
-      )}
+      {contextMenu && (() => {
+        const term = terminal.current;
+        const buffer = term?.buffer.active;
+        const hasBuffer = Boolean(buffer && buffer.length > 0 && extractBufferText(buffer, 0, Math.min(buffer.length - 1, 50)).trim().length > 0);
+        const hasLast = Boolean(term && extractLastOutput(term, (term as unknown as { __mawLastCommandMarker?: { line: number } | null }).__mawLastCommandMarker).trim().length > 0);
+
+        return (
+          <PaneContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            hasSelection={!!(terminal.current?.hasSelection() || (contextMenu ? contextMenu.selectedText.length > 0 : false))}
+            canCopyLast={hasLast}
+            canCopyAll={hasBuffer}
+            isLive={live && !!session.terminalId}
+            fileCandidate={contextMenu.candidate}
+            canCopyNativeFile={canCopyNativeFile}
+            onCopySelection={() => void copy('selection')}
+            onCopyLast={() => void copy('last')}
+            onCopyAll={() => void copy('all')}
+            onOpenSearch={() => openSearch(contextMenu.selectedText)}
+            onSelectAll={() => {
+              terminal.current?.selectAll();
+              terminal.current?.focus();
+            }}
+            onPaste={() => void paste()}
+            onInterrupt={interrupt}
+            onClear={clear}
+            onOpenFile={contextMenu.candidate ? () => openFile(contextMenu.candidate!.relative) : undefined}
+            onCopyFile={contextMenu.candidate ? () => void copyFile(contextMenu.candidate!.relative) : undefined}
+            onCopyAbsolutePath={contextMenu.candidate ? () => void copyAbsolutePath(contextMenu.candidate!.absolute) : undefined}
+            onCopyRelativePath={contextMenu.candidate ? () => void copyRelativePath(contextMenu.candidate!.relative) : undefined}
+            onCopyFileContents={contextMenu.candidate ? () => copyFileContents(contextMenu.candidate!.relative) : undefined}
+            onClose={() => setContextMenu(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
