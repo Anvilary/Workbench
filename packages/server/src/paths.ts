@@ -170,3 +170,24 @@ export function agentStatusDir(agent: string): string {
 export function terminalHistoryDir(): string {
   return path.join(appConfigDir(), 'terminal-history');
 }
+
+const SAFE_HISTORY_ID_PATTERN = /^[0-9a-zA-Z_-]+$/;
+
+/**
+ * Raiz del historial de comandos shell por terminal.
+ * Cada terminal mantiene su propio archivo de comandos independiente.
+ */
+export function terminalCommandHistoryDir(): string {
+  return path.join(appConfigDir(), 'terminal-command-history');
+}
+
+/**
+ * Ruta del archivo de comandos shell para un identificador de terminal o pestana.
+ */
+export function terminalCommandHistoryPath(historyId: string): string {
+  if (!SAFE_HISTORY_ID_PATTERN.test(historyId)) {
+    throw new Error('Invalid historyId for terminal command history: ' + historyId);
+  }
+  return path.join(terminalCommandHistoryDir(), `${historyId}.history`);
+}
+

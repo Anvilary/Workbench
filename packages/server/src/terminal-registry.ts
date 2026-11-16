@@ -14,6 +14,7 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { stat } from 'node:fs/promises';
+import path from 'node:path';
 import {
   insertionIndex,
   serverText,
@@ -39,6 +40,7 @@ import { PtySession, type LaunchSpec } from './pty-session.js';
 import { createPtyScreen, type PtyScreen } from './pty-screen.js';
 import type { ShellLocation } from './shell-locator.js';
 import { prepareIntegratedShell } from './agency/shell-integration.js';
+import { prepareTerminalCommandHistory } from './terminal-command-history.js';
 import { integrationsDir } from './paths.js';
 import { PtyHostClient, isTestExecution } from './pty-host/pty-host-client.js';
 import type { PtyHostSessionInfo, PtyHostTombstoneInfo } from './pty-host/pty-host-types.js';
@@ -201,6 +203,7 @@ interface TerminalEntry {
   agencyManaged: boolean;
   /** Explicit validated profile launch, retained only in memory. */
   agencyLaunch: AgencyPreparedTerminalLaunch | null;
+  readonly historyId: string;
 }
 
 export interface OpenTerminalOptions {
@@ -225,6 +228,8 @@ export interface OpenTerminalOptions {
   agencyManaged?: boolean;
   /** Lane B validated original CLI executable, argv and isolated environment. */
   agencyLaunch?: AgencyPreparedTerminalLaunch;
+  /** Identificador persistente del historial de comandos shell (por ejemplo tab.id). */
+  historyId?: string;
 }
 
 // Vive en su propio modulo para que se pueda reconocer sin cargar node-pty.
@@ -580,6 +585,7 @@ export class TerminalRegistry extends EventEmitter {
         agencyManaged: session.agencyManaged !== false,
         launching: false,
         launchedAt: descriptor.launchedAt,
+        historyId: session.id,
       };
 
       this.terminals.set(session.id, createdEntry);
@@ -785,6 +791,7 @@ export class TerminalRegistry extends EventEmitter {
 
       const resumed = kind === 'agent' && options.resumeSessionId !== undefined;
       const terminalId = randomUUID();
+      const historyId = options.historyId ?? terminalId;
       const descriptor: TerminalDescriptor = {
         terminalId,
         kind,
@@ -805,6 +812,7 @@ export class TerminalRegistry extends EventEmitter {
         launchedAt: null,
         worktree,
         review: kind === 'agent' && options.review === true,
+        historyId,
       };
 
       const entry: TerminalEntry = {
@@ -818,6 +826,7 @@ export class TerminalRegistry extends EventEmitter {
         stopWatchingActivity: null,
         launching: true,
         agencyManaged: options.agencyManaged === true,
+        historyId,
         agencyLaunch: options.agencyLaunch === undefined ? null : {
           nativeIdentity: options.agencyLaunch.nativeIdentity == null ? null :
             Object.freeze({ ...options.agencyLaunch.nativeIdentity }),
@@ -1047,6 +1056,24 @@ export class TerminalRegistry extends EventEmitter {
     let env = entry.agencyLaunch === null
       ? this.agents.composedEnvironment(process.env)
       : { ...entry.agencyLaunch.env };
+    if (kind === 'shell') {
+      const shellName = path.basename(launch.file);
+      const histPath = await prepareTerminalCommandHistory(entry.historyId, shellName);
+      env = {
+        ...env,
+        HISTFILE: histPath,
+        MAW_TERMINAL_HISTFILE: histPath,
+        MAW_HISTORY_ID: entry.historyId,
+      };
+      if (!entry.agencyManaged) {
+        const pc = env['PROMPT_COMMAND'];
+        if (!pc) {
+          env['PROMPT_COMMAND'] = 'history -a 2>/dev/null || true';
+        } else if (!pc.includes('history -a')) {
+          env['PROMPT_COMMAND'] = 'history -a 2>/dev/null || true; ' + pc;
+        }
+      }
+    }
     if (entry.agencyManaged && kind === 'shell') {
       const integrated = await prepareIntegratedShell(launch, env, this.shellIntegrationDir());
       launch = integrated.launch;
@@ -1395,6 +1422,7 @@ export class TerminalRegistry extends EventEmitter {
         worktree,
         // Hito 49: la de revision vuelve como de revision, y despierta en su modo.
         review: tab.review === true,
+        historyId: terminalId,
       };
 
       this.terminals.set(terminalId, {
@@ -1409,6 +1437,7 @@ export class TerminalRegistry extends EventEmitter {
         launching: false,
         agencyManaged: false,
         agencyLaunch: null,
+        historyId: terminalId,
       });
       this.insertInOrder(terminalId, descriptor);
     }

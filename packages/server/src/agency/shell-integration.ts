@@ -216,8 +216,15 @@ export function generateBashIntegrationScript(): string {
 # MAW Safe Bash Shell Integration (OSC 133)
 # Safely hooks command start and exit without overwriting user configuration.
 
+if [[ -n "\${MAW_TERMINAL_HISTFILE:-}" ]]; then
+  export HISTFILE="\$MAW_TERMINAL_HISTFILE"
+fi
+
 __maw_osc133_precmd() {
   local last_status="$?"
+  if [[ -n "\${MAW_TERMINAL_HISTFILE:-}" ]]; then
+    history -a "\$MAW_TERMINAL_HISTFILE" 2>/dev/null || history -a 2>/dev/null || true
+  fi
   printf "\\033]133;D;%d\\007\\033]133;A\\007" "$last_status"
   return "$last_status"
 }
@@ -263,8 +270,18 @@ export function generateZshIntegrationScript(): string {
 # MAW Safe Zsh Shell Integration (OSC 133)
 # Safely hooks precmd and preexec without mutating user dotfiles.
 
+if [[ -n "\${MAW_TERMINAL_HISTFILE:-}" ]]; then
+  export HISTFILE="\$MAW_TERMINAL_HISTFILE"
+  export HISTSIZE=10000
+  export SAVEHIST=10000
+  setopt INC_APPEND_HISTORY 2>/dev/null || true
+fi
+
 __maw_osc133_zsh_precmd() {
   local last_status="$?"
+  if [[ -n "\${MAW_TERMINAL_HISTFILE:-}" ]]; then
+    fc -W 2>/dev/null || true
+  fi
   print -n "\\e]133;D;\${last_status}\\a"
   print -n "\\e]133;A\\a"
 }

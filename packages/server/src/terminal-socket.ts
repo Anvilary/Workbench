@@ -2460,6 +2460,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
                   ? { resumeSessionId: message.resumeSessionId }
                   : {}),
                 ...(message.label !== undefined ? { label: message.label } : {}),
+                ...(message.historyId !== undefined ? { historyId: message.historyId } : {}),
               });
               // Early PTY output may already have created this store. Reuse it.
               getHistoryStore(descriptor.terminalId);

@@ -535,6 +535,7 @@ export interface ClientOpenTerminalMessage {
    * nada: el servidor responde `agent-unsupported` y no abre la pestana.
    */
   unsupportedAgent?: string;
+  historyId?: string;
 }
 
 /** Cierra la pestana y termina el proceso. */
@@ -2766,6 +2767,8 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       if (label !== null) message.label = label;
       const kind = asLiteral(record['kind'], TERMINAL_KINDS);
       if (kind !== null) message.kind = kind;
+      const historyId = asNonEmptyString(record['historyId']);
+      if (historyId !== null) message.historyId = historyId;
       // Ausente o null es "que decida el servidor"; cualquier otra cosa que no
       // sea un id conocido se conserva para rechazarla, no para ignorarla.
       const rawAgent = record['agent'];

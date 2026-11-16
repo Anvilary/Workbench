@@ -388,6 +388,7 @@ export class AgencySessionRuntime extends EventEmitter {
     // Distinct IDs: Agency session, proposed native session, and launch correlation.
     const proposedSessionId = randomUUID();
     const launchToken = randomUUID();
+    let assignedTabId: string | null = null;
     const workspace = await this.workspaces.withSessionReservation(input.workspaceId, async (row) => {
       if (row === null || row.id !== input.workspaceId) {
         throw new AgencyRuntimeError('not-found', 'Workspace does not exist');
@@ -398,6 +399,7 @@ export class AgencySessionRuntime extends EventEmitter {
       const original = input.tabId ? this.list().find(s => s.workspaceId === input.workspaceId && s.tab?.id === input.tabId && s.tab?.current) : undefined;
       if (input.tabId && (!original || original.tab?.closedAt || ACTIVE.has(original.lifecycle))) throw new AgencyRuntimeError('conflict', 'Tab is closed or already active');
       const tab = original?.tab ? { ...original.tab } : { id: randomUUID(), name: null, ...(input.kind === 'terminal' ? { terminalNumber: new Set(this.list(input.workspaceId).filter(s => s.kind === 'terminal').map(s => s.tab?.id)).size + 1 } : {}), order: Math.max(-1, ...this.list(input.workspaceId).map(s => s.tab?.order ?? -1)) + 1, selected: true, closedAt: null, current: true };
+      assignedTabId = tab.id;
       if (input.kind === 'agent' && input.resumeNativeSessionId !== undefined &&
           (input.resumeNativeSessionId.length === 0 || input.resumeNativeSessionId.length > 512)) {
         throw new AgencyRuntimeError('invalid-request', 'Invalid native resume session ID');
@@ -464,6 +466,7 @@ export class AgencySessionRuntime extends EventEmitter {
         rows: input.rows,
         kind: input.kind === 'terminal' ? 'shell' : 'agent',
         agencyManaged: true,
+        historyId: assignedTabId ?? undefined,
       };
       let native: ValidatedNativeLaunch | null = null;
       if (input.kind === 'agent') {

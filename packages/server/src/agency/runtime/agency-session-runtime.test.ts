@@ -30,7 +30,7 @@ class FakeTerminals extends EventEmitter {
   private readonly descriptors = new Map<TerminalId, TerminalDescriptor>();
   readonly unconfirmed = new Set<TerminalId>();
   isSupervisorSessionUnconfirmed(id: TerminalId): boolean { return this.unconfirmed.has(id); }
-  readonly opens: Array<{ cwd: string; kind?: string; agent?: string; agencyLaunch?: { file: string; args: readonly string[]; env: Record<string, string>; acceptNativeSessionId?: (id: TerminalId, nativeId: string) => boolean } }> = [];
+  readonly opens: Array<{ cwd: string; kind?: string; agent?: string; historyId?: string; agencyLaunch?: { file: string; args: readonly string[]; env: Record<string, string>; acceptNativeSessionId?: (id: TerminalId, nativeId: string) => boolean } }> = [];
   readonly writes: string[] = [];
   readonly sizes: Array<[number, number]> = [];
   closeCount = 0;
@@ -42,6 +42,7 @@ class FakeTerminals extends EventEmitter {
     cwd: string;
     kind?: string;
     agent?: string;
+    historyId?: string;
     agencyLaunch?: {
       file: string;
       args: readonly string[];
@@ -70,6 +71,7 @@ class FakeTerminals extends EventEmitter {
       launchedAt: Date.now(),
       worktree: null,
       review: false,
+      historyId: options.historyId,
     };
     this.descriptors.set(descriptor.terminalId, descriptor);
     this.onOpen?.(options, descriptor);

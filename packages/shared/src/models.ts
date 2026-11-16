@@ -219,6 +219,11 @@ export interface TerminalDescriptor {
    * Se guarda entre arranques. Siempre false en las consolas.
    */
   review: boolean;
+  /**
+   * Identificador persistente del historial de comandos shell de esta terminal.
+   * Si no se especifica, por defecto toma el terminalId.
+   */
+  historyId?: string;
 }
 
 /**
