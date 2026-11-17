@@ -9,6 +9,9 @@ import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.m
 import { calculateResourceBudget, selectEvictionCandidate, isProtectedProvider, readSystemMemory } from './resource-budget.mjs';
 import { ResourceCollector } from './resource-monitor.mjs';
 import { browserDownloadHandler } from './browser-downloads.mjs';
+import { isAllowedWebAuthnOrigin, isValidRpId, generateClientData, parseFido2AssertOutput, classifyWebAuthnError } from './webauthn-policy.mjs';
+import { isFido2ToolsAvailable, discoverFido2Devices, getDeviceCapabilities, executeAssertion } from './webauthn-backend.mjs';
+import { requestPinDialog } from './webauthn-dialog.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Deliberately distinct from both production MAW and any Brave/Neko profile.
@@ -56,6 +59,8 @@ async function start() {
   await mkdir(app.getPath('userData'), { recursive: true, mode: 0o700 });
   await app.whenReady();
   Menu.setApplicationMenu(null);
+  const isWebAuthnEnabled = process.env.MAW_WEBAUTHN_ENABLED === '1';
+  const webauthnPreload = path.join(here, 'webauthn-preload.cjs');
   const secure = { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: false, allowRunningInsecureContent: false };
   const chatSession = session.fromPartition(PARTITION);
   const githubSession = session.fromPartition(GITHUB_PARTITION);
@@ -366,7 +371,7 @@ async function start() {
     contents.on('will-attach-webview', event => event.preventDefault());
     const popupWindow = () => ({ action: 'allow', overrideBrowserWindowOptions: {
       parent: win, autoHideMenuBar: true, width: 640, height: 760,
-      webPreferences: { ...secure, session: browserSessions[provider] ?? chatSession, preload: '', backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required', webgl: true },
+      webPreferences: { ...secure, session: browserSessions[provider] ?? chatSession, preload: isWebAuthnEnabled && provider === 'chatgpt' ? webauthnPreload : '', backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required', webgl: true },
     } });
     contents.setWindowOpenHandler(({ url, disposition, features }) => {
       if (provider === 'chatgpt' && isDownloadOrFileDeliveryUrl(url)) {
@@ -639,7 +644,8 @@ async function start() {
     }
 
     trimCapacity(id, 1);
-    const view = new WebContentsView({ webPreferences: { ...secure, session: targetSession, backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required', webgl: true } });
+    const viewPreload = isWebAuthnEnabled && provider === 'chatgpt' ? webauthnPreload : '';
+    const view = new WebContentsView({ webPreferences: { ...secure, session: targetSession, preload: viewPreload, backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required', webgl: true } });
     view.setVisible(false);
     view.setBackgroundColor('#212121');
     views.set(id, view);
@@ -1000,6 +1006,87 @@ async function start() {
       }
     }
   });
+
+  if (isWebAuthnEnabled) {
+    ipcMain.handle('maw:webauthn:is-available', async () => {
+      return { available: await isFido2ToolsAvailable() };
+    });
+
+    ipcMain.handle('maw:webauthn:get', async (event, options) => {
+      const senderWebContents = event.sender;
+      if (!senderWebContents || senderWebContents.isDestroyed() || senderWebContents.session !== chatSession) {
+        return { success: false, error: { name: 'SecurityError', message: 'WebAuthn is only permitted within the ChatGPT session' } };
+      }
+
+      let origin = '';
+      try {
+        origin = event.senderFrame?.origin || new URL(senderWebContents.getURL()).origin;
+      } catch {
+        return { success: false, error: { name: 'SecurityError', message: 'Could not determine frame origin' } };
+      }
+
+      const extraOrigins = (process.env.MAW_WEBAUTHN_EXTRA_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+      if (!isAllowedWebAuthnOrigin(origin, extraOrigins)) {
+        return { success: false, error: { name: 'SecurityError', message: `Origin ${origin} is not authorized for WebAuthn` } };
+      }
+
+      const rpId = options?.rpId;
+      if (!isValidRpId(rpId, origin)) {
+        return { success: false, error: { name: 'SecurityError', message: `Requested rpId ${rpId} does not match origin ${origin}` } };
+      }
+
+      const devices = await discoverFido2Devices();
+      if (devices.length === 0) {
+        return { success: false, error: { name: 'NotAllowedError', message: 'No FIDO2 hardware device found. Please insert your security key.' } };
+      }
+      const device = devices[0];
+
+      const caps = await getDeviceCapabilities(device.path);
+      let pin = null;
+      const userVerification = options?.userVerification || 'preferred';
+      const pinRequired = caps.hasClientPin && (userVerification === 'required' || userVerification === 'preferred');
+
+      if (pinRequired) {
+        const parentWin = BrowserWindow.fromWebContents(senderWebContents) || win;
+        try {
+          pin = await requestPinDialog({ parentWindow: parentWin, title: 'Security Key PIN' });
+        } catch (err) {
+          return { success: false, error: classifyWebAuthnError(err) };
+        }
+      }
+
+      const challengeBase64Url = options?.challenge || '';
+      const { clientDataJSONBuffer, clientDataHash } = generateClientData('webauthn.get', challengeBase64Url, origin);
+
+      const allowCredentials = Array.isArray(options?.allowCredentials) ? options.allowCredentials : [];
+      const isResident = allowCredentials.length === 0;
+      const credId = !isResident ? allowCredentials[0]?.id : '';
+
+      try {
+        const stdout = await executeAssertion({
+          devicePath: device.path,
+          rpId,
+          clientDataHash,
+          credentialId: credId,
+          isResident,
+          pin,
+          timeoutMs: (options?.timeout ? options.timeout * 1000 : 60000),
+        });
+
+        const parsed = parseFido2AssertOutput(stdout, {
+          rpId,
+          credentialId: credId,
+          clientDataJSONBuffer,
+        });
+
+        return { success: true, data: parsed };
+      } catch (err) {
+        return { success: false, error: classifyWebAuthnError(err) };
+      } finally {
+        pin = null;
+      }
+    });
+  }
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (isOAuthLoopbackCallback(url)) {
