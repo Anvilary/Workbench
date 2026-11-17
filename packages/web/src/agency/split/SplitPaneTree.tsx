@@ -61,7 +61,6 @@ interface Props {
   onOpenRelativeFile?: (paneId: string, path: string) => void;
   onDirtyChange?: (tabId: string, dirty: boolean) => void;
   isTabUnsaved?: (tabId: string) => boolean;
-  onSplitCreate?: (paneId: string, direction: SplitDirection, action: 'terminal' | 'web' | 'file') => void;
   onRenameTab: (tab: WorkspaceTab, title: string) => Promise<void>;
   onFocusPane: (paneId: string) => void;
   onTabDisplayed: (id: string, ready: boolean) => void;
@@ -202,7 +201,6 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
         onSelectBrowserFavorite={props.onSelectBrowserFavorite ? (fav) => props.onSelectBrowserFavorite?.(node.id, fav) : undefined}
         onSelectBrowserOther={props.onSelectBrowserOther ? () => props.onSelectBrowserOther?.(node.id) : undefined}
         onOpenFileClick={props.onOpenFileClick ? () => props.onOpenFileClick?.(node.id) : undefined}
-        onSplitCreate={props.onSplitCreate ? (direction, action) => props.onSplitCreate?.(node.id, direction, action) : undefined}
         onMoveTabToPane={onMoveTabToPane}
         onRenameTab={onRenameTab}
         isTabUnsaved={props.isTabUnsaved}

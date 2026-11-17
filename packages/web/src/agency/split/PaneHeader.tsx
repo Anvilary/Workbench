@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AgencyCliProfile, MawActivityState, SplitDirection, WorkspaceId, BrowserFavorite, SearchEngine } from '@agent-workbench/shared';
+import type { AgencyCliProfile, MawActivityState, WorkspaceId, BrowserFavorite, SearchEngine } from '@agent-workbench/shared';
 import { DEFAULT_BROWSER_FAVORITES, getSearchEngine } from '@agent-workbench/shared';
 import { t } from '../../i18n/index.js';
 import { agencySessionText, agencyTabActivityText } from '../agency-labels.js';
@@ -45,7 +45,6 @@ interface Props {
   onAddAgentClick?: (profileId?: string) => void;
   onAddWebTabClick: () => void;
   onOpenFileClick?: () => void;
-  onSplitCreate?: (direction: SplitDirection, action: 'terminal' | 'web' | 'file') => void;
   onMoveTabToPane: (tabId: string, targetPaneId: string, targetIndex?: number) => void;
   onRenameTab: (tab: WorkspaceTab, title: string) => Promise<void>;
   isTabUnsaved?: (tabId: string) => boolean;
@@ -94,7 +93,6 @@ export function PaneHeader({
   onAddAgentClick,
   onAddWebTabClick,
   onOpenFileClick,
-  onSplitCreate,
   onMoveTabToPane,
   onRenameTab,
   isTabUnsaved,
@@ -853,8 +851,7 @@ export function PaneHeader({
               title={splitRightReason}
               onClick={() => {
                 setPaneActionsOpen(false);
-                if (onSplitCreate) onSplitCreate('row', 'terminal');
-                else onSplitRight();
+                onSplitRight();
               }}
             >
               <span className="agency-dropdown-label">{t('agency.splits.splitVertically')}</span>
@@ -867,8 +864,7 @@ export function PaneHeader({
               title={splitDownReason}
               onClick={() => {
                 setPaneActionsOpen(false);
-                if (onSplitCreate) onSplitCreate('column', 'terminal');
-                else onSplitDown();
+                onSplitDown();
               }}
             >
               <span className="agency-dropdown-label">{t('agency.splits.splitHorizontally')}</span>

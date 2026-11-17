@@ -285,7 +285,7 @@ export function AgencyWorkspaceView({
   const handleSplit = useCallback(
     (targetPaneId: string, direction: SplitDirection, tabIdToMove?: string) => {
       const newPaneId = `pane-${crypto.randomUUID().slice(0, 8)}`;
-      const nextTree = splitPane(layout.tree, targetPaneId, direction, newPaneId, tabIdToMove);
+      const nextTree = splitPane(layout.tree, targetPaneId, direction, newPaneId, tabIdToMove, true);
       if (nextTree) {
         save(
           {
@@ -990,13 +990,6 @@ export function AgencyWorkspaceView({
           }}
           onDirtyChange={handleDirtyChange}
           isTabUnsaved={(id) => unsavedTabIds.has(id)}
-          onSplitCreate={(paneId, direction, action) => {
-            pendingSplit.current = { paneId, direction };
-            creationTarget.current = paneId;
-            if (action === 'terminal') void add('terminal', paneId);
-            else if (action === 'web') handleSelectOther(paneId);
-            else if (action === 'file') setFileDialog({ paneId, direction });
-          }}
           onRenameTab={async (tab, title) => {
             await request(
               tab.kind === 'web'
