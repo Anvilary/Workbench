@@ -1,6 +1,7 @@
 import { t } from '../i18n/index.js';
 import { agencySessionText } from './agency-labels.js';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useLayoutEffect, useId } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   AgencyProject, AgencyRuntimeSession, AgencyWorkspace, ProjectId, WorkspaceId, WebTab,
 } from '@agent-workbench/shared';
@@ -50,6 +51,132 @@ export function SidebarToggleIcon(): JSX.Element {
   );
 }
 
+export function calculateSidebarDropdownPosition(params: {
+  triggerRect: { left: number; top: number; right: number; bottom: number };
+  menuWidth: number;
+  menuHeight: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  margin?: number;
+}): { left: number; top: number } {
+  const { triggerRect, menuWidth, menuHeight, viewportWidth, viewportHeight } = params;
+  const margin = params.margin ?? 8;
+
+  let left = triggerRect.left;
+  if (left + menuWidth > viewportWidth - margin) {
+    left = triggerRect.right - menuWidth;
+  }
+  if (left < margin) {
+    left = margin;
+  }
+  if (left + menuWidth > viewportWidth - margin) {
+    left = Math.max(margin, viewportWidth - menuWidth - margin);
+  }
+
+  let top: number;
+  if (triggerRect.bottom + menuHeight + margin <= viewportHeight) {
+    top = triggerRect.bottom + 4;
+  } else if (triggerRect.top - menuHeight - margin >= 0) {
+    top = triggerRect.top - menuHeight - 4;
+  } else {
+    top = Math.max(margin, viewportHeight - menuHeight - margin);
+  }
+
+  return { left: Math.round(left), top: Math.round(top) };
+}
+
+function SidebarDropdownMenu({
+  anchor,
+  children,
+  onMouseEnter,
+  onMouseLeave,
+  onKeyDown,
+  menuRef,
+}: {
+  anchor: HTMLElement | null;
+  children: React.ReactNode;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
+  menuRef: (el: HTMLDivElement | null) => void;
+}): JSX.Element | null {
+  const id = useId();
+  const [position, setPosition] = useState<{ left: number; top: number }>(() => {
+    if (!anchor) return { left: 0, top: 0 };
+    return calculateSidebarDropdownPosition({
+      triggerRect: anchor.getBoundingClientRect(),
+      menuWidth: 160,
+      menuHeight: 140,
+      viewportWidth: typeof window !== 'undefined' ? window.innerWidth : 1280,
+      viewportHeight: typeof window !== 'undefined' ? window.innerHeight : 800,
+    });
+  });
+  const internalRef = useRef<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    const update = () => {
+      if (!anchor || !internalRef.current) return;
+      const triggerRect = anchor.getBoundingClientRect();
+      const popupRect = internalRef.current.getBoundingClientRect();
+      const pos = calculateSidebarDropdownPosition({
+        triggerRect,
+        menuWidth: popupRect.width > 0 ? popupRect.width : 160,
+        menuHeight: popupRect.height > 0 ? popupRect.height : 140,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      });
+      setPosition((prev) => {
+        if (prev.left === pos.left && prev.top === pos.top) return prev;
+        return pos;
+      });
+    };
+
+    update();
+    anchor?.setAttribute('aria-controls', id);
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+
+    return () => {
+      anchor?.removeAttribute('aria-controls');
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [anchor, id]);
+
+  const setRefs = useCallback(
+    (el: HTMLDivElement | null) => {
+      internalRef.current = el;
+      menuRef(el);
+    },
+    [menuRef]
+  );
+
+  return createPortal(
+    <div
+      ref={setRefs}
+      id={id}
+      className="agency-dropdown-menu"
+      role="menu"
+      style={{
+        position: 'fixed',
+        left: `${position.left}px`,
+        top: `${position.top}px`,
+        right: 'auto',
+        bottom: 'auto',
+        margin: 0,
+        zIndex: 950,
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onKeyDown={onKeyDown}
+    >
+      {children}
+    </div>,
+    document.body
+  );
+}
+
 function InlineRenameInput({
   initialValue,
   onCommit,
@@ -64,12 +191,17 @@ function InlineRenameInput({
   const [value, setValue] = useState(initialValue);
   const committedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const canBlurRef = useRef(false);
 
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus();
       inputRef.current.select();
     }
+    const timer = setTimeout(() => {
+      canBlurRef.current = true;
+    }, 150);
+    return () => clearTimeout(timer);
   }, []);
 
   const handleCommit = () => {
@@ -109,7 +241,9 @@ function InlineRenameInput({
         }
       }}
       onBlur={() => {
-        handleCommit();
+        if (canBlurRef.current) {
+          handleCommit();
+        }
       }}
       aria-label={ariaLabel}
     />
@@ -148,6 +282,10 @@ export function AgencySidebar({
   const activeTriggerRef = useRef<HTMLElement | null>(null);
   const activeMenuRef = useRef<HTMLDivElement | null>(null);
 
+  const setMenuRef = useCallback((el: HTMLDivElement | null) => {
+    activeMenuRef.current = el;
+  }, []);
+
   const clearGraceTimer = useCallback(() => {
     if (graceTimerRef.current !== null) {
       window.clearTimeout(graceTimerRef.current);
@@ -159,62 +297,6 @@ export function AgencySidebar({
     clearGraceTimer();
     setOpenMenu(null);
   }, [clearGraceTimer]);
-
-  useEffect(() => {
-    if (!openMenu) return;
-
-    function handlePointerDown(e: PointerEvent) {
-      const target = e.target as Node;
-      if (
-        activeMenuRef.current?.contains(target) ||
-        activeTriggerRef.current?.contains(target)
-      ) {
-        return;
-      }
-      closeMenu();
-    }
-
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        const trigger = activeTriggerRef.current;
-        closeMenu();
-        trigger?.focus();
-      }
-    }
-
-    document.addEventListener('pointerdown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-      clearGraceTimer();
-    };
-  }, [openMenu, closeMenu, clearGraceTimer]);
-
-  useEffect(() => {
-    if (!openMenu || !activeMenuRef.current || !activeTriggerRef.current) return;
-    const menuEl = activeMenuRef.current;
-    const triggerRect = activeTriggerRef.current.getBoundingClientRect();
-    const menuRect = menuEl.getBoundingClientRect();
-
-    if (triggerRect.bottom + menuRect.height > window.innerHeight - 8) {
-      menuEl.style.top = 'auto';
-      menuEl.style.bottom = '100%';
-      menuEl.style.marginTop = '0';
-      menuEl.style.marginBottom = '4px';
-    } else {
-      menuEl.style.top = '100%';
-      menuEl.style.bottom = 'auto';
-      menuEl.style.marginTop = '4px';
-      menuEl.style.marginBottom = '0';
-    }
-
-    if (menuRect.left < 8) {
-      menuEl.style.left = '0';
-      menuEl.style.right = 'auto';
-    }
-  }, [openMenu]);
 
   const handleTriggerClick = (type: 'project' | 'workspace', id: string, e: React.MouseEvent<HTMLElement>) => {
     e.stopPropagation();
@@ -449,66 +531,6 @@ export function AgencySidebar({
                     >
                       ⋯
                     </button>
-                    {isMenuOpen && (
-                      <div
-                        className="agency-dropdown-menu"
-                        role="menu"
-                        ref={(el) => {
-                          if (el) {
-                            activeMenuRef.current = el;
-                          }
-                        }}
-                        onMouseEnter={handleMenuMouseEnter}
-                        onMouseLeave={handleMenuMouseLeave}
-                        onKeyDown={handleMenuKeyDown}
-                      >
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="agency-dropdown-item"
-                          onClick={() => {
-                            closeMenu();
-                            onCreate(project.id);
-                          }}
-                        >
-                          {t('agency.ui.addWorkspace')}
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="agency-dropdown-item"
-                          onClick={() => {
-                            closeMenu();
-                            setInlineRenamingProjectId(project.id);
-                            setInlineRenameProjectValue(project.name);
-                          }}
-                        >
-                          {t('agency.ui.renameProject')}
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="agency-dropdown-item"
-                          onClick={() => {
-                            closeMenu();
-                            setArchivingProject(project);
-                          }}
-                        >
-                          {t('agency.ui.archiveProject')}
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="agency-dropdown-item agency-text-danger"
-                          onClick={() => {
-                            closeMenu();
-                            handleProjectDeleteClick(project);
-                          }}
-                        >
-                          {t('agency.ui.deleteProject')}
-                        </button>
-                      </div>
-                    )}
                   </div>
                 </div>
                 {!collapsed.has(project.id) && (
@@ -655,67 +677,6 @@ export function AgencySidebar({
                             >
                               ⋯
                             </button>
-                            {isWsMenuOpen && (
-                              <div
-                                className="agency-dropdown-menu"
-                                role="menu"
-                                ref={(el) => {
-                                  if (el) {
-                                    activeMenuRef.current = el;
-                                  }
-                                }}
-                                onMouseEnter={handleMenuMouseEnter}
-                                onMouseLeave={handleMenuMouseLeave}
-                                onKeyDown={handleMenuKeyDown}
-                              >
-                                <button
-                                  type="button"
-                                  role="menuitem"
-                                  className="agency-dropdown-item"
-                                  onClick={() => {
-                                    closeMenu();
-                                    setInlineRenamingWorkspaceId(workspace.id);
-                                    setInlineRenameWorkspaceValue(workspace.name);
-                                  }}
-                                >
-                                  {t('agency.ui.renameWorkspace')}
-                                </button>
-                                <button
-                                  type="button"
-                                  role="menuitem"
-                                  className="agency-dropdown-item"
-                                  title={t('agency.ui.markNamedDone', { name: workspace.name })}
-                                  onClick={() => {
-                                    closeMenu();
-                                    onDone(workspace);
-                                  }}
-                                >
-                                  {t('agency.ui.markDone')}
-                                </button>
-                                <button
-                                  type="button"
-                                  role="menuitem"
-                                  className="agency-dropdown-item"
-                                  onClick={() => {
-                                    closeMenu();
-                                    setArchivingWorkspace(workspace);
-                                  }}
-                                >
-                                  {t('agency.ui.archiveWorkspace')}
-                                </button>
-                                <button
-                                  type="button"
-                                  role="menuitem"
-                                  className="agency-dropdown-item agency-text-danger"
-                                  onClick={() => {
-                                    closeMenu();
-                                    setDeletingWorkspace(workspace);
-                                  }}
-                                >
-                                  {t('agency.ui.deleteWorkspace')}
-                                </button>
-                              </div>
-                            )}
                           </div>
                         </div>
                       );
@@ -728,6 +689,127 @@ export function AgencySidebar({
           })}
         </div>
       </nav>
+
+      {openMenu && activeTriggerRef.current && (
+        openMenu.type === 'project' ? (() => {
+          const project = projects.find((p) => p.id === openMenu.id);
+          if (!project) return null;
+          return (
+            <SidebarDropdownMenu
+              anchor={activeTriggerRef.current}
+              menuRef={setMenuRef}
+              onMouseEnter={handleMenuMouseEnter}
+              onMouseLeave={handleMenuMouseLeave}
+              onKeyDown={handleMenuKeyDown}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="agency-dropdown-item"
+                onClick={() => {
+                  closeMenu();
+                  onCreate(project.id);
+                }}
+              >
+                {t('agency.ui.addWorkspace')}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="agency-dropdown-item"
+                onClick={() => {
+                  closeMenu();
+                  setInlineRenamingProjectId(project.id);
+                  setInlineRenameProjectValue(project.name);
+                }}
+              >
+                {t('agency.ui.renameProject')}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="agency-dropdown-item"
+                onClick={() => {
+                  closeMenu();
+                  setArchivingProject(project);
+                }}
+              >
+                {t('agency.ui.archiveProject')}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="agency-dropdown-item agency-text-danger"
+                onClick={() => {
+                  closeMenu();
+                  handleProjectDeleteClick(project);
+                }}
+              >
+                {t('agency.ui.deleteProject')}
+              </button>
+            </SidebarDropdownMenu>
+          );
+        })() : (() => {
+          const workspace = workspaces.find((w) => w.id === openMenu.id);
+          if (!workspace) return null;
+          return (
+            <SidebarDropdownMenu
+              anchor={activeTriggerRef.current}
+              menuRef={setMenuRef}
+              onMouseEnter={handleMenuMouseEnter}
+              onMouseLeave={handleMenuMouseLeave}
+              onKeyDown={handleMenuKeyDown}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="agency-dropdown-item"
+                onClick={() => {
+                  closeMenu();
+                  setInlineRenamingWorkspaceId(workspace.id);
+                  setInlineRenameWorkspaceValue(workspace.name);
+                }}
+              >
+                {t('agency.ui.renameWorkspace')}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="agency-dropdown-item"
+                title={t('agency.ui.markNamedDone', { name: workspace.name })}
+                onClick={() => {
+                  closeMenu();
+                  onDone(workspace);
+                }}
+              >
+                {t('agency.ui.markDone')}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="agency-dropdown-item"
+                onClick={() => {
+                  closeMenu();
+                  setArchivingWorkspace(workspace);
+                }}
+              >
+                {t('agency.ui.archiveWorkspace')}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="agency-dropdown-item agency-text-danger"
+                onClick={() => {
+                  closeMenu();
+                  setDeletingWorkspace(workspace);
+                }}
+              >
+                {t('agency.ui.deleteWorkspace')}
+              </button>
+            </SidebarDropdownMenu>
+          );
+        })()
+      )}
 
       {/* Archive Project Confirmation */}
       {archivingProject && (

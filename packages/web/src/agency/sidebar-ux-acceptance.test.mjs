@@ -239,6 +239,8 @@ test('sidebar ux & branding acceptance suite: drag-and-drop, controls, lifecycle
 
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   page.setDefaultTimeout(8000);
+  page.on('console', msg => console.log('BROWSER:', msg.text()));
+  page.on('pageerror', err => console.log('PAGE ERROR:', err));
 
   await page.goto(`http://127.0.0.1:${port}`);
 
