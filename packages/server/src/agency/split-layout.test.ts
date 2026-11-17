@@ -184,11 +184,13 @@ test('split layout: reconcile handles deleted tabs, missing tabs, and malformed 
   const p1 = findPaneNode(reconciled.tree, 'pane-1')!;
   const p2 = findPaneNode(reconciled.tree, 'pane-2');
 
-  // t2 is removed; pane-2 became empty and was automatically closed
-  assert.equal(p2, null);
+  // t2 is removed; pane-2 is preserved as an empty pane showing the new-tab picker
+  assert.ok(p2);
+  assert.deepEqual(p2.tabIds, []);
+  assert.equal(p2.selectedTabId, null);
   // t4 was added to focused pane
   assert.ok(p1.tabIds.includes('t4'));
-  assert.equal(countLeaves(reconciled.tree), 1);
+  assert.equal(countLeaves(reconciled.tree), 2);
 
   // Corrupted / malformed layout fallback
   const fallback = reconcileLayout(null, wsId, ['t1']);
@@ -351,7 +353,7 @@ test('split layout: pruneEmptyPanes automatically collapses empty panes and expa
   assert.deepEqual((res4 as any).tabIds, []);
 });
 
-test('split layout: reconcileLayout automatically prunes empty panes when tabs close', () => {
+test('split layout: reconcileLayout preserves empty panes when tabs close', () => {
   const ws = '11111111-1111-4111-8111-111111111111' as WorkspaceId;
   const layout: WorkspacePaneLayout = {
     version: 1,
@@ -370,11 +372,17 @@ test('split layout: reconcileLayout automatically prunes empty panes when tabs c
   };
 
   // When t2 closes, openTabIds is only ['t1'].
-  // p2 becomes empty and reconcileLayout must prune it, expanding p1 to full space.
+  // p2 becomes empty and reconcileLayout preserves it, keeping the split layout intact.
   const reconciled = reconcileLayout(layout, ws, ['t1']);
-  assert.equal(countLeaves(reconciled.tree), 1);
-  assert.equal(reconciled.tree.type, 'pane');
-  assert.equal(reconciled.tree.id, 'p1');
-  assert.equal(reconciled.focusedPaneId, 'p1');
+  assert.equal(countLeaves(reconciled.tree), 2);
+  assert.equal(reconciled.tree.type, 'split');
+  const p1 = findPaneNode(reconciled.tree, 'p1');
+  const p2 = findPaneNode(reconciled.tree, 'p2');
+  assert.ok(p1);
+  assert.deepEqual(p1.tabIds, ['t1']);
+  assert.ok(p2);
+  assert.deepEqual(p2.tabIds, []);
+  assert.equal(p2.selectedTabId, null);
+  assert.equal(reconciled.focusedPaneId, 'p2');
 });
 

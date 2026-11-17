@@ -12,6 +12,7 @@ import { NativeChatGptView } from '../NativeChatGptView.js';
 import type { useAgencyStore } from '../useAgencyStore.js';
 import { PaneHeader } from './PaneHeader.js';
 import { SplitDivider } from './SplitDivider.js';
+import { EmptyPaneChooser } from './EmptyPaneChooser.js';
 
 function PaneBody({
   paneId,
@@ -54,6 +55,7 @@ interface Props {
   onSwapPane: (sourcePaneId: string, targetPaneId: string) => void;
   onMoveTabToPane: (tabId: string, targetPaneId: string, targetIndex?: number) => void;
   onAddTerminalClick: (paneId: string) => void;
+  onAddAgentClick?: (paneId: string, profileId?: string) => void;
   onAddWebTabClick: (paneId: string) => void;
   onOpenFileClick?: (paneId: string) => void;
   onOpenRelativeFile?: (paneId: string, path: string) => void;
@@ -187,6 +189,7 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
         onToggleMaximize={() => onToggleMaximize(node.id)}
         onClosePane={() => onClosePane(node.id)}
         onAddTerminalClick={() => onAddTerminalClick(node.id)}
+        onAddAgentClick={props.onAddAgentClick ? (profileId) => props.onAddAgentClick?.(node.id, profileId) : undefined}
         onAddWebTabClick={() => onAddWebTabClick(node.id)}
         onOpenFileClick={props.onOpenFileClick ? () => props.onOpenFileClick?.(node.id) : undefined}
         onSplitCreate={props.onSplitCreate ? (direction, action) => props.onSplitCreate?.(node.id, direction, action) : undefined}
@@ -223,17 +226,19 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
             onOpenRelativeFile={props.onOpenRelativeFile ? (targetPath) => props.onOpenRelativeFile?.(node.id, targetPath) : undefined}
           />
         ) : selectedTab ? null : (
-          <div className="agency-shell-placeholder">
-            <p>{tabs.length ? t('agency.web.selectTab') : t('agency.tabs.empty')}</p>
-            <button
-              type="button"
-              className="agency-secondary-button"
-              disabled={!online}
-              onClick={() => onAddTerminalClick(node.id)}
-            >
-              {t('agency.tabs.newTerminal')}
-            </button>
-          </div>
+          <EmptyPaneChooser
+            paneId={node.id}
+            online={online}
+            busy={busy}
+            profiles={profiles}
+            canClose={canClose}
+            onAddTerminal={() => onAddTerminalClick(node.id)}
+            onAddAgent={(profileId) => props.onAddAgentClick?.(node.id, profileId)}
+            onAddBrowser={() => onAddWebTabClick(node.id)}
+            onOpenFile={props.onOpenFileClick ? () => props.onOpenFileClick?.(node.id) : () => {}}
+            onClosePane={() => onClosePane(node.id)}
+            onMoveTabToPane={onMoveTabToPane}
+          />
         )}
       </PaneBody>
 
