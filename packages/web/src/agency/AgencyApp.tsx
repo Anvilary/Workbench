@@ -9,16 +9,14 @@ import { useNotificationStore } from './useNotificationStore.js';
 import { NotificationInbox, type DesktopPermission } from './NotificationInbox.js';
 import { PerformancePanel } from './PerformancePanel.js';
 import { NotificationToastContainer } from './NotificationToast.js';
-import { AgentsUsageView } from '../AgentsUsageView.js';
 import { acknowledgeWorkspaceDraft, createAgencyTransport, putWorkspaceDraft, allWorkspaceTabs } from './model.js';
 import { t } from '../i18n/index.js';
 import { useLocale } from '../i18n/useLocale.js';
 import './agency.css';
 import { useDropdownDismissal } from './useDropdownDismissal.js';
 import { useNativeChatGptTabs } from './useNativeChatGptTabs.js';
-import { SettingsDialog } from '../SettingsDialog.js';
+import { SettingsDialog, type SettingsTabId } from '../SettingsDialog.js';
 import { useAppSettings } from '../useAppSettings.js';
-import { usePanelVisibility } from '../panel-visibility.js';
 import { useTerminalTheme } from '../useTerminalTheme.js';
 import { useTheme, type ThemeState } from '../useTheme.js';
 
@@ -96,11 +94,10 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
   useNativeChatGptTabs(data.webTabs, online && synchronized, store.request);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [performanceOpen, setPerformanceOpen] = useState(false);
-  const [agentsUsageOpen, setAgentsUsageOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabId>('general');
   const appSettings = useAppSettings(connection);
-  const panelVisibility = usePanelVisibility();
   const terminalTheme = useTerminalTheme('dark');
   const [agents, setAgents] = useState<AgentInfo[]>([]);
 
@@ -587,7 +584,8 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
                   className="agency-dropdown-item maw-menu-item"
                   onClick={() => {
                     setMenuOpen(false);
-                    setAgentsUsageOpen(true);
+                    setSettingsInitialTab('usage');
+                    setSettingsOpen(true);
                   }}
                 >
                   <span className="maw-menu-item-text">Agents Usage</span>
@@ -598,6 +596,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
                   className="agency-dropdown-item maw-menu-item"
                   onClick={() => {
                     setMenuOpen(false);
+                    setSettingsInitialTab('general');
                     setSettingsOpen(true);
                   }}
                 >
@@ -625,28 +624,6 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
         )}
         {performanceOpen && (
           <PerformancePanel onClose={() => setPerformanceOpen(false)} />
-        )}
-        {agentsUsageOpen && (
-          <div className="modal-backdrop" onClick={() => setAgentsUsageOpen(false)}>
-            <div
-              className="modal settings-dialog settings-dialog-wide"
-              role="dialog"
-              aria-label="Agents Usage"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <header className="modal-header">
-                <span className="modal-title">Agents Usage</span>
-                <button
-                  className="icon-button"
-                  onClick={() => setAgentsUsageOpen(false)}
-                  title={t('common.closeEsc')}
-                >
-                  ×
-                </button>
-              </header>
-              <AgentsUsageView connection={connection} />
-            </div>
-          </div>
         )}
         {error && <div role="alert" className="agency-error-bar">{error}
           <button type="button" onClick={() => setError(null)} aria-label={t('agency.ui.dismissError')}>×</button></div>}
@@ -746,15 +723,14 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
         <SettingsDialog
           onClose={() => setSettingsOpen(false)}
           terminalTheme={terminalTheme}
-          panels={panelVisibility}
-          consoleCount={0}
-          onHideConsole={() => {}}
+          showPanels={false}
           appSettings={appSettings}
           agents={agents}
           remoteClient={connection.isRemoteClient ? connection.isRemoteClient() : false}
           onOpenVault={null}
           onOpenRemote={null}
           connection={connection}
+          initialTab={settingsInitialTab}
         />
       )}
       {notificationsEnabled && (

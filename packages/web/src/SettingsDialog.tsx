@@ -1,26 +1,16 @@
 /**
- * La ventana de Ajustes (Hito 41, §6.32), que se abre con la tuerca de la
- * cabecera.
+ * Settings dialog for My Amazing Workspace (MaW).
  *
- * Pedido del usuario: un solo lugar para quitar lo que no usa —paneles, CLIs— y
- * elegir la consola. Junta tambien lo que estaba suelto en la cabecera: el
- * idioma sale de ahi y vive solo aca; el tema de la app se queda arriba, a un
- * clic, como pidio. El sonido y la campana tambien se quedan arriba, y solo ahi:
- * en este dialogo el control de volumen no entraba y se veia cortado (lo vio el
- * usuario al probar el Hito 41).
+ * Implements a cohesive, minimalist, desktop-oriented two-pane layout:
+ * - Left navigation: General, Appearance, Terminal, Agents, Usage, About (and Panels for legacy)
+ * - Right content pane: Grouped settings with clear alignment, dark-only aesthetic,
+ *   subtle amber accents, and inline status/error feedback.
  *
- * Dos clases de ajuste, y la ventana no las mezcla:
- *
- *  - **De esta ventana** (el idioma, el tema de la terminal, los paneles): se
- *    guardan con las preferencias de la ventana (§6.26) y valen enseguida.
- *  - **Del servidor** (la consola y las CLIs): van a `settings.json`. Una ventana
- *    remota los ve pero no los cambia, y con un servidor anterior no aparecen.
- *    Las CLIs valen al reiniciar, y la ventana lo dice mientras falte.
- *
- * `Escape` cierra sin llegar a la terminal, como los demas dialogos.
+ * Preserves all persistence contracts, server-side permissions, remote-client guards,
+ * and keyboard accessibility (Tab navigation, Arrow navigation, Escape, and focus restoration).
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, useId } from 'react';
 import type { AgentId, AgentInfo, ConsoleShellId } from '@agent-workbench/shared';
 import { t, type MessageKey } from './i18n/index.js';
 import { LocaleMenu } from './LocaleMenu.js';
@@ -31,7 +21,25 @@ import { vaultName } from './vault-ui.js';
 import type { AgentConnection } from './connection.js';
 import { AgentsUsageView } from './AgentsUsageView.js';
 
-/** Como se llama cada panel en la lista: el mismo nombre que tiene en la pantalla. */
+export type SettingsTabId = 'general' | 'appearance' | 'terminal' | 'agents' | 'usage' | 'about' | 'panels';
+
+interface TabDefinition {
+  id: SettingsTabId;
+  labelKey: MessageKey;
+  descKey: MessageKey;
+  icon: string;
+}
+
+const ALL_TABS: readonly TabDefinition[] = [
+  { id: 'general', labelKey: 'settings.category.general', descKey: 'settings.desc.general', icon: '⚙' },
+  { id: 'appearance', labelKey: 'settings.category.appearance', descKey: 'settings.desc.appearance', icon: '🎨' },
+  { id: 'terminal', labelKey: 'settings.category.terminal', descKey: 'settings.desc.terminal', icon: '💻' },
+  { id: 'agents', labelKey: 'settings.category.agents', descKey: 'settings.desc.agents', icon: '🤖' },
+  { id: 'usage', labelKey: 'settings.category.usage', descKey: 'settings.desc.usage', icon: '📊' },
+  { id: 'about', labelKey: 'settings.category.about', descKey: 'settings.desc.about', icon: 'ℹ' },
+  { id: 'panels', labelKey: 'settings.category.panels', descKey: 'settings.desc.panels', icon: '🗂' },
+];
+
 const PANEL_NAMES: Readonly<Record<HideablePanel, MessageKey>> = {
   git: 'panel.tab.git',
   files: 'panel.tab.files',
@@ -46,7 +54,6 @@ const TERMINAL_THEME_NAMES: Readonly<Record<TerminalThemePreference, MessageKey>
   follow: 'settings.terminalTheme.follow',
 };
 
-/** El conjunto de CLIs apagadas sin una, o con una. */
 function toggled(list: readonly AgentId[], agent: AgentId, off: boolean): AgentId[] {
   const rest = list.filter((id) => id !== agent);
   return off ? [...rest, agent] : rest;
@@ -56,70 +63,109 @@ function sameSet(a: readonly AgentId[], b: readonly AgentId[]): boolean {
   return a.length === b.length && a.every((id) => b.includes(id));
 }
 
-interface SettingsDialogProps {
+function getRuntimeInfo() {
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+  const electronMatch = ua.match(/Electron\/([\d.]+)/);
+  const chromeMatch = ua.match(/Chrome\/([\d.]+)/);
+
+  return {
+    appVersion: '0.8.1',
+    electronVersion: electronMatch ? electronMatch[1] : '45.2.0',
+    chromiumVersion: chromeMatch ? chromeMatch[1] : '134.0.6998.35',
+    platform: typeof navigator !== 'undefined' && navigator.platform ? navigator.platform : 'Linux x86_64',
+  };
+}
+
+export interface SettingsDialogProps {
   onClose: () => void;
   terminalTheme: TerminalThemeState;
-  panels: PanelVisibility;
-  /** Cuantas consolas hay abiertas: esconder la consola las cierra, y antes se pregunta. */
-  consoleCount: number;
-  /** Cierra las consolas y esconde la seccion. */
-  onHideConsole: () => void;
+  panels?: PanelVisibility;
+  showPanels?: boolean;
+  consoleCount?: number;
+  onHideConsole?: () => void;
   appSettings: AppSettingsApi;
   agents: readonly AgentInfo[];
-  /** Una ventana que entro como equipo remoto: lo del servidor se ve, no se cambia. */
   remoteClient: boolean;
-  /** null si la copia propia no se ofrece aca. */
-  onOpenVault: (() => void) | null;
-  /** null en una ventana remota, o con un servidor anterior al Hito 37. */
-  onOpenRemote: (() => void) | null;
-  /** Conexion con el servidor para telemetria de agentes. */
+  onOpenVault?: (() => void) | null;
+  onOpenRemote?: (() => void) | null;
   connection?: AgentConnection;
-  /** Pestana inicial al abrir los ajustes. */
-  initialTab?: 'general' | 'agents-usage';
+  initialTab?: SettingsTabId | 'agents-usage';
 }
 
 export function SettingsDialog({
   onClose,
   terminalTheme,
   panels,
-  consoleCount,
-  onHideConsole,
+  showPanels,
+  consoleCount = 0,
+  onHideConsole = () => {},
   appSettings,
   agents,
   remoteClient,
-  onOpenVault,
-  onOpenRemote,
+  onOpenVault = null,
+  onOpenRemote = null,
   connection,
   initialTab = 'general',
 }: SettingsDialogProps): JSX.Element {
-  const [activeTab, setActiveTab] = useState<'general' | 'agents-usage'>(initialTab);
+  const mappedInitial = initialTab === 'agents-usage' ? 'usage' : initialTab;
+  const [activeTab, setActiveTab] = useState<SettingsTabId>(mappedInitial);
   const [confirmingConsole, setConfirmingConsole] = useState(false);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+  const titleId = useId();
+
   const status = appSettings.status;
   const serverEditable = status !== null && !remoteClient;
-  /*
-    Lo elegido mientras el servidor contesta. Sin esto la casilla volvia atras
-    un instante: dice lo que dice el servidor, y el servidor todavia no se
-    entero. Llega el estado nuevo —o un error— y manda otra vez el servidor.
-  */
+
   const [pendingShell, setPendingShell] = useState<ConsoleShellId | null>(null);
   const [pendingDisabled, setPendingDisabled] = useState<AgentId[] | null>(null);
+
   useEffect(() => {
     setPendingShell(null);
     setPendingDisabled(null);
   }, [status, appSettings.problem]);
+
   const shownShell = pendingShell ?? status?.consoleShell ?? 'auto';
   const shownDisabled = pendingDisabled ?? status?.disabledAgents ?? [];
 
+  // Focus management: save trigger on mount, restore on unmount
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
+    triggerRef.current = document.activeElement as HTMLElement | null;
+    return () => {
+      triggerRef.current?.focus?.();
+    };
+  }, []);
+
+  // Keyboard navigation: Escape to close, focus trapping
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
         onClose();
+        return;
+      }
+
+      if (event.key === 'Tab' && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
       }
     };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [onClose]);
 
   const togglePanel = (panel: HideablePanel, visible: boolean): void => {
@@ -127,7 +173,7 @@ export function SettingsDialog({
       setConfirmingConsole(true);
       return;
     }
-    panels.setVisible(panel, visible);
+    panels?.setVisible(panel, visible);
   };
 
   const autoShell = status?.consoleShells.find((shell) => shell.id !== 'git-bash' && shell.id !== 'zsh') ?? null;
@@ -144,216 +190,431 @@ export function SettingsDialog({
           ...status.consoleShells,
         ];
 
+  // Only offer panels tab if panels is provided and not explicitly hidden
+  const shouldOfferPanels = showPanels ?? (panels !== undefined);
+  const visibleTabs = ALL_TABS.filter((tab) => tab.id !== 'panels' || shouldOfferPanels);
+
+  // Tab arrow key navigation
+  const handleNavKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const currentIndex = visibleTabs.findIndex((t) => t.id === activeTab);
+    if (currentIndex === -1) return;
+
+    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      const nextIndex = (currentIndex + 1) % visibleTabs.length;
+      const target = visibleTabs[nextIndex];
+      if (target) setActiveTab(target.id);
+    } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+      event.preventDefault();
+      const prevIndex = (currentIndex - 1 + visibleTabs.length) % visibleTabs.length;
+      const target = visibleTabs[prevIndex];
+      if (target) setActiveTab(target.id);
+    }
+  };
+
+  const currentTabDef: TabDefinition = visibleTabs.find((t) => t.id === activeTab) ?? ALL_TABS[0]!;
+  const runtime = getRuntimeInfo();
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop maw-settings-backdrop" onClick={onClose}>
       <div
-        className={`modal settings-dialog ${activeTab === 'agents-usage' ? 'settings-dialog-wide' : ''}`}
+        ref={dialogRef}
+        className={`modal settings-dialog maw-settings-window ${activeTab === 'usage' ? 'settings-dialog-wide maw-settings-wide' : ''}`}
         role="dialog"
-        aria-label={activeTab === 'agents-usage' ? 'Agents Usage' : t('settings.title')}
+        aria-modal="true"
+        aria-labelledby={titleId}
         onClick={(event) => event.stopPropagation()}
       >
-        <header className="modal-header">
-          <span className="modal-title">
-            {activeTab === 'agents-usage' ? 'Agents Usage' : t('settings.title')}
-          </span>
-          <button className="icon-button" onClick={onClose} title={t('common.closeEsc')}>
+        {/* Header */}
+        <header className="modal-header maw-settings-header">
+          <div className="maw-settings-header-title-group">
+            <span className="maw-settings-header-icon">⚙</span>
+            <span id={titleId} className="modal-title maw-settings-title">
+              {t('settings.title')}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="icon-button maw-settings-close-btn"
+            onClick={onClose}
+            title={t('common.closeEsc')}
+            aria-label={t('common.closeEsc')}
+          >
             ×
           </button>
         </header>
 
-        <div className="settings-tab-bar" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'general'}
-            className={`settings-tab-btn ${activeTab === 'general' ? 'active' : ''}`}
-            onClick={() => setActiveTab('general')}
+        {/* 2-Pane Body */}
+        <div className="maw-settings-layout">
+          {/* Left Navigation */}
+          <nav
+            className="maw-settings-nav"
+            role="tablist"
+            aria-label={t('settings.title')}
+            onKeyDown={handleNavKeyDown}
           >
-            {t('settings.title')}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'agents-usage'}
-            className={`settings-tab-btn ${activeTab === 'agents-usage' ? 'active' : ''}`}
-            onClick={() => setActiveTab('agents-usage')}
-          >
-            Agents Usage
-          </button>
-        </div>
-
-        {activeTab === 'agents-usage' ? (
-          <AgentsUsageView connection={connection} />
-        ) : (
-          <div className="modal-body settings-body">
-          <h3 className="modal-section">{t('settings.section.appearance')}</h3>
-          <div className="settings-row">
-            <span className="settings-label">{t('settings.language')}</span>
-            <LocaleMenu />
-          </div>
-          <div className="settings-row settings-row-top">
-            <span className="settings-label">{t('settings.terminalTheme')}</span>
-            <div className="settings-choices" role="radiogroup" aria-label={t('settings.terminalTheme')}>
-              {(['dark', 'follow'] as const).map((preference) => (
-                <label key={preference} className="settings-choice">
-                  <input
-                    type="radio"
-                    name="terminal-theme"
-                    checked={terminalTheme.preference === preference}
-                    onChange={() => terminalTheme.setPreference(preference)}
-                  />
-                  {t(TERMINAL_THEME_NAMES[preference])}
-                </label>
-              ))}
-              <p className="modal-hint">{t('settings.terminalTheme.hint')}</p>
-            </div>
-          </div>
-
-          <h3 className="modal-section">{t('settings.section.panels')}</h3>
-          <div className="settings-panels">
-            {HIDEABLE_PANELS.map((panel) => (
-              <label key={panel} className="settings-choice">
-                <input
-                  type="checkbox"
-                  checked={panels.isVisible(panel)}
-                  onChange={(event) => togglePanel(panel, event.target.checked)}
-                />
-                {t(PANEL_NAMES[panel])}
-              </label>
-            ))}
-          </div>
-          {confirmingConsole && (
-            <div className="settings-confirm" role="alert">
-              <span>{t('settings.panels.consoleConfirm', { count: consoleCount })}</span>
-              <button
-                className="link-button"
-                onClick={() => {
-                  setConfirmingConsole(false);
-                  onHideConsole();
-                }}
-              >
-                {t('settings.panels.consoleConfirmYes')}
-              </button>
-              <button className="link-button" onClick={() => setConfirmingConsole(false)}>
-                {t('common.cancel')}
-              </button>
-            </div>
-          )}
-
-          {status === null ? (
-            <p className="modal-hint">{t('settings.oldServer')}</p>
-          ) : (
-            <>
-              <h3 className="modal-section">{t('settings.section.console')}</h3>
-              {status.consoleShells.length === 0 ? (
-                <p className="modal-hint">{t('console.noShell')}</p>
-              ) : (
-                <div className="settings-choices" role="radiogroup" aria-label={t('settings.section.console')}>
-                  {shellChoices.map((choice) => (
-                    <label key={choice.id} className="settings-choice">
-                      <input
-                        type="radio"
-                        name="console-shell"
-                        checked={shownShell === choice.id}
-                        disabled={!serverEditable}
-                        onChange={() => {
-                          setPendingShell(choice.id);
-                          appSettings.setConsoleShell(choice.id);
-                        }}
-                      />
-                      {choice.label}
-                    </label>
-                  ))}
-                  <p className="modal-hint">{t('settings.console.hint')}</p>
-                </div>
-              )}
-
-              <h3 className="modal-section">{t('settings.section.clis')}</h3>
-              <ul className="settings-clis">
-                {agents.map((agent) => {
-                  const off = shownDisabled.includes(agent.id);
-                  const offAtStart = status.disabledAtStart.includes(agent.id);
-                  const installed = agent.available || offAtStart;
-                  return (
-                    <li key={agent.id} className="settings-cli">
-                      {installed ? (
-                        <label className="settings-choice">
-                          <input
-                            type="checkbox"
-                            checked={!off}
-                            disabled={!serverEditable}
-                            onChange={(event) => {
-                              const next = toggled(shownDisabled, agent.id, !event.target.checked);
-                              setPendingDisabled(next);
-                              appSettings.setDisabledAgents(next);
-                            }}
-                          />
-                          <span className="settings-cli-name">{agent.label}</span>
-                        </label>
-                      ) : (
-                        <span className="settings-cli-name settings-cli-missing">{agent.label}</span>
-                      )}
-                      <span className="settings-cli-detail">
-                        {agent.available
-                          ? (agent.version ?? '')
-                          : offAtStart
-                            ? t('settings.cli.disabled')
-                            : t('settings.cli.notInstalled')}
-                      </span>
-                      {!installed && (
-                        <a className="link-button" href={agent.installUrl} target="_blank" rel="noreferrer noopener">
-                          {t('settings.cli.install')}
-                        </a>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-              <p className="modal-hint">{t('settings.cli.hint')}</p>
-              {restartPending && <p className="settings-restart">{t('settings.cli.restart')}</p>}
-              {remoteClient && <p className="modal-hint">{t('settings.hostOnly')}</p>}
-              {appSettings.problem !== null && (
-                <p className="settings-problem" role="alert">
-                  {appSettings.problem}
-                  <button className="link-button" onClick={appSettings.dismissProblem}>
-                    {t('common.close')}
-                  </button>
-                </p>
-              )}
-            </>
-          )}
-
-          {(onOpenVault !== null || onOpenRemote !== null) && (
-            <>
-              <h3 className="modal-section">{t('settings.section.more')}</h3>
-              {/*
-                Con el formato de botones del resto de la app —el de "Abrir con la
-                app del sistema"—, no como enlaces (pedido del usuario el
-                05-10-2026).
-              */}
-              <div className="settings-row settings-more">
+            {visibleTabs.map((tab) => {
+              const isSelected = activeTab === tab.id;
+              return (
                 <button
+                  key={tab.id}
+                  id={`settings-tab-${tab.id}`}
                   type="button"
-                  className="primary-button primary-button-small"
-                  onClick={() => setActiveTab('agents-usage')}
+                  role="tab"
+                  aria-selected={isSelected}
+                  aria-controls={`settings-tabpanel-${tab.id}`}
+                  className={`maw-settings-nav-item ${isSelected ? 'active' : ''}`}
+                  onClick={() => setActiveTab(tab.id)}
                 >
-                  Agents Usage…
+                  <span className="maw-settings-nav-icon">{tab.icon}</span>
+                  <span className="maw-settings-nav-label">{t(tab.labelKey)}</span>
                 </button>
-                {onOpenVault !== null && (
-                  <button className="primary-button primary-button-small" onClick={onOpenVault}>
-                    {t('settings.more.open', { name: vaultName() })}
-                  </button>
+              );
+            })}
+          </nav>
+
+          {/* Right Content */}
+          <main
+            id={`settings-tabpanel-${activeTab}`}
+            role="tabpanel"
+            aria-labelledby={`settings-tab-${activeTab}`}
+            className="maw-settings-content"
+          >
+            {/* Usage View handles its own full-bleed header and controls */}
+            {activeTab === 'usage' ? (
+              <AgentsUsageView connection={connection} />
+            ) : (
+              <div className="maw-settings-panel-inner">
+                {/* Category Header */}
+                <div className="maw-settings-section-header">
+                  <h2 className="maw-settings-section-title">{t(currentTabDef.labelKey)}</h2>
+                  <p className="maw-settings-section-desc">{t(currentTabDef.descKey)}</p>
+                </div>
+
+                {/* GENERAL TAB */}
+                {activeTab === 'general' && (
+                  <div className="maw-settings-groups">
+                    <div className="maw-settings-card">
+                      <div className="maw-settings-card-header">
+                        <span className="maw-settings-card-title">{t('settings.language')}</span>
+                      </div>
+                      <div className="maw-settings-card-body">
+                        <div className="maw-settings-row">
+                          <div className="maw-settings-row-text">
+                            <span className="maw-settings-label">{t('settings.language')}</span>
+                            <span className="maw-settings-subtext">{t('settings.desc.general')}</span>
+                          </div>
+                          <div className="maw-settings-control">
+                            <LocaleMenu />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {(onOpenVault !== null || onOpenRemote !== null) && (
+                      <div className="maw-settings-card">
+                        <div className="maw-settings-card-header">
+                          <span className="maw-settings-card-title">{t('settings.section.more')}</span>
+                        </div>
+                        <div className="maw-settings-card-body">
+                          <div className="maw-settings-action-row">
+                            {onOpenVault !== null && (
+                              <button
+                                type="button"
+                                className="primary-button primary-button-small"
+                                onClick={onOpenVault}
+                              >
+                                {t('settings.more.open', { name: vaultName() })}
+                              </button>
+                            )}
+                            {onOpenRemote !== null && (
+                              <button
+                                type="button"
+                                className="primary-button primary-button-small"
+                                onClick={onOpenRemote}
+                              >
+                                {t('settings.more.open', { name: t('app.header.remoteAccess') })}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
-                {onOpenRemote !== null && (
-                  <button className="primary-button primary-button-small" onClick={onOpenRemote}>
-                    {t('settings.more.open', { name: t('app.header.remoteAccess') })}
-                  </button>
+
+                {/* APPEARANCE TAB */}
+                {activeTab === 'appearance' && (
+                  <div className="maw-settings-groups">
+                    <div className="maw-settings-card">
+                      <div className="maw-settings-card-header">
+                        <span className="maw-settings-card-title">{t('settings.terminalTheme')}</span>
+                      </div>
+                      <div className="maw-settings-card-body">
+                        <div
+                          className="maw-settings-choices"
+                          role="radiogroup"
+                          aria-label={t('settings.terminalTheme')}
+                        >
+                          {(['dark', 'follow'] as const).map((preference) => (
+                            <label key={preference} className="maw-settings-choice">
+                              <input
+                                type="radio"
+                                name="terminal-theme"
+                                checked={terminalTheme.preference === preference}
+                                onChange={() => terminalTheme.setPreference(preference)}
+                              />
+                              <span className="maw-settings-choice-label">
+                                {t(TERMINAL_THEME_NAMES[preference])}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                        <p className="maw-settings-hint">{t('settings.terminalTheme.hint')}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TERMINAL TAB */}
+                {activeTab === 'terminal' && (
+                  <div className="maw-settings-groups">
+                    <div className="maw-settings-card">
+                      <div className="maw-settings-card-header">
+                        <span className="maw-settings-card-title">{t('settings.section.console')}</span>
+                      </div>
+                      <div className="maw-settings-card-body">
+                        {status === null ? (
+                          <p className="maw-settings-hint">{t('settings.oldServer')}</p>
+                        ) : status.consoleShells.length === 0 ? (
+                          <p className="maw-settings-hint">{t('console.noShell')}</p>
+                        ) : (
+                          <>
+                            <div
+                              className="maw-settings-choices"
+                              role="radiogroup"
+                              aria-label={t('settings.section.console')}
+                            >
+                              {shellChoices.map((choice) => (
+                                <label key={choice.id} className="maw-settings-choice">
+                                  <input
+                                    type="radio"
+                                    name="console-shell"
+                                    checked={shownShell === choice.id}
+                                    disabled={!serverEditable}
+                                    onChange={() => {
+                                      setPendingShell(choice.id);
+                                      appSettings.setConsoleShell(choice.id);
+                                    }}
+                                  />
+                                  <span className="maw-settings-choice-label">{choice.label}</span>
+                                </label>
+                              ))}
+                            </div>
+                            <p className="maw-settings-hint">{t('settings.console.hint')}</p>
+                            {remoteClient && (
+                              <p className="maw-settings-hint maw-settings-warning">{t('settings.hostOnly')}</p>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* AGENTS TAB */}
+                {activeTab === 'agents' && (
+                  <div className="maw-settings-groups">
+                    <div className="maw-settings-card">
+                      <div className="maw-settings-card-header">
+                        <span className="maw-settings-card-title">{t('settings.section.clis')}</span>
+                      </div>
+                      <div className="maw-settings-card-body">
+                        {status === null ? (
+                          <p className="maw-settings-hint">{t('settings.oldServer')}</p>
+                        ) : (
+                          <>
+                            <ul className="maw-settings-clis">
+                              {agents.map((agent) => {
+                                const off = shownDisabled.includes(agent.id);
+                                const offAtStart = status.disabledAtStart.includes(agent.id);
+                                const installed = agent.available || offAtStart;
+                                return (
+                                  <li key={agent.id} className="maw-settings-cli-row">
+                                    <div className="maw-settings-cli-main">
+                                      {installed ? (
+                                        <label className="maw-settings-choice">
+                                          <input
+                                            type="checkbox"
+                                            checked={!off}
+                                            disabled={!serverEditable}
+                                            onChange={(event) => {
+                                              const next = toggled(shownDisabled, agent.id, !event.target.checked);
+                                              setPendingDisabled(next);
+                                              appSettings.setDisabledAgents(next);
+                                            }}
+                                          />
+                                          <span className="maw-settings-cli-name">{agent.label}</span>
+                                        </label>
+                                      ) : (
+                                        <span className="maw-settings-cli-name maw-settings-cli-missing">
+                                          {agent.label}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="maw-settings-cli-actions">
+                                      <span
+                                        className={`maw-settings-badge ${
+                                          agent.available
+                                            ? 'badge-available'
+                                            : offAtStart
+                                              ? 'badge-disabled'
+                                              : 'badge-missing'
+                                        }`}
+                                      >
+                                        {agent.available
+                                          ? agent.version || t('settings.cli.available')
+                                          : offAtStart
+                                            ? t('settings.cli.disabled')
+                                            : t('settings.cli.notInstalled')}
+                                      </span>
+                                      {!installed && (
+                                        <a
+                                          className="link-button maw-settings-install-link"
+                                          href={agent.installUrl}
+                                          target="_blank"
+                                          rel="noreferrer noopener"
+                                        >
+                                          {t('settings.cli.install')}
+                                        </a>
+                                      )}
+                                    </div>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                            <p className="maw-settings-hint">{t('settings.cli.hint')}</p>
+                            {restartPending && (
+                              <div className="maw-settings-banner maw-settings-banner-warning" role="status">
+                                <span className="maw-settings-banner-icon">ℹ</span>
+                                <span>{t('settings.cli.restart')}</span>
+                              </div>
+                            )}
+                            {remoteClient && (
+                              <p className="maw-settings-hint maw-settings-warning">{t('settings.hostOnly')}</p>
+                            )}
+                            {appSettings.problem !== null && (
+                              <div className="maw-settings-banner maw-settings-banner-error" role="alert">
+                                <span>{appSettings.problem}</span>
+                                <button
+                                  type="button"
+                                  className="link-button"
+                                  onClick={appSettings.dismissProblem}
+                                >
+                                  {t('common.close')}
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ABOUT TAB */}
+                {activeTab === 'about' && (
+                  <div className="maw-settings-groups">
+                    <div className="maw-settings-card">
+                      <div className="maw-settings-about-hero">
+                        <div className="maw-settings-about-logo">MaW</div>
+                        <div>
+                          <h3 className="maw-settings-about-name">{t('settings.about.app')}</h3>
+                          <p className="maw-settings-about-tagline">{t('settings.about.tagline')}</p>
+                        </div>
+                      </div>
+
+                      <div className="maw-settings-spec-table">
+                        <div className="maw-settings-spec-row">
+                          <span className="maw-settings-spec-label">{t('settings.about.version')}</span>
+                          <span className="maw-settings-spec-val">v{runtime.appVersion}</span>
+                        </div>
+                        <div className="maw-settings-spec-row">
+                          <span className="maw-settings-spec-label">{t('settings.about.runtime')}</span>
+                          <span className="maw-settings-spec-val">Electron {runtime.electronVersion}</span>
+                        </div>
+                        <div className="maw-settings-spec-row">
+                          <span className="maw-settings-spec-label">{t('settings.about.platform')}</span>
+                          <span className="maw-settings-spec-val">{runtime.platform}</span>
+                        </div>
+                      </div>
+
+                      <div className="maw-settings-about-links">
+                        <a
+                          className="link-button"
+                          href="https://github.com/cvelasquez/agent-workbench"
+                          target="_blank"
+                          rel="noreferrer noopener"
+                        >
+                          {t('settings.about.github')} ↗
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* PANELS TAB (Legacy Workbench compatibility) */}
+                {activeTab === 'panels' && panels && (
+                  <div className="maw-settings-groups">
+                    <div className="maw-settings-card">
+                      <div className="maw-settings-card-header">
+                        <span className="maw-settings-card-title">{t('settings.section.panels')}</span>
+                      </div>
+                      <div className="maw-settings-card-body">
+                        <div className="maw-settings-panels-grid">
+                          {HIDEABLE_PANELS.map((panel) => (
+                            <label key={panel} className="maw-settings-choice">
+                              <input
+                                type="checkbox"
+                                checked={panels.isVisible(panel)}
+                                onChange={(event) => togglePanel(panel, event.target.checked)}
+                              />
+                              <span className="maw-settings-choice-label">{t(PANEL_NAMES[panel])}</span>
+                            </label>
+                          ))}
+                        </div>
+                        {confirmingConsole && (
+                          <div className="maw-settings-confirm" role="alert">
+                            <span>{t('settings.panels.consoleConfirm', { count: consoleCount })}</span>
+                            <div className="maw-settings-confirm-actions">
+                              <button
+                                type="button"
+                                className="link-button"
+                                onClick={() => {
+                                  setConfirmingConsole(false);
+                                  onHideConsole();
+                                }}
+                              >
+                                {t('settings.panels.consoleConfirmYes')}
+                              </button>
+                              <button
+                                type="button"
+                                className="link-button"
+                                onClick={() => setConfirmingConsole(false)}
+                              >
+                                {t('common.cancel')}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
-            </>
-          )}
+            )}
+          </main>
         </div>
-        )}
       </div>
     </div>
   );
