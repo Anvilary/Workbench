@@ -1070,8 +1070,31 @@ async function start() {
 
       if (pinRequired) {
         const parentWin = BrowserWindow.fromWebContents(senderWebContents) || win;
+        let paneBounds = null;
+        for (const [id, view] of attachedViews.entries()) {
+          if (view.webContents === senderWebContents) {
+            try {
+              paneBounds = view.getBounds();
+            } catch {}
+            break;
+          }
+        }
+        if (!paneBounds && popupOwners.has(senderWebContents)) {
+          const ownerId = popupOwners.get(senderWebContents);
+          const ownerView = attachedViews.get(ownerId);
+          if (ownerView) {
+            try {
+              paneBounds = ownerView.getBounds();
+            } catch {}
+          }
+        }
         try {
-          pin = await requestPinDialog({ parentWindow: parentWin, title: 'Security Key PIN' });
+          pin = await requestPinDialog({
+            parentWindow: parentWin,
+            paneBounds,
+            rpId,
+            title: 'Security Key PIN',
+          });
         } catch (err) {
           return { success: false, error: classifyWebAuthnError(err) };
         }

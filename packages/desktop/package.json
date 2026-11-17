@@ -7,7 +7,7 @@
   "main": "main.mjs",
   "scripts": {
     "start": "electron .",
-    "test": "node --test browser-downloads.test.mjs policy.test.mjs file-clipboard.test.mjs resource-budget.test.mjs terminal-clipboard.test.mjs resource-monitor.test.mjs reproduce-perf-and-ownership.test.mjs webauthn-policy.test.mjs webauthn-backend.test.mjs webauthn-integration.test.mjs",
+    "test": "node --test browser-downloads.test.mjs policy.test.mjs file-clipboard.test.mjs resource-budget.test.mjs terminal-clipboard.test.mjs resource-monitor.test.mjs reproduce-perf-and-ownership.test.mjs webauthn-policy.test.mjs webauthn-backend.test.mjs webauthn-integration.test.mjs webauthn-dialog.test.mjs",
     "test:terminal": "node --test terminal-rendering.test.mjs",
     "test:electron": "node --test --test-concurrency=1 smoke.test.mjs browser-capabilities.test.mjs browser-release.test.mjs browser-link-navigation-electron.test.mjs browser-auth-popup.test.mjs nautilus-clipboard.test.mjs download-smoke.test.mjs resource-tab-pool.test.mjs",
     "test:staging": "node --test staging-release.test.mjs",

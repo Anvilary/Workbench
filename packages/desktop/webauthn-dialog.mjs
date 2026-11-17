@@ -5,30 +5,46 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import crypto from 'node:crypto';
+import { calculatePinDialogPosition } from './webauthn-dialog-position.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
+export { calculatePinDialogPosition };
+
 /**
- * Displays a native modal PIN dialog to collect the hardware security key PIN.
+ * Displays a native PIN dialog positioned relative to the requesting browser pane.
  * @param {object} options
  * @param {BrowserWindow|null} [options.parentWindow]
+ * @param {{ x: number, y: number, width: number, height: number }|null} [options.paneBounds]
+ * @param {string} [options.rpId]
  * @param {string} [options.title]
+ * @param {string} [options.error]
  * @param {number} [options.timeoutMs]
  * @returns {Promise<string>}
  */
 export function requestPinDialog({
   parentWindow = null,
+  paneBounds = null,
+  rpId = '',
   title = 'Security Key PIN',
+  error = '',
   timeoutMs = 60000,
 } = {}) {
   return new Promise((resolve, reject) => {
     let settled = false;
+    const requestId = crypto.randomUUID();
+
+    const dialogWidth = 400;
+    const dialogHeight = error ? 260 : 230;
 
     const win = new BrowserWindow({
-      width: 380,
-      height: 210,
-      modal: Boolean(parentWindow && !parentWindow.isDestroyed()),
+      width: dialogWidth,
+      height: dialogHeight,
+      useContentSize: true,
+      modal: false,
       parent: parentWindow && !parentWindow.isDestroyed() ? parentWindow : undefined,
+      alwaysOnTop: true,
       show: false,
       resizable: false,
       autoHideMenuBar: true,
@@ -41,22 +57,37 @@ export function requestPinDialog({
       },
     });
 
+    if (parentWindow && !parentWindow.isDestroyed()) {
+      const contentBounds = parentWindow.getContentBounds();
+      const pos = calculatePinDialogPosition({
+        contentBounds,
+        paneBounds,
+        dialogWidth,
+        dialogHeight,
+      });
+      win.setPosition(pos.x, pos.y);
+    }
+
     const cleanup = () => {
       ipcMain.removeListener('maw:webauthn:pin-submit', onSubmit);
       ipcMain.removeListener('maw:webauthn:pin-cancel', onCancel);
       clearTimeout(timer);
     };
 
-    const onSubmit = (_event, pin) => {
+    const onSubmit = (event, payload) => {
       if (settled) return;
+      if (event.sender !== win.webContents) return;
+      if (!payload || payload.requestId !== requestId) return;
       settled = true;
       cleanup();
       try { win.close(); } catch {}
-      resolve(pin);
+      resolve(payload.pin);
     };
 
-    const onCancel = () => {
+    const onCancel = (event, payload) => {
       if (settled) return;
+      if (event.sender !== win.webContents) return;
+      if (payload && payload.requestId && payload.requestId !== requestId) return;
       settled = true;
       cleanup();
       try { win.close(); } catch {}
@@ -87,6 +118,9 @@ export function requestPinDialog({
       win.focus();
     });
 
-    win.loadFile(path.join(here, 'webauthn-dialog.html'));
+    const query = { requestId };
+    if (rpId) query.rpId = rpId;
+    if (error) query.error = error;
+    win.loadFile(path.join(here, 'webauthn-dialog.html'), { query });
   });
 }
