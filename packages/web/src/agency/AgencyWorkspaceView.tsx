@@ -292,6 +292,7 @@ export function AgencyWorkspaceView({
             ...layout,
             tree: nextTree,
             focusedPaneId: newPaneId,
+            maximizedPaneId: null,
             updatedAt: new Date().toISOString(),
           },
           true,
@@ -597,20 +598,42 @@ export function AgencyWorkspaceView({
     save({ ...current, tree, focusedPaneId: source, updatedAt: new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1)).toISOString() }, true);
   }
 
-  function takeSplitPane(fallback: string): { paneId: string; created: boolean } {
+  async function takeSplitPane(fallback: string): Promise<{ paneId: string; created: boolean } | null> {
     const pending = pendingSplit.current;
     pendingSplit.current = null;
     if (!pending) return { paneId: fallback, created: false };
-    if (countLeaves(layoutRef.current.tree) >= MAX_LEAVES) return { paneId: fallback, created: false };
+    if (countLeaves(layoutRef.current.tree) >= MAX_LEAVES) {
+      setError(t('agency.splits.maxPanesReached'));
+      return null;
+    }
+    const targetNode = findPaneNode(layoutRef.current.tree, pending.paneId);
+    if (!targetNode) {
+      setError(t('agency.splits.splitUnavailable') || 'Split target pane not found');
+      return null;
+    }
     const newPaneId = `pane-${crypto.randomUUID().slice(0, 8)}`;
     const nextTree = splitPane(layoutRef.current.tree, pending.paneId, pending.direction, newPaneId, undefined, true);
-    if (!nextTree) return { paneId: fallback, created: false };
-    save({
+    if (!nextTree) {
+      setError(t('agency.splits.splitUnavailable') || 'Unable to split pane');
+      return null;
+    }
+    const nextLayout: WorkspacePaneLayout = {
       ...layoutRef.current,
       tree: nextTree,
       focusedPaneId: newPaneId,
+      maximizedPaneId: null,
       updatedAt: new Date().toISOString(),
-    }, true);
+    };
+    save(nextLayout, true);
+    if (onSaveLayout) {
+      try {
+        await onSaveLayout(workspace.id, nextLayout);
+      } catch (reason) {
+        rollbackPane(newPaneId);
+        setError(t('agency.splits.saveFailed', { error: String(reason) }));
+        return null;
+      }
+    }
     return { paneId: newPaneId, created: true };
   }
 
@@ -626,12 +649,13 @@ export function AgencyWorkspaceView({
   }
 
   async function add(kind: 'agent' | 'terminal', targetPaneId = creationTarget.current ?? layoutRef.current.focusedPaneId, profileOverride?: string) {
-    const profile = profileOverride;
+    const profile = profileOverride ?? (kind === 'agent' ? profiles[0]?.id : undefined);
     if (flight.current || !online || (kind === 'agent' && !profile)) {
       pendingSplit.current = null;
       return;
     }
-    const placed = takeSplitPane(targetPaneId);
+    const placed = await takeSplitPane(targetPaneId);
+    if (!placed) return;
     flight.current = true;
     const launchId = crypto.randomUUID();
     creatingLaunch.current = launchId;
@@ -693,7 +717,8 @@ export function AgencyWorkspaceView({
       pendingSplit.current = null;
       return;
     }
-    const placed = takeSplitPane(targetPaneId);
+    const placed = await takeSplitPane(targetPaneId);
+    if (!placed) return;
     flight.current = true;
     setBusy(true);
     try {
@@ -806,12 +831,12 @@ export function AgencyWorkspaceView({
       setError(t('agency.web.invalidUrl'));
       return;
     }
-
     const title =
       (customTitle && customTitle.trim()) ||
       (provider === 'github' ? 'GitHub' : provider === 'perplexity' ? 'Perplexity' : provider === 'chatgpt' ? 'ChatGPT' : 'Browser');
 
-    const placed = takeSplitPane(targetPaneId);
+    const placed = await takeSplitPane(targetPaneId);
+    if (!placed) return;
     flight.current = true;
     setBusy(true);
     setError(null);
@@ -937,6 +962,9 @@ export function AgencyWorkspaceView({
           onMoveTabToPane={handleMoveTab}
           onAddTerminalClick={(paneId) => {
             void add('terminal', paneId);
+          }}
+          onAddAgentClick={(paneId, profileId) => {
+            void add('agent', paneId, profileId);
           }}
           onAddWebTabClick={(paneId) => {
             creationTarget.current = paneId;

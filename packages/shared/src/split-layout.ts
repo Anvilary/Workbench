@@ -414,19 +414,33 @@ export function reconcileLayout(
     return createDefaultLayout(workspaceId, openTabIds, defaultSelectedTabId);
   }
 
+  // Validate structural uniqueness of pane and split IDs
+  const seenNodeIds = new Set<string>();
+  let hasDuplicateId = false;
+  function validateNodeIds(n: LayoutNode) {
+    if (seenNodeIds.has(n.id)) {
+      hasDuplicateId = true;
+      return;
+    }
+    seenNodeIds.add(n.id);
+    if (n.type === 'split') {
+      validateNodeIds(n.first);
+      validateNodeIds(n.second);
+    }
+  }
+  validateNodeIds(tree);
+  if (hasDuplicateId) {
+    return createDefaultLayout(workspaceId, openTabIds, defaultSelectedTabId);
+  }
+
   const openSet = new Set(openTabIds);
   const assignedTabs = new Set<string>();
-  const closedPanes = new Set<string>();
   let modified = false;
 
-  // 1. Prune closed/stale tabs from each pane
+  // 1. Prune closed/stale tabs from each pane, preserving intentionally empty panes
   function cleanNode(node: LayoutNode): LayoutNode {
     if (node.type === 'pane') {
-      const hadTabs = node.tabIds.length > 0;
       const validTabs = node.tabIds.filter((id) => openSet.has(id));
-      if (hadTabs && validTabs.length === 0) {
-        closedPanes.add(node.id);
-      }
       if (validTabs.length !== node.tabIds.length) modified = true;
       for (const t of validTabs) assignedTabs.add(t);
       const selected = validTabs.includes(node.selectedTabId ?? '')
@@ -471,11 +485,6 @@ export function reconcileLayout(
       };
     });
   }
-
-  // 4. Automatically close empty panes and expand adjacent panes
-  const prunedTree = pruneEmptyPanes(tree, (pane) => closedPanes.has(pane.id) || openTabIds.length === 0);
-  if (countLeaves(prunedTree) !== countLeaves(tree)) modified = true;
-  tree = prunedTree;
 
   panes = getPaneNodes(tree);
   focusedPane = panes.find((p) => p.id === saved.focusedPaneId) ?? panes[0];
