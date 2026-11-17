@@ -97,6 +97,29 @@ export function PaneHeader({
 }: Props): JSX.Element {
   const selectedTab = tabs.find((tab) => tab.id === selectedTabId);
   const isWebTab = selectedTab?.kind === 'web';
+  const [zoomPercentage, setZoomPercentage] = useState<number | null>(null);
+  const zoomTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const bridge = window.mawChatGpt;
+    if (!bridge || !selectedTabId || !isWebTab) return;
+    return bridge.subscribe((state) => {
+      if (state.type === 'browser-zoom' && state.id === selectedTabId && typeof state.percentage === 'number') {
+        setZoomPercentage(state.percentage);
+        if (zoomTimer.current) clearTimeout(zoomTimer.current);
+        zoomTimer.current = setTimeout(() => {
+          setZoomPercentage(null);
+        }, 1800);
+      }
+    });
+  }, [selectedTabId, isWebTab]);
+
+  useEffect(() => {
+    return () => {
+      if (zoomTimer.current) clearTimeout(zoomTimer.current);
+    };
+  }, []);
+
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -657,6 +680,12 @@ export function PaneHeader({
             </PaneMenu>
           )}
         </div>
+
+        {isWebTab && zoomPercentage !== null && (
+          <div className="maw-zoom-indicator" role="status" aria-live="polite">
+            {zoomPercentage}%
+          </div>
+        )}
 
       <div className="maw-pane-actions">
         {isWebTab && (

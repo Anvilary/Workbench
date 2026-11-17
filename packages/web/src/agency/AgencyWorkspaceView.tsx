@@ -480,6 +480,47 @@ export function AgencyWorkspaceView({
     return () => window.removeEventListener('keydown', key);
   }, [closing, webDialog, fileDialog, configuringProfile]);
 
+  useEffect(() => {
+    const onZoomKeyDown = (event: KeyboardEvent) => {
+      if ((!event.ctrlKey && !event.metaKey) || event.altKey) return;
+      const key = event.key;
+      const code = event.code;
+      let action: 'zoom-in' | 'zoom-out' | 'zoom-reset' | null = null;
+      if (key === '+' || key === '=' || key === 'Add' || code === 'NumpadAdd' || code === 'Equal') {
+        action = 'zoom-in';
+      } else if (key === '-' || key === '_' || key === 'Subtract' || code === 'NumpadSubtract' || code === 'Minus') {
+        action = 'zoom-out';
+      } else if (key === '0' || code === 'Digit0' || code === 'Numpad0') {
+        action = 'zoom-reset';
+      }
+      if (!action) return;
+
+      const active = document.activeElement;
+      if (active) {
+        if (
+          active.closest('.xterm, .xterm-helper-textarea, .monaco-editor, .cm-editor') ||
+          active.tagName === 'TEXTAREA' ||
+          (active.tagName === 'INPUT' && !['button', 'submit', 'reset', 'checkbox', 'radio'].includes((active as HTMLInputElement).type)) ||
+          (active as HTMLElement).isContentEditable
+        ) {
+          return;
+        }
+      }
+
+      const curLayout = layoutRef.current;
+      const focusedPane = findPaneNode(curLayout.tree, curLayout.focusedPaneId);
+      const activeTabId = focusedPane?.selectedTabId;
+      if (!activeTabId) return;
+      const activeTab = tabs.find((t) => t.id === activeTabId);
+      if (activeTab?.kind !== 'web') return;
+
+      event.preventDefault();
+      void window.mawChatGpt?.command({ type: 'browser-action', id: activeTabId, action });
+    };
+    window.addEventListener('keydown', onZoomKeyDown);
+    return () => window.removeEventListener('keydown', onZoomKeyDown);
+  }, [tabs]);
+
   function completeCreation(response: Awaited<ReturnType<Props['request']>>, targetPaneId: string) {
     // The server commits the destination even if this workspace was switched away.
     if (!mounted.current) return;

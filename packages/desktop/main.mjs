@@ -4,7 +4,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { mkdir, readFile, lstat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, BROWSER_PARTITION, otherUrl, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, targetWebProvider, isSameSite, authenticationUrl, decideWindowOpen } from './policy.mjs';
+import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, BROWSER_PARTITION, otherUrl, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, targetWebProvider, isSameSite, authenticationUrl, decideWindowOpen, getBrowserZoomAction } from './policy.mjs';
 import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
 import { calculateResourceBudget, selectEvictionCandidate, isProtectedProvider, readSystemMemory } from './resource-budget.mjs';
 import { ResourceCollector } from './resource-monitor.mjs';
@@ -286,6 +286,33 @@ async function start() {
     return embeddedUrl(url);
   }
 
+  function applyBrowserZoom(id, contents, action) {
+    if (!contents || contents.isDestroyed()) return;
+    let lvl = contents.getZoomLevel();
+    if (action === 'zoom-in') {
+      lvl = Math.min(3, Math.round((lvl + 0.5) * 10) / 10);
+    } else if (action === 'zoom-out') {
+      lvl = Math.max(-3, Math.round((lvl - 0.5) * 10) / 10);
+    } else if (action === 'zoom-reset') {
+      lvl = 0;
+    } else {
+      return;
+    }
+    contents.setZoomLevel(lvl);
+    zoomLevels.set(id, lvl);
+    let factor;
+    try {
+      factor = contents.getZoomFactor();
+    } catch {
+      factor = Math.pow(1.2, lvl);
+    }
+    if (!Number.isFinite(factor) || factor <= 0) {
+      factor = Math.pow(1.2, lvl);
+    }
+    const percentage = Math.round(factor * 100);
+    send({ type: 'browser-zoom', id, zoomFactor: factor, percentage });
+  }
+
   function guard(contents, provider = 'chatgpt', allowPopup = true) {
     const getTabId = () => [...views.entries()].find(([, v]) => v.webContents === contents)?.[0] || popupOwners.get(contents);
     const isAuthFlow = () => {
@@ -427,6 +454,12 @@ async function start() {
       if (id && input.type === 'keyDown') interactionProtected.add(id);
       if (input.type === 'keyDown' && input.control && input.key.toLowerCase() === 'l') {
         event.preventDefault(); send({ type: 'address-shortcut', id }); return;
+      }
+      const zoomAction = getBrowserZoomAction(input);
+      if (zoomAction && id) {
+        event.preventDefault();
+        applyBrowserZoom(id, contents, zoomAction);
+        return;
       }
       desktopShortcut(event, input);
     });
@@ -873,19 +906,8 @@ async function start() {
           void openExternal(command.url);
         }
       }
-      if (command.action === 'zoom-in') {
-        const lvl = Math.min(3, contents.getZoomLevel() + 0.5);
-        contents.setZoomLevel(lvl);
-        zoomLevels.set(command.id, lvl);
-      }
-      if (command.action === 'zoom-out') {
-        const lvl = Math.max(-3, contents.getZoomLevel() - 0.5);
-        contents.setZoomLevel(lvl);
-        zoomLevels.set(command.id, lvl);
-      }
-      if (command.action === 'zoom-reset') {
-        contents.setZoomLevel(0);
-        zoomLevels.set(command.id, 0);
+      if (command.action === 'zoom-in' || command.action === 'zoom-out' || command.action === 'zoom-reset') {
+        applyBrowserZoom(command.id, contents, command.action);
       }
     }
     if (command.type === 'copy-file') {

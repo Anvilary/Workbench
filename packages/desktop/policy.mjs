@@ -68,6 +68,22 @@ export function targetWebProvider(value) {
   return null;
 }
 
+export function getBrowserZoomAction(input) {
+  if (!input || input.type !== 'keyDown' || (!input.control && !input.meta) || input.alt) return null;
+  const key = input.key;
+  const code = input.code;
+  if (key === '+' || key === '=' || key === 'Add' || code === 'NumpadAdd' || code === 'Equal') {
+    return 'zoom-in';
+  }
+  if (key === '-' || key === '_' || key === 'Subtract' || code === 'NumpadSubtract' || code === 'Minus') {
+    return 'zoom-out';
+  }
+  if (key === '0' || code === 'Digit0' || code === 'Numpad0') {
+    return 'zoom-reset';
+  }
+  return null;
+}
+
 export function isSameSite(url1, url2) {
   if (typeof url1 !== 'string' || typeof url2 !== 'string') return false;
   try {

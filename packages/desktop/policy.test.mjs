@@ -1,7 +1,36 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { embeddedUrl, externalUrl, otherUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl, githubUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, isSameSite, targetWebProvider, authenticationUrl, decideWindowOpen } from './policy.mjs';
+import { embeddedUrl, externalUrl, otherUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl, githubUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, isSameSite, targetWebProvider, authenticationUrl, decideWindowOpen, getBrowserZoomAction } from './policy.mjs';
 const id = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
+test('getBrowserZoomAction: recognizes zoom shortcuts and rejects unrelated keys', () => {
+  // Zoom in
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', control: true, key: '+', code: 'Equal', shift: true }), 'zoom-in');
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', control: true, key: '=', code: 'Equal' }), 'zoom-in');
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', control: true, key: 'Add', code: 'NumpadAdd' }), 'zoom-in');
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', control: true, key: '+', code: 'NumpadAdd' }), 'zoom-in');
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', meta: true, key: '=', code: 'Equal' }), 'zoom-in');
+
+  // Zoom out
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', control: true, key: '-', code: 'Minus' }), 'zoom-out');
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', control: true, key: '_', code: 'Minus', shift: true }), 'zoom-out');
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', control: true, key: 'Subtract', code: 'NumpadSubtract' }), 'zoom-out');
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', control: true, key: '-', code: 'NumpadSubtract' }), 'zoom-out');
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', meta: true, key: '-', code: 'Minus' }), 'zoom-out');
+
+  // Zoom reset
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', control: true, key: '0', code: 'Digit0' }), 'zoom-reset');
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', control: true, key: '0', code: 'Numpad0' }), 'zoom-reset');
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', meta: true, key: '0', code: 'Digit0' }), 'zoom-reset');
+
+  // Ignored / preserved shortcuts
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', control: true, key: 'l', code: 'KeyL' }), null);
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', control: true, key: 'w', code: 'KeyW' }), null);
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', control: true, key: 'Tab', code: 'Tab' }), null);
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', control: false, meta: false, key: '+', code: 'Equal' }), null);
+  assert.equal(getBrowserZoomAction({ type: 'keyDown', control: true, alt: true, key: '0', code: 'Digit0' }), null);
+  assert.equal(getBrowserZoomAction({ type: 'keyUp', control: true, key: '0', code: 'Digit0' }), null);
+});
+
 test('general web URLs cannot name local services or privileged protocols', () => {
   assert.equal(validCommand({ type: 'restore-shell-storage' }), true);
   assert.equal(validCommand({ type: 'restore-shell-storage', origin: 'https://attacker.com' }), false);

@@ -1209,6 +1209,7 @@
 }
 
 .maw-pane-header {
+  position: relative;
   display: flex;
   align-items: center;
   height: 32px;
@@ -1220,6 +1221,43 @@
 }
 .maw-pane-header.is-tab-drop {
   box-shadow: inset 0 -2px 0 var(--ember);
+}
+
+.maw-zoom-indicator {
+  position: absolute;
+  right: 96px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  user-select: none;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm, 4px);
+  background: rgba(24, 24, 27, 0.88);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--ink, #f4f4f5);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  z-index: 10;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .maw-zoom-indicator {
+    animation: mawZoomFade 140ms ease-out;
+  }
+}
+
+@keyframes mawZoomFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .maw-pane-tabs {
