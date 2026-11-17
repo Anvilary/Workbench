@@ -59,7 +59,7 @@ async function start() {
   await mkdir(app.getPath('userData'), { recursive: true, mode: 0o700 });
   await app.whenReady();
   Menu.setApplicationMenu(null);
-  const isWebAuthnEnabled = process.env.MAW_WEBAUTHN_ENABLED === '1';
+  const isWebAuthnEnabled = process.env.MAW_WEBAUTHN_ENABLED !== '0';
   const webauthnPreload = path.join(here, 'webauthn-preload.cjs');
   const secure = { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: false, allowRunningInsecureContent: false };
   const chatSession = session.fromPartition(PARTITION);
