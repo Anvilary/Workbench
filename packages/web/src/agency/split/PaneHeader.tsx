@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AgencyCliProfile, MawActivityState, SplitDirection, WorkspaceId } from '@agent-workbench/shared';
+import type { AgencyCliProfile, MawActivityState, SplitDirection, WorkspaceId, BrowserFavorite, SearchEngine } from '@agent-workbench/shared';
+import { DEFAULT_BROWSER_FAVORITES, getSearchEngine } from '@agent-workbench/shared';
 import { t } from '../../i18n/index.js';
 import { agencySessionText, agencyTabActivityText } from '../agency-labels.js';
 import type { WorkspaceTab } from '../model.js';
@@ -9,6 +10,8 @@ import { setTabDragPreview, useTabDragPreview } from './tab-drag-store.js';
 import { insertionIndex, tabShift } from './tab-geometry.mjs';
 import { TabNameInput } from '../TabNameInput.js';
 import type { useAgencyStore } from '../useAgencyStore.js';
+import { BrowserDestinationPicker } from './BrowserDestinationPicker.js';
+import { GlobeIcon } from '../GlobeIcon.js';
 
 interface Props {
   paneId: string;
@@ -51,6 +54,11 @@ interface Props {
   showSinglePane?: boolean;
   browserToolbarOpen?: boolean;
   onToggleBrowserToolbar?: () => void;
+  browserFavorites?: readonly BrowserFavorite[];
+  searchEngine?: SearchEngine;
+  onSelectBrowserFavorite?: (favorite: BrowserFavorite) => void;
+  onSelectBrowserOther?: () => void;
+  favicons?: Record<string, string>;
 }
 
 export function PaneHeader({
@@ -94,6 +102,11 @@ export function PaneHeader({
   showSinglePane,
   browserToolbarOpen,
   onToggleBrowserToolbar,
+  browserFavorites,
+  searchEngine,
+  onSelectBrowserFavorite,
+  onSelectBrowserOther,
+  favicons,
 }: Props): JSX.Element {
   const selectedTab = tabs.find((tab) => tab.id === selectedTabId);
   const isWebTab = selectedTab?.kind === 'web';
@@ -113,6 +126,8 @@ export function PaneHeader({
       }
     });
   }, [selectedTabId, isWebTab]);
+
+  const [menuView, setMenuView] = useState<'main' | 'browser'>('main');
 
   useEffect(() => {
     return () => {
@@ -285,6 +300,38 @@ export function PaneHeader({
     );
   }
 
+  function renderTabIcon(tab: WorkspaceTab, favicon?: string) {
+    if (tab.kind === 'web') {
+      if (favicon) {
+        return (
+          <span className="maw-tab-icon-wrapper" aria-hidden="true">
+            <img
+              className="maw-tab-favicon"
+              src={favicon}
+              alt=""
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;
+                if (fallback) fallback.style.display = 'inline-flex';
+              }}
+            />
+            <span className="maw-tab-icon-fallback" style={{ display: 'none' }}>
+              <GlobeIcon size={14} />
+            </span>
+          </span>
+        );
+      }
+      return (
+        <span className="maw-tab-icon-fallback" aria-hidden="true">
+          <GlobeIcon size={14} />
+        </span>
+      );
+    }
+    if (tab.kind === 'editor') return <span>✎</span>;
+    if (tab.session?.kind === 'agent') return <span>◇</span>;
+    return <span>&gt;_</span>;
+  }
+
   return (
     <div
       className={`maw-pane-header${isFocused ? ' is-focused' : ''}${dragPreview?.overPaneId === paneId && dragPreview.sourcePaneId !== paneId ? ' is-tab-drop' : ''}`}
@@ -358,14 +405,22 @@ export function PaneHeader({
                   ghost.className = 'maw-tab-drag-ghost';
                   const iconSpan = document.createElement('span');
                   iconSpan.setAttribute('aria-hidden', 'true');
-                  iconSpan.textContent =
-                    sourceTab.kind === 'web'
-                      ? '◎'
-                      : sourceTab.kind === 'editor'
-                        ? '✎'
-                        : sourceTab.session?.kind === 'agent'
-                          ? '◇'
-                          : '>_';
+                  const sourceFav = favicons?.[sourceTab.id];
+                  if (sourceTab.kind === 'web' && sourceFav) {
+                    const img = document.createElement('img');
+                    img.className = 'maw-tab-favicon';
+                    img.src = sourceFav;
+                    iconSpan.appendChild(img);
+                  } else {
+                    iconSpan.textContent =
+                      sourceTab.kind === 'web'
+                        ? '🌐'
+                        : sourceTab.kind === 'editor'
+                          ? '✎'
+                          : sourceTab.session?.kind === 'agent'
+                            ? '◇'
+                            : '>_';
+                  }
                   const titleSpan = document.createElement('span');
                   titleSpan.className = 'agency-truncate';
                   titleSpan.textContent = tabName(sourceTab);
@@ -552,9 +607,12 @@ export function PaneHeader({
           const isBeingDragged = dragPreview?.tabId === tab.id && dragPreview.sourcePaneId === paneId;
           const isTargetBefore = (previewHere?.overIndex === idx && previewHere.tabId !== tab.id) || dragOverIndex === idx;
           const isTargetAfter = previewHere?.overIndex === paneTabs.length && idx === paneTabs.length - 1 && previewHere.tabId !== tab.id;
+          const isRenaming = renamingTabId === tab.id;
+          const tabFavicon = favicons?.[tab.id];
           const tabClassName = [
             'maw-session-tab',
             isSelected ? 'active' : '',
+            isRenaming ? 'renaming' : '',
             isBeingDragged ? 'dragging' : '',
             isTargetBefore ? 'maw-drop-target-before' : '',
             isTargetAfter ? 'maw-drop-target-after' : '',
@@ -565,28 +623,34 @@ export function PaneHeader({
               key={tab.id}
               className={tabClassName}
               data-tab-id={tab.id}
-              style={renamingTabId === tab.id && renameWidth ? { width: renameWidth, flexBasis: renameWidth } : shift ? { transform: `translateX(${shift}px)` } : undefined}
+              style={isRenaming && renameWidth ? { width: renameWidth, flexBasis: renameWidth } : shift ? { transform: `translateX(${shift}px)` } : undefined}
             >
-              {renamingTabId === tab.id ? (
-                <TabNameInput
-                  name={tabName(tab)}
-                  report={reportError}
-                  onSave={async (title) => {
-                    await onRenameTab(tab, title);
-                    setRenamingTabId(null);
-                  }}
-                  onClose={(restore) => {
-                    setRenamingTabId(null);
-                    setRenameWidth(null);
-                    if (restore) {
-                      requestAnimationFrame(() => {
-                        const active = document.activeElement;
-                        if (active && active !== document.body && active.isConnected) return;
-                        document.getElementById('tab-' + tab.id)?.focus();
-                      });
-                    }
-                  }}
-                />
+              {isRenaming ? (
+                <div className="maw-tab-rename-row">
+                  <span className="maw-tab-icon" aria-hidden="true">
+                    {renderTabIcon(tab, tabFavicon)}
+                  </span>
+                  <TabNameInput
+                    name={tabName(tab)}
+                    report={reportError}
+                    onSave={async (title) => {
+                      await onRenameTab(tab, title);
+                      setRenamingTabId(null);
+                    }}
+                    onClose={(restore) => {
+                      setRenamingTabId(null);
+                      setRenameWidth(null);
+                      if (restore) {
+                        requestAnimationFrame(() => {
+                          const active = document.activeElement;
+                          if (active && active !== document.body && active.isConnected) return;
+                          document.getElementById('tab-' + tab.id)?.focus();
+                        });
+                      }
+                    }}
+                  />
+                  <span className={`agency-status-dot ${dotClass}`} aria-label={status} />
+                </div>
               ) : (
                 <button
                   type="button"
@@ -615,8 +679,8 @@ export function PaneHeader({
                     }
                   }}
                 >
-                  <span aria-hidden="true">
-                    {tab.kind === 'web' ? '◎' : tab.kind === 'editor' ? '✎' : session?.kind === 'agent' ? '◇' : '>_'}
+                  <span className="maw-tab-icon" aria-hidden="true">
+                    {renderTabIcon(tab, tabFavicon)}
                   </span>
                   <span
                     className="agency-truncate"
@@ -656,26 +720,75 @@ export function PaneHeader({
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             disabled={!online || busy}
-            onClick={() => setMenuOpen(!menuOpen)}
+            onClick={() => {
+              setMenuView('main');
+              setMenuOpen(!menuOpen);
+            }}
           >
             +
           </button>
           {menuOpen && (
-            <PaneMenu anchor={addButton} label={t('agency.tabs.add')} onClose={() => setMenuOpen(false)}>
-              <button type="button" role="menuitem" onClick={() => choose('terminal')}>{t('agency.tabs.newTerminal')}</button>
-              <button type="button" role="menuitem" onClick={() => choose('web')}>{t('agency.web.newTab')}</button>
-              <button type="button" role="menuitem" onClick={() => choose('file')}>{t('agency.tabs.openFile')}</button>
-              {selectedTabId && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
+            <PaneMenu
+              anchor={addButton}
+              label={t('agency.tabs.add')}
+              onClose={() => {
+                setMenuOpen(false);
+                setMenuView('main');
+              }}
+            >
+              {menuView === 'main' ? (
+                <>
+                  <button type="button" role="menuitem" onClick={() => choose('terminal')}>
+                    {t('agency.tabs.newTerminal')}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="agency-dropdown-item-browser"
+                    onClick={() => setMenuView('browser')}
+                  >
+                    {t('agency.web.newTab')}
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => choose('file')}>
+                    {t('agency.tabs.openFile')}
+                  </button>
+                  {selectedTabId && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setRenamingTabId(selectedTabId);
+                      }}
+                    >
+                      {t('agency.web.rename')}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <BrowserDestinationPicker
+                  favorites={browserFavorites ?? DEFAULT_BROWSER_FAVORITES}
+                  searchEngine={searchEngine ?? getSearchEngine()}
+                  onBack={() => setMenuView('main')}
+                  onSelectFavorite={(fav) => {
                     setMenuOpen(false);
-                    setRenamingTabId(selectedTabId);
+                    setMenuView('main');
+                    if (onSelectBrowserFavorite) {
+                      onSelectBrowserFavorite(fav);
+                    } else {
+                      onAddWebTabClick();
+                    }
                   }}
-                >
-                  {t('agency.web.rename')}
-                </button>
+                  onSelectOther={() => {
+                    setMenuOpen(false);
+                    setMenuView('main');
+                    if (onSelectBrowserOther) {
+                      onSelectBrowserOther();
+                    } else {
+                      onAddWebTabClick();
+                    }
+                  }}
+                />
               )}
             </PaneMenu>
           )}

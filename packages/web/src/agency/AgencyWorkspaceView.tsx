@@ -2,14 +2,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AgencyCliProfile, AgencyRuntimeSession, AgencyWorkspace, CliProfileId,
   EditorTab, MawActivityState, SplitDirection, WebTab, WebTabProvider, WorkspaceId, WorkspacePaneLayout,
+  BrowserFavorite,
 } from '@agent-workbench/shared';
 import {
   assignCreatedTab, swapPanes, countLeaves, createDefaultLayout, findPaneNode, getPaneNodes, moveTabBetweenPanes,
   reconcileLayout, splitPane, closePane, updatePaneNode, updateSplitRatio, MAX_LEAVES,
-  validateChatGptUrl, validateGithubUrl, validatePerplexityUrl, validateOtherWebUrl, validateWebTabTitle,
+  validateChatGptUrl, validateGithubUrl, validatePerplexityUrl, validateOtherWebUrl,
   classifyWebTabUrl,
 } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
+import type { AppSettingsApi } from '../useAppSettings.js';
+import { useBrowserSettings } from './useBrowserSettings.js';
+import { useBrowserFavicons } from './useBrowserFavicons.js';
 import { t } from '../i18n/index.js';
 import { AgencyProfileDialog } from './AgencyProfileDialog.js';
 import { BrowserContextMenu } from './BrowserContextMenu.js';
@@ -46,15 +50,10 @@ interface Props {
   onAcknowledgeTab?: (workspaceId: WorkspaceId, tabId: string) => Promise<void> | void;
   savedLayout?: WorkspacePaneLayout;
   onSaveLayout?: (workspaceId: WorkspaceId, layout: WorkspacePaneLayout) => Promise<unknown>;
+  appSettings?: AppSettingsApi;
 }
 
 const EMPTY_EDITOR_TABS: readonly EditorTab[] = [];
-const BROWSER_HOME: Record<WebTabProvider, string> = {
-  chatgpt: 'https://chatgpt.com/', perplexity: 'https://www.perplexity.ai/', github: 'https://github.com/', other: 'https://',
-};
-const BROWSER_TITLE = {
-  chatgpt: 'agency.tabs.chatgpt', perplexity: 'agency.tabs.perplexity', github: 'agency.tabs.github', other: 'agency.web.newTab',
-} as const;
 
 export function AgencyWorkspaceView({
   workspace,
@@ -77,7 +76,10 @@ export function AgencyWorkspaceView({
   getTabActivityVersion,
   savedLayout,
   onSaveLayout,
+  appSettings,
 }: Props): JSX.Element {
+  const browserSettings = useBrowserSettings(appSettings);
+  const { favicons, removeFavicon } = useBrowserFavicons();
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const creatingLaunch = useRef<string | null>(null);
@@ -125,10 +127,6 @@ export function AgencyWorkspaceView({
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
 
-  const [webDialog, setWebDialog] = useState<'create' | 'navigate' | null>(null);
-  const [webUrl, setWebUrl] = useState('https://chatgpt.com/');
-  const [webProvider, setWebProvider] = useState<WebTabProvider>('chatgpt');
-  const [webTitle, setWebTitle] = useState('');
   const [configuringProfile, setConfiguringProfile] = useState<AgencyCliProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [closing, setClosing] = useState<WorkspaceTab | null>(null);
@@ -451,12 +449,11 @@ export function AgencyWorkspaceView({
   }, selecting);
 
   useEffect(() => {
-    if ((!closing && !webDialog && !fileDialog) || configuringProfile) return;
+    if ((!closing && !fileDialog) || configuringProfile) return;
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !flight.current) {
         pendingSplit.current = null;
         setClosing(null);
-        setWebDialog(null);
         setFileDialog(null);
       }
       if (event.key === 'Tab' && dialog.current) {
@@ -478,7 +475,7 @@ export function AgencyWorkspaceView({
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [closing, webDialog, fileDialog, configuringProfile]);
+  }, [closing, fileDialog, configuringProfile]);
 
   useEffect(() => {
     const onZoomKeyDown = (event: KeyboardEvent) => {
@@ -761,6 +758,8 @@ export function AgencyWorkspaceView({
         next.delete(tab.id);
         return next;
       });
+    } else if (tab.kind === 'web') {
+      removeFavicon(tab.id);
     }
     try {
       await action(tab, 'close');
@@ -779,61 +778,57 @@ export function AgencyWorkspaceView({
     }
   }
 
-  function webEditor(mode: 'create' | 'navigate') {
-    setError(null);
-    setWebDialog(mode);
-    const activeTab = tabs.find((t) => t.id === activeTabId);
-    const provider = activeTab?.kind === 'web' && mode !== 'create' ? (activeTab.web.provider ?? 'chatgpt') : 'chatgpt';
-    setWebProvider(provider);
-    setWebUrl(activeTab?.kind === 'web' && mode !== 'create' ? activeTab.web.url : BROWSER_HOME[provider]);
-    setWebTitle(activeTab?.kind === 'web' && mode !== 'create' ? activeTab.web.title : t(BROWSER_TITLE[provider]));
-  }
+  async function createBrowserTab(targetPaneId: string, options: { url: string; title?: string; provider?: WebTabProvider }) {
+    if (flight.current || !online) return;
+    const { url: rawUrl, title: customTitle, provider: customProvider } = options;
 
-  async function saveWeb() {
-    if (flight.current || !online || !webDialog) return;
-    const url = webProvider === 'github' ? validateGithubUrl(webUrl) : webProvider === 'perplexity' ? validatePerplexityUrl(webUrl) : webProvider === 'other' ? validateOtherWebUrl(webUrl) : validateChatGptUrl(webUrl);
-    if (!url.valid) {
+    let provider: WebTabProvider = customProvider ?? 'other';
+    let normalizedUrl = rawUrl;
+
+    const chat = validateChatGptUrl(rawUrl);
+    const perp = validatePerplexityUrl(rawUrl);
+    const git = validateGithubUrl(rawUrl);
+    const other = validateOtherWebUrl(rawUrl);
+
+    if (chat.valid) {
+      provider = 'chatgpt';
+      normalizedUrl = chat.normalizedUrl!;
+    } else if (perp.valid) {
+      provider = 'perplexity';
+      normalizedUrl = perp.normalizedUrl!;
+    } else if (git.valid) {
+      provider = 'github';
+      normalizedUrl = git.normalizedUrl!;
+    } else if (other.valid) {
+      provider = 'other';
+      normalizedUrl = other.normalizedUrl!;
+    } else {
       setError(t('agency.web.invalidUrl'));
       return;
     }
-    if (webDialog !== 'navigate' && !validateWebTabTitle(webTitle)) {
-      setError(t('agency.web.invalidTitle'));
-      return;
-    }
-    const placed = webDialog === 'create'
-      ? takeSplitPane(creationTarget.current ?? layoutRef.current.focusedPaneId)
-      : { paneId: creationTarget.current ?? layoutRef.current.focusedPaneId, created: false };
+
+    const title =
+      (customTitle && customTitle.trim()) ||
+      (provider === 'github' ? 'GitHub' : provider === 'perplexity' ? 'Perplexity' : provider === 'chatgpt' ? 'ChatGPT' : 'Browser');
+
+    const placed = takeSplitPane(targetPaneId);
     flight.current = true;
     setBusy(true);
     setError(null);
     try {
-      if (webDialog === 'create') {
-        const targetPaneId = placed.paneId;
-        const launchId = crypto.randomUUID();
-        creatingLaunch.current = launchId;
-        const response = await request({
-          type: 'agency.webTab.create',
-          workspaceId: workspace.id,
-          url: url.normalizedUrl!,
-          provider: webProvider,
-          title: webTitle.trim(),
-          select: true,
-          targetPaneId,
-          launchId,
-        });
-        completeCreation(response, targetPaneId);
-      } else if (activeTabId) {
-        const activeTab = tabs.find((t) => t.id === activeTabId);
-        if (activeTab?.kind === 'web') {
-          await request({
-            type: 'agency.webTab.navigate',
-            workspaceId: workspace.id,
-            tabId: activeTab.id,
-            url: url.normalizedUrl!,
-          });
-        }
-      }
-      setWebDialog(null);
+      const launchId = crypto.randomUUID();
+      creatingLaunch.current = launchId;
+      const response = await request({
+        type: 'agency.webTab.create',
+        workspaceId: workspace.id,
+        url: normalizedUrl,
+        provider,
+        title,
+        select: true,
+        targetPaneId: placed.paneId,
+        launchId,
+      });
+      completeCreation(response, placed.paneId);
     } catch (reason) {
       if (placed.created) rollbackPane(placed.paneId);
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -842,6 +837,21 @@ export function AgencyWorkspaceView({
       flight.current = false;
       setBusy(false);
     }
+  }
+
+  function handleSelectFavorite(targetPaneId: string, favorite: BrowserFavorite) {
+    void createBrowserTab(targetPaneId, {
+      url: favorite.url,
+      title: favorite.title,
+    });
+  }
+
+  function handleSelectOther(targetPaneId: string) {
+    void createBrowserTab(targetPaneId, {
+      url: browserSettings.searchEngine.homeUrl,
+      title: browserSettings.searchEngine.name,
+      provider: 'other',
+    });
   }
 
   function tabDisplayName(tab: WorkspaceTab) {
@@ -859,7 +869,6 @@ export function AgencyWorkspaceView({
   const leafCount = countLeaves(layout.tree);
   const maximizedNode = layout.maximizedPaneId ? findPaneNode(layout.tree, layout.maximizedPaneId) : null;
   const visibleTree = maximizedNode ?? layout.tree;
-  const webHeading = webDialog === 'create' ? t('agency.web.newTab') : t('agency.web.navigate');
 
   return (
     <section className="agency-workspace-view" aria-label={t('agency.ui.workspaceNamed', { name: workspace.name })}>
@@ -931,7 +940,18 @@ export function AgencyWorkspaceView({
           }}
           onAddWebTabClick={(paneId) => {
             creationTarget.current = paneId;
-            webEditor('create');
+            handleSelectOther(paneId);
+          }}
+          browserFavorites={browserSettings.favorites}
+          searchEngine={browserSettings.searchEngine}
+          favicons={favicons}
+          onSelectBrowserFavorite={(paneId, fav) => {
+            creationTarget.current = paneId;
+            handleSelectFavorite(paneId, fav);
+          }}
+          onSelectBrowserOther={(paneId) => {
+            creationTarget.current = paneId;
+            handleSelectOther(paneId);
           }}
           onOpenFileClick={(paneId) => {
             creationTarget.current = paneId;
@@ -946,7 +966,7 @@ export function AgencyWorkspaceView({
             pendingSplit.current = { paneId, direction };
             creationTarget.current = paneId;
             if (action === 'terminal') void add('terminal', paneId);
-            else if (action === 'web') webEditor('create');
+            else if (action === 'web') handleSelectOther(paneId);
             else if (action === 'file') setFileDialog({ paneId, direction });
           }}
           onRenameTab={async (tab, title) => {
@@ -1014,7 +1034,7 @@ export function AgencyWorkspaceView({
         }}
       />
 
-      {(closing || webDialog || fileDialog) && (
+      {(closing || fileDialog) && (
         <div className="agency-modal-backdrop">
           <div
             ref={dialog}
@@ -1026,9 +1046,7 @@ export function AgencyWorkspaceView({
             <h2 id="maw-session-dialog">
               {closing
                 ? t('agency.tabs.confirmClose', { name: tabDisplayName(closing) })
-                : fileDialog
-                  ? t('agency.tabs.openFile')
-                  : webHeading}
+                : t('agency.tabs.openFile')}
             </h2>
 
             {closing ? (
@@ -1037,12 +1055,12 @@ export function AgencyWorkspaceView({
                   ? t('agency.tabs.unsavedWarning')
                   : t('agency.tabs.closeExplanation')}
               </p>
-            ) : fileDialog ? (
+            ) : (
               <form
                 id="maw-open-file-form"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void openEditorFile(filePathInput, fileDialog.paneId);
+                  if (fileDialog) void openEditorFile(filePathInput, fileDialog.paneId);
                 }}
               >
                 <label className="agency-field">
@@ -1053,51 +1071,6 @@ export function AgencyWorkspaceView({
                     placeholder={t('agency.tabs.filePathPlaceholder')}
                     required
                     onChange={(event) => setFilePathInput(event.target.value)}
-                  />
-                </label>
-              </form>
-            ) : (
-              <form
-                id="maw-web-tab-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void saveWeb();
-                }}
-              >
-                {webDialog !== 'navigate' && (
-                  <label className="agency-field">
-                    <span>{t('agency.web.provider')}</span>
-                    <select value={webProvider} onChange={(event) => {
-                      const provider = event.target.value as WebTabProvider;
-                      if (webTitle === t(BROWSER_TITLE[webProvider])) setWebTitle(t(BROWSER_TITLE[provider]));
-                      setWebProvider(provider);
-                      setWebUrl(BROWSER_HOME[provider]);
-                    }}>
-                      <option value="chatgpt">{t('agency.tabs.chatgpt')}</option><option value="perplexity">{t('agency.tabs.perplexity')}</option><option value="github">{t('agency.tabs.github')}</option><option value="other">{t('agency.tabs.other')}</option>
-                    </select>
-                  </label>
-                )}
-                {webDialog !== 'navigate' && (
-                  <label className="agency-field">
-                    <span>{t('agency.web.title')}</span>
-                    <input
-                  autoFocus
-                      value={webTitle}
-                      maxLength={120}
-                      required
-                      onChange={(event) => setWebTitle(event.target.value)}
-                    />
-                  </label>
-                )}
-                <label className="agency-field">
-                  <span>{t('agency.web.url')}</span>
-                  <input
-                    autoFocus={webDialog === 'navigate'}
-                    type="url"
-                    value={webUrl}
-                    maxLength={2048}
-                    required
-                    onChange={(event) => setWebUrl(event.target.value)}
                   />
                 </label>
               </form>
@@ -1112,7 +1085,6 @@ export function AgencyWorkspaceView({
                 onClick={() => {
                   pendingSplit.current = null;
                   setClosing(null);
-                  setWebDialog(null);
                   setFileDialog(null);
                 }}
               >
@@ -1127,26 +1099,13 @@ export function AgencyWorkspaceView({
                 >
                   {t('agency.tabs.open')}
                 </button>
-              ) : webDialog ? (
-                <button type="submit" form="maw-web-tab-form" className="agency-primary-button" disabled={busy || !online}>
-                  {webHeading}
-                </button>
               ) : (
                 <button
                   type="button"
                   className="agency-primary-button"
                   disabled={busy || !online}
                   onClick={() => {
-                    if (closing) {
-                      if (closing.kind === 'editor') {
-                        setUnsavedTabIds((prev) => {
-                          const next = new Set(prev);
-                          next.delete(closing.id);
-                          return next;
-                        });
-                      }
-                      void close(closing);
-                    }
+                    if (closing) void close(closing);
                   }}
                 >
                   {t('agency.tabs.closeSession')}

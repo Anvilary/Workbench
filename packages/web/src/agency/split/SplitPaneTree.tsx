@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { AgencyCliProfile, MawActivityState, SplitDirection } from '@agent-workbench/shared';
-import { countLeaves, getPaneNodes, MAX_LEAVES, type LayoutPaneNode, type LayoutNode, type WorkspacePaneLayout } from '@agent-workbench/shared';
+import type { AgencyCliProfile, MawActivityState, SplitDirection, BrowserFavorite, SearchEngine } from '@agent-workbench/shared';
+import { countLeaves, getPaneNodes, MAX_LEAVES, DEFAULT_BROWSER_FAVORITES, getSearchEngine, type LayoutPaneNode, type LayoutNode, type WorkspacePaneLayout } from '@agent-workbench/shared';
 import { createPortal } from 'react-dom';
 import { useDroppable, useDragOperation } from '@dnd-kit/react';
 import { pointerIntersection } from '@dnd-kit/collision';
@@ -12,6 +12,7 @@ import { NativeChatGptView } from '../NativeChatGptView.js';
 import type { useAgencyStore } from '../useAgencyStore.js';
 import { PaneHeader } from './PaneHeader.js';
 import { SplitDivider } from './SplitDivider.js';
+import { BrowserDestinationPicker } from './BrowserDestinationPicker.js';
 
 function PaneBody({
   paneId,
@@ -70,6 +71,11 @@ interface Props {
   browserToolbarOpen?: Record<string, boolean>;
   onToggleBrowserToolbar?: (tabId: string) => void;
   onExpandBrowserToolbar?: (tabId: string) => void;
+  browserFavorites?: readonly BrowserFavorite[];
+  searchEngine?: SearchEngine;
+  onSelectBrowserFavorite?: (paneId: string, favorite: BrowserFavorite) => void;
+  onSelectBrowserOther?: (paneId: string) => void;
+  favicons?: Record<string, string>;
 }
 
 function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
@@ -93,6 +99,7 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
   const totalLeaves = countLeaves(layout.tree);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const [emptyBrowserOpen, setEmptyBrowserOpen] = useState(false);
 
   const setContainerRef = useCallback((element: HTMLDivElement | null) => {
     containerRef.current = element;
@@ -188,6 +195,11 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
         onClosePane={() => onClosePane(node.id)}
         onAddTerminalClick={() => onAddTerminalClick(node.id)}
         onAddWebTabClick={() => onAddWebTabClick(node.id)}
+        browserFavorites={props.browserFavorites}
+        searchEngine={props.searchEngine}
+        favicons={props.favicons}
+        onSelectBrowserFavorite={props.onSelectBrowserFavorite ? (fav) => props.onSelectBrowserFavorite?.(node.id, fav) : undefined}
+        onSelectBrowserOther={props.onSelectBrowserOther ? () => props.onSelectBrowserOther?.(node.id) : undefined}
         onOpenFileClick={props.onOpenFileClick ? () => props.onOpenFileClick?.(node.id) : undefined}
         onSplitCreate={props.onSplitCreate ? (direction, action) => props.onSplitCreate?.(node.id, direction, action) : undefined}
         onMoveTabToPane={onMoveTabToPane}
@@ -210,6 +222,7 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
             onExpandToolbar={props.onExpandBrowserToolbar ? () => props.onExpandBrowserToolbar?.(selectedTab.id) : undefined}
             onDisplayed={onTabDisplayed}
             onFocused={() => onFocusPane(node.id)}
+            searchEngine={props.searchEngine}
           />
         ) : selectedTab?.kind === 'editor' ? (
           <EditorPaneView
@@ -225,14 +238,60 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
         ) : selectedTab ? null : (
           <div className="agency-shell-placeholder">
             <p>{tabs.length ? t('agency.web.selectTab') : t('agency.tabs.empty')}</p>
-            <button
-              type="button"
-              className="agency-secondary-button"
-              disabled={!online}
-              onClick={() => onAddTerminalClick(node.id)}
-            >
-              {t('agency.tabs.newTerminal')}
-            </button>
+            {emptyBrowserOpen ? (
+              <div style={{ marginTop: '8px', width: '100%', maxWidth: '280px', textAlign: 'left' }}>
+                <BrowserDestinationPicker
+                  favorites={props.browserFavorites ?? DEFAULT_BROWSER_FAVORITES}
+                  searchEngine={props.searchEngine ?? getSearchEngine()}
+                  onBack={() => setEmptyBrowserOpen(false)}
+                  onSelectFavorite={(fav) => {
+                    setEmptyBrowserOpen(false);
+                    if (props.onSelectBrowserFavorite) {
+                      props.onSelectBrowserFavorite(node.id, fav);
+                    } else {
+                      onAddWebTabClick(node.id);
+                    }
+                  }}
+                  onSelectOther={() => {
+                    setEmptyBrowserOpen(false);
+                    if (props.onSelectBrowserOther) {
+                      props.onSelectBrowserOther(node.id);
+                    } else {
+                      onAddWebTabClick(node.id);
+                    }
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="agency-empty-pane-actions" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  className="agency-secondary-button"
+                  disabled={!online}
+                  onClick={() => onAddTerminalClick(node.id)}
+                >
+                  {t('agency.tabs.newTerminal')}
+                </button>
+                <button
+                  type="button"
+                  className="agency-secondary-button"
+                  disabled={!online}
+                  onClick={() => setEmptyBrowserOpen(true)}
+                >
+                  {t('agency.web.newTab')}
+                </button>
+                {props.onOpenFileClick && (
+                  <button
+                    type="button"
+                    className="agency-secondary-button"
+                    disabled={!online}
+                    onClick={() => props.onOpenFileClick?.(node.id)}
+                  >
+                    {t('agency.tabs.openFile')}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </PaneBody>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { WebTab } from '@agent-workbench/shared';
-import { validateOtherWebUrl } from '@agent-workbench/shared';
+import type { WebTab, SearchEngine } from '@agent-workbench/shared';
+import { validateOtherWebUrl, getSearchEngine, resolveAddressBarInput } from '@agent-workbench/shared';
 import { t } from '../i18n/index.js';
 import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
 
@@ -63,13 +63,16 @@ export function NativeChatGptView({
   onExpandToolbar,
   onDisplayed,
   onFocused,
+  searchEngine,
 }: {
   tab: WebTab;
   toolbarOpen?: boolean;
   onExpandToolbar?: () => void;
   onDisplayed: (id: string, ready: boolean) => void;
   onFocused?: () => void;
+  searchEngine?: SearchEngine;
 }): JSX.Element {
+  const effectiveSearchEngine = searchEngine ?? getSearchEngine();
   const { id } = tab;
   const supported = nativeWorkspaceUrl(tab.url, tab.provider);
   const callback = useRef(onDisplayed);
@@ -153,7 +156,27 @@ export function NativeChatGptView({
         <button type="button" aria-label={t('agency.browser.back')} disabled={!history.canGoBack} onClick={() => void window.mawChatGpt?.command({ type: 'browser-action', id, action: 'back' })}>‹</button>
         <button type="button" aria-label={t('agency.browser.forward')} disabled={!history.canGoForward} onClick={() => void window.mawChatGpt?.command({ type: 'browser-action', id, action: 'forward' })}>›</button>
         <button type="button" aria-label={t('agency.browser.reload')} onClick={() => void window.mawChatGpt?.command({ type: 'browser-action', id, action: 'reload' })}>↻</button>
-        <form onSubmit={(event) => { event.preventDefault(); const value = address.trim(); if (nativeWorkspaceUrl(value, provider)) { void window.mawChatGpt?.command({ type: 'update', id, url: value, provider }).catch(reason => setError(String(reason))); } else { addressInput.current?.setCustomValidity(t('agency.web.invalidUrl')); addressInput.current?.reportValidity(); } }}>
+        <form onSubmit={(event) => {
+          event.preventDefault();
+          const value = address.trim();
+          if (provider === 'other') {
+            const resolved = resolveAddressBarInput(value, effectiveSearchEngine, 'other');
+            if (resolved.url) {
+              setAddress(resolved.url);
+              void window.mawChatGpt?.command({ type: 'update', id, url: resolved.url, provider: 'other' }).catch((reason) => setError(String(reason)));
+            } else {
+              addressInput.current?.setCustomValidity(resolved.error || t('agency.web.invalidUrl'));
+              addressInput.current?.reportValidity();
+            }
+          } else {
+            if (nativeWorkspaceUrl(value, provider)) {
+              void window.mawChatGpt?.command({ type: 'update', id, url: value, provider }).catch((reason) => setError(String(reason)));
+            } else {
+              addressInput.current?.setCustomValidity(t('agency.web.invalidUrl'));
+              addressInput.current?.reportValidity();
+            }
+          }
+        }}>
           <input ref={addressInput} aria-label={t('agency.browser.address')} value={address} onChange={(event) => { event.currentTarget.setCustomValidity(''); setAddress(event.target.value); }} onKeyDown={(event) => { if (event.ctrlKey && event.key.toLowerCase() === 'l') { event.preventDefault(); event.currentTarget.select(); } }} />
         </form>
       </div>}

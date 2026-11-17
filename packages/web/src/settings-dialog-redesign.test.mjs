@@ -320,7 +320,7 @@ test('SettingsDialog acceptance suite: 2-pane navigation, tabs, accessibility, a
 
     const navTabs = page.locator('.maw-settings-nav-item');
     const tabCount = await navTabs.count();
-    assert.equal(tabCount, 7, 'Expected 7 tabs (including legacy panels)');
+    assert.equal(tabCount, 8, 'Expected 8 tabs (including browser and legacy panels)');
 
     // 2. Verify Initial General Tab
     const generalSectionTitle = await page.textContent('.maw-settings-section-title');

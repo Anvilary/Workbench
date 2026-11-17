@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import type { AgentId, AppSettingsStatus, ConsoleShellId, ServerMessage } from '@agent-workbench/shared';
+import type { AgentId, AppSettingsStatus, BrowserSettings, ConsoleShellId, ServerMessage } from '@agent-workbench/shared';
 import type { AgentConnection } from './connection.js';
 import { serverTextMessage } from './i18n/server-text.js';
 
@@ -21,6 +21,7 @@ export interface AppSettingsApi {
   problem: string | null;
   setConsoleShell: (shell: ConsoleShellId) => void;
   setDisabledAgents: (agents: AgentId[]) => void;
+  setBrowserSettings: (browser: Partial<BrowserSettings>) => void;
   dismissProblem: () => void;
 }
 
@@ -56,7 +57,11 @@ export function useAppSettings(connection: AgentConnection): AppSettingsApi {
     (agents: AgentId[]) => connection.send({ type: 'settings.update', disabledAgents: agents }),
     [connection],
   );
+  const setBrowserSettings = useCallback(
+    (browser: Partial<BrowserSettings>) => connection.send({ type: 'settings.update', browser }),
+    [connection],
+  );
   const dismissProblem = useCallback(() => setProblem(null), []);
 
-  return { status, problem, setConsoleShell, setDisabledAgents, dismissProblem };
+  return { status, problem, setConsoleShell, setDisabledAgents, setBrowserSettings, dismissProblem };
 }

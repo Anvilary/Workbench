@@ -54,6 +54,10 @@ export class AppSettingsService extends EventEmitter {
       shellName: this.currentShell()?.name ?? null,
       disabledAgents: [...settings.agents.disabled],
       disabledAtStart: [...this.disabledAtStart],
+      browser: {
+        defaultSearchEngine: settings.browser.defaultSearchEngine,
+        favorites: settings.browser.favorites.map((f) => ({ ...f })),
+      },
     };
   }
 
@@ -66,6 +70,7 @@ export class AppSettingsService extends EventEmitter {
     await this.options.settings.update({
       ...(change.consoleShell !== undefined ? { console: { shell: change.consoleShell } } : {}),
       ...(change.disabledAgents !== undefined ? { agents: { disabled: change.disabledAgents } } : {}),
+      ...(change.browser !== undefined ? { browser: change.browser } : {}),
     });
     const after = this.currentShell();
     if (after !== before) this.options.onShellChange(after);

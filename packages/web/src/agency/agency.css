@@ -653,21 +653,66 @@
 .maw-session-tab [role=tab]:focus-visible { outline: 1px solid var(--ember); outline-offset: -2px; border-radius: var(--radius-sm, 3px); }
 .maw-session-tab [data-close] { padding:8px; }
 .maw-session-tab.active [role=tab] { color: var(--ink); }
+.maw-tab-rename-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 8px;
+  box-sizing: border-box;
+}
+.maw-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  font-size: 13px;
+  line-height: 1;
+}
+.maw-tab-icon-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+.maw-tab-favicon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  border-radius: 2px;
+  display: block;
+}
+.maw-tab-icon-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-3);
+}
+.maw-globe-icon {
+  display: block;
+}
 .maw-tab-name-input {
   width: auto;
   min-width: 0;
   max-width: 100%;
   flex: 1;
-  height: 22px;
-  margin: 0 4px;
-  padding: 0 6px;
-  border: 1px solid var(--ember);
-  border-radius: 3px;
-  background: var(--bg-1, #121316);
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.2));
+  border-radius: 0;
+  background: transparent;
   color: var(--ink);
   font: inherit;
-  line-height: 20px;
-  box-shadow: 0 0 0 1px var(--accent-border-soft);
+  font-size: inherit;
+  line-height: inherit;
+  box-shadow: none;
   outline: none;
   user-select: text;
   box-sizing: border-box;
@@ -675,10 +720,13 @@
 .agency-app .maw-tab-name-input:focus,
 .agency-app .maw-tab-name-input:focus-visible {
   outline: none;
-  border-color: var(--ember);
-  box-shadow: 0 0 0 1px var(--ember), 0 0 6px var(--ember-glow);
+  border-color: transparent;
+  border-bottom: 1px solid var(--ink-2, #a1a1aa);
+  box-shadow: none;
 }
-.maw-tab-name-input[aria-invalid=true] { border-color: var(--danger); }
+.maw-tab-name-input[aria-invalid=true] {
+  border-bottom: 1px solid var(--danger, #ef4444);
+}
 .maw-add-tab { flex:none; }
 .maw-session-content { flex:1; min-height:0; position:relative; display:flex; }
 .maw-session-pane { display:flex; flex:1; min-width:0; min-height:0; flex-direction:column; }
@@ -2716,5 +2764,299 @@
 .maw-terminal-search-close {
   font-size: 14px;
   margin-left: 2px;
+}
+
+/* ==========================================================================
+   MAW BROWSER SETTINGS & DESTINATION PICKER
+   ========================================================================== */
+
+.maw-settings-card-header-flex {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.maw-settings-action-btn {
+  background: var(--bg-3);
+  border: 1px solid var(--border-subtle);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 9px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.maw-settings-action-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--ember);
+  color: var(--ember);
+}
+
+.maw-settings-choice-meta {
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-left: 8px;
+  font-family: var(--font-mono, monospace);
+  opacity: 0.85;
+}
+
+.maw-settings-favorite-form {
+  margin-top: 10px;
+  margin-bottom: 14px;
+  padding: 12px;
+  background: var(--bg-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.maw-settings-form-row {
+  display: flex;
+  gap: 12px;
+}
+
+.maw-settings-form-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.maw-settings-form-field input {
+  background: var(--bg-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.maw-settings-form-field input:focus {
+  outline: none;
+  border-color: var(--ember);
+}
+
+.maw-settings-fav-error {
+  margin: 0;
+  font-size: 11.5px;
+  color: #ff6b6b;
+}
+
+.maw-settings-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.maw-settings-favorites-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  border: 1px solid var(--border-faint);
+  border-radius: 6px;
+  background: var(--bg-1);
+  overflow: hidden;
+}
+
+.maw-settings-favorite-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-faint);
+  transition: background 100ms ease;
+}
+
+.maw-settings-favorite-row:last-child {
+  border-bottom: none;
+}
+
+.maw-settings-favorite-row:hover {
+  background: var(--bg-hover);
+}
+
+.maw-settings-fav-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.maw-settings-fav-title {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.maw-settings-fav-url {
+  font-size: 11px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono, monospace);
+}
+
+.maw-settings-fav-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.maw-settings-fav-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--ink-dim);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 100ms ease;
+}
+
+.maw-settings-fav-btn:hover:not(:disabled) {
+  background: var(--agency-hover);
+  color: var(--ink);
+}
+
+.maw-settings-fav-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.maw-settings-fav-delete:hover:not(:disabled) {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.12);
+}
+
+.maw-settings-favorites-footer {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.maw-settings-link-btn {
+  background: transparent;
+  border: none;
+  color: var(--ink-3);
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 2px 4px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.maw-settings-link-btn:hover {
+  color: var(--ink);
+}
+
+.maw-settings-empty-favorites {
+  padding: 16px;
+  text-align: center;
+  border: 1px dashed var(--border-subtle);
+  border-radius: 6px;
+  margin-top: 8px;
+}
+
+/* Browser Destination Picker in Add Tab & Menus */
+
+.maw-browser-dest-picker {
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+}
+
+.maw-browser-dest-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-dim);
+  border-bottom: 1px solid var(--border-faint);
+  margin-bottom: 4px;
+}
+
+.maw-browser-dest-back {
+  background: transparent;
+  border: none;
+  color: var(--ember);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.maw-browser-dest-back:hover {
+  background: var(--agency-hover);
+}
+
+.maw-browser-dest-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--ink);
+  transition: background 100ms ease;
+}
+
+.maw-browser-dest-item:hover,
+.maw-browser-dest-item:focus-visible {
+  background: var(--agency-hover);
+  outline: none;
+}
+
+.maw-browser-dest-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.maw-browser-dest-url {
+  font-size: 10.5px;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.maw-browser-dest-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 6px;
+}
+
+.maw-browser-dest-empty {
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--ink-3);
+  font-style: italic;
 }
 

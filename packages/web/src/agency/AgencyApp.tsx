@@ -650,6 +650,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
           <AgencyWorkspaceView
             key={selected.id}
             workspace={selected}
+            appSettings={appSettings}
             connection={connection}
             request={store.request}
             sendImmediate={agencyTransport.sendImmediate}

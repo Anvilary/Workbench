@@ -230,6 +230,52 @@ export function serviceUrl(value) {
   return url;
 }
 
+export function validateFaviconUrl(value, options = {}) {
+  if (typeof value !== 'string') return null;
+  const clean = value.trim();
+  if (!clean || clean.length > 65536 || /[\u0000-\u001f\u007f]/.test(clean)) return null;
+
+  // Safe data:image/ URIs (PNG, ICO, JPEG, WEBP, SVG) up to 64KB
+  if (clean.startsWith('data:image/')) {
+    const match = /^data:image\/(?:png|x-icon|vnd\.microsoft\.icon|jpeg|svg\+xml|webp);base64,[A-Za-z0-9+/=]+$/.test(clean);
+    return match ? clean : null;
+  }
+
+  if (clean.length > 2048) return null;
+  let parsed;
+  try {
+    parsed = new URL(clean);
+  } catch {
+    return null;
+  }
+
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+  if (parsed.username || parsed.password) return null;
+
+  const hostname = parsed.hostname.toLowerCase();
+  const loopback = hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === '127.0.0.1' || hostname === '::1';
+
+  if (parsed.protocol === 'http:') {
+    if (!options.allowLoopback || !loopback) return null;
+  } else {
+    if (parsed.port && parsed.port !== '443') return null;
+    if (loopback && !options.allowLoopback) return null;
+    if (['local', 'internal', 'lan', 'home', 'invalid', 'example', 'test'].some(s => hostname === s || hostname.endsWith('.' + s))) return null;
+    if (isIP(hostname.replace(/^\[|\]$/g, ''))) return null;
+  }
+
+  return parsed.toString();
+}
+
+export function selectBestFavicon(candidates, options = {}) {
+  if (!Array.isArray(candidates)) return null;
+  for (const candidate of candidates) {
+    const valid = validateFaviconUrl(candidate, options);
+    if (valid) return valid;
+  }
+  return null;
+}
+
 export function trustedSender(event, contents, origin) {
   try { return event.sender === contents && event.senderFrame === contents.mainFrame && new URL(event.senderFrame.url).origin === origin && new URL(event.senderFrame.url).pathname === '/'; }
   catch { return false; }
@@ -266,6 +312,7 @@ export function validCommand(value) {
   }
   if (value.type === 'close' || value.type === 'capture') return exact(value, ['type', 'id']) && typeof value.id === 'string' && UUID.test(value.id);
   if (value.type === 'get-backend-endpoint') return exact(value, ['type']);
+  if (value.type === 'get-favicons') return exact(value, ['type']);
   if (value.type === 'restore-shell-storage') return exact(value, ['type']);
   if (value.type === 'write-clipboard-text') {
     return exact(value, ['type', 'text']) && typeof value.text === 'string' && value.text.length <= 25_000_000;

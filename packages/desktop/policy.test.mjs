@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { embeddedUrl, externalUrl, otherUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl, githubUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, isSameSite, targetWebProvider, authenticationUrl, decideWindowOpen, getBrowserZoomAction } from './policy.mjs';
+import { embeddedUrl, externalUrl, otherUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl, githubUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, isSameSite, targetWebProvider, authenticationUrl, decideWindowOpen, getBrowserZoomAction, validateFaviconUrl, selectBestFavicon } from './policy.mjs';
 const id = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
 test('getBrowserZoomAction: recognizes zoom shortcuts and rejects unrelated keys', () => {
   // Zoom in
@@ -287,4 +287,60 @@ test('window.open keeps authentication popups out of workspace tabs', () => {
   const longAuth = 'https://accounts.google.com/o/oauth2/v2/auth?state=' + 'a'.repeat(2500);
   assert.equal(decideWindowOpen({ url: longAuth, allowPopup: true, permitted: false, tabbable: false, external: true }), 'popup');
   assert.equal(decideWindowOpen({ url: longAuth, allowPopup: true, popupOpen: true, permitted: false, tabbable: false, external: true }), 'external');
+});
+
+test('validateFaviconUrl: validates HTTPS URLs, data URIs, and rejects dangerous schemes', () => {
+  // Valid HTTPS favicons
+  assert.equal(validateFaviconUrl('https://chatgpt.com/favicon.ico'), 'https://chatgpt.com/favicon.ico');
+  assert.equal(validateFaviconUrl('https://github.githubassets.com/favicons/favicon.png'), 'https://github.githubassets.com/favicons/favicon.png');
+  assert.equal(validateFaviconUrl('https://www.perplexity.ai/favicon.svg'), 'https://www.perplexity.ai/favicon.svg');
+
+  // Valid base64 data URIs
+  const validDataPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  assert.equal(validateFaviconUrl(validDataPng), validDataPng);
+  const validDataSvg = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiI+PC9zdmc+';
+  assert.equal(validateFaviconUrl(validDataSvg), validDataSvg);
+
+  // Dangerous / forbidden schemes must be rejected
+  assert.equal(validateFaviconUrl('file:///etc/passwd'), null);
+  assert.equal(validateFaviconUrl('javascript:alert(1)'), null);
+  assert.equal(validateFaviconUrl('chrome://settings'), null);
+  assert.equal(validateFaviconUrl('about:blank'), null);
+  assert.equal(validateFaviconUrl('blob:https://chatgpt.com/12345'), null);
+
+  // URLs with credentials or forbidden ports
+  assert.equal(validateFaviconUrl('https://user:pass@chatgpt.com/favicon.ico'), null);
+  assert.equal(validateFaviconUrl('https://chatgpt.com:8080/favicon.ico'), null);
+
+  // Local/private addresses rejected by default
+  assert.equal(validateFaviconUrl('http://localhost:3000/favicon.ico'), null);
+  assert.equal(validateFaviconUrl('http://127.0.0.1:8080/favicon.ico'), null);
+  assert.equal(validateFaviconUrl('https://192.168.1.1/favicon.ico'), null);
+
+  // Loopback allowed when explicitly permitted
+  assert.equal(validateFaviconUrl('http://localhost:3000/favicon.ico', { allowLoopback: true }), 'http://localhost:3000/favicon.ico');
+  assert.equal(validateFaviconUrl('http://127.0.0.1:8080/favicon.ico', { allowLoopback: true }), 'http://127.0.0.1:8080/favicon.ico');
+
+  // Invalid data URIs and oversized payloads
+  assert.equal(validateFaviconUrl('data:text/html;base64,PHNjcmlwdD4='), null);
+  assert.equal(validateFaviconUrl('data:image/png;base64,' + 'A'.repeat(70000)), null);
+  assert.equal(validateFaviconUrl(''), null);
+  assert.equal(validateFaviconUrl(null), null);
+  assert.equal(validateFaviconUrl(undefined), null);
+
+  // selectBestFavicon picks the first valid favicon
+  const candidates = [
+    'file:///secret/icon.png',
+    'javascript:alert(1)',
+    'https://chatgpt.com/favicon.ico',
+    validDataPng,
+  ];
+  assert.equal(selectBestFavicon(candidates), 'https://chatgpt.com/favicon.ico');
+  assert.equal(selectBestFavicon(['file:///etc/hosts']), null);
+  assert.equal(selectBestFavicon(null), null);
+});
+
+test('validCommand: supports get-favicons', () => {
+  assert.equal(validCommand({ type: 'get-favicons' }), true);
+  assert.equal(validCommand({ type: 'get-favicons', extra: 1 }), false);
 });

@@ -10,6 +10,7 @@
  */
 
 import { isAgentId, type AgentId } from './agents.js';
+import { parseBrowserSettings, type BrowserSettings } from './browser-settings.js';
 import { asArrayFiltered, asLiteral, asNonEmptyString, asRecord } from './validation.js';
 
 /**
@@ -52,6 +53,8 @@ export interface AppSettingsStatus {
    * reiniciar la app: si difiere de `disabledAgents`, Ajustes lo dice.
    */
   disabledAtStart: AgentId[];
+  /** Browser favorites and default search engine. */
+  browser?: BrowserSettings;
 }
 
 function asConsoleShellId(value: unknown): ConsoleShellId | null {
@@ -87,24 +90,35 @@ export function parseAppSettingsStatus(value: unknown): AppSettingsStatus | null
   const disabledAtStart = asAgentIdList(record['disabledAtStart']);
   if (consoleShell === null || consoleShells === null || disabledAgents === null || disabledAtStart === null) return null;
   if (rawShellName !== null && shellName === null) return null;
-  return { consoleShell, consoleShells, shellName, disabledAgents, disabledAtStart };
+  const rawBrowser = record['browser'];
+  const browser = rawBrowser !== undefined ? (parseBrowserSettings(rawBrowser) ?? undefined) : undefined;
+  return { consoleShell, consoleShells, shellName, disabledAgents, disabledAtStart, ...(browser ? { browser } : {}) };
 }
 
-/** El cambio que pide Ajustes: al menos uno de los dos. */
+/** El cambio que pide Ajustes: al menos uno. */
 export interface AppSettingsChange {
   consoleShell?: ConsoleShellId;
   disabledAgents?: AgentId[];
+  browser?: Partial<BrowserSettings>;
 }
 
 export function parseAppSettingsChange(record: Record<string, unknown>): AppSettingsChange | null {
   const rawShell = record['consoleShell'];
   const rawAgents = record['disabledAgents'];
+  const rawBrowser = record['browser'];
   const consoleShell = rawShell === undefined ? undefined : asConsoleShellId(rawShell);
   const disabledAgents = rawAgents === undefined ? undefined : asAgentIdList(rawAgents);
+  let browser: Partial<BrowserSettings> | undefined;
+  if (rawBrowser !== undefined) {
+    const parsed = parseBrowserSettings(rawBrowser);
+    if (parsed === null) return null;
+    browser = parsed;
+  }
   if (consoleShell === null || disabledAgents === null) return null;
-  if (consoleShell === undefined && disabledAgents === undefined) return null;
+  if (consoleShell === undefined && disabledAgents === undefined && browser === undefined) return null;
   return {
     ...(consoleShell !== undefined ? { consoleShell } : {}),
     ...(disabledAgents !== undefined ? { disabledAgents } : {}),
+    ...(browser !== undefined ? { browser } : {}),
   };
 }

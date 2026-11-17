@@ -35,8 +35,12 @@ import {
   asLiteral,
   asRecord,
   isRemotePort,
+  parseBrowserSettings,
+  DEFAULT_BROWSER_SETTINGS,
   type AgentId,
   type ConsoleShellId,
+  type BrowserSettings,
+  type BrowserFavorite,
 } from '@agent-workbench/shared';
 import { appSettingsPath } from './paths.js';
 import { writeFileAtomic } from './vault/write.js';
@@ -91,6 +95,7 @@ export interface AppSettings {
   remote: RemoteSettings;
   console: ConsoleSettings;
   agents: AgentsSettings;
+  browser: BrowserSettings;
 }
 
 export interface SettingsPatch {
@@ -98,6 +103,7 @@ export interface SettingsPatch {
   remote?: Partial<RemoteSettings>;
   console?: Partial<ConsoleSettings>;
   agents?: Partial<AgentsSettings>;
+  browser?: Partial<BrowserSettings>;
 }
 
 export function defaultAppSettings(): AppSettings {
@@ -107,6 +113,10 @@ export function defaultAppSettings(): AppSettings {
     remote: { enabled: false, port: REMOTE_DEFAULT_PORT },
     console: { shell: 'auto' },
     agents: { disabled: [] },
+    browser: {
+      defaultSearchEngine: DEFAULT_BROWSER_SETTINGS.defaultSearchEngine,
+      favorites: DEFAULT_BROWSER_SETTINGS.favorites.map((f) => ({ ...f })),
+    },
   };
 }
 
@@ -152,6 +162,12 @@ export function parseAppSettings(
   const disabled = agentsRecord === null ? null : asAgentIdList(agentsRecord['disabled']);
   if (disabled !== null) settings.agents.disabled = disabled;
 
+  const browserRecord = asRecord(record['browser']);
+  if (browserRecord !== null) {
+    const parsedBrowser = parseBrowserSettings(browserRecord);
+    if (parsedBrowser !== null) settings.browser = parsedBrowser;
+  }
+
   const remote = asRecord(record['remote']);
   if (remote !== null) {
     settings.remote.enabled = asBoolean(remote['enabled']) ?? false;
@@ -180,6 +196,10 @@ function frozen(settings: AppSettings): AppSettings {
     remote: Object.freeze({ ...settings.remote }),
     console: Object.freeze({ ...settings.console }),
     agents: Object.freeze({ disabled: Object.freeze([...settings.agents.disabled]) as AgentId[] }),
+    browser: Object.freeze({
+      ...settings.browser,
+      favorites: Object.freeze(settings.browser.favorites.map((f) => Object.freeze({ ...f }))) as BrowserFavorite[],
+    }),
   });
 }
 
@@ -277,6 +297,10 @@ export class SettingsStore {
         remote: { ...this.current.remote },
         console: { ...this.current.console },
         agents: { disabled: [...this.current.agents.disabled] },
+        browser: {
+          defaultSearchEngine: this.current.browser.defaultSearchEngine,
+          favorites: this.current.browser.favorites.map((f) => ({ ...f })),
+        },
       };
       const vault = patch.vault ?? {};
       if (vault.enabled !== undefined) next.vault.enabled = vault.enabled;
@@ -291,6 +315,12 @@ export class SettingsStore {
       }
       if (patch.console?.shell !== undefined) next.console.shell = patch.console.shell;
       if (patch.agents?.disabled !== undefined) next.agents.disabled = [...new Set(patch.agents.disabled)];
+      if (patch.browser?.defaultSearchEngine !== undefined) {
+        next.browser.defaultSearchEngine = patch.browser.defaultSearchEngine;
+      }
+      if (patch.browser?.favorites !== undefined) {
+        next.browser.favorites = patch.browser.favorites.map((f) => ({ ...f }));
+      }
       const remote = patch.remote ?? {};
       if (remote.enabled !== undefined) next.remote.enabled = remote.enabled;
       if (remote.port !== undefined) {

@@ -20,8 +20,10 @@ import type { TerminalThemePreference, TerminalThemeState } from './useTerminalT
 import { vaultName } from './vault-ui.js';
 import type { AgentConnection } from './connection.js';
 import { AgentsUsageView } from './AgentsUsageView.js';
+import { useBrowserSettings } from './agency/useBrowserSettings.js';
+import { SEARCH_ENGINES } from '@agent-workbench/shared';
 
-export type SettingsTabId = 'general' | 'appearance' | 'terminal' | 'agents' | 'usage' | 'about' | 'panels';
+export type SettingsTabId = 'general' | 'appearance' | 'terminal' | 'browser' | 'agents' | 'usage' | 'about' | 'panels';
 
 interface TabDefinition {
   id: SettingsTabId;
@@ -34,6 +36,7 @@ const ALL_TABS: readonly TabDefinition[] = [
   { id: 'general', labelKey: 'settings.category.general', descKey: 'settings.desc.general', icon: '⚙' },
   { id: 'appearance', labelKey: 'settings.category.appearance', descKey: 'settings.desc.appearance', icon: '🎨' },
   { id: 'terminal', labelKey: 'settings.category.terminal', descKey: 'settings.desc.terminal', icon: '💻' },
+  { id: 'browser', labelKey: 'settings.category.browser', descKey: 'settings.desc.browser', icon: '🌐' },
   { id: 'agents', labelKey: 'settings.category.agents', descKey: 'settings.desc.agents', icon: '🤖' },
   { id: 'usage', labelKey: 'settings.category.usage', descKey: 'settings.desc.usage', icon: '📊' },
   { id: 'about', labelKey: 'settings.category.about', descKey: 'settings.desc.about', icon: 'ℹ' },
@@ -128,6 +131,13 @@ export function SettingsDialog({
   const shownShell = pendingShell ?? status?.consoleShell ?? 'auto';
   const shownDisabled = pendingDisabled ?? status?.disabledAgents ?? [];
 
+  const browserSettings = useBrowserSettings(appSettings);
+  const [editingFavoriteId, setEditingFavoriteId] = useState<string | null>(null);
+  const [isAddingFavorite, setIsAddingFavorite] = useState(false);
+  const [favTitleInput, setFavTitleInput] = useState('');
+  const [favUrlInput, setFavUrlInput] = useState('');
+  const [favError, setFavError] = useState<string | null>(null);
+
   // Focus management: save trigger on mount, restore on unmount
   useEffect(() => {
     triggerRef.current = document.activeElement as HTMLElement | null;
@@ -176,7 +186,7 @@ export function SettingsDialog({
     panels?.setVisible(panel, visible);
   };
 
-  const autoShell = status?.consoleShells.find((shell) => shell.id !== 'git-bash' && shell.id !== 'zsh') ?? null;
+  const autoShell = status?.consoleShells?.find((shell) => shell.id !== 'git-bash' && shell.id !== 'zsh') ?? null;
   const restartPending = status !== null && !sameSet(status.disabledAgents, status.disabledAtStart);
 
   const shellChoices: { id: ConsoleShellId; label: string }[] =
@@ -417,6 +427,229 @@ export function SettingsDialog({
                             )}
                           </>
                         )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* BROWSER TAB */}
+                {activeTab === 'browser' && (
+                  <div className="maw-settings-groups">
+                    {/* Search Engine Selection Card */}
+                    <div className="maw-settings-card">
+                      <div className="maw-settings-card-header">
+                        <span className="maw-settings-card-title">{t('settings.browser.searchEngine')}</span>
+                      </div>
+                      <div className="maw-settings-card-body">
+                        <div
+                          className="maw-settings-choices"
+                          role="radiogroup"
+                          aria-label={t('settings.browser.searchEngine')}
+                        >
+                          {SEARCH_ENGINES.map((engine) => (
+                            <label key={engine.id} className="maw-settings-choice">
+                              <input
+                                type="radio"
+                                name="default-search-engine"
+                                checked={browserSettings.defaultSearchEngine === engine.id}
+                                onChange={() => browserSettings.setDefaultSearchEngine(engine.id)}
+                              />
+                              <span className="maw-settings-choice-label">{engine.name}</span>
+                              <span className="maw-settings-choice-meta">{engine.homeUrl}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <p className="maw-settings-hint">{t('settings.browser.searchEngineDesc')}</p>
+                      </div>
+                    </div>
+
+                    {/* Favorites Management Card */}
+                    <div className="maw-settings-card">
+                      <div className="maw-settings-card-header maw-settings-card-header-flex">
+                        <span className="maw-settings-card-title">{t('settings.browser.favorites')}</span>
+                        {!isAddingFavorite && !editingFavoriteId && (
+                          <button
+                            type="button"
+                            className="maw-settings-action-btn"
+                            onClick={() => {
+                              setIsAddingFavorite(true);
+                              setEditingFavoriteId(null);
+                              setFavTitleInput('');
+                              setFavUrlInput('');
+                              setFavError(null);
+                            }}
+                          >
+                            + {t('settings.browser.addFavorite')}
+                          </button>
+                        )}
+                      </div>
+                      <div className="maw-settings-card-body">
+                        <p className="maw-settings-hint">{t('settings.browser.favoritesDesc')}</p>
+
+                        {(isAddingFavorite || editingFavoriteId) && (
+                          <form
+                            className="maw-settings-favorite-form"
+                            noValidate
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              if (isAddingFavorite) {
+                                const res = browserSettings.addFavorite({
+                                  title: favTitleInput,
+                                  url: favUrlInput,
+                                });
+                                if (!res.success) {
+                                  setFavError(res.error ?? 'Invalid input');
+                                } else {
+                                  setIsAddingFavorite(false);
+                                  setFavTitleInput('');
+                                  setFavUrlInput('');
+                                  setFavError(null);
+                                }
+                              } else if (editingFavoriteId) {
+                                const res = browserSettings.editFavorite(editingFavoriteId, {
+                                  title: favTitleInput,
+                                  url: favUrlInput,
+                                });
+                                if (!res.success) {
+                                  setFavError(res.error ?? 'Invalid input');
+                                } else {
+                                  setEditingFavoriteId(null);
+                                  setFavTitleInput('');
+                                  setFavUrlInput('');
+                                  setFavError(null);
+                                }
+                              }
+                            }}
+                          >
+                            <div className="maw-settings-form-row">
+                              <label className="maw-settings-form-field">
+                                <span>{t('settings.browser.name')}</span>
+                                <input
+                                  autoFocus
+                                  type="text"
+                                  required
+                                  maxLength={120}
+                                  value={favTitleInput}
+                                  onChange={(e) => {
+                                    setFavTitleInput(e.target.value);
+                                    setFavError(null);
+                                  }}
+                                  placeholder="e.g. Documentation"
+                                />
+                              </label>
+                              <label className="maw-settings-form-field">
+                                <span>{t('settings.browser.url')}</span>
+                                <input
+                                  type="url"
+                                  required
+                                  maxLength={2048}
+                                  value={favUrlInput}
+                                  onChange={(e) => {
+                                    setFavUrlInput(e.target.value);
+                                    setFavError(null);
+                                  }}
+                                  placeholder="https://..."
+                                />
+                              </label>
+                            </div>
+                            {favError && (
+                              <p role="alert" className="agency-error maw-settings-fav-error">
+                                {favError}
+                              </p>
+                            )}
+                            <div className="maw-settings-form-actions">
+                              <button type="submit" className="agency-button-primary">
+                                {t('common.save')}
+                              </button>
+                              <button
+                                type="button"
+                                className="agency-button-secondary"
+                                onClick={() => {
+                                  setIsAddingFavorite(false);
+                                  setEditingFavoriteId(null);
+                                  setFavError(null);
+                                }}
+                              >
+                                {t('common.cancel')}
+                              </button>
+                            </div>
+                          </form>
+                        )}
+
+                        {browserSettings.favorites.length === 0 ? (
+                          <div className="maw-settings-empty-favorites">
+                            <p className="maw-settings-hint">{t('settings.browser.noFavorites')}</p>
+                          </div>
+                        ) : (
+                          <ul className="maw-settings-favorites-list">
+                            {browserSettings.favorites.map((fav, index) => (
+                              <li key={fav.id} className="maw-settings-favorite-row">
+                                <div className="maw-settings-fav-info">
+                                  <span className="maw-settings-fav-title">{fav.title}</span>
+                                  <span className="maw-settings-fav-url" title={fav.url}>
+                                    {fav.url}
+                                  </span>
+                                </div>
+                                <div className="maw-settings-fav-actions">
+                                  <button
+                                    type="button"
+                                    className="icon-button maw-settings-fav-btn"
+                                    title="Move Up"
+                                    aria-label="Move Up"
+                                    disabled={index === 0}
+                                    onClick={() => browserSettings.moveFavorite(fav.id, 'up')}
+                                  >
+                                    ↑
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="icon-button maw-settings-fav-btn"
+                                    title="Move Down"
+                                    aria-label="Move Down"
+                                    disabled={index === browserSettings.favorites.length - 1}
+                                    onClick={() => browserSettings.moveFavorite(fav.id, 'down')}
+                                  >
+                                    ↓
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="icon-button maw-settings-fav-btn"
+                                    title={t('settings.browser.editFavorite')}
+                                    aria-label={t('settings.browser.editFavorite')}
+                                    onClick={() => {
+                                      setEditingFavoriteId(fav.id);
+                                      setIsAddingFavorite(false);
+                                      setFavTitleInput(fav.title);
+                                      setFavUrlInput(fav.url);
+                                      setFavError(null);
+                                    }}
+                                  >
+                                    ✎
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="icon-button maw-settings-fav-btn maw-settings-fav-delete"
+                                    title="Delete"
+                                    aria-label="Delete"
+                                    onClick={() => browserSettings.removeFavorite(fav.id)}
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+
+                        <div className="maw-settings-favorites-footer">
+                          <button
+                            type="button"
+                            className="maw-settings-link-btn"
+                            onClick={() => browserSettings.resetToDefaults()}
+                          >
+                            {t('settings.browser.resetDefaults')}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>

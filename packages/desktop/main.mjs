@@ -4,7 +4,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { mkdir, readFile, lstat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, BROWSER_PARTITION, otherUrl, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, targetWebProvider, isSameSite, authenticationUrl, decideWindowOpen, getBrowserZoomAction } from './policy.mjs';
+import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, BROWSER_PARTITION, otherUrl, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, targetWebProvider, isSameSite, authenticationUrl, decideWindowOpen, getBrowserZoomAction, selectBestFavicon } from './policy.mjs';
 import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
 import { calculateResourceBudget, selectEvictionCandidate, isProtectedProvider, readSystemMemory } from './resource-budget.mjs';
 import { ResourceCollector } from './resource-monitor.mjs';
@@ -182,6 +182,7 @@ async function start() {
   const activeDownloads = new Map(); // id -> number (count)
   const interactionProtected = new Set();
   const zoomLevels = new Map(); // id -> number
+  const tabFavicons = new Map(); // id -> string (best validated favicon URL)
   let shuttingDown = false;
   let pendingShellStorage = null;
   const send = state => { if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(CHANNEL + ':state', state); };
@@ -706,11 +707,26 @@ async function start() {
       if (!isMainFrame) return;
       reportNavigation(id);
       if (!durablePage(provider, url)) return;
+      const prevUrl = urls.get(id);
       urls.set(id, url);
+      try {
+        if (prevUrl && new URL(prevUrl).origin !== new URL(url).origin) {
+          tabFavicons.delete(id);
+          send({ type: 'favicon', id, favicon: '' });
+        }
+      } catch {}
       send({ type: 'committed', id, url });
     };
     view.webContents.on('did-navigate', (event, url) => { interactionProtected.delete(id); committed(event, url); });
     view.webContents.on('did-navigate-in-page', committed);
+    view.webContents.on('page-favicon-updated', (_event, favicons) => {
+      if (views.get(id) !== view || view.webContents.isDestroyed()) return;
+      const best = selectBestFavicon(favicons, { allowLoopback: provider === 'other' });
+      if (best) {
+        tabFavicons.set(id, best);
+        send({ type: 'favicon', id, favicon: best });
+      }
+    });
     view.webContents.on('did-start-loading', () => { failures.delete(id); send({ type: 'loading', id }); });
     view.webContents.on('did-finish-load', () => {
       if (initialZoom !== 0 && !view.webContents.isDestroyed()) {
@@ -756,6 +772,7 @@ async function start() {
     lastAccessedAt.delete(id);
     zoomLevels.delete(id);
     activeDownloads.delete(id);
+    tabFavicons.delete(id);
     const view = views.get(id);
     if (view) {
       hide(id);
@@ -818,6 +835,9 @@ async function start() {
         ...suspendedTabs.values(),
       ].filter(tab => durablePage(tab.provider, tab.url)).map(({ id, provider, url }) => ({ id, provider, url }));
       return { ...storage, browserTabs };
+    }
+    if (command.type === 'get-favicons') {
+      return { ok: true, favicons: Object.fromEntries(tabFavicons) };
     }
     if (command.type === 'get-backend-endpoint') {
       try {

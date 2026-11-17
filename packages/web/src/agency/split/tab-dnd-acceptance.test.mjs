@@ -11,12 +11,8 @@ const create = async (page, n, kind) => {
   }).click();
   if (kind === 'agent') await page.getByRole('dialog').getByRole('button', { name: /^(Create|Launch|Start)/ }).click();
   if (kind === 'web') {
-    const dialog = page.getByRole('dialog', { name: 'Browser' });
-    assert.deepEqual(await dialog.getByLabel('Browser provider').locator('option').allTextContents(), ['ChatGPT', 'Perplexity', 'GitHub', 'Other']);
-    await dialog.getByLabel('Browser provider').selectOption('github');
-    assert.equal(await dialog.getByLabel('Tab title').inputValue(), 'GitHub');
-    await dialog.getByRole('button', { name: 'Browser', exact: true }).click();
-    await pane(page, n).getByRole('tab', { name: 'GitHub' }).waitFor();
+    await page.getByRole('menuitem', { name: 'GitHub' }).click();
+    await pane(page, n).getByRole('tab', { name: /GitHub/ }).waitFor();
   }
   if (kind === 'file') {
     await page.getByRole('dialog').locator('input').fill('src/index.ts');
