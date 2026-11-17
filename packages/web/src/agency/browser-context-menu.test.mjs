@@ -1,6 +1,34 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { calculateMenuPosition } from './BrowserContextMenu.js';
+import { calculateMenuPosition, isSupportedBrowserLink } from './BrowserContextMenu.js';
+
+test('isSupportedBrowserLink: validates public web hyperlinks and rejects invalid/unsupported links', () => {
+  // Supported web URLs:
+  assert.equal(isSupportedBrowserLink('https://chatgpt.com/'), true);
+  assert.equal(isSupportedBrowserLink('https://chat.openai.com/c/123'), true);
+  assert.equal(isSupportedBrowserLink('https://github.com/microsoft/vscode'), true);
+  assert.equal(isSupportedBrowserLink('https://perplexity.ai/search?q=test'), true);
+  assert.equal(isSupportedBrowserLink('https://en.wikipedia.org/wiki/Main_Page'), true);
+  assert.equal(isSupportedBrowserLink('https://docs.anthropic.com/en/docs'), true);
+
+  // Unsupported protocols or formats:
+  assert.equal(isSupportedBrowserLink('http://example.com/'), false); // plain http rejected
+  assert.equal(isSupportedBrowserLink('javascript:alert(1)'), false);
+  assert.equal(isSupportedBrowserLink('data:text/html,<h1>hi</h1>'), false);
+  assert.equal(isSupportedBrowserLink('mailto:alice@example.com'), false);
+  assert.equal(isSupportedBrowserLink('file:///etc/passwd'), false);
+
+  // Loopback and internal addresses rejected:
+  assert.equal(isSupportedBrowserLink('https://127.0.0.1:8080/'), false);
+  assert.equal(isSupportedBrowserLink('https://localhost:3000/'), false);
+  assert.equal(isSupportedBrowserLink('https://192.168.1.1/'), false);
+
+  // Non-strings or empty:
+  assert.equal(isSupportedBrowserLink(''), false);
+  assert.equal(isSupportedBrowserLink('   '), false);
+  assert.equal(isSupportedBrowserLink(null), false);
+  assert.equal(isSupportedBrowserLink(undefined), false);
+});
 
 test('calculateMenuPosition: positions normally when ample space exists', () => {
   const bounds = { left: 240, top: 40, right: 1200, bottom: 800 };

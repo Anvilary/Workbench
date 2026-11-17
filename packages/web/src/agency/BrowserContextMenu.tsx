@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { WebTab } from '@agent-workbench/shared';
+import { classifyWebTabUrl, isLoopbackHost, validateOtherWebUrl, type WebTab } from '@agent-workbench/shared';
 import { t } from '../i18n/index.js';
 import type { useAgencyStore } from './useAgencyStore.js';
 
@@ -8,6 +8,23 @@ export interface BoundingBox {
   top: number;
   right: number;
   bottom: number;
+}
+
+export function isSupportedBrowserLink(rawUrl: string | null | undefined): boolean {
+  if (!rawUrl || typeof rawUrl !== 'string') return false;
+  const trimmed = rawUrl.trim();
+  if (!trimmed.startsWith('https://')) return false;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port) return false;
+    if (isLoopbackHost(parsed.hostname)) return false;
+    const classification = classifyWebTabUrl(trimmed);
+    if (classification.valid) return true;
+    const other = validateOtherWebUrl(trimmed);
+    return other.valid;
+  } catch {
+    return false;
+  }
 }
 
 export function getBrowserContentBounds(tabId: string): { bounds: BoundingBox; originX: number; originY: number } {
@@ -144,7 +161,7 @@ export function BrowserContextMenu({
 }): JSX.Element | null {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [measuredSize, setMeasuredSize] = useState<{ width: number; height: number }>({ width: 190, height: 320 });
+  const [measuredSize, setMeasuredSize] = useState<{ width: number; height: number }>({ width: 190, height: 240 });
 
   useEffect(() => window.mawChatGpt?.subscribe((state) => {
     if (state.type !== 'browser-context' || !state.id) return;
@@ -192,7 +209,8 @@ export function BrowserContextMenu({
     void window.mawChatGpt?.command(command);
     setMenu(null);
   };
-  const link = menu.linkURL.startsWith('https://') ? menu.linkURL : '';
+  const isValidLink = isSupportedBrowserLink(menu.linkURL);
+  const link = isValidLink ? menu.linkURL.trim() : '';
   const items: { label: string; disabled?: boolean; run: () => void }[] = [
     { label: t('agency.browser.back'), disabled: !menu.canGoBack, run: () => send('back') },
     { label: t('agency.browser.forward'), disabled: !menu.canGoForward, run: () => send('forward') },
@@ -200,10 +218,6 @@ export function BrowserContextMenu({
     { label: t('agency.browser.copyPageUrl'), run: () => send('copy-url') },
     { label: t('agency.browser.copySelection'), disabled: !menu.selection, run: () => send('copy-selection') },
     { label: t('agency.browser.openLink'), disabled: !link, run: () => send('open-link', link) },
-    { label: t('agency.browser.openPage'), run: () => send('open-page') },
-    { label: t('agency.browser.zoomIn'), run: () => send('zoom-in') },
-    { label: t('agency.browser.zoomOut'), run: () => send('zoom-out') },
-    { label: t('agency.browser.zoomReset'), run: () => send('zoom-reset') },
     { label: t('agency.browser.moveNext'), disabled: !tab, run: () => { if (tab) onMoveNext(tab.id); setMenu(null); } },
     { label: t('agency.browser.duplicate'), disabled: !tab, run: () => { if (tab) onDuplicate(tab); setMenu(null); } },
     { label: t('agency.browser.close'), disabled: !tab, run: () => { if (tab) onCloseTab(tab); setMenu(null); } },
