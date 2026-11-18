@@ -172,7 +172,7 @@
 .agency-project-row, .agency-workspace-nav-row { display: flex; align-items: center; min-width: 0; position: relative; }
 .agency-project.agency-is-dragging,
 .agency-workspace-nav-row.agency-is-dragging {
-  opacity: 0.45;
+  opacity: 0;
 }
 .agency-project.agency-drop-target-before::before,
 .agency-workspace-nav-row.agency-drop-target-before::before {
@@ -3956,14 +3956,14 @@ body.agency-sidebar-dragging * {
   cursor: grabbing !important;
 }
 
-.agency-project,
-.agency-workspace-nav-row {
+.agency-sidebar-dragging .agency-project,
+.agency-sidebar-dragging .agency-workspace-nav-row {
   transition: transform 150ms cubic-bezier(0.2, 0, 0, 1), opacity 120ms ease;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .agency-project,
-  .agency-workspace-nav-row {
+  .agency-sidebar-dragging .agency-project,
+  .agency-sidebar-dragging .agency-workspace-nav-row {
     transition: none;
   }
 }

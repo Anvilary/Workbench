@@ -227,6 +227,18 @@ test('staging release creates and restores a general Browser tab through the rea
       return page.getByRole('dialog', { name: 'Settings' });
     };
     const settings = await openBrowserSettings();
+    await settings.getByRole('button', { name: 'Delete Search Engine: DuckDuckGo', exact: true }).click();
+    assert.equal(await settings.getByRole('radio', { name: /Google/ }).isChecked(), true);
+    await settings.getByRole('button', { name: 'Reset to defaults', exact: true }).click();
+    assert.equal(await settings.getByRole('radio', { name: /DuckDuckGo/ }).isChecked(), true);
+
+    const profilesCard = settings.locator('#setting-card-browser-profiles');
+    await profilesCard.getByRole('button', { name: 'Browser Profiles', exact: true }).click();
+    assert.equal(await profilesCard.getByRole('button', { name: 'Browser Profiles', exact: true }).getAttribute('aria-expanded'), 'false');
+    await settings.getByRole('searchbox', { name: 'Search settings...' }).fill('Browser Profiles');
+    await settings.getByRole('option', { name: /Browser Profiles/ }).click();
+    await profilesCard.locator('.maw-subsection-toggle[aria-expanded="true"]').waitFor();
+
     const addProfile = async (name, mode) => {
       await settings.getByRole('button', { name: /add profile/i }).click();
       await settings.getByLabel('Profile Name', { exact: true }).fill(name);
@@ -281,7 +293,95 @@ test('staging release creates and restores a general Browser tab through the rea
     await eventually(async () => await activeSessionPath() === sessions[0].path, 'Main fallback after deleting an assigned profile');
     assert.equal(await desktop.evaluate(async ({ session }) => (await session.fromPartition('persist:maw-browser').cookies.get({ name: 'staging-fixture' }))[0]?.value), 'isolated-cookie');
 
-    await page.getByRole('button', { name: 'Workspace actions', exact: true }).click();
+    await page.locator('.maw-pane-menu-toggle').click();
+    await page.getByRole('menuitem', { name: 'Split vertically', exact: true }).click();
+    const extraPane = page.locator('.maw-split-pane').nth(1);
+    await extraPane.locator('.maw-pane-add-tab').click();
+    await page.getByRole('menuitem', { name: 'New Terminal', exact: true }).click();
+    await extraPane.getByRole('tab').waitFor();
+    const paneClose = extraPane.locator('[data-pane-close]');
+    assert.equal(await paneClose.evaluate(button => button.previousElementSibling?.classList.contains('maw-pane-grip')), true);
+    await paneClose.click();
+    const paneConfirmation = extraPane.getByRole('dialog');
+    const targetBounds = await extraPane.locator('.maw-pane-body').boundingBox();
+    const paneConfirmationBounds = await paneConfirmation.locator('.maw-pane-close-dialog').boundingBox();
+    assert.ok(targetBounds && paneConfirmationBounds);
+    assert.ok(Math.abs(targetBounds.x + targetBounds.width / 2 - paneConfirmationBounds.x - paneConfirmationBounds.width / 2) < 2);
+    assert.ok(Math.abs(targetBounds.y + targetBounds.height / 2 - paneConfirmationBounds.y - paneConfirmationBounds.height / 2) < 2);
+    await screenshot('electron-pane-confirmation.png');
+    assert.equal(await page.getByRole('dialog').count(), 1);
+    await paneConfirmation.getByRole('button', { name: 'Close pane', exact: true }).click();
+    await extraPane.waitFor({ state: 'detached' });
+    assert.equal(await page.locator(`#tab-${created.id}`).count(), 1);
+    assert.equal(await page.getByRole('dialog').count(), 0);
+
+    const originalProject = page.locator('[data-sidebar-project-id]').filter({
+      has: page.locator('.agency-project-name', { hasText: 'Staging Browser Project' }),
+    });
+    const originalWorkspace = originalProject.locator('.agency-workspace-nav-row', { hasText: 'Staging Browser Workspace' });
+    await originalProject.getByRole('button', { name: 'Project actions', exact: true }).click();
+    await page.getByRole('menuitem', { name: /add workspace/i }).click();
+    await page.getByRole('dialog').getByLabel(/workspace name/i).fill('Second Workspace');
+    await page.getByRole('dialog').getByRole('button', { name: /select existing folder/i }).click();
+    await page.getByRole('dialog', { name: /choose workspace directory/i }).getByRole('button', { name: /use this directory/i }).click();
+    const secondWorkspace = originalProject.locator('.agency-workspace-nav-row', { hasText: 'Second Workspace' });
+    await secondWorkspace.waitFor();
+    await originalWorkspace.locator('.agency-workspace-nav-button').click();
+
+    await page.getByRole('button', { name: 'New project', exact: true }).click();
+    await page.getByRole('dialog').getByRole('textbox').fill('Second Project');
+    await page.getByRole('dialog').getByRole('button', { name: 'Create project', exact: true }).click();
+    const secondProject = page.locator('.agency-project-row', { hasText: 'Second Project' });
+    const sidebarGhost = page.locator('.agency-sidebar-drag-ghost');
+    const dragSidebarRow = async (source, target, cancel = false) => {
+      const from = await source.boundingBox();
+      const to = await target.boundingBox();
+      assert.ok(from && to);
+      const x = from.x + 40;
+      await page.mouse.move(x, from.y + from.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(x, to.y + 2, { steps: 12 });
+      await sidebarGhost.waitFor();
+      const sidebar = await page.locator('.agency-sidebar').boundingBox();
+      const preview = await sidebarGhost.boundingBox();
+      assert.ok(sidebar && preview && preview.x >= sidebar.x && preview.x + preview.width <= sidebar.x + sidebar.width);
+      if (cancel) {
+        await screenshot('electron-sidebar-drag.png');
+        await page.keyboard.press('Escape');
+      }
+      await page.mouse.up();
+      await sidebarGhost.waitFor({ state: 'detached' });
+    };
+    const dataFile = path.join(env.XDG_CONFIG_HOME, 'agent-workbench', 'agency-state.json');
+    const savedAgency = async () => JSON.parse(await readFile(dataFile, 'utf8'));
+    const scroller = page.locator('.agency-side-section');
+    await scroller.evaluate(element => { element.style.maxHeight = '145px'; });
+    const scrollerBounds = await scroller.boundingBox();
+    const dragSourceBounds = await originalProject.locator('.agency-project-row').boundingBox();
+    assert.ok(scrollerBounds && dragSourceBounds);
+    const edgeX = dragSourceBounds.x + 40;
+    await page.mouse.move(edgeX, dragSourceBounds.y + dragSourceBounds.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(edgeX, scrollerBounds.y + scrollerBounds.height - 4, { steps: 8 });
+    await sidebarGhost.waitFor();
+    await page.waitForFunction(() => document.querySelector('.agency-side-section').scrollTop > 0);
+    await page.keyboard.press('Escape');
+    await page.mouse.up();
+    await sidebarGhost.waitFor({ state: 'detached' });
+    await scroller.evaluate(element => { element.style.removeProperty('max-height'); element.scrollTop = 0; });
+    await dragSidebarRow(secondProject, originalProject.locator('.agency-project-row'), true);
+    assert.equal((await savedAgency()).projects[0].name, 'Staging Browser Project');
+    await dragSidebarRow(secondProject, originalProject.locator('.agency-project-row'));
+    await eventually(async () => (await savedAgency()).projects[0].name === 'Second Project', 'persisted project order');
+    await dragSidebarRow(secondWorkspace, originalWorkspace);
+    await eventually(async () => (await savedAgency()).workspaces[0].name === 'Second Workspace', 'persisted workspace order');
+    assert.equal(await originalWorkspace.locator('.agency-workspace-nav-button').getAttribute('aria-current'), 'page');
+    await secondWorkspace.getByRole('button', { name: 'Workspace actions', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Delete workspace', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Delete workspace', exact: true }).click();
+    await secondWorkspace.waitFor({ state: 'detached' });
+
+    await originalWorkspace.getByRole('button', { name: 'Workspace actions', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Delete workspace', exact: true }).click();
     const workspaceDeletion = page.getByRole('dialog');
     const sidebarBounds = await page.locator('.agency-sidebar').boundingBox();
@@ -291,7 +391,7 @@ test('staging release creates and restores a general Browser tab through the rea
     await workspaceDeletion.getByRole('button', { name: 'Cancel', exact: true }).click();
     assert.equal(await page.locator('.agency-workspace-nav-button').filter({ hasText: 'Staging Browser Workspace' }).count(), 1);
 
-    await page.getByRole('button', { name: 'Project actions', exact: true }).click();
+    await originalProject.getByRole('button', { name: 'Project actions', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Delete project', exact: true }).click();
     const projectDeletion = page.getByRole('dialog');
     assert.match(await projectDeletion.innerText(), /all associated workspaces/);
@@ -300,6 +400,7 @@ test('staging release creates and restores a general Browser tab through the rea
     await projectDeletion.waitFor({ state: 'detached' });
     await eventually(async () => (await savedTabs()).find(tab => tab.id === created.id)?.closedAt, 'durable browser closure after project removal');
     assert.equal(await page.locator('.agency-workspace-nav-button').count(), 0);
+    assert.deepEqual((await savedAgency()).projects.map(project => project.name), ['Second Project']);
     assert.equal(await readFile(sourceMarker, 'utf8'), 'source directory survives workspace and project removal');
     await eventually(async () => !(await browserState()), 'Electron destroys the workspace browser view');
     assert.deepEqual(pageErrors, []);

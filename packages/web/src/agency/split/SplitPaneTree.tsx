@@ -366,7 +366,7 @@ function PaneLeaf(props: Props & {
                 </button>
                 <button
                   type="button"
-                  className="agency-primary-button agency-text-danger"
+                  className="agency-primary-button"
                   onClick={() => {
                     setConfirmingClosePane(false);
                     void onClosePane(node.id, true);

@@ -86,7 +86,7 @@ export function DeleteProjectDialog({
           </button>
           <button
             type="button"
-            className="agency-primary-button agency-text-danger"
+            className="agency-primary-button"
             disabled={busy}
             onClick={() => void handleDelete()}
           >
