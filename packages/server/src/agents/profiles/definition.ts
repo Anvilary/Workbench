@@ -1,4 +1,7 @@
-import type { CliProfileId, CliProvider } from '@agent-workbench/shared';
+import {
+  CLI_PROVIDERS, PROFILE_ENV_RULES,
+  type CliProfileId, type CliProvider,
+} from '@agent-workbench/shared';
 import { resolveConfiguredExecutable } from './executable.js';
 
 export interface ProfileDefinition {
@@ -14,6 +17,8 @@ export interface ProfileDefinition {
 
 export type ProfileChanges = Partial<Pick<ProfileDefinition,
   'label' | 'executable' | 'args' | 'environmentOverrides' | 'disabled'>>;
+
+export const SUPPORTED_PROVIDERS: readonly CliProvider[] = CLI_PROVIDERS;
 
 const templates: readonly [string, CliProvider, string][] = [
   ['codex-0', 'codex', 'Codex 00'],
@@ -42,15 +47,7 @@ export function defaultDefinitions(): ProfileDefinition[] {
   }));
 }
 
-const ENV_RULES: Readonly<Record<string, RegExp>> = {
-  LANG: /^[A-Za-z0-9_.@-]{1,80}$/,
-  LC_ALL: /^[A-Za-z0-9_.@-]{1,80}$/,
-  LC_CTYPE: /^[A-Za-z0-9_.@-]{1,80}$/,
-  TERM: /^[A-Za-z0-9_.+-]{1,80}$/,
-  COLORTERM: /^(truecolor|24bit)$/,
-  NO_COLOR: /^(|1)$/,
-  FORCE_COLOR: /^[0-3]$/,
-};
+const ENV_RULES = PROFILE_ENV_RULES;
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -88,12 +85,28 @@ function validateArgs(value: unknown): string[] {
 }
 
 export function validateDefinition(id: string, input: unknown): ProfileDefinition {
-  const template = defaultDefinitions().find((item) => item.id === id);
-  if (template === undefined) throw new Error('Unknown CLI profile: ' + id);
+  if (typeof id !== 'string' || id.trim().length < 1 || id.length > 64 || /[\u0000-\u001f\u007f]/.test(id)) {
+    throw new Error('Invalid profile ID: ' + id);
+  }
   if (!record(input)) throw new Error('Invalid profile record.');
-  if (input['id'] !== id || input['provider'] !== template.provider) {
+  if (input['id'] !== id) {
     throw new Error('Profile identity and provider cannot change.');
   }
+  const template = defaultDefinitions().find((item) => item.id === id);
+  let provider: CliProvider;
+  if (template !== undefined) {
+    if (input['provider'] !== template.provider) {
+      throw new Error('Profile identity and provider cannot change.');
+    }
+    provider = template.provider;
+  } else {
+    const rawProvider = input['provider'];
+    if (typeof rawProvider !== 'string' || !SUPPORTED_PROVIDERS.includes(rawProvider as CliProvider)) {
+      throw new Error('Invalid profile provider: ' + String(rawProvider));
+    }
+    provider = rawProvider as CliProvider;
+  }
+
   const label = input['label'];
   const executable = input['executable'];
   const disabled = input['disabled'];
@@ -105,14 +118,56 @@ export function validateDefinition(id: string, input: unknown): ProfileDefinitio
   // shell commands; validation/resolution happens before launch.
   if (typeof disabled !== 'boolean') throw new Error('Invalid profile disabled flag.');
   return {
-    id: template.id,
-    provider: template.provider,
+    id: id as CliProfileId,
+    provider,
     label: label.trim(),
     executable,
     args: validateArgs(input['args']),
     environmentOverrides: validateEnv(input['environmentOverrides']),
     disabled,
   };
+}
+
+export interface CreateProfileParams {
+  readonly id?: string;
+  readonly provider: CliProvider;
+  readonly label?: string;
+  readonly executable?: string;
+  readonly args?: readonly string[];
+  readonly environmentOverrides?: Readonly<Record<string, string>>;
+  readonly disabled?: boolean;
+}
+
+export function createProfileDefinition(params: CreateProfileParams, existingIds: readonly string[] = []): ProfileDefinition {
+  if (!SUPPORTED_PROVIDERS.includes(params.provider)) {
+    throw new Error('Invalid profile provider: ' + String(params.provider));
+  }
+  let id = params.id?.trim();
+  if (!id) {
+    let counter = 0;
+    const prefix = params.provider === 'claude-code' ? 'claude' : params.provider;
+    do {
+      id = `${prefix}${counter < 10 ? '0' + counter : counter}`;
+      counter++;
+    } while (existingIds.includes(id));
+  }
+  const defaultLabels: Record<CliProvider, string> = {
+    codex: 'Codex',
+    antigravity: 'AGY',
+    'claude-code': 'Claude Code',
+    opencode: 'OpenCode',
+    pi: 'Pi',
+  };
+  const label = params.label?.trim() || `${defaultLabels[params.provider]} (${id})`;
+  return validateDefinition(id, {
+    id,
+    provider: params.provider,
+    label,
+    executable: params.executable ?? '',
+    args: params.args ?? [],
+    environmentOverrides: params.environmentOverrides ?? {},
+    disabled: params.disabled ?? false,
+  });
 }
 
 export function applyProfileChanges(current: ProfileDefinition, changes: ProfileChanges): ProfileDefinition {

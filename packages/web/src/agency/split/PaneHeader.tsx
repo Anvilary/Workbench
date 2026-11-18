@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AgencyCliProfile, MawActivityState, WorkspaceId, BrowserFavorite, SearchEngine } from '@agent-workbench/shared';
-import { DEFAULT_BROWSER_FAVORITES, getSearchEngine } from '@agent-workbench/shared';
 import { t } from '../../i18n/index.js';
 import { agencySessionText, agencyTabActivityText } from '../agency-labels.js';
 import type { WorkspaceTab } from '../model.js';
@@ -10,7 +9,6 @@ import { setTabDragPreview, useTabDragPreview } from './tab-drag-store.js';
 import { insertionIndex, tabShift } from './tab-geometry.mjs';
 import { TabNameInput } from '../TabNameInput.js';
 import type { useAgencyStore } from '../useAgencyStore.js';
-import { BrowserDestinationPicker } from './BrowserDestinationPicker.js';
 import { GlobeIcon } from '../GlobeIcon.js';
 
 interface Props {
@@ -102,10 +100,6 @@ export function PaneHeader({
   showSinglePane,
   browserToolbarOpen,
   onToggleBrowserToolbar,
-  browserFavorites,
-  searchEngine,
-  onSelectBrowserFavorite,
-  onSelectBrowserOther,
   favicons,
 }: Props): JSX.Element {
   const selectedTab = tabs.find((tab) => tab.id === selectedTabId);
@@ -126,8 +120,6 @@ export function PaneHeader({
       }
     });
   }, [selectedTabId, isWebTab]);
-
-  const [menuView, setMenuView] = useState<'main' | 'browser'>('main');
 
   useEffect(() => {
     return () => {
@@ -722,7 +714,6 @@ export function PaneHeader({
             aria-expanded={menuOpen}
             disabled={!online || busy}
             onClick={() => {
-              setMenuView('main');
               setMenuOpen(!menuOpen);
             }}
           >
@@ -732,67 +723,39 @@ export function PaneHeader({
             <PaneMenu
               anchor={addButton}
               label={t('agency.tabs.add')}
-              onClose={() => {
-                setMenuOpen(false);
-                setMenuView('main');
-              }}
+              onClose={() => setMenuOpen(false)}
             >
-              {menuView === 'main' ? (
-                <>
-                  <button type="button" role="menuitem" onClick={() => choose('terminal')}>
-                    {t('agency.tabs.newTerminal')}
-                  </button>
-                  <button type="button" role="menuitem" onClick={() => choose('agent')}>
-                    {t('agency.tabs.codingAgent') || 'Coding Agent'}
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="agency-dropdown-item-browser"
-                    onClick={() => setMenuView('browser')}
-                  >
-                    {t('agency.web.newTab')}
-                  </button>
-                  <button type="button" role="menuitem" onClick={() => choose('file')}>
-                    {t('agency.tabs.openFile')}
-                  </button>
-                  {selectedTabId && (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        setRenamingTabId(selectedTabId);
-                      }}
-                    >
-                      {t('agency.web.rename')}
-                    </button>
-                  )}
-                </>
-              ) : (
-                <BrowserDestinationPicker
-                  favorites={browserFavorites ?? DEFAULT_BROWSER_FAVORITES}
-                  searchEngine={searchEngine ?? getSearchEngine()}
-                  onBack={() => setMenuView('main')}
-                  onSelectFavorite={(fav) => {
+              <button type="button" role="menuitem" onClick={() => choose('terminal')}>
+                {t('agency.tabs.newTerminal')}
+              </button>
+              <button type="button" role="menuitem" onClick={() => choose('agent')}>
+                {t('agency.tabs.codingAgent') || 'Coding Agent'}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="agency-dropdown-item-browser"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onAddWebTabClick();
+                }}
+              >
+                {t('agency.web.newTab')}
+              </button>
+              <button type="button" role="menuitem" onClick={() => choose('file')}>
+                {t('agency.tabs.openFile')}
+              </button>
+              {selectedTabId && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
                     setMenuOpen(false);
-                    setMenuView('main');
-                    if (onSelectBrowserFavorite) {
-                      onSelectBrowserFavorite(fav);
-                    } else {
-                      onAddWebTabClick();
-                    }
+                    setRenamingTabId(selectedTabId);
                   }}
-                  onSelectOther={() => {
-                    setMenuOpen(false);
-                    setMenuView('main');
-                    if (onSelectBrowserOther) {
-                      onSelectBrowserOther();
-                    } else {
-                      onAddWebTabClick();
-                    }
-                  }}
-                />
+                >
+                  {t('agency.web.rename')}
+                </button>
               )}
             </PaneMenu>
           )}

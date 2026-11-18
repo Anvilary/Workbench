@@ -7,8 +7,9 @@ import { copyFile, mkdir, readFile, rename, rm, writeFile, chmod } from 'node:fs
 import path from 'node:path';
 import type { CliProfileId } from '@agent-workbench/shared';
 import {
-  applyProfileChanges, defaultDefinitions, identicalLaunchMessage, identicalLaunchPeer, validateDefinition,
-  type ProfileChanges, type ProfileDefinition,
+  applyProfileChanges, createProfileDefinition, defaultDefinitions,
+  identicalLaunchMessage, identicalLaunchPeer, validateDefinition,
+  type CreateProfileParams, type ProfileChanges, type ProfileDefinition,
 } from '../agents/profiles/definition.js';
 
 const SCHEMA_VERSION = 1;
@@ -67,8 +68,26 @@ export class AgencyProfileStore {
         throw new InvalidProfileStoreError('Invalid profile definition.', { cause: error });
       }
     }
-    // Safe additive migration for profiles added to the fixed registry later.
-    return defaults.map((item) => defined.find((saved) => saved.id === item.id) ?? item);
+    const deleted = Array.isArray(data['deletedProfileIds'])
+      ? new Set<string>(data['deletedProfileIds'].filter((x): x is string => typeof x === 'string'))
+      : new Set<string>();
+    this.deletedProfileIds = deleted;
+
+    const result: ProfileDefinition[] = [];
+    for (const item of defaults) {
+      const saved = defined.find((d) => d.id === item.id);
+      if (saved) {
+        result.push(saved);
+      } else if (!deleted.has(item.id)) {
+        result.push(item);
+      }
+    }
+    for (const custom of defined) {
+      if (!defaults.some((item) => item.id === custom.id)) {
+        result.push(custom);
+      }
+    }
+    return result;
   }
 
   private async readFileOrNull(filename: string): Promise<ProfileDefinition[] | null> {
@@ -100,7 +119,7 @@ export class AgencyProfileStore {
         throw new Error('Agency profile store is invalid and no valid backup exists.', { cause: error });
       }
       await rename(this.filename, this.filename + '.corrupt-' + Date.now());
-      await this.write(backup, false);
+      await this.write(backup, false, Array.from(this.deletedProfileIds));
       return backup;
     }
 
@@ -109,16 +128,25 @@ export class AgencyProfileStore {
     // An invalid or unsupported backup fails closed instead of using defaults.
     const backup = await this.readFileOrNull(this.filename + '.bak');
     if (backup === null) return defaultDefinitions();
-    await this.write(backup, false);
+    await this.write(backup, false, Array.from(this.deletedProfileIds));
     return backup;
   }
 
-  private async write(definitions: readonly ProfileDefinition[], backup: boolean): Promise<void> {
+  private deletedProfileIds = new Set<string>();
+
+  private async write(definitions: readonly ProfileDefinition[], backup: boolean, deletedProfileIds: readonly string[] = []): Promise<void> {
     const dir = path.dirname(this.filename);
     await mkdir(dir, { recursive: true, mode: 0o700 });
     const temp = this.filename + '.tmp-' + process.pid + '-' + Math.random().toString(16).slice(2);
     try {
-      await writeFile(temp, JSON.stringify({ schemaVersion: SCHEMA_VERSION, profiles: definitions }, null, 2) + '\n', {
+      const payload: Record<string, unknown> = {
+        schemaVersion: SCHEMA_VERSION,
+        profiles: definitions,
+      };
+      if (deletedProfileIds.length > 0) {
+        payload['deletedProfileIds'] = deletedProfileIds;
+      }
+      await writeFile(temp, JSON.stringify(payload, null, 2) + '\n', {
         encoding: 'utf8', mode: 0o600, flag: 'wx',
       });
       await chmod(temp, 0o600);
@@ -161,8 +189,39 @@ export class AgencyProfileStore {
       next[index] = changed;
       const peer = await identicalLaunchPeer(changed, next, process.env);
       if (peer !== null) throw new Error(identicalLaunchMessage(peer));
-      await this.write(next, true);
+      await this.write(next, true, Array.from(this.deletedProfileIds));
       return changed;
+    });
+  }
+
+  createProfile(params: CreateProfileParams): Promise<ProfileDefinition> {
+    return this.serialize(async () => {
+      const all = await this.read();
+      const existingIds = all.map((p) => p.id as string);
+      const newDef = createProfileDefinition(params, existingIds);
+      if (existingIds.includes(newDef.id)) {
+        throw new Error('Profile ID already exists: ' + newDef.id);
+      }
+      const next = [...all, newDef];
+      const peer = await identicalLaunchPeer(newDef, next, process.env);
+      if (peer !== null) throw new Error(identicalLaunchMessage(peer));
+      this.deletedProfileIds.delete(newDef.id);
+      await this.write(next, true, Array.from(this.deletedProfileIds));
+      return newDef;
+    });
+  }
+
+  deleteProfile(id: CliProfileId): Promise<void> {
+    return this.serialize(async () => {
+      const all = await this.read();
+      const target = all.find((item) => item.id === id);
+      if (!target) throw new Error('Unknown Agency CLI profile.');
+      const next = all.filter((item) => item.id !== id);
+      const defaults = defaultDefinitions();
+      if (defaults.some((d) => d.id === id)) {
+        this.deletedProfileIds.add(id);
+      }
+      await this.write(next, true, Array.from(this.deletedProfileIds));
     });
   }
 }

@@ -3,3 +3,5 @@
  * del `package.json` de la raíz, para el cartel de §6.28. En Node no existe.
  */
 declare const __APP_VERSION__: string | undefined;
+declare const __APP_GIT_SHA__: string | undefined;
+declare const __APP_IS_DEV__: boolean | undefined;

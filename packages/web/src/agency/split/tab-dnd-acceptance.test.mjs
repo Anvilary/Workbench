@@ -12,6 +12,8 @@ const create = async (page, n, kind) => {
   if (kind === 'agent') await page.getByRole('dialog').getByRole('button', { name: /^(Create|Launch|Start)/ }).click();
   if (kind === 'web') {
     await page.getByRole('menuitem', { name: 'GitHub' }).click();
+    const openBtn = page.getByRole('button', { name: 'Open' });
+    if (await openBtn.count()) await openBtn.click();
     await pane(page, n).getByRole('tab', { name: /GitHub/ }).waitFor();
   }
   if (kind === 'file') {

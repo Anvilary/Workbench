@@ -116,6 +116,7 @@ export function defaultAppSettings(): AppSettings {
     browser: {
       defaultSearchEngine: DEFAULT_BROWSER_SETTINGS.defaultSearchEngine,
       favorites: DEFAULT_BROWSER_SETTINGS.favorites.map((f) => ({ ...f })),
+      ...(DEFAULT_BROWSER_SETTINGS.searchEngines ? { searchEngines: DEFAULT_BROWSER_SETTINGS.searchEngines.map((e) => ({ ...e })) } : {}),
     },
   };
 }
@@ -199,6 +200,9 @@ function frozen(settings: AppSettings): AppSettings {
     browser: Object.freeze({
       ...settings.browser,
       favorites: Object.freeze(settings.browser.favorites.map((f) => Object.freeze({ ...f }))) as BrowserFavorite[],
+      ...(settings.browser.searchEngines
+        ? { searchEngines: Object.freeze(settings.browser.searchEngines.map((e) => Object.freeze({ ...e }))) as any }
+        : {}),
     }),
   });
 }
@@ -300,6 +304,9 @@ export class SettingsStore {
         browser: {
           defaultSearchEngine: this.current.browser.defaultSearchEngine,
           favorites: this.current.browser.favorites.map((f) => ({ ...f })),
+          ...(this.current.browser.searchEngines
+            ? { searchEngines: this.current.browser.searchEngines.map((e) => ({ ...e })) }
+            : {}),
         },
       };
       const vault = patch.vault ?? {};
@@ -320,6 +327,9 @@ export class SettingsStore {
       }
       if (patch.browser?.favorites !== undefined) {
         next.browser.favorites = patch.browser.favorites.map((f) => ({ ...f }));
+      }
+      if (patch.browser?.searchEngines !== undefined) {
+        next.browser.searchEngines = patch.browser.searchEngines.map((e) => ({ ...e }));
       }
       const remote = patch.remote ?? {};
       if (remote.enabled !== undefined) next.remote.enabled = remote.enabled;

@@ -839,6 +839,19 @@ async function start() {
     if (command.type === 'get-favicons') {
       return { ok: true, favicons: Object.fromEntries(tabFavicons) };
     }
+    if (command.type === 'browse-executable') {
+      const result = await dialog.showOpenDialog(win, {
+        title: (typeof command.title === 'string' && command.title) ? command.title : 'Select CLI Executable',
+        properties: ['openFile'],
+        filters: process.platform === 'win32'
+          ? [{ name: 'Executables', extensions: ['exe', 'cmd', 'bat', 'ps1', '*'] }]
+          : undefined,
+      });
+      if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+        return { ok: true, path: null };
+      }
+      return { ok: true, path: result.filePaths[0] };
+    }
     if (command.type === 'get-backend-endpoint') {
       try {
         const found = await discoverBackendReadiness();
@@ -1047,6 +1060,21 @@ async function start() {
         }
       }
     }
+  });
+
+  ipcMain.handle('maw:browse-executable', async (event, options) => {
+    if (!trustedSender(event, win.webContents, local.origin)) throw new Error('Invalid desktop request');
+    const result = await dialog.showOpenDialog(win, {
+      title: (typeof options?.title === 'string' && options.title) ? options.title : 'Select CLI Executable',
+      properties: ['openFile'],
+      filters: process.platform === 'win32'
+        ? [{ name: 'Executables', extensions: ['exe', 'cmd', 'bat', 'ps1', '*'] }]
+        : undefined,
+    });
+    if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+      return null;
+    }
+    return result.filePaths[0];
   });
 
   if (isWebAuthnEnabled) {

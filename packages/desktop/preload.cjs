@@ -7,4 +7,5 @@ contextBridge.exposeInMainWorld('mawChatGpt', Object.freeze({
     ipcRenderer.on('maw:chatgpt:state', listener);
     return () => ipcRenderer.removeListener('maw:chatgpt:state', listener);
   },
+  browseExecutable: options => ipcRenderer.invoke('maw:browse-executable', options),
 }));

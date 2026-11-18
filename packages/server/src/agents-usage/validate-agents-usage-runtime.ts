@@ -255,14 +255,22 @@ async function run() {
     await menuBtn.waitFor({ state: 'visible', timeout: 5000 });
     await menuBtn.click();
 
-    // Click "Agents Usage" menu item
-    const usageMenuItem = page.locator('.agency-dropdown-item:has-text("Agents Usage")');
-    await usageMenuItem.waitFor({ state: 'visible', timeout: 3000 });
-    await usageMenuItem.click();
+    // Click "Settings" menu item
+    console.log('Navigating to Settings > Agents Usage...');
+    const settingsMenuItem = page.locator('.agency-dropdown-item').filter({ hasText: 'Settings' });
+    await settingsMenuItem.waitFor({ state: 'visible', timeout: 3000 });
+    await settingsMenuItem.click();
 
     // Verify modal dialog opened
     const agencyModal = page.locator('.modal.settings-dialog');
     await agencyModal.waitFor({ state: 'visible', timeout: 5000 });
+
+    // Navigate to Agents Usage tab
+    const agencyTabBar = agencyModal.locator('.settings-tab-bar');
+    await agencyTabBar.waitFor({ state: 'visible', timeout: 2000 });
+    const agencyUsageTabBtn = agencyTabBar.locator('.settings-tab-btn:has-text("Agents Usage")');
+    await agencyUsageTabBtn.click();
+    await agencyModal.locator('.agents-usage-view').waitFor({ state: 'visible', timeout: 5000 });
     const agencyScreenshotPath = path.join(ARTIFACT_DIR, 'agents-usage-agency.png');
     console.log(`Capturing Agency screenshot to ${agencyScreenshotPath}...`);
     await agencyModal.screenshot({ path: agencyScreenshotPath });

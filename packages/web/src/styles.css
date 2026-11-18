@@ -7879,3 +7879,1053 @@ kbd {
   font-size: 11px;
 }
 
+/* ---------- MaW Polish Pass: Settings Dialog ---------- */
+.maw-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-faint, rgba(255, 255, 255, 0.08));
+  padding: 14px 20px;
+  background: var(--bg-2, #18181b);
+  flex-shrink: 0;
+}
+
+.maw-settings-header-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.maw-settings-header-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--ink-2, #a1a1aa);
+  flex-shrink: 0;
+}
+
+.maw-settings-header-icon svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+.maw-settings-title {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  color: var(--ink, #f4f4f5);
+  font-family: var(--font-display, 'Lexend', sans-serif);
+  margin: 0;
+}
+
+.maw-settings-nav {
+  width: 210px;
+  flex-shrink: 0;
+  background: rgba(18, 18, 21, 0.75);
+  border-right: 1px solid var(--border-faint, rgba(255, 255, 255, 0.08));
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+
+.maw-settings-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
+.maw-settings-search-icon {
+  position: absolute;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-3, #71717a);
+  pointer-events: none;
+  width: 14px;
+  height: 14px;
+}
+
+.maw-settings-search-input {
+  width: 100%;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-faint, rgba(255, 255, 255, 0.08));
+  border-radius: 6px;
+  padding: 0 26px 0 30px;
+  font-size: 12px;
+  color: var(--ink, #f4f4f5);
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.maw-settings-search-input:focus {
+  border-color: rgba(249, 115, 22, 0.5);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.maw-settings-search-clear {
+  position: absolute;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: var(--ink-3, #71717a);
+  cursor: pointer;
+  font-size: 15px;
+  padding: 2px 4px;
+  line-height: 1;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.maw-settings-search-clear:hover {
+  color: var(--ink, #f4f4f5);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.maw-settings-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.maw-settings-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.maw-settings-search-count {
+  font-size: 11px;
+  color: var(--ink-3, #71717a);
+  padding: 2px 8px 6px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border-faint, rgba(255, 255, 255, 0.08));
+  margin-bottom: 2px;
+}
+
+.maw-settings-search-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-2, #a1a1aa);
+  text-align: left;
+  cursor: pointer;
+  transition: all 120ms ease;
+  box-sizing: border-box;
+}
+
+.maw-settings-search-item:hover,
+.maw-settings-search-item.active {
+  background: var(--agency-hover, rgba(255, 255, 255, 0.06));
+  color: var(--ink, #f4f4f5);
+}
+
+.maw-settings-search-item.active {
+  border-color: rgba(249, 115, 22, 0.28);
+  background: rgba(249, 115, 22, 0.08);
+}
+
+.maw-settings-search-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.maw-settings-search-item-title {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink, #f4f4f5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.maw-settings-search-item-category {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink-3, #71717a);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.maw-settings-search-item-desc {
+  font-size: 11px;
+  color: var(--ink-3, #71717a);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.maw-settings-search-empty {
+  padding: 24px 12px;
+  text-align: center;
+}
+
+.maw-settings-search-empty-text {
+  font-size: 12px;
+  color: var(--ink-3, #71717a);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.maw-settings-sidebar-footer {
+  margin-top: auto;
+  padding: 12px 8px 4px;
+  border-top: 1px solid var(--border-faint, rgba(255, 255, 255, 0.08));
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-shrink: 0;
+}
+
+.maw-settings-version {
+  font-size: 11px;
+  color: var(--ink-3, #71717a);
+  font-family: var(--font-mono, monospace);
+  letter-spacing: -0.01em;
+  user-select: text;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.maw-settings-card.maw-settings-card-highlighted {
+  border-color: rgba(249, 115, 22, 0.5);
+  box-shadow: 0 0 16px rgba(249, 115, 22, 0.15);
+  transition: border-color 300ms ease, box-shadow 300ms ease;
+}
+
+.maw-settings-nav-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.maw-settings-nav-icon svg {
+  display: block;
+  width: 15px;
+  height: 15px;
+}
+
+/* ---------- MAW Main Shell Menu ---------- */
+.maw-shell-menu {
+  min-width: 160px;
+  right: 0;
+  top: 100%;
+  margin-top: 6px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.maw-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: var(--radius-sm, 4px);
+  color: var(--agency-text, var(--ink, #ededea));
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.maw-menu-item:hover:not(:disabled),
+.maw-menu-item:focus-visible {
+  background: var(--agency-hover, var(--bg-hover, rgba(255, 255, 255, 0.06)));
+  color: var(--ink, #ededea);
+  outline: none;
+}
+
+.maw-menu-item.selected {
+  color: var(--ember, #d97442);
+  font-weight: 600;
+}
+
+.maw-menu-item-text {
+  flex: 1;
+  text-align: left;
+}
+
+
+
+/* ==========================================================================
+   MAW CUSTOM SEARCH ENGINES & FAVORITES DRAG AND DROP
+   ========================================================================== */
+
+.maw-settings-card-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.maw-settings-engine-action-btn {
+  background: var(--bg-3);
+  border: 1px solid var(--border-subtle, var(--border));
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 9px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.maw-settings-engine-action-btn:hover {
+  background: var(--bg-hover, var(--border));
+  border-color: var(--ember);
+  color: var(--ember);
+}
+
+.maw-settings-engine-form {
+  margin-top: 10px;
+  margin-bottom: 12px;
+}
+
+.maw-settings-form-field-full {
+  flex: 1 1 100%;
+}
+
+.maw-settings-form-hint {
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-top: 3px;
+}
+
+.maw-settings-engines-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.maw-settings-engine-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-faint, var(--border));
+  background: var(--bg-1, var(--bg));
+  transition: background 100ms ease;
+}
+
+.maw-settings-engine-row:hover {
+  background: var(--bg-hover, var(--border));
+}
+
+.maw-settings-engine-choice {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.maw-settings-engine-labels {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.maw-settings-engine-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.maw-settings-engine-badge {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.maw-settings-engine-badge.builtin {
+  background: var(--bg-3);
+  color: var(--ink-3);
+  border: 1px solid var(--border-subtle, var(--border));
+}
+
+.maw-settings-engine-badge.custom {
+  background: color-mix(in srgb, var(--ember) 15%, transparent);
+  color: var(--ember);
+  border: 1px solid color-mix(in srgb, var(--ember) 35%, transparent);
+}
+
+.maw-settings-engine-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Favorites Drag and Drop Styling */
+.maw-fav-grip {
+  width: 20px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--ink-4);
+  cursor: grab;
+  border-radius: 3px;
+  margin-right: 6px;
+  flex-shrink: 0;
+  transition: all 100ms ease;
+}
+
+.maw-fav-grip:hover {
+  color: var(--ink-2);
+  background: var(--bg-hover, var(--border));
+}
+
+.maw-fav-grip:active,
+.maw-fav-grip.is-dragging {
+  cursor: grabbing;
+  color: var(--ember);
+}
+
+.maw-fav-grip:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 1px;
+}
+
+.maw-settings-favorite-row.is-dragging {
+  opacity: 0.35;
+}
+
+.maw-settings-favorite-row.is-drop-target {
+  background: color-mix(in srgb, var(--ember) 12%, var(--bg-1, var(--bg)));
+  outline: 1px dashed var(--ember);
+  border-color: var(--ember);
+}
+
+.maw-fav-drag-overlay {
+  background: var(--panel);
+  border: 1px solid var(--ember);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+/* Coding Agent Profiles Manager */
+.maw-profiles-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.maw-profiles-header-info {
+  flex: 1;
+}
+
+.maw-add-profile-btn {
+  font-size: 13px;
+  padding: 6px 14px;
+  white-space: nowrap;
+}
+
+.maw-profiles-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.maw-provider-group {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-1, var(--panel));
+}
+
+.maw-provider-group-toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--bg-2, var(--surface));
+  border: none;
+  cursor: pointer;
+  color: var(--ink-1);
+  text-align: left;
+  transition: background 150ms ease;
+}
+
+.maw-provider-group-toggle:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.04));
+}
+
+.maw-provider-title-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.maw-provider-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.maw-provider-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.maw-profiles-count {
+  font-size: 12px;
+  color: var(--ink-4);
+  font-weight: normal;
+}
+
+.maw-provider-chevron {
+  font-size: 14px;
+  color: var(--ink-3);
+  transition: transform 200ms ease;
+}
+
+.maw-provider-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.maw-provider-chevron.expanded {
+  transform: rotate(0deg);
+}
+
+.maw-provider-profiles-list {
+  padding: 8px 14px;
+  background: var(--bg-1, var(--panel));
+}
+
+.maw-no-profiles {
+  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.maw-inline-add-btn {
+  font-size: 12px;
+  align-self: flex-start;
+  color: var(--ember);
+}
+
+.maw-profiles-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.maw-profile-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 4px;
+  background: var(--bg-2, var(--surface));
+  border: 1px solid var(--border-subtle, var(--border));
+  gap: 12px;
+}
+
+.maw-profile-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.maw-profile-header-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.maw-profile-label {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink-1);
+}
+
+.maw-profile-id {
+  font-size: 12px;
+  font-family: monospace;
+  color: var(--ink-4);
+}
+
+.maw-profile-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.maw-profile-executable code,
+.maw-profile-args code {
+  font-family: monospace;
+  background: var(--bg-3, rgba(0, 0, 0, 0.2));
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--ink-2);
+}
+
+.maw-profile-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.maw-profile-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.maw-profile-form-dialog,
+.maw-profile-remove-dialog {
+  max-width: 540px;
+  width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.maw-form-group {
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.maw-form-group label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.maw-executable-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.maw-executable-input-row input {
+  flex: 1;
+}
+
+.maw-browse-btn {
+  white-space: nowrap;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.maw-quick-picks {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.maw-pick-chip {
+  font-size: 11px;
+  font-family: monospace;
+  padding: 2px 6px;
+  background: var(--bg-3, rgba(255, 255, 255, 0.05));
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.maw-help-text {
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.maw-env-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.maw-env-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.maw-env-row select {
+  width: 140px;
+  flex-shrink: 0;
+}
+
+.maw-env-row input {
+  flex: 1;
+}
+
+.maw-env-remove-btn {
+  padding: 4px 8px;
+  line-height: 1;
+  font-size: 14px;
+}
+
+.maw-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.maw-remove-notice-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+/* ==========================================================================
+   MAW BROWSER DESTINATION PICKER & PANE-SCOPED OVERLAY
+   ========================================================================== */
+
+.maw-pane-browser-picker-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(14, 14, 16, 0.78);
+  backdrop-filter: blur(4px);
+  padding: 16px;
+  overflow: auto;
+  box-sizing: border-box;
+}
+
+.maw-pane-browser-picker-card {
+  width: 100%;
+  max-width: 360px;
+  min-width: 200px;
+  background: var(--bg-2, #141417);
+  border: 1px solid var(--border-subtle, #25252b);
+  border-radius: var(--radius, 10px);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.maw-browser-dest-picker {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.maw-browser-dest-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px 10px 6px;
+  border-bottom: 1px solid var(--border-faint, #1d1d22);
+  margin-bottom: 8px;
+}
+
+.maw-browser-dest-header-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink, #ededea);
+  letter-spacing: -0.01em;
+}
+
+.maw-browser-dest-close {
+  background: transparent;
+  border: none;
+  color: var(--ink-3, #8a877f);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 6px);
+  line-height: 1;
+  transition: all 120ms ease;
+}
+
+.maw-browser-dest-close:hover {
+  background: var(--bg-3, #1a1a1e);
+  color: var(--ink, #ededea);
+}
+
+.maw-browser-dest-back {
+  background: transparent;
+  border: none;
+  color: var(--ember, #d97442);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm, 6px);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 120ms ease;
+}
+
+.maw-browser-dest-back:hover {
+  background: var(--agency-hover, #1a1a1e);
+}
+
+.maw-browser-dest-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  color: var(--ink, #ededea);
+  transition: background 100ms ease;
+  box-sizing: border-box;
+}
+
+.maw-browser-dest-item:hover,
+.maw-browser-dest-item:focus-visible {
+  background: var(--agency-hover, #1a1a1e);
+  outline: none;
+}
+
+.maw-browser-dest-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--ink-dim, #b8b6b0);
+}
+
+.maw-browser-dest-favicon {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  object-fit: contain;
+}
+
+.maw-browser-dest-icon {
+  flex-shrink: 0;
+}
+
+.maw-browser-dest-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink, #ededea);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.maw-browser-dest-url {
+  font-size: 11px;
+  color: var(--ink-dim, #8a877f);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.maw-browser-dest-engine {
+  font-size: 11px;
+  color: var(--ink-3, #8a877f);
+  padding: 1px 6px;
+  background: var(--bg-3, #1a1a1e);
+  border-radius: 4px;
+  border: 1px solid var(--border-faint, #1d1d22);
+}
+
+.maw-browser-dest-divider {
+  height: 1px;
+  background: var(--border-subtle, #25252b);
+  margin: 6px 4px;
+}
+
+.maw-browser-dest-empty {
+  padding: 12px 10px;
+  font-size: 12px;
+  color: var(--ink-3, #8a877f);
+  font-style: italic;
+  text-align: center;
+}
+
+.maw-browser-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px 12px 6px;
+}
+
+.maw-browser-preview-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink, #ededea);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.maw-browser-preview-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--bg-1, #0e0e10);
+  border: 1px solid var(--border-faint, #1d1d22);
+  border-radius: var(--radius-sm, 6px);
+  margin-bottom: 12px;
+}
+
+.maw-browser-preview-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-3, #8a877f);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.maw-browser-preview-configured-url {
+  font-size: 12px;
+  color: var(--ink-2, #b8b6b0);
+  font-family: var(--font-mono, monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.maw-browser-preview-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.maw-browser-dest-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--ink, #ededea);
+  background: var(--bg-1, #0e0e10);
+  border: 1px solid var(--border, #25252b);
+  border-radius: var(--radius-sm, 6px);
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.maw-browser-dest-input:focus {
+  border-color: var(--ember, #d97442);
+}
+
+.maw-browser-preview-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-3, #8a877f);
+  line-height: 1.4;
+}
+
+.maw-browser-dest-error {
+  font-size: 11px;
+  color: #ef4444;
+  margin-top: 4px;
+}
+
+.maw-browser-preview-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.maw-browser-dest-btn-secondary {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2, #b8b6b0);
+  background: var(--bg-3, #1a1a1e);
+  border: 1px solid var(--border, #25252b);
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.maw-browser-dest-btn-secondary:hover {
+  background: var(--border, #25252b);
+  color: var(--ink, #ededea);
+}
+
+.maw-browser-dest-btn-primary {
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--ember, #d97442);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.maw-browser-dest-btn-primary:hover {
+  opacity: 0.9;
+}

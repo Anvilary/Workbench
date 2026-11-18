@@ -968,7 +968,10 @@ export function AgencyWorkspaceView({
           }}
           onAddWebTabClick={(paneId) => {
             creationTarget.current = paneId;
-            handleSelectOther(paneId);
+          }}
+          onCreateBrowserTab={(paneId, dest) => {
+            creationTarget.current = paneId;
+            void createBrowserTab(paneId, dest);
           }}
           browserFavorites={browserSettings.favorites}
           searchEngine={browserSettings.searchEngine}

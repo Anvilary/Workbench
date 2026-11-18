@@ -13,6 +13,8 @@ import type { useAgencyStore } from '../useAgencyStore.js';
 import { PaneHeader } from './PaneHeader.js';
 import { SplitDivider } from './SplitDivider.js';
 import { EmptyPaneChooser } from './EmptyPaneChooser.js';
+import { BrowserDestinationPicker } from './BrowserDestinationPicker.js';
+import { DEFAULT_BROWSER_FAVORITES, getSearchEngine, type WebTabProvider } from '@agent-workbench/shared';
 
 function PaneBody({
   paneId,
@@ -76,9 +78,15 @@ interface Props {
   onSelectBrowserFavorite?: (paneId: string, favorite: BrowserFavorite) => void;
   onSelectBrowserOther?: (paneId: string) => void;
   favicons?: Record<string, string>;
+  onCreateBrowserTab?: (paneId: string, options: { url: string; title?: string; provider?: WebTabProvider }) => void;
 }
 
-function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
+function PaneLeaf(props: Props & {
+  node: LayoutPaneNode;
+  browserPickerOpen?: boolean;
+  onOpenBrowserPicker?: () => void;
+  onCloseBrowserPicker?: () => void;
+}): JSX.Element {
   const operation = useDragOperation();
   const isDragSource = operation.source?.data.workspaceId === props.layout.workspaceId && operation.source?.data.paneId === props.node.id;
   const drop = useDroppable({ collisionDetector: pointerIntersection, id: `pane:${props.layout.workspaceId}:${props.node.id}`, type: 'pane', accept: 'pane', data: { workspaceId: props.layout.workspaceId, paneId: props.node.id }, disabled: !!props.layout.maximizedPaneId || !props.online });
@@ -194,7 +202,7 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
         onClosePane={() => onClosePane(node.id)}
         onAddTerminalClick={() => onAddTerminalClick(node.id)}
         onAddAgentClick={props.onAddAgentClick ? (profileId) => props.onAddAgentClick?.(node.id, profileId) : undefined}
-        onAddWebTabClick={() => onAddWebTabClick(node.id)}
+        onAddWebTabClick={props.onOpenBrowserPicker ? props.onOpenBrowserPicker : () => onAddWebTabClick(node.id)}
         browserFavorites={props.browserFavorites}
         searchEngine={props.searchEngine}
         favicons={props.favicons}
@@ -243,11 +251,44 @@ function PaneLeaf(props: Props & { node: LayoutPaneNode }): JSX.Element {
             canClose={canClose}
             onAddTerminal={() => onAddTerminalClick(node.id)}
             onAddAgent={(profileId) => props.onAddAgentClick?.(node.id, profileId)}
-            onAddBrowser={() => onAddWebTabClick(node.id)}
+            onAddBrowser={props.onOpenBrowserPicker ? props.onOpenBrowserPicker : () => onAddWebTabClick(node.id)}
             onOpenFile={props.onOpenFileClick ? () => props.onOpenFileClick?.(node.id) : () => {}}
             onClosePane={() => onClosePane(node.id)}
             onMoveTabToPane={onMoveTabToPane}
           />
+        )}
+
+        {props.browserPickerOpen && (
+          <div
+            className="maw-pane-browser-picker-overlay maw-browser-picker-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('agency.browser.pickerTitle') || t('agency.web.newTab') || 'New Browser Tab'}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                props.onCloseBrowserPicker?.();
+              }
+            }}
+          >
+            <div className="maw-pane-browser-picker-card" onClick={(e) => e.stopPropagation()}>
+              <BrowserDestinationPicker
+                favorites={props.browserFavorites ?? DEFAULT_BROWSER_FAVORITES}
+                searchEngine={props.searchEngine ?? getSearchEngine()}
+                favicons={props.favicons}
+                onConfirm={(dest) => {
+                  props.onCloseBrowserPicker?.();
+                  if (props.onCreateBrowserTab) {
+                    props.onCreateBrowserTab(node.id, dest);
+                  } else if (props.onSelectBrowserFavorite && dest.url) {
+                    props.onSelectBrowserFavorite(node.id, { id: 'dest', title: dest.title, url: dest.url });
+                  } else {
+                    onAddWebTabClick(node.id);
+                  }
+                }}
+                onCancel={props.onCloseBrowserPicker}
+              />
+            </div>
+          </div>
         )}
       </PaneBody>
 
@@ -359,6 +400,7 @@ function SplitStructure(props: Props & { holders: Map<string, HTMLDivElement> })
 
 /** Stable portal containers keep pane contents mounted when leaves exchange tree positions. */
 export function SplitPaneTree(props: Props): JSX.Element {
+  const [browserPickerPaneId, setBrowserPickerPaneId] = useState<string | null>(null);
   const holders = useRef(new Map<string, HTMLDivElement>());
   const panes = getPaneNodes(props.node);
   for (const pane of panes) {
@@ -375,8 +417,25 @@ export function SplitPaneTree(props: Props): JSX.Element {
       if (!live.has(id)) { holder.remove(); holders.current.delete(id); }
     }
   });
+
+  const handleAddWebTabClick = useCallback((paneId: string) => {
+    setBrowserPickerPaneId(paneId);
+    props.onAddWebTabClick?.(paneId);
+  }, [props.onAddWebTabClick]);
+
   return <>
-    <SplitStructure {...props} holders={holders.current} />
-    {panes.map(pane => createPortal(<PaneLeaf {...props} node={pane} />, holders.current.get(pane.id)!, pane.id))}
+    <SplitStructure {...props} onAddWebTabClick={handleAddWebTabClick} holders={holders.current} />
+    {panes.map(pane => createPortal(
+      <PaneLeaf
+        {...props}
+        onAddWebTabClick={handleAddWebTabClick}
+        node={pane}
+        browserPickerOpen={browserPickerPaneId === pane.id}
+        onOpenBrowserPicker={() => setBrowserPickerPaneId(pane.id)}
+        onCloseBrowserPicker={() => setBrowserPickerPaneId(null)}
+      />,
+      holders.current.get(pane.id)!,
+      pane.id
+    ))}
   </>;
 }
