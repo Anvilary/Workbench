@@ -198,6 +198,51 @@ const mockSnapshot = {
 
 const mockConnection = {
   send: (msg) => {
+    if (msg.type === 'agency.profiles.list') {
+      setTimeout(() => {
+        for (const cb of connectionListeners) {
+          cb({
+            type: 'agency.profiles.snapshot',
+            requestId: msg.requestId,
+            profiles: [
+              {
+                id: 'codex-0',
+                label: 'Codex 00',
+                provider: 'codex',
+                executable: '/usr/bin/codex-0',
+                args: [],
+                environmentOverrides: {},
+                capabilities: { canLaunch: true, canResumeNativeSession: false, canInterrupt: false, canReportActivity: false, canSelectModel: false, canSelectEffort: false, canRequestPermissions: false, models: [], discovery: 'configured' },
+                configurationStatus: 'available',
+                configurationMessage: null,
+              },
+              {
+                id: 'codex-1',
+                label: 'Codex 01',
+                provider: 'codex',
+                executable: '/usr/bin/codex-1',
+                args: ['--profile', 'other'],
+                environmentOverrides: {},
+                capabilities: { canLaunch: true, canResumeNativeSession: false, canInterrupt: false, canReportActivity: false, canSelectModel: false, canSelectEffort: false, canRequestPermissions: false, models: [], discovery: 'configured' },
+                configurationStatus: 'available',
+                configurationMessage: null,
+              },
+              {
+                id: 'claude-code',
+                label: 'Claude Code',
+                provider: 'claude-code',
+                executable: 'claude',
+                args: [],
+                environmentOverrides: {},
+                capabilities: { canLaunch: true, canResumeNativeSession: false, canInterrupt: false, canReportActivity: false, canSelectModel: false, canSelectEffort: false, canRequestPermissions: false, models: [], discovery: 'configured' },
+                configurationStatus: 'available',
+                configurationMessage: null,
+              },
+            ],
+          });
+        }
+      }, 10);
+    }
     if (msg.type === 'agents.usage.get') {
       setTimeout(() => {
         for (const cb of connectionListeners) {
@@ -217,6 +262,8 @@ const mockConnection = {
     };
   },
   isRemoteClient: () => false,
+  getStatus: () => 'open',
+  onStatus: () => () => {},
 };
 
 function Harness() {
@@ -267,6 +314,11 @@ test('SettingsDialog acceptance suite: 2-pane navigation, tabs, accessibility, a
     write: false,
     format: 'esm',
     jsx: 'automatic',
+    define: {
+      __APP_VERSION__: '"0.8.1"',
+      __APP_GIT_SHA__: '"e34fbaf"',
+      __APP_IS_DEV__: 'true',
+    },
     loader: { '.png': 'dataurl', '.svg': 'text', '.css': 'empty' },
   });
 
@@ -314,30 +366,68 @@ test('SettingsDialog acceptance suite: 2-pane navigation, tabs, accessibility, a
     await page.goto(`http://127.0.0.1:${port}`);
     await page.waitForSelector('.maw-settings-window');
 
-    // 1. Check title and navigation items
+    // 1. Check title, header icon, and navigation items
     const titleText = await page.textContent('.maw-settings-title');
     assert.equal(titleText.trim(), 'Settings');
+    const headerSvgCount = await page.locator('.maw-settings-header-icon svg').count();
+    assert.equal(headerSvgCount, 1, 'Header icon should be an SVG');
 
     const navTabs = page.locator('.maw-settings-nav-item');
     const tabCount = await navTabs.count();
-    assert.equal(tabCount, 8, 'Expected 8 tabs (including browser and legacy panels)');
+    assert.equal(tabCount, 7, 'Expected 7 tabs (Appearance merged into General, including browser and legacy panels)');
 
-    // 2. Verify Initial General Tab
+    // Verify SVG icons on all nav items (no colorful emojis)
+    const navSvgCount = await page.locator('.maw-settings-nav-icon svg').count();
+    assert.equal(navSvgCount, 7, 'All 7 nav items should use consistent SVG icons');
+
+    // Verify authoritative version display at bottom-left
+    const versionEl = page.locator('.maw-settings-version');
+    assert.equal(await versionEl.count(), 1, 'Version display should exist in sidebar footer');
+    const versionText = await versionEl.textContent();
+    assert.ok(versionText?.startsWith('v0.8.1'), `Expected version starting with v0.8.1, got ${versionText}`);
+
+    // 2. Verify Initial General Tab (now includes Terminal Theme & Dark Theme)
     const generalSectionTitle = await page.textContent('.maw-settings-section-title');
     assert.equal(generalSectionTitle.trim(), 'General');
+    const generalThemeRadios = await page.locator('input[name="terminal-theme"]').count();
+    assert.equal(generalThemeRadios, 2, 'General tab should now contain terminal theme preference radios');
     await page.screenshot({ path: path.join(artifactDir, 'screenshots', 'settings-after-general.png') });
 
-    // 3. Navigate to Appearance Tab
-    const appearanceTab = page.locator('#settings-tab-appearance');
-    await appearanceTab.click();
-    await page.waitForTimeout(100);
-    const appearanceTitle = await page.textContent('.maw-settings-section-title');
-    assert.equal(appearanceTitle.trim(), 'Appearance');
-    const radioCount = await page.locator('input[name="terminal-theme"]').count();
-    assert.equal(radioCount, 2);
-    await page.screenshot({ path: path.join(artifactDir, 'screenshots', 'settings-after-appearance.png') });
+    // 3. Verify Appearance tab is removed from nav
+    const appearanceTabCount = await page.locator('#settings-tab-appearance').count();
+    assert.equal(appearanceTabCount, 0, 'Appearance tab should no longer exist as a standalone category');
 
-    // 4. Navigate to Terminal Tab
+    // 4. Test Search Functionality: search, empty state, and navigation
+    const searchInput = page.locator('.maw-settings-search-input');
+    assert.equal(await searchInput.count(), 1, 'Search input should exist in sidebar');
+
+    // 4a. Search for a query that matches settings in another category (e.g. "duckduckgo" or "search engine")
+    await searchInput.fill('DuckDuckGo');
+    await page.waitForTimeout(100);
+    const searchResults = page.locator('.maw-settings-search-item');
+    const resultCount = await searchResults.count();
+    assert.ok(resultCount > 0, 'Expected at least 1 search result for DuckDuckGo');
+
+    // Selecting result navigates to Browser category
+    await searchResults.first().click();
+    await page.waitForTimeout(100);
+    const activeSectionAfterSearch = await page.textContent('.maw-settings-section-title');
+    assert.equal(activeSectionAfterSearch.trim(), 'Browser', 'Selecting search result should navigate to Browser category');
+
+    // 4b. Test Empty State for search
+    await searchInput.fill('xyznonexistentquery999');
+    await page.waitForTimeout(100);
+    const emptyState = page.locator('.maw-settings-search-empty');
+    assert.equal(await emptyState.count(), 1, 'Empty state should be displayed when no settings match');
+
+    // 4c. Clear search to restore tab navigation
+    const clearBtn = page.locator('.maw-settings-search-clear');
+    await clearBtn.click();
+    await page.waitForTimeout(100);
+    const restoredTabCount = await page.locator('.maw-settings-nav-item').count();
+    assert.equal(restoredTabCount, 7, 'Clearing search should restore normal tab navigation');
+
+    // 5. Navigate to Terminal Tab
     const terminalTab = page.locator('#settings-tab-terminal');
     await terminalTab.click();
     await page.waitForTimeout(100);
@@ -347,7 +437,7 @@ test('SettingsDialog acceptance suite: 2-pane navigation, tabs, accessibility, a
     assert.equal(shellRadios, 4, 'Expected auto + 3 installed shells');
     await page.screenshot({ path: path.join(artifactDir, 'screenshots', 'settings-after-terminal.png') });
 
-    // 5. Navigate to Agents Tab
+    // 6. Navigate to Agents Tab
     const agentsTab = page.locator('#settings-tab-agents');
     await agentsTab.click();
     await page.waitForTimeout(100);
@@ -355,9 +445,41 @@ test('SettingsDialog acceptance suite: 2-pane navigation, tabs, accessibility, a
     assert.equal(agentsTitle.trim(), 'Agents');
     const cliRows = await page.locator('.maw-settings-cli-row').count();
     assert.equal(cliRows, 5, 'Expected 5 configured agent CLIs');
+
+    // 6b. Verify Profiles section in Agents Tab
+    const profilesCard = page.locator('#setting-card-profiles');
+    assert.equal(await profilesCard.count(), 1, 'Expected setting-card-profiles card');
+    const providerGroups = page.locator('.maw-provider-group');
+    assert.equal(await providerGroups.count(), 5, 'Expected 5 provider groups (Codex, Claude, AGY, OpenCode, Pi)');
+
+    // Codex has 2 profiles, so it should default to collapsed
+    const codexToggle = page.locator('.maw-provider-group-toggle').first();
+    assert.equal(await codexToggle.getAttribute('aria-expanded'), 'false', 'Multi-profile provider should default to collapsed');
+
+    // Click toggle to expand
+    await codexToggle.click();
+    assert.equal(await codexToggle.getAttribute('aria-expanded'), 'true', 'Clicking toggle expands the provider group');
+    const profileRows = page.locator('.maw-profile-row');
+    assert.ok((await profileRows.count()) >= 2, 'Expected expanded profiles to be visible');
+
+    // Test Add Profile button and modal
+    const addProfileBtn = page.locator('.maw-add-profile-btn');
+    assert.equal(await addProfileBtn.count(), 1);
+    await addProfileBtn.click();
+    const addModal = page.locator('.maw-profile-form-dialog');
+    assert.equal(await addModal.count(), 1, 'Add profile dialog opened');
+    const providerOptions = page.locator('#new-profile-provider option');
+    assert.equal(await providerOptions.count(), 5, 'Expected 5 provider options in Add Profile');
+    const browseBtn = page.locator('.maw-browse-btn');
+    assert.equal(await browseBtn.count(), 1, 'Expected native browse button');
+
+    // Cancel modal
+    await page.locator('.maw-modal-footer button:has-text("Cancel")').click();
+    assert.equal(await page.locator('.maw-profile-form-dialog').count(), 0, 'Dialog closed on Cancel');
+
     await page.screenshot({ path: path.join(artifactDir, 'screenshots', 'settings-after-agents.png') });
 
-    // 6. Navigate to Usage Tab
+    // 7. Navigate to Usage Tab
     const usageTab = page.locator('#settings-tab-usage');
     await usageTab.click();
     await page.waitForTimeout(400); // Allow telemetry mock to populate
@@ -365,7 +487,7 @@ test('SettingsDialog acceptance suite: 2-pane navigation, tabs, accessibility, a
     assert.equal(usageCards, 2, 'Agents usage view rendered summary cards');
     await page.screenshot({ path: path.join(artifactDir, 'screenshots', 'settings-after-usage.png') });
 
-    // 7. Navigate to About Tab
+    // 8. Navigate to About Tab
     const aboutTab = page.locator('#settings-tab-about');
     await aboutTab.click();
     await page.waitForTimeout(100);
@@ -375,17 +497,17 @@ test('SettingsDialog acceptance suite: 2-pane navigation, tabs, accessibility, a
     assert.equal(specRows, 3, 'Expected 3 spec rows (Version, Desktop Runtime, Platform)');
     await page.screenshot({ path: path.join(artifactDir, 'screenshots', 'settings-after-about.png') });
 
-    // 8. Test Arrow Key Navigation
+    // 9. Test Arrow Key Navigation
     await page.keyboard.press('ArrowUp');
     const activeNavTextAfterUp = await page.textContent('.maw-settings-nav-item.active');
     assert.equal(activeNavTextAfterUp.includes('Usage'), true, 'ArrowUp navigated from About to Usage');
 
-    // 9. Narrow Viewport Test (600x700)
+    // 10. Narrow Viewport Test (600x700)
     await page.setViewportSize({ width: 600, height: 700 });
     await page.waitForTimeout(200);
     await page.screenshot({ path: path.join(artifactDir, 'screenshots', 'settings-after-narrow.png') });
 
-    // 10. Escape Key Dismissal Test
+    // 11. Escape Key Dismissal Test
     await page.keyboard.press('Escape');
     await page.waitForTimeout(100);
     const dialogPresent = await page.locator('.maw-settings-window').count();
