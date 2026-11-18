@@ -39,10 +39,6 @@ Every test tree uses dedicated root helpers (`tests/helpers/paths.ts` for `@agen
 - `MAW_REAL_SYSTEMD=1`: Enables the 3 live user-systemd tests in `packages/server/tests/runtime/lifecycle/maw-systemd-acceptance.test.ts` (automatically skipped when unset).
 - `MAW_TEST_ARTIFACTS_DIR`: Overrides where acceptance UI screenshots are written (defaults under OS `tmpdir()`).
 
-## CI Tiering (`.github/workflows/ci.yml`)
+## CI tiers
 
-- `fast-checks`: Node 22 Linux fast gate (`pnpm typecheck`, `pnpm test:unit`, `pnpm test:security`, desktop policy suite, `pnpm build`).
-- `windows-validation`: Windows Node 22 checks (`pnpm typecheck`, focused domain/model tests, `pnpm check`).
-- `server-runtime-and-integration`: Full backend `test:integration` and `test:runtime` suites.
-- `desktop-and-browser-e2e`: Playwright Chromium installation, web `test:integration` and `test:e2e`, Debian desktop package build + `production.test.mjs`, sandboxed Electron lifecycle (`test:electron`), and `test:staging`.
-- `package`, `smoke`, and `android`: Artifact allowlist verification, cross-OS Node 20/22 npm tarball installation smoke matrix, and Android Gradle unit/lint/debug APK checks.
+The [CI and release runbook](./ci-and-release-runbook.md) lists the automatic jobs, full-run authorization and required check semantics. Browser-backed web tests are integration or E2E. The web commands discover tests recursively within each tier, and cap concurrent browser test files to reduce runner contention. Desktop security E2E uses real sandboxed Electron, while its policy and orchestrator unit cases require only Node.
