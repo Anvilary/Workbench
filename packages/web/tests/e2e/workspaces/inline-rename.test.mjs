@@ -293,6 +293,8 @@ test('inline renaming: typing multi-character words, inserting, backspacing, and
   await renameWsItem.click();
   await renameInput.waitFor({ state: 'visible' });
   await renameInput.fill('Workspace Blurred');
+  // Respect InlineRenameInput's 150ms unintentional-blur guard after focus.
+  await page.waitForTimeout(180);
   await page.locator('body').click();
   await renameInput.waitFor({ state: 'detached' });
 

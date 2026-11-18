@@ -182,7 +182,7 @@ await step('Output buffer PTY throughput (256 KiB ring)', async () => {
     [
       '--import',
       './packages/server/node_modules/tsx/dist/loader.mjs',
-      'docs/research/maw-next-generation/evidence/bench/output-buffer-micro.mjs',
+      'scripts/bench/output-buffer-micro.mjs',
     ],
     {
       env: { TOTAL_MIB: mode === 'full' ? '16' : '4', REPS: mode === 'full' ? '3' : '1' },
@@ -219,7 +219,7 @@ await step('Tab drag-and-drop interaction responsiveness', async () => {
   await runCommand(
     'node',
     [
-      'docs/research/maw-next-generation/evidence/bench/dnd-pointermove-cost.mjs',
+      'scripts/bench/dnd-pointermove-cost.mjs',
       tmpOut,
       '6',
       String(moves),

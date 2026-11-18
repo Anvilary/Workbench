@@ -75,6 +75,10 @@ cpSync(path.join(repoRoot, 'packages', 'web', 'dist'), path.join(outDir, 'dist',
 const supervisorSrc = path.join(repoRoot, 'packages', 'server', 'src', 'pty-host', 'maw-ptyd.mjs');
 if (existsSync(supervisorSrc)) {
   cpSync(supervisorSrc, path.join(outDir, 'dist', 'maw-ptyd.mjs'));
+  cpSync(
+    path.join(repoRoot, 'packages', 'server', 'src', 'pty-host', 'terminal-state.mjs'),
+    path.join(outDir, 'dist', 'terminal-state.mjs'),
+  );
 }
 cpSync(path.join(repoRoot, 'LICENSE'), path.join(outDir, 'LICENSE'));
 

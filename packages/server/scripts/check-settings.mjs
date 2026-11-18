@@ -166,7 +166,17 @@ const workDir = await mkdtemp(path.join(os.tmpdir(), 'aw-check-settings-'));
   const emitted = [];
   service.on('status', (status) => emitted.push(status));
   check('4.1 el estado: la automatica, las instaladas y la apagada del arranque',
-    json(service.status()) === json({ consoleShell: 'auto', consoleShells: [{ id: 'pwsh', label: 'PowerShell 7' }, { id: 'git-bash', label: 'Git Bash' }], shellName: 'PowerShell', disabledAgents: [], disabledAtStart: ['opencode'] }),
+    json(service.status()) === json({
+      consoleShell: 'auto',
+      consoleShells: [{ id: 'pwsh', label: 'PowerShell 7' }, { id: 'git-bash', label: 'Git Bash' }],
+      shellName: 'PowerShell',
+      disabledAgents: [],
+      disabledAtStart: ['opencode'],
+      browser: {
+        defaultSearchEngine: store.get().browser.defaultSearchEngine,
+        favorites: store.get().browser.favorites,
+      },
+    }),
     json(service.status()));
   await service.update({ consoleShell: 'git-bash' });
   check('4.2 elegir Git Bash avisa al registro y a todas las ventanas',

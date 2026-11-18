@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, chmod, symlink, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { pathToFileURL } from 'node:url';
 import { REPO_ROOT } from '../../helpers/paths.mjs';
 const exec = promisify(execFile);
 const root = REPO_ROOT;
@@ -35,8 +37,15 @@ test('old updater build entry refuses missing production desktop runtime before 
   await assert.rejects(exec(process.execPath,[path.join(root,'scripts/maw/check-desktop-build.mjs')],{cwd:dir}), e=>{assert.match(e.stderr,/No release was activated/);return true;});
 });
 
-test('Ubuntu package owns its sandbox and does not contain state or service installation', async () => {
-  const deb = path.join(root,'dist-desktop/maw-electron-45.2.0_amd64.deb');
+test('Ubuntu package owns its sandbox and does not contain state or service installation', async t => {
+  const defaultDeb = path.join(root,'dist-desktop/maw-electron-45.2.0_amd64.deb');
+  let deb = defaultDeb;
+  if (!existsSync(defaultDeb)) {
+    const tmpOut = await mkdtemp(path.join(tmpdir(), 'maw-desktop-deb-out-'));
+    t.after(() => rm(tmpOut, { recursive: true, force: true }));
+    await exec(process.execPath, [path.join(root, 'scripts/maw/build-desktop-deb.mjs'), tmpOut], { cwd: root });
+    deb = path.join(tmpOut, 'maw-electron-45.2.0_amd64.deb');
+  }
   const {stdout}=await exec('dpkg-deb',['--contents',deb],{maxBuffer:1024*1024});
   assert.match(stdout,/rwsr-xr-x root\/root.*chrome-sandbox/);
   assert.match(stdout,/rwxr-xr-x root\/root.*\/electron\n/);

@@ -60,7 +60,10 @@ try {
 
 const packageDir = path.join(appDir, 'node_modules', 'agent-workbench');
 const serverFile = path.join(packageDir, 'dist', 'server.js');
+const ptydFile = path.join(packageDir, 'dist', 'maw-ptyd.mjs');
+const ptydStateFile = path.join(packageDir, 'dist', 'terminal-state.mjs');
 check('the package installs its server', existsSync(serverFile));
+check('the package installs its PTY supervisor', existsSync(ptydFile) && existsSync(ptydStateFile));
 check('the anvil-bench bin shim exists', existsSync(path.join(appDir, 'node_modules', '.bin', isWindows ? 'anvil-bench.cmd' : 'anvil-bench')));
 check('the legacy bin shim exists', existsSync(path.join(appDir, 'node_modules', '.bin', isWindows ? 'agent-workbench.cmd' : 'agent-workbench')));
 
