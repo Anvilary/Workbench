@@ -206,10 +206,10 @@ export async function handleAgencyDomainRequest(
         return { type: 'agency.project.unarchived', requestId, project };
       }
       case 'agency.project.delete': {
+        if (!context.store.listProjects().some((project) => project.id === request.projectId)) {
+          return { type: 'agency.project.deleted', requestId, projectId: request.projectId };
+        }
         if (request.cascade) {
-          if (!context.store.listProjects().some((p) => p.id === request.projectId)) {
-            return { type: 'agency.project.deleted', requestId, projectId: request.projectId };
-          }
           const children = context.store.listWorkspaces(request.projectId);
           for (const ws of children) {
             const deleted = await deleteWorkspaceWithCleanup(ws.id, context);

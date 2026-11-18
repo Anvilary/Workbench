@@ -341,25 +341,23 @@ export class TabActivityManager extends EventEmitter {
   /** Removes all persisted activity and parser state for a deleted workspace. */
   purgeWorkspace(workspaceId: WorkspaceId): Promise<void> {
     return this.mutate(async () => {
-      const prefix = `${workspaceId}:`;
-      for (const [key, record] of [...this.states.entries()]) {
-        if (key.startsWith(prefix)) {
-          const parser = this.shellParsers.get(record.tabId);
-          if (parser) {
-            parser.dispose();
-            this.shellParsers.delete(record.tabId);
-          }
-          this.shellCommandCounters.delete(record.tabId);
-          this.states.delete(key);
-        }
+      const records = [...this.states].filter(([, record]) => record.workspaceId === workspaceId);
+      const receipts = [...this.pendingNotifications].filter(([, receipt]) => receipt.workspaceId === workspaceId);
+      if (records.length === 0 && receipts.length === 0) return;
+      for (const [key] of records) this.states.delete(key);
+      for (const [key] of receipts) this.pendingNotifications.delete(key);
+      try {
+        await this.persist();
+      } catch (error) {
+        for (const [key, record] of records) this.states.set(key, record);
+        for (const [key, receipt] of receipts) this.pendingNotifications.set(key, receipt);
+        throw error;
       }
-      for (const key of [...this.committedStates.keys()]) {
-        if (key.startsWith(prefix)) this.committedStates.delete(key);
+      for (const [, { tabId }] of records) {
+        this.shellParsers.get(tabId)?.dispose();
+        this.shellParsers.delete(tabId);
+        this.shellCommandCounters.delete(tabId);
       }
-      for (const [dedup, receipt] of [...this.pendingNotifications.entries()]) {
-        if (receipt.workspaceId === workspaceId) this.pendingNotifications.delete(dedup);
-      }
-      await this.persist();
     });
   }
 

@@ -672,3 +672,20 @@ test('22. Workspace validation on mutations remains unweakened for Done and Arch
     (err: any) => err.code === 'conflict'
   );
 });
+
+test('concurrent delete requests take the coordinator lock once and publish one deletion', async (t) => {
+  const ctx = await setupTest(t);
+  const workspace = await ctx.createWorkspace('concurrent-delete');
+  const context = ctx.domainContext({
+    runWorkspaceExclusive: (id, operation) => ctx.coordinator.mutations.runExclusive(id, operation),
+  });
+  const request = { type: 'agency.workspace.delete', workspaceId: workspace.id };
+  const replies = await Promise.all([
+    handleAgencyDomainRequest({ ...request, requestId: 'first' }, context),
+    handleAgencyDomainRequest({ ...request, requestId: 'second' }, context),
+  ]);
+  assert.deepEqual(replies.map(reply => reply?.type), ['agency.workspace.deleted', 'agency.workspace.deleted']);
+  assert.equal(ctx.messages.filter(message => message.type === 'agency.workspace.changed' &&
+    message.change === 'deleted' && message.workspaceId === workspace.id).length, 1);
+  assert.equal(await realpath(workspace.cwd), workspace.cwd);
+});
