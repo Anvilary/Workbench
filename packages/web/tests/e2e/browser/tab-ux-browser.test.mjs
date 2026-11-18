@@ -80,10 +80,13 @@ const connection = {
     requests.push(m);
     queueMicrotask(() => {
       const reply = (type, extra = {}) => emit({ type, requestId: m.requestId, ...extra });
+      if (m.type === 'terminal.attach') { emit({ type: 'terminal.snapshot', terminalId: m.terminalId, data: 'ok', startOffset: 0, endOffset: 2, truncated: false }); }
       switch (m.type) {
         case 'agency.projects.list': reply('agency.projects.snapshot', { projects: [project] }); break;
         case 'agency.workspaces.list': reply('agency.workspaces.snapshot', { workspaces: [workspace] }); break;
         case 'agency.profiles.list': reply('agency.profiles.snapshot', { profiles: [profile] }); break;
+        case 'agency.browserProfiles.list': reply('agency.browserProfiles.snapshot', { profiles: [] }); break;
+        case 'agency.layout.save': reply('agency.layout.saved', { workspaceId: m.workspaceId, layout: m.layout }); break;
         case 'agency.sessions.list': reply('agency.sessions.snapshot', { sessions: structuredClone(sessions) }); break;
         case 'agency.webTabs.list': reply('agency.webTabs.snapshot', { tabs: structuredClone(webTabs) }); break;
         case 'agency.editorTabs.list': reply('agency.editorTabs.snapshot', { tabs: [] }); break;
@@ -91,8 +94,13 @@ const connection = {
         case 'terminal.attach': emit({ type: 'terminal.replay', terminalId: m.terminalId, data: 'prompt$ ', truncated: false }); break;
         case 'agency.tab.action': {
           if (m.action === 'select') {
-            sessions = sessions.map(s => ({ ...s, tab: { ...s.tab, selected: s.tab.id === m.tabId } }));
+            sessions = sessions.map(s => ({ ...s, activity: s.tab.id === m.tabId ? 'idle' : s.activity, tab: { ...s.tab, selected: s.tab.id === m.tabId } }));
             webTabs = webTabs.map(t => ({ ...t, selected: t.id === m.tabId }));
+            const act = activities.find(a => a.tabId === m.tabId);
+            if (act && act.state === 'finished') {
+              act.state = 'idle';
+              emit({ type: 'agency.tab.activity', activity: act });
+            }
             snapshots();
             reply('agency.session.changed', { session: sessions.find(s => s.tab.id === m.tabId) });
           }
@@ -198,7 +206,7 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
 <style>
   html,body,#root{height:100%;margin:0}
   .agency-app{display:flex;height:100%}
-  .agency-main{flex:1;min-width:0}
+  .agency-main,.agency-workspace-view,.maw-split-workspace-content,.maw-split-pane,.maw-pane-body,.maw-terminal-pane,.maw-terminal-container{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0}
   .agency-sidebar{width:240px}
   .maw-pane-header{display:flex;height:42px}
   .maw-pane-tabs{display:flex;flex:1;min-width:0;overflow-x:auto}
@@ -270,71 +278,24 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   await page.keyboard.press('Escape');
   await page.mouse.up();
 
-  // Test 5: Notification inbox and GitHub-style Done action
-  // Bell shows unread count of 2
-  await page.locator('.maw-bell-button').click();
-  await page.locator('.maw-notification-inbox').waitFor();
-
-  // 2 inbox items present
-  const items = page.locator('.maw-inbox-item');
-  assert.equal(await items.count(), 2);
-
-  // Each notification item has an accessible Done button
-  const doneButtons = page.locator('.maw-done-button');
-  assert.equal(await doneButtons.count(), 2);
-  assert.equal(await doneButtons.first().getAttribute('title'), 'Done');
-
-  // Agent B has finished completion badge dot
+  // Test 5: Tab completion badge and toast notification rules
+  // Agent B has finished completion badge dot from initial snapshot
   const agentTab = page.locator('.maw-session-tab').filter({ hasText: 'Agent B' });
   await agentTab.locator('.agency-status-dot.finished').waitFor();
 
-  // Click Done on Agent B notification (first item)
-  await doneButtons.first().click();
-
-  // Verify agency.notification.done request was sent
-  await page.waitForFunction(() => window.agencyTest.requests.some(m => m.type === 'agency.notification.done'));
-
-  // Item immediately disappears from active inbox
-  await page.waitForFunction(() => document.querySelectorAll('.maw-inbox-item').length === 1);
-
-  // Tab completion indicator for Agent B clears (returns to idle)
+  // Selecting Agent B acknowledges completion and clears badge dot to idle
+  await page.waitForTimeout(220);
+  await page.getByRole('tab', { name: 'Agent B' }).click();
   await agentTab.locator('.agency-status-dot.idle').waitFor();
 
-  // Test 6: Race condition - newer turn is not cleared by a stale Done request
-  // Simulate Turn 2 completing on Agent B
+  // Switch back to Terminal A so Agent B is a background tab
+  await page.getByRole('tab', { name: 'Terminal A' }).click();
+
+  // Test 6: Turn 2 completing on background Agent B shows finished dot and toast
   await page.evaluate(() => window.agencyTest.addTurn2ToAgentB());
   await agentTab.locator('.agency-status-dot.finished').waitFor();
 
-  // Simulate stale Done for Turn 1
-  // Tab completion must remain finished because Turn 2 is active!
-  await agentTab.locator('.agency-status-dot.finished').waitFor();
-
-  // Test 7: Rejected Done request failure & snapshot reconciliation
-  // Simulate transport/persistence failure on Done for the remaining item (Terminal A)
-  await page.evaluate(() => { window.agencyTest.failDone = true; });
-  const remainingDoneBtn = page.locator('.maw-done-button').first();
-  await remainingDoneBtn.click();
-
-  // Error bar appears showing failure
-  await page.locator('.agency-error-bar').waitFor();
-
-  // Item remains visible in inbox (not permanently suppressed)
-  assert.equal(await page.locator('.maw-inbox-item').count(), 1);
-
-  // Subsequent snapshot from server reconciles without suppressing the alert
-  await page.evaluate(() => window.agencyTest.emitSnapshot());
-  assert.equal(await page.locator('.maw-inbox-item').count(), 1);
-
-  // Clear failure, retry Done -> succeeds, commits suppression
-  await page.evaluate(() => { window.agencyTest.failDone = false; });
-  await page.locator('.maw-done-button').first().click();
-  await page.waitForFunction(() => document.querySelectorAll('.maw-inbox-item').length === 0);
-
-  // Subsequent snapshot filters out confirmed Done alert
-  await page.evaluate(() => window.agencyTest.emitSnapshot());
-  assert.equal(await page.locator('.maw-inbox-item').count(), 0);
-
-  // Test 8: Workbench UI Shell Polish: branding, sidebar toggle, shell dropdown, notifications enable toggle
+  // Test 8: Workbench UI Shell Polish: branding, sidebar toggle, shell dropdown, toast rules
   // 1. Branding: sidebar header displays 'Workbench'
   const brand = page.locator('.agency-nav-head strong');
   assert.equal(await brand.textContent(), 'Workbench');
@@ -347,70 +308,12 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   // 3. Sidebar bottom no longer has done toggle section
   assert.equal(await page.locator('.agency-nav-bottom').count(), 0);
 
-  // 4. Header does not have Refresh button or prominent Enable notifications button
+  // 4. Header does not have Refresh button, Enable notifications button, or removed bell button
   assert.equal(await page.locator('.agency-topbar button').filter({ hasText: 'Refresh' }).count(), 0);
   assert.equal(await page.locator('.agency-topbar button').filter({ hasText: 'Enable notifications' }).count(), 0);
+  assert.equal(await page.locator('.maw-bell-button').count(), 0);
 
-  // 5. Notifications dropdown has enable/disable toggle at bottom right
-  // Bell button has neutral gray SVG bell
-  assert.equal(await page.locator('.maw-bell-button svg').count(), 1);
-  const notifToggleBtn = page.locator('.maw-inbox-footer .maw-notification-toggle-button');
-  assert.equal(await notifToggleBtn.count(), 1);
-  // Defaults to enabled -> button says 'Disable notifications'
-  assert.equal(await notifToggleBtn.textContent(), 'Disable notifications');
-  assert.equal(await page.evaluate(() => localStorage.getItem('agency-ui.notifications-enabled.v1')), null);
-
-  // Desktop notification permission in dropdown footer (fresh browser defaults to 'default')
-  const desktopPermBtn = page.locator('.maw-desktop-perm-button');
-  assert.equal(await desktopPermBtn.count(), 1);
-  assert.equal(await desktopPermBtn.textContent(), 'Allow desktop alerts');
-
-  // Explicit user-initiated click triggers Notification.requestPermission()
-  await page.evaluate(() => {
-    window.__permRequested = false;
-    if (window.Notification) {
-      window.Notification.requestPermission = async () => {
-        window.__permRequested = true;
-        Object.defineProperty(window.Notification, 'permission', { value: 'granted', configurable: true });
-        return 'granted';
-      };
-    }
-  });
-  await desktopPermBtn.click();
-  assert.equal(await page.evaluate(() => window.__permRequested), true);
-  await page.locator('.maw-desktop-perm-status.granted').waitFor();
-  assert.equal(await page.locator('.maw-desktop-perm-status.granted').textContent(), 'Desktop alerts on');
-
-  // Click toggle button -> disables notifications
-  await notifToggleBtn.click();
-  assert.equal(await notifToggleBtn.textContent(), 'Enable notifications');
-  assert.equal(await page.evaluate(() => localStorage.getItem('agency-ui.notifications-enabled.v1')), 'false');
-
-  // FINDING 1 Verification:
-  // Disabling notifications suppresses nonessential in-app popups (toast) while preserving inbox item
-  await page.evaluate(() => {
-    window.agencyTest.emitNotificationCreated({
-      id: 'suppressed-notif-1',
-      workspaceId: '11111111-1111-4111-8111-111111111111',
-      tabId: '33333333-3333-4333-8333-333333333333',
-      title: 'Suppressed Alert',
-      body: 'Should not create toast popup',
-      state: 'finished',
-      read: false,
-      createdAt: new Date().toISOString()
-    });
-  });
-  // Item arrives in inbox
-  await page.waitForFunction(() => document.querySelectorAll('.maw-inbox-item').length === 1);
-  // But toast popup is NOT rendered
-  assert.equal(await page.locator('.maw-toast-item').count(), 0);
-
-  // Click toggle button again -> re-enables notifications
-  await notifToggleBtn.click();
-  assert.equal(await notifToggleBtn.textContent(), 'Disable notifications');
-  assert.equal(await page.evaluate(() => localStorage.getItem('agency-ui.notifications-enabled.v1')), 'true');
-
-  // Decision 2: No notification for task started, working, or unknown activity
+  // Decision 2: No toast notification for task started, working, or unknown activity
   await page.evaluate(() => {
     window.agencyTest.emitNotificationCreated({
       id: 'working-notif',
@@ -424,9 +327,8 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
     });
   });
   assert.equal(await page.locator('.maw-toast-item').count(), 0);
-  assert.equal(await page.locator('.maw-inbox-item').count(), 1);
 
-  // Decision 2: Completion in the actively viewed tab suppresses toast while updating inbox
+  // Decision 2: Completion in the actively viewed tab suppresses toast
   await page.evaluate(() => {
     window.agencyTest.emitNotificationCreated({
       id: 'active-viewed-completion',
@@ -439,10 +341,9 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
       createdAt: new Date().toISOString()
     });
   });
-  await page.waitForFunction(() => document.querySelectorAll('.maw-inbox-item').length === 2);
   assert.equal(await page.locator('.maw-toast-item').count(), 0);
 
-  // Decision 2: Completion in another tab shows toast and updates inbox
+  // Decision 2: Completion in another tab shows toast
   await page.evaluate(() => {
     window.agencyTest.emitNotificationCreated({
       id: 'other-tab-completion',
@@ -457,7 +358,6 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   });
   await page.locator('.maw-toast-item').waitFor();
   assert.ok((await page.locator('.maw-toast-item').textContent() || '').includes('Other Tab Completion'));
-  await page.waitForFunction(() => document.querySelectorAll('.maw-inbox-item').length === 3);
 
   // Decision 2: Completion when the application is unfocused shows toast
   await page.evaluate(() => {
@@ -481,7 +381,6 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   await page.evaluate(() => {
     document.hasFocus = window.__origHasFocus;
   });
-  await page.waitForFunction(() => document.querySelectorAll('.maw-inbox-item').length === 4);
 
   // Decision 2: Exactly one notification for verified completion (deduplication)
   const toastCountBefore = await page.locator('.maw-toast-item').count();
@@ -498,18 +397,12 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
     });
   });
   assert.equal(await page.locator('.maw-toast-item').count(), toastCountBefore);
-  assert.equal(await page.locator('.maw-inbox-item').count(), 4);
 
   // Decision 2: No duplicate notification after reconnect / snapshot replay
   await page.evaluate(() => {
     window.agencyTest.emitSnapshot();
   });
-  assert.equal(await page.locator('.maw-inbox-item').count(), 4);
   assert.equal(await page.locator('.maw-toast-item').count(), toastCountBefore);
-
-  // Close notifications inbox
-  await page.locator('.maw-bell-button').click();
-  await page.waitForFunction(() => document.querySelectorAll('.maw-notification-inbox').length === 0);
 
   // 6. Central shell dropdown next to notifications
   const shellMenuBtn = page.locator('.maw-menu-button');
@@ -554,16 +447,6 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
     assert.ok(topbarBox, `topbar should exist at ${w}x${h}`);
     assert.equal(topbarBox.x >= 0, true);
     assert.equal(topbarBox.width <= w, true);
-
-    // Open notifications dropdown and verify it fits on screen without horizontal clipping
-    await page.locator('.maw-bell-button').click();
-    await page.locator('.maw-notification-inbox').waitFor();
-    const inboxBox = await page.locator('.maw-notification-inbox').boundingBox();
-    assert.ok(inboxBox);
-    assert.ok(inboxBox.x >= 0, `inbox left edge ${inboxBox.x} should be >= 0 at ${w}x${h}`);
-    assert.ok(inboxBox.x + inboxBox.width <= w, `inbox right edge ${inboxBox.x + inboxBox.width} should fit within width ${w}`);
-    await page.locator('.maw-bell-button').click();
-    await page.waitForFunction(() => document.querySelectorAll('.maw-notification-inbox').length === 0);
 
     // Open workspace menu and verify it fits on screen without clipping
     await shellMenuBtn.click();

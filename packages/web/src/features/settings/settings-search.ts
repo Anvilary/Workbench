@@ -186,6 +186,16 @@ export function buildSettingsSearchCatalog({
   }
 
   items.push({
+    id: 'browser-profiles',
+    tabId: 'browser',
+    targetId: 'setting-card-browser-profiles',
+    categoryName: t('settings.category.browser'),
+    title: t('settings.browser.profiles'),
+    description: t('settings.browser.profilesDesc'),
+    keywords: ['browser profiles', 'profiles', 'sessions', 'cookies', 'clone', 'isolation', 'main', 'auth'],
+  });
+
+  items.push({
     id: 'browser-favorites',
     tabId: 'browser',
     targetId: 'setting-card-favorites',

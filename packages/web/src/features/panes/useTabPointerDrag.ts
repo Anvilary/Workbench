@@ -1,10 +1,25 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import type { AgencyCliProfile, WorkspaceId } from '@agent-workbench/shared';
+import { MAX_LEAVES, type AgencyCliProfile, type SplitDirection, type WorkspaceId } from '@agent-workbench/shared';
 import type { WorkspaceTab } from '../../agency/model.js';
 import type { useAgencyStore } from '../../agency/useAgencyStore.js';
 import { insertionIndex } from '../../agency/split/tab-geometry.mjs';
-import { setTabDragPreview, useTabDragPreview } from '../../agency/split/tab-drag-store.js';
+import { setTabDragPreview, useTabDragPreview, type TabDragSplitTarget } from '../../agency/split/tab-drag-store.js';
 import { getWorkspaceTabDisplayName } from '../workspaces/workspace-tab-helpers.js';
+
+interface CachedHeaderGeometry {
+  rect: DOMRect;
+  scrollLeft: number;
+  tabRects: { left: number; width: number }[];
+}
+
+interface CachedPaneGeometry {
+  paneId: string;
+  paneEl: HTMLElement;
+  rect: DOMRect;
+  bodyRect: DOMRect | null;
+  stripEl: HTMLElement | null;
+  stripRect: DOMRect | null;
+}
 
 interface ActiveTabDrag {
   tabId: string;
@@ -16,10 +31,13 @@ interface ActiveTabDrag {
   isDragging: boolean;
   targetIndex: number;
   overPaneId: string | null;
+  splitTarget: TabDragSplitTarget | null;
   sourceWidth: number;
+  captureEl: HTMLElement | null;
   ghostEl: HTMLElement | null;
   shieldEl: HTMLElement | null;
-  cachedHeaders: Map<string, { rect: DOMRect; tabRects: { left: number; width: number }[] }>;
+  cachedPanes: CachedPaneGeometry[];
+  cachedHeaders: Map<string, CachedHeaderGeometry>;
   rafId: number;
   latestX: number;
   latestY: number;
@@ -33,8 +51,103 @@ export interface UseTabPointerDragOptions {
   profiles: readonly AgencyCliProfile[];
   favicons?: Record<string, string>;
   onMoveTabToPane: (tabId: string, targetPaneId: string, targetIndex?: number) => void;
+  onSplitPane?: (targetPaneId: string, direction: SplitDirection, tabIdToMove: string) => void;
   request: ReturnType<typeof useAgencyStore>['request'];
   reportError: (error: string) => void;
+}
+
+function snapshotAllPanes(): CachedPaneGeometry[] {
+  const result: CachedPaneGeometry[] = [];
+  const panes = document.querySelectorAll<HTMLElement>('.maw-split-pane');
+  for (const paneEl of panes) {
+    const paneId = paneEl.id.replace('pane-container-', '');
+    if (!paneId) continue;
+    const rect = paneEl.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) continue;
+    const bodyEl = paneEl.querySelector<HTMLElement>('.maw-pane-body');
+    const stripEl = paneEl.querySelector<HTMLElement>('.maw-pane-tabs');
+    result.push({
+      paneId,
+      paneEl,
+      rect,
+      bodyRect: bodyEl ? bodyEl.getBoundingClientRect() : null,
+      stripEl,
+      stripRect: stripEl ? stripEl.getBoundingClientRect() : null,
+    });
+  }
+  return result;
+}
+
+function findCachedPaneAtPoint(
+  cachedPanes: readonly CachedPaneGeometry[],
+  clientX: number,
+  clientY: number,
+): CachedPaneGeometry | null {
+  for (const item of cachedPanes) {
+    const { rect } = item;
+    if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+      return item;
+    }
+  }
+  return null;
+}
+
+function measureHeaderGeometry(paneEl: HTMLElement): CachedHeaderGeometry | null {
+  const header = paneEl.querySelector<HTMLElement>('.maw-pane-header');
+  if (!header) return null;
+  const strip = header.querySelector<HTMLElement>('.maw-pane-tabs');
+  const scrollLeft = strip?.scrollLeft ?? 0;
+  const headerRect = header.getBoundingClientRect();
+  const tabEls = [...header.querySelectorAll<HTMLElement>('.maw-session-tab')];
+  const tabRects = tabEls.map((element) => {
+    const rect = element.getBoundingClientRect();
+    // Subtract any inline translateX shift so midpoints remain stable in layout space
+    const styleTransform = element.style.transform;
+    let shiftX = 0;
+    if (styleTransform && styleTransform.startsWith('translateX(')) {
+      const parsed = Number.parseFloat(styleTransform.slice('translateX('.length));
+      if (Number.isFinite(parsed)) shiftX = parsed;
+    }
+    return { left: rect.left - shiftX, width: rect.width };
+  });
+  return { rect: headerRect, scrollLeft, tabRects };
+}
+
+function detectSplitEdge(
+  paneGeom: CachedPaneGeometry,
+  totalPanes: number,
+  sourcePaneId: string,
+  sourceTabCount: number,
+  targetTabCount: number,
+  clientX: number,
+  clientY: number,
+): TabDragSplitTarget | null {
+  if (totalPanes >= MAX_LEAVES) return null;
+  if (paneGeom.paneId === sourcePaneId && sourceTabCount <= 1) return null;
+  if (targetTabCount === 0) return null;
+
+  const rect = paneGeom.bodyRect;
+  if (
+    !rect ||
+    clientX < rect.left ||
+    clientX > rect.right ||
+    clientY < rect.top ||
+    clientY > rect.bottom
+  ) {
+    return null;
+  }
+
+  const edgeThreshold = Math.min(48, Math.max(28, Math.min(rect.width, rect.height) * 0.16));
+  const distRight = rect.right - clientX;
+  const distBottom = rect.bottom - clientY;
+
+  if (distRight <= edgeThreshold && distRight <= distBottom && rect.width >= 280) {
+    return { paneId: paneGeom.paneId, direction: 'row' };
+  }
+  if (distBottom <= edgeThreshold && rect.height >= 180) {
+    return { paneId: paneGeom.paneId, direction: 'column' };
+  }
+  return null;
 }
 
 export function useTabPointerDrag({
@@ -45,6 +158,7 @@ export function useTabPointerDrag({
   profiles,
   favicons,
   onMoveTabToPane,
+  onSplitPane,
   request,
   reportError,
 }: UseTabPointerDragOptions) {
@@ -54,22 +168,25 @@ export function useTabPointerDrag({
   const tabDrag = useRef<ActiveTabDrag | null>(null);
 
   const cleanupDrag = () => {
-    if (tabDrag.current?.rafId) {
-      cancelAnimationFrame(tabDrag.current.rafId);
-      tabDrag.current.rafId = 0;
-    }
-    if (tabDrag.current?.ghostEl) {
-      tabDrag.current.ghostEl.remove();
-      tabDrag.current.ghostEl = null;
-    }
-    if (tabDrag.current?.shieldEl) {
-      tabDrag.current.shieldEl.remove();
-      tabDrag.current.shieldEl = null;
-    }
-    document.body.classList.remove('maw-pane-dragging');
+    const drag = tabDrag.current;
+    if (!drag) return;
     tabDrag.current = null;
-    setDragState(null);
-    setTabDragPreview(null);
+    if (drag.isDragging) {
+      suppressTabClickUntil.current = Date.now() + 200;
+      document.body.classList.remove('maw-pane-dragging');
+      setDragState(null);
+      setTabDragPreview(null);
+    }
+    if (drag.captureEl) {
+      try {
+        if (drag.captureEl.hasPointerCapture(drag.pointerId)) {
+          drag.captureEl.releasePointerCapture(drag.pointerId);
+        }
+      } catch {}
+    }
+    if (drag.rafId) cancelAnimationFrame(drag.rafId);
+    drag.ghostEl?.remove();
+    drag.shieldEl?.remove();
   };
 
   useEffect(() => {
@@ -78,15 +195,20 @@ export function useTabPointerDrag({
         cleanupDrag();
       }
     };
+    const onBlur = () => {
+      if (tabDrag.current) cleanupDrag();
+    };
     window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('blur', onBlur);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('blur', onBlur);
       cleanupDrag();
     };
   }, []);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || (event.target as Element).closest('[data-close], input')) return;
+    if (event.button !== 0 || !event.isPrimary || (event.target as Element).closest('[data-close], input')) return;
     const tabEl = (event.target as Element).closest<HTMLElement>('.maw-session-tab');
     if (!tabEl) return;
     const tabId = tabEl.getAttribute('data-tab-id');
@@ -104,9 +226,12 @@ export function useTabPointerDrag({
       isDragging: false,
       targetIndex: idx,
       overPaneId: paneId,
+      splitTarget: null,
       sourceWidth: rect.width,
+      captureEl: null,
       ghostEl: null,
       shieldEl: null,
+      cachedPanes: [],
       cachedHeaders: new Map(),
       rafId: 0,
       latestX: event.clientX,
@@ -123,7 +248,13 @@ export function useTabPointerDrag({
         return;
       }
       drag.isDragging = true;
+      drag.captureEl = event.currentTarget;
       event.currentTarget.setPointerCapture(event.pointerId);
+      drag.cachedPanes = snapshotAllPanes();
+      for (const p of drag.cachedPanes) {
+        const measured = measureHeaderGeometry(p.paneEl);
+        if (measured) drag.cachedHeaders.set(p.paneId, measured);
+      }
 
       const sourceTab = paneTabs.find((t) => t.id === drag.tabId);
       if (sourceTab) {
@@ -183,56 +314,73 @@ export function useTabPointerDrag({
       });
     }
 
-    let targetPaneId: string | null = null;
-    let targetPaneEl: HTMLElement | null = null;
+    const hit = findCachedPaneAtPoint(drag.cachedPanes, event.clientX, event.clientY);
+    if (!hit) {
+      if (drag.overPaneId !== null) {
+        drag.overPaneId = null;
+        drag.splitTarget = null;
+        setDragState(null);
+        setTabDragPreview(null);
+      }
+      return;
+    }
+    const { paneEl: targetPaneEl, paneId: targetPaneId, stripEl, stripRect } = hit;
 
-    const currentHeader = drag.overPaneId ? drag.cachedHeaders.get(drag.overPaneId) : undefined;
-    if (
-      currentHeader &&
-      event.clientX >= currentHeader.rect.left &&
-      event.clientX <= currentHeader.rect.right &&
-      event.clientY >= currentHeader.rect.top &&
-      event.clientY <= currentHeader.rect.bottom
-    ) {
-      targetPaneId = drag.overPaneId;
-    } else {
-      const elUnder = document.elementFromPoint(event.clientX, event.clientY);
-      targetPaneEl = elUnder?.closest<HTMLElement>('.maw-split-pane') ?? null;
-      targetPaneId = targetPaneEl?.id.replace('pane-container-', '') ?? null;
+    if (stripEl && stripRect && stripEl.scrollWidth > stripEl.clientWidth) {
+      if (event.clientY >= stripRect.top - 12 && event.clientY <= stripRect.bottom + 12) {
+        if (event.clientX < stripRect.left + 28) {
+          stripEl.scrollLeft -= 10;
+          drag.cachedHeaders.delete(targetPaneId);
+        } else if (event.clientX > stripRect.right - 28) {
+          stripEl.scrollLeft += 10;
+          drag.cachedHeaders.delete(targetPaneId);
+        }
+      }
     }
 
-    if (!targetPaneId) return;
-
+    const currentScrollLeft = stripEl?.scrollLeft ?? 0;
     let headerData = drag.cachedHeaders.get(targetPaneId);
-    if (!headerData) {
-      const pEl = targetPaneEl ?? document.getElementById(`pane-container-${targetPaneId}`);
-      const header = pEl?.querySelector<HTMLElement>('.maw-pane-header');
-      if (header) {
-        const headerRect = header.getBoundingClientRect();
-        const tabEls = [...header.querySelectorAll<HTMLElement>('.maw-session-tab')];
-        const tabRects = tabEls.map((element) => {
-          const rect = element.getBoundingClientRect();
-          return { left: rect.left, width: rect.width };
-        });
-        headerData = { rect: headerRect, tabRects };
+    if (!headerData || headerData.scrollLeft !== currentScrollLeft) {
+      const measured = measureHeaderGeometry(targetPaneEl);
+      if (measured) {
+        headerData = measured;
         drag.cachedHeaders.set(targetPaneId, headerData);
       }
     }
 
     const rects = headerData?.tabRects ?? [];
-    const target = targetPaneId && rects.length > 0 ? insertionIndex(event.clientX, rects) : rects.length;
+    const nextSplitTarget = detectSplitEdge(
+      hit,
+      drag.cachedPanes.length,
+      paneId,
+      paneTabs.length,
+      rects.length,
+      event.clientX,
+      event.clientY,
+    );
+    const target = nextSplitTarget
+      ? rects.length
+      : rects.length > 0
+        ? insertionIndex(event.clientX, rects)
+        : 0;
 
-    if (target !== drag.targetIndex || targetPaneId !== drag.overPaneId) {
+    const splitChanged =
+      drag.splitTarget?.paneId !== nextSplitTarget?.paneId ||
+      drag.splitTarget?.direction !== nextSplitTarget?.direction;
+
+    if (target !== drag.targetIndex || targetPaneId !== drag.overPaneId || splitChanged) {
       drag.targetIndex = target;
       drag.overPaneId = targetPaneId;
+      drag.splitTarget = nextSplitTarget;
       setDragState({ tabId: drag.tabId, targetIndex: target });
       setTabDragPreview({
         tabId: drag.tabId,
         sourcePaneId: paneId,
         sourceIndex: paneTabs.findIndex((tab) => tab.id === drag.tabId),
         width: drag.sourceWidth,
-        overPaneId: targetPaneId,
-        overIndex: target,
+        overPaneId: nextSplitTarget ? null : targetPaneId,
+        overIndex: nextSplitTarget ? null : target,
+        splitTarget: nextSplitTarget,
       });
     }
   };
@@ -241,58 +389,48 @@ export function useTabPointerDrag({
     const dragInfo = tabDrag.current;
     if (!dragInfo || dragInfo.pointerId !== event.pointerId) return;
 
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
     cleanupDrag();
 
     if (!dragInfo.isDragging) return;
 
     suppressTabClickUntil.current = Date.now() + 200;
-    const elUnder = document.elementFromPoint(event.clientX, event.clientY);
-    const destination =
-      elUnder?.closest('.maw-split-pane')?.id.replace('pane-container-', '') ?? dragInfo.overPaneId;
-    if (!destination) return;
+    const hit = findCachedPaneAtPoint(dragInfo.cachedPanes, event.clientX, event.clientY);
+    if (!hit) return;
+    const destination = hit.paneId;
 
-    const targetPaneEl = document.getElementById(`pane-container-${destination}`);
-    const targetHeader = targetPaneEl?.querySelector('.maw-pane-header');
-    const targetElements = targetHeader
-      ? [...targetHeader.querySelectorAll<HTMLElement>('.maw-session-tab')]
-      : [];
-    const targetIndex = targetElements.findIndex((element) => {
-      const rect = element.getBoundingClientRect();
-      return event.clientX < rect.left + rect.width / 2;
-    });
-    const insertion = targetIndex < 0 ? targetElements.length : targetIndex;
+    const cached = dragInfo.cachedHeaders.get(destination) ?? measureHeaderGeometry(hit.paneEl);
+    const rects = cached?.tabRects ?? [];
+    const split = detectSplitEdge(hit, dragInfo.cachedPanes.length, paneId, paneTabs.length, rects.length, event.clientX, event.clientY);
+    if (split && onSplitPane) {
+      onSplitPane(split.paneId, split.direction, dragInfo.tabId);
+      return;
+    }
+    const insertion = rects.length > 0 ? insertionIndex(event.clientX, rects) : 0;
     const sourceIndex = paneTabs.findIndex((tab) => tab.id === dragInfo.tabId);
-    onMoveTabToPane(
-      dragInfo.tabId,
-      destination,
-      destination === paneId && insertion > sourceIndex ? insertion - 1 : insertion,
-    );
+    const finalIndex = destination === paneId && insertion > sourceIndex ? insertion - 1 : insertion;
+
+    onMoveTabToPane(dragInfo.tabId, destination, finalIndex);
 
     if (destination !== paneId) return;
-    const currentIdx = tabs.findIndex((t) => t.id === dragInfo.tabId);
-    const targetPaneTab = paneTabs[dragInfo.targetIndex];
-    const targetIdx = targetPaneTab ? tabs.findIndex((t) => t.id === targetPaneTab.id) : tabs.length;
-    if (currentIdx !== -1 && targetIdx !== currentIdx && targetIdx !== currentIdx + 1) {
-      const ids = tabs.map((t) => t.id);
-      const [draggedId] = ids.splice(currentIdx, 1);
-      const insertIdx = targetIdx > currentIdx ? targetIdx - 1 : targetIdx;
-      ids.splice(insertIdx, 0, draggedId!);
-      try {
-        await request({ type: 'agency.tabs.order', workspaceId, tabIds: ids });
-      } catch (reason) {
-        reportError(String(reason));
-      }
+    if (sourceIndex === -1 || finalIndex === sourceIndex) return;
+
+    const paneIds = paneTabs.map((t) => t.id);
+    const [moved] = paneIds.splice(sourceIndex, 1);
+    if (!moved) return;
+    paneIds.splice(Math.max(0, Math.min(paneIds.length, finalIndex)), 0, moved);
+
+    const paneIdSet = new Set(paneIds);
+    let slot = 0;
+    const nextGlobalIds = tabs.map((t) => (paneIdSet.has(t.id) ? paneIds[slot++]! : t.id));
+    try {
+      await request({ type: 'agency.tabs.order', workspaceId, tabIds: nextGlobalIds });
+    } catch (reason) {
+      reportError(String(reason));
     }
   };
 
   const onPointerCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    cleanupDrag();
+    if (tabDrag.current?.pointerId === event.pointerId) cleanupDrag();
   };
 
   return {

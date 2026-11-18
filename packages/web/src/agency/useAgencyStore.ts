@@ -4,13 +4,15 @@ import { serverTextMessage } from '../i18n/server-text.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AgencyClientMessage, AgencyProject, AgencyRuntimeSession, AgencyServerMessage, AgencyWorkspace,
-  WorkspacePaneLayout, WorkspaceId, WebTab,
+  BrowserProfileId, BrowserProfileSite, WorkspacePaneLayout, WorkspaceId, WebTab,
 } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import {
   EMPTY_AGENCY_SNAPSHOT, retainUnconfirmedCreations, applySessionActivity, applySessionsSnapshot, replaceById, transitionNotice,
+  pruneWorkspaceData, pruneProjectData,
   type AgencySnapshot, type AgencyTransport, type AgencyNoticeKind,
 } from './model.js';
+import { editorDraftStore } from './editorDraftStore.js';
 
 type Payload = AgencyClientMessage extends infer M
   ? M extends AgencyClientMessage ? Omit<M, 'requestId'> : never
@@ -70,7 +72,7 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
     setSynchronized(false);
     const types = [
       'agency.projects.list', 'agency.workspaces.list',
-      'agency.profiles.list', 'agency.sessions.list', 'agency.webTabs.list', 'agency.editorTabs.list', 'agency.notifications.list',
+      'agency.profiles.list', 'agency.browserProfiles.list', 'agency.sessions.list', 'agency.webTabs.list', 'agency.editorTabs.list', 'agency.notifications.list',
     ] as const;
     types.forEach((type) => { void request({ type }).catch(() => { /* Preserve existing state. */ }); });
   }, [request, connection]);
@@ -108,6 +110,28 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
         setData((old) => ({ ...old, workspaces: message.workspaces }));
       } else if (message.type === 'agency.profiles.snapshot') {
         setData((old) => ({ ...old, profiles: message.profiles }));
+      } else if (message.type === 'agency.browserProfiles.snapshot') {
+        setData((old) => ({ ...old, browserProfiles: message.profiles }));
+      } else if (message.type === 'agency.browserProfile.created' || message.type === 'agency.browserProfile.renamed') {
+        setData((old) => ({ ...old, browserProfiles: replaceById(old.browserProfiles, message.profile) }));
+      } else if (message.type === 'agency.browserProfile.deleted') {
+        setData((old) => ({
+          ...old,
+          browserProfiles: old.browserProfiles.filter((p) => p.id !== message.profileId),
+          projects: old.projects.map((p) => (p.browserProfileId === message.profileId ? { ...p, browserProfileId: undefined } : p)),
+          workspaces: old.workspaces.map((w) => (w.browserProfileId === message.profileId ? { ...w, browserProfileId: undefined } : w)),
+        }));
+      } else if (message.type === 'agency.browserProfile.changed') {
+        if (message.change === 'deleted') {
+          setData((old) => ({
+            ...old,
+            browserProfiles: old.browserProfiles.filter((p) => p.id !== message.profileId),
+            projects: old.projects.map((p) => (p.browserProfileId === message.profileId ? { ...p, browserProfileId: undefined } : p)),
+            workspaces: old.workspaces.map((w) => (w.browserProfileId === message.profileId ? { ...w, browserProfileId: undefined } : w)),
+          }));
+        } else if (message.profile) {
+          setData((old) => ({ ...old, browserProfiles: replaceById(old.browserProfiles, message.profile!) }));
+        }
       } else if (message.type === 'agency.webTabs.snapshot') {
         const workspaceId = pending.current.get(message.requestId)?.workspaceId;
         const tabs = retainUnconfirmedCreations(message.tabs, new Map([...unconfirmedWebTabs.current].filter(([, tab]) => !workspaceId || tab.workspaceId === workspaceId)));
@@ -182,14 +206,27 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
       ) {
         setData((old) => ({ ...old, projects: replaceById(old.projects, message.project) }));
       } else if (message.type === 'agency.project.deleted') {
-        setData((old) => ({ ...old, projects: old.projects.filter((p) => p.id !== message.projectId) }));
+        setData((old) => {
+          const targetWsIds = new Set(old.workspaces.filter((w) => w.projectId === message.projectId).map((w) => w.id));
+          old.editorTabs.forEach((tab) => {
+            if (targetWsIds.has(tab.workspaceId)) editorDraftStore.clearDraft(tab.id);
+          });
+          return pruneProjectData(old, message.projectId);
+        });
       } else if (message.type === 'agency.project.changed') {
-        setData((old) => ({
-          ...old,
-          projects: message.projects ?? (message.change === 'deleted'
-            ? old.projects.filter((p) => p.id !== message.projectId)
-            : message.project ? replaceById(old.projects, message.project) : old.projects),
-        }));
+        setData((old) => {
+          if (message.change === 'deleted') {
+            const targetWsIds = new Set(old.workspaces.filter((w) => w.projectId === message.projectId).map((w) => w.id));
+            old.editorTabs.forEach((tab) => {
+              if (targetWsIds.has(tab.workspaceId)) editorDraftStore.clearDraft(tab.id);
+            });
+            return pruneProjectData(old, message.projectId);
+          }
+          return {
+            ...old,
+            projects: message.projects ?? (message.project ? replaceById(old.projects, message.project) : old.projects),
+          };
+        });
       } else if (
         message.type === 'agency.workspace.created' || message.type === 'agency.workspace.updated' ||
         message.type === 'agency.workspace.done' || message.type === 'agency.workspace.restored' ||
@@ -198,22 +235,24 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
         setData((old) => ({ ...old, workspaces: replaceById(old.workspaces, message.workspace) }));
       } else if (message.type === 'agency.workspace.deleted') {
         setData((old) => {
-          const nextWarnings = old.layoutWarnings ? { ...old.layoutWarnings } : undefined;
-          if (nextWarnings && message.workspaceId in nextWarnings) {
-            delete nextWarnings[message.workspaceId];
+          old.editorTabs.forEach((tab) => {
+            if (tab.workspaceId === message.workspaceId) editorDraftStore.clearDraft(tab.id);
+          });
+          return pruneWorkspaceData(old, message.workspaceId);
+        });
+      } else if (message.type === 'agency.workspace.changed') {
+        setData((old) => {
+          if (message.change === 'deleted') {
+            old.editorTabs.forEach((tab) => {
+              if (tab.workspaceId === message.workspaceId) editorDraftStore.clearDraft(tab.id);
+            });
+            return pruneWorkspaceData(old, message.workspaceId);
           }
           return {
             ...old,
-            workspaces: old.workspaces.filter((w) => w.id !== message.workspaceId),
-            layoutWarnings: nextWarnings,
+            workspaces: message.workspaces ?? (message.workspace ? replaceById(old.workspaces, message.workspace) : old.workspaces),
           };
         });
-      } else if (message.type === 'agency.workspace.changed') {
-        setData((old) => ({
-          ...old, workspaces: message.workspaces ?? (message.change === 'deleted'
-            ? old.workspaces.filter((w) => w.id !== message.workspaceId)
-            : message.workspace ? replaceById(old.workspaces, message.workspace) : old.workspaces),
-        }));
       } else if (message.type === 'agency.profile.configured' || message.type === 'agency.profile.created' || message.type === 'agency.profile.changed') {
         if (message.type === 'agency.profile.changed' && message.change === 'deleted') {
           setData((old) => ({ ...old, profiles: old.profiles.filter((p) => p.id !== message.profileId) }));
@@ -284,14 +323,16 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
   }, [connection, transport, refresh]);
 
   const createProject = (name: string) => request({ type: 'agency.project.create', name });
+  const updateProject = (projectId: AgencyProject['id'], patch: { name?: string; browserProfileId?: string | null }) =>
+    request({ type: 'agency.project.update', projectId, ...patch });
   const renameProject = (projectId: AgencyProject['id'], name: string) =>
-    request({ type: 'agency.project.update', projectId, name });
+    updateProject(projectId, { name });
   const archiveProject = (projectId: AgencyProject['id']) =>
     request({ type: 'agency.project.archive', projectId });
   const unarchiveProject = (projectId: AgencyProject['id']) =>
     request({ type: 'agency.project.unarchive', projectId });
-  const deleteProject = (projectId: AgencyProject['id']) =>
-    request({ type: 'agency.project.delete', projectId });
+  const deleteProject = (projectId: AgencyProject['id'], cascade = false) =>
+    request({ type: 'agency.project.delete', projectId, ...(cascade ? { cascade: true } : {}) });
   const orderProjects = (projectIds: readonly AgencyProject['id'][]) => {
     setData((old) => {
       const orderMap = new Map(projectIds.map((id, index) => [id, index]));
@@ -307,8 +348,10 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
   };
   const createWorkspace = (projectId: AgencyWorkspace['projectId'], name: string, pickerId: string) =>
     request({ type: 'agency.workspace.create', projectId, name, pickerId });
+  const updateWorkspace = (workspaceId: AgencyWorkspace['id'], patch: { name?: string; browserProfileId?: string | null }) =>
+    request({ type: 'agency.workspace.update', workspaceId, ...patch });
   const renameWorkspace = (workspaceId: AgencyWorkspace['id'], name: string) =>
-    request({ type: 'agency.workspace.update', workspaceId, name });
+    updateWorkspace(workspaceId, { name });
   const archiveWorkspace = (workspaceId: AgencyWorkspace['id']) =>
     request({ type: 'agency.workspace.archive', workspaceId });
   const markDone = (workspaceId: AgencyWorkspace['id']) =>
@@ -317,6 +360,20 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
     request({ type: 'agency.workspace.restore', workspaceId });
   const deleteWorkspace = (workspaceId: AgencyWorkspace['id']) =>
     request({ type: 'agency.workspace.delete', workspaceId });
+  const createBrowserProfile = (
+    name: string,
+    options?: { sourceProfileId?: BrowserProfileId; clearSites?: readonly BrowserProfileSite[] },
+  ) =>
+    request({
+      type: 'agency.browserProfile.create',
+      name,
+      ...(options?.sourceProfileId ? { sourceProfileId: options.sourceProfileId } : {}),
+      ...(options?.clearSites && options.clearSites.length > 0 ? { clearSites: options.clearSites } : {}),
+    });
+  const renameBrowserProfile = (profileId: BrowserProfileId, name: string) =>
+    request({ type: 'agency.browserProfile.rename', profileId, name });
+  const deleteBrowserProfile = (profileId: BrowserProfileId) =>
+    request({ type: 'agency.browserProfile.delete', profileId });
   const orderWorkspaces = (projectId: AgencyWorkspace['projectId'], workspaceIds: readonly AgencyWorkspace['id'][]) => {
     setData((old) => {
       const orderMap = new Map(workspaceIds.map((id, index) => [id, index]));
@@ -351,8 +408,9 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
 
   return {
     data, online, loaded, synchronized, notice, request, refresh,
-    createProject, renameProject, archiveProject, unarchiveProject, deleteProject, orderProjects,
-    createWorkspace, renameWorkspace, archiveWorkspace, markDone, restore, deleteWorkspace, orderWorkspaces,
+    createProject, updateProject, renameProject, archiveProject, unarchiveProject, deleteProject, orderProjects,
+    createWorkspace, updateWorkspace, renameWorkspace, archiveWorkspace, markDone, restore, deleteWorkspace, orderWorkspaces,
+    createBrowserProfile, renameBrowserProfile, deleteBrowserProfile,
     saveLayout, clearLayoutWarning,
   };
 }

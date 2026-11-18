@@ -239,10 +239,11 @@ test('live terminals keep scrollback, selection and the PTY attachment across sw
   await page.waitForFunction(() => document.querySelectorAll('.maw-pane-menu').length === 0);
   assert.equal(await page.locator('.maw-split-pane').count(), 1);
 
-  // Pane actions -> Split vertically creates the second pane with the new session immediately
+  // Pane actions -> Split vertically creates the second pane with EmptyPaneChooser, then New Terminal launches tabC
   await page.getByRole('button', { name: 'Pane actions' }).click();
   await page.getByRole('menuitem', { name: 'Split vertically' }).click();
   await page.waitForFunction(() => document.querySelectorAll('.maw-split-pane').length === 2);
+  await page.locator('.maw-split-pane').nth(1).getByRole('button', { name: 'New Terminal' }).click();
   const shellPane = await read(tabA);
   const tabC = '55555555-5555-4555-8555-555555555555';
   const newPane = await read(tabC);
@@ -255,13 +256,12 @@ test('live terminals keep scrollback, selection and the PTY attachment across sw
   assert.equal((await snapshot()).disposed, 0);
   assert.deepEqual((await snapshot()).attaches.sort(), ['term-a', 'term-b', 'term-c']);
 
-  await page.evaluate(async (id) => {
-    const header = document.querySelectorAll('.maw-pane-header')[1];
-    const transfer = new DataTransfer();
-    transfer.setData('application/maw-tab-id', id);
-    header.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: transfer }));
-    await new Promise((resolve) => requestAnimationFrame(() => resolve()));
-  }, tabA);
+  const tabABox = await page.getByRole('tab', { name: /Shell A/ }).boundingBox();
+  const pane2StripBox = await page.locator('.maw-split-pane').nth(1).locator('.maw-pane-tabs').boundingBox();
+  await page.mouse.move(tabABox.x + tabABox.width / 2, tabABox.y + tabABox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(pane2StripBox.x + 24, pane2StripBox.y + pane2StripBox.height / 2, { steps: 12 });
+  await page.mouse.up();
   const moved = await read(tabA);
   assert.equal(moved.n, shellPane.n);
   assert.equal(moved.connected, true);
@@ -270,7 +270,7 @@ test('live terminals keep scrollback, selection and the PTY attachment across sw
   assert.deepEqual((await snapshot()).detaches, []);
 
   await page.getByRole('button', { name: 'Pane actions' }).first().click();
-  await page.getByRole('menuitem', { name: 'Close pane' }).click();
+  await page.getByRole('menuitem', { name: 'Single pane' }).click();
   await page.waitForFunction(() => document.querySelectorAll('.maw-split-pane').length === 1);
   assert.equal((await read(tabA)).n, 0);
   assert.equal((await read(tabB)).n, 1);

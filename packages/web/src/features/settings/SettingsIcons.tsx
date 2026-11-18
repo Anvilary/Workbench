@@ -165,3 +165,139 @@ export function SearchIcon({ size = 13 }: { size?: number }): JSX.Element {
     </svg>
   );
 }
+
+export function ChevronIcon({ size = 14 }: { size?: number }): JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M4.25 6l3.75 4 3.75-4" />
+    </svg>
+  );
+}
+
+/**
+ * Monochrome 16x16 geometric/monogram glyphs for supported CLI providers.
+ */
+export function ProviderIcon({ provider, size = 16 }: { provider: string; size?: number }): JSX.Element {
+  switch (provider) {
+    case 'codex':
+      return (
+        <svg
+          viewBox="0 0 16 16"
+          width={size}
+          height={size}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.35"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <polygon points="8,1.75 13.75,5 13.75,11 8,14.25 2.25,11 2.25,5" />
+          <path d="M9.25 4.75L6.25 8.25h3l-1 3" />
+        </svg>
+      );
+    case 'claude-code':
+      return (
+        <svg
+          viewBox="0 0 16 16"
+          width={size}
+          height={size}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.35"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d="M8 2v12M2.8 5l10.4 6M13.2 5L2.8 11" />
+          <circle cx="8" cy="8" r="1.4" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case 'antigravity':
+      return (
+        <svg
+          viewBox="0 0 16 16"
+          width={size}
+          height={size}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.35"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d="M8 2.25L13.25 13.25L8 10.75L2.75 13.25Z" />
+          <circle cx="8" cy="7.5" r="0.9" fill="currentColor" stroke="none" />
+        </svg>
+      );
+    case 'opencode':
+      return (
+        <svg
+          viewBox="0 0 16 16"
+          width={size}
+          height={size}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.35"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <rect x="1.75" y="2.5" width="12.5" height="11" rx="2" />
+          <path d="M4.75 6l2.5 2-2.5 2M8.75 10h2.5" />
+        </svg>
+      );
+    case 'pi':
+      return (
+        <svg
+          viewBox="0 0 16 16"
+          width={size}
+          height={size}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d="M3 4.5h10" />
+          <path d="M6 4.5v6.5c0 .7-.4 1.25-1 1.5" />
+          <path d="M10.25 4.5v5.75c0 1.25.65 2 1.75 2" />
+        </svg>
+      );
+    default:
+      return (
+        <svg
+          viewBox="0 0 16 16"
+          width={size}
+          height={size}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.35"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <rect x="2" y="2.5" width="12" height="11" rx="2" />
+          <path d="M5 6.5l2 1.5-2 1.5M8.5 9.5H11" />
+        </svg>
+      );
+  }
+}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AgencyProject, AgencyRuntimeSession, AgencyWorkspace, WebTab } from '@agent-workbench/shared';
+import type { AgencyProject, AgencyRuntimeSession, AgencyWorkspace, EditorTab, WebTab } from '@agent-workbench/shared';
 import { t } from '../../i18n/index.js';
 import { DeleteWorkspaceDialog } from './DeleteWorkspaceDialog.js';
 
@@ -8,6 +8,7 @@ export interface AgencyDoneViewProps {
   projects: readonly AgencyProject[];
   sessions?: readonly AgencyRuntimeSession[];
   webTabs?: readonly WebTab[];
+  editorTabs?: readonly EditorTab[];
   onRestore: (workspace: AgencyWorkspace) => void;
   onArchiveWorkspace?: (workspace: AgencyWorkspace) => void;
   onDeleteWorkspace?: (workspace: AgencyWorkspace) => Promise<void> | void;
@@ -18,6 +19,7 @@ export function AgencyDoneView({
   projects,
   sessions = [],
   webTabs = [],
+  editorTabs = [],
   onRestore,
   onArchiveWorkspace,
   onDeleteWorkspace,
@@ -100,6 +102,7 @@ export function AgencyDoneView({
           workspace={confirmDelete}
           sessions={sessions}
           webTabs={webTabs}
+          editorTabs={editorTabs}
           onConfirm={onDeleteWorkspace}
           onClose={() => setConfirmDelete(null)}
         />

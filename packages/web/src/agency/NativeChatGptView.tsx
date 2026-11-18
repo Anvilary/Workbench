@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { WebTab, SearchEngine } from '@agent-workbench/shared';
-import { validateOtherWebUrl, getSearchEngine, resolveAddressBarInput } from '@agent-workbench/shared';
+import { DEFAULT_BROWSER_PROFILE_ID, validateOtherWebUrl, getSearchEngine, resolveAddressBarInput } from '@agent-workbench/shared';
 import { t } from '../i18n/index.js';
 import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
 
@@ -59,6 +59,7 @@ export function nativeWebProvider(value: string, storedProvider?: WebTab['provid
 
 export function NativeChatGptView({
   tab,
+  profileId = DEFAULT_BROWSER_PROFILE_ID,
   toolbarOpen = false,
   onExpandToolbar,
   onDisplayed,
@@ -66,6 +67,7 @@ export function NativeChatGptView({
   searchEngine,
 }: {
   tab: WebTab;
+  profileId?: string;
   toolbarOpen?: boolean;
   onExpandToolbar?: () => void;
   onDisplayed: (id: string, ready: boolean) => void;
@@ -99,7 +101,7 @@ export function NativeChatGptView({
     const bridge = window.mawChatGpt;
     if (!bridge || !supported || !host.current) return;
 
-    void bridge.command({ type: 'open', id, url: url.current, provider: tab.provider ?? nativeWebProvider(url.current) }).catch((err) => {
+    void bridge.command({ type: 'open', id, url: url.current, provider: tab.provider ?? nativeWebProvider(url.current), profileId }).catch((err) => {
       setError(String(err));
     });
     const unsubscribe = bridge.subscribe((state) => {
@@ -148,7 +150,7 @@ export function NativeChatGptView({
       unsubscribe();
       unregister();
     };
-  }, [id, supported]);
+  }, [id, profileId, supported]);
 
   return (
     <div className="maw-browser-pane">

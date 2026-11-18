@@ -97,13 +97,12 @@ test('Browser compatibility preserves CLI input, mixed tabs and external ChatGPT
   await page.getByRole('tab', {name:'Native shell'}).waitFor();
   await page.locator('.xterm-helper-textarea').press('Control+c');
   await page.waitForFunction(() => window.agencyTest.requests.some(m=>m.type==='input' && m.data==='\x03'));
-  await page.getByRole('button', {name:'Notifications',exact:true}).click();
   await page.evaluate(() => window.agencyTest.failSelect=true);
-  await page.getByRole('article').filter({hasText:'Research'}).click();
+  await page.getByRole('tab', {name:'Research'}).click();
   await page.getByRole('alert').filter({hasText:'Session is unavailable'}).waitFor();
   assert.equal(await page.evaluate(() => window.agencyTest.requests.filter(m=>m.type==='agency.tab.acknowledge'||m.type==='agency.notification.markRead').length),0);
   await page.evaluate(() => {window.agencyTest.failSelect=false;});
-  await page.getByRole('article').filter({hasText:'Research'}).click();
+  await page.getByRole('tab', {name:'Research'}).click();
   await page.getByRole('link',{name:'Open website',exact:true}).waitFor();
   assert.equal(await page.locator('iframe').count(),0);
   assert.equal(await page.evaluate(() => window.agencyTest.requests.filter(m=>m.type==='agency.tab.acknowledge'||m.type==='agency.notification.markRead').length),0,'an external link is not evidence of viewing a conversation');
@@ -129,7 +128,7 @@ test('Browser compatibility preserves CLI input, mixed tabs and external ChatGPT
   await input.fill('Cancelled'); await input.press('Escape');
   await shell.waitFor(); await page.waitForFunction(()=>document.activeElement?.id==='tab-33333333-3333-4333-8333-333333333333');
   await shell.locator('.agency-truncate').dblclick();
-  await input.fill('Blur cancels'); await page.getByRole('button',{name:'Workspace options',exact:true}).focus();
+  await input.fill('Blur cancels'); await page.getByRole('button',{name:'Workspace menu',exact:true}).focus();
   await shell.waitFor();
   await shell.press('F2'); await input.fill('   '); await input.press('Enter');
   assert.equal(await input.getAttribute('aria-invalid'),'true');

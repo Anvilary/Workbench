@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import type { WebTab } from '@agent-workbench/shared';
+import {
+  DEFAULT_BROWSER_PROFILE_ID,
+  resolveEffectiveBrowserProfileId,
+  type AgencyProject,
+  type AgencyWorkspace,
+  type WebTab,
+} from '@agent-workbench/shared';
 import type { useAgencyStore } from './useAgencyStore.js';
 import { nativeWebProvider, nativeWorkspaceUrl } from './NativeChatGptView.js';
 
@@ -7,14 +13,16 @@ import { nativeWebProvider, nativeWorkspaceUrl } from './NativeChatGptView.js';
 export function useNativeChatGptTabs(
   tabs: readonly WebTab[],
   synchronized: boolean,
-  request: ReturnType<typeof useAgencyStore>['request']
+  request: ReturnType<typeof useAgencyStore>['request'],
+  projects: readonly AgencyProject[] = [],
+  workspaces: readonly AgencyWorkspace[] = [],
 ): void {
-  const current = useRef({ tabs, request, synchronized });
-  current.current = { tabs, request, synchronized };
+  const current = useRef({ tabs, request, synchronized, projects, workspaces });
+  current.current = { tabs, request, synchronized, projects, workspaces };
 
   // Separate confirmed state from in-flight requests and desired state
-  const confirmedTabs = useRef<Map<string, { url: string; provider: string }>>(new Map());
-  const inFlightUpdates = useRef<Map<string, { seq: number; url: string; provider: string }>>(new Map());
+  const confirmedTabs = useRef<Map<string, { url: string; provider: string; profileId: string }>>(new Map());
+  const inFlightUpdates = useRef<Map<string, { seq: number; url: string; provider: string; profileId: string }>>(new Map());
   const pendingCheckpoints = useRef<Map<string, { url: string; provider: string; seq: number; acknowledged?: boolean }>>(new Map());
   const checkpointInFlight = useRef<Map<string, number>>(new Map());
   const mounted = useRef(true);
@@ -37,7 +45,7 @@ export function useNativeChatGptTabs(
         if (typeof tab.id !== 'string' || typeof tab.url !== 'string' || !nativeWorkspaceUrl(tab.url, tab.provider)) continue;
         const provider = nativeWebProvider(tab.url, tab.provider);
         pendingCheckpoints.current.set(tab.id, { url: tab.url, provider, seq: ++seqCounter.current });
-        confirmedTabs.current.set(tab.id, { url: tab.url, provider });
+        confirmedTabs.current.set(tab.id, { url: tab.url, provider, profileId: DEFAULT_BROWSER_PROFILE_ID });
       }
     } catch {}
     return () => {
@@ -64,8 +72,11 @@ export function useNativeChatGptTabs(
     if (!tab || !nativeWorkspaceUrl(state.url, tab.provider)) return;
     if (tab.url === state.url && !pendingCheckpoints.current.has(tab.id)) return;
     const provider = nativeWebProvider(state.url, tab.provider);
+    const ws = current.current.workspaces.find(w => w.id === tab.workspaceId);
+    const proj = current.current.projects.find(p => p.id === ws?.projectId);
+    const profileId = resolveEffectiveBrowserProfileId(ws, proj);
     pendingCheckpoints.current.set(tab.id, { url: state.url, provider, seq: ++seqCounter.current, acknowledged: tab.url === state.url });
-    confirmedTabs.current.set(tab.id, { url: state.url, provider });
+    confirmedTabs.current.set(tab.id, { url: state.url, provider, profileId });
     inFlightUpdates.current.delete(tab.id);
     setRetryEpoch(e => e + 1);
 
@@ -118,26 +129,29 @@ export function useNativeChatGptTabs(
       }
       const desiredUrl = pending?.url ?? tab.url;
       const provider = pending?.provider ?? nativeWebProvider(desiredUrl, tab.provider);
+      const ws = workspaces.find((w) => w.id === tab.workspaceId);
+      const proj = projects.find((p) => p.id === ws?.projectId);
+      const profileId = resolveEffectiveBrowserProfileId(ws, proj);
       const confirmed = confirmedTabs.current.get(tab.id);
       const inFlight = inFlightUpdates.current.get(tab.id);
 
-      // If already confirmed for this exact URL & provider, skip IPC
-      if (confirmed && confirmed.url === desiredUrl && confirmed.provider === provider) {
+      // If already confirmed for this exact URL, provider & profileId, skip IPC
+      if (confirmed && confirmed.url === desiredUrl && confirmed.provider === provider && confirmed.profileId === profileId) {
         continue;
       }
-      // If an in-flight request is already targeting this exact URL & provider, await it
-      if (inFlight && inFlight.url === desiredUrl && inFlight.provider === provider) {
+      // If an in-flight request is already targeting this exact URL, provider & profileId, await it
+      if (inFlight && inFlight.url === desiredUrl && inFlight.provider === provider && inFlight.profileId === profileId) {
         continue;
       }
 
       const seq = ++seqCounter.current;
-      inFlightUpdates.current.set(tab.id, { seq, url: desiredUrl, provider });
+      inFlightUpdates.current.set(tab.id, { seq, url: desiredUrl, provider, profileId });
 
-      void bridge.command({ type: 'update', id: tab.id, url: desiredUrl, provider })
+      void bridge.command({ type: 'update', id: tab.id, url: desiredUrl, provider, profileId })
         .then(() => {
           if (inFlightUpdates.current.get(tab.id)?.seq === seq) {
             inFlightUpdates.current.delete(tab.id);
-            confirmedTabs.current.set(tab.id, { url: desiredUrl, provider });
+            confirmedTabs.current.set(tab.id, { url: desiredUrl, provider, profileId });
           }
         })
         .catch(() => {
@@ -179,5 +193,5 @@ export function useNativeChatGptTabs(
           }
         });
     }
-  }, [tabs, synchronized, retryEpoch]);
+  }, [tabs, projects, workspaces, synchronized, retryEpoch]);
 }

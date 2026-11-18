@@ -312,12 +312,9 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
       if (!existing) {
         return { success: false, error: 'Search engine not found' };
       }
-      if (existing.isBuiltin || DEFAULT_SEARCH_ENGINES.some((d) => d.id === id)) {
-        return { success: false, error: 'Built-in search engines cannot be removed' };
-      }
       const filtered = currentList.filter((e) => e.id !== id);
       let nextDefault = settings.defaultSearchEngine;
-      if (settings.defaultSearchEngine === id) {
+      if (settings.defaultSearchEngine === id || !filtered.some((e) => e.id === nextDefault)) {
         nextDefault = filtered[0]?.id ?? DEFAULT_SEARCH_ENGINE_ID;
       }
       const next: BrowserSettings = {

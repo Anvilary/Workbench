@@ -2,8 +2,8 @@ import type { AgentConnection } from '../connection.js';
 import type {
   AgencyCliProfile, AgencyProject, AgencyRuntimeSession, AgencyServerMessage,
   AgencyClientMessage, AgencyWorkspace, AgencyAgentSession, AgencyProfileCapabilities,
-  ClientMessage,
-  SessionActivity, SessionLifecycle, WorkspaceId, CliProfileId, WebTab, EditorTab,
+  BrowserProfile, ClientMessage,
+  SessionActivity, SessionLifecycle, WorkspaceId, ProjectId, CliProfileId, WebTab, EditorTab,
 } from '@agent-workbench/shared';
 
 export interface AgencyTransport {
@@ -22,6 +22,7 @@ export interface AgencySnapshot {
   projects: readonly AgencyProject[];
   workspaces: readonly AgencyWorkspace[];
   profiles: readonly AgencyCliProfile[];
+  browserProfiles: readonly BrowserProfile[];
   sessions: readonly AgencyRuntimeSession[];
   webTabs: readonly WebTab[];
   editorTabs: readonly EditorTab[];
@@ -30,7 +31,7 @@ export interface AgencySnapshot {
 }
 
 export const EMPTY_AGENCY_SNAPSHOT: AgencySnapshot = {
-  projects: [], workspaces: [], profiles: [], sessions: [], webTabs: [], editorTabs: [], layouts: {}, layoutWarnings: {},
+  projects: [], workspaces: [], profiles: [], browserProfiles: [], sessions: [], webTabs: [], editorTabs: [], layouts: {}, layoutWarnings: {},
 };
 
 export function workspaceTabs(sessions: readonly AgencyRuntimeSession[], workspaceId: WorkspaceId): AgencyRuntimeSession[] {
@@ -163,13 +164,54 @@ export function agentSession(session: AgencyRuntimeSession | undefined): AgencyA
 export type AgencySelectId = CliProfileId | '';
 export type WorkspaceSelection = WorkspaceId | null;
 
+/** Remove all client-cached records associated with a deleted workspace. */
+export function pruneWorkspaceData(snapshot: AgencySnapshot, workspaceId: WorkspaceId): AgencySnapshot {
+  const nextLayouts = snapshot.layouts ? { ...snapshot.layouts } : {};
+  delete nextLayouts[workspaceId];
+  const nextWarnings = snapshot.layoutWarnings ? { ...snapshot.layoutWarnings } : undefined;
+  if (nextWarnings && workspaceId in nextWarnings) {
+    delete nextWarnings[workspaceId];
+  }
+  return {
+    ...snapshot,
+    workspaces: snapshot.workspaces.filter((w) => w.id !== workspaceId),
+    sessions: snapshot.sessions.filter((s) => s.workspaceId !== workspaceId),
+    webTabs: snapshot.webTabs.filter((t) => t.workspaceId !== workspaceId),
+    editorTabs: snapshot.editorTabs.filter((t) => t.workspaceId !== workspaceId),
+    layouts: nextLayouts,
+    layoutWarnings: nextWarnings,
+  };
+}
+
+/** Remove a deleted project and any client-cached workspace resources belonging to it. */
+export function pruneProjectData(snapshot: AgencySnapshot, projectId: ProjectId): AgencySnapshot {
+  const targetWorkspaceIds = new Set(
+    snapshot.workspaces.filter((w) => w.projectId === projectId).map((w) => w.id),
+  );
+  const nextLayouts = snapshot.layouts ? { ...snapshot.layouts } : {};
+  const nextWarnings = snapshot.layoutWarnings ? { ...snapshot.layoutWarnings } : undefined;
+  for (const wsId of targetWorkspaceIds) {
+    delete nextLayouts[wsId];
+    if (nextWarnings && wsId in nextWarnings) delete nextWarnings[wsId];
+  }
+  return {
+    ...snapshot,
+    projects: snapshot.projects.filter((p) => p.id !== projectId),
+    workspaces: snapshot.workspaces.filter((w) => w.projectId !== projectId),
+    sessions: snapshot.sessions.filter((s) => !targetWorkspaceIds.has(s.workspaceId)),
+    webTabs: snapshot.webTabs.filter((t) => !targetWorkspaceIds.has(t.workspaceId)),
+    editorTabs: snapshot.editorTabs.filter((t) => !targetWorkspaceIds.has(t.workspaceId)),
+    layouts: nextLayouts,
+    layoutWarnings: nextWarnings,
+  };
+}
+
 export function activeByProject(
   projects: readonly AgencyProject[], workspaces: readonly AgencyWorkspace[],
 ): { project: AgencyProject; items: AgencyWorkspace[] }[] {
   return projects.map((project) => ({
     project,
-    items: workspaces.filter((ws) => ws.projectId === project.id && ws.status === 'active')
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    items: workspaces.filter((ws) => ws.projectId === project.id && ws.status === 'active'),
   }));
 }
 

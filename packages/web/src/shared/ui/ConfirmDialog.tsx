@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ModalDialog } from './ModalDialog.js';
+import { ModalDialog, type AnchorRect } from './ModalDialog.js';
 
 export interface ConfirmDialogProps {
   title: ReactNode;
@@ -14,6 +14,7 @@ export interface ConfirmDialogProps {
   danger?: boolean;
   busy?: boolean;
   confirmOnly?: boolean;
+  anchorRect?: AnchorRect | null;
   onConfirm: () => void;
   onClose: () => void;
 }
@@ -31,6 +32,7 @@ export function ConfirmDialog({
   danger = false,
   busy = false,
   confirmOnly = false,
+  anchorRect = null,
   onConfirm,
   onClose,
 }: ConfirmDialogProps): JSX.Element {
@@ -38,6 +40,7 @@ export function ConfirmDialog({
     <ModalDialog
       title={title}
       titleId={titleId}
+      anchorRect={anchorRect}
       onClose={onClose}
       closeLabel={closeLabel ?? cancelLabel}
       closeDisabled={busy}

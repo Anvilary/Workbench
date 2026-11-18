@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId, AgentInfo, ServerMessage } from '@agent-workbench/shared';
+import { resolveEffectiveBrowserProfileId } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import { AgencySidebar, AgencyDoneView, SidebarToggleIcon } from './AgencySidebar.js';
 import { AgencyWorkspaceCreator, AgencyProjectCreator } from './AgencyWorkspaceCreator.js';
@@ -91,7 +92,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
   const agencyTransport = useMemo(() => createAgencyTransport(connection), [connection]);
   const store = useAgencyStore(agencyTransport, connection);
   const { data, loaded, online, synchronized, notice } = store;
-  useNativeChatGptTabs(data.webTabs, online && synchronized, store.request);
+  useNativeChatGptTabs(data.webTabs, online && synchronized, store.request, data.projects, data.workspaces);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [performanceOpen, setPerformanceOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -413,12 +414,22 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
     } catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.errors.internalError')); }
   }
 
-  async function deleteProject(project: AgencyProject) {
+  async function deleteProject(project: AgencyProject, cascade = false) {
     setError(null);
     try {
-      const answer = await store.deleteProject(project.id);
-      if (answer.type !== 'agency.project.deleted') throw new Error(t('agency.errors.internalError'));
-    } catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.errors.internalError')); }
+      const answer = await store.deleteProject(project.id, cascade);
+      if (answer.type !== 'agency.project.deleted') {
+        const msg = answer.type === 'agency.error' ? answer.message : t('agency.errors.internalError');
+        throw new Error(msg);
+      }
+      if (selected && selected.projectId === project.id) {
+        setSelectedId(null);
+      }
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : t('agency.errors.internalError');
+      setError(message);
+      throw reason;
+    }
   }
 
   async function restore(workspace: AgencyWorkspace) {
@@ -466,6 +477,8 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
               workspaces={data.workspaces}
               sessions={data.sessions}
               webTabs={data.webTabs}
+              editorTabs={data.editorTabs}
+              browserProfiles={data.browserProfiles}
               selected={selectedId}
               showingDone={showingDone}
               onSelect={(id) => { setSelectedId(id); setShowingDone(false); }}
@@ -476,8 +489,10 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
               onDeleteWorkspace={deleteWorkspace}
               onRenameProject={(p, n) => { void renameProject(p, n); }}
               onRenameWorkspace={(ws, n) => { void renameWorkspace(ws, n); }}
+              onUpdateProjectProfile={(p, profileId) => { void store.updateProject(p.id, { browserProfileId: profileId }).catch((err) => setError(String(err))); }}
+              onUpdateWorkspaceProfile={(ws, profileId) => { void store.updateWorkspace(ws.id, { browserProfileId: profileId }).catch((err) => setError(String(err))); }}
               onArchiveProject={(p) => { void archiveProject(p); }}
-              onDeleteProject={(p) => { void deleteProject(p); }}
+              onDeleteProject={deleteProject}
               onRestore={(ws) => { void restore(ws); }}
               onReorderProjects={reorderProjects}
               onReorderWorkspaces={reorderWorkspaces}
@@ -634,6 +649,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
             projects={data.projects}
             sessions={data.sessions}
             webTabs={data.webTabs}
+            editorTabs={data.editorTabs}
             onRestore={(ws) => { void restore(ws); }}
             onArchiveWorkspace={(ws) => { void archiveWorkspace(ws); }}
             onDeleteWorkspace={deleteWorkspace}
@@ -642,6 +658,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
           <AgencyWorkspaceView
             key={selected.id}
             workspace={selected}
+            browserProfileId={resolveEffectiveBrowserProfileId(selected, data.projects.find(project => project.id === selected.projectId))}
             appSettings={appSettings}
             connection={connection}
             request={store.request}
@@ -724,6 +741,40 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
           onOpenRemote={null}
           connection={connection}
           initialTab={settingsInitialTab}
+          browserProfiles={data.browserProfiles}
+          onCreateBrowserProfile={async ({ name, sourceProfileId, clearSites }) => {
+            const bridge = window.mawChatGpt;
+            if (sourceProfileId && !bridge) throw new Error(t('agency.web.disconnected'));
+            const answer = await store.createBrowserProfile(name, { sourceProfileId, clearSites });
+            if (answer.type === 'agency.browserProfile.created' && sourceProfileId && bridge) {
+              try {
+                await bridge.command({
+                  type: 'clone-profile',
+                  sourceProfileId,
+                  targetProfileId: answer.profile.id,
+                  ...(clearSites && clearSites.length > 0 ? { clearSites } : {}),
+                });
+              } catch (error) {
+                await store.deleteBrowserProfile(answer.profile.id);
+                throw error;
+              }
+            }
+          }}
+          onRenameBrowserProfile={async (profileId, name) => {
+            await store.renameBrowserProfile(profileId, name);
+          }}
+          onDeleteBrowserProfile={async (profileId) => {
+            await store.deleteBrowserProfile(profileId);
+          }}
+          onClearBrowserProfileSiteAuth={window.mawChatGpt && (async (profileId, sites) => {
+            for (const site of sites) {
+              await window.mawChatGpt!.command({
+                type: 'clear-profile-site-auth',
+                profileId,
+                site,
+              });
+            }
+          })}
         />
       )}
       {notificationsEnabled && (

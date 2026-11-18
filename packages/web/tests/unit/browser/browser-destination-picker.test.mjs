@@ -74,9 +74,8 @@ test('3. Inline Preview renders favorite name, configured URL, editable destinat
   assert.ok(html.includes('maw-browser-dest-preview'), 'Renders in preview mode');
   // Title
   assert.ok(html.includes(targetFav.title), 'Displays favorite title in preview');
-  // Configured URL row
-  assert.ok(html.includes('maw-browser-preview-configured-url'), 'Displays configured URL row');
-  assert.ok(html.includes(targetFav.url), 'Configured URL matches favorite url');
+  // Duplicate static Configured URL row is omitted in favor of the single editable Destination URL input
+  assert.ok(!html.includes('maw-browser-preview-configured-url'), 'Omits duplicate static configured URL row');
   // Destination URL editable input
   assert.ok(html.includes('id="maw-preview-dest-input"'), 'Includes editable destination URL input');
   assert.ok(html.includes(`value="${targetFav.url}"`), 'Destination input defaults to configured URL');

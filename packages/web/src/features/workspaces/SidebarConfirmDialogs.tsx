@@ -1,21 +1,24 @@
-import type { AgencyProject, AgencyRuntimeSession, AgencyWorkspace, WebTab } from '@agent-workbench/shared';
+import type { AgencyProject, AgencyRuntimeSession, AgencyWorkspace, EditorTab, WebTab } from '@agent-workbench/shared';
 import { t } from '../../i18n/index.js';
 import { ConfirmDialog } from '../../shared/ui/ConfirmDialog.js';
+import type { AnchorRect } from '../../shared/ui/ModalDialog.js';
 import { DeleteWorkspaceDialog } from './DeleteWorkspaceDialog.js';
+import { DeleteProjectDialog } from './DeleteProjectDialog.js';
 
 export interface SidebarConfirmDialogsProps {
   archivingProject: AgencyProject | null;
   deletingProject: AgencyProject | null;
-  projectDeleteBlocked: AgencyProject | null;
   archivingWorkspace: AgencyWorkspace | null;
   deletingWorkspace: AgencyWorkspace | null;
+  anchorRect?: AnchorRect | null;
+  workspaces: readonly AgencyWorkspace[];
   sessions: readonly AgencyRuntimeSession[];
   webTabs: readonly WebTab[];
+  editorTabs?: readonly EditorTab[];
   onCloseArchiveProject: () => void;
   onConfirmArchiveProject: (project: AgencyProject) => void;
-  onCloseProjectDeleteBlocked: () => void;
   onCloseDeleteProject: () => void;
-  onConfirmDeleteProject: (project: AgencyProject) => void;
+  onConfirmDeleteProject: (project: AgencyProject, cascade: boolean) => Promise<void> | void;
   onCloseArchiveWorkspace: () => void;
   onConfirmArchiveWorkspace: (workspace: AgencyWorkspace) => void;
   onCloseDeleteWorkspace: () => void;
@@ -25,14 +28,15 @@ export interface SidebarConfirmDialogsProps {
 export function SidebarConfirmDialogs({
   archivingProject,
   deletingProject,
-  projectDeleteBlocked,
   archivingWorkspace,
   deletingWorkspace,
+  anchorRect = null,
+  workspaces,
   sessions,
   webTabs,
+  editorTabs = [],
   onCloseArchiveProject,
   onConfirmArchiveProject,
-  onCloseProjectDeleteBlocked,
   onCloseDeleteProject,
   onConfirmDeleteProject,
   onCloseArchiveWorkspace,
@@ -57,6 +61,7 @@ export function SidebarConfirmDialogs({
           message={t('agency.ui.archiveProjectWarning')}
           cancelLabel={t('common.cancel')}
           confirmLabel={t('agency.ui.archiveProject')}
+          anchorRect={anchorRect}
           onClose={onCloseArchiveProject}
           onConfirm={() => {
             onConfirmArchiveProject(archivingProject);
@@ -65,32 +70,16 @@ export function SidebarConfirmDialogs({
         />
       )}
 
-      {projectDeleteBlocked && (
-        <ConfirmDialog
-          title={t('agency.ui.deleteProject')}
-          titleId="agency-del-proj-blocked"
-          confirmOnly
-          confirmLabel={t('common.close')}
-          onClose={onCloseProjectDeleteBlocked}
-          onConfirm={onCloseProjectDeleteBlocked}
-        >
-          <p className="agency-error">{t('agency.ui.cannotDeleteProjectNonEmpty')}</p>
-        </ConfirmDialog>
-      )}
-
       {deletingProject && (
-        <ConfirmDialog
-          title={t('agency.ui.confirmDeleteProject', { name: deletingProject.name })}
-          titleId="agency-del-proj-title"
-          message={t('agency.ui.deleteProjectWarning')}
-          cancelLabel={t('common.cancel')}
-          confirmLabel={t('agency.ui.deleteProject')}
-          danger
+        <DeleteProjectDialog
+          project={deletingProject}
+          workspaces={workspaces}
+          sessions={sessions}
+          webTabs={webTabs}
+          editorTabs={editorTabs}
+          anchorRect={anchorRect}
           onClose={onCloseDeleteProject}
-          onConfirm={() => {
-            onConfirmDeleteProject(deletingProject);
-            onCloseDeleteProject();
-          }}
+          onConfirm={onConfirmDeleteProject}
         />
       )}
 
@@ -102,6 +91,7 @@ export function SidebarConfirmDialogs({
           warning={archiveWorkspaceHasRunning ? t('agency.ui.activeProcessesWarning') : undefined}
           cancelLabel={t('common.cancel')}
           confirmLabel={t('agency.ui.archiveWorkspace')}
+          anchorRect={anchorRect}
           onClose={onCloseArchiveWorkspace}
           onConfirm={() => {
             onConfirmArchiveWorkspace(archivingWorkspace);
@@ -115,6 +105,8 @@ export function SidebarConfirmDialogs({
           workspace={deletingWorkspace}
           sessions={sessions}
           webTabs={webTabs}
+          editorTabs={editorTabs}
+          anchorRect={anchorRect}
           onConfirm={onConfirmDeleteWorkspace}
           onClose={onCloseDeleteWorkspace}
         />

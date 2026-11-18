@@ -13,7 +13,14 @@
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import type { AgentId, AgentInfo, ConsoleShellId } from '@agent-workbench/shared';
+import type {
+  AgentId,
+  AgentInfo,
+  BrowserProfile,
+  BrowserProfileId,
+  BrowserProfileSite,
+  ConsoleShellId,
+} from '@agent-workbench/shared';
 import { t } from './i18n/index.js';
 import type { HideablePanel, PanelVisibility } from './panel-visibility.js';
 import type { AppSettingsApi } from './useAppSettings.js';
@@ -78,6 +85,18 @@ export interface SettingsDialogProps {
   onOpenRemote?: (() => void) | null;
   connection?: AgentConnection;
   initialTab?: SettingsTabId | 'agents-usage' | 'appearance';
+  browserProfiles?: readonly BrowserProfile[];
+  onCreateBrowserProfile?: (input: {
+    name: string;
+    sourceProfileId?: BrowserProfileId;
+    clearSites?: readonly BrowserProfileSite[];
+  }) => void | Promise<unknown>;
+  onRenameBrowserProfile?: (profileId: BrowserProfileId, name: string) => void | Promise<unknown>;
+  onDeleteBrowserProfile?: (profileId: BrowserProfileId) => void | Promise<unknown>;
+  onClearBrowserProfileSiteAuth?: (
+    profileId: BrowserProfileId,
+    sites: readonly BrowserProfileSite[],
+  ) => void | Promise<unknown>;
 }
 
 export function SettingsDialog({
@@ -94,6 +113,11 @@ export function SettingsDialog({
   onOpenRemote = null,
   connection,
   initialTab = 'general',
+  browserProfiles,
+  onCreateBrowserProfile,
+  onRenameBrowserProfile,
+  onDeleteBrowserProfile,
+  onClearBrowserProfileSiteAuth,
 }: SettingsDialogProps): JSX.Element {
   const mappedInitial: SettingsTabId =
     initialTab === 'agents-usage'
@@ -105,6 +129,7 @@ export function SettingsDialog({
   const [activeTab, setActiveTab] = useState<SettingsTabId>(mappedInitial);
   const [confirmingConsole, setConfirmingConsole] = useState(false);
   const [highlightedCardId, setHighlightedCardId] = useState<string | null>(null);
+  const [expandSignal, setExpandSignal] = useState(0);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedResultIndex, setSelectedResultIndex] = useState(0);
@@ -251,6 +276,7 @@ export function SettingsDialog({
     setActiveTab(result.tabId);
     setSearchQuery('');
     setHighlightedCardId(result.targetId);
+    setExpandSignal((prev) => prev + 1);
 
     setTimeout(() => {
       const el = document.getElementById(result.targetId);
@@ -355,7 +381,7 @@ export function SettingsDialog({
             </div>
 
             {isSearching ? (
-              <div className="maw-settings-search-results" role="listbox" aria-label="Search results">
+              <div className="maw-settings-search-results" role="listbox" aria-label={t('settings.search.placeholder')}>
                 {searchResults.length === 0 ? (
                   <div className="maw-settings-search-empty">
                     <p className="maw-settings-search-empty-text">
@@ -441,6 +467,7 @@ export function SettingsDialog({
                   <GeneralSettingsSection
                     terminalTheme={terminalTheme}
                     highlightedCardId={highlightedCardId}
+                    expandSignal={expandSignal}
                     onOpenVault={onOpenVault}
                     onOpenRemote={onOpenRemote}
                   />
@@ -454,6 +481,7 @@ export function SettingsDialog({
                     serverEditable={serverEditable}
                     remoteClient={remoteClient}
                     highlightedCardId={highlightedCardId}
+                    expandSignal={expandSignal}
                     onSelectShell={(shellId) => {
                       setPendingShell(shellId);
                       appSettings.setConsoleShell(shellId);
@@ -465,6 +493,12 @@ export function SettingsDialog({
                   <BrowserSettingsSection
                     browserSettings={browserSettings}
                     highlightedCardId={highlightedCardId}
+                    expandSignal={expandSignal}
+                    browserProfiles={browserProfiles}
+                    onCreateBrowserProfile={onCreateBrowserProfile}
+                    onRenameBrowserProfile={onRenameBrowserProfile}
+                    onDeleteBrowserProfile={onDeleteBrowserProfile}
+                    onClearBrowserProfileSiteAuth={onClearBrowserProfileSiteAuth}
                   />
                 )}
 
@@ -478,6 +512,7 @@ export function SettingsDialog({
                     restartPending={restartPending}
                     remoteClient={remoteClient}
                     highlightedCardId={highlightedCardId}
+                    expandSignal={expandSignal}
                     connection={connection}
                     onChangeDisabledAgents={(next) => {
                       setPendingDisabled(next);
@@ -499,6 +534,7 @@ export function SettingsDialog({
                     consoleCount={consoleCount}
                     confirmingConsole={confirmingConsole}
                     highlightedCardId={highlightedCardId}
+                    expandSignal={expandSignal}
                     onTogglePanel={togglePanel}
                     onConfirmHideConsole={() => {
                       setConfirmingConsole(false);

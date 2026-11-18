@@ -24,7 +24,7 @@ export interface ClippingAncestor {
 
 function collectActiveOverlayRects(): OverlayRect[] {
   const items = document.querySelectorAll<HTMLElement>(
-    '[role="dialog"], [role="menu"], .agency-modal-backdrop, .modal-backdrop, .agency-dropdown-menu, .maw-toast-item, .context-menu, .agency-dialog, .settings-dialog, .maw-performance-panel, .maw-notification-inbox, .maw-context-menu, .maw-pane-drag-shield, .maw-pane-browser-picker-overlay, .maw-browser-picker-overlay, .maw-browser-dest-picker'
+    '[role="dialog"], [role="menu"], .agency-modal-backdrop, .modal-backdrop, .agency-dropdown-menu, .maw-toast-item, .context-menu, .agency-dialog, .settings-dialog, .maw-performance-panel, .maw-notification-inbox, .maw-context-menu, .maw-pane-drag-shield, .maw-pane-browser-picker-overlay, .maw-browser-picker-overlay, .maw-browser-dest-picker, .maw-pane-close-overlay, .agency-anchored-dialog'
   );
   if (items.length === 0) return [];
 

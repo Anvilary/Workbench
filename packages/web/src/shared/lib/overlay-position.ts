@@ -58,3 +58,39 @@ export function calculateViewportMenuPosition(params: ViewportPlacementParams): 
 
   return { left, top };
 }
+
+/**
+ * Places a sidebar-triggered confirmation dialog immediately to the right of its
+ * triggering anchor/row, clamped inside the visible viewport.
+ */
+export function calculateAnchoredDialogPosition(params: {
+  triggerRect: { left: number; top: number; right: number; bottom: number };
+  dialogWidth: number;
+  dialogHeight: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  margin?: number;
+  offset?: number;
+}): { left: number; top: number } {
+  const { triggerRect, dialogWidth, dialogHeight, viewportWidth, viewportHeight } = params;
+  const margin = params.margin ?? 12;
+  const offset = params.offset ?? 10;
+
+  let left = triggerRect.right + offset;
+  if (left + dialogWidth > viewportWidth - margin) {
+    left = Math.max(margin, viewportWidth - dialogWidth - margin);
+  }
+  if (left < margin) {
+    left = margin;
+  }
+
+  let top = triggerRect.top - 8;
+  if (top + dialogHeight > viewportHeight - margin) {
+    top = Math.max(margin, viewportHeight - dialogHeight - margin);
+  }
+  if (top < margin) {
+    top = margin;
+  }
+
+  return { left: Math.round(left), top: Math.round(top) };
+}

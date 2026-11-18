@@ -3,18 +3,24 @@
  *
  * One cohesive, centered, pane-scoped browser destination picker.
  * Displays user's configured browser favorites by name only with safe favicons,
- * followed by a subtle divider and "Other" (showing the default search engine).
- * Selecting a favorite reveals an inline preview with editable one-off destination URL.
- * Selecting "Other" reveals a clean URL or search query input.
+ * followed by a subtle divider and an inline "Other" section with an immediately
+ * usable URL/search input and a separate Search Engine homepage button.
+ * Selecting a favorite opens a streamlined preview with the title in the header,
+ * an editable one-off destination URL input, and Back / Open actions.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import type { BrowserFavorite, SearchEngine, WebTabProvider } from '@agent-workbench/shared';
-import { validateFaviconUrl, resolveAddressBarInput } from '@agent-workbench/shared';
+import {
+  validateFaviconUrl,
+  resolveAddressBarInput,
+  validateBrowserFavoriteUrl,
+} from '@agent-workbench/shared';
 import { GlobeIcon } from '../GlobeIcon.js';
 import { t } from '../../i18n/index.js';
 
 export interface BrowserDestinationPickerProps {
+  pickerTitle?: string;
   favorites: readonly BrowserFavorite[];
   searchEngine: SearchEngine;
   favicons?: Record<string, string>;
@@ -27,7 +33,28 @@ export interface BrowserDestinationPickerProps {
   initialFavorite?: BrowserFavorite;
 }
 
+function SearchGlyph(): JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="7" cy="7" r="4.5" />
+      <path d="M10.5 10.5l3.5 3.5" />
+    </svg>
+  );
+}
+
 export function BrowserDestinationPicker({
+  pickerTitle,
   favorites,
   searchEngine,
   favicons,
@@ -74,49 +101,34 @@ export function BrowserDestinationPicker({
     setMode('preview');
   };
 
-  const handleOtherClick = () => {
-    if (onSelectOther && !onConfirm) {
+  const handleOpenSearchEngineHome = () => {
+    if (onConfirm) {
+      onConfirm({ url: searchEngine.homeUrl, title: searchEngine.name, provider: 'other' });
+    } else if (onSelectOther) {
       onSelectOther();
-      return;
     }
-    setQueryInput('');
-    setError(null);
-    setMode('other');
   };
 
   const handleConfirmPreview = () => {
     if (!selectedFavorite) return;
     const raw = destinationUrl.trim() || selectedFavorite.url;
-    let finalUrl = raw;
-    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(finalUrl)) {
-      finalUrl = 'https://' + finalUrl;
-    }
-    try {
-      const parsed = new URL(finalUrl);
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        setError(t('agency.web.invalidUrl') || 'Invalid URL scheme');
-        return;
-      }
-    } catch {
-      setError(t('agency.web.invalidUrl') || 'Invalid URL');
+    const validation = validateBrowserFavoriteUrl(raw);
+    if (!validation.valid || !validation.normalizedUrl) {
+      setError(t('agency.web.invalidUrl'));
       return;
     }
 
     if (onConfirm) {
-      onConfirm({ url: finalUrl, title: selectedFavorite.title });
+      onConfirm({ url: validation.normalizedUrl, title: selectedFavorite.title });
     } else if (onSelectFavorite) {
-      onSelectFavorite({ ...selectedFavorite, url: finalUrl });
+      onSelectFavorite({ ...selectedFavorite, url: validation.normalizedUrl });
     }
   };
 
   const handleConfirmOther = () => {
     const raw = queryInput.trim();
     if (!raw) {
-      if (onConfirm) {
-        onConfirm({ url: searchEngine.homeUrl, title: searchEngine.name, provider: 'other' });
-      } else if (onSelectOther) {
-        onSelectOther();
-      }
+      handleOpenSearchEngineHome();
       return;
     }
     const resolved = resolveAddressBarInput(raw, searchEngine, 'other');
@@ -132,11 +144,21 @@ export function BrowserDestinationPicker({
     }
   };
 
+  const handleOtherSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    handleConfirmOther();
+  };
+
   const getFavicon = (fav: BrowserFavorite | null): string | null => {
     if (!fav) return null;
     const candidate = favicons?.[fav.id] || favicons?.[fav.url];
     if (!candidate) return null;
     return validateFaviconUrl(candidate);
+  };
+
+  const returnToList = () => {
+    setMode('list');
+    setError(null);
   };
 
   // Preview Mode
@@ -146,24 +168,26 @@ export function BrowserDestinationPicker({
       <div
         className="maw-browser-dest-picker maw-browser-dest-preview"
         role="region"
-        aria-label={t('agency.browser.previewTitle') || 'Preview Destination'}
+        aria-label={t('agency.browser.previewTitle')}
       >
         <div className="maw-browser-dest-header">
-          <button
-            type="button"
-            className="maw-browser-dest-back"
-            onClick={() => {
-              setMode('list');
-              setError(null);
-            }}
-          >
-            ‹ {t('agency.browser.chooseDifferent') || t('common.back') || 'Back'}
-          </button>
+          <div className="maw-browser-dest-other-label-group">
+            <span className="maw-browser-dest-icon-wrap" aria-hidden="true">
+              {favIconUrl ? (
+                <img className="maw-browser-dest-favicon" src={favIconUrl} alt="" />
+              ) : (
+                <GlobeIcon size={16} className="maw-browser-dest-icon" />
+              )}
+            </span>
+            <h4 className="maw-browser-dest-header-title maw-browser-preview-title">
+              {selectedFavorite.title}
+            </h4>
+          </div>
           {onCancel && (
             <button
               type="button"
               className="maw-browser-dest-close"
-              aria-label={t('common.cancel') || 'Cancel'}
+              aria-label={t('common.cancel')}
               onClick={onCancel}
             >
               ✕
@@ -171,29 +195,9 @@ export function BrowserDestinationPicker({
           )}
         </div>
 
-        <div className="maw-browser-preview-header">
-          <span className="maw-browser-dest-icon-wrap" aria-hidden="true">
-            {favIconUrl ? (
-              <img className="maw-browser-dest-favicon" src={favIconUrl} alt="" />
-            ) : (
-              <GlobeIcon size={16} className="maw-browser-dest-icon" />
-            )}
-          </span>
-          <h4 className="maw-browser-preview-title">{selectedFavorite.title}</h4>
-        </div>
-
-        <div className="maw-browser-preview-row">
-          <span className="maw-browser-preview-label">
-            {t('agency.browser.configuredUrl') || 'Configured URL'}
-          </span>
-          <span className="maw-browser-preview-configured-url" title={selectedFavorite.url}>
-            {selectedFavorite.url}
-          </span>
-        </div>
-
         <div className="maw-browser-preview-field">
           <label htmlFor="maw-preview-dest-input" className="maw-browser-preview-label">
-            {t('agency.browser.destinationUrl') || 'Destination URL'}
+            {t('agency.browser.destinationUrl')}
           </label>
           <input
             id="maw-preview-dest-input"
@@ -214,8 +218,7 @@ export function BrowserDestinationPicker({
             spellCheck={false}
           />
           <p className="maw-browser-preview-hint">
-            {t('agency.browser.oneOffHint') ||
-              'One-off navigation. Editing this does not alter your saved favorite.'}
+            {t('agency.browser.oneOffHint')}
           </p>
           {error && (
             <div className="maw-browser-dest-error" role="alert">
@@ -228,49 +231,44 @@ export function BrowserDestinationPicker({
           <button
             type="button"
             className="maw-browser-dest-btn-secondary"
-            onClick={() => {
-              setMode('list');
-              setError(null);
-            }}
+            onClick={returnToList}
           >
-            {t('agency.browser.chooseDifferent') || t('common.back') || 'Back'}
+            {t('common.back')}
           </button>
           <button
             type="submit"
             className="maw-browser-dest-btn-primary"
             onClick={handleConfirmPreview}
           >
-            {t('agency.browser.open') || 'Open'}
+            {t('agency.browser.open')}
           </button>
         </div>
       </div>
     );
   }
 
-  // Other Mode
+  // Standalone Other Mode (if opened directly via initialMode="other")
   if (mode === 'other') {
     return (
       <div
         className="maw-browser-dest-picker maw-browser-dest-other"
         role="region"
-        aria-label={t('agency.tabs.other') || 'Other Destination'}
+        aria-label={t('agency.tabs.other')}
       >
         <div className="maw-browser-dest-header">
           <button
             type="button"
             className="maw-browser-dest-back"
-            onClick={() => {
-              setMode('list');
-              setError(null);
-            }}
+            onClick={returnToList}
           >
-            ‹ {t('common.back') || 'Back'}
+            <span aria-hidden="true">‹</span>
+            <span>{t('common.back')}</span>
           </button>
           {onCancel && (
             <button
               type="button"
               className="maw-browser-dest-close"
-              aria-label={t('common.cancel') || 'Cancel'}
+              aria-label={t('common.cancel')}
               onClick={onCancel}
             >
               ✕
@@ -280,35 +278,20 @@ export function BrowserDestinationPicker({
 
         <div className="maw-browser-preview-header">
           <span className="maw-browser-dest-icon-wrap" aria-hidden="true">
-            <svg
-              viewBox="0 0 16 16"
-              width="16"
-              height="16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="7" cy="7" r="4.5" />
-              <path d="M10.5 10.5l3.5 3.5" />
-            </svg>
+            <SearchGlyph />
           </span>
-          <h4 className="maw-browser-preview-title">{t('agency.tabs.other') || 'Other Destination'}</h4>
+          <h4 className="maw-browser-preview-title">{t('agency.tabs.other')}</h4>
         </div>
 
         <div className="maw-browser-preview-field">
           <label htmlFor="maw-other-query-input" className="maw-browser-preview-label">
-            {t('agency.browser.urlOrSearch') || 'URL or Search Query'}
+            {t('agency.browser.urlOrSearch')}
           </label>
           <input
             id="maw-other-query-input"
             type="text"
             className="maw-browser-dest-input"
-            placeholder={
-              t('agency.browser.searchPlaceholder', { engine: searchEngine.name }) ||
-              `Search with ${searchEngine.name} or enter URL...`
-            }
+            placeholder={t('agency.browser.searchPlaceholder', { engine: searchEngine.name })}
             value={queryInput}
             onChange={(e) => {
               setQueryInput(e.target.value);
@@ -324,8 +307,7 @@ export function BrowserDestinationPicker({
             spellCheck={false}
           />
           <p className="maw-browser-preview-hint">
-            {t('agency.browser.searchEngineHint', { engine: searchEngine.name }) ||
-              `Searches with ${searchEngine.name}`}
+            {t('agency.browser.searchEngineHint', { engine: searchEngine.name })}
           </p>
           {error && (
             <div className="maw-browser-dest-error" role="alert">
@@ -338,48 +320,46 @@ export function BrowserDestinationPicker({
           <button
             type="button"
             className="maw-browser-dest-btn-secondary"
-            onClick={() => {
-              setMode('list');
-              setError(null);
-            }}
+            onClick={returnToList}
           >
-            {t('common.back') || 'Back'}
+            {t('common.back')}
           </button>
           <button
             type="submit"
             className="maw-browser-dest-btn-primary"
             onClick={handleConfirmOther}
           >
-            {t('agency.browser.open') || 'Open'}
+            {t('agency.browser.open')}
           </button>
         </div>
       </div>
     );
   }
 
-  // List Mode (Default)
+  // List Mode (Default) with Inline Other URL/Search Input + Search Engine Button
   return (
     <div
       className="maw-browser-dest-picker"
       role="menu"
-      aria-label={t('settings.category.browser') || 'Browser'}
+      aria-label={t('settings.category.browser')}
     >
-      {(onBack || onCancel) && (
+      {(onBack || onCancel || pickerTitle) && (
         <div className="maw-browser-dest-header">
           {onBack ? (
             <button type="button" role="menuitem" className="maw-browser-dest-back" onClick={onBack}>
-              ‹ {t('common.back') || 'Back'}
+              <span aria-hidden="true">‹</span>
+              <span>{t('common.back')}</span>
             </button>
           ) : (
             <span className="maw-browser-dest-header-title">
-              {t('agency.browser.pickerTitle') || t('agency.web.newTab') || 'New Browser Tab'}
+              {pickerTitle || t('agency.browser.pickerTitle')}
             </span>
           )}
           {onCancel && (
             <button
               type="button"
               className="maw-browser-dest-close"
-              aria-label={t('common.cancel') || 'Cancel'}
+              aria-label={t('common.cancel')}
               onClick={onCancel}
             >
               ✕
@@ -416,30 +396,50 @@ export function BrowserDestinationPicker({
 
       <div className="maw-browser-dest-divider" role="separator" />
 
-      <button
-        type="button"
-        role="menuitem"
-        className="agency-dropdown-item maw-browser-dest-item maw-browser-dest-item-other"
-        onClick={handleOtherClick}
-      >
-        <span className="maw-browser-dest-icon-wrap" aria-hidden="true">
-          <svg
-            viewBox="0 0 16 16"
-            width="14"
-            height="14"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+      <div className="maw-browser-dest-item maw-browser-dest-other-inline maw-browser-dest-item-other">
+        <div className="maw-browser-dest-other-top">
+          <div className="maw-browser-dest-other-label-group">
+            <span className="maw-browser-dest-icon-wrap" aria-hidden="true">
+              <SearchGlyph />
+            </span>
+            <span className="maw-browser-dest-name">{t('agency.tabs.other')}</span>
+          </div>
+          <button
+            type="button"
+            className="maw-browser-dest-engine-btn maw-browser-dest-url"
+            title={t('agency.browser.openHomePage', { engine: searchEngine.name })}
+            aria-label={t('agency.browser.openHomePage', { engine: searchEngine.name })}
+            onClick={handleOpenSearchEngineHome}
           >
-            <circle cx="7" cy="7" r="4.5" />
-            <path d="M10.5 10.5l3.5 3.5" />
-          </svg>
-        </span>
-        <span className="maw-browser-dest-name">{t('agency.tabs.other')}</span>
-        <span className="maw-browser-dest-url maw-browser-dest-engine">{searchEngine.name}</span>
-      </button>
+            {searchEngine.name}
+          </button>
+        </div>
+
+        <form className="maw-browser-dest-other-form" onSubmit={handleOtherSubmit} noValidate>
+          <input
+            id="maw-other-inline-input"
+            type="text"
+            className="maw-browser-dest-input maw-browser-dest-inline-input"
+            placeholder={t('agency.browser.searchPlaceholder', { engine: searchEngine.name })}
+            aria-label={t('agency.browser.urlOrSearch')}
+            value={queryInput}
+            onChange={(e) => {
+              setQueryInput(e.target.value);
+              setError(null);
+            }}
+            spellCheck={false}
+          />
+          <button type="submit" className="maw-browser-dest-btn-primary maw-browser-dest-go-btn">
+            {t('agency.browser.go')}
+          </button>
+        </form>
+
+        {error && (
+          <div className="maw-browser-dest-error" role="alert">
+            {error}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

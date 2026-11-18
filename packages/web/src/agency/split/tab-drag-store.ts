@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
 
+export interface TabDragSplitTarget {
+  paneId: string;
+  direction: 'row' | 'column';
+}
+
 export interface TabDragPreview {
   tabId: string;
   sourcePaneId: string;
@@ -7,6 +12,7 @@ export interface TabDragPreview {
   width: number;
   overPaneId: string | null;
   overIndex: number | null;
+  splitTarget?: TabDragSplitTarget | null;
 }
 
 type Listener = (preview: TabDragPreview | null) => void;
@@ -24,7 +30,9 @@ export function setTabDragPreview(preview: TabDragPreview | null): void {
       current.sourceIndex === preview.sourceIndex &&
       current.width === preview.width &&
       current.overPaneId === preview.overPaneId &&
-      current.overIndex === preview.overIndex)
+      current.overIndex === preview.overIndex &&
+      current.splitTarget?.paneId === preview.splitTarget?.paneId &&
+      current.splitTarget?.direction === preview.splitTarget?.direction)
   ) {
     return;
   }

@@ -31,7 +31,7 @@ export function AboutSettingsSection({
           </div>
           <div className="maw-settings-spec-row">
             <span className="maw-settings-spec-label">{t('settings.about.runtime')}</span>
-            <span className="maw-settings-spec-val">Electron {runtime.electronVersion}</span>
+            <span className="maw-settings-spec-val">{t('settings.about.runtimeValue', { version: runtime.electronVersion })}</span>
           </div>
           <div className="maw-settings-spec-row">
             <span className="maw-settings-spec-label">{t('settings.about.platform')}</span>
