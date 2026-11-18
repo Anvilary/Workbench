@@ -12,6 +12,7 @@ class Continuation {
   state = 'ground';
   pending = '';
   feed(data) {
+    if (this.state === 'ground' && !/[\x1b\x90\x98\x9b-\x9f]/.test(data)) return;
     for (const ch of data) {
       const n = ch.codePointAt(0);
       if (n === 0x9c) { this.state = 'ground'; this.pending = ''; continue; }
@@ -58,15 +59,25 @@ class Continuation {
 
 export class TerminalState {
   constructor(cols = 80, rows = 24) {
-    this.term = new headless.Terminal({ cols, rows, scrollback: 1000, allowProposedApi: true });
-    this.serializer = new serialize.SerializeAddon();
-    this.term.loadAddon(this.serializer);
+    this.initialCols = cols;
+    this.initialRows = rows;
+    this.term = null;
+    this.serializer = null;
     this.continuation = new Continuation();
     this.waiters = new Set();
     this.disposed = false;
     this.margins = { normal: null, alternate: null };
     this.cursorVisible = true;
     this.savedNormal = null;
+    this.pendingWrites = [];
+    this.pendingLength = 0;
+    this.flushImmediate = null;
+  }
+  ensureTerm() {
+    if (this.term) return this.term;
+    this.term = new headless.Terminal({ cols: this.initialCols, rows: this.initialRows, scrollback: 1000, allowProposedApi: true });
+    this.serializer = new serialize.SerializeAddon();
+    this.term.loadAddon(this.serializer);
     this.term.parser.registerCsiHandler({ final: 'r' }, (params) => {
       const top = Number(params[0]) || 1;
       const requested = Number(params[1]);
@@ -97,25 +108,53 @@ export class TerminalState {
       this.savedNormal = null;
       return false;
     });
+    return this.term;
+  }
+  flush() {
+    if (this.flushImmediate) {
+      clearImmediate(this.flushImmediate);
+      this.flushImmediate = null;
+    }
+    if (this.disposed || this.pendingWrites.length === 0) return;
+    const batch = this.pendingWrites.length === 1 ? this.pendingWrites[0] : this.pendingWrites.join('');
+    this.pendingWrites.length = 0;
+    this.pendingLength = 0;
+    this.continuation.feed(batch);
+    this.ensureTerm().write(batch);
   }
   push(data) {
-    if (this.disposed) return;
-    this.continuation.feed(data);
-    this.term.write(data);
+    if (this.disposed || !data.length) return;
+    this.pendingWrites.push(data);
+    this.pendingLength += data.length;
+    if (this.pendingLength >= 64 * 1024 || this.pendingWrites.length >= 256) {
+      this.flush();
+      return;
+    }
+    if (!this.flushImmediate) {
+      this.flushImmediate = setImmediate(() => {
+        this.flushImmediate = null;
+        this.flush();
+      });
+      this.flushImmediate.unref?.();
+    }
   }
   resize(cols, rows) {
     if (this.disposed) return;
+    this.flush();
+    const term = this.ensureTerm();
     // Like writes, resizes must follow the output that preceded SIGWINCH.
-    this.term.write('', () => {
+    term.write('', () => {
       if (this.disposed) return;
-      if (this.term.cols !== cols || this.term.rows !== rows) {
-        this.term.resize(cols, rows);
+      if (term.cols !== cols || term.rows !== rows) {
+        term.resize(cols, rows);
         this.margins = { normal: null, alternate: null };
       }
     });
   }
   snapshot(signal) {
     if (this.disposed) return Promise.reject(new Error('Terminal state disposed'));
+    this.flush();
+    const term = this.ensureTerm();
     const pending = this.continuation.pending;
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -132,7 +171,7 @@ export class TerminalState {
       this.waiters.add(fail);
       if (signal?.aborted) { abort(); return; }
       signal?.addEventListener('abort', abort, { once: true });
-      this.term.write('', () => {
+      term.write('', () => {
         if (settled || this.disposed) return;
         try {
           let data = this.serializer.serialize();
@@ -174,8 +213,14 @@ export class TerminalState {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    if (this.flushImmediate) {
+      clearImmediate(this.flushImmediate);
+      this.flushImmediate = null;
+    }
+    this.pendingWrites.length = 0;
+    this.pendingLength = 0;
     for (const reject of this.waiters) reject(new Error('Terminal state disposed'));
     this.waiters.clear();
-    this.term.dispose();
+    this.term?.dispose();
   }
 }

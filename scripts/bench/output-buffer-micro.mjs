@@ -1,40 +1,40 @@
-// Microbenchmark: OutputBuffer.push() (256 KiB replay ring) under different PTY chunk sizes.
-// Run: node --import ./packages/server/node_modules/tsx/dist/loader.mjs scripts/bench/output-buffer-micro.mjs
-import { OutputBuffer } from '../../packages/server/src/output-buffer.ts';
+// Run with the server's tsx loader. The same workload measures enqueue and checkpoint completion.
+import assert from 'node:assert/strict';
+import { performance } from 'node:perf_hooks';
+import { OutputBuffer as CurrentOutputBuffer } from '../../packages/server/src/output-buffer.ts';
 
-class RingAlt {
-  constructor(limit = 256 * 1024) { this.limit = limit; this.chunks = []; this.sizes = []; this.head = 0; this.size = 0; this.truncated = false; this.alt = false; }
-  push(chunk) {
-    if (!chunk.length) return;
-    if (chunk.includes('\x1b[?1049h') || chunk.includes('\x1b[?47h')) this.alt = true;
-    if (chunk.includes('\x1b[?1049l') || chunk.includes('\x1b[?47l')) this.alt = false;
-    const b = Buffer.byteLength(chunk, 'utf8');
-    this.chunks.push(chunk); this.sizes.push(b); this.size += b;
-    while (this.size > this.limit && this.head < this.chunks.length) {
-      const oldest = this.sizes[this.head];
-      if (this.size - oldest >= this.limit) { this.chunks[this.head] = undefined; this.size -= oldest; this.head++; }
-      else break;
-      this.truncated = true;
-    }
-    if (this.head > 4096 && this.head * 2 > this.chunks.length) { this.chunks = this.chunks.slice(this.head); this.sizes = this.sizes.slice(this.head); this.head = 0; }
+const { OutputBuffer } = process.env.MAW_OUTPUT_BUFFER_MODULE
+  ? await import(process.env.MAW_OUTPUT_BUFFER_MODULE)
+  : { OutputBuffer: CurrentOutputBuffer };
+const totalBytes = Number(process.env.TOTAL_MIB ?? 16) * 1024 * 1024;
+const repetitions = Number(process.env.REPS ?? 3);
+assert.ok(Number.isInteger(repetitions) && repetitions > 0 && totalBytes >= 65536);
+
+async function run(chunkBytes) {
+  const buffer = new OutputBuffer();
+  const marker = 'checkpoint-end';
+  const chunk = 'x'.repeat(chunkBytes - 2) + '\r\n';
+  const chunks = Math.floor(totalBytes / chunkBytes);
+  try {
+    const started = performance.now();
+    for (let index = 0; index < chunks; index++) buffer.push(chunk);
+    const enqueued = performance.now();
+    buffer.push(marker);
+    const checkpoint = await buffer.checkpoint();
+    assert.equal(buffer.endOffset, chunks * chunkBytes + marker.length);
+    assert.ok(checkpoint.data.includes(marker));
+    return { enqueueMs: enqueued - started, completionMs: performance.now() - started, chunks };
+  } finally {
+    buffer.dispose();
   }
 }
 
-function run(Ctor, chunkBytes, total) {
-  const chunk = ('x'.repeat(Math.max(1, chunkBytes - 2))) + '\r\n';
-  const n = Math.floor(total / chunkBytes);
-  const b = new Ctor();
-  const t0 = process.hrtime.bigint();
-  for (let i = 0; i < n; i++) b.push(chunk);
-  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
-  return { ms: +ms.toFixed(1), nsPerPush: Math.round(ms * 1e6 / n), mbPerSec: +((n * chunkBytes) / 1048576 / (ms / 1000)).toFixed(0) };
-}
-const TOTAL = Number(process.env.TOTAL_MIB ?? 16) * 1024 * 1024;
-const REPS = Number(process.env.REPS ?? 3);
-console.log('chunkBytes | impl | ms | ns/push | MiB/s   (TOTAL_MIB through a 256 KiB ring; best of REPS)');
-for (const cb of [16, 64, 256, 4096, 65536]) {
-  for (const [name, C] of [['OutputBuffer(current)', OutputBuffer], ['RingAlt(head index)', RingAlt]]) {
-    let best = null; for (let r = 0; r < REPS; r++) { const x = run(C, cb, TOTAL); if (!best || x.ms < best.ms) best = x; }
-    console.log(`${String(cb).padStart(9)} | ${name.padEnd(21)} | ${String(best.ms).padStart(8)} | ${String(best.nsPerPush).padStart(7)} | ${best.mbPerSec}`);
-  }
+console.log('chunkBytes | impl | enqueue ms | checkpoint completion ms | enqueue MiB/s (median run)');
+for (const chunkBytes of [16, 64, 256, 4096, 65536]) {
+  const runs = [];
+  for (let repetition = 0; repetition < repetitions; repetition++) runs.push(await run(chunkBytes));
+  runs.sort((a, b) => a.enqueueMs - b.enqueueMs);
+  const middle = runs[Math.floor(runs.length / 2)];
+  const throughput = Math.round(middle.chunks * chunkBytes / 1048576 / (middle.enqueueMs / 1000));
+  console.log(`${chunkBytes} | OutputBuffer | ${middle.enqueueMs.toFixed(1)} | ${middle.completionMs.toFixed(1)} | ${throughput}`);
 }

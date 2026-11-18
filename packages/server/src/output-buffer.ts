@@ -63,6 +63,7 @@ export class OutputBuffer {
   private state = new TerminalState();
   private chunks: string[] = [];
   private chunkSizes: number[] = [];
+  private head = 0;
   private sizeBytes = 0;
   private totalBytesPushed = 0;
   private truncated = false;
@@ -101,28 +102,34 @@ export class OutputBuffer {
     this.sizeBytes += chunkByteLen;
     this.totalBytesPushed += chunkByteLen;
 
-    while (this.sizeBytes > this.limitBytes && this.chunks.length > 0) {
-      const oldest = this.chunks[0]!;
-      const size = this.chunkSizes[0]!;
+    while (this.sizeBytes > this.limitBytes && this.head < this.chunks.length) {
+      const oldest = this.chunks[this.head]!;
+      const size = this.chunkSizes[this.head]!;
       const remainingWithoutOldest = this.sizeBytes - size;
       if (remainingWithoutOldest >= this.limitBytes) {
-        this.chunks.shift();
-        this.chunkSizes.shift();
+        this.chunks[this.head] = '';
+        this.head++;
         this.sizeBytes -= size;
       } else {
         const suffix = suffixWithinBytes(oldest, this.limitBytes - remainingWithoutOldest);
         if (suffix.length === 0) {
-          this.chunks.shift();
-          this.chunkSizes.shift();
+          this.chunks[this.head] = '';
+          this.head++;
           this.sizeBytes -= size;
         } else {
           const suffixSize = Buffer.byteLength(suffix, 'utf8');
-          this.chunks[0] = suffix;
-          this.chunkSizes[0] = suffixSize;
+          this.chunks[this.head] = suffix;
+          this.chunkSizes[this.head] = suffixSize;
           this.sizeBytes -= (size - suffixSize);
         }
       }
       this.truncated = true;
+    }
+
+    if (this.head > 4096 && this.head * 2 > this.chunks.length) {
+      this.chunks = this.chunks.slice(this.head);
+      this.chunkSizes = this.chunkSizes.slice(this.head);
+      this.head = 0;
     }
   }
 
@@ -135,7 +142,8 @@ export class OutputBuffer {
    * reinyecta para que xterm pinte en el buffer alterno y no sobre el normal.
    */
   read(): string {
-    const raw = this.chunks.join('');
+    const activeChunks = this.head === 0 ? this.chunks : this.chunks.slice(this.head);
+    const raw = activeChunks.join('');
     if (this.truncated && this.inAlternateScreen && !raw.includes('\x1b[?1049h') && !raw.includes('\x1b[?47h')) {
       return '\x1b[?1049h' + raw;
     }
@@ -189,7 +197,7 @@ export class OutputBuffer {
     let skipped = 0;
     const resultParts: string[] = [];
 
-    for (let i = 0; i < this.chunks.length; i++) {
+    for (let i = this.head; i < this.chunks.length; i++) {
       const chunk = this.chunks[i]!;
       const chunkBytes = this.chunkSizes[i]!;
       const chunkEnd = skipped + chunkBytes;
@@ -247,6 +255,7 @@ export class OutputBuffer {
     this.state = new TerminalState();
     this.chunks = [];
     this.chunkSizes = [];
+    this.head = 0;
     this.sizeBytes = 0;
     this.totalBytesPushed = 0;
     this.truncated = false;
@@ -266,6 +275,7 @@ export class OutputBuffer {
     this.chunks = data.length > 0 ? [data] : [];
     const byteLen = Buffer.byteLength(data, 'utf8');
     this.chunkSizes = data.length > 0 ? [byteLen] : [];
+    this.head = 0;
     this.sizeBytes = byteLen;
     this.totalBytesPushed = endOffset;
     this.truncated = truncated;

@@ -311,7 +311,9 @@ async function runBenchmarkSuite(targetSuite = 'all') {
     }
 
     // Save output evidence file
-    const evidenceDir = path.resolve(repoRoot, 'docs/maw/webview-performance/evidence');
+    const evidenceDir = process.env.MAW_WEBVIEW_EVIDENCE_DIR
+      ? path.resolve(process.env.MAW_WEBVIEW_EVIDENCE_DIR)
+      : path.resolve(repoRoot, 'docs/maw/webview-performance/evidence');
     await mkdir(evidenceDir, { recursive: true });
     const evidencePath = path.resolve(evidenceDir, 'latest-benchmark.json');
     await writeFile(evidencePath, JSON.stringify(results, null, 2), 'utf8');

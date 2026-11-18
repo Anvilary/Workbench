@@ -85,9 +85,9 @@ async function step(name, fn) {
 
 // 1. Native layout coordinator idle rAF regression check
 await step('Native layout coordinator idle rAF elimination', async () => {
-  const { stdout } = await runCommand('node', ['--test', 'packages/web/tests/unit/panes/native-layout-coordinator.test.mjs'], { silent: true });
-  if (!stdout.includes('pass 2') && !stdout.includes('✔')) {
-    throw new Error('Native layout coordinator test suite failed or produced unexpected test counts');
+  const { stdout } = await runCommand('node', ['--test', '--test-reporter=tap', 'packages/web/tests/integration/panes/native-layout-coordinator.test.mjs'], { silent: true });
+  if (!/^# pass [1-9]\d*$/m.test(stdout) || !/^# skipped 0$/m.test(stdout)) {
+    throw new Error('Native layout coordinator cases were not all executed');
   }
   return {
     metrics: {
@@ -253,9 +253,9 @@ await step('Tab drag-and-drop interaction responsiveness', async () => {
   }
   return {
     metrics: {
-      'script duration (mean)': `${avgScript} ms (reduced from ~93 ms)`,
-      'getBoundingClientRect per move': `${avgGbcr} (reduced from 6.9, 98% reduction)`,
-      'style recalcs (rAF coalesced)': `${avgRecalc} (reduced from ~168)`,
+      'script duration (mean)': `${avgScript} ms`,
+      'getBoundingClientRect per move': avgGbcr,
+      'style recalcs (rAF coalesced)': avgRecalc,
       'long tasks (>50ms)': `${maxLong}`,
     },
   };

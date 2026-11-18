@@ -6,6 +6,28 @@ import os from 'node:os';
 // @ts-expect-error - standalone pure-ESM supervisor script
 import { PtySupervisor } from '../../../src/pty-host/maw-ptyd.mjs';
 import { PtyHostClient } from '../../../src/pty-host/pty-host-client.js';
+import { TerminalState } from '../../../src/pty-host/terminal-state.mjs';
+
+test('burst rendering checkpoint retains modes and preserves resize and snapshot order', async () => {
+  const state = new TerminalState();
+  try {
+    state.push('before alternate\x1b[?1049h');
+    for (let chunk = 0; chunk < 9000; chunk++) state.push('x'.repeat(80));
+    state.resize(92, 28);
+    state.push('\r\nBEFORE_CHECKPOINT');
+    const snapshot = state.snapshot();
+    state.push('\r\nAFTER_CHECKPOINT');
+    const captured = await snapshot;
+    assert.equal(captured.cols, 92);
+    assert.equal(captured.rows, 28);
+    assert.match(captured.data, /before alternate.*\x1b\[\?1049h/s);
+    assert.match(captured.data, /BEFORE_CHECKPOINT/);
+    assert.doesNotMatch(captured.data, /AFTER_CHECKPOINT/);
+    assert.match((await state.snapshot()).data, /AFTER_CHECKPOINT/);
+  } finally {
+    state.dispose();
+  }
+});
 
 function isolatedHost() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maw-render-transport-'));

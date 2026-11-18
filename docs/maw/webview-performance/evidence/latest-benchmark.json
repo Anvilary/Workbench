@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-11-18T17:38:35.322Z",
+  "timestamp": "2026-11-18T18:44:19.783Z",
   "environment": {
     "platform": "linux",
     "arch": "x64",
@@ -8,99 +8,99 @@
   "benchmarks": {
     "lifecycle": {
       "viewCreation": {
-        "mean": 0.88,
-        "min": 0.504,
-        "max": 3.228,
-        "p50": 0.76,
-        "p95": 3.228,
-        "p99": 3.228,
+        "mean": 0.749,
+        "min": 0.462,
+        "max": 3.003,
+        "p50": 0.62,
+        "p95": 3.003,
+        "p99": 3.003,
         "count": 20
       },
       "viewAttachment": {
-        "mean": 0.132,
-        "min": 0.067,
-        "max": 0.304,
-        "p50": 0.133,
-        "p95": 0.304,
-        "p99": 0.304,
+        "mean": 0.104,
+        "min": 0.06,
+        "max": 0.185,
+        "p50": 0.09,
+        "p95": 0.185,
+        "p99": 0.185,
         "count": 20
       },
       "boundsUpdate": {
-        "mean": 0.046,
-        "min": 0.029,
-        "max": 0.089,
-        "p50": 0.044,
-        "p95": 0.089,
-        "p99": 0.089,
+        "mean": 0.041,
+        "min": 0.026,
+        "max": 0.082,
+        "p50": 0.037,
+        "p95": 0.082,
+        "p99": 0.082,
         "count": 20
       },
       "viewDetachment": {
-        "mean": 0.035,
+        "mean": 0.027,
         "min": 0.017,
-        "max": 0.073,
-        "p50": 0.028,
-        "p95": 0.073,
-        "p99": 0.073,
+        "max": 0.058,
+        "p50": 0.027,
+        "p95": 0.058,
+        "p99": 0.058,
         "count": 20
       },
       "viewDestruction": {
-        "mean": 0.006,
-        "min": 0.003,
-        "max": 0.02,
-        "p50": 0.006,
-        "p95": 0.02,
-        "p99": 0.02,
+        "mean": 0.004,
+        "min": 0.002,
+        "max": 0.008,
+        "p50": 0.004,
+        "p95": 0.008,
+        "p99": 0.008,
         "count": 20
       }
     },
     "tabSwitch": {
       "warmSwitchPrimitiveMs": {
-        "mean": 0.066,
-        "min": 0.054,
-        "max": 0.11,
-        "p50": 0.065,
-        "p95": 0.11,
-        "p99": 0.11,
+        "mean": 0.091,
+        "min": 0.067,
+        "max": 0.148,
+        "p50": 0.086,
+        "p95": 0.148,
+        "p99": 0.148,
         "count": 20
       }
     },
     "paneResize": {
       "setBoundsLatencyMs": {
-        "mean": 0.024,
+        "mean": 0.019,
         "min": 0.015,
-        "max": 0.059,
-        "p50": 0.024,
-        "p95": 0.035,
-        "p99": 0.059,
+        "max": 0.055,
+        "p50": 0.017,
+        "p95": 0.025,
+        "p99": 0.055,
         "count": 51
       }
     },
     "overlayCapture": {
       "gpuReadbackMs": {
-        "mean": 0.008,
+        "mean": 0.01,
         "min": 0.001,
-        "max": 0.067,
-        "p50": 0.001,
-        "p95": 0.067,
-        "p99": 0.067,
+        "max": 0.085,
+        "p50": 0.002,
+        "p95": 0.085,
+        "p99": 0.085,
         "count": 10
       },
       "pngEncodeMs": {
-        "mean": 0.002,
+        "mean": 0.001,
         "min": 0,
-        "max": 0.012,
+        "max": 0.007,
         "p50": 0,
-        "p95": 0.012,
-        "p99": 0.012,
+        "p95": 0.007,
+        "p99": 0.007,
         "count": 10
       },
       "totalCaptureMs": {
-        "mean": 0.01,
+        "mean": 0.012,
         "min": 0.001,
-        "max": 0.079,
-        "p50": 0.001,
-        "p95": 0.079,
-        "p99": 0.079,
+        "max": 0.092,
+        "p50": 0.002,
+        "p95": 0.092,
+        "p99": 0.092,
         "count": 10
       },
       "payloadBytes": {
@@ -115,37 +115,37 @@
     },
     "resourceMatrix": {
       "processCount": 4,
-      "totalRssMiB": 507.4,
-      "totalPssMiB": 186.4,
-      "totalPrivateMiB": 129.2,
+      "totalRssMiB": 491.2,
+      "totalPssMiB": 203.2,
+      "totalPrivateMiB": 157.8,
       "processes": [
         {
           "type": "Browser",
-          "pid": 3123150,
-          "rssMiB": 177.2,
-          "pssMiB": 80.8,
-          "privateMiB": 66.7
+          "pid": 3359045,
+          "rssMiB": 168.6,
+          "pssMiB": 77.4,
+          "privateMiB": 64
         },
         {
           "type": "GPU",
-          "pid": 3123193,
-          "rssMiB": 151.2,
-          "pssMiB": 63.1,
-          "privateMiB": 37.5
+          "pid": 3359086,
+          "rssMiB": 148.7,
+          "pssMiB": 82.8,
+          "privateMiB": 68
         },
         {
           "type": "Utility",
-          "pid": 3123195,
-          "rssMiB": 83.6,
-          "pssMiB": 22.9,
-          "privateMiB": 14.7
+          "pid": 3359089,
+          "rssMiB": 81.6,
+          "pssMiB": 22.7,
+          "privateMiB": 14.6
         },
         {
           "type": "Tab",
-          "pid": 3123214,
-          "rssMiB": 95.4,
-          "pssMiB": 19.6,
-          "privateMiB": 10.3
+          "pid": 3359107,
+          "rssMiB": 92.3,
+          "pssMiB": 20.3,
+          "privateMiB": 11.2
         }
       ]
     }
