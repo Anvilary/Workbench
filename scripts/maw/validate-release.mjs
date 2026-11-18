@@ -59,14 +59,14 @@ try {
   if (['all', 'build'].includes(phase)) {
     await run('checks', 'corepack pnpm check');
     await run('desktop-package', 'node scripts/maw/build-desktop-deb.mjs');
-    await run('desktop-production', 'node --test --test-concurrency=1 packages/desktop/production.test.mjs');
+    await run('desktop-production', 'node --test --test-concurrency=1 packages/desktop/tests/integration/desktop/production.test.mjs');
   }
   if (['all', 'desktop', 'acceptance'].includes(phase)) {
     const desktop = JSON.parse(await readFile(path.join(root, 'packages/desktop/package.json'), 'utf8'));
     if (phase !== 'acceptance') await run('electron', `GSK_RENDERER=cairo LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a dbus-run-session env MAW_NAUTILUS_TEST_ISOLATED=1 ${desktop.scripts['test:electron']}`, path.join(root, 'packages/desktop'));
-    await run('browser-acceptance', 'node --test --test-concurrency=1 packages/web/src/agency/browser-tabs.test.mjs packages/web/src/maw-root.test.mjs packages/web/src/terminal-webgl.test.mjs packages/web/src/agency/native-layout-coordinator.test.mjs packages/web/src/agency/split/terminal-scrollback-20k.test.mjs');
+    await run('browser-acceptance', 'node --test --test-concurrency=1 packages/web/tests/e2e/browser/browser-tabs.test.mjs packages/web/tests/unit/workspaces/maw-root.test.mjs packages/web/tests/e2e/terminals/terminal-webgl.test.mjs packages/web/tests/unit/panes/native-layout-coordinator.test.mjs packages/web/tests/e2e/terminals/terminal-scrollback-20k.test.mjs');
   }
-  if (['all', 'desktop', 'staging'].includes(phase)) await run('staging', 'xvfb-run -a node --test packages/desktop/staging-release.test.mjs');
+  if (['all', 'desktop', 'staging'].includes(phase)) await run('staging', 'xvfb-run -a node --test packages/desktop/tests/runtime/lifecycle/staging-release.test.mjs');
 } finally {
   await writeFile(path.join(evidence, `${phase}.json`), JSON.stringify({ phase, results }, null, 2) + '\n');
   await rm(home, { recursive: true, force: true });

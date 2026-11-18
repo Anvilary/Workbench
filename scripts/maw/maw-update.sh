@@ -262,7 +262,7 @@ if [ ! -d "$candidate_dir/packages/server/node_modules/node-pty" ]; then
   handle_candidate_failure validate 'node-pty dependency is missing'
 fi
 printf '%s\n' 'Running profile test suite...'
-run_step corepack pnpm --filter @agent-workbench/server exec tsx --test src/agents/profiles/profiles.test.ts ||
+run_step corepack pnpm --filter @agent-workbench/server exec tsx --test tests/unit/agents/profiles.test.ts ||
   handle_candidate_failure test 'profiles test failed'
 
 # 9. Finalize: detach from git, write metadata, then drop the candidate marker (the release becomes valid).

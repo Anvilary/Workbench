@@ -11,6 +11,6 @@ const env={HOME:home,USERPROFILE:home,APPDATA:path.join(temp,'appdata'),XDG_CONF
 try {
  const output=execFileSync('systemd-run',['--user','--quiet','--wait','--pipe','--collect','--unit=maw-native-fixtures-'+process.pid,
   '--property=WorkingDirectory='+path.join(repo,'packages/server'),'--property=KillMode=control-group',
-  ...Object.entries(env).map(([key,value])=>'--setenv='+key+'='+value),process.execPath,'--import',path.join(repo,'packages/server/node_modules/tsx/dist/loader.mjs'),'--test',path.join(repo,'packages/server/src/agency/native-context.test.ts')],{encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout:60000});
+  ...Object.entries(env).map(([key,value])=>'--setenv='+key+'='+value),process.execPath,'--import',path.join(repo,'packages/server/node_modules/tsx/dist/loader.mjs'),'--test',path.join(repo,'packages/server/tests/security/filesystem/native-context.test.ts')],{encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout:60000});
  console.log(output);console.log('PASS disposable ten-profile PTY/context suite under systemd');
 } finally {await rm(temp,{recursive:true,force:true});}
