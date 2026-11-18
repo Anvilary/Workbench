@@ -17,7 +17,7 @@ export function AboutSettingsSection({
         className={`maw-settings-card ${highlightedCardId === 'setting-card-about' ? 'maw-settings-card-highlighted' : ''}`}
       >
         <div className="maw-settings-about-hero">
-          <div className="maw-settings-about-logo">MaW</div>
+          <div className="maw-settings-about-logo" aria-hidden="true">AW</div>
           <div>
             <h3 className="maw-settings-about-name">{t('settings.about.app')}</h3>
             <p className="maw-settings-about-tagline">{t('settings.about.tagline')}</p>

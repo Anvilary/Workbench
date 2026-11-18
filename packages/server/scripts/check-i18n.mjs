@@ -297,7 +297,7 @@ const { SERVER_TEXTS } = await import('../../shared/src/server-text.ts');
 {
   const LETTERS = /\p{L}/u;
   /** Lo que se muestra igual en todos los idiomas. */
-  const UNTRANSLATED = new Set(['CLI', 'Agent Workbench', 'Git', 'aA', 'MAW', 'Agents Usage', 'Agents Usage…']);
+  const UNTRANSLATED = new Set(['CLI', 'Anvilary Workbench', 'Git', 'aA', 'MAW', 'Agents Usage', 'Agents Usage…']);
   const UNTRANSLATED_FILES = new Set([
     'AgentsUsageView.tsx',
     'TerminalView.tsx',

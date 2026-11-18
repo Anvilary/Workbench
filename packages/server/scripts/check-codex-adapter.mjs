@@ -2681,13 +2681,13 @@ const throwsOn = (run) => {
   const legacyAvailable = ['  CLI          2.1.270', '  Binary       /bin/claude'];
   // La linea de apoyo (§6.28): una, alineada como las demas, con la direccion de la app.
   check('A6 la linea de apoyo del arranque',
-    supportStartupLine() === '  Support      If Agent Workbench is useful to you, consider supporting it: https://buymeacoffee.com/cvelasquez',
+    supportStartupLine() === '  Support      If Anvilary Workbench is useful to you, consider supporting it: https://buymeacoffee.com/cvelasquez',
     supportStartupLine());
   // Con color: sin las secuencias queda la lisa; rotulo fucsia, texto amarillo, direccion azul subrayada.
   const colored = supportStartupLineColored();
   check('A6 la de color, sin las secuencias, es la lisa', colored.replace(/[[0-9;]*m/g, '') === supportStartupLine(), JSON.stringify(colored));
   check('A6 la de color: fucsia, amarillo y azul subrayado, cada uno cerrado',
-    colored.includes('[95mSupport[0m') && colored.includes('[33mIf Agent Workbench') && colored.includes('[4;94mhttps://buymeacoffee.com/cvelasquez[0m'));
+    colored.includes('[95mSupport[0m') && colored.includes('[33mIf Anvilary Workbench') && colored.includes('[4;94mhttps://buymeacoffee.com/cvelasquez[0m'));
   check('A6 claude-code sola: las lineas de siempre y la de disponibles',
     same(startupAgentLines([claude()]), ['  Available CLIs  claude-code', ...legacyAvailable]), show(startupAgentLines([claude()])));
   const withoutCodex = startupAgentLines([claude(), codexMissing]);

@@ -141,7 +141,7 @@ window.mawChatGpt.subscribe(s => {
     await command({ type: 'open', id: tabId, provider: 'other', url: 'https://capabilities.maw-audit.com/media-test' });
 
     const info = await app.evaluate(({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows().find(w => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find(w => w.getTitle().includes('Workbench'));
       return { contentSize: win.getContentSize(), zoom: win.webContents.getZoomFactor() };
     });
 
@@ -349,7 +349,7 @@ window.mawChatGpt.subscribe(s => {
 
     // 4. Verify unthrottled requestAnimationFrame when unfocused (backgroundThrottling: false)
     const animationResults = await app.evaluate(async ({ webContents, session, BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows().find(w => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find(w => w.getTitle().includes('Workbench'));
       const childrenCount = win ? win.contentView.children.length : -1;
       const contents = webContents.getAllWebContents().find(c =>
         c.session === session.fromPartition('persist:maw-browser') &&

@@ -416,7 +416,7 @@ export function SettingsDialog({
             )}
 
             <div className="maw-settings-sidebar-footer">
-              <span className="maw-settings-version" title={`MaW ${versionInfo.displayVersion}`}>
+              <span className="maw-settings-version" title={`Anvilary Workbench ${versionInfo.displayVersion}`}>
                 {versionInfo.displayVersion}
               </span>
             </div>

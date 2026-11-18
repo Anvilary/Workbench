@@ -61,7 +61,8 @@ try {
 const packageDir = path.join(appDir, 'node_modules', 'agent-workbench');
 const serverFile = path.join(packageDir, 'dist', 'server.js');
 check('the package installs its server', existsSync(serverFile));
-check('the bin shim exists', existsSync(path.join(appDir, 'node_modules', '.bin', isWindows ? 'agent-workbench.cmd' : 'agent-workbench')));
+check('the anvil-bench bin shim exists', existsSync(path.join(appDir, 'node_modules', '.bin', isWindows ? 'anvil-bench.cmd' : 'anvil-bench')));
+check('the legacy bin shim exists', existsSync(path.join(appDir, 'node_modules', '.bin', isWindows ? 'agent-workbench.cmd' : 'agent-workbench')));
 
 // ---- 1. the server ----------------------------------------------------------
 
@@ -101,7 +102,7 @@ if (!url.startsWith('http')) {
   const get = (target, headers = {}) => fetch(target, { headers, redirect: 'manual' }).then(async (r) => ({ status: r.status, body: await r.text() }));
   try {
     const withToken = await get(url);
-    check('with the token: the interface', withToken.status === 200 && withToken.body.includes('My Amazing Workspace'), `HTTP ${withToken.status}`);
+    check('with the token: the interface', withToken.status === 200 && withToken.body.includes('Anvilary Workbench'), `HTTP ${withToken.status}`);
     const withoutToken = await get(`${base.origin}/`);
     check('without the token: refused', withoutToken.status === 401, `HTTP ${withoutToken.status}`);
     const foreign = await get(url, { Origin: 'http://evil.example' });

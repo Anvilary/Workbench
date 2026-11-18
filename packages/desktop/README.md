@@ -1,8 +1,8 @@
-# Native ChatGPT desktop experiment
+# Anvilary Workbench Desktop
 
-For installation against the existing service, use [the production Ubuntu guide](PRODUCTION.md). The production command is `maw desktop`; `pnpm desktop` below is development only.
+For installation against the existing service, use [the production Ubuntu guide](PRODUCTION.md). The production command is `anvil-bench desktop` (`maw desktop` remains available as a compatibility alias); `pnpm desktop` below is development only.
 
-A desktop-first Ubuntu MAW prototype using the existing local Node service and
+An Ubuntu desktop-first Anvilary Workbench shell using the existing local Node service and
 React frontend. Neko source and infrastructure are retired in this branch; no
 installed service, container, volume, profile or credentials have been removed. See [validation](VALIDATION.md)
 and the separate [Neko migration plan](NEKO-MIGRATION.md).

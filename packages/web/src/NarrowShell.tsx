@@ -238,7 +238,7 @@ export function NarrowShell({
         </button>
         <button className="narrow-current" onClick={() => setSheet('tabs')} title={t('narrow.tabs.open')}>
           {activeTerminal === null ? (
-            <span className="app-name">Agent Workbench</span>
+            <span className="app-name">Anvilary Workbench</span>
           ) : (
             <>
               <TabStatus

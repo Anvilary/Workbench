@@ -299,7 +299,7 @@ function describeStartup(
   const agentList: readonly AgentInfo[] = agents.list();
   const line = '-'.repeat(64);
   console.log(`\n${line}`);
-  console.log('  Agent Workbench');
+  console.log('  Anvilary Workbench');
   console.log(line);
   console.log(`  URL          ${url}`);
   console.log(`  Mode         ${isProduction ? 'production (compiled interface)' : 'development'}`);
@@ -692,8 +692,8 @@ async function main(): Promise<void> {
   if (noAuth) {
     console.warn(
       '\n  ⚠  TOKEN-FREE LOCAL MODE (MAW_UNSAFE_LOCAL_NO_AUTH=1)\n' +
-      '  Any process on this machine that can reach 127.0.0.1 can access MAW.\n' +
-      '  MAW executes shell commands. Loopback-only binding does not eliminate all risks.\n'
+      '  Any process on this machine that can reach 127.0.0.1 can access Anvilary Workbench.\n' +
+      '  Anvilary Workbench executes shell commands. Loopback-only binding does not eliminate all risks.\n'
     );
   }
   const runtimeDir = process.env['MAW_RUNTIME_DIR']
@@ -708,7 +708,7 @@ async function main(): Promise<void> {
   const shutdown = (): void => {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.log('\nClosing Agent Workbench...');
+    console.log('\nClosing Anvilary Workbench...');
 
     classicLifecycle.dispose();
     const historyFlushed = detachSocket();
@@ -768,6 +768,6 @@ main().catch((error: unknown) => {
       : typeof error === 'object' && error !== null
         ? JSON.stringify(error, Object.getOwnPropertyNames(error))
         : String(error);
-  console.error(`Agent Workbench couldn't start:\n${detail}`);
+  console.error(`Anvilary Workbench couldn't start:\n${detail}`);
   process.exit(1);
 });

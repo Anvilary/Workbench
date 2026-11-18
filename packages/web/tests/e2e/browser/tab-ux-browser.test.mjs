@@ -334,10 +334,10 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   await page.evaluate(() => window.agencyTest.emitSnapshot());
   assert.equal(await page.locator('.maw-inbox-item').count(), 0);
 
-  // Test 8: MAW UI Shell Polish: branding, sidebar toggle, shell dropdown, notifications enable toggle
-  // 1. Branding: sidebar header displays 'MaW'
+  // Test 8: Workbench UI Shell Polish: branding, sidebar toggle, shell dropdown, notifications enable toggle
+  // 1. Branding: sidebar header displays 'Workbench'
   const brand = page.locator('.agency-nav-head strong');
-  assert.equal(await brand.textContent(), 'MaW');
+  assert.equal(await brand.textContent(), 'Workbench');
 
   // 2. Sidebar toggle button uses SVG panel toggle icon (not hamburger '☰')
   const sidebarCollapseBtn = page.locator('.agency-nav-head button.agency-icon-button');

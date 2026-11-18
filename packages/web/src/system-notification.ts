@@ -92,7 +92,7 @@ export function showSystemNotification(options: {
   onClick: () => void;
 }): void {
   try {
-    const notification = new Notification('Agent Workbench', {
+    const notification = new Notification('Anvilary Workbench', {
       body: notificationBody(options.chime, options.tabName),
       tag: `agent-workbench:${options.terminalId}`,
     });

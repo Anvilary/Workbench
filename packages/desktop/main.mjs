@@ -21,7 +21,7 @@ export { isOAuthLoopbackCallback };
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Deliberately distinct from both production MAW and any Brave/Neko profile.
 app.setPath('userData', path.resolve(process.env.MAW_DESKTOP_DATA_DIR || path.join(app.getPath('appData'), 'maw-desktop-prototype')));
-app.setName(process.env.MAW_DESKTOP_PRODUCTION === '1' ? 'My Amazing Workspace' : 'MAW ChatGPT Prototype');
+app.setName(process.env.MAW_DESKTOP_PRODUCTION === '1' ? 'Anvilary Workbench' : 'Anvilary Workbench Prototype');
 if (process.platform === 'linux') app.setDesktopName('maw.desktop');
 if (app.commandLine.hasSwitch('no-sandbox')) throw new Error('MAW desktop requires Chromium sandboxing');
 app.enableSandbox();
@@ -60,7 +60,7 @@ async function start() {
   });
 
   const iconPath = path.join(here, 'icon.png');
-  const win = new BrowserWindow({ width: 1280, height: 860, title: 'MAW · ChatGPT feasibility prototype', autoHideMenuBar: true,
+  const win = new BrowserWindow({ width: 1280, height: 860, title: 'Anvilary Workbench', autoHideMenuBar: true,
     backgroundColor: '#0e0e10',
     icon: iconPath,
     webPreferences: { ...secure, partition: 'persist:maw-shell-prototype', preload: path.join(here, 'preload.cjs') } });

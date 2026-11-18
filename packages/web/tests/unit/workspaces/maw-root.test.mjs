@@ -63,7 +63,7 @@ test('MAW view loads without the classic Workbench chunk; classic view still wor
   assert.equal(await page.evaluate(() => document.documentElement.dataset.theme !== undefined), true, 'theme attributes still applied');
 
   await page.goto(base + '/?view=workbench');
-  await page.getByText('Agent Workbench', { exact: true }).waitFor();
+  await page.getByText('Anvilary Workbench', { exact: true }).waitFor();
   assert.ok(requested.includes(classicChunk), 'classic view loads its chunk on demand');
   assert.equal(await page.locator('.agency-app').count(), 0);
 

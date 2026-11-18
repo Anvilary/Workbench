@@ -26,3 +26,4 @@ The top-level package locations (`packages/shared`, `packages/server`, `packages
 - [Dependency Rules](./dependency-rules.md)
 - [Testing Architecture](./testing.md)
 - [Migration Plan and Roadmap](./migration-plan.md)
+- [Rebranding & Compatibility Migration](./rebranding-migration.md)

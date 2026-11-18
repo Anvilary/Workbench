@@ -1,8 +1,8 @@
-# Agent Workbench
+# Anvilary Workbench
 
-This experimental branch adds **My Amazing Workspace for Ubuntu desktop**. Run
-`pnpm desktop` from the development worktree for one native MAW window with CLI,
-terminal and official ChatGPT tabs. See the [desktop prototype guide](packages/desktop/README.md)
+**Anvilary Workbench** (short name: **Workbench**, formerly My Amazing Workspace / MaW and Agent Workbench; planned repository: `Anvilary/Workbench`) provides a local browser and Ubuntu desktop interface for coding-agent CLIs. Run
+`pnpm desktop` from the development worktree (or `anvil-bench desktop` / `maw desktop` once installed) for one native Workbench window with CLI,
+terminal and official ChatGPT tabs. See the [desktop guide](packages/desktop/README.md)
 for setup, security, validation and retained-data migration. Browser access remains
 a compatibility mode. The desktop loads ChatGPT directly over HTTPS; the legacy
 Workbench documentation below describes the existing CLI/browser interface.
@@ -27,7 +27,7 @@ npx agent-workbench
 
 ## How it works
 
-Agent Workbench doesn't talk to any AI service. It starts the CLI you already
+Anvilary Workbench doesn't talk to any AI service. It starts the CLI you already
 have —`claude`, `codex`, `opencode`, `agy` or `pi`— inside a real terminal, and
 adds around it what a terminal alone doesn't give you: tabs, your past
 conversations, the conversation as easy-to-read cards, a context meter, the
@@ -120,7 +120,7 @@ model opens itself.
 | Antigravity CLI | `agy` | [guide](https://antigravity.google/docs/cli/getting-started) |
 | Pi | `pi` | [pi.dev](https://pi.dev) |
 
-Agent Workbench doesn't include or download any CLI: it finds the ones in your
+Anvilary Workbench doesn't include or download any CLI: it finds the ones in your
 `PATH`. If there are none, it tells you so and doesn't open sessions.
 
 **Platforms.** Built and used every day on Windows 11 with PowerShell. On macOS
@@ -140,7 +140,7 @@ npm install -g agent-workbench
 Then, from the folder of the project you want to work on:
 
 ```bash
-agent-workbench
+anvil-bench   # or agent-workbench
 ```
 
 It opens your browser at an address like this one:
@@ -290,7 +290,7 @@ including the ones you open outside the app, and it needs `node` in the
 
 ### Remote access over SSH
 
-Leave Agent Workbench running on one computer and use it from another one on
+Leave Anvilary Workbench running on one computer and use it from another one on
 your network, in its browser, with no CLI installed there. **The app is never
 opened to the network**: it still listens only on `127.0.0.1`, and the other
 computer reaches it through an SSH tunnel. The tunnel is also what makes it
@@ -426,11 +426,11 @@ app keeps on the phone and the permissions it asks for are in
 
 ## Your data and security
 
-- **Agent Workbench sends nothing anywhere.** No telemetry, no analytics, no
+- **Anvilary Workbench sends nothing anywhere.** No telemetry, no analytics, no
   network calls of its own. The Android app talks only to your computer.
 - **Each CLI still does on its own what it would do if you opened it by hand:**
   it talks to its AI provider, and it may check for updates or send its own
-  usage data. Agent Workbench doesn't add anything to that, and it doesn't turn
+  usage data. Anvilary Workbench doesn't add anything to that, and it doesn't turn
   it off either: it doesn't change any CLI's settings. What each CLI sends is
   in its own documentation.
 - **It never touches your credentials.** There's no login screen: if a CLI asks
@@ -639,7 +639,7 @@ pnpm start     # serves the built interface
 ```
 
 **One-click start on Windows:** `pnpm package` builds the interface and leaves
-an **`Agent Workbench.cmd`** in the root. Double-click it: it installs whatever
+an **`Anvilary Workbench.cmd`** in the root. Double-click it: it installs whatever
 is missing, builds if needed and opens the browser. It's a twenty-line text
 file you can read before running it.
 
@@ -677,7 +677,7 @@ made-up data.
 
 ## Support the project
 
-If Agent Workbench is useful to you, consider supporting it:
+If Anvilary Workbench is useful to you, consider supporting it:
 [Buy Me a Coffee](https://buymeacoffee.com/cvelasquez). The app suggests it
 once per version, in a strip you can close, and never again until the next one.
 
@@ -687,6 +687,6 @@ once per version, in a strip you can close, and never again until the next one.
 
 MIT. See [`LICENSE`](LICENSE).
 
-Agent Workbench is an independent project. It works with the Claude Code,
+Anvilary Workbench is an independent project. It works with the Claude Code,
 Codex, OpenCode, Antigravity and Pi CLIs, but it is not affiliated with or
 endorsed by Anthropic, OpenAI, the OpenCode authors, Google or Earendil.

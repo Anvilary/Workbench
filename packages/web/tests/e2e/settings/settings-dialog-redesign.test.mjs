@@ -493,7 +493,7 @@ test('SettingsDialog acceptance suite: 2-pane navigation, tabs, accessibility, a
     await aboutTab.click();
     await page.waitForTimeout(100);
     const aboutAppName = await page.textContent('.maw-settings-about-name');
-    assert.equal(aboutAppName.trim(), 'My Amazing Workspace');
+    assert.equal(aboutAppName.trim(), 'Anvilary Workbench');
     const specRows = await page.locator('.maw-settings-spec-row').count();
     assert.equal(specRows, 3, 'Expected 3 spec rows (Version, Desktop Runtime, Platform)');
     await page.screenshot({ path: path.join(artifactDir, 'screenshots', 'settings-after-about.png') });

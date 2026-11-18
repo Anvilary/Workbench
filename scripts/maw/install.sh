@@ -79,6 +79,8 @@ install -d -m 755 "$lib_dir/pty-host"
 install -m 644 "$script_dir/pty-host/maw-ptyd.service" "$lib_dir/pty-host/maw-ptyd.service"
 install -m 755 "$script_dir/maw" "$lib_dir/maw"
 install -m 755 "$script_dir/maw" "$bin_dir/maw"
+install -m 755 "$script_dir/anvil-bench" "$lib_dir/anvil-bench"
+install -m 755 "$script_dir/anvil-bench" "$bin_dir/anvil-bench"
 printf '1\n' > "$lib_dir/desktop-launcher-api"
 printf '2\n' > "$lib_dir/activation-helper-api.tmp"
 mv -f "$lib_dir/activation-helper-api.tmp" "$lib_dir/activation-helper-api"
@@ -124,7 +126,7 @@ if [ "$mode" = --service ]; then
   # shellcheck source=scripts/maw/maw-lib.sh
   . "$script_dir/maw-lib.sh"
   maw_sctl daemon-reload
-  printf '%s\n' 'Service installed but not enabled or started. Start and verify it with: maw start'
+  printf '%s\n' 'Service installed but not enabled or started. Start and verify it with: anvil-bench start (or legacy: maw start)'
 fi
 
 if [ "$mode" = --desktop ]; then
@@ -155,14 +157,14 @@ if [ "$mode" = --desktop ] || [ "$mode" = --desktop-assets ] || [ "$mode" = --in
     const fs=require("fs"); const command=process.argv[1];
     if (/[\n\r]/.test(command)) throw Error("Invalid launcher path");
     const escaped=command.replace(/([\\\"`$])/g,"\\$1").replace(/%/g,"%%");
-    fs.writeFileSync(process.argv[2], `[Desktop Entry]\nType=Application\nName=MaW\nGenericName=My Amazing Workspace\nExec="${escaped}" desktop\nIcon=maw-workspace\nTerminal=false\nCategories=Development;\nKeywords=MAW;MaW;Workspace;Terminal;ChatGPT;GitHub;\n`);
-  ' "$bin_dir/maw" "$desktop_apps/maw.desktop"
+    fs.writeFileSync(process.argv[2], `[Desktop Entry]\nType=Application\nName=Workbench\nGenericName=Anvilary Workbench\nExec="${escaped}" desktop\nIcon=maw-workspace\nTerminal=false\nCategories=Development;\nKeywords=Anvilary;Workbench;anvil-bench;MAW;MaW;Workspace;Terminal;ChatGPT;GitHub;\n`);
+  ' "$bin_dir/anvil-bench" "$desktop_apps/maw.desktop"
   if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database "$desktop_apps" 2>/dev/null || true; fi
-  printf '%s\n' 'Desktop installed. Start the existing service with maw start if needed, then launch: maw desktop'
+  printf '%s\n' 'Desktop installed. Start the existing service with anvil-bench start if needed, then launch: anvil-bench desktop'
 fi
 
 if [ "$mode" = --integrate-desktop ]; then
   # Enable login/cold-boot startup without restarting either live service.
   maw_sctl enable "$unit_name" "$ptyd_unit_name"
-  printf '%s\n' 'MaW user services enabled for login. Existing services were not restarted.'
+  printf '%s\n' 'Workbench user services enabled for login. Existing services were not restarted.'
 fi

@@ -89,7 +89,7 @@ export function remoteAccessStartupLine(
     case 'active':
       return `  ${REMOTE_ACCESS_LABEL}  on, port ${port}, ${pairedDevices} paired device${pairedDevices === 1 ? '' : 's'}`;
     case 'port-busy':
-      return `  ${REMOTE_ACCESS_LABEL}  NOT WORKING: port ${port} is busy (another Agent Workbench, or another program)`;
+      return `  ${REMOTE_ACCESS_LABEL}  NOT WORKING: port ${port} is busy (another Anvilary Workbench, or another program)`;
     case 'restart-needed':
       // Al arrancar no pasa: el puerto se acaba de elegir con estos mismos ajustes.
       return `  ${REMOTE_ACCESS_LABEL}  on, takes effect after a restart`;
@@ -115,7 +115,7 @@ function missingText(text: ServerText): string {
   const command = String(text.params?.['command'] ?? '');
   const url = String(text.params?.['url'] ?? '');
   return (
-    `The "${command}" command wasn't found in the PATH. Agent Workbench uses the CLI you already ` +
+    `The "${command}" command wasn't found in the PATH. Anvilary Workbench uses the CLI you already ` +
     `have installed: it doesn't include or download it. Install it from ${url} and start again.`
   );
 }
@@ -166,7 +166,7 @@ export const SUPPORT_LABEL = 'Support';
  * consola que casi nadie mira. La direccion es la misma que la de la web.
  */
 export function supportStartupLine(): string {
-  return `  ${SUPPORT_LABEL}      If Agent Workbench is useful to you, consider supporting it: ${SUPPORT_URL}`;
+  return `  ${SUPPORT_LABEL}      If Anvilary Workbench is useful to you, consider supporting it: ${SUPPORT_URL}`;
 }
 
 /**
@@ -178,7 +178,7 @@ export function supportStartupLine(): string {
 export function supportStartupLineColored(): string {
   return (
     `  \x1b[95m${SUPPORT_LABEL}\x1b[0m      ` +
-    `\x1b[33mIf Agent Workbench is useful to you, consider supporting it:\x1b[0m ` +
+    `\x1b[33mIf Anvilary Workbench is useful to you, consider supporting it:\x1b[0m ` +
     `\x1b[4;94m${SUPPORT_URL}\x1b[0m`
   );
 }

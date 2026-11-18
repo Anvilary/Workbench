@@ -28,7 +28,7 @@ try {
  }
  assert.ok(state,'installed package readiness');
  const response=await fetch(state.url);assert.equal(response.status,200);
- assert.match(await response.text(),/My Amazing Workspace/);
+ assert.match(await response.text(),/Anvilary Workbench/);
  console.log('PASS package contents, clean npm installation, arbitrary-cwd startup, authenticated HTTP');
 } finally {
  if(child && child.exitCode===null) { const exited=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await exited; }

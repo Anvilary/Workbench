@@ -107,7 +107,7 @@ writeFileSync(
       // listas que se desincronizan cuando se suma una CLI.
       keywords: rootPkg.keywords,
       type: 'module',
-      bin: { 'agent-workbench': 'dist/server.js' },
+      bin: { 'anvil-bench': 'dist/server.js', 'agent-workbench': 'dist/server.js' },
       files: ['dist'],
       engines: rootPkg.engines,
       dependencies,

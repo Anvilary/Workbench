@@ -14,7 +14,8 @@ maw_init_paths
 maw_bin="$self_dir/maw"
 [ -f "$maw_bin" ] || maw_bin="${MAW_BIN_DIR:-$HOME/.local/bin}/maw"
 
-usage='Usage: maw update [--restart|--no-restart] [--ref <git-ref> --allow-unapproved-ref] [--source <dir>]'
+cli_name="${MAW_CLI_NAME:-maw}"
+usage="Usage: $cli_name update [--restart|--no-restart] [--ref <git-ref> --allow-unapproved-ref] [--source <dir>]"
 
 # Strip optional leading "update" subcommand if invoked via wrapper: maw update "$@"
 if [ "${1:-}" = "update" ]; then shift; fi
