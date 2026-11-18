@@ -1,5 +1,3 @@
-import { copyFile, mkdir, readFile, rename } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import {
   type WorkspaceId,
@@ -8,6 +6,12 @@ import {
 } from '@agent-workbench/shared';
 import { writeAtomically } from '../atomic-write.js';
 import { appConfigDir } from '../paths.js';
+import { SerialQueue } from '../shared/concurrency/serial-queue.js';
+import {
+  loadWithBackupRecovery,
+  writeSnapshotWithBackup,
+} from '../shared/persistence/versioned-json-store.js';
+import { isRecord } from '../shared/validation/primitives.js';
 
 const VERSION = 1;
 
@@ -19,8 +23,8 @@ class UnsupportedAgencyLayoutSchemaError extends Error {
 }
 
 export class AgencyLayoutStore {
-  private queue: Promise<void> = Promise.resolve();
-  private mutations: Promise<void> = Promise.resolve();
+  private readonly writeQueue = new SerialQueue();
+  private readonly mutationQueue = new SerialQueue();
   private readonly layouts = new Map<WorkspaceId, WorkspacePaneLayout>();
   private initialized = false;
 
@@ -39,55 +43,31 @@ export class AgencyLayoutStore {
   }
 
   async load(): Promise<WorkspacePaneLayout[]> {
-    let primaryMissing = false;
-    let primaryFailure: unknown = null;
-
-    try {
-      const contents = await readFile(this.file, 'utf8');
-      return this.parse(contents);
-    } catch (error) {
-      if (error instanceof UnsupportedAgencyLayoutSchemaError) throw error;
-      primaryMissing = (error as NodeJS.ErrnoException).code === 'ENOENT';
-      primaryFailure = error;
-    }
-
-    let recovered: WorkspacePaneLayout[] = [];
-    try {
-      const backupContents = await readFile(this.file + '.bak', 'utf8');
-      recovered = this.parse(backupContents);
-    } catch (backupError) {
-      if (backupError instanceof UnsupportedAgencyLayoutSchemaError) throw backupError;
-      const backupMissing = (backupError as NodeJS.ErrnoException).code === 'ENOENT';
-      if (primaryMissing && backupMissing) {
-        return [];
-      }
-      throw new AggregateError([primaryFailure, backupError], 'Agency layout store could not be recovered');
-    }
-
-    if (!primaryMissing) {
-      // Refuse recovery if quarantine fails, otherwise the next save could
-      // overwrite the valid backup with the corrupt primary.
-      await rename(this.file, this.file + '.corrupt-' + randomUUID());
-    }
-    return recovered;
+    const result = await loadWithBackupRecovery({
+      filePath: this.file,
+      parse: (contents) => this.parse(contents),
+      emptyValue: () => [],
+      isUnsupportedSchemaError: (error) => error instanceof UnsupportedAgencyLayoutSchemaError,
+      recoveryErrorMessage: 'Agency layout store could not be recovered',
+    });
+    return result.value;
   }
 
   private parse(contents: string): WorkspacePaneLayout[] {
     const raw: unknown = JSON.parse(contents);
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    if (!isRecord(raw)) {
       throw new Error('Invalid Agency layout store: expected object');
     }
-    const record = raw as Record<string, unknown>;
-    if (!Number.isInteger(record.version)) throw new Error('Invalid Agency layout store version');
-    if (record.version !== VERSION) {
-      throw new UnsupportedAgencyLayoutSchemaError(record.version);
+    if (!Number.isInteger(raw.version)) throw new Error('Invalid Agency layout store version');
+    if (raw.version !== VERSION) {
+      throw new UnsupportedAgencyLayoutSchemaError(raw.version);
     }
-    if (!Array.isArray(record.layouts)) {
+    if (!Array.isArray(raw.layouts)) {
       throw new Error('Invalid Agency layout store: layouts must be an array');
     }
     const valid: WorkspacePaneLayout[] = [];
     const seen = new Set<WorkspaceId>();
-    for (const item of record.layouts) {
+    for (const item of raw.layouts) {
       // Skipping malformed entries silently loses panes and can prevent backup
       // recovery. Treat the primary as corrupt and restore its valid backup.
       if (!isWorkspacePaneLayout(item)) throw new Error('Invalid Agency layout record');
@@ -98,31 +78,24 @@ export class AgencyLayoutStore {
     return valid;
   }
 
-  private mutate<T>(operation: () => Promise<T>): Promise<T> {
-    const next = this.mutations.then(operation);
-    this.mutations = next.then(() => undefined, () => undefined);
-    return next;
-  }
-
   /**
    * Write `layouts` without publishing them into memory first.
    * A rejected write leaves the queue usable so the next save can persist.
    */
-  private async persist(layouts: Iterable<WorkspacePaneLayout>): Promise<void> {
+  private persist(layouts: Iterable<WorkspacePaneLayout>): Promise<void> {
     const payload = JSON.stringify({
       version: VERSION,
       layouts: [...layouts],
     }, null, 2);
 
-    const write = this.queue.then(async () => {
-      await mkdir(path.dirname(this.file), { recursive: true });
-      await copyFile(this.file, this.file + '.bak').catch((err) => {
-        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-      });
-      await this.write(this.file, Buffer.from(payload, 'utf8'), { mode: 0o600 });
-    });
-    this.queue = write.then(() => undefined, () => undefined);
-    return write;
+    return this.writeQueue.run(() =>
+      writeSnapshotWithBackup({
+        filePath: this.file,
+        content: payload,
+        fileMode: 0o600,
+        write: this.write,
+      }),
+    );
   }
 
   get(workspaceId: WorkspaceId): WorkspacePaneLayout | undefined {
@@ -137,7 +110,7 @@ export class AgencyLayoutStore {
     if (!isWorkspacePaneLayout(layout)) {
       throw new Error('Invalid WorkspacePaneLayout payload');
     }
-    return this.mutate(async () => {
+    return this.mutationQueue.run(async () => {
       const next = new Map(this.layouts);
       next.set(layout.workspaceId, layout);
       await this.persist(next.values());
@@ -146,10 +119,15 @@ export class AgencyLayoutStore {
   }
 
   /** Read and change the latest layout within the persistence queue. */
-  async update(workspaceId: WorkspaceId, change: (current: WorkspacePaneLayout | undefined) => WorkspacePaneLayout): Promise<WorkspacePaneLayout> {
-    return this.mutate(async () => {
+  async update(
+    workspaceId: WorkspaceId,
+    change: (current: WorkspacePaneLayout | undefined) => WorkspacePaneLayout,
+  ): Promise<WorkspacePaneLayout> {
+    return this.mutationQueue.run(async () => {
       const layout = change(this.layouts.get(workspaceId));
-      if (layout.workspaceId !== workspaceId || !isWorkspacePaneLayout(layout)) throw new Error('Invalid layout update');
+      if (layout.workspaceId !== workspaceId || !isWorkspacePaneLayout(layout)) {
+        throw new Error('Invalid layout update');
+      }
       const next = new Map(this.layouts);
       next.set(workspaceId, layout);
       await this.persist(next.values());
@@ -159,7 +137,7 @@ export class AgencyLayoutStore {
   }
 
   async delete(workspaceId: WorkspaceId): Promise<void> {
-    return this.mutate(async () => {
+    return this.mutationQueue.run(async () => {
       if (!this.layouts.has(workspaceId)) return;
       const next = new Map(this.layouts);
       next.delete(workspaceId);
@@ -169,6 +147,6 @@ export class AgencyLayoutStore {
   }
 
   flush(): Promise<void> {
-    return this.mutations.then(() => this.queue);
+    return this.mutationQueue.flush().then(() => this.writeQueue.flush());
   }
 }

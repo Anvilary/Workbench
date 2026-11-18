@@ -6,13 +6,16 @@
  * atomically with a validated backup and quarantine for corrupt primary files.
  */
 
-import { copyFile, mkdir, readFile, rename } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { AgencyErrorCode, EditorTab, WorkspaceId } from '@agent-workbench/shared';
 import { isEditorTab, validateRelativeFilePath } from '@agent-workbench/shared';
-import { writeAtomically } from '../../atomic-write.js';
 import { appConfigDir } from '../../paths.js';
+import { SerialQueue } from '../../shared/concurrency/serial-queue.js';
+import {
+  loadWithBackupRecovery,
+  writeSnapshotWithBackup,
+} from '../../shared/persistence/versioned-json-store.js';
+import { isRecord } from '../../shared/validation/primitives.js';
 
 export const EDITOR_TAB_STORE_VERSION = 1;
 
@@ -36,10 +39,6 @@ export class UnsupportedEditorTabSchemaError extends EditorTabStoreError {
 export interface EditorTabSnapshot {
   version: number;
   tabs: EditorTab[];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -140,7 +139,7 @@ export function parseEditorTabSnapshot(contents: string): EditorTab[] {
 }
 
 export class EditorTabStore {
-  private queue: Promise<void> = Promise.resolve();
+  private readonly saveQueue = new SerialQueue();
   private inMemoryTabs: Map<string, EditorTab> = new Map();
   private loaded = false;
 
@@ -158,47 +157,16 @@ export class EditorTabStore {
    * If both are missing, initializes with empty state.
    */
   async load(): Promise<readonly EditorTab[]> {
-    let primaryMissing = false;
-    let primaryFailure: unknown = null;
-    let loadedTabs: EditorTab[] | null = null;
-
-    try {
-      const raw = await readFile(this.filePath, 'utf8');
-      loadedTabs = parseEditorTabSnapshot(raw);
-    } catch (error) {
-      if (error instanceof UnsupportedEditorTabSchemaError) throw error;
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        primaryMissing = true;
-      }
-      primaryFailure = error;
-    }
-
-    if (loadedTabs === null) {
-      // Try backup
-      try {
-        const rawBackup = await readFile(this.filePath + '.bak', 'utf8');
-        loadedTabs = parseEditorTabSnapshot(rawBackup);
-      } catch (backupError) {
-        if (backupError instanceof UnsupportedEditorTabSchemaError) throw backupError;
-        const backupMissing = (backupError as NodeJS.ErrnoException).code === 'ENOENT';
-        if (primaryMissing && backupMissing) {
-          this.inMemoryTabs.clear();
-          this.loaded = true;
-          return [];
-        }
-        throw new AggregateError(
-          [primaryFailure, backupError],
-          'Editor tab store corrupted and backup unavailable',
-        );
-      }
-
-      // If primary was present but corrupt, quarantine it
-      if (!primaryMissing) {
-        const quarantinePath = `${this.filePath}.corrupt-${randomUUID()}`;
-        await rename(this.filePath, quarantinePath);
+    const { value: loadedTabs } = await loadWithBackupRecovery({
+      filePath: this.filePath,
+      parse: parseEditorTabSnapshot,
+      emptyValue: () => [],
+      isUnsupportedSchemaError: (error) => error instanceof UnsupportedEditorTabSchemaError,
+      recoveryErrorMessage: 'Editor tab store corrupted and backup unavailable',
+      onQuarantine: (quarantinePath) => {
         console.warn(`[maw] corrupt editor tab metadata quarantined at ${quarantinePath}`);
-      }
-    }
+      },
+    });
 
     this.inMemoryTabs.clear();
     for (const tab of loadedTabs) {
@@ -232,7 +200,6 @@ export class EditorTabStore {
       targetTabs.map(sanitizeEditorTabForDurableStorage),
     );
 
-    // Update in-memory state with normalized selections
     this.inMemoryTabs.clear();
     for (const tab of sanitized) {
       this.inMemoryTabs.set(tab.id, tab);
@@ -245,30 +212,22 @@ export class EditorTabStore {
 
     const serialized = Buffer.from(JSON.stringify(snapshot, null, 2) + '\n', 'utf8');
 
-    const task = async () => {
-      await mkdir(path.dirname(this.filePath), { recursive: true, mode: 0o700 });
-      // Create backup of current state if primary exists
+    return this.saveQueue.run(async () => {
       try {
-        await copyFile(this.filePath, this.filePath + '.bak');
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
-          throw e;
-        }
+        await writeSnapshotWithBackup({
+          filePath: this.filePath,
+          content: serialized,
+          dirMode: 0o700,
+          fileMode: 0o600,
+        });
+      } catch (error) {
+        this.inMemoryTabs = previousInMemory;
+        throw error;
       }
-      await writeAtomically(this.filePath, serialized, { mode: 0o600 });
-    };
-
-    // Chain onto queue
-    const next = this.queue.then(task).catch((error) => {
-      // Roll back in-memory tabs on persistence failure
-      this.inMemoryTabs = previousInMemory;
-      throw error;
     });
-    this.queue = next.catch(() => undefined);
-    return next;
   }
 
   flush(): Promise<void> {
-    return this.queue;
+    return this.saveQueue.flush();
   }
 }
