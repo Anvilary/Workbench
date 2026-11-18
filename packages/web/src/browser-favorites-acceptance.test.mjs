@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { existsSync, readdirSync, readFileSync, mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -28,7 +28,7 @@ const require = createRequire(path.join(projectRoot, 'package.json'));
 const { build } = require('esbuild');
 const { chromium } = require('playwright');
 
-const artifactDir = '/home/user/.local/share/agy-2-profile/home/.gemini/antigravity-cli/brain/be5152c3-72cd-4309-8c79-631f1ff8eae9';
+const artifactDir = process.env.MAW_TEST_ARTIFACTS_DIR || path.join(tmpdir(), 'maw-test-artifacts', 'browser-favorites-acceptance');
 const screenshotsDir = path.join(artifactDir, 'screenshots');
 mkdirSync(screenshotsDir, { recursive: true });
 

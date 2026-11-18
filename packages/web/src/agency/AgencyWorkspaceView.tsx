@@ -7,8 +7,6 @@ import type {
 import {
   assignCreatedTab, swapPanes, countLeaves, createDefaultLayout, findPaneNode, getPaneNodes, moveTabBetweenPanes,
   reconcileLayout, splitPane, closePane, updatePaneNode, updateSplitRatio, MAX_LEAVES,
-  validateChatGptUrl, validateGithubUrl, validatePerplexityUrl, validateOtherWebUrl,
-  classifyWebTabUrl,
 } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import type { AppSettingsApi } from '../useAppSettings.js';
@@ -25,6 +23,11 @@ import { SplitPaneTree } from './split/SplitPaneTree.js';
 import { usePaneInspection } from './split/usePaneInspection.js';
 import type { useAgencyStore } from './useAgencyStore.js';
 import { editorDraftStore } from './editorDraftStore.js';
+import { BannerNotice } from '../shared/ui/BannerNotice.js';
+import { useBrowserZoomShortcuts } from '../features/browser/useBrowserZoomShortcuts.js';
+import { useNativeWebTabLinks } from '../features/browser/useNativeWebTabLinks.js';
+import { resolveBrowserTabTarget } from '../features/workspaces/workspace-tab-helpers.js';
+import { WorkspaceSessionDialogs } from '../features/workspaces/WorkspaceSessionDialogs.js';
 
 interface Props {
   workspace: AgencyWorkspace;
@@ -184,7 +187,6 @@ export function AgencyWorkspaceView({
     else paneHosts.current.delete(paneId);
     setHostVersion((version) => version + 1);
   }, []);
-  const dialog = useRef<HTMLDivElement | null>(null);
   const saveTimer = useRef<number | null>(null);
   const persistence = useRef(onSaveLayout);
   persistence.current = onSaveLayout;
@@ -192,7 +194,6 @@ export function AgencyWorkspaceView({
     if (saveTimer.current === null) return;
     clearTimeout(saveTimer.current);
     saveTimer.current = null;
-    // Flush a divider edit before leaving this workspace, reconciling against current open tabs
     const currentOpen = openTabIdsRef.current;
     const currentLayout = reconcileLayout(layoutRef.current, workspace.id, currentOpen, defaultSelectedRef.current);
     void persistence.current?.(workspace.id, currentLayout).catch(reason => console.warn('[maw-layout] save failed:', reason));
@@ -231,7 +232,6 @@ export function AgencyWorkspaceView({
     }
   }
 
-  // Sync with incoming server layout when available
   const initialSavedLayoutApplied = useRef(Boolean(savedLayout));
   useEffect(() => {
     if (savedLayout && savedLayout.workspaceId === workspace.id) {
@@ -449,146 +449,37 @@ export function AgencyWorkspaceView({
     },
   }, selecting);
 
-  useEffect(() => {
-    if ((!closing && !fileDialog) || configuringProfile) return;
-    const key = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !flight.current) {
-        pendingSplit.current = null;
-        setClosing(null);
-        setFileDialog(null);
+  useBrowserZoomShortcuts({ layoutRef, tabs });
+
+  const completeCreation = useCallback(
+    (response: Awaited<ReturnType<Props['request']>>, targetPaneId: string) => {
+      // The server commits the destination even if this workspace was switched away.
+      if (!mounted.current) return;
+      const created = response.type === 'agency.session.created'
+        ? allWorkspaceTabs([response.session], [], workspace.id)[0]
+        : response.type === 'agency.webTab.created'
+          ? allWorkspaceTabs([], [response.tab], workspace.id)[0]
+          : response.type === 'agency.editorTab.opened'
+            ? allWorkspaceTabs([], [], workspace.id, [response.tab])[0]
+            : undefined;
+      if (!created) throw new Error(t('agency.errors.internalError'));
+      setCreatedTabs((current) => [...current.filter((tab) => tab.id !== created.id), created]);
+      if (!openTabIdsRef.current.includes(created.id)) {
+        openTabIdsRef.current = [...openTabIdsRef.current, created.id];
       }
-      if (event.key === 'Tab' && dialog.current) {
-        const elements = [
-          ...dialog.current.querySelectorAll<HTMLElement>(
-            'button:not(:disabled), select:not(:disabled), input:not(:disabled)',
-          ),
-        ];
-        const first = elements[0];
-        const last = elements.at(-1);
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last?.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first?.focus();
-        }
-      }
-    };
-    window.addEventListener('keydown', key);
-    return () => window.removeEventListener('keydown', key);
-  }, [closing, fileDialog, configuringProfile]);
+      save(assignCreatedTab(layoutRef.current, targetPaneId, created.id), true);
+    },
+    [workspace.id, save],
+  );
 
-  useEffect(() => {
-    const onZoomKeyDown = (event: KeyboardEvent) => {
-      if ((!event.ctrlKey && !event.metaKey) || event.altKey) return;
-      const key = event.key;
-      const code = event.code;
-      let action: 'zoom-in' | 'zoom-out' | 'zoom-reset' | null = null;
-      if (key === '+' || key === '=' || key === 'Add' || code === 'NumpadAdd' || code === 'Equal') {
-        action = 'zoom-in';
-      } else if (key === '-' || key === '_' || key === 'Subtract' || code === 'NumpadSubtract' || code === 'Minus') {
-        action = 'zoom-out';
-      } else if (key === '0' || code === 'Digit0' || code === 'Numpad0') {
-        action = 'zoom-reset';
-      }
-      if (!action) return;
-
-      const active = document.activeElement;
-      if (active) {
-        if (
-          active.closest('.xterm, .xterm-helper-textarea, .monaco-editor, .cm-editor') ||
-          active.tagName === 'TEXTAREA' ||
-          (active.tagName === 'INPUT' && !['button', 'submit', 'reset', 'checkbox', 'radio'].includes((active as HTMLInputElement).type)) ||
-          (active as HTMLElement).isContentEditable
-        ) {
-          return;
-        }
-      }
-
-      const curLayout = layoutRef.current;
-      const focusedPane = findPaneNode(curLayout.tree, curLayout.focusedPaneId);
-      const activeTabId = focusedPane?.selectedTabId;
-      if (!activeTabId) return;
-      const activeTab = tabs.find((t) => t.id === activeTabId);
-      if (activeTab?.kind !== 'web') return;
-
-      event.preventDefault();
-      void window.mawChatGpt?.command({ type: 'browser-action', id: activeTabId, action });
-    };
-    window.addEventListener('keydown', onZoomKeyDown);
-    return () => window.removeEventListener('keydown', onZoomKeyDown);
-  }, [tabs]);
-
-  function completeCreation(response: Awaited<ReturnType<Props['request']>>, targetPaneId: string) {
-    // The server commits the destination even if this workspace was switched away.
-    if (!mounted.current) return;
-    const created = response.type === 'agency.session.created'
-      ? allWorkspaceTabs([response.session], [], workspace.id)[0]
-      : response.type === 'agency.webTab.created'
-        ? allWorkspaceTabs([], [response.tab], workspace.id)[0]
-        : response.type === 'agency.editorTab.opened'
-          ? allWorkspaceTabs([], [], workspace.id, [response.tab])[0]
-          : undefined;
-    if (!created) throw new Error(t('agency.errors.internalError'));
-    setCreatedTabs((current) => [...current.filter((tab) => tab.id !== created.id), created]);
-    if (!openTabIdsRef.current.includes(created.id)) {
-      openTabIdsRef.current = [...openTabIdsRef.current, created.id];
-    }
-    save(assignCreatedTab(layoutRef.current, targetPaneId, created.id), true);
-  }
-
-  useEffect(() => {
-    const bridge = window.mawChatGpt;
-    if (!bridge) return;
-    return bridge.subscribe((state) => {
-      if (state.type === 'open-web-tab' && state.url && state.sourceTabId) {
-        const sourceTabId = state.sourceTabId;
-        const targetUrl = state.url;
-        const sourceTab = tabs.find((t) => t.id === sourceTabId);
-        if (!sourceTab) return;
-
-        const panes = getPaneNodes(layoutRef.current.tree);
-        const sourcePane = panes.find((pane) => pane.tabIds.includes(sourceTabId));
-        const targetPaneId = sourcePane?.id ?? layoutRef.current.focusedPaneId;
-
-        const classification = classifyWebTabUrl(targetUrl);
-        if (!classification.valid && !validateOtherWebUrl(targetUrl).valid) {
-          setError(t('agency.web.invalidUrl'));
-          return;
-        }
-
-        const provider: WebTabProvider = classification.provider ?? 'other';
-        const urlToOpen = classification.normalizedUrl ?? targetUrl;
-        let title = '';
-        try {
-          if (provider === 'github') title = 'GitHub';
-          else if (provider === 'chatgpt') title = 'ChatGPT';
-          else if (provider === 'perplexity') title = 'Perplexity';
-          else title = new URL(urlToOpen).hostname;
-        } catch {
-          title = provider;
-        }
-
-        const launchId = crypto.randomUUID();
-        void request({
-          type: 'agency.webTab.create',
-          workspaceId: workspace.id,
-          url: urlToOpen,
-          provider,
-          title,
-          select: true,
-          targetPaneId,
-          launchId,
-        })
-          .then((response) => {
-            completeCreation(response, targetPaneId);
-          })
-          .catch((reason) => {
-            setError(reason instanceof Error ? reason.message : String(reason));
-          });
-      }
-    });
-  }, [tabs, workspace.id, request]);
+  useNativeWebTabLinks({
+    workspaceId: workspace.id,
+    tabs,
+    layoutRef,
+    request,
+    onCreated: completeCreation,
+    onError: setError,
+  });
 
   function handleSwapPane(source: string, target: string) {
     const current = layoutRef.current;
@@ -789,8 +680,6 @@ export function AgencyWorkspaceView({
     try {
       await action(tab, 'close');
     } catch (reason) {
-      // Backend rejected termination or request failed:
-      // Recoverable closing lifecycle rolls back optimistic removal and restores tab.
       closingInFlight.current.delete(tab.id);
       setClosingTabIds((prev) => {
         const next = new Set(prev);
@@ -805,35 +694,11 @@ export function AgencyWorkspaceView({
 
   async function createBrowserTab(targetPaneId: string, options: { url: string; title?: string; provider?: WebTabProvider }) {
     if (flight.current || !online) return;
-    const { url: rawUrl, title: customTitle, provider: customProvider } = options;
-
-    let provider: WebTabProvider = customProvider ?? 'other';
-    let normalizedUrl = rawUrl;
-
-    const chat = validateChatGptUrl(rawUrl);
-    const perp = validatePerplexityUrl(rawUrl);
-    const git = validateGithubUrl(rawUrl);
-    const other = validateOtherWebUrl(rawUrl);
-
-    if (chat.valid) {
-      provider = 'chatgpt';
-      normalizedUrl = chat.normalizedUrl!;
-    } else if (perp.valid) {
-      provider = 'perplexity';
-      normalizedUrl = perp.normalizedUrl!;
-    } else if (git.valid) {
-      provider = 'github';
-      normalizedUrl = git.normalizedUrl!;
-    } else if (other.valid) {
-      provider = 'other';
-      normalizedUrl = other.normalizedUrl!;
-    } else {
+    const resolved = resolveBrowserTabTarget(options);
+    if (!resolved.ok) {
       setError(t('agency.web.invalidUrl'));
       return;
     }
-    const title =
-      (customTitle && customTitle.trim()) ||
-      (provider === 'github' ? 'GitHub' : provider === 'perplexity' ? 'Perplexity' : provider === 'chatgpt' ? 'ChatGPT' : 'Browser');
 
     const placed = await takeSplitPane(targetPaneId);
     if (!placed) return;
@@ -846,9 +711,9 @@ export function AgencyWorkspaceView({
       const response = await request({
         type: 'agency.webTab.create',
         workspaceId: workspace.id,
-        url: normalizedUrl,
-        provider,
-        title,
+        url: resolved.url,
+        provider: resolved.provider,
+        title: resolved.title,
         select: true,
         targetPaneId: placed.paneId,
         launchId,
@@ -879,17 +744,11 @@ export function AgencyWorkspaceView({
     });
   }
 
-  function tabDisplayName(tab: WorkspaceTab) {
-    if (tab.kind === 'web') return tab.web.title;
-    if (tab.kind === 'editor') return tab.editor.title;
-    const session = tab.session;
-    return (
-      session.tab?.name ??
-      (session.kind === 'terminal'
-        ? t('agency.tabs.terminalNamed', { number: session.tab?.terminalNumber ?? 1 })
-        : profiles.find((p) => p.id === session.profileId)?.label ?? t('agency.ui.agentLabel'))
-    );
-  }
+  const dismissSessionDialogs = useCallback(() => {
+    pendingSplit.current = null;
+    setClosing(null);
+    setFileDialog(null);
+  }, []);
 
   const leafCount = countLeaves(layout.tree);
   const maximizedNode = layout.maximizedPaneId ? findPaneNode(layout.tree, layout.maximizedPaneId) : null;
@@ -898,32 +757,24 @@ export function AgencyWorkspaceView({
   return (
     <section className="agency-workspace-view" aria-label={t('agency.ui.workspaceNamed', { name: workspace.name })}>
       {placementWarning && (
-        <div className="agency-notice-bar" role="status">
-          <span>{placementWarning}</span>
-          <button
-            type="button"
-            aria-label={t('agency.ui.dismissNotification')}
-            onClick={() => onClearPlacementWarning?.()}
-          >
-            ×
-          </button>
-        </div>
+        <BannerNotice
+          variant="notice"
+          message={placementWarning}
+          dismissLabel={t('agency.ui.dismissNotification')}
+          onDismiss={() => onClearPlacementWarning?.()}
+        />
       )}
 
       {(error || launchError) && (
-        <div className="agency-error-bar" role="alert">
-          <span>{error || launchError}</span>
-          <button
-            type="button"
-            aria-label={t('agency.ui.dismissError')}
-            onClick={() => {
-              setError(null);
-              onClearLaunchError?.();
-            }}
-          >
-            ×
-          </button>
-        </div>
+        <BannerNotice
+          variant="error"
+          message={(error || launchError)!}
+          dismissLabel={t('agency.ui.dismissError')}
+          onDismiss={() => {
+            setError(null);
+            onClearLaunchError?.();
+          }}
+        />
       )}
 
       <PaneMovement key={workspace.id} workspaceId={workspace.id} onSwap={handleSwapPane}>
@@ -1058,87 +909,22 @@ export function AgencyWorkspaceView({
         }}
       />
 
-      {(closing || fileDialog) && (
-        <div className="agency-modal-backdrop">
-          <div
-            ref={dialog}
-            className="agency-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="maw-session-dialog"
-          >
-            <h2 id="maw-session-dialog">
-              {closing
-                ? t('agency.tabs.confirmClose', { name: tabDisplayName(closing) })
-                : t('agency.tabs.openFile')}
-            </h2>
-
-            {closing ? (
-              <p>
-                {closing.kind === 'editor' && unsavedTabIds.has(closing.id)
-                  ? t('agency.tabs.unsavedWarning')
-                  : t('agency.tabs.closeExplanation')}
-              </p>
-            ) : (
-              <form
-                id="maw-open-file-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (fileDialog) void openEditorFile(filePathInput, fileDialog.paneId);
-                }}
-              >
-                <label className="agency-field">
-                  <span>{t('agency.tabs.filePath')}</span>
-                  <input
-                    autoFocus
-                    value={filePathInput}
-                    placeholder={t('agency.tabs.filePathPlaceholder')}
-                    required
-                    onChange={(event) => setFilePathInput(event.target.value)}
-                  />
-                </label>
-              </form>
-            )}
-
-            {error && <p role="alert" className="agency-error">{error}</p>}
-            <div className="agency-dialog-actions">
-              <button
-                type="button"
-                autoFocus={!!closing}
-                disabled={busy}
-                onClick={() => {
-                  pendingSplit.current = null;
-                  setClosing(null);
-                  setFileDialog(null);
-                }}
-              >
-                {t('common.cancel')}
-              </button>
-              {fileDialog ? (
-                <button
-                  type="submit"
-                  form="maw-open-file-form"
-                  className="agency-primary-button"
-                  disabled={busy || !online || !filePathInput.trim()}
-                >
-                  {t('agency.tabs.open')}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="agency-primary-button"
-                  disabled={busy || !online}
-                  onClick={() => {
-                    if (closing) void close(closing);
-                  }}
-                >
-                  {t('agency.tabs.closeSession')}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <WorkspaceSessionDialogs
+        closing={closing}
+        fileDialog={fileDialog}
+        configuringProfileOpen={Boolean(configuringProfile)}
+        inFlight={flight.current}
+        busy={busy}
+        online={online}
+        error={error}
+        filePathInput={filePathInput}
+        profiles={profiles}
+        unsavedTabIds={unsavedTabIds}
+        onChangeFilePathInput={setFilePathInput}
+        onDismiss={dismissSessionDialogs}
+        onConfirmClose={(tab) => void close(tab)}
+        onConfirmOpenFile={(filePath, paneId) => void openEditorFile(filePath, paneId)}
+      />
 
       {configuringProfile && (
         <AgencyProfileDialog
