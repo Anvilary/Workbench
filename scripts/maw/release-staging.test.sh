@@ -333,12 +333,15 @@ fi
 # ---- Test 16: MAW_NODE_BIN override handling ----
 begin "16. MAW_NODE_BIN override validation"
 # Valid override
-valid_out=$(MAW_NODE_BIN="$resolved_node" . "$script_dir/maw-lib.sh"; maw_resolve_node)
-[ "$valid_out" = "$resolved_node" ] || { fail "valid MAW_NODE_BIN not returned"; }
+valid_out=$(MAW_NODE_BIN="$resolved_node" maw_resolve_node)
 # Invalid override
-invalid_out=$(MAW_NODE_BIN="/bin/false" . "$script_dir/maw-lib.sh"; maw_resolve_node 2>/dev/null || true)
-[ -z "$invalid_out" ] || { fail "invalid MAW_NODE_BIN should be rejected"; }
-ok
+if [ "$valid_out" != "$resolved_node" ]; then
+  fail "valid MAW_NODE_BIN not returned"
+elif invalid_out=$(MAW_NODE_BIN=/bin/false maw_resolve_node 2>/dev/null) || [ -n "$invalid_out" ]; then
+  fail "invalid MAW_NODE_BIN should be rejected"
+else
+  ok
+fi
 
 # ---- Test 17: Legacy release validation and rollback preservation ----
 begin "17. legacy release (a93fecc without dist/) validates and supports rollback"

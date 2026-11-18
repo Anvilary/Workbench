@@ -64,7 +64,7 @@ try {
   if (['all', 'desktop', 'acceptance'].includes(phase)) {
     const desktop = JSON.parse(await readFile(path.join(root, 'packages/desktop/package.json'), 'utf8'));
     if (phase !== 'acceptance') await run('electron', `GSK_RENDERER=cairo LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a dbus-run-session env MAW_NAUTILUS_TEST_ISOLATED=1 ${desktop.scripts['test:electron']}`, path.join(root, 'packages/desktop'));
-    await run('browser-acceptance', 'node --test --test-concurrency=1 packages/web/tests/e2e/browser/browser-tabs.test.mjs packages/web/tests/unit/workspaces/maw-root.test.mjs packages/web/tests/e2e/terminals/terminal-webgl.test.mjs packages/web/tests/unit/panes/native-layout-coordinator.test.mjs packages/web/tests/e2e/terminals/terminal-scrollback-20k.test.mjs');
+    await run('browser-acceptance', 'node --test --test-concurrency=1 packages/web/tests/e2e/browser/browser-tabs.test.mjs packages/web/tests/integration/workspaces/maw-root.test.mjs packages/web/tests/e2e/terminals/terminal-webgl.test.mjs packages/web/tests/integration/panes/native-layout-coordinator.test.mjs packages/web/tests/e2e/terminals/terminal-scrollback-20k.test.mjs');
   }
   if (['all', 'desktop', 'staging'].includes(phase)) await run('staging', 'xvfb-run -a node --test packages/desktop/tests/runtime/lifecycle/staging-release.test.mjs');
 } finally {
