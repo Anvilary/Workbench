@@ -36,6 +36,9 @@ import {
 import { isDrag, momentumStep, releaseVelocity, wholePixels, type TouchSample } from './touch-scroll.js';
 import { useTerminalHistory } from './useTerminalHistory.js';
 
+/** Capacidad del buffer de scrollback activo de xterm (lineas). */
+export const ACTIVE_TERMINAL_SCROLLBACK = 42_000;
+
 /** Espera a que el contenedor deje de cambiar de tamano antes de avisar al pty. */
 const RESIZE_DEBOUNCE_MS = 60;
 
@@ -344,7 +347,7 @@ export function TerminalView({
       fontFamily: '"Cascadia Mono", "Consolas", "Menlo", "DejaVu Sans Mono", monospace',
       fontSize: 14,
       lineHeight: 1.2,
-      scrollback: 5_000,
+      scrollback: ACTIVE_TERMINAL_SCROLLBACK,
       allowProposedApi: true,
       theme: TERMINAL_THEMES[themeRef.current],
       minimumContrastRatio: MINIMUM_CONTRAST[themeRef.current],

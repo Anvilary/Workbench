@@ -1,4 +1,4 @@
-// Terminal 5,000-line scrollback, shortcut consistency, and scroll stability test.
+// Terminal 42,000-line scrollback, shortcut consistency, search, and scroll stability test.
 // Run: node --test packages/web/src/agency/split/terminal-scrollback-20k.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -67,6 +67,9 @@ function Harness() {
     }
     return {};
   };
+  window.selectTab = (tabId) => {
+    setSessions((prev) => prev.map((row) => ({ ...row, tab: { ...row.tab, selected: row.tab.id === tabId } })));
+  };
   return React.createElement(AgencyWorkspaceView, {
     workspace, profiles: [], sessions, webTabs: [], connection, request,
     sendImmediate: connection.sendImmediate, online: true, onDone() {}, onSaveLayout: async () => {},
@@ -89,7 +92,7 @@ function browserExecutable() {
   return undefined;
 }
 
-test('TASK B: 5,000-line scrollback, Ctrl+Shift+A, Ctrl+A/C semantics, and scroll stability under 25,000 lines of output', { timeout: 120000 }, async (t) => {
+test('TASK B: 42,000-line scrollback, search, Ctrl+Shift+A, Ctrl+A/C semantics, and scroll stability under 50,000 lines of output', { timeout: 120000 }, async (t) => {
   const executablePath = browserExecutable();
   if (!executablePath) {
     t.skip('Chromium is not installed');
@@ -138,20 +141,20 @@ test('TASK B: 5,000-line scrollback, Ctrl+Shift+A, Ctrl+A/C semantics, and scrol
   await page.goto('http://127.0.0.1:' + server.address().port);
   await page.waitForFunction(() => window.terminals?.length === 3);
 
-  // 1. Verify all 3 terminals have scrollback configured to 5,000
+  // 1. Verify all 3 terminals have scrollback configured to 42,000
   const scrollbacks = await page.evaluate(() => window.terminals.map((t) => t.options.scrollback));
-  assert.deepEqual(scrollbacks, [5000, 5000, 5000], 'All terminals must have 5,000-line scrollback');
+  assert.deepEqual(scrollbacks, [42000, 42000, 42000], 'All terminals must have 42,000-line scrollback');
 
-  // 2. Stream 25,000 lines of synthetic output to concurrent terminals
-  const lineChunkSize = 2500;
-  const totalLines = 25000;
+  // 2. Stream 50,000 lines of synthetic output to concurrent terminals (exceeding 42,000)
+  const lineChunkSize = 5000;
+  const totalLines = 50000;
   await page.evaluate(async ({ totalLines, lineChunkSize }) => {
     const [tA, tB, tC] = window.terminals;
     for (let start = 0; start < totalLines; start += lineChunkSize) {
       const end = start + lineChunkSize;
       const lines = [];
       for (let i = start; i < end; i++) {
-        lines.push('SYNTH_LINE_' + String(i).padStart(5, '0'));
+        lines.push('SYNTH_LINE_' + String(i).padStart(6, '0'));
       }
       const chunk = lines.join('\r\n') + '\r\n';
       await Promise.all([
@@ -162,7 +165,7 @@ test('TASK B: 5,000-line scrollback, Ctrl+Shift+A, Ctrl+A/C semantics, and scrol
     }
   }, { totalLines, lineChunkSize });
 
-  // 3. Verify the existing 5,000-line retention cap under 25,000 lines of output.
+  // 3. Verify the 42,000-line retention cap under 50,000 lines of output.
   const bufferStats = await page.evaluate(() => {
     const term = window.terminals[0];
     const b = term.buffer.active;
@@ -171,10 +174,12 @@ test('TASK B: 5,000-line scrollback, Ctrl+Shift+A, Ctrl+A/C semantics, and scrol
       rows: term.rows,
       firstLine: b.getLine(0)?.translateToString(true) ?? '',
       lastLine: b.getLine(b.length - 1)?.translateToString(true) ?? '',
+      lastPopulatedLine: b.getLine(b.length - 2)?.translateToString(true) ?? '',
     };
   });
-  assert.equal(bufferStats.length, 5000 + bufferStats.rows, 'Buffer must cap at exactly 5,000 scrollback lines + visible rows');
-  assert.equal(bufferStats.firstLine, 'SYNTH_LINE_' + String(totalLines + 1 - bufferStats.length).padStart(5, '0'), 'Oldest output rolls off at the configured capacity');
+  assert.equal(bufferStats.length, 42000 + bufferStats.rows, 'Buffer must cap at exactly 42,000 scrollback lines + visible rows');
+  assert.equal(bufferStats.firstLine, 'SYNTH_LINE_' + String(totalLines + 1 - bufferStats.length).padStart(6, '0'), 'Oldest output rolls off at the configured capacity');
+  assert.equal(bufferStats.lastPopulatedLine, 'SYNTH_LINE_' + String(totalLines - 1).padStart(6, '0'), 'Latest output line is retained');
 
   // 4. Test Ctrl+Shift+A selects all retained lines.
   await page.evaluate(() => {
@@ -202,7 +207,7 @@ test('TASK B: 5,000-line scrollback, Ctrl+Shift+A, Ctrl+A/C semantics, and scrol
   });
   assert.ok(selectionInfo.hasSelection, 'Ctrl+Shift+A must select terminal buffer');
   assert.ok(selectionInfo.startsWith.startsWith(bufferStats.firstLine), 'Selection includes earliest retained line');
-  assert.ok(selectionInfo.selectionText.includes('SYNTH_LINE_24999'), 'Selection includes latest line');
+  assert.ok(selectionInfo.selectionText.includes('SYNTH_LINE_049999'), 'Selection includes latest line');
 
   // 5. Test Ctrl+A continues reaching shell / CLI (does not select, produces input)
   await page.evaluate(() => {
@@ -265,10 +270,10 @@ test('TASK B: 5,000-line scrollback, Ctrl+Shift+A, Ctrl+A/C semantics, and scrol
   // Scroll above the live viewport.
   await page.evaluate(() => {
     const term = window.terminals[0];
-    term.scrollToLine(1000);
+    term.scrollToLine(5000);
   });
   const scrollPosBefore = await page.evaluate(() => window.terminals[0].buffer.active.viewportY);
-  assert.equal(scrollPosBefore, 1000, 'Viewport scrolled above live output');
+  assert.equal(scrollPosBefore, 5000, 'Viewport scrolled above live output');
 
   // Stream another 500 lines of output
   await page.evaluate(async () => {
@@ -276,11 +281,34 @@ test('TASK B: 5,000-line scrollback, Ctrl+Shift+A, Ctrl+A/C semantics, and scrol
     const moreLines = Array.from({ length: 500 }, (_, i) => 'MORE_LINE_' + i).join('\r\n') + '\r\n';
     await new Promise((r) => term.write(moreLines, r));
   });
-  // Verify user's viewportY stayed anchored
+  // Verify user's viewportY stayed anchored to the content (adjusting for trimmed roll-off lines)
   const scrollPosAfter = await page.evaluate(() => window.terminals[0].buffer.active.viewportY);
+  assert.equal(scrollPosAfter, scrollPosBefore - 500, 'Viewport stays anchored to content as oldest lines roll off');
   assert.ok(scrollPosAfter < 10000, 'Viewport must not jump to bottom on new output while scrolled up');
 
-  // 8. Test Alternate-Screen TUI behavior:
+  // 8. Test terminal search across the 42,000-line buffer:
+  const searchResult = await page.evaluate(() => {
+    const term = window.terminals[0];
+    const addon = term.__mawSearchAddon;
+    if (!addon) return { ok: false, error: 'missing SearchAddon' };
+    const foundMid = addon.findNext('SYNTH_LINE_025000');
+    const selMid = term.getSelection();
+    const foundTop = addon.findPrevious('SYNTH_LINE_008500');
+    const selTop = term.getSelection();
+    term.clearSelection();
+    return {
+      ok: true,
+      foundMid,
+      selMidMatches: selMid.includes('SYNTH_LINE_025000'),
+      foundTop,
+      selTopMatches: selTop.includes('SYNTH_LINE_008500'),
+    };
+  });
+  assert.ok(searchResult.ok, searchResult.error ?? 'Search addon present');
+  assert.ok(searchResult.foundMid && searchResult.selMidMatches, 'Search finds text in middle of 42k buffer');
+  assert.ok(searchResult.foundTop && searchResult.selTopMatches, 'Search finds text near top of 42k buffer');
+
+  // 9. Test Alternate-Screen TUI behavior:
   // Switch to alternate screen (\x1b[?1049h), write TUI output, verify normal buffer is preserved
   const beforeAlt = await page.evaluate(async () => {
     const term = window.terminals[0];
@@ -291,9 +319,12 @@ test('TASK B: 5,000-line scrollback, Ctrl+Shift+A, Ctrl+A/C semantics, and scrol
   const inAltBuffer = await page.evaluate(() => ({
     altActive: window.terminals[0].buffer.active.type === 'alternate',
     normalLength: window.terminals[0].buffer.normal.length,
+    altBaseY: window.terminals[0].buffer.active.baseY,
   }));
   assert.equal(inAltBuffer.altActive, true, 'Alternate buffer is active');
   assert.equal(inAltBuffer.normalLength, beforeAlt, 'Entering the alternate screen preserves the existing normal buffer');
+  assert.equal(inAltBuffer.altBaseY, 0, 'Alternate buffer has 0 scrollback');
+  assert.ok(inAltBuffer.normalLength === 42000 + bufferStats.rows, 'Normal buffer retains the full configured history during TUI session');
 
   // Exit alternate screen (\x1b[?1049l)
   await page.evaluate(async () => {
@@ -303,13 +334,79 @@ test('TASK B: 5,000-line scrollback, Ctrl+Shift+A, Ctrl+A/C semantics, and scrol
   const outAltBuffer = await page.evaluate(() => window.terminals[0].buffer.active.type === 'normal');
   assert.equal(outAltBuffer, true, 'Normal buffer restored after TUI exit');
 
-  // 9. Test Reconnection with 256 KiB truncated backend replay:
+  // 10. Test moving a terminal between panes / tab switching preserves existing state:
+  const stateBeforeMove = await page.evaluate(() => {
+    const term = window.terminals[0];
+    return {
+      termCount: window.terminals.length,
+      scrollbackLines: term.buffer.active.baseY,
+      firstLine: term.buffer.active.getLine(0)?.translateToString(true) ?? '',
+      lastLine: term.buffer.active.getLine(term.buffer.active.length - 2)?.translateToString(true) ?? '',
+    };
+  });
+  await page.evaluate((tabB) => { window.selectTab(tabB); }, tabB);
+  await page.evaluate((tabA) => { window.selectTab(tabA); }, tabA);
+  const stateAfterMove = await page.evaluate(() => {
+    const term = window.terminals[0];
+    return {
+      termCount: window.terminals.length,
+      scrollbackLines: term.buffer.active.baseY,
+      firstLine: term.buffer.active.getLine(0)?.translateToString(true) ?? '',
+      lastLine: term.buffer.active.getLine(term.buffer.active.length - 2)?.translateToString(true) ?? '',
+    };
+  });
+  assert.equal(stateAfterMove.termCount, stateBeforeMove.termCount, 'Terminal instances are preserved without unmounting');
+  assert.equal(stateAfterMove.scrollbackLines, 42000, 'Scrollback capacity of 42,000 lines preserved across tab switch / pane move');
+  assert.equal(stateAfterMove.firstLine, stateBeforeMove.firstLine, 'First line preserved across tab switch / pane move');
+  assert.equal(stateAfterMove.lastLine, stateBeforeMove.lastLine, 'Last line preserved across tab switch / pane move');
+
+  // 11. Independent terminals maintain independent buffers:
+  await page.evaluate(async () => {
+    const tB = window.terminals[1];
+    await new Promise((r) => tB.write('\r\nINDEPENDENT_BUFFER_DATA_TERMINAL_B\r\n', r));
+  });
+  const independentStats = await page.evaluate(() => {
+    const [tA, tB, tC] = window.terminals;
+    const textA = Array.from({ length: 5 }, (_, i) => tA.buffer.active.getLine(tA.buffer.active.length - 1 - i)?.translateToString(true) ?? '').join(' ');
+    const textB = Array.from({ length: 5 }, (_, i) => tB.buffer.active.getLine(tB.buffer.active.length - 1 - i)?.translateToString(true) ?? '').join(' ');
+    const textC = Array.from({ length: 5 }, (_, i) => tC.buffer.active.getLine(tC.buffer.active.length - 1 - i)?.translateToString(true) ?? '').join(' ');
+    return {
+      tAHasUnique: textA.includes('INDEPENDENT_BUFFER_DATA_TERMINAL_B'),
+      tBHasUnique: textB.includes('INDEPENDENT_BUFFER_DATA_TERMINAL_B'),
+      tCHasUnique: textC.includes('INDEPENDENT_BUFFER_DATA_TERMINAL_B'),
+    };
+  });
+  assert.equal(independentStats.tAHasUnique, false, 'Terminal A does not receive Terminal B buffer data');
+  assert.equal(independentStats.tBHasUnique, true, 'Terminal B receives and retains its independent buffer data');
+  assert.equal(independentStats.tCHasUnique, false, 'Terminal C does not receive Terminal B buffer data');
+
+  // 12. Test Reconnection replay behavior:
+  // Delta replay (reset: false) appends without clearing 42,000-line buffer
   await page.evaluate(() => {
     window.emit({
       type: 'terminal.replay',
       terminalId: 'term-a',
-      data: 'REPLAY_AFTER_RECONNECT\\r\\n',
+      data: 'DELTA_REPLAY_LINE\r\n',
+      reset: false,
+    });
+  });
+  const deltaReplayStats = await page.evaluate(() => {
+    const term = window.terminals[0];
+    const b = term.buffer.active;
+    const last = b.getLine(b.length - 2)?.translateToString(true) ?? '';
+    return { length: b.length, last };
+  });
+  assert.ok(deltaReplayStats.length >= 42000, 'Delta replay preserves full 42,000-line scrollback');
+  assert.equal(deltaReplayStats.last, 'DELTA_REPLAY_LINE', 'Delta replay line appended correctly');
+
+  // Truncated replay (reset: true) handles reset replay cleanly
+  await page.evaluate(() => {
+    window.emit({
+      type: 'terminal.replay',
+      terminalId: 'term-a',
+      data: 'REPLAY_AFTER_RECONNECT\r\n',
       truncated: true,
+      reset: true,
     });
   });
   const reconnectedText = await page.evaluate(() => {

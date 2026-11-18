@@ -149,9 +149,9 @@ test('useTerminalHistory and TerminalView history pagination', { timeout: 60000 
   assert.equal(constants.pageSize, 1000, 'HISTORY_PAGE_SIZE must be 1,000');
   assert.equal(constants.maxCachedPages, 20, 'MAX_CACHED_PAGES must be 20');
 
-  // 2. Verify xterm scrollback is reduced to 5,000
+  // 2. Verify xterm scrollback is configured to 42,000
   const scrollback = await page.evaluate(() => window.terminalInstance.options.scrollback);
-  assert.equal(scrollback, 5000, 'TerminalView scrollback must be 5,000');
+  assert.equal(scrollback, 42000, 'TerminalView scrollback must be 42,000');
 
   // 3. Verify initial hook state
   const initialState = await page.evaluate(() => ({
