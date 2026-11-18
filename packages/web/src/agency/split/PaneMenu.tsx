@@ -1,5 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
+import { handleMenuArrowNavigation } from '../../shared/hooks/useMenuKeyboardNav.js';
+import { calculateViewportMenuPosition } from '../../shared/lib/overlay-position.js';
 
 const opened = 'maw:pane-menu-opened';
 export const dismissPaneMenus = () => window.dispatchEvent(new Event('maw:dismiss-pane-menus'));
@@ -18,12 +20,13 @@ export function PaneMenu({ anchor, label, onClose, children }: {
       const button = anchor.current?.getBoundingClientRect();
       const popup = menu.current?.getBoundingClientRect();
       if (!button || !popup) return;
-      const margin = 8;
-      setPosition({
-        left: Math.max(margin, Math.min(button.left, window.innerWidth - popup.width - margin)),
-        top: Math.max(margin, button.bottom + popup.height + margin <= window.innerHeight
-          ? button.bottom + 4 : Math.min(button.top - popup.height - 4, window.innerHeight - popup.height - margin)),
-      });
+      setPosition(calculateViewportMenuPosition({
+        triggerRect: button,
+        menuWidth: popup.width,
+        menuHeight: popup.height,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      }));
     };
     place();
     anchor.current?.setAttribute('aria-controls', id);
@@ -31,8 +34,13 @@ export function PaneMenu({ anchor, label, onClose, children }: {
     // A scroll can move the anchor without changing the pane's geometry.
     window.addEventListener('scroll', place, true);
     menu.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
-    return () => { anchor.current?.removeAttribute('aria-controls'); window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); };
+    return () => {
+      anchor.current?.removeAttribute('aria-controls');
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
   }, [anchor, id]);
+
   useEffect(() => {
     const token = {};
     window.dispatchEvent(new CustomEvent(opened, { detail: token }));
@@ -59,15 +67,19 @@ export function PaneMenu({ anchor, label, onClose, children }: {
       document.removeEventListener('keydown', keyboard, true);
     };
   }, [anchor]);
-  return createPortal(<div ref={menu} id={id} role="menu" aria-label={label}
-    className="agency-dropdown-menu maw-pane-menu" style={{ ...position, position: 'fixed', zIndex: 150 }}
-    onKeyDown={(event) => {
-      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-      event.preventDefault(); event.stopPropagation();
-      const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')];
-      const index = items.indexOf(document.activeElement as HTMLButtonElement);
-      const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
-        : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
-      items[next]?.focus();
-    }}>{children}</div>, document.body);
+
+  return createPortal(
+    <div
+      ref={menu}
+      id={id}
+      role="menu"
+      aria-label={label}
+      className="agency-dropdown-menu maw-pane-menu"
+      style={{ ...position, position: 'fixed', zIndex: 150 }}
+      onKeyDown={(event) => handleMenuArrowNavigation(event, event.currentTarget)}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
 }

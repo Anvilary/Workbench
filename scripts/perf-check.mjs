@@ -85,7 +85,7 @@ async function step(name, fn) {
 
 // 1. Native layout coordinator idle rAF regression check
 await step('Native layout coordinator idle rAF elimination', async () => {
-  const { stdout } = await runCommand('node', ['--test', 'packages/web/src/agency/native-layout-coordinator.test.mjs'], { silent: true });
+  const { stdout } = await runCommand('node', ['--test', 'packages/web/tests/unit/panes/native-layout-coordinator.test.mjs'], { silent: true });
   if (!stdout.includes('pass 2') && !stdout.includes('✔')) {
     throw new Error('Native layout coordinator test suite failed or produced unexpected test counts');
   }
@@ -102,7 +102,7 @@ await step('Native layout coordinator idle rAF elimination', async () => {
 await step('Codex watcher stat-only delta polling', async () => {
   await runCommand(
     'node',
-    ['--import', 'tsx', '--test', 'src/agents/codex/turn-watcher.test.ts'],
+    ['--import', 'tsx', '--test', 'tests/unit/agents/turn-watcher.test.ts'],
     { cwd: path.join(repoRoot, 'packages/server'), silent: true }
   );
 

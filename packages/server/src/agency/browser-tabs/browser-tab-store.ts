@@ -7,13 +7,16 @@
  * with a validated backup and quarantine for corrupt primary files.
  */
 
-import { copyFile, mkdir, readFile, rename } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { AgencyErrorCode, WebTab, WorkspaceId } from '@agent-workbench/shared';
 import { isWebTab } from '@agent-workbench/shared';
-import { writeAtomically } from '../../atomic-write.js';
 import { appConfigDir } from '../../paths.js';
+import { SerialQueue } from '../../shared/concurrency/serial-queue.js';
+import {
+  loadWithBackupRecovery,
+  writeSnapshotWithBackup,
+} from '../../shared/persistence/versioned-json-store.js';
+import { isRecord } from '../../shared/validation/primitives.js';
 
 export const BROWSER_TAB_STORE_VERSION = 2;
 
@@ -37,10 +40,6 @@ export class UnsupportedBrowserTabSchemaError extends BrowserTabStoreError {
 export interface BrowserTabSnapshot {
   version: number;
   tabs: WebTab[];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -75,7 +74,6 @@ export function sanitizeForDurableStorage(tab: WebTab): WebTab {
  * If none are selected and open tabs exist, leaves them unselected unless requested.
  */
 export function normalizeWorkspaceSelections(tabs: readonly WebTab[]): WebTab[] {
-  // First pass: identify open tabs that claim selected state, prefer lowest order
   const openTabsByWorkspace = new Map<string, WebTab[]>();
   for (const tab of tabs) {
     const list = openTabsByWorkspace.get(tab.workspaceId) ?? [];
@@ -136,7 +134,6 @@ export function parseBrowserTabSnapshot(contents: string): WebTab[] {
       throw new BrowserTabStoreError('conflict', `Duplicate tab ID in store: ${item.id}`);
     }
     seenIds.add(item.id);
-    // Preserves last known targetRef for reconciliation; starts detached until verified
     tabs.push({
       ...item,
       targetRef: item.targetRef ?? null,
@@ -150,7 +147,7 @@ export function parseBrowserTabSnapshot(contents: string): WebTab[] {
 }
 
 export class BrowserTabStore {
-  private queue: Promise<void> = Promise.resolve();
+  private readonly saveQueue = new SerialQueue();
   private inMemoryTabs: Map<string, WebTab> = new Map();
   private loaded = false;
 
@@ -168,49 +165,16 @@ export class BrowserTabStore {
    * If both are missing, initializes with empty state.
    */
   async load(): Promise<readonly WebTab[]> {
-    let primaryMissing = false;
-    let primaryFailure: unknown = null;
-    let loadedTabs: WebTab[] | null = null;
-
-    try {
-      const raw = await readFile(this.filePath, 'utf8');
-      loadedTabs = parseBrowserTabSnapshot(raw);
-    } catch (error) {
-      if (error instanceof UnsupportedBrowserTabSchemaError) throw error;
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        primaryMissing = true;
-      }
-      primaryFailure = error;
-    }
-
-    if (loadedTabs === null) {
-      // Try backup
-      try {
-        const rawBackup = await readFile(this.filePath + '.bak', 'utf8');
-        loadedTabs = parseBrowserTabSnapshot(rawBackup);
-      } catch (backupError) {
-        if (backupError instanceof UnsupportedBrowserTabSchemaError) throw backupError;
-        const backupMissing = (backupError as NodeJS.ErrnoException).code === 'ENOENT';
-        if (primaryMissing && backupMissing) {
-          this.inMemoryTabs.clear();
-          this.loaded = true;
-          return [];
-        }
-        throw new AggregateError(
-          [primaryFailure, backupError],
-          'Browser tab store corrupted and backup unavailable',
-        );
-      }
-
-      // If primary was present but corrupt, quarantine it
-      if (!primaryMissing) {
-        const quarantinePath = `${this.filePath}.corrupt-${randomUUID()}`;
-        // If quarantine fails, a later save would copy the corrupt primary over
-        // the only valid .bak. Fail closed and leave both files untouched.
-        await rename(this.filePath, quarantinePath);
+    const { value: loadedTabs } = await loadWithBackupRecovery({
+      filePath: this.filePath,
+      parse: parseBrowserTabSnapshot,
+      emptyValue: () => [],
+      isUnsupportedSchemaError: (error) => error instanceof UnsupportedBrowserTabSchemaError,
+      recoveryErrorMessage: 'Browser tab store corrupted and backup unavailable',
+      onQuarantine: (quarantinePath) => {
         console.warn(`[maw] corrupt browser tab metadata quarantined at ${quarantinePath}`);
-      }
-    }
+      },
+    });
 
     this.inMemoryTabs.clear();
     for (const tab of loadedTabs) {
@@ -255,20 +219,17 @@ export class BrowserTabStore {
 
     const serialized = Buffer.from(JSON.stringify(snapshot, null, 2) + '\n', 'utf8');
 
-    const perform = async (): Promise<void> => {
-      await mkdir(path.dirname(this.filePath), { recursive: true, mode: 0o700 });
-      await copyFile(this.filePath, this.filePath + '.bak').catch((err: NodeJS.ErrnoException) => {
-        if (err.code !== 'ENOENT') throw err;
-      });
-      await writeAtomically(this.filePath, serialized, { mode: 0o600 });
-    };
-
-    const next = this.queue.then(perform);
-    this.queue = next.catch(() => undefined);
-    return next;
+    return this.saveQueue.run(() =>
+      writeSnapshotWithBackup({
+        filePath: this.filePath,
+        content: serialized,
+        dirMode: 0o700,
+        fileMode: 0o600,
+      }),
+    );
   }
 
   flush(): Promise<void> {
-    return this.queue;
+    return this.saveQueue.flush();
   }
 }

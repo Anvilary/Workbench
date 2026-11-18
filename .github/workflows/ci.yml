@@ -9,81 +9,102 @@ on:
   # publish.yml runs this whole workflow as its gate before uploading anything.
   workflow_call:
 
-# Download fixture browsers explicitly in the Linux UI job. Electron has its
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Download fixture browsers explicitly in the Linux E2E job. Electron has its
 # own pinned Chromium runtime and a separately sandboxed lifecycle check.
 env:
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
 
 jobs:
-  test:
-    name: Node ${{ matrix.node }} on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest]
-        # The app runs on Node 20, but working on the repository needs 22.13+:
-        # pnpm requires it, and the checks use node:sqlite.
-        node: ['22']
+  fast-checks:
+    name: Fast checks (typecheck, unit, security, build) on Linux
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
-          node-version: ${{ matrix.node }}
+          node-version: '22'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      - name: Agency Lane A focused domain tests
+      - run: pnpm test:unit
+      - run: pnpm test:security
+      - run: pnpm --filter @agent-workbench/desktop test
+      - run: pnpm build
+
+  windows-validation:
+    name: Windows validation (Node 22)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - name: Agency domain unit tests
         working-directory: packages/server
-        run: corepack pnpm exec tsx --test src/agency/domain.test.ts
-      - name: Agency Lane B focused profile tests
-        if: runner.os == 'Linux'
-        working-directory: packages/server
-        run: corepack pnpm exec tsx --test src/agents/profiles/profiles.test.ts
-      - name: Agency Lane C focused runtime tests
-        if: runner.os == 'Linux'
-        working-directory: packages/server
-        run: corepack pnpm exec tsx --test src/agency/runtime/agency-session-runtime.test.ts
-      - name: Agency Lane D focused frontend model tests
-        run: node --experimental-strip-types --test packages/web/src/agency/model.test.mjs
-      # The checks were written on Windows, the primary platform: several
-      # fixtures force `win32` while using real temp folders, so on Linux they
-      # fail for reasons that aren't bugs in the app. Porting them is welcome.
+        run: corepack pnpm exec tsx --test tests/unit/workspaces/domain.test.ts
+      - name: Frontend workspace model unit tests
+        run: node --experimental-strip-types --test packages/web/tests/unit/workspaces/model.test.mjs
+      # The server check scripts include Windows path fixtures; keep running them here.
       - run: pnpm check
-        if: runner.os == 'Windows'
-      - name: MAW security, native lifecycle, browser ownership and activity regressions
-        if: runner.os == 'Linux'
-        working-directory: packages/server
-        run: pnpm exec tsx --test src/security.test.ts src/maw-host.test.ts src/output-backpressure.test.ts src/agency/*.test.ts src/agency/browser-tabs/*.test.ts src/agency/runtime/*.test.ts ../web/src/agency/split/interactive-cli-scroll.test.mjs
-      - name: MAW updater, activation and rollback acceptance (mocked systemd)
-        if: runner.os == 'Linux'
-        working-directory: packages/server
-        run: pnpm exec tsx --test src/maw-updater-acceptance.test.ts
-      # Real-systemd activation/rollback (src/maw-systemd-acceptance.test.ts) needs a user systemd manager,
-      # which hosted runners do not provide; it runs locally with MAW_REAL_SYSTEMD=1 and skips here.
-      - name: Native desktop boundary policy
-        if: runner.os == 'Linux'
-        run: pnpm --filter @agent-workbench/desktop test
-      - name: Browser for MAW UI regressions
-        if: runner.os == 'Linux'
+
+  server-runtime-and-integration:
+    name: Server integration and runtime suites (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Server integration tests
+        run: pnpm --filter @agent-workbench/server run test:integration
+      # Real-systemd acceptance skips when MAW_REAL_SYSTEMD is unset (no user systemd in hosted runners).
+      - name: Server runtime, PTY supervisor, recovery, and updater tests
+        run: pnpm --filter @agent-workbench/server run test:runtime
+
+  desktop-and-browser-e2e:
+    name: Browser E2E and Electron lifecycle (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium for web E2E regressions
         run: pnpm exec playwright install chromium --with-deps
-      - name: MAW real browser and notification UI regressions
-        if: runner.os == 'Linux'
-        run: node --test packages/web/src/agency/browser-tabs.test.mjs packages/web/src/agency/notifications.test.mjs packages/web/src/maw-root.test.mjs packages/web/src/terminal-webgl.test.mjs packages/web/src/agency/split/terminal-scrollback-20k.test.mjs
+      - name: Web integration tests
+        run: pnpm --filter @agent-workbench/web run test:integration
+      - name: Web browser E2E regressions
+        run: |
+          pnpm --filter @agent-workbench/web test
+          pnpm --filter @agent-workbench/web exec tsx --test tests/e2e/browser/browser-favorites-acceptance.test.mjs tests/e2e/terminals/terminal-scrollback-20k.test.mjs tests/e2e/terminals/terminal-webgl.test.mjs tests/e2e/panes/split-divider-lifecycle.test.mjs tests/e2e/panes/tab-close-lifecycle.test.mjs tests/e2e/panes/tab-scroll-ergonomics.test.mjs
       - name: Ubuntu desktop package and production integration fixtures
-        if: runner.os == 'Linux'
         run: |
           node scripts/maw/build-desktop-deb.mjs
-          node --test packages/desktop/production.test.mjs
+          node --test packages/desktop/tests/integration/desktop/production.test.mjs
       - uses: actions/upload-artifact@v4
-        if: runner.os == 'Linux'
         with:
           name: ubuntu-desktop-runtime
           path: dist-desktop/*.deb
           if-no-files-found: error
       - name: Sandboxed native Electron lifecycle on a separate display
-        if: runner.os == 'Linux'
         working-directory: packages/desktop
         run: |
           sudo apt-get update && sudo apt-get install -y --no-install-recommends nautilus xdotool x11-utils adwaita-icon-theme dbus-x11
@@ -93,7 +114,6 @@ jobs:
           GSK_RENDERER=cairo LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a dbus-run-session env MAW_NAUTILUS_TEST_ISOLATED=1 pnpm test:electron
       - run: pnpm build
       - name: Built MAW desktop and backend recovery
-        if: runner.os == 'Linux'
         working-directory: packages/desktop
         run: xvfb-run -a pnpm test:staging
 
@@ -124,7 +144,7 @@ jobs:
   # it promises: it installs (node-pty is downloaded or compiled there), the
   # pseudo-terminal spawns a process, and the server starts and guards its door.
   smoke:
-    name: Install and start · Node ${{ matrix.node }} on ${{ matrix.os }}
+    name: Install and start - Node ${{ matrix.node }} on ${{ matrix.os }}
     needs: package
     runs-on: ${{ matrix.os }}
     strategy:

@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AgencyCliProfile, MawActivityState, WorkspaceId, BrowserFavorite, SearchEngine } from '@agent-workbench/shared';
 import { t } from '../../i18n/index.js';
-import { agencySessionText, agencyTabActivityText } from '../agency-labels.js';
 import type { WorkspaceTab } from '../model.js';
 import { PaneMenu } from './PaneMenu.js';
 import { PaneGrip } from './PaneMovement.js';
-import { setTabDragPreview, useTabDragPreview } from './tab-drag-store.js';
-import { insertionIndex, tabShift } from './tab-geometry.mjs';
+import { tabShift } from './tab-geometry.mjs';
 import { TabNameInput } from '../TabNameInput.js';
 import type { useAgencyStore } from '../useAgencyStore.js';
-import { GlobeIcon } from '../GlobeIcon.js';
+import { StatusDot } from '../../shared/ui/StatusDot.js';
+import { getWorkspaceTabDisplayName } from '../../features/workspaces/workspace-tab-helpers.js';
+import { PaneTabIcon, resolvePaneTabStatus } from '../../features/panes/TabStatusIcon.js';
+import { useHorizontalWheelScroll } from '../../features/panes/useHorizontalWheelScroll.js';
+import { useTabPointerDrag } from '../../features/panes/useTabPointerDrag.js';
 
 interface Props {
   paneId: string;
@@ -137,94 +139,32 @@ export function PaneHeader({
   const splitRightAllowed = canSplitRight !== undefined ? canSplitRight : canSplit;
   const splitDownAllowed = canSplitDown !== undefined ? canSplitDown : canSplit;
   const strip = useRef<HTMLDivElement | null>(null);
-  const dragPreview = useTabDragPreview();
-  const [dragState, setDragState] = useState<{ tabId: string; targetIndex: number } | null>(null);
-  const suppressTabClickUntil = useRef(0);
-  const tabDrag = useRef<{
-    tabId: string;
-    pointerId: number;
-    startX: number;
-    startY: number;
-    grabOffsetX: number;
-    grabOffsetY: number;
-    isDragging: boolean;
-    targetIndex: number;
-    overPaneId: string | null;
-    sourceWidth: number;
-    ghostEl: HTMLElement | null;
-    shieldEl: HTMLElement | null;
-    cachedHeaders: Map<string, { rect: DOMRect; tabRects: { left: number; width: number }[] }>;
-    rafId: number;
-    latestX: number;
-    latestY: number;
-  } | null>(null);
 
-  const cleanupDrag = () => {
-    if (tabDrag.current?.rafId) {
-      cancelAnimationFrame(tabDrag.current.rafId);
-      tabDrag.current.rafId = 0;
-    }
-    if (tabDrag.current?.ghostEl) {
-      tabDrag.current.ghostEl.remove();
-      tabDrag.current.ghostEl = null;
-    }
-    if (tabDrag.current?.shieldEl) {
-      tabDrag.current.shieldEl.remove();
-      tabDrag.current.shieldEl = null;
-    }
-    document.body.classList.remove('maw-pane-dragging');
-    tabDrag.current = null;
-    setDragState(null);
-    setTabDragPreview(null);
-  };
+  const paneTabs = tabIds
+    .map((id) => tabs.find((t) => t.id === id))
+    .filter((t): t is WorkspaceTab => t !== undefined);
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && tabDrag.current) {
-        cleanupDrag();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      cleanupDrag();
-    };
-  }, []);
+  const {
+    dragPreview,
+    dragState,
+    suppressTabClickUntil,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel,
+  } = useTabPointerDrag({
+    paneId,
+    workspaceId,
+    paneTabs,
+    tabs,
+    profiles,
+    favicons,
+    onMoveTabToPane,
+    request,
+    reportError,
+  });
 
-  useEffect(() => {
-    const node = strip.current;
-    if (!node) return;
-    const onWheel = (event: WheelEvent) => {
-      // Touchpad horizontal swipe: pass through to native browser momentum scrolling
-      if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
-
-      // Vertical mouse wheel: convert to horizontal scroll
-      if (node.scrollWidth <= node.clientWidth) return;
-
-      let delta = event.deltaY;
-      if (event.deltaMode === 1) {
-        // Line mode
-        delta *= 18;
-      } else if (event.deltaMode === 2) {
-        // Page mode
-        delta *= node.clientWidth;
-      } else {
-        // Pixel mode: damp excessive wheel jumps
-        delta = Math.sign(delta) * Math.min(Math.abs(delta), 100);
-      }
-
-      if (delta === 0) return;
-
-      // Allow event to bubble to parent when reaching boundaries
-      if (delta < 0 && node.scrollLeft <= 0) return;
-      if (delta > 0 && node.scrollLeft + node.clientWidth >= node.scrollWidth - 1) return;
-
-      event.preventDefault();
-      node.scrollLeft += delta;
-    };
-    node.addEventListener('wheel', onWheel, { passive: false });
-    return () => node.removeEventListener('wheel', onWheel);
-  }, [tabIds.length]);
+  useHorizontalWheelScroll(strip, tabIds.length);
 
   useEffect(() => {
     if (dragPreview) return;
@@ -236,10 +176,6 @@ export function PaneHeader({
     if (left < node.scrollLeft) node.scrollLeft = left;
     else if (right > node.scrollLeft + node.clientWidth) node.scrollLeft = right - node.clientWidth;
   }, [selectedTabId, dragPreview]);
-
-  const paneTabs = tabIds
-    .map((id) => tabs.find((t) => t.id === id))
-    .filter((t): t is WorkspaceTab => t !== undefined);
 
   async function handleKeyDown(event: React.KeyboardEvent) {
     if (!paneTabs.length || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -281,48 +217,10 @@ export function PaneHeader({
     else if (action === 'file') onOpenFileClick?.();
   }
 
-  function tabName(tab: WorkspaceTab) {
-    if (tab.kind === 'web') return tab.web.title;
-    if (tab.kind === 'editor') return tab.editor.title;
-    const session = tab.session;
-    return (
-      session.tab?.name ??
-      (session.kind === 'terminal'
-        ? t('agency.tabs.terminalNamed', { number: session.tab?.terminalNumber ?? 1 })
-        : profiles.find((p) => p.id === session.profileId)?.label ?? t('agency.ui.agentLabel'))
-    );
-  }
-
-  function renderTabIcon(tab: WorkspaceTab, favicon?: string) {
-    if (tab.kind === 'web') {
-      if (favicon) {
-        return (
-          <span className="maw-tab-icon-wrapper" aria-hidden="true">
-            <img
-              className="maw-tab-favicon"
-              src={favicon}
-              alt=""
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-                const fallback = e.currentTarget.nextElementSibling as HTMLElement | null;
-                if (fallback) fallback.style.display = 'inline-flex';
-              }}
-            />
-            <span className="maw-tab-icon-fallback" style={{ display: 'none' }}>
-              <GlobeIcon size={14} />
-            </span>
-          </span>
-        );
-      }
-      return (
-        <span className="maw-tab-icon-fallback" aria-hidden="true">
-          <GlobeIcon size={14} />
-        </span>
-      );
-    }
-    if (tab.kind === 'editor') return <span>✎</span>;
-    if (tab.session?.kind === 'agent') return <span>◇</span>;
-    return <span>&gt;_</span>;
+  function beginRename(tabId: string, element: HTMLElement | null) {
+    const host = element?.closest<HTMLElement>('.maw-session-tab');
+    setRenameWidth(host?.getBoundingClientRect().width ?? null);
+    setRenamingTabId(tabId);
   }
 
   return (
@@ -354,241 +252,16 @@ export function PaneHeader({
         role="tablist"
         aria-label={t('agency.tabs.tabList')}
         onKeyDown={handleKeyDown}
-        onPointerDown={(event) => {
-          if (event.button !== 0 || (event.target as Element).closest('[data-close], input')) return;
-          const tabEl = (event.target as Element).closest<HTMLElement>('.maw-session-tab');
-          if (tabEl) {
-            const tabId = tabEl.getAttribute('data-tab-id');
-            if (tabId) {
-              const idx = paneTabs.findIndex((t) => t.id === tabId);
-              const rect = tabEl.getBoundingClientRect();
-              tabDrag.current = {
-                tabId,
-                pointerId: event.pointerId,
-                startX: event.clientX,
-                startY: event.clientY,
-                grabOffsetX: event.clientX - rect.left,
-                grabOffsetY: event.clientY - rect.top,
-                isDragging: false,
-                targetIndex: idx,
-                overPaneId: paneId,
-                sourceWidth: rect.width,
-                ghostEl: null,
-                shieldEl: null,
-                cachedHeaders: new Map(),
-                rafId: 0,
-                latestX: event.clientX,
-                latestY: event.clientY,
-              };
-            }
-          }
-        }}
-        onPointerMove={(event) => {
-          const drag = tabDrag.current;
-          if (drag && drag.pointerId === event.pointerId) {
-            if (!drag.isDragging) {
-              if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 6) {
-                drag.isDragging = true;
-                event.currentTarget.setPointerCapture(event.pointerId);
-
-                // Create ghost element tracking the cursor
-                const sourceTab = paneTabs.find((t) => t.id === drag.tabId);
-                if (sourceTab) {
-                  const ghost = document.createElement('div');
-                  ghost.className = 'maw-tab-drag-ghost';
-                  const iconSpan = document.createElement('span');
-                  iconSpan.setAttribute('aria-hidden', 'true');
-                  const sourceFav = favicons?.[sourceTab.id];
-                  if (sourceTab.kind === 'web' && sourceFav) {
-                    const img = document.createElement('img');
-                    img.className = 'maw-tab-favicon';
-                    img.src = sourceFav;
-                    iconSpan.appendChild(img);
-                  } else {
-                    iconSpan.textContent =
-                      sourceTab.kind === 'web'
-                        ? '🌐'
-                        : sourceTab.kind === 'editor'
-                          ? '✎'
-                          : sourceTab.session?.kind === 'agent'
-                            ? '◇'
-                            : '>_';
-                  }
-                  const titleSpan = document.createElement('span');
-                  titleSpan.className = 'agency-truncate';
-                  titleSpan.textContent = tabName(sourceTab);
-                  ghost.appendChild(iconSpan);
-                  ghost.appendChild(titleSpan);
-                  ghost.style.transform = `translate3d(${event.clientX - drag.grabOffsetX}px, ${event.clientY - drag.grabOffsetY}px, 0)`;
-                  document.body.appendChild(ghost);
-                  drag.ghostEl = ghost;
-                }
-
-                // Add drag shield so native WebContentsViews do not obscure dragged ghost or drop targets
-                if (!document.querySelector('.maw-pane-drag-shield')) {
-                  const shield = document.createElement('div');
-                  shield.className = 'maw-pane-drag-shield';
-                  shield.setAttribute('aria-hidden', 'true');
-                  document.body.appendChild(shield);
-                  drag.shieldEl = shield;
-                }
-                document.body.classList.add('maw-pane-dragging');
-              }
-            }
-            if (drag.isDragging) {
-              event.preventDefault();
-
-              // Coalesce ghost transform updates to requestAnimationFrame (cuts style recalcs under rapid pointermove)
-              drag.latestX = event.clientX;
-              drag.latestY = event.clientY;
-              if (drag.rafId === 0) {
-                drag.rafId = requestAnimationFrame(() => {
-                  const current = tabDrag.current;
-                  if (current && current.rafId !== 0) {
-                    current.rafId = 0;
-                    if (current.ghostEl) {
-                      current.ghostEl.style.transform = `translate3d(${current.latestX - current.grabOffsetX}px, ${current.latestY - current.grabOffsetY}px, 0)`;
-                    }
-                  }
-                });
-              }
-
-              // Determine target pane
-              let targetPaneId: string | null = null;
-              let targetPaneEl: HTMLElement | null = null;
-
-              const currentHeader = drag.overPaneId ? drag.cachedHeaders.get(drag.overPaneId) : undefined;
-              if (
-                currentHeader &&
-                event.clientX >= currentHeader.rect.left &&
-                event.clientX <= currentHeader.rect.right &&
-                event.clientY >= currentHeader.rect.top &&
-                event.clientY <= currentHeader.rect.bottom
-              ) {
-                targetPaneId = drag.overPaneId;
-              } else {
-                const elUnder = document.elementFromPoint(event.clientX, event.clientY);
-                targetPaneEl = elUnder?.closest<HTMLElement>('.maw-split-pane') ?? null;
-                targetPaneId = targetPaneEl?.id.replace('pane-container-', '') ?? null;
-              }
-
-              if (!targetPaneId) return;
-
-              // Cache header rects on first encounter during this drag
-              let headerData = drag.cachedHeaders.get(targetPaneId);
-              if (!headerData) {
-                const pEl = targetPaneEl ?? document.getElementById(`pane-container-${targetPaneId}`);
-                const header = pEl?.querySelector<HTMLElement>('.maw-pane-header');
-                if (header) {
-                  const headerRect = header.getBoundingClientRect();
-                  const tabEls = [...header.querySelectorAll<HTMLElement>('.maw-session-tab')];
-                  const tabRects = tabEls.map((element) => {
-                    const rect = element.getBoundingClientRect();
-                    return { left: rect.left, width: rect.width };
-                  });
-                  headerData = { rect: headerRect, tabRects };
-                  drag.cachedHeaders.set(targetPaneId, headerData);
-                }
-              }
-
-              const rects = headerData?.tabRects ?? [];
-              const target = targetPaneId && rects.length > 0 ? insertionIndex(event.clientX, rects) : rects.length;
-
-              // Only update React state when target index or pane actually changes!
-              if (target !== drag.targetIndex || targetPaneId !== drag.overPaneId) {
-                drag.targetIndex = target;
-                drag.overPaneId = targetPaneId;
-                setDragState({ tabId: drag.tabId, targetIndex: target });
-                setTabDragPreview({
-                  tabId: drag.tabId,
-                  sourcePaneId: paneId,
-                  sourceIndex: paneTabs.findIndex((tab) => tab.id === drag.tabId),
-                  width: drag.sourceWidth,
-                  overPaneId: targetPaneId,
-                  overIndex: target,
-                });
-              }
-            }
-          }
-        }}
-        onPointerUp={async (event) => {
-          const dragInfo = tabDrag.current;
-          if (dragInfo && dragInfo.pointerId === event.pointerId) {
-            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-              event.currentTarget.releasePointerCapture(event.pointerId);
-            }
-            cleanupDrag();
-
-            if (dragInfo.isDragging) {
-              suppressTabClickUntil.current = Date.now() + 200;
-              const elUnder = document.elementFromPoint(event.clientX, event.clientY);
-              const destination = elUnder?.closest('.maw-split-pane')?.id.replace('pane-container-', '') ?? dragInfo.overPaneId;
-              if (!destination) return;
-              const targetPaneEl = document.getElementById(`pane-container-${destination}`);
-              const targetHeader = targetPaneEl?.querySelector('.maw-pane-header');
-              const targetElements = targetHeader ? [...targetHeader.querySelectorAll<HTMLElement>('.maw-session-tab')] : [];
-              const targetIndex = targetElements.findIndex((element) => {
-                const rect = element.getBoundingClientRect();
-                return event.clientX < rect.left + rect.width / 2;
-              });
-              const insertion = targetIndex < 0 ? targetElements.length : targetIndex;
-              const sourceIndex = paneTabs.findIndex((tab) => tab.id === dragInfo.tabId);
-              onMoveTabToPane(dragInfo.tabId, destination, destination === paneId && insertion > sourceIndex ? insertion - 1 : insertion);
-              if (destination !== paneId) return;
-              const currentIdx = tabs.findIndex((t) => t.id === dragInfo.tabId);
-              const targetPaneTab = paneTabs[dragInfo.targetIndex];
-              const targetIdx = targetPaneTab ? tabs.findIndex((t) => t.id === targetPaneTab.id) : tabs.length;
-              if (currentIdx !== -1 && targetIdx !== currentIdx && targetIdx !== currentIdx + 1) {
-                const ids = tabs.map((t) => t.id);
-                const [draggedId] = ids.splice(currentIdx, 1);
-                const insertIdx = targetIdx > currentIdx ? targetIdx - 1 : targetIdx;
-                ids.splice(insertIdx, 0, draggedId!);
-                try {
-                  await request({ type: 'agency.tabs.order', workspaceId, tabIds: ids });
-                } catch (reason) {
-                  reportError(String(reason));
-                }
-              }
-            }
-          }
-        }}
-        onPointerCancel={(event) => {
-          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-            event.currentTarget.releasePointerCapture(event.pointerId);
-          }
-          cleanupDrag();
-        }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
       >
         {paneTabs.map((tab, idx) => {
           const tabState = getTabActivity?.(workspaceId, tab.id);
-          const session = tab.kind === 'native' ? tab.session : undefined;
           const isUnsaved = isTabUnsaved?.(tab.id);
-          const status = tabState
-            ? agencyTabActivityText(tabState)
-            : session
-              ? agencySessionText(session)
-              : tab.kind === 'editor'
-                ? (isUnsaved ? t('docs.edit.unsaved') : t('agency.tabs.editor'))
-                : t('agency.web.tabKind');
-          const dotClass =
-            tab.kind === 'editor'
-              ? (isUnsaved ? 'attention' : 'idle')
-              : tabState === 'finished'
-                ? 'finished'
-                : tabState === 'failed' ||
-                    session?.lifecycle === 'failed' ||
-                    session?.recovery?.status === 'manual' ||
-                    (tab.kind === 'web' && ['error', 'crashed'].includes(tab.web.runtimeState ?? ''))
-                  ? 'failed'
-                  : session?.lifecycle === 'exited'
-                    ? 'muted'
-                    : session && ['awaiting-user', 'awaiting-permission'].includes(session.activity)
-                      ? 'attention'
-                      : (tab.kind === 'web' && ['navigating', 'attaching'].includes(tab.web.runtimeState ?? ''))
-                        ? 'working'
-                        : tabState === 'needs-input'
-                          ? 'attention'
-                          : tabState ?? (session?.activity === 'working' ? 'working' : session?.activity === 'idle' ? 'idle' : 'unknown');
+          const { status, dotClass } = resolvePaneTabStatus(tab, tabState, isUnsaved);
+          const displayName = getWorkspaceTabDisplayName(tab, profiles);
 
           const isSelected = selectedTabId === tab.id;
           const previewHere = dragPreview?.overPaneId === paneId ? dragPreview : null;
@@ -621,10 +294,10 @@ export function PaneHeader({
               {isRenaming ? (
                 <div className="maw-tab-rename-row">
                   <span className="maw-tab-icon" aria-hidden="true">
-                    {renderTabIcon(tab, tabFavicon)}
+                    <PaneTabIcon tab={tab} favicon={tabFavicon} />
                   </span>
                   <TabNameInput
-                    name={tabName(tab)}
+                    name={displayName}
                     report={reportError}
                     onSave={async (title) => {
                       await onRenameTab(tab, title);
@@ -642,7 +315,7 @@ export function PaneHeader({
                       }
                     }}
                   />
-                  <span className={`agency-status-dot ${dotClass}`} aria-label={status} />
+                  <StatusDot tone={dotClass} ariaLabel={status} />
                 </div>
               ) : (
                 <button
@@ -652,46 +325,36 @@ export function PaneHeader({
                   aria-selected={isSelected}
                   tabIndex={isSelected ? 0 : -1}
                   disabled={!online}
-                  title={`${tabName(tab)}${isUnsaved ? ' •' : ''} · ${status}`}
+                  title={`${displayName}${isUnsaved ? ' •' : ''} · ${status}`}
                   aria-keyshortcuts="F2 Alt+ArrowLeft Alt+ArrowRight"
                   onClick={(event) => {
                     if (Date.now() < suppressTabClickUntil.current) { event.preventDefault(); return; }
                     onSelectTab(tab.id);
                   }}
-                  onDoubleClick={(event) => {
-                    const host = (event.currentTarget as HTMLElement).closest<HTMLElement>('.maw-session-tab');
-                    setRenameWidth(host?.getBoundingClientRect().width ?? null);
-                    setRenamingTabId(tab.id);
-                  }}
+                  onDoubleClick={(event) => beginRename(tab.id, event.currentTarget)}
                   onKeyDown={(e) => {
                     if (e.key === 'F2') {
                       e.preventDefault();
-                      const host = (e.currentTarget as HTMLElement).closest<HTMLElement>('.maw-session-tab');
-                      setRenameWidth(host?.getBoundingClientRect().width ?? null);
-                      setRenamingTabId(tab.id);
+                      beginRename(tab.id, e.currentTarget);
                     }
                   }}
                 >
                   <span className="maw-tab-icon" aria-hidden="true">
-                    {renderTabIcon(tab, tabFavicon)}
+                    <PaneTabIcon tab={tab} favicon={tabFavicon} />
                   </span>
                   <span
                     className="agency-truncate"
-                    onDoubleClick={(event) => {
-                      const host = (event.currentTarget as HTMLElement).closest<HTMLElement>('.maw-session-tab');
-                      setRenameWidth(host?.getBoundingClientRect().width ?? null);
-                      setRenamingTabId(tab.id);
-                    }}
+                    onDoubleClick={(event) => beginRename(tab.id, event.currentTarget)}
                   >
-                    {tabName(tab)}{isUnsaved ? ' •' : ''}
+                    {displayName}{isUnsaved ? ' •' : ''}
                   </span>
-                  <span className={`agency-status-dot ${dotClass}`} aria-label={status} />
+                  <StatusDot tone={dotClass} ariaLabel={status} />
                 </button>
               )}
               <button
                 type="button"
                 data-close
-                aria-label={t('agency.tabs.closeNamed', { name: tabName(tab) })}
+                aria-label={t('agency.tabs.closeNamed', { name: displayName })}
                 disabled={!online || busy}
                 onClick={(e) => {
                   e.stopPropagation();

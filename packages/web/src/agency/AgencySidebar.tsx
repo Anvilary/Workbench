@@ -1,11 +1,20 @@
 import { t } from '../i18n/index.js';
 import { agencySessionText } from './agency-labels.js';
-import { useState, useRef, useEffect, useCallback, useLayoutEffect, useId } from 'react';
-import { createPortal } from 'react-dom';
+import { useState, useRef, useCallback } from 'react';
 import type {
   AgencyProject, AgencyRuntimeSession, AgencyWorkspace, ProjectId, WorkspaceId, WebTab,
 } from '@agent-workbench/shared';
 import { activeByProject, isAttention, workspaceTabs } from './model.js';
+import { InlineRenameInput } from '../shared/ui/InlineRenameInput.js';
+import { StatusDot } from '../shared/ui/StatusDot.js';
+import { handleMenuArrowNavigation } from '../shared/hooks/useMenuKeyboardNav.js';
+import { calculateSidebarDropdownPosition } from '../shared/lib/overlay-position.js';
+import { AgencyDoneView } from '../features/workspaces/AgencyDoneView.js';
+import { DeleteWorkspaceDialog } from '../features/workspaces/DeleteWorkspaceDialog.js';
+import { SidebarConfirmDialogs } from '../features/workspaces/SidebarConfirmDialogs.js';
+import { SidebarDropdownMenu } from '../features/workspaces/SidebarDropdownMenu.js';
+
+export { AgencyDoneView, DeleteWorkspaceDialog, calculateSidebarDropdownPosition };
 
 export interface AgencySidebarProps {
   projects: readonly AgencyProject[];
@@ -51,205 +60,6 @@ export function SidebarToggleIcon(): JSX.Element {
   );
 }
 
-export function calculateSidebarDropdownPosition(params: {
-  triggerRect: { left: number; top: number; right: number; bottom: number };
-  menuWidth: number;
-  menuHeight: number;
-  viewportWidth: number;
-  viewportHeight: number;
-  margin?: number;
-}): { left: number; top: number } {
-  const { triggerRect, menuWidth, menuHeight, viewportWidth, viewportHeight } = params;
-  const margin = params.margin ?? 8;
-
-  let left = triggerRect.left;
-  if (left + menuWidth > viewportWidth - margin) {
-    left = triggerRect.right - menuWidth;
-  }
-  if (left < margin) {
-    left = margin;
-  }
-  if (left + menuWidth > viewportWidth - margin) {
-    left = Math.max(margin, viewportWidth - menuWidth - margin);
-  }
-
-  let top: number;
-  if (triggerRect.bottom + menuHeight + margin <= viewportHeight) {
-    top = triggerRect.bottom + 4;
-  } else if (triggerRect.top - menuHeight - margin >= 0) {
-    top = triggerRect.top - menuHeight - 4;
-  } else {
-    top = Math.max(margin, viewportHeight - menuHeight - margin);
-  }
-
-  return { left: Math.round(left), top: Math.round(top) };
-}
-
-function SidebarDropdownMenu({
-  anchor,
-  children,
-  onMouseEnter,
-  onMouseLeave,
-  onKeyDown,
-  menuRef,
-}: {
-  anchor: HTMLElement | null;
-  children: React.ReactNode;
-  onMouseEnter?: () => void;
-  onMouseLeave?: () => void;
-  onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => void;
-  menuRef: (el: HTMLDivElement | null) => void;
-}): JSX.Element | null {
-  const id = useId();
-  const [position, setPosition] = useState<{ left: number; top: number }>(() => {
-    if (!anchor) return { left: 0, top: 0 };
-    return calculateSidebarDropdownPosition({
-      triggerRect: anchor.getBoundingClientRect(),
-      menuWidth: 160,
-      menuHeight: 140,
-      viewportWidth: typeof window !== 'undefined' ? window.innerWidth : 1280,
-      viewportHeight: typeof window !== 'undefined' ? window.innerHeight : 800,
-    });
-  });
-  const internalRef = useRef<HTMLDivElement | null>(null);
-
-  useLayoutEffect(() => {
-    const update = () => {
-      if (!anchor || !internalRef.current) return;
-      const triggerRect = anchor.getBoundingClientRect();
-      const popupRect = internalRef.current.getBoundingClientRect();
-      const pos = calculateSidebarDropdownPosition({
-        triggerRect,
-        menuWidth: popupRect.width > 0 ? popupRect.width : 160,
-        menuHeight: popupRect.height > 0 ? popupRect.height : 140,
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight,
-      });
-      setPosition((prev) => {
-        if (prev.left === pos.left && prev.top === pos.top) return prev;
-        return pos;
-      });
-    };
-
-    update();
-    anchor?.setAttribute('aria-controls', id);
-    window.addEventListener('resize', update);
-    window.addEventListener('scroll', update, true);
-
-    return () => {
-      anchor?.removeAttribute('aria-controls');
-      window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', update, true);
-    };
-  }, [anchor, id]);
-
-  const setRefs = useCallback(
-    (el: HTMLDivElement | null) => {
-      internalRef.current = el;
-      menuRef(el);
-    },
-    [menuRef]
-  );
-
-  return createPortal(
-    <div
-      ref={setRefs}
-      id={id}
-      className="agency-dropdown-menu"
-      role="menu"
-      style={{
-        position: 'fixed',
-        left: `${position.left}px`,
-        top: `${position.top}px`,
-        right: 'auto',
-        bottom: 'auto',
-        margin: 0,
-        zIndex: 950,
-      }}
-      onClick={(e) => e.stopPropagation()}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      onKeyDown={onKeyDown}
-    >
-      {children}
-    </div>,
-    document.body
-  );
-}
-
-function InlineRenameInput({
-  initialValue,
-  onCommit,
-  onCancel,
-  ariaLabel,
-}: {
-  initialValue: string;
-  onCommit: (cleanValue: string) => void;
-  onCancel: () => void;
-  ariaLabel: string;
-}): JSX.Element {
-  const [value, setValue] = useState(initialValue);
-  const committedRef = useRef(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const canBlurRef = useRef(false);
-
-  useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-    const timer = setTimeout(() => {
-      canBlurRef.current = true;
-    }, 150);
-    return () => clearTimeout(timer);
-  }, []);
-
-  const handleCommit = () => {
-    if (committedRef.current) return;
-    committedRef.current = true;
-    const clean = value.trim();
-    if (clean) {
-      onCommit(clean);
-    } else {
-      onCancel();
-    }
-  };
-
-  const handleCancel = () => {
-    if (committedRef.current) return;
-    committedRef.current = true;
-    onCancel();
-  };
-
-  return (
-    <input
-      ref={inputRef}
-      type="text"
-      className="agency-inline-rename-input"
-      value={value}
-      maxLength={120}
-      onClick={(e) => e.stopPropagation()}
-      onChange={(e) => setValue(e.target.value)}
-      onKeyDown={(e) => {
-        e.stopPropagation();
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          handleCommit();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          handleCancel();
-        }
-      }}
-      onBlur={() => {
-        if (canBlurRef.current) {
-          handleCommit();
-        }
-      }}
-      aria-label={ariaLabel}
-    />
-  );
-}
-
 export function AgencySidebar({
   projects, workspaces, sessions, webTabs = [], selected, showingDone = false,
   onSelect, onCreate, onCreateProject, onDone, onArchiveWorkspace, onDeleteWorkspace,
@@ -264,20 +74,17 @@ export function AgencySidebar({
   const [workspaceDropTarget, setWorkspaceDropTarget] = useState<{ id: WorkspaceId; position: 'before' | 'after' } | null>(null);
   const suppressClickUntil = useRef<number>(0);
 
-  // Inline renaming state
   const [inlineRenamingProjectId, setInlineRenamingProjectId] = useState<ProjectId | null>(null);
   const [inlineRenameProjectValue, setInlineRenameProjectValue] = useState<string>('');
   const [inlineRenamingWorkspaceId, setInlineRenamingWorkspaceId] = useState<WorkspaceId | null>(null);
   const [inlineRenameWorkspaceValue, setInlineRenameWorkspaceValue] = useState<string>('');
 
-  // Modals state
   const [archivingProject, setArchivingProject] = useState<AgencyProject | null>(null);
   const [deletingProject, setDeletingProject] = useState<AgencyProject | null>(null);
   const [projectDeleteBlocked, setProjectDeleteBlocked] = useState<AgencyProject | null>(null);
   const [archivingWorkspace, setArchivingWorkspace] = useState<AgencyWorkspace | null>(null);
   const [deletingWorkspace, setDeletingWorkspace] = useState<AgencyWorkspace | null>(null);
 
-  // Context menu lifecycle refs & handlers
   const graceTimerRef = useRef<number | null>(null);
   const activeTriggerRef = useRef<HTMLElement | null>(null);
   const activeMenuRef = useRef<HTMLDivElement | null>(null);
@@ -340,28 +147,7 @@ export function AgencySidebar({
   };
 
   const handleMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    const items = activeMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
-    if (!items || items.length === 0) return;
-    const itemsArray = Array.from(items);
-    const currentIndex = itemsArray.indexOf(document.activeElement as HTMLButtonElement);
-
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      const nextIndex = currentIndex === -1 || currentIndex === itemsArray.length - 1 ? 0 : currentIndex + 1;
-      itemsArray[nextIndex]?.focus();
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      const prevIndex = currentIndex <= 0 ? itemsArray.length - 1 : currentIndex - 1;
-      itemsArray[prevIndex]?.focus();
-    } else if (e.key === 'Home') {
-      e.preventDefault();
-      itemsArray[0]?.focus();
-    } else if (e.key === 'End') {
-      e.preventDefault();
-      itemsArray[itemsArray.length - 1]?.focus();
-    } else if (e.key === 'Tab') {
-      closeMenu();
-    }
+    handleMenuArrowNavigation(e, activeMenuRef.current, closeMenu);
   };
 
   const groups = activeByProject(projects, workspaces);
@@ -550,6 +336,7 @@ export function AgencySidebar({
                         isWsTargetBefore ? 'agency-drop-target-before' : '',
                         isWsTargetAfter ? 'agency-drop-target-after' : '',
                       ].filter(Boolean).join(' ');
+                      const statusTone = attention ? 'attention' : working ? 'working' : collection.some(item => item.lifecycle === 'running') ? 'idle' : 'muted';
 
                       return (
                         <div
@@ -644,7 +431,11 @@ export function AgencySidebar({
                             aria-current={selected === workspace.id && !showingDone ? 'page' : undefined}
                             title={workspace.cwd}
                           >
-                            <span className={'agency-status-dot ' + (attention ? 'attention' : working ? 'working' : collection.some(item => item.lifecycle === 'running') ? 'idle' : 'muted')} title={collection.map(item => agencySessionText(item)).join(', ')} aria-label={t('agency.tabs.sessionCount', { count: collection.length })} />
+                            <StatusDot
+                              tone={statusTone}
+                              title={collection.map(item => agencySessionText(item)).join(', ')}
+                              ariaLabel={t('agency.tabs.sessionCount', { count: collection.length })}
+                            />
                             {inlineRenamingWorkspaceId === workspace.id ? (
                               <InlineRenameInput
                                 initialValue={inlineRenameWorkspaceValue}
@@ -811,323 +602,24 @@ export function AgencySidebar({
         })()
       )}
 
-      {/* Archive Project Confirmation */}
-      {archivingProject && (
-        <div className="agency-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setArchivingProject(null); }}>
-          <div className="agency-dialog" role="dialog" aria-modal="true" aria-labelledby="agency-archive-proj-title">
-            <div className="agency-dialog-head">
-              <h2 id="agency-archive-proj-title">{t('agency.ui.confirmArchiveProject', { name: archivingProject.name })}</h2>
-              <button type="button" className="agency-icon-button" onClick={() => setArchivingProject(null)}>×</button>
-            </div>
-            <p className="agency-muted">{t('agency.ui.archiveProjectWarning')}</p>
-            <div className="agency-dialog-actions">
-              <button type="button" className="agency-secondary-button" onClick={() => setArchivingProject(null)}>
-                {t('common.cancel')}
-              </button>
-              <button
-                type="button"
-                className="agency-primary-button"
-                onClick={() => {
-                  onArchiveProject(archivingProject);
-                  setArchivingProject(null);
-                }}
-              >
-                {t('agency.ui.archiveProject')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Project Blocked Dialog */}
-      {projectDeleteBlocked && (
-        <div className="agency-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setProjectDeleteBlocked(null); }}>
-          <div className="agency-dialog" role="dialog" aria-modal="true" aria-labelledby="agency-del-proj-blocked">
-            <div className="agency-dialog-head">
-              <h2 id="agency-del-proj-blocked">{t('agency.ui.deleteProject')}</h2>
-              <button type="button" className="agency-icon-button" onClick={() => setProjectDeleteBlocked(null)}>×</button>
-            </div>
-            <p className="agency-error">{t('agency.ui.cannotDeleteProjectNonEmpty')}</p>
-            <div className="agency-dialog-actions">
-              <button type="button" className="agency-primary-button" onClick={() => setProjectDeleteBlocked(null)}>
-                {t('common.close')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Project Confirmation */}
-      {deletingProject && (
-        <div className="agency-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setDeletingProject(null); }}>
-          <div className="agency-dialog" role="dialog" aria-modal="true" aria-labelledby="agency-del-proj-title">
-            <div className="agency-dialog-head">
-              <h2 id="agency-del-proj-title">{t('agency.ui.confirmDeleteProject', { name: deletingProject.name })}</h2>
-              <button type="button" className="agency-icon-button" onClick={() => setDeletingProject(null)}>×</button>
-            </div>
-            <p className="agency-muted">{t('agency.ui.deleteProjectWarning')}</p>
-            <div className="agency-dialog-actions">
-              <button type="button" className="agency-secondary-button" onClick={() => setDeletingProject(null)}>
-                {t('common.cancel')}
-              </button>
-              <button
-                type="button"
-                className="agency-primary-button agency-text-danger"
-                onClick={() => {
-                  onDeleteProject(deletingProject);
-                  setDeletingProject(null);
-                }}
-              >
-                {t('agency.ui.deleteProject')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Archive Workspace Confirmation */}
-      {archivingWorkspace && (() => {
-        const hasRunning = sessions.some(
-          (s) => s.workspaceId === archivingWorkspace.id && (s.lifecycle === 'running' || s.lifecycle === 'starting')
-        );
-        return (
-          <div className="agency-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setArchivingWorkspace(null); }}>
-            <div className="agency-dialog" role="dialog" aria-modal="true" aria-labelledby="agency-arch-ws-title">
-              <div className="agency-dialog-head">
-                <h2 id="agency-arch-ws-title">{t('agency.ui.confirmArchiveWorkspace', { name: archivingWorkspace.name })}</h2>
-                <button type="button" className="agency-icon-button" onClick={() => setArchivingWorkspace(null)}>×</button>
-              </div>
-              <p className="agency-muted">{t('agency.ui.archiveWorkspaceWarning')}</p>
-              {hasRunning && <p className="agency-error" role="alert">{t('agency.ui.activeProcessesWarning')}</p>}
-              <div className="agency-dialog-actions">
-                <button type="button" className="agency-secondary-button" onClick={() => setArchivingWorkspace(null)}>
-                  {t('common.cancel')}
-                </button>
-                <button
-                  type="button"
-                  className="agency-primary-button"
-                  onClick={() => {
-                    onArchiveWorkspace(archivingWorkspace);
-                    setArchivingWorkspace(null);
-                  }}
-                >
-                  {t('agency.ui.archiveWorkspace')}
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Delete Workspace Confirmation */}
-      {deletingWorkspace && (
-        <DeleteWorkspaceDialog
-          workspace={deletingWorkspace}
-          sessions={sessions}
-          webTabs={webTabs}
-          onConfirm={onDeleteWorkspace}
-          onClose={() => setDeletingWorkspace(null)}
-        />
-      )}
+      <SidebarConfirmDialogs
+        archivingProject={archivingProject}
+        deletingProject={deletingProject}
+        projectDeleteBlocked={projectDeleteBlocked}
+        archivingWorkspace={archivingWorkspace}
+        deletingWorkspace={deletingWorkspace}
+        sessions={sessions}
+        webTabs={webTabs}
+        onCloseArchiveProject={() => setArchivingProject(null)}
+        onConfirmArchiveProject={onArchiveProject}
+        onCloseProjectDeleteBlocked={() => setProjectDeleteBlocked(null)}
+        onCloseDeleteProject={() => setDeletingProject(null)}
+        onConfirmDeleteProject={onDeleteProject}
+        onCloseArchiveWorkspace={() => setArchivingWorkspace(null)}
+        onConfirmArchiveWorkspace={onArchiveWorkspace}
+        onCloseDeleteWorkspace={() => setDeletingWorkspace(null)}
+        onConfirmDeleteWorkspace={onDeleteWorkspace}
+      />
     </>
-  );
-}
-
-export function DeleteWorkspaceDialog({
-  workspace,
-  sessions,
-  webTabs = [],
-  onConfirm,
-  onClose,
-}: {
-  workspace: AgencyWorkspace;
-  sessions: readonly AgencyRuntimeSession[];
-  webTabs?: readonly WebTab[];
-  onConfirm: (workspace: AgencyWorkspace) => Promise<void> | void;
-  onClose: () => void;
-}): JSX.Element {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const wsSessions = sessions.filter((s) => s.workspaceId === workspace.id);
-  const runningClis = wsSessions.filter(
-    (s) => s.kind === 'agent' && (s.lifecycle === 'running' || s.lifecycle === 'starting')
-  ).length;
-  const runningTerminals = wsSessions.filter(
-    (s) => s.kind === 'terminal' && (s.lifecycle === 'running' || s.lifecycle === 'starting')
-  ).length;
-  const stoppingSessions = wsSessions.filter((s) => s.lifecycle === 'stopping').length;
-  const chatGptTabs = webTabs.filter((t) => t.workspaceId === workspace.id && !t.closedAt).length;
-  const exitedTabs = wsSessions.filter(
-    (s) => s.lifecycle === 'exited' && s.tab?.current && !s.tab.closedAt
-  ).length;
-
-  const totalActive = runningClis + runningTerminals + stoppingSessions + chatGptTabs;
-  const totalResources = totalActive + exitedTabs;
-
-  async function handleDelete() {
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await onConfirm(workspace);
-      onClose();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div
-      className="agency-modal-backdrop"
-      onMouseDown={(e) => {
-        if (!busy && e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="agency-dialog" role="dialog" aria-modal="true" aria-labelledby="agency-del-ws-title">
-        <div className="agency-dialog-head">
-          <h2 id="agency-del-ws-title">{t('agency.ui.confirmDeleteWorkspace', { name: workspace.name })}</h2>
-          <button type="button" className="agency-icon-button" disabled={busy} onClick={onClose} aria-label={t('common.close')}>
-            ×
-          </button>
-        </div>
-        <p className="agency-muted">{t('agency.ui.deleteWorkspaceWarning')}</p>
-
-        <div className="agency-resource-summary" style={{ margin: '12px 0', padding: '10px 14px', background: 'rgba(255, 255, 255, 0.04)', borderRadius: '6px', fontSize: '13px' }}>
-          {totalResources === 0 ? (
-            <p className="agency-muted" style={{ margin: 0 }}>{t('agency.ui.deleteNoActiveResources')}</p>
-          ) : (
-            <ul style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {runningClis > 0 && <li>{t('agency.ui.deleteResourcesActiveClis', { count: runningClis })}</li>}
-              {runningTerminals > 0 && <li>{t('agency.ui.deleteResourcesActiveTerminals', { count: runningTerminals })}</li>}
-              {stoppingSessions > 0 && <li>{t('agency.ui.deleteResourcesUnresolvedSessions', { count: stoppingSessions })}</li>}
-              {chatGptTabs > 0 && <li>{t('agency.ui.deleteResourcesChatGptTabs', { count: chatGptTabs })}</li>}
-              {exitedTabs > 0 && <li>{t('agency.ui.deleteResourcesExitedTabs', { count: exitedTabs })}</li>}
-            </ul>
-          )}
-        </div>
-
-        {totalActive > 0 && (
-          <p className="agency-error" role="alert" style={{ margin: '8px 0' }}>
-            {t('agency.ui.deleteInterruptionWarning')}
-          </p>
-        )}
-
-        {error && (
-          <p className="agency-error" role="alert" style={{ margin: '8px 0' }}>
-            {error}
-          </p>
-        )}
-
-        <div className="agency-dialog-actions">
-          <button type="button" className="agency-secondary-button" disabled={busy} onClick={onClose}>
-            {t('common.cancel')}
-          </button>
-          <button
-            type="button"
-            className="agency-primary-button agency-text-danger"
-            disabled={busy}
-            onClick={() => void handleDelete()}
-          >
-            {busy ? t('agency.ui.deletingWorkspace') : t('agency.ui.deleteWorkspace')}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function AgencyDoneView({
-  workspaces,
-  projects,
-  sessions = [],
-  webTabs = [],
-  onRestore,
-  onArchiveWorkspace,
-  onDeleteWorkspace,
-}: {
-  workspaces: readonly AgencyWorkspace[];
-  projects: readonly AgencyProject[];
-  sessions?: readonly AgencyRuntimeSession[];
-  webTabs?: readonly WebTab[];
-  onRestore: (workspace: AgencyWorkspace) => void;
-  onArchiveWorkspace?: (workspace: AgencyWorkspace) => void;
-  onDeleteWorkspace?: (workspace: AgencyWorkspace) => Promise<void> | void;
-}): JSX.Element {
-  const [tab, setTab] = useState<'done' | 'archived'>('done');
-  const [confirmDelete, setConfirmDelete] = useState<AgencyWorkspace | null>(null);
-
-  const doneList = workspaces
-    .filter((ws) => ws.status === 'done')
-    .sort((a, b) => (b.doneAt ?? '').localeCompare(a.doneAt ?? ''));
-  const archivedList = workspaces
-    .filter((ws) => ws.status === 'archived')
-    .sort((a, b) => (b.archivedAt ?? b.updatedAt ?? '').localeCompare(a.archivedAt ?? a.updatedAt ?? ''));
-
-  const items = tab === 'done' ? doneList : archivedList;
-
-  return (
-    <section className="agency-done-view" aria-labelledby="agency-done-title">
-      <h1 id="agency-done-title">{tab === 'done' ? t('agency.ui.doneWorkspaces') : t('agency.ui.archivedWorkspaces')}</h1>
-      <p className="agency-muted">{t('agency.ui.archivedFromActiveNavigationSessionsFilesAndHistory')}</p>
-
-      <div className="agency-done-tabs" style={{ display: 'flex', gap: '8px', margin: '16px 0 24px' }}>
-        <button
-          type="button"
-          className={'agency-secondary-button' + (tab === 'done' ? ' agency-text-button selected' : '')}
-          onClick={() => setTab('done')}
-        >
-          {t('agency.ui.done')} ({doneList.length})
-        </button>
-        <button
-          type="button"
-          className={'agency-secondary-button' + (tab === 'archived' ? ' agency-text-button selected' : '')}
-          onClick={() => setTab('archived')}
-        >
-          {t('agency.ui.archived')} ({archivedList.length})
-        </button>
-      </div>
-
-      {items.length === 0 && <div className="agency-empty-state">{t('agency.ui.noCompletedWorkspacesYet')}</div>}
-      {items.map((ws) => (
-        <article key={ws.id} className="agency-done-row">
-          <div>
-            <strong>{ws.name}</strong>
-            <p>{projects.find((p) => p.id === ws.projectId)?.name ?? t('agency.ui.project')} · {ws.cwd}</p>
-          </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <button type="button" className="agency-secondary-button" onClick={() => onRestore(ws)}>
-              {t('agency.ui.restore')}
-            </button>
-            {tab === 'done' && onArchiveWorkspace && (
-              <button type="button" className="agency-secondary-button" onClick={() => onArchiveWorkspace(ws)}>
-                {t('agency.ui.archiveWorkspace')}
-              </button>
-            )}
-            {onDeleteWorkspace && (
-              <button
-                type="button"
-                className="agency-secondary-button agency-text-danger"
-                onClick={() => setConfirmDelete(ws)}
-              >
-                {t('agency.ui.deleteWorkspace')}
-              </button>
-            )}
-          </div>
-        </article>
-      ))}
-
-      {confirmDelete && onDeleteWorkspace && (
-        <DeleteWorkspaceDialog
-          workspace={confirmDelete}
-          sessions={sessions}
-          webTabs={webTabs}
-          onConfirm={onDeleteWorkspace}
-          onClose={() => setConfirmDelete(null)}
-        />
-      )}
-    </section>
   );
 }

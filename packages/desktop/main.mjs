@@ -1,8 +1,7 @@
 import { app, BrowserWindow, WebContentsView, Menu, ipcMain, session, shell, dialog, clipboard, ClipboardItem } from 'electron';
 import path from 'node:path';
-import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { mkdir, readFile, lstat } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, BROWSER_PARTITION, otherUrl, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, targetWebProvider, isSameSite, authenticationUrl, decideWindowOpen, getBrowserZoomAction, selectBestFavicon } from './policy.mjs';
 import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
@@ -12,6 +11,12 @@ import { browserDownloadHandler } from './browser-downloads.mjs';
 import { isAllowedWebAuthnOrigin, isValidRpId, generateClientData, parseFido2AssertOutput, classifyWebAuthnError } from './webauthn-policy.mjs';
 import { isFido2ToolsAvailable, discoverFido2Devices, getDeviceCapabilities, executeAssertion } from './webauthn-backend.mjs';
 import { requestPinDialog } from './webauthn-dialog.mjs';
+import { isOAuthLoopbackCallback } from './src/security/oauth-loopback.mjs';
+import { configureBrowserSessionPermissions, isDurableProviderPage } from './src/security/session-permissions.mjs';
+import { discoverBackendReadiness } from './src/ipc/backend-readiness.mjs';
+import { applyWebContentsZoom } from './src/browser/zoom-controller.mjs';
+
+export { isOAuthLoopbackCallback };
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Deliberately distinct from both production MAW and any Brave/Neko profile.
@@ -32,27 +37,6 @@ let local = serviceUrl(process.env.MAW_DESKTOP_URL || '');
 delete process.env.MAW_DESKTOP_URL;
 if (!app.requestSingleInstanceLock({ serviceUrl: local.href })) app.exit(0);
 
-export function isOAuthLoopbackCallback(value) {
-  if (typeof value !== 'string' || value.length > 4096 || /[\u0000-\u0020\u007f]/.test(value)) return false;
-  try {
-    const url = new URL(value);
-    if (url.protocol !== 'http:' || url.username || url.password) return false;
-    const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-    if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') return false;
-    const hasCode = url.searchParams.has('code');
-    const hasError = url.searchParams.has('error');
-    if (!hasCode && !hasError) return false;
-    const normPath = url.pathname.toLowerCase().replace(/\/+$/, '');
-    const isCallbackPath = normPath === '/callback' || normPath.endsWith('/callback') ||
-      normPath === '/oauth/callback' || normPath.endsWith('/oauth/callback') ||
-      normPath === '/auth/callback' || normPath.endsWith('/auth/callback');
-    if (!isCallbackPath && !hasCode) return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 // Do not await app.whenReady() at module scope: Electron waits for ESM
 // evaluation before emitting ready, which would deadlock initialization.
 async function start() {
@@ -66,99 +50,14 @@ async function start() {
   const githubSession = session.fromPartition(GITHUB_PARTITION);
   const perplexitySession = session.fromPartition(PERPLEXITY_PARTITION);
   const browserSession = session.fromPartition(BROWSER_PARTITION);
-  const isInteractivePermission = (permission) => permission === 'fullscreen' || permission === 'pointerLock' || permission === 'speaker-selection';
-
-  browserSession.setPermissionRequestHandler((_contents, permission, callback) => {
-    callback(isInteractivePermission(permission) || permission === 'clipboard-sanitized-write');
+  configureBrowserSessionPermissions({
+    chatSession,
+    githubSession,
+    perplexitySession,
+    browserSession,
+    otherUrl,
+    authenticationUrl,
   });
-  browserSession.setPermissionCheckHandler((_contents, permission) => {
-    return isInteractivePermission(permission) || permission === 'automatic-fullscreen' || permission === 'clipboard-sanitized-write';
-  });
-  browserSession.webRequest.onBeforeRequest((details, callback) => {
-    // Block direct local-network URLs, including subframes and fetches, in general web pages.
-    const network = /^(https?|wss?):/.test(details.url);
-    const checked = details.url.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
-    callback({ cancel: network && !otherUrl(checked, 8192) && !(details.url.startsWith('https:') && authenticationUrl(details.url)) });
-  });
-  // Permit clipboard writing only from the official ChatGPT origin.
-  // Clipboard reading and all unrelated permissions remain denied.
-  const canWriteClipboard = (contents, requestingUrl) => {
-    try {
-      return !!contents &&
-        new URL(contents.getURL()).origin === 'https://chatgpt.com' &&
-        new URL(requestingUrl).origin === 'https://chatgpt.com';
-    } catch {
-      return false;
-    }
-  };
-
-  chatSession.setPermissionRequestHandler((contents, permission, callback, details) => {
-    if (permission === 'media' && details?.mediaTypes?.includes('audio') && !details?.mediaTypes?.includes('video')) {
-      try {
-        const origin = contents ? new URL(contents.getURL()).origin : '';
-        const reqOrigin = details?.requestingUrl ? new URL(details.requestingUrl).origin : '';
-        if (origin === 'https://chatgpt.com' && reqOrigin === 'https://chatgpt.com') {
-          callback(true);
-          return;
-        }
-      } catch {}
-    }
-    callback(
-      isInteractivePermission(permission) ||
-      (permission === 'clipboard-sanitized-write' && canWriteClipboard(contents, details?.requestingUrl))
-    );
-  });
-
-  chatSession.setPermissionCheckHandler((contents, permission, requestingOrigin) => {
-    if (permission === 'media') {
-      try {
-        const origin = contents ? new URL(contents.getURL()).origin : '';
-        const reqOrigin = requestingOrigin ? new URL(requestingOrigin).origin : '';
-        return origin === 'https://chatgpt.com' && reqOrigin === 'https://chatgpt.com';
-      } catch { return false; }
-    }
-    return isInteractivePermission(permission) ||
-      permission === 'automatic-fullscreen' ||
-      (permission === 'clipboard-sanitized-write' && canWriteClipboard(contents, requestingOrigin));
-  });
-  const githubClipboard = (contents, requestingUrl) => {
-    try {
-      return !!contents &&
-        new URL(contents.getURL()).origin === 'https://github.com' &&
-        new URL(requestingUrl).origin === 'https://github.com';
-    } catch { return false; }
-  };
-  githubSession.setPermissionRequestHandler((contents, permission, callback, details) => {
-    callback(
-      isInteractivePermission(permission) ||
-      (permission === 'clipboard-sanitized-write' && githubClipboard(contents, details?.requestingUrl))
-    );
-  });
-  githubSession.setPermissionCheckHandler((contents, permission, requestingOrigin) =>
-    isInteractivePermission(permission) ||
-    permission === 'automatic-fullscreen' ||
-    (permission === 'clipboard-sanitized-write' && githubClipboard(contents, requestingOrigin))
-  );
-  const perplexityClipboard = (contents, requestingUrl) => {
-    try {
-      if (!contents) return false;
-      const origin = new URL(contents.getURL()).origin;
-      const reqOrigin = new URL(requestingUrl).origin;
-      const allowedOrigins = ['https://www.perplexity.ai', 'https://perplexity.ai'];
-      return allowedOrigins.includes(origin) && allowedOrigins.includes(reqOrigin);
-    } catch { return false; }
-  };
-  perplexitySession.setPermissionRequestHandler((contents, permission, callback, details) => {
-    callback(
-      isInteractivePermission(permission) ||
-      (permission === 'clipboard-sanitized-write' && perplexityClipboard(contents, details?.requestingUrl))
-    );
-  });
-  perplexitySession.setPermissionCheckHandler((contents, permission, requestingOrigin) =>
-    isInteractivePermission(permission) ||
-    permission === 'automatic-fullscreen' ||
-    (permission === 'clipboard-sanitized-write' && perplexityClipboard(contents, requestingOrigin))
-  );
 
   const iconPath = path.join(here, 'icon.png');
   const win = new BrowserWindow({ width: 1280, height: 860, title: 'MAW · ChatGPT feasibility prototype', autoHideMenuBar: true,
@@ -196,6 +95,8 @@ async function start() {
     return true;
   }
 
+  const getBackendReadiness = () => discoverBackendReadiness({ serviceUrl });
+
   const resourceCollector = new ResourceCollector({
     app,
     win,
@@ -204,7 +105,7 @@ async function start() {
     urls,
     attachedViews,
     suspendedTabs,
-    getBackendReadiness: discoverBackendReadiness,
+    getBackendReadiness,
     onState: (snapshot) => {
       send({ type: 'performance-update', snapshot });
     },
@@ -288,30 +189,7 @@ async function start() {
   }
 
   function applyBrowserZoom(id, contents, action) {
-    if (!contents || contents.isDestroyed()) return;
-    let lvl = contents.getZoomLevel();
-    if (action === 'zoom-in') {
-      lvl = Math.min(3, Math.round((lvl + 0.5) * 10) / 10);
-    } else if (action === 'zoom-out') {
-      lvl = Math.max(-3, Math.round((lvl - 0.5) * 10) / 10);
-    } else if (action === 'zoom-reset') {
-      lvl = 0;
-    } else {
-      return;
-    }
-    contents.setZoomLevel(lvl);
-    zoomLevels.set(id, lvl);
-    let factor;
-    try {
-      factor = contents.getZoomFactor();
-    } catch {
-      factor = Math.pow(1.2, lvl);
-    }
-    if (!Number.isFinite(factor) || factor <= 0) {
-      factor = Math.pow(1.2, lvl);
-    }
-    const percentage = Math.round(factor * 100);
-    send({ type: 'browser-zoom', id, zoomFactor: factor, percentage });
+    applyWebContentsZoom(id, contents, action, zoomLevels, send);
   }
 
   function guard(contents, provider = 'chatgpt', allowPopup = true) {
@@ -490,35 +368,8 @@ async function start() {
     if (input.control && input.key.toLowerCase() === 'w') { event.preventDefault(); send({ type: 'close-shortcut' }); }
   }
 
-  function chatUrlForPersistence(value) {
-    try {
-      const url = new URL(value);
-      return url.origin === 'https://chatgpt.com' && !/^\/(api|auth)(\/|$)/.test(url.pathname) &&
-        ![...url.searchParams.keys()].some(key => /token|code|state|session/i.test(key));
-    } catch { return false; }
-  }
-
   function durablePage(provider, value) {
-    if (provider === 'other') {
-      try {
-        const url = new URL(value);
-        return otherUrl(value) && !/^\/(api|auth)(\/|$)/.test(url.pathname) && ![...url.searchParams.keys()].some(key => /token|code|state|session/i.test(key));
-      } catch { return false; }
-    }
-    if (provider === 'github') {
-      try {
-        const url = new URL(value);
-        return url.origin === 'https://github.com' && ![...url.searchParams.keys()].some(key => /token|code|state|session/i.test(key));
-      } catch { return false; }
-    }
-    if (provider === 'perplexity') {
-      try {
-        const url = new URL(value);
-        return perplexityUrl(value) && !/^\/(api|auth)(\/|$)/.test(url.pathname) &&
-          ![...url.searchParams.keys()].some(key => /token|code|state|session/i.test(key));
-      } catch { return false; }
-    }
-    return chatUrlForPersistence(value);
+    return isDurableProviderPage(provider, value, { otherUrl, perplexityUrl });
   }
 
   function canEvict(id) {
@@ -789,41 +640,6 @@ async function start() {
     send({ type: 'navigation', id, url: current, canGoBack: contents.navigationHistory.canGoBack(), canGoForward: contents.navigationHistory.canGoForward() });
   }
 
-  async function discoverBackendReadiness() {
-    const uid = typeof process.getuid === 'function' ? process.getuid() : null;
-    let file;
-    if (process.env.MAW_RUNTIME_DIR) {
-      file = path.join(process.env.MAW_RUNTIME_DIR, 'maw-ready.json');
-    } else if (process.env.XDG_RUNTIME_DIR) {
-      file = path.join(process.env.XDG_RUNTIME_DIR, 'maw', 'maw-ready.json');
-    } else if (uid !== null && existsSync(`/run/user/${uid}`)) {
-      file = path.join(`/run/user/${uid}`, 'maw', 'maw-ready.json');
-    } else {
-      file = path.join(os.tmpdir(), 'maw', 'maw-ready.json');
-    }
-
-    const info = await lstat(file);
-    if (!info.isFile() || info.isSymbolicLink()) throw new Error('Invalid readiness file type');
-    if (uid !== null && info.uid !== uid) throw new Error('Unsafe readiness file owner');
-    if (info.mode & 0o077) throw new Error('Unsafe readiness file permissions');
-
-    const raw = await readFile(file, 'utf8');
-    const state = JSON.parse(raw);
-    if (!Number.isInteger(state.pid) || state.pid <= 0) throw new Error('Invalid readiness PID');
-
-    try {
-      process.kill(state.pid, 0);
-    } catch {
-      throw new Error('Service PID not running');
-    }
-
-    const parsedUrl = serviceUrl(state.url);
-    const probe = await fetch(parsedUrl, { signal: AbortSignal.timeout(1500), redirect: 'error' });
-    if (!probe.ok && probe.status !== 401) throw new Error(`Service probe returned ${probe.status}`);
-
-    return { url: parsedUrl, pid: state.pid, state };
-  }
-
   let performanceSubscribed = false;
   ipcMain.handle(CHANNEL, async (event, command) => {
     if (!trustedSender(event, win.webContents, local.origin) || !validCommand(command)) throw new Error('Invalid desktop request');
@@ -854,7 +670,7 @@ async function start() {
     }
     if (command.type === 'get-backend-endpoint') {
       try {
-        const found = await discoverBackendReadiness();
+        const found = await getBackendReadiness();
         return {
           ok: true,
           url: found.url.href,
@@ -1233,7 +1049,7 @@ async function start() {
 
     if (backendFailureCount > 0) {
       try {
-        const discovered = await discoverBackendReadiness();
+        const discovered = await getBackendReadiness();
         if (discovered.url.href !== local.href) {
           const originChanged = discovered.url.origin !== local.origin;
           if (originChanged) {
