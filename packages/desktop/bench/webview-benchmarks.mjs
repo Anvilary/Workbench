@@ -232,24 +232,31 @@ async function runBenchmarkSuite(targetSuite = 'all') {
         mainWin.contentView.addChildView(view);
         view.setBounds({ x: 0, y: 0, width: 800, height: 600 });
 
-        const captures = [];
-        for (let i = 0; i < 10; i++) {
-          const t0 = performance.now();
-          const img = await view.webContents.capturePage();
-          const t1 = performance.now();
-          const dataUrl = img.toDataURL();
-          const t2 = performance.now();
-          captures.push({
-            captureMs: t1 - t0,
-            encodeMs: t2 - t1,
-            totalMs: t2 - t0,
-            bytes: dataUrl.length,
-          });
+        try {
+          await view.webContents.loadURL('data:text/html,' + encodeURIComponent(
+            '<style>body{background:linear-gradient(120deg,#123,#abc);font:32px sans-serif;color:white}</style>' +
+            '<main>Native overlay capture fixture</main>',
+          ));
+          const captures = [];
+          for (let i = 0; i < 10; i++) {
+            const t0 = performance.now();
+            const img = await view.webContents.capturePage();
+            const t1 = performance.now();
+            if (img.isEmpty()) throw new Error('Native overlay capture returned an empty image');
+            const dataUrl = img.toDataURL();
+            const t2 = performance.now();
+            captures.push({
+              captureMs: t1 - t0,
+              encodeMs: t2 - t1,
+              totalMs: t2 - t0,
+              bytes: Buffer.byteLength(dataUrl),
+            });
+          }
+          return captures;
+        } finally {
+          mainWin.contentView.removeChildView(view);
+          view.webContents.close();
         }
-
-        mainWin.contentView.removeChildView(view);
-        view.webContents.close();
-        return captures;
       });
 
       results.benchmarks.overlayCapture = {
