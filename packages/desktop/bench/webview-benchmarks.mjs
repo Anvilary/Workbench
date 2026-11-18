@@ -267,7 +267,47 @@ async function runBenchmarkSuite(targetSuite = 'all') {
       });
     }
 
-    // 5. BENCHMARK: Resource Matrix Accounting
+    if (targetSuite === 'all' || targetSuite === 'browser-profiles') {
+      await desktop.evaluate(({ session }) => {
+        for (const partition of ['persist:maw-browser', 'persist:maw-profile-bench-browser']) {
+          session.fromPartition(partition).protocol.handle('https', () =>
+            new Response('<title>Browser profile benchmark</title>', { headers: { 'Content-Type': 'text/html' } }));
+        }
+      });
+      const samples = await win.evaluate(async () => {
+        const bridge = window.mawChatGpt;
+        const timings = { main: [], bench: [] };
+        for (let run = 0; run < 9; run++) {
+          for (const profileId of (run % 2 === 0 ? ['main', 'bench'] : ['bench', 'main'])) {
+            const id = crypto.randomUUID();
+            let unsubscribe;
+            let deadline;
+            const began = performance.now();
+            try {
+              const ready = new Promise((resolve, reject) => {
+                deadline = setTimeout(() => reject(new Error('Native browser fixture did not load')), 10_000);
+                unsubscribe = bridge.subscribe(event => {
+                  if (event.id !== id) return;
+                  if (event.type === 'ready') resolve();
+                  if (event.type === 'error') reject(new Error(event.message));
+                });
+              });
+              await Promise.all([ready, bridge.command({ type: 'open', id, profileId, provider: 'other', url: 'https://docs.example.com/' })]);
+              if (run > 0) timings[profileId].push(performance.now() - began);
+            } finally {
+              clearTimeout(deadline);
+              unsubscribe?.();
+              await bridge.command({ type: 'close', id });
+            }
+          }
+        }
+        return timings;
+      });
+      results.benchmarks.browserProfiles = { mainOpenReadyMs: stats(samples.main), customOpenReadyMs: stats(samples.bench) };
+      console.table(results.benchmarks.browserProfiles);
+    }
+
+    // Resource Matrix Accounting
     if (targetSuite === 'all' || targetSuite === 'resource-matrix') {
       console.log('\nRunning Benchmark: Multi-Workload Resource Matrix...');
       const pids = await desktop.evaluate(async ({ app }) => {
