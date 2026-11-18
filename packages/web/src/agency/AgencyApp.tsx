@@ -97,6 +97,40 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabId>('general');
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (menuOpen && menuDropdownRef.current) {
+      const firstItem = menuDropdownRef.current.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
+      firstItem?.focus();
+    }
+  }, [menuOpen]);
+
+  const handleMenuKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = menuDropdownRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
+    if (!items || items.length === 0) return;
+    const itemsArray = Array.from(items);
+    const currentIndex = itemsArray.indexOf(document.activeElement as HTMLButtonElement);
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const nextIndex = currentIndex === -1 || currentIndex === itemsArray.length - 1 ? 0 : currentIndex + 1;
+      itemsArray[nextIndex]?.focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prevIndex = currentIndex <= 0 ? itemsArray.length - 1 : currentIndex - 1;
+      itemsArray[prevIndex]?.focus();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      itemsArray[0]?.focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      itemsArray[itemsArray.length - 1]?.focus();
+    } else if (e.key === 'Tab') {
+      setMenuOpen(false);
+    }
+  }, []);
   const appSettings = useAppSettings(connection);
   const terminalTheme = useTerminalTheme('dark');
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -413,8 +447,6 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
     }
   }
 
-  const doneCount = data.workspaces.filter((ws) => ws.status === 'done' || ws.status === 'archived').length;
-
   return (
     <div className="agency-app">
       <aside
@@ -506,70 +538,42 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
           )}
           <div className="agency-dropdown" onClick={(e) => e.stopPropagation()}>
             <button
+              ref={menuTriggerRef}
               type="button"
+              id="maw-shell-menu-trigger"
               className={`agency-icon-button maw-menu-button ${menuOpen ? 'active' : ''}`}
               aria-label={t('agency.ui.workspaceMenu')}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
+              aria-controls="maw-shell-menu-dropdown"
               title={t('agency.ui.workspaceMenu')}
               onClick={() => {
                 setMenuOpen(!menuOpen);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+                  if (!menuOpen) {
+                    e.preventDefault();
+                    setMenuOpen(true);
+                  }
+                }
               }}
             >
               <SettingsMenuIcon />
             </button>
             {menuOpen && (
-              <div className="agency-dropdown-menu maw-shell-menu" role="menu">
+              <div
+                ref={menuDropdownRef}
+                id="maw-shell-menu-dropdown"
+                className="agency-dropdown-menu maw-shell-menu"
+                role="menu"
+                aria-label={t('agency.ui.workspaceMenu')}
+                onKeyDown={handleMenuKeyDown}
+              >
                 <button
                   type="button"
                   role="menuitem"
-                  className={`agency-dropdown-item maw-menu-item ${showingDone ? 'selected' : ''}`}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setShowingDone(true);
-                  }}
-                >
-                  <span className="maw-menu-item-text">{t('agency.ui.doneWorkspaces')}</span>
-                  {doneCount > 0 && <span className="agency-count">{doneCount}</span>}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="agency-dropdown-item maw-menu-item"
-                  disabled={!online}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    store.refresh();
-                  }}
-                >
-                  <span className="maw-menu-item-text">{t('agency.ui.refresh')}</span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="agency-dropdown-item maw-menu-item"
-                  disabled={!online}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    openCreator();
-                  }}
-                >
-                  <span className="maw-menu-item-text">{t('agency.ui.newWorkspace')}</span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="agency-dropdown-item maw-menu-item"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setCreatingProject(true);
-                  }}
-                >
-                  <span className="maw-menu-item-text">{t('agency.ui.newProject')}</span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
+                  id="menu-open-performance"
                   className="agency-dropdown-item maw-menu-item"
                   onClick={() => {
                     setMenuOpen(false);
@@ -581,18 +585,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
                 <button
                   type="button"
                   role="menuitem"
-                  className="agency-dropdown-item maw-menu-item"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setSettingsInitialTab('usage');
-                    setSettingsOpen(true);
-                  }}
-                >
-                  <span className="maw-menu-item-text">Agents Usage</span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
+                  id="menu-open-settings"
                   className="agency-dropdown-item maw-menu-item"
                   onClick={() => {
                     setMenuOpen(false);
@@ -601,7 +594,6 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
                   }}
                 >
                   <span className="maw-menu-item-text">{t('settings.open')}</span>
-                  <span className="agency-count">⚙</span>
                 </button>
               </div>
             )}
