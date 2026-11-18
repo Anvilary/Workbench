@@ -3,11 +3,11 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, readFile, rm, unlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { once } from 'node:events';
 import { test } from 'node:test';
 import { _electron as electron } from 'playwright';
 import { DESKTOP_ROOT, REPO_ROOT } from '../../helpers/paths.mjs';
@@ -43,6 +43,7 @@ function isolatedEnv(root) {
     MAW_RUNTIME_DIR: path.join(root, 'runtime'),
     MAW_PERSISTENT_PTY: '0',
     MAW_DESKTOP_DATA_DIR: path.join(root, 'electron-profile'),
+    MAW_DESKTOP_PRODUCTION: '1',
     AGENT_WORKBENCH_NO_OPEN: '1',
     AGENT_WORKBENCH_NO_RESTORE: '1',
     SHELL: '/bin/bash',
@@ -68,6 +69,8 @@ test('staging release creates and restores a general Browser tab through the rea
     mkdir(env.HOME, { recursive: true }), mkdir(env.CODEX_HOME, { recursive: true }),
     mkdir(env.XDG_CONFIG_HOME, { recursive: true }), mkdir(env.MAW_RUNTIME_DIR, { recursive: true }),
   ]);
+  const sourceMarker = path.join(env.HOME, 'user-source.txt');
+  await writeFile(sourceMarker, 'source directory survives workspace and project removal');
   const serverLog = { value: '' };
   let server;
   let desktop;
@@ -89,13 +92,11 @@ test('staging release creates and restores a general Browser tab through the rea
 
   const stopServer = async () => {
     const child = server;
-    if (!child || child.exitCode !== null) return;
+    if (!child || child.exitCode !== null || child.signalCode !== null) return;
+    const exited = once(child, 'exit');
+    const timer = setTimeout(() => child.kill('SIGKILL'), 8000);
     child.kill('SIGTERM');
-    await Promise.race([
-      new Promise(resolve => child.once('exit', resolve)),
-      pause(8000).then(() => { if (child.exitCode === null) child.kill('SIGKILL'); }),
-    ]);
-    if (child.exitCode === null) await new Promise(resolve => child.once('exit', resolve));
+    try { await exited; } finally { clearTimeout(timer); }
     server = null;
   };
 
@@ -108,6 +109,16 @@ test('staging release creates and restores a general Browser tab through the rea
       env: { ...env, MAW_DESKTOP_URL: ready.url },
     });
     const page = await desktop.firstWindow();
+    assert.deepEqual(await desktop.evaluate(({ app }) => ({
+      userData: app.getPath('userData'),
+      sessionData: app.getPath('sessionData'),
+    })), { userData: env.MAW_DESKTOP_DATA_DIR, sessionData: env.MAW_DESKTOP_DATA_DIR });
+    const screenshot = async (filename) => {
+      const directory = process.env.MAW_TEST_ARTIFACTS_DIR;
+      if (!directory) return;
+      await mkdir(directory, { recursive: true });
+      await page.screenshot({ path: path.join(directory, filename) });
+    };
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(redact(error.message)));
 
@@ -134,14 +145,15 @@ test('staging release creates and restores a general Browser tab through the rea
     const picker = page.getByRole('dialog', { name: /choose workspace directory/i });
     await picker.getByRole('button', { name: /use this directory/i }).click();
     await eventually(async () => await page.locator('.agency-workspace-nav-button').filter({ hasText: 'Staging Browser Workspace' }).count() === 1, 'workspace creation through the UI');
+    await screenshot('electron-sidebar.png');
 
     await page.locator('.maw-pane-add-tab').first().click();
     await page.getByRole('menuitem', { name: /^browser$/i }).click();
     const browserDialog = page.getByRole('dialog');
-    await browserDialog.getByLabel('Browser provider').selectOption('other');
-    await browserDialog.locator('input:not([type="url"])').fill('Staging Browser');
-    await browserDialog.locator('input[type="url"]').fill('https://docs.maw-audit.com/one');
-    await browserDialog.locator('input[type="url"]').press('Enter');
+    const destinationInput = browserDialog.getByLabel('URL or Search Query', { exact: true });
+    await destinationInput.fill('https://docs.maw-audit.com/one');
+    await screenshot('electron-browser-picker.png');
+    await destinationInput.press('Enter');
 
     const browserState = () => desktop.evaluate(async ({ session, webContents }) => {
       const contents = webContents.getAllWebContents().find(item => item.session === session.fromPartition('persist:maw-browser'));
@@ -156,6 +168,7 @@ test('staging release creates and restores a general Browser tab through the rea
     assert.ok(created?.id, 'server assigned a durable Browser tab ID');
 
     const address = page.locator('.maw-browser-toolbar input');
+    await page.locator('.maw-browser-toolbar-toggle').click();
     await address.fill('https://docs.maw-audit.com/two');
     await address.press('Enter');
     await eventually(async () => (await browserState())?.url.endsWith('/two') && !(await browserState()).loading, 'address-bar navigation');
@@ -206,6 +219,89 @@ test('staging release creates and restores a general Browser tab through the rea
     assert.equal(await desktop.evaluate(async ({ session }) => (await session.fromPartition('persist:maw-browser').cookies.get({ name: 'staging-fixture' }))[0]?.value), 'isolated-cookie');
     assert.equal(await desktop.evaluate(({ session, webContents }) => webContents.getAllWebContents().find(item => item.session === session.fromPartition('persist:maw-browser'))?.id), nativeContents, 'backend restart preserves the native WebContents');
     assert.equal(await (await browserState()).draft, 'unsaved fixture draft', 'backend restart preserves unsaved page input');
+
+    const openBrowserSettings = async () => {
+      await page.locator('.maw-menu-button').click();
+      await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+      await page.locator('#settings-tab-browser').click();
+      return page.getByRole('dialog', { name: 'Settings' });
+    };
+    const settings = await openBrowserSettings();
+    const addProfile = async (name, mode) => {
+      await settings.getByRole('button', { name: /add profile/i }).click();
+      await settings.getByLabel('Profile Name', { exact: true }).fill(name);
+      await settings.getByLabel('Initialization').selectOption(mode);
+      await settings.getByRole('button', { name: 'Save', exact: true }).click();
+      await settings.locator('.maw-settings-profile-form').waitFor({ state: 'detached' });
+      return await settings.locator('[data-profile-id]').filter({ hasText: name }).getAttribute('data-profile-id');
+    };
+    const projectProfile = await addProfile('Project identity', 'clone');
+    const overrideProfile = await addProfile('Workspace identity', 'empty');
+    assert.ok(projectProfile && overrideProfile && projectProfile !== overrideProfile);
+    await screenshot('electron-browser-settings.png');
+    await page.keyboard.press('Escape');
+    await settings.waitFor({ state: 'detached' });
+
+    const sessions = await desktop.evaluate(async ({ session }, ids) => {
+      const names = ['persist:maw-browser', ...ids.map(id => `persist:maw-profile-${id}-browser`)];
+      return await Promise.all(names.map(async (name, index) => {
+        const current = session.fromPartition(name);
+        if (index > 0) current.protocol.handle('https', () => new Response('<title>Profile fixture</title>', { headers: { 'content-type': 'text/html' } }));
+        return { path: current.getStoragePath(), cookies: (await current.cookies.get({ name: 'staging-fixture' })).map(cookie => cookie.value) };
+      }));
+    }, [projectProfile, overrideProfile]);
+    assert.equal(new Set(sessions.map(item => item.path)).size, 3);
+    assert.deepEqual(sessions.map(item => item.cookies), [['isolated-cookie'], ['isolated-cookie'], []]);
+    const activeSessionPath = () => desktop.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].contentView.children.find(view => view.webContents)?.webContents.session.getStoragePath());
+    async function assignProfile(target, id, expectedPath) {
+      await page.getByRole('button', { name: target + ' actions', exact: true }).click();
+      await page.getByLabel('Browser Profiles', { exact: true }).selectOption(id);
+      await page.keyboard.press('Escape');
+      await eventually(async () => await activeSessionPath() === expectedPath, target + ' browser partition');
+    }
+    await assignProfile('Project', projectProfile, sessions[1].path);
+    await assignProfile('Workspace', overrideProfile, sessions[2].path);
+    await assignProfile('Workspace', 'main', sessions[0].path);
+    await assignProfile('Workspace', '', sessions[1].path);
+
+    const profileSettings = await openBrowserSettings();
+    const cloneRow = profileSettings.locator('[data-profile-id]').filter({ hasText: 'Project identity' });
+    await cloneRow.getByRole('button', { name: 'Clear Site Auth', exact: true }).click();
+    await cloneRow.getByRole('checkbox', { name: /other/i }).check();
+    await cloneRow.getByRole('button', { name: 'Clear Selected', exact: true }).click();
+    await cloneRow.locator('.maw-settings-profile-clear-panel').waitFor({ state: 'detached' });
+    assert.deepEqual(await desktop.evaluate(async ({ session }, id) => {
+      return (await session.fromPartition(`persist:maw-profile-${id}-browser`).cookies.get({ name: 'staging-fixture' }))
+        .map(cookie => cookie.value);
+    }, projectProfile), []);
+    await profileSettings.getByRole('button', { name: 'Delete profile: Project identity', exact: false }).click();
+    await profileSettings.locator('[data-profile-id]').filter({ hasText: 'Project identity' }).waitFor({ state: 'detached' });
+    await page.keyboard.press('Escape');
+    await eventually(async () => await activeSessionPath() === sessions[0].path, 'Main fallback after deleting an assigned profile');
+    assert.equal(await desktop.evaluate(async ({ session }) => (await session.fromPartition('persist:maw-browser').cookies.get({ name: 'staging-fixture' }))[0]?.value), 'isolated-cookie');
+
+    await page.getByRole('button', { name: 'Workspace actions', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Delete workspace', exact: true }).click();
+    const workspaceDeletion = page.getByRole('dialog');
+    const sidebarBounds = await page.locator('.agency-sidebar').boundingBox();
+    const deletionBounds = await workspaceDeletion.boundingBox();
+    assert.ok(sidebarBounds && deletionBounds && deletionBounds.x >= sidebarBounds.x + sidebarBounds.width);
+    await screenshot('electron-workspace-delete.png');
+    await workspaceDeletion.getByRole('button', { name: 'Cancel', exact: true }).click();
+    assert.equal(await page.locator('.agency-workspace-nav-button').filter({ hasText: 'Staging Browser Workspace' }).count(), 1);
+
+    await page.getByRole('button', { name: 'Project actions', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Delete project', exact: true }).click();
+    const projectDeletion = page.getByRole('dialog');
+    assert.match(await projectDeletion.innerText(), /all associated workspaces/);
+    await screenshot('electron-project-cascade.png');
+    await projectDeletion.getByRole('button', { name: 'Delete project', exact: true }).click();
+    await projectDeletion.waitFor({ state: 'detached' });
+    await eventually(async () => (await savedTabs()).find(tab => tab.id === created.id)?.closedAt, 'durable browser closure after project removal');
+    assert.equal(await page.locator('.agency-workspace-nav-button').count(), 0);
+    assert.equal(await readFile(sourceMarker, 'utf8'), 'source directory survives workspace and project removal');
+    await eventually(async () => !(await browserState()), 'Electron destroys the workspace browser view');
     assert.deepEqual(pageErrors, []);
   } finally {
     if (desktop) await desktop.close().catch(() => {});

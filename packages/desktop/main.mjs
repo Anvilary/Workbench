@@ -779,11 +779,21 @@ async function start() {
     }
     if (command.type === 'clear-profile-site-auth') {
       if (cloningProfiles.has(command.profileId)) throw new Error('Browser profile clone is in progress');
-      return await clearProfileSiteAuth({
+      const targetSession = session.fromPartition(partitionForBrowserProfile(
+        command.profileId, command.site === 'browser' ? 'other' : command.site,
+      ));
+      for (const popup of popups) {
+        if (!popup.isDestroyed() && popup.webContents.session === targetSession) popup.destroy();
+      }
+      const result = await clearProfileSiteAuth({
         sessionApi: session,
         profileId: command.profileId,
         site: command.site,
       });
+      for (const { webContents } of views.values()) {
+        if (!webContents.isDestroyed() && webContents.session === targetSession) webContents.reload();
+      }
+      return result;
     }
     if (command.type === 'browser-action') {
       const view = views.get(command.id);
@@ -965,8 +975,8 @@ async function start() {
       sessionProviders.get(sender.session) === 'chatgpt' &&
       isAllowedWebAuthnOrigin(senderFrame.origin, extraOrigins);
 
-    ipcMain.handle('maw:webauthn:is-available', async () => {
-      return { available: await isFido2ToolsAvailable() };
+    ipcMain.handle('maw:webauthn:is-available', async (event) => {
+      return { available: allowedFrame(event) && await isFido2ToolsAvailable() };
     });
 
     ipcMain.handle('maw:webauthn:get', async (event, options) => {

@@ -257,3 +257,26 @@ test('WebAuthn Orchestrator: popup bounds resolution, PIN retries, multi-device 
   assert.equal(assertCalls, 1);
   assert.equal(result.data.credentialId, 'Y3JlZC1pZC0x');
 });
+
+test('WebAuthn rejects malformed allow-lists and does not downgrade required verification', async () => {
+  const origin = 'https://chatgpt.com';
+  const options = { rpId: 'chatgpt.com', challenge: 'Y2hhbGxlbmdl', userVerification: 'required' };
+  let discoveryCalls = 0;
+  let assertionCalls = 0;
+  const deps = {
+    discoverFido2Devices: async () => { discoveryCalls++; return [{ path: '/dev/hidraw0' }]; },
+    getDeviceCapabilities: async () => ({ hasClientPin: false }),
+    executeAssertion: async () => { assertionCalls++; },
+  };
+  const invalid = await performWebAuthnAssertion({
+    options: { ...options, allowCredentials: [{ type: 'public-key', id: 'invalid encoding' }] },
+    origin, deps,
+  });
+  assert.equal(invalid.success, false);
+  assert.equal(invalid.error.name, 'SecurityError');
+  assert.equal(discoveryCalls, 0);
+  const unverifiable = await performWebAuthnAssertion({ options, origin, deps });
+  assert.equal(unverifiable.success, false);
+  assert.equal(unverifiable.error.name, 'NotAllowedError');
+  assert.equal(assertionCalls, 0);
+});

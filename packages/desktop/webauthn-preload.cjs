@@ -7,7 +7,6 @@ const { contextBridge, ipcRenderer, webFrame } = require('electron');
 // Expose minimal, unprivileged WebAuthn bridge to the isolated world
 contextBridge.exposeInMainWorld('__mawWebAuthn', Object.freeze({
   get: (options) => ipcRenderer.invoke('maw:webauthn:get', options),
-  create: (options) => ipcRenderer.invoke('maw:webauthn:create', options),
   isAvailable: () => ipcRenderer.invoke('maw:webauthn:is-available'),
 }));
 
@@ -19,7 +18,6 @@ const injectScript = `
   window.__mawWebAuthnInstalled = true;
 
   const originalGet = navigator.credentials.get.bind(navigator.credentials);
-  const originalCreate = navigator.credentials.create.bind(navigator.credentials);
 
   function bufferToBase64Url(buf) {
     if (!buf) return '';
@@ -50,6 +48,9 @@ const injectScript = `
 
     // Pass through conditional mediation (ambient passkey autofill probes)
     if (options.mediation === 'conditional') {
+      return originalGet(options);
+    }
+    if (!(await window.__mawWebAuthn.isAvailable()).available) {
       return originalGet(options);
     }
 
@@ -116,25 +117,7 @@ const injectScript = `
     return credential;
   };
 
-  navigator.credentials.create = async function(options) {
-    if (!options || !options.publicKey) {
-      return originalCreate(options);
-    }
-    const res = await window.__mawWebAuthn.create({
-      rpId: options.publicKey.rp?.id || window.location.hostname,
-    });
-    if (!res || !res.success) {
-      const errName = res?.error?.name || 'NotSupportedError';
-      const errMsg = res?.error?.message || 'Security key registration (credentials.create) is not supported in this desktop session.';
-      throw new DOMException(errMsg, errName);
-    }
-    return originalCreate(options);
-  };
 })();
 `;
 
-try {
-  webFrame.executeJavaScript(injectScript);
-} catch (err) {
-  // Graceful degradation
-}
+void webFrame.executeJavaScript(injectScript).catch(() => {});
