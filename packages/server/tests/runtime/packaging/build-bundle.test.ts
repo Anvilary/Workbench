@@ -16,7 +16,7 @@ test('Prebuilt production server bundle: exists and starts cleanly under raw nod
     execSync('node scripts/build-bundle.mjs', { cwd: serverRoot, stdio: 'inherit' });
   }
   if (!existsSync(webIndexPath)) {
-    execSync('pnpm --filter @agent-workbench/web build', { cwd: REPO_ROOT, stdio: 'inherit', shell: true });
+    execSync('pnpm --filter @agent-workbench/web build', { cwd: REPO_ROOT, stdio: 'inherit' });
   }
   assert.ok(existsSync(bundlePath), 'dist/index.mjs should exist');
   assert.ok(existsSync(webIndexPath), 'packages/web/dist/index.html should exist');

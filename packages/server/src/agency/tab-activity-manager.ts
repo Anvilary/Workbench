@@ -338,6 +338,31 @@ export class TabActivityManager extends EventEmitter {
     return this.mutate(() => this.closeTabInner(workspaceId, tabId));
   }
 
+  /** Removes all persisted activity and parser state for a deleted workspace. */
+  purgeWorkspace(workspaceId: WorkspaceId): Promise<void> {
+    return this.mutate(async () => {
+      const prefix = `${workspaceId}:`;
+      for (const [key, record] of [...this.states.entries()]) {
+        if (key.startsWith(prefix)) {
+          const parser = this.shellParsers.get(record.tabId);
+          if (parser) {
+            parser.dispose();
+            this.shellParsers.delete(record.tabId);
+          }
+          this.shellCommandCounters.delete(record.tabId);
+          this.states.delete(key);
+        }
+      }
+      for (const key of [...this.committedStates.keys()]) {
+        if (key.startsWith(prefix)) this.committedStates.delete(key);
+      }
+      for (const [dedup, receipt] of [...this.pendingNotifications.entries()]) {
+        if (receipt.workspaceId === workspaceId) this.pendingNotifications.delete(dedup);
+      }
+      await this.persist();
+    });
+  }
+
   private async closeTabInner(workspaceId: WorkspaceId, tabId: string): Promise<void> {
     const key = this.makeKey(workspaceId, tabId);
     const existing = this.states.get(key);

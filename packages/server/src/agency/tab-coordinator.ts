@@ -27,6 +27,10 @@ export class AgencyTabCoordinator {
     private readonly publish: (message: AgencyServerMessage) => void,
     readonly layouts?: AgencyLayoutStore,
     readonly editor?: EditorTabAdapter,
+    private readonly activityCleanup?: {
+      closeTab?(workspaceId: WorkspaceId, tabId: string): Promise<void>;
+      purgeWorkspace?(workspaceId: WorkspaceId): Promise<void>;
+    },
   ) {
     browser.setSelectionCoordinator({
       unselectNativeTabs: async (workspaceId) => {
@@ -432,16 +436,19 @@ export class AgencyTabCoordinator {
     }
 
     // 3. Close each workspace-owned logical session tab through existing supported lifecycle.
+    const closedTabIds = new Set<string>();
     for (const session of this.native.list(workspaceId)) {
       if (session.tab?.current && !session.tab.closedAt) {
+        closedTabIds.add(session.tab.id);
         await this.native.tabAction(workspaceId, session.tab.id, 'close');
       }
     }
 
-    // 4. Close all workspace-owned ChatGPT tabs through the browser-tab adapter.
+    // 4. Close all workspace-owned browser tabs through the browser-tab adapter.
     // Authorized closure during workspace deletion permits inactive (done/archived) workspaces.
     const webTabs = this.browser.listTabs(workspaceId, { includeClosed: false });
     for (const tab of webTabs) {
+      closedTabIds.add(tab.id);
       await this.browser.closeTab(workspaceId, tab.id, { allowInactiveWorkspace: true });
     }
 
@@ -449,17 +456,16 @@ export class AgencyTabCoordinator {
     if (this.editor) {
       const editorTabs = this.editor.listTabs(workspaceId, { includeClosed: false });
       for (const tab of editorTabs) {
+        closedTabIds.add(tab.id);
         await this.editor.closeTab(workspaceId, tab.id, { allowInactiveWorkspace: true });
       }
     }
 
-    // 6. Broadcast snapshots so clients and Electron reconcile/destroy native views.
-    this.snapshot();
+    for (const tabId of closedTabIds) {
+      await this.activityCleanup?.closeTab?.(workspaceId, tabId);
+    }
 
-    // 7. Delete layout for deleted workspace if present.
-    await this.layouts?.delete(workspaceId);
-
-    // 8. Recheck blocking resources before final deletion.
+    // 6. Verify zero blocking references BEFORE deleting persistent layout/activity metadata.
     if (this.native.hasWorkspaceReferences(workspaceId)) {
       throw new AgencyRuntimeError('conflict', 'Native session references remain; workspace deletion aborted');
     }
@@ -469,5 +475,12 @@ export class AgencyTabCoordinator {
     if (this.hasEditorReferences(workspaceId)) {
       throw new AgencyRuntimeError('conflict', 'Editor tab references remain; workspace deletion aborted');
     }
+
+    // 7. Broadcast snapshots so clients and Electron reconcile/destroy native views.
+    this.snapshot();
+
+    // 8. Delete layout and activity metadata for deleted workspace.
+    await this.layouts?.delete(workspaceId);
+    await this.activityCleanup?.purgeWorkspace?.(workspaceId);
   }
 }

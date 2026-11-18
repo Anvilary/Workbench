@@ -65,6 +65,8 @@ import {
   type WorkspacePaneLayout,
 } from '@agent-workbench/shared';
 import { AgencyWorkspaceStore } from './agency/store.js';
+import { BrowserProfileStore } from './agency/browser-profiles/store.js';
+import { DomainError } from './shared/index.js';
 import { AgencyProfileStore } from './agency/agency-profile-store.js';
 import { AgencySessionRuntime, AgencyRuntimeError } from './agency/agency-session-runtime.js';
 import { AgencyNotificationStore } from './agency/agency-notification-store.js';
@@ -227,6 +229,7 @@ export interface TerminalSocketOptions {
   /** Las ramas aparte (`worktree.*`, hito 48, §6.38). */
   worktrees: WorktreeService;
   agencyWorkspaceStore: AgencyWorkspaceStore;
+  agencyBrowserProfileStore?: BrowserProfileStore;
   agencyProfileStore: AgencyProfileStore;
   agencyIdentities?: NativeIdentities;
   agencyRuntime: AgencySessionRuntime;
@@ -344,6 +347,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
   const chatgptProvider = new ChatGPTActivityProvider();
   agencyActivityManager.registerBrowserProvider(chatgptProvider);
   const agencyBrowserTabs = options.agencyBrowserTabs ?? new BrowserTabAdapter({ store: new BrowserTabStore(), workspaceStore: agencyWorkspaceStore });
+  const agencyBrowserProfileStore = options.agencyBrowserProfileStore ?? new BrowserProfileStore();
   const agencyEditorTabs = options.agencyEditorTabs ?? new EditorTabAdapter({
     store: new EditorTabStore(),
     workspaceStore: agencyWorkspaceStore,
@@ -354,6 +358,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
     agencyNotificationStore.initialize(),
     agencyActivityManager.initialize(),
     agencyLayoutStore.initialize(),
+    options.agencyBrowserProfileStore ? Promise.resolve() : agencyBrowserProfileStore.load(),
     options.agencyBrowserTabs ? Promise.resolve() : agencyBrowserTabs.restore(),
     options.agencyEditorTabs ? Promise.resolve() : agencyEditorTabs.restore(),
   ]);
@@ -445,7 +450,18 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
     }
   };
 
-  const tabCoordinator = new AgencyTabCoordinator(agencyRuntime, agencyBrowserTabs, agencyWorkspaceStore, broadcast, agencyLayoutStore, agencyEditorTabs);
+  const tabCoordinator = new AgencyTabCoordinator(
+    agencyRuntime,
+    agencyBrowserTabs,
+    agencyWorkspaceStore,
+    broadcast,
+    agencyLayoutStore,
+    agencyEditorTabs,
+    {
+      closeTab: (workspaceId, tabId) => agencyActivityManager.closeTab(workspaceId, tabId),
+      purgeWorkspace: (workspaceId) => agencyActivityManager.purgeWorkspace(workspaceId),
+    },
+  );
   const hasOpenActivityTab = (workspaceId: import('@agent-workbench/shared').WorkspaceId, tabId: string): boolean => {
     if (!agencyWorkspaceStore.getWorkspace(workspaceId)) return false;
     return agencyRuntime.list(workspaceId).some(session => session.tab?.id === tabId && session.tab.current && !session.tab.closedAt) ||
@@ -3790,8 +3806,10 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
         case 'agency.workspaces.order': {
           const domainContext: AgencyDomainContext = {
             store: agencyWorkspaceStore,
+            browserProfiles: agencyBrowserProfileStore,
             pickers,
             withSessionReservationLock: (id, op) => workspaceLock.runExclusive(id, op),
+            runWorkspaceExclusive: (id, op) => tabCoordinator.mutations.runExclusive(id, op),
             hasBlockingSessions: async (id) => agencyRuntime.hasWorkspaceReferences(id) || tabCoordinator.hasBrowserReferences(id) || tabCoordinator.hasEditorReferences(id),
             publish: (broadcastMsg) => broadcast(broadcastMsg),
             shutdownWorkspace: (id) => tabCoordinator.shutdownWorkspace(id),
@@ -3801,6 +3819,76 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
             : await handleAgencyDomainRequest(message, domainContext);
           if (domainResponse !== null) {
             send(socket, domainResponse);
+          }
+          break;
+        }
+
+        case 'agency.browserProfiles.list': {
+          send(socket, {
+            type: 'agency.browserProfiles.snapshot',
+            requestId: message.requestId,
+            profiles: agencyBrowserProfileStore.listProfiles(),
+          });
+          break;
+        }
+
+        case 'agency.browserProfile.create': {
+          try {
+            const profile = await agencyBrowserProfileStore.createProfile(message.name, message.sourceProfileId);
+            broadcast({ type: 'agency.browserProfile.changed', change: 'created', profileId: profile.id, profile });
+            send(socket, {
+              type: 'agency.browserProfile.created',
+              requestId: message.requestId,
+              profile,
+              ...(message.sourceProfileId !== undefined ? { sourceProfileId: message.sourceProfileId } : {}),
+              ...(message.clearSites !== undefined ? { clearSites: message.clearSites } : {}),
+            });
+          } catch (error) {
+            send(socket, {
+              type: 'agency.error',
+              requestId: message.requestId,
+              code: error instanceof DomainError ? (error.code as AgencyErrorCode) : 'invalid-request',
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+          break;
+        }
+
+        case 'agency.browserProfile.rename': {
+          try {
+            const profile = await agencyBrowserProfileStore.renameProfile(message.profileId, message.name);
+            broadcast({ type: 'agency.browserProfile.changed', change: 'renamed', profileId: profile.id, profile });
+            send(socket, { type: 'agency.browserProfile.renamed', requestId: message.requestId, profile });
+          } catch (error) {
+            send(socket, {
+              type: 'agency.error',
+              requestId: message.requestId,
+              code: error instanceof DomainError ? (error.code as AgencyErrorCode) : 'invalid-request',
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+          break;
+        }
+
+        case 'agency.browserProfile.delete': {
+          try {
+            await agencyBrowserProfileStore.deleteProfile(message.profileId);
+            const cleared = await agencyWorkspaceStore.clearBrowserProfile(message.profileId);
+            for (const project of cleared.projects) {
+              broadcast({ type: 'agency.project.changed', change: 'updated', projectId: project.id, project });
+            }
+            for (const workspace of cleared.workspaces) {
+              broadcast({ type: 'agency.workspace.changed', change: 'updated', workspaceId: workspace.id, workspace });
+            }
+            broadcast({ type: 'agency.browserProfile.changed', change: 'deleted', profileId: message.profileId });
+            send(socket, { type: 'agency.browserProfile.deleted', requestId: message.requestId, profileId: message.profileId });
+          } catch (error) {
+            send(socket, {
+              type: 'agency.error',
+              requestId: message.requestId,
+              code: error instanceof DomainError ? (error.code as AgencyErrorCode) : 'invalid-request',
+              message: error instanceof Error ? error.message : String(error),
+            });
           }
           break;
         }

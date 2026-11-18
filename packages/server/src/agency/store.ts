@@ -11,6 +11,7 @@ import path from 'node:path';
 import type {
   AgencyErrorCode, AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId,
 } from '@agent-workbench/shared';
+import { isValidBrowserProfileId } from '@agent-workbench/shared';
 import { appConfigDir } from '../paths.js';
 import { writeAtomically } from '../atomic-write.js';
 
@@ -70,11 +71,17 @@ export function parseAgencySnapshot(value: unknown): Snapshot {
     if (archivedAt !== null && !validTime(archivedAt)) {
       throw new AgencyStoreError('internal-error', 'Invalid project archivedAt');
     }
+    const browserProfileId = valueProject['browserProfileId'] === undefined || valueProject['browserProfileId'] === null
+      ? undefined : valueProject['browserProfileId'];
+    if (browserProfileId !== undefined && !isValidBrowserProfileId(browserProfileId)) {
+      throw new AgencyStoreError('internal-error', 'Invalid project browserProfileId');
+    }
     projectIds.add(valueProject['id']);
     projects.push({
       id: valueProject['id'] as ProjectId,
       name: valueProject['name'],
       status,
+      ...(browserProfileId !== undefined ? { browserProfileId } : {}),
       createdAt: valueProject['createdAt'],
       updatedAt: valueProject['updatedAt'],
       archivedAt,
@@ -99,6 +106,11 @@ export function parseAgencySnapshot(value: unknown): Snapshot {
     if (archivedAt !== null && !validTime(archivedAt)) {
       throw new AgencyStoreError('internal-error', 'Invalid workspace archivedAt');
     }
+    const wsProfileId = valueWorkspace['browserProfileId'] === undefined || valueWorkspace['browserProfileId'] === null
+      ? undefined : valueWorkspace['browserProfileId'];
+    if (wsProfileId !== undefined && !isValidBrowserProfileId(wsProfileId)) {
+      throw new AgencyStoreError('internal-error', 'Invalid workspace browserProfileId');
+    }
     workspaceIds.add(valueWorkspace['id']);
     workspaces.push({
       id: valueWorkspace['id'] as WorkspaceId,
@@ -106,6 +118,7 @@ export function parseAgencySnapshot(value: unknown): Snapshot {
       name: valueWorkspace['name'],
       cwd: valueWorkspace['cwd'],
       status: wStatus,
+      ...(wsProfileId !== undefined ? { browserProfileId: wsProfileId } : {}),
       createdAt: valueWorkspace['createdAt'],
       updatedAt: valueWorkspace['updatedAt'],
       doneAt: valueWorkspace['doneAt'],
@@ -249,12 +262,32 @@ export class AgencyWorkspaceStore {
   }
 
   async renameProject(id: ProjectId, name: string): Promise<AgencyProject> {
-    const clean = checkedName(name);
+    return this.updateProject(id, { name });
+  }
+
+  async updateProject(
+    id: ProjectId,
+    changes: { name?: string; browserProfileId?: string | null },
+  ): Promise<AgencyProject> {
+    const clean = changes.name !== undefined ? checkedName(changes.name) : undefined;
+    if (changes.browserProfileId !== undefined && changes.browserProfileId !== null && !isValidBrowserProfileId(changes.browserProfileId)) {
+      throw new AgencyStoreError('invalid-request', 'Invalid browserProfileId');
+    }
     return this.transact((state) => {
       const original = state.projects.find((p) => p.id === id);
       if (!original) throw new AgencyStoreError('not-found', 'Project not found');
-      const project = { ...original, name: clean, updatedAt: new Date().toISOString() };
-      return [{ ...state, projects: state.projects.map((p) => p.id === id ? project : p) }, { ...project }];
+      const project: AgencyProject = {
+        ...original,
+        ...(clean !== undefined ? { name: clean } : {}),
+        ...(changes.browserProfileId !== undefined
+          ? changes.browserProfileId === null
+            ? { browserProfileId: undefined }
+            : { browserProfileId: changes.browserProfileId }
+          : {}),
+        updatedAt: new Date().toISOString(),
+      };
+      if (project.browserProfileId === undefined) delete project.browserProfileId;
+      return [{ ...state, projects: state.projects.map((p) => (p.id === id ? project : p)) }, { ...project }];
     });
   }
 
@@ -351,7 +384,54 @@ export class AgencyWorkspaceStore {
   }
 
   async renameWorkspace(id: WorkspaceId, name: string): Promise<AgencyWorkspace> {
-    return this.updateWorkspace(id, (w) => ({ ...w, name: checkedName(name), updatedAt: new Date().toISOString() }));
+    return this.updateWorkspaceFields(id, { name });
+  }
+
+  async updateWorkspaceFields(
+    id: WorkspaceId,
+    changes: { name?: string; browserProfileId?: string | null },
+  ): Promise<AgencyWorkspace> {
+    const clean = changes.name !== undefined ? checkedName(changes.name) : undefined;
+    if (changes.browserProfileId !== undefined && changes.browserProfileId !== null && !isValidBrowserProfileId(changes.browserProfileId)) {
+      throw new AgencyStoreError('invalid-request', 'Invalid browserProfileId');
+    }
+    return this.updateWorkspace(id, (w) => {
+      const next: AgencyWorkspace = {
+        ...w,
+        ...(clean !== undefined ? { name: clean } : {}),
+        ...(changes.browserProfileId !== undefined
+          ? changes.browserProfileId === null
+            ? { browserProfileId: undefined }
+            : { browserProfileId: changes.browserProfileId }
+          : {}),
+        updatedAt: new Date().toISOString(),
+      };
+      if (next.browserProfileId === undefined) delete next.browserProfileId;
+      return next;
+    });
+  }
+
+  async clearBrowserProfile(profileId: string): Promise<{ projects: AgencyProject[]; workspaces: AgencyWorkspace[] }> {
+    return this.transact((state) => {
+      const now = new Date().toISOString();
+      const updatedProjects: AgencyProject[] = [];
+      const updatedWorkspaces: AgencyWorkspace[] = [];
+      const projects = state.projects.map((p) => {
+        if (p.browserProfileId !== profileId) return p;
+        const next: AgencyProject = { ...p, updatedAt: now };
+        delete next.browserProfileId;
+        updatedProjects.push({ ...next });
+        return next;
+      });
+      const workspaces = state.workspaces.map((w) => {
+        if (w.browserProfileId !== profileId) return w;
+        const next: AgencyWorkspace = { ...w, updatedAt: now };
+        delete next.browserProfileId;
+        updatedWorkspaces.push({ ...next });
+        return next;
+      });
+      return [{ ...state, projects, workspaces }, { projects: updatedProjects, workspaces: updatedWorkspaces }];
+    });
   }
 
   async markDone(id: WorkspaceId): Promise<AgencyWorkspace> {
