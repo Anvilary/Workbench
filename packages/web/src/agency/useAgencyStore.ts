@@ -214,8 +214,14 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
             ? old.workspaces.filter((w) => w.id !== message.workspaceId)
             : message.workspace ? replaceById(old.workspaces, message.workspace) : old.workspaces),
         }));
-      } else if (message.type === 'agency.profile.configured' || message.type === 'agency.profile.changed') {
-        setData((old) => ({ ...old, profiles: replaceById(old.profiles, message.profile) }));
+      } else if (message.type === 'agency.profile.configured' || message.type === 'agency.profile.created' || message.type === 'agency.profile.changed') {
+        if (message.type === 'agency.profile.changed' && message.change === 'deleted') {
+          setData((old) => ({ ...old, profiles: old.profiles.filter((p) => p.id !== message.profileId) }));
+        } else if (message.profile) {
+          setData((old) => ({ ...old, profiles: replaceById(old.profiles, message.profile!) }));
+        }
+      } else if (message.type === 'agency.profile.deleted') {
+        setData((old) => ({ ...old, profiles: old.profiles.filter((p) => p.id !== message.profileId) }));
       } else if (message.type === 'agency.profile.capabilities') {
         setData((old) => ({ ...old, profiles: old.profiles.map((profile) =>
           profile.id === message.profileId ? { ...profile, capabilities: message.capabilities } : profile) }));

@@ -521,14 +521,22 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   await shellMenuBtn.click();
   await page.locator('.maw-shell-menu').waitFor();
 
-  // Contains Done workspaces action
-  const doneMenuItem = page.locator('.maw-shell-menu .maw-menu-item').filter({ hasText: 'Done workspaces' });
-  assert.equal(await doneMenuItem.count(), 1);
+  // Contains Performance and Settings actions; does not contain removed items
+  const performanceItem = page.locator('.maw-shell-menu .maw-menu-item').filter({ hasText: 'Performance' });
+  assert.equal(await performanceItem.count(), 1);
+  const settingsItem = page.locator('.maw-shell-menu .maw-menu-item').filter({ hasText: 'Settings' });
+  assert.equal(await settingsItem.count(), 1);
 
-  // Clicking Done workspaces opens Done view
-  await doneMenuItem.click();
-  await page.locator('.agency-done-view').waitFor();
-  assert.equal(await page.locator('#agency-done-title').textContent(), 'Done workspaces');
+  const doneMenuItem = page.locator('.maw-shell-menu .maw-menu-item').filter({ hasText: 'Done workspaces' });
+  assert.equal(await doneMenuItem.count(), 0);
+  const refreshMenuItem = page.locator('.maw-shell-menu .maw-menu-item').filter({ hasText: 'Refresh' });
+  assert.equal(await refreshMenuItem.count(), 0);
+  const newWsMenuItem = page.locator('.maw-shell-menu .maw-menu-item').filter({ hasText: 'New workspace' });
+  assert.equal(await newWsMenuItem.count(), 0);
+  const newProjMenuItem = page.locator('.maw-shell-menu .maw-menu-item').filter({ hasText: 'New project' });
+  assert.equal(await newProjMenuItem.count(), 0);
+  const agentsUsageMenuItem = page.locator('.maw-shell-menu .maw-menu-item').filter({ hasText: 'Agents Usage' });
+  assert.equal(await agentsUsageMenuItem.count(), 0);
 
   // 7. Sidebar collapse and expand
   await sidebarCollapseBtn.click();
