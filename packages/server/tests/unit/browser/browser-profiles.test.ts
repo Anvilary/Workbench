@@ -87,7 +87,7 @@ test('domain cascade delete cleans child workspaces before removing project with
   const broadcasts: string[] = [];
   const ctx: AgencyDomainContext = {
     store,
-    pickers: new DirectoryPickers(),
+    pickers: new DirectoryPickers([]),
     withSessionReservationLock: async (_id, fn) => fn(),
     runWorkspaceExclusive: async (_id, fn) => fn(),
     hasBlockingSessions: async () => false,

@@ -134,9 +134,7 @@ async function deleteWorkspaceWithCleanup(
       typeof context.withSessionReservationLock !== 'function') {
     throw new AgencyStoreError('session-unavailable', 'Session guard and shared reservation lock are required');
   }
-  if (!context.store.getWorkspace(workspaceId)) {
-    return false;
-  }
+  let deleted = false;
   const runDelete = async (): Promise<void> => {
     if (!context.store.getWorkspace(workspaceId)) return;
     if (typeof context.shutdownWorkspace === 'function') {
@@ -144,13 +142,14 @@ async function deleteWorkspaceWithCleanup(
     }
     await context.withSessionReservationLock!(workspaceId, () =>
       context.store.deleteWorkspace(workspaceId, context.hasBlockingSessions!));
+    deleted = true;
   };
   if (typeof context.runWorkspaceExclusive === 'function') {
     await context.runWorkspaceExclusive(workspaceId, runDelete);
   } else {
     await runDelete();
   }
-  return true;
+  return deleted;
 }
 
 function publishSafely(context: AgencyDomainContext, message: DomainBroadcast): void {
@@ -209,7 +208,7 @@ export async function handleAgencyDomainRequest(
       case 'agency.project.delete': {
         if (request.cascade) {
           if (!context.store.listProjects().some((p) => p.id === request.projectId)) {
-            throw new AgencyStoreError('not-found', 'Project not found');
+            return { type: 'agency.project.deleted', requestId, projectId: request.projectId };
           }
           const children = context.store.listWorkspaces(request.projectId);
           for (const ws of children) {

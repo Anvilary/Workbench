@@ -348,6 +348,8 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
   agencyActivityManager.registerBrowserProvider(chatgptProvider);
   const agencyBrowserTabs = options.agencyBrowserTabs ?? new BrowserTabAdapter({ store: new BrowserTabStore(), workspaceStore: agencyWorkspaceStore });
   const agencyBrowserProfileStore = options.agencyBrowserProfileStore ?? new BrowserProfileStore();
+  const projectMutations = new WorkspaceMutex();
+  const browserProfileMutations = new WorkspaceMutex();
   const agencyEditorTabs = options.agencyEditorTabs ?? new EditorTabAdapter({
     store: new EditorTabStore(),
     workspaceStore: agencyWorkspaceStore,
@@ -3814,9 +3816,21 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
             publish: (broadcastMsg) => broadcast(broadcastMsg),
             shutdownWorkspace: (id) => tabCoordinator.shutdownWorkspace(id),
           };
-          const domainResponse = 'workspaceId' in message
-            ? await tabCoordinator.mutations.runExclusive(message.workspaceId, () => handleAgencyDomainRequest(message, domainContext))
-            : await handleAgencyDomainRequest(message, domainContext);
+          const handle = () => handleAgencyDomainRequest(message, domainContext);
+          const handleOrdered = () => {
+            if (message.type === 'agency.project.delete' || message.type === 'agency.workspace.create') {
+              return projectMutations.runExclusive(message.projectId, handle);
+            }
+            if ('workspaceId' in message && message.type !== 'agency.workspace.delete') {
+              return tabCoordinator.mutations.runExclusive(message.workspaceId, handle);
+            }
+            return handle();
+          };
+          const profileId = (message.type === 'agency.workspace.update' || message.type === 'agency.project.update')
+            ? message.browserProfileId : undefined;
+          const domainResponse = profileId
+            ? await browserProfileMutations.runExclusive(profileId, handleOrdered)
+            : await handleOrdered();
           if (domainResponse !== null) {
             send(socket, domainResponse);
           }
@@ -3872,15 +3886,23 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
 
         case 'agency.browserProfile.delete': {
           try {
-            await agencyBrowserProfileStore.deleteProfile(message.profileId);
-            const cleared = await agencyWorkspaceStore.clearBrowserProfile(message.profileId);
-            for (const project of cleared.projects) {
-              broadcast({ type: 'agency.project.changed', change: 'updated', projectId: project.id, project });
-            }
-            for (const workspace of cleared.workspaces) {
-              broadcast({ type: 'agency.workspace.changed', change: 'updated', workspaceId: workspace.id, workspace });
-            }
-            broadcast({ type: 'agency.browserProfile.changed', change: 'deleted', profileId: message.profileId });
+            await browserProfileMutations.runExclusive(message.profileId, async () => {
+              const profile = agencyBrowserProfileStore.getProfile(message.profileId);
+              if (profile?.isDefault) {
+                throw new DomainError('conflict', 'The default Main browser profile cannot be deleted');
+              }
+              const cleared = await agencyWorkspaceStore.clearBrowserProfile(message.profileId);
+              for (const project of cleared.projects) {
+                broadcast({ type: 'agency.project.changed', change: 'updated', projectId: project.id, project });
+              }
+              for (const workspace of cleared.workspaces) {
+                broadcast({ type: 'agency.workspace.changed', change: 'updated', workspaceId: workspace.id, workspace });
+              }
+              if (profile) {
+                await agencyBrowserProfileStore.deleteProfile(message.profileId);
+                broadcast({ type: 'agency.browserProfile.changed', change: 'deleted', profileId: message.profileId });
+              }
+            });
             send(socket, { type: 'agency.browserProfile.deleted', requestId: message.requestId, profileId: message.profileId });
           } catch (error) {
             send(socket, {
@@ -4146,12 +4168,11 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
         }
 
         case 'agency.layout.save': {
-          const ws = agencyWorkspaceStore.getWorkspace(message.workspaceId);
-          if (!ws) {
-            send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Workspace not found' });
-            break;
-          }
           await tabCoordinator.mutations.runExclusive(message.workspaceId, async () => {
+            if (!agencyWorkspaceStore.getWorkspace(message.workspaceId)) {
+              send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Workspace not found' });
+              return;
+            }
             const openTabIds = tabCoordinator.listOpenTabIds(message.workspaceId, { includeClosing: true });
             const decision = evaluateLayoutSave(message.workspaceId, message.layout, openTabIds);
             if (!decision.ok) {
