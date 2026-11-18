@@ -1,6 +1,6 @@
 name: Publish
 
-# Runs on a vX.Y.Z tag. Publishes `dist-npm/` to npm with provenance through
+# Runs on a vX.Y.Z tag. Publishes the CI-verified tarball to npm with provenance through
 # trusted publishing (OIDC): npm trusts this repository and this workflow, so
 # there is no long-lived token anywhere. Then it creates the GitHub release.
 #

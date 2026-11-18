@@ -8,7 +8,12 @@ import { fileURLToPath } from 'node:url';
 
 const outDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'dist-npm');
 const raw = execFileSync('npm', ['pack', '--dry-run', '--json'], { cwd: outDir, encoding: 'utf8', shell: process.platform === 'win32' });
-const files = JSON.parse(raw)[0].files.map((f) => f.path);
+const manifest = JSON.parse(raw);
+const packages = Array.isArray(manifest) ? manifest : Object.values(manifest);
+if (packages.length !== 1 || !Array.isArray(packages[0]?.files)) {
+  throw new Error('npm pack did not return a single tarball file list');
+}
+const files = packages[0].files.map((file) => file.path);
 
 const allowed = (file) =>
   file === 'package.json' ||

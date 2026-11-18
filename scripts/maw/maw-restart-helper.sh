@@ -162,8 +162,8 @@ managed=true
 maw_valid_release "$target" || managed=false
 
 if ! "$node_bin" "$control_script" check-data "$target"; then
-  maw_log activation-blocked target "$target_name" reason 'target release cannot read existing browser tab data'
-  printf '%s\n' 'Activation refused to protect browser tab data. Archive the v2 browser tab store and perform an explicit data migration before using this older release.' \
+  maw_log activation-blocked target "$target_name" reason 'target release cannot preserve existing browser data'
+  printf '%s\n' 'Activation refused to protect browser data.' \
     'No release pointer or service was changed.' >&2
   exit 1
 fi
@@ -288,8 +288,8 @@ phase=rollback
 if [ -n "$healthy" ] && [ "$healthy" != "$target" ]; then
   healthy_name=$(basename "$healthy")
   if ! "$node_bin" "$control_script" check-data "$healthy"; then
-    maw_log rollback-failure release "$healthy_name" failed "$target_name" reason 'target release cannot read existing browser tab data'
-    printf '%s\n' "CRITICAL: automatic rollback to $healthy_name was blocked to protect browser tab data." \
+    maw_log rollback-failure release "$healthy_name" failed "$target_name" reason 'target release cannot preserve existing browser data'
+    printf '%s\n' "CRITICAL: automatic rollback to $healthy_name was blocked to protect browser data." \
       'The browser tab store was preserved. Inspect maw status and maw logs before choosing a compatible release.' >&2
     exit 3
   fi

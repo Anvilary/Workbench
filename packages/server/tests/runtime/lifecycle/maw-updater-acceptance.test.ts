@@ -319,6 +319,14 @@ test('control check-data reads compatibility metadata and refuses a v2-to-v1 dow
   await writeFile(manifest, JSON.stringify({ mawCompatibility: { browserTabStore: 2 } }));
   await run();
   assert.equal(await readFile(store, 'utf8'), original);
+  const workspaceStore = path.join(configDir, 'agency-state.json');
+  const assignments = JSON.stringify({ version: 1, projects: [{ browserProfileId: 'custom' }], workspaces: [] });
+  await writeFile(workspaceStore, assignments);
+  await assert.rejects(run(), (error: { stderr: string }) => /does not preserve browser profile assignments/.test(error.stderr));
+  assert.equal(await readFile(workspaceStore, 'utf8'), assignments);
+  await writeFile(manifest, JSON.stringify({ mawCompatibility: { browserTabStore: 2, browserProfileAssignments: 1 } }));
+  await run();
+  assert.equal(await readFile(workspaceStore, 'utf8'), assignments);
 }));
 
 test('supervisor code promotion fails closed on auth/list failure without switching current', () => withFixture(async f => {
@@ -389,7 +397,7 @@ test('restart refuses a browser store downgrade before changing current or resta
   const before = await pointers(f);
   const result = await helper(f, { XDG_CONFIG_HOME: configHome });
   assert.equal(result.code, 1);
-  assert.match(result.stderr, /Activation refused to protect browser tab data/);
+  assert.match(result.stderr, /Activation refused to protect browser data/);
   assert.deepEqual(await pointers(f), before);
   assert.equal(await readFile(storePath, 'utf8'), original);
   assert.ok(!existsSync(path.join(f.root, 'restarts')));
@@ -423,7 +431,7 @@ test('failed activation cannot automatically roll back to an incompatible browse
   await writeFile(backup, data);
   const result = await helper(f, { XDG_CONFIG_HOME: configHome });
   assert.equal(result.code, 3);
-  assert.match(result.stderr, /automatic rollback .* was blocked to protect browser tab data/);
+  assert.match(result.stderr, /automatic rollback .* was blocked to protect browser data/);
   assert.equal(await pointer(f, 'current'), target);
   assert.equal(await pointer(f, 'healthy'), f.initialId);
   assert.equal(await readFile(backup, 'utf8'), data);
@@ -446,7 +454,7 @@ test('maw rollback refuses an older target before mutating current or staged poi
     (error: { code: number; stderr: string }) => ({ code: error.code, stderr: error.stderr }),
   );
   assert.equal(result.code, 1);
-  assert.match(result.stderr, /Rollback refused to protect browser tab data/);
+  assert.match(result.stderr, /Rollback refused to protect browser data/);
   assert.deepEqual(await pointers(f), before);
   assert.ok(!existsSync(path.join(f.root, 'restarts')) || (await readFile(path.join(f.root, 'restarts'), 'utf8')).trim() === '1');
 }));

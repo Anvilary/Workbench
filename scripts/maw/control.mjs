@@ -79,12 +79,17 @@ async function supervisorIsEmpty() {
 function checkDataCompatibility(target) {
   const manifestPath = path.join(target, 'package.json');
   let supportedVersion = 1;
+  let supportedAssignments = 0;
   if (existsSync(manifestPath)) {
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     const declared = manifest.mawCompatibility?.browserTabStore;
     if (declared !== undefined) {
       if (!Number.isSafeInteger(declared) || declared < 1) throw new Error('Target release has invalid browser tab compatibility metadata');
       supportedVersion = declared;
+    }
+    supportedAssignments = manifest.mawCompatibility?.browserProfileAssignments ?? 0;
+    if (!Number.isSafeInteger(supportedAssignments) || supportedAssignments < 0) {
+      throw new Error('Target release has invalid browser profile assignment compatibility metadata');
     }
   }
   const configRoot = process.env.XDG_CONFIG_HOME || path.join(process.env.HOME || '', '.config');
@@ -99,6 +104,22 @@ function checkDataCompatibility(target) {
     if (!Number.isSafeInteger(decoded.version) || decoded.version < 1) throw new Error(`Browser tab store version is invalid: ${candidate}`);
     if (decoded.version > supportedVersion) {
       throw new Error(`Target supports browser tab store v${supportedVersion}, but ${candidate} is v${decoded.version}`);
+    }
+  }
+  if (supportedAssignments < 1) {
+    const workspaceStorePath = path.join(configRoot, 'agent-workbench', 'agency-state.json');
+    for (const candidate of [workspaceStorePath, `${workspaceStorePath}.bak`]) {
+      let stat;
+      try { stat = lstatSync(candidate); }
+      catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+      if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`Workspace store path is unsafe: ${candidate}`);
+      const snapshot = JSON.parse(readFileSync(candidate, 'utf8'));
+      if (!Array.isArray(snapshot?.projects) || !Array.isArray(snapshot?.workspaces)) {
+        throw new Error(`Workspace store cannot be safely inspected: ${candidate}`);
+      }
+      if ([...snapshot.projects, ...snapshot.workspaces].some(row => row?.browserProfileId != null)) {
+        throw new Error('Target does not preserve browser profile assignments. Clear the assignments in Workbench before rolling back.');
+      }
     }
   }
 }
