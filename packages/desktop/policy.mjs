@@ -318,6 +318,7 @@ export function validCommand(value) {
     return exact(value, ['type', 'text']) && typeof value.text === 'string' && value.text.length <= 25_000_000;
   }
   if (value.type === 'read-clipboard-text') return exact(value, ['type']);
+  if (value.type === 'browse-executable') return exact(value, ['type']) || (exact(value, ['type', 'title']) && typeof value.title === 'string' && value.title.length <= 128);
   if (
     value.type === 'performance-subscribe' ||
     value.type === 'performance-unsubscribe' ||

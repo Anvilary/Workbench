@@ -1,7 +1,7 @@
 /**
  * Browser settings state hook.
  *
- * Manages user-configurable favorites and default search engine.
+ * Manages user-configurable favorites, search engines, and default search engine.
  * Provides dual persistence:
  * - Instant local storage cache (resilient against network delays, tab refresh, offline mode)
  * - Server-side settings synchronization (survives desktop restart, workspace switches, multi-window)
@@ -10,13 +10,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   DEFAULT_BROWSER_FAVORITES,
+  DEFAULT_SEARCH_ENGINES,
   DEFAULT_SEARCH_ENGINE_ID,
   getSearchEngine,
   parseBrowserSettings,
   validateBrowserFavoriteUrl,
+  validateSearchEngine,
   type BrowserFavorite,
   type BrowserSettings,
   type SearchEngine,
+  type SearchEngineCandidate,
   type SearchEngineId,
 } from '@agent-workbench/shared';
 import type { AppSettingsApi } from '../useAppSettings.js';
@@ -28,6 +31,7 @@ function loadCachedBrowserSettings(): BrowserSettings {
     return {
       defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
       favorites: [...DEFAULT_BROWSER_FAVORITES],
+      searchEngines: [...DEFAULT_SEARCH_ENGINES],
     };
   }
   try {
@@ -36,6 +40,7 @@ function loadCachedBrowserSettings(): BrowserSettings {
       return {
         defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
         favorites: [...DEFAULT_BROWSER_FAVORITES],
+        searchEngines: [...DEFAULT_SEARCH_ENGINES],
       };
     }
     const parsed = parseBrowserSettings(JSON.parse(raw));
@@ -46,6 +51,7 @@ function loadCachedBrowserSettings(): BrowserSettings {
   return {
     defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
     favorites: [...DEFAULT_BROWSER_FAVORITES],
+    searchEngines: [...DEFAULT_SEARCH_ENGINES],
   };
 }
 
@@ -60,6 +66,7 @@ function saveCachedBrowserSettings(settings: BrowserSettings): void {
 
 export interface UseBrowserSettingsResult {
   favorites: readonly BrowserFavorite[];
+  searchEngines: readonly SearchEngine[];
   defaultSearchEngine: SearchEngineId;
   searchEngine: SearchEngine;
   addFavorite: (favorite: { title: string; url: string }) => { success: boolean; error?: string };
@@ -68,6 +75,10 @@ export interface UseBrowserSettingsResult {
   reorderFavorites: (ids: readonly string[]) => void;
   moveFavorite: (id: string, direction: 'up' | 'down') => void;
   setDefaultSearchEngine: (engineId: SearchEngineId) => void;
+  addSearchEngine: (candidate: { name: string; homeUrl: string; searchUrl: string }) => { success: boolean; error?: string };
+  editSearchEngine: (id: string, updates: { name: string; homeUrl: string; searchUrl: string }) => { success: boolean; error?: string };
+  removeSearchEngine: (id: string) => { success: boolean; error?: string };
+  restoreBuiltinSearchEngines: () => void;
   resetToDefaults: () => void;
 }
 
@@ -114,7 +125,9 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
         return { success: false, error: 'A favorite with this URL already exists' };
       }
 
-      const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `fav-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const id = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `fav-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const newFav: BrowserFavorite = {
         id,
         title,
@@ -230,6 +243,9 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
 
   const setDefaultSearchEngine = useCallback(
     (engineId: SearchEngineId) => {
+      const currentList = settings.searchEngines ?? DEFAULT_SEARCH_ENGINES;
+      const exists = currentList.some((e) => e.id === engineId);
+      if (!exists && !DEFAULT_SEARCH_ENGINES.some((d) => d.id === engineId)) return;
       const next: BrowserSettings = {
         ...settings,
         defaultSearchEngine: engineId,
@@ -239,24 +255,123 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
     [settings, persist],
   );
 
+  const addSearchEngine = useCallback(
+    (candidate: { name: string; homeUrl: string; searchUrl: string }) => {
+      const currentList = settings.searchEngines ?? DEFAULT_SEARCH_ENGINES;
+      const validated = validateSearchEngine(candidate, currentList);
+      if (!validated.valid || !validated.normalized) {
+        return { success: false, error: validated.error ?? 'Invalid search engine' };
+      }
+      const next: BrowserSettings = {
+        ...settings,
+        searchEngines: [...currentList, validated.normalized],
+      };
+      persist(next);
+      return { success: true };
+    },
+    [settings, persist],
+  );
+
+  const editSearchEngine = useCallback(
+    (id: string, updates: { name: string; homeUrl: string; searchUrl: string }) => {
+      const currentList = settings.searchEngines ?? DEFAULT_SEARCH_ENGINES;
+      const index = currentList.findIndex((e) => e.id === id);
+      if (index === -1) {
+        return { success: false, error: 'Search engine not found' };
+      }
+      const existing = currentList[index]!;
+      const candidate: SearchEngineCandidate = {
+        id,
+        name: updates.name,
+        homeUrl: updates.homeUrl,
+        searchUrl: updates.searchUrl,
+      };
+      const validated = validateSearchEngine(candidate, currentList, id);
+      if (!validated.valid || !validated.normalized) {
+        return { success: false, error: validated.error ?? 'Invalid search engine' };
+      }
+      const updatedList = [...currentList];
+      updatedList[index] = {
+        ...validated.normalized,
+        isBuiltin: existing.isBuiltin,
+      };
+      const next: BrowserSettings = {
+        ...settings,
+        searchEngines: updatedList,
+      };
+      persist(next);
+      return { success: true };
+    },
+    [settings, persist],
+  );
+
+  const removeSearchEngine = useCallback(
+    (id: string) => {
+      const currentList = settings.searchEngines ?? DEFAULT_SEARCH_ENGINES;
+      const existing = currentList.find((e) => e.id === id);
+      if (!existing) {
+        return { success: false, error: 'Search engine not found' };
+      }
+      if (existing.isBuiltin || DEFAULT_SEARCH_ENGINES.some((d) => d.id === id)) {
+        return { success: false, error: 'Built-in search engines cannot be removed' };
+      }
+      const filtered = currentList.filter((e) => e.id !== id);
+      let nextDefault = settings.defaultSearchEngine;
+      if (settings.defaultSearchEngine === id) {
+        nextDefault = filtered[0]?.id ?? DEFAULT_SEARCH_ENGINE_ID;
+      }
+      const next: BrowserSettings = {
+        ...settings,
+        defaultSearchEngine: nextDefault,
+        searchEngines: filtered,
+      };
+      persist(next);
+      return { success: true };
+    },
+    [settings, persist],
+  );
+
+  const restoreBuiltinSearchEngines = useCallback(() => {
+    const currentList = settings.searchEngines ?? DEFAULT_SEARCH_ENGINES;
+    const customEngines = currentList.filter(
+      (e) => !e.isBuiltin && !DEFAULT_SEARCH_ENGINES.some((d) => d.id === e.id),
+    );
+    const restored = [...DEFAULT_SEARCH_ENGINES, ...customEngines];
+    const defaultExists = restored.some((e) => e.id === settings.defaultSearchEngine);
+    const next: BrowserSettings = {
+      ...settings,
+      defaultSearchEngine: defaultExists ? settings.defaultSearchEngine : DEFAULT_SEARCH_ENGINE_ID,
+      searchEngines: restored,
+    };
+    persist(next);
+  }, [settings, persist]);
+
   const resetToDefaults = useCallback(() => {
     const next: BrowserSettings = {
       defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
       favorites: [...DEFAULT_BROWSER_FAVORITES],
+      searchEngines: [...DEFAULT_SEARCH_ENGINES],
     };
     persist(next);
   }, [persist]);
 
+  const currentSearchEngines = settings.searchEngines ?? DEFAULT_SEARCH_ENGINES;
+
   return {
     favorites: settings.favorites,
+    searchEngines: currentSearchEngines,
     defaultSearchEngine: settings.defaultSearchEngine,
-    searchEngine: getSearchEngine(settings.defaultSearchEngine),
+    searchEngine: getSearchEngine(settings.defaultSearchEngine, currentSearchEngines),
     addFavorite,
     editFavorite,
     removeFavorite,
     reorderFavorites,
     moveFavorite,
     setDefaultSearchEngine,
+    addSearchEngine,
+    editSearchEngine,
+    removeSearchEngine,
+    restoreBuiltinSearchEngines,
     resetToDefaults,
   };
 }

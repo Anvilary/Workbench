@@ -14,11 +14,12 @@ import {
   isLoopbackHost,
   type WebTabProvider,
 } from './browser-tabs.js';
-import { asArrayFiltered, asLiteral, asNonEmptyString, asRecord } from './validation.js';
+import { asArrayFiltered, asNonEmptyString, asRecord } from './validation.js';
 
-export type SearchEngineId = 'duckduckgo' | 'google' | 'brave' | 'bing' | 'ecosia';
+export type BuiltinSearchEngineId = 'duckduckgo' | 'google' | 'brave' | 'bing' | 'ecosia';
+export type SearchEngineId = string;
 
-export const SEARCH_ENGINE_IDS: readonly SearchEngineId[] = [
+export const BUILTIN_SEARCH_ENGINE_IDS: readonly BuiltinSearchEngineId[] = [
   'duckduckgo',
   'google',
   'brave',
@@ -26,51 +27,287 @@ export const SEARCH_ENGINE_IDS: readonly SearchEngineId[] = [
   'ecosia',
 ] as const;
 
+export const SEARCH_ENGINE_IDS = BUILTIN_SEARCH_ENGINE_IDS;
+
 export interface SearchEngine {
   id: SearchEngineId;
   name: string;
   homeUrl: string;
   searchUrl: string;
+  isBuiltin?: boolean;
 }
 
-export const SEARCH_ENGINES: readonly SearchEngine[] = [
+export const DEFAULT_SEARCH_ENGINES: readonly SearchEngine[] = [
   {
     id: 'duckduckgo',
     name: 'DuckDuckGo',
     homeUrl: 'https://duckduckgo.com/',
     searchUrl: 'https://duckduckgo.com/?q=',
+    isBuiltin: true,
   },
   {
     id: 'google',
     name: 'Google',
     homeUrl: 'https://www.google.com/',
     searchUrl: 'https://www.google.com/search?q=',
+    isBuiltin: true,
   },
   {
     id: 'brave',
     name: 'Brave',
     homeUrl: 'https://search.brave.com/',
     searchUrl: 'https://search.brave.com/search?q=',
+    isBuiltin: true,
   },
   {
     id: 'bing',
     name: 'Bing',
     homeUrl: 'https://www.bing.com/',
     searchUrl: 'https://www.bing.com/search?q=',
+    isBuiltin: true,
   },
   {
     id: 'ecosia',
     name: 'Ecosia',
     homeUrl: 'https://www.ecosia.org/',
     searchUrl: 'https://www.ecosia.org/search?q=',
+    isBuiltin: true,
   },
 ] as const;
 
+export const SEARCH_ENGINES: readonly SearchEngine[] = DEFAULT_SEARCH_ENGINES;
+
 export const DEFAULT_SEARCH_ENGINE_ID: SearchEngineId = 'duckduckgo';
 
-export function getSearchEngine(id?: unknown): SearchEngine {
-  const match = SEARCH_ENGINES.find((e) => e.id === id);
-  return match ?? SEARCH_ENGINES[0]!;
+/**
+ * Returns true if a host is a publicly resolvable domain name,
+ * rejecting private, loopback, internal domains, or IP addresses.
+ */
+export function isPublicWebHost(host: string): boolean {
+  if (!host || typeof host !== 'string') return false;
+  const clean = host.trim().toLowerCase();
+  if (isLoopbackHost(clean)) return false;
+  const ipv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(clean);
+  const ipv6 = clean.startsWith('[') || clean.endsWith(']');
+  if (ipv4 || ipv6) return false;
+  if (!clean.includes('.') || clean.endsWith('.')) return false;
+  const internalSuffixes = [
+    'localhost',
+    'local',
+    'internal',
+    'lan',
+    'home',
+    'home.arpa',
+    'test',
+    'invalid',
+    'example',
+    'corp',
+    'onion',
+  ];
+  if (internalSuffixes.some((suffix) => clean === suffix || clean.endsWith('.' + suffix))) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Constructs a full search URL by safely encoding the query into
+ * a template containing `%s` or `{q}`, or appending it to a query prefix.
+ */
+export function buildSearchUrl(templateOrPrefix: string, query: string): string {
+  const encoded = encodeURIComponent(query);
+  if (templateOrPrefix.includes('%s')) {
+    return templateOrPrefix.replace(/%s/g, encoded);
+  }
+  if (templateOrPrefix.includes('{q}')) {
+    return templateOrPrefix.replace(/\{q\}/g, encoded);
+  }
+  return `${templateOrPrefix}${encoded}`;
+}
+
+/**
+ * Retrieves a search engine by ID from configured engines or defaults.
+ */
+export function getSearchEngine(id?: unknown, customOrAllEngines?: readonly SearchEngine[]): SearchEngine {
+  if (customOrAllEngines && customOrAllEngines.length > 0) {
+    const match = customOrAllEngines.find((e) => e.id === id);
+    if (match) return match;
+  }
+  const defaultMatch = DEFAULT_SEARCH_ENGINES.find((e) => e.id === id);
+  if (defaultMatch) return defaultMatch;
+  if (customOrAllEngines && customOrAllEngines.length > 0) {
+    return customOrAllEngines[0]!;
+  }
+  return DEFAULT_SEARCH_ENGINES[0]!;
+}
+
+export interface SearchEngineCandidate {
+  id?: string;
+  name: string;
+  homeUrl: string;
+  searchUrl: string;
+}
+
+/**
+ * Validates a search engine candidate for security and correctness:
+ * - HTTPS scheme required for both home and search URLs
+ * - Query token placeholder (`%s` or `{q}`) required in searchUrl
+ * - Non-empty valid URL with public host (no loopback, private IP, or internal addresses)
+ * - Safe encoding and no control characters or credentials
+ * - Duplicate prevention against existing configured engines
+ */
+export function validateSearchEngine(
+  candidate: SearchEngineCandidate,
+  existingEngines?: readonly SearchEngine[],
+  editingId?: string,
+): { valid: boolean; normalized?: SearchEngine; error?: string } {
+  if (!candidate || typeof candidate !== 'object') {
+    return { valid: false, error: 'Search engine candidate must be an object' };
+  }
+
+  // 1. Validate Name
+  if (typeof candidate.name !== 'string') {
+    return { valid: false, error: 'Name must be a string' };
+  }
+  const trimmedName = candidate.name.trim();
+  if (trimmedName.length === 0) {
+    return { valid: false, error: 'Name cannot be empty' };
+  }
+  if (trimmedName.length > 120) {
+    return { valid: false, error: 'Name exceeds maximum length of 120 characters' };
+  }
+  if (/[\u0000-\u001f\u007f]/.test(trimmedName)) {
+    return { valid: false, error: 'Name contains control characters' };
+  }
+
+  // Duplicate name check
+  if (
+    existingEngines &&
+    existingEngines.some(
+      (e) => e.id !== editingId && e.name.trim().toLowerCase() === trimmedName.toLowerCase(),
+    )
+  ) {
+    return { valid: false, error: 'A search engine with this name already exists' };
+  }
+
+  // 2. Validate Homepage URL
+  if (typeof candidate.homeUrl !== 'string') {
+    return { valid: false, error: 'Homepage URL must be a string' };
+  }
+  const trimmedHome = candidate.homeUrl.trim();
+  if (trimmedHome.length === 0) {
+    return { valid: false, error: 'Homepage URL cannot be empty' };
+  }
+  if (trimmedHome.length > 2048) {
+    return { valid: false, error: 'Homepage URL exceeds maximum length of 2048 characters' };
+  }
+  if (/[\u0000-\u001f\u007f]/.test(trimmedHome)) {
+    return { valid: false, error: 'Homepage URL contains control characters' };
+  }
+  if (!/^https:\/\//i.test(trimmedHome)) {
+    return { valid: false, error: 'Homepage URL must use HTTPS scheme (https://)' };
+  }
+  let parsedHome: URL;
+  try {
+    parsedHome = new URL(trimmedHome);
+  } catch {
+    return { valid: false, error: 'Homepage URL is not a valid URL' };
+  }
+  if (parsedHome.protocol !== 'https:') {
+    return { valid: false, error: 'Homepage URL must use HTTPS scheme' };
+  }
+  if (parsedHome.username || parsedHome.password) {
+    return { valid: false, error: 'URLs with user credentials are not allowed' };
+  }
+  if (!isPublicWebHost(parsedHome.hostname)) {
+    return {
+      valid: false,
+      error: 'Private, internal, or loopback hostnames are not permitted for search engines',
+    };
+  }
+
+  // Duplicate homeUrl check
+  const normalizedHome = parsedHome.toString();
+  if (
+    existingEngines &&
+    existingEngines.some(
+      (e) => e.id !== editingId && e.homeUrl.trim().toLowerCase() === normalizedHome.toLowerCase(),
+    )
+  ) {
+    return { valid: false, error: 'A search engine with this homepage URL already exists' };
+  }
+
+  // 3. Validate Search URL Template
+  if (typeof candidate.searchUrl !== 'string') {
+    return { valid: false, error: 'Search URL must be a string' };
+  }
+  const trimmedSearch = candidate.searchUrl.trim();
+  if (trimmedSearch.length === 0) {
+    return { valid: false, error: 'Search URL cannot be empty' };
+  }
+  if (trimmedSearch.length > 2048) {
+    return { valid: false, error: 'Search URL exceeds maximum length of 2048 characters' };
+  }
+  if (/[\u0000-\u001f\u007f]/.test(trimmedSearch)) {
+    return { valid: false, error: 'Search URL contains control characters' };
+  }
+  const hasQueryToken = trimmedSearch.includes('%s') || trimmedSearch.includes('{q}');
+  if (!hasQueryToken) {
+    return {
+      valid: false,
+      error: 'Search URL template must contain query token %s or {q}',
+    };
+  }
+  if (!/^https:\/\//i.test(trimmedSearch)) {
+    return { valid: false, error: 'Search URL must use HTTPS scheme (https://)' };
+  }
+
+  // Test replacing query token with safe query string
+  const testUrlStr = buildSearchUrl(trimmedSearch, 'workbench-test-query');
+  let parsedSearch: URL;
+  try {
+    parsedSearch = new URL(testUrlStr);
+  } catch {
+    return { valid: false, error: 'Search URL template does not produce a valid URL' };
+  }
+  if (parsedSearch.protocol !== 'https:') {
+    return { valid: false, error: 'Search URL must use HTTPS scheme' };
+  }
+  if (parsedSearch.username || parsedSearch.password) {
+    return { valid: false, error: 'URLs with user credentials are not allowed' };
+  }
+  if (!isPublicWebHost(parsedSearch.hostname)) {
+    return {
+      valid: false,
+      error: 'Private, internal, or loopback hostnames are not permitted for search engines',
+    };
+  }
+
+  // Duplicate searchUrl check
+  if (
+    existingEngines &&
+    existingEngines.some(
+      (e) => e.id !== editingId && e.searchUrl.trim().toLowerCase() === trimmedSearch.toLowerCase(),
+    )
+  ) {
+    return { valid: false, error: 'A search engine with this search URL template already exists' };
+  }
+
+  const id = candidate.id && candidate.id.trim()
+    ? candidate.id.trim()
+    : `custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const isBuiltin = candidate.id ? DEFAULT_SEARCH_ENGINES.some((d) => d.id === candidate.id) : false;
+
+  return {
+    valid: true,
+    normalized: {
+      id,
+      name: trimmedName,
+      homeUrl: normalizedHome,
+      searchUrl: trimmedSearch,
+      isBuiltin,
+    },
+  };
 }
 
 export interface BrowserFavorite {
@@ -88,11 +325,13 @@ export const DEFAULT_BROWSER_FAVORITES: readonly BrowserFavorite[] = [
 export interface BrowserSettings {
   favorites: BrowserFavorite[];
   defaultSearchEngine: SearchEngineId;
+  searchEngines?: SearchEngine[];
 }
 
 export const DEFAULT_BROWSER_SETTINGS: BrowserSettings = {
   favorites: [...DEFAULT_BROWSER_FAVORITES],
   defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
+  searchEngines: [...DEFAULT_SEARCH_ENGINES],
 };
 
 /**
@@ -169,7 +408,7 @@ export function resolveAddressBarInput(
   // If input contains spaces or whitespace, treat it directly as search query
   if (/\s/.test(trimmed)) {
     return {
-      url: `${searchEngine.searchUrl}${encodeURIComponent(trimmed)}`,
+      url: buildSearchUrl(searchEngine.searchUrl, trimmed),
       isSearch: true,
     };
   }
@@ -204,7 +443,7 @@ export function resolveAddressBarInput(
 
   // Fallback to free-text search for single words or unresolvable domain strings
   return {
-    url: `${searchEngine.searchUrl}${encodeURIComponent(trimmed)}`,
+    url: buildSearchUrl(searchEngine.searchUrl, trimmed),
     isSearch: true,
   };
 }
@@ -226,13 +465,40 @@ export function parseBrowserFavorite(value: unknown): BrowserFavorite | null {
   };
 }
 
+export function parseSearchEngine(value: unknown): SearchEngine | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const id = asNonEmptyString(record['id']);
+  const name = asNonEmptyString(record['name']);
+  const homeUrl = asNonEmptyString(record['homeUrl']);
+  const searchUrl = asNonEmptyString(record['searchUrl']);
+  if (!id || !name || !homeUrl || !searchUrl) return null;
+
+  const isBuiltin = record['isBuiltin'] === true || DEFAULT_SEARCH_ENGINES.some((d) => d.id === id);
+
+  // If built-in, allow legacy searchUrl that ends with '=' or query token
+  if (isBuiltin) {
+    return {
+      id,
+      name: name.trim(),
+      homeUrl: homeUrl.trim(),
+      searchUrl: searchUrl.trim(),
+      isBuiltin: true,
+    };
+  }
+
+  const validated = validateSearchEngine({ id, name, homeUrl, searchUrl });
+  if (!validated.valid || !validated.normalized) return null;
+  return validated.normalized;
+}
+
 export function parseBrowserSettings(value: unknown): BrowserSettings | null {
   const record = asRecord(value);
   if (!record) return null;
 
   const rawEngine = record['defaultSearchEngine'];
   const defaultSearchEngine: SearchEngineId =
-    asLiteral(rawEngine, SEARCH_ENGINE_IDS) ?? DEFAULT_SEARCH_ENGINE_ID;
+    typeof rawEngine === 'string' && rawEngine.trim() ? rawEngine.trim() : DEFAULT_SEARCH_ENGINE_ID;
 
   const rawFavorites = record['favorites'];
   let favorites: BrowserFavorite[];
@@ -243,8 +509,21 @@ export function parseBrowserSettings(value: unknown): BrowserSettings | null {
     favorites = [...DEFAULT_BROWSER_FAVORITES];
   }
 
+  const rawEngines = record['searchEngines'];
+  let searchEngines: SearchEngine[];
+  if (Array.isArray(rawEngines)) {
+    const parsed = asArrayFiltered(rawEngines, parseSearchEngine);
+    searchEngines = parsed !== null && parsed.length > 0 ? parsed : [...DEFAULT_SEARCH_ENGINES];
+  } else {
+    searchEngines = [...DEFAULT_SEARCH_ENGINES];
+  }
+
+  const engineExists = searchEngines.some((e) => e.id === defaultSearchEngine);
+  const resolvedDefault = engineExists ? defaultSearchEngine : (searchEngines[0]?.id ?? DEFAULT_SEARCH_ENGINE_ID);
+
   return {
-    defaultSearchEngine,
+    defaultSearchEngine: resolvedDefault,
     favorites,
+    searchEngines,
   };
 }

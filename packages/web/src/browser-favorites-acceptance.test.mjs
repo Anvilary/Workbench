@@ -16,6 +16,9 @@ import {
   parseBrowserSettings,
   validateFaviconUrl,
   selectBestFavicon,
+  validateSearchEngine,
+  buildSearchUrl,
+  DEFAULT_SEARCH_ENGINES,
 } from '@agent-workbench/shared';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -158,6 +161,167 @@ test('parseBrowserSettings: parses versioned settings and restores defaults on c
   assert.notEqual(corrupted, null);
   assert.equal(corrupted.defaultSearchEngine, 'duckduckgo');
   assert.equal(corrupted.favorites.length, 3);
+  assert.equal(corrupted.searchEngines.length, 5);
+
+  // Settings with custom search engines
+  const withCustom = parseBrowserSettings({
+    defaultSearchEngine: 'kagi',
+    favorites: [...DEFAULT_BROWSER_FAVORITES],
+    searchEngines: [
+      ...DEFAULT_SEARCH_ENGINES,
+      {
+        id: 'kagi',
+        name: 'Kagi',
+        homeUrl: 'https://kagi.com',
+        searchUrl: 'https://kagi.com/search?q=%s',
+      },
+    ],
+  });
+  assert.notEqual(withCustom, null);
+  assert.equal(withCustom.defaultSearchEngine, 'kagi');
+  assert.equal(withCustom.searchEngines.length, 6);
+  assert.equal(withCustom.searchEngines[5].name, 'Kagi');
+});
+
+test('validateSearchEngine & buildSearchUrl: security rules, HTTPS scheme, query tokens, and address resolution', () => {
+  // Valid engine with %s
+  const validPercentS = validateSearchEngine({
+    name: 'Kagi',
+    homeUrl: 'https://kagi.com',
+    searchUrl: 'https://kagi.com/search?q=%s',
+  });
+  assert.equal(validPercentS.valid, true);
+  assert.equal(validPercentS.normalized.name, 'Kagi');
+  assert.equal(validPercentS.normalized.searchUrl, 'https://kagi.com/search?q=%s');
+
+  // Valid engine with {q}
+  const validBraceQ = validateSearchEngine({
+    name: 'Startpage',
+    homeUrl: 'https://startpage.com',
+    searchUrl: 'https://startpage.com/sp/search?query={q}',
+  });
+  assert.equal(validBraceQ.valid, true);
+  assert.equal(validBraceQ.normalized.name, 'Startpage');
+
+  // Query construction and safe URL encoding
+  assert.equal(
+    buildSearchUrl('https://kagi.com/search?q=%s', 'c++ algorithms & data structures'),
+    'https://kagi.com/search?q=c%2B%2B%20algorithms%20%26%20data%20structures',
+  );
+  assert.equal(
+    buildSearchUrl('https://startpage.com/sp/search?query={q}&hl=en', 'hello world 2026'),
+    'https://startpage.com/sp/search?query=hello%20world%202026&hl=en',
+  );
+
+  // resolveAddressBarInput respects configured custom search engine
+  const customEngine = validPercentS.normalized;
+  const searchResolution = resolveAddressBarInput('distributed consensus raft', customEngine);
+  assert.equal(searchResolution.isSearch, true);
+  assert.equal(
+    searchResolution.url,
+    'https://kagi.com/search?q=distributed%20consensus%20raft',
+  );
+
+  // Rejection of non-HTTPS schemes
+  assert.equal(
+    validateSearchEngine({
+      name: 'Insecure Home',
+      homeUrl: 'http://insecure.org',
+      searchUrl: 'https://insecure.org/search?q=%s',
+    }).valid,
+    false,
+  );
+  assert.equal(
+    validateSearchEngine({
+      name: 'Insecure Search',
+      homeUrl: 'https://insecure.org',
+      searchUrl: 'http://insecure.org/search?q=%s',
+    }).valid,
+    false,
+  );
+
+  // Rejection of missing query token
+  assert.equal(
+    validateSearchEngine({
+      name: 'Missing Token',
+      homeUrl: 'https://search.org',
+      searchUrl: 'https://search.org/search?query=',
+    }).valid,
+    false,
+  );
+
+  // Rejection of loopback hosts
+  assert.equal(
+    validateSearchEngine({
+      name: 'Localhost',
+      homeUrl: 'https://localhost:8080',
+      searchUrl: 'https://localhost:8080/search?q=%s',
+    }).valid,
+    false,
+  );
+
+  // Rejection of private/internal IP addresses
+  assert.equal(
+    validateSearchEngine({
+      name: 'Internal IP',
+      homeUrl: 'https://192.168.1.1',
+      searchUrl: 'https://192.168.1.1/search?q=%s',
+    }).valid,
+    false,
+  );
+  assert.equal(
+    validateSearchEngine({
+      name: 'Loopback IP',
+      homeUrl: 'https://127.0.0.1',
+      searchUrl: 'https://127.0.0.1/search?q=%s',
+    }).valid,
+    false,
+  );
+
+  // Rejection of internal domain suffixes
+  assert.equal(
+    validateSearchEngine({
+      name: 'Internal Domain',
+      homeUrl: 'https://myserver.lan',
+      searchUrl: 'https://myserver.lan/search?q=%s',
+    }).valid,
+    false,
+  );
+
+  // Rejection of URLs with user credentials
+  assert.equal(
+    validateSearchEngine({
+      name: 'Credentials',
+      homeUrl: 'https://admin:secret@example.com',
+      searchUrl: 'https://example.com/search?q=%s',
+    }).valid,
+    false,
+  );
+
+  // Rejection of duplicate engine names or URLs
+  const existingList = [...DEFAULT_SEARCH_ENGINES];
+  assert.equal(
+    validateSearchEngine(
+      {
+        name: 'google',
+        homeUrl: 'https://newsearch.org',
+        searchUrl: 'https://newsearch.org/search?q=%s',
+      },
+      existingList,
+    ).valid,
+    false,
+  );
+  assert.equal(
+    validateSearchEngine(
+      {
+        name: 'My Search',
+        homeUrl: 'https://www.google.com/',
+        searchUrl: 'https://newsearch.org/search?q=%s',
+      },
+      existingList,
+    ).valid,
+    false,
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -526,6 +690,55 @@ test('Browser Acceptance Suite: Settings, Destination Picker, Favicons, Minimal 
 
     // Capture Settings > Browser screenshot
     await page.screenshot({ path: path.join(screenshotsDir, 'settings-browser-tab.png') });
+
+    // Drag-and-drop handles & keyboard reordering verification
+    const grips = page.locator('.maw-fav-grip');
+    assert.equal(await grips.count(), 4, 'Should display drag handles for all favorites');
+    const firstTitleBefore = await page.locator('.maw-settings-fav-title').first().textContent();
+    assert.equal(firstTitleBefore.trim(), 'ChatGPT');
+
+    // Focus first grip and press ArrowDown to reorder via keyboard accessibility
+    await grips.first().focus();
+    await page.keyboard.press('ArrowDown');
+    await page.waitForTimeout(100);
+
+    const secondTitleAfter = await page.locator('.maw-settings-fav-title').nth(1).textContent();
+    assert.equal(secondTitleAfter.trim(), 'ChatGPT', 'ChatGPT should now be at index 1 after keyboard reordering');
+
+    // =========================================================================
+    // 1B. CUSTOM SEARCH ENGINE MANAGEMENT VERIFICATION
+    // =========================================================================
+    // Add a custom search engine
+    await page.click('.maw-settings-engine-action-btn');
+    await page.fill('.maw-settings-engine-form input[type="text"]', 'Kagi');
+    await page.fill('.maw-settings-engine-form input[type="url"]', 'https://kagi.com');
+    await page.fill('.maw-settings-engine-form .maw-settings-form-field-full input', 'https://kagi.com/search?q=%s');
+    await page.click('.maw-settings-engine-form button[type="submit"]');
+    await page.waitForTimeout(100);
+
+    const updatedRadioCount = await page.locator('input[name="default-search-engine"]').count();
+    assert.equal(updatedRadioCount, 6, 'Should display 6 search engines after adding custom engine');
+
+    // Select custom engine as default
+    await page.locator('input[name="default-search-engine"]').last().check();
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator('input[name="default-search-engine"]').last().isChecked(), true);
+
+    // Edit the custom search engine
+    await page.locator('.maw-settings-engine-edit-btn').last().click();
+    await page.waitForSelector('.maw-settings-engine-form');
+    await page.fill('.maw-settings-engine-form input[type="text"]', 'Kagi Pro');
+    await page.click('.maw-settings-engine-form button[type="submit"]');
+    await page.waitForTimeout(100);
+
+    const editedEngineLabel = await page.locator('.maw-settings-choice-label').last().textContent();
+    assert.equal(editedEngineLabel.trim(), 'Kagi Pro');
+
+    // Remove the custom search engine
+    await page.locator('.maw-settings-engine-delete-btn').last().click();
+    await page.waitForTimeout(100);
+    const finalRadioCount = await page.locator('input[name="default-search-engine"]').count();
+    assert.equal(finalRadioCount, 5, 'Should return to 5 engines after removing custom engine');
 
     // =========================================================================
     // 2. BROWSER DESTINATION PICKER VERIFICATION & SCREENSHOT
