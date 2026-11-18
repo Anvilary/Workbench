@@ -9,6 +9,8 @@ import { AgentRegistry } from '../registry.js';
 import { createCodexAdapter } from '../codex/index.js';
 import { createClaudeCodeAdapter } from '../claude-code/index.js';
 import { createAntigravityAdapter } from '../antigravity/index.js';
+import { createOpenCodeAdapter } from '../opencode/index.js';
+import { createPiAdapter } from '../pi/index.js';
 import { NativeIdentities } from '../../agency/native-identity.js';
 import { defaultDefinitions, isolatedEnvironment } from './definition.js';
 import { resolveConfiguredExecutable } from './executable.js';
@@ -33,6 +35,7 @@ async function fixture() {
 function nativeRegistry() {
   return new AgentRegistry([
     createCodexAdapter(), createClaudeCodeAdapter(), createAntigravityAdapter(),
+    createOpenCodeAdapter(), createPiAdapter(),
   ]);
 }
 
@@ -414,5 +417,87 @@ test('C-1: two profiles with an identical launch plan (same account) are refused
     await assert.rejects(buildAgencyProfileLaunch(f.store, registry, {
       profileId: asId('codex-1'), cwd: await (await import('node:fs/promises')).realpath(f.root), proposedSessionId: UUID1, launchToken: UUID2,
     }), /same native account/);
+  } finally { await f.cleanup(); }
+});
+
+test('profile creation, editing, multiple accounts per provider, and deletion across all providers', async () => {
+  const f = await fixture();
+  try {
+    const registry = nativeRegistry();
+
+    // 1. Create profiles for each supported provider: codex, antigravity, claude-code, opencode, pi
+    const pCodex = await f.store.createProfile({
+      provider: 'codex',
+      label: 'Codex Custom',
+      executable: f.binary,
+      args: ['--account', 'work'],
+      environmentOverrides: { LANG: 'en_US.UTF-8' },
+    });
+    assert.equal(pCodex.provider, 'codex');
+    assert.equal(pCodex.label, 'Codex Custom');
+    assert.deepEqual(pCodex.args, ['--account', 'work']);
+
+    const pOpenCode = await f.store.createProfile({
+      provider: 'opencode',
+      label: 'OpenCode Main',
+      executable: f.binary,
+      args: ['--model', 'local'],
+    });
+    assert.equal(pOpenCode.provider, 'opencode');
+    assert.equal(pOpenCode.label, 'OpenCode Main');
+
+    const pPi = await f.store.createProfile({
+      provider: 'pi',
+      label: 'Pi Agent',
+      executable: f.binary,
+      args: ['--quiet'],
+    });
+    assert.equal(pPi.provider, 'pi');
+    assert.equal(pPi.label, 'Pi Agent');
+
+    // 2. Multiple accounts per provider
+    const pCodex2 = await f.store.createProfile({
+      provider: 'codex',
+      label: 'Codex Secondary',
+      executable: f.binary,
+      args: ['--account', 'personal'],
+    });
+    assert.notEqual(pCodex.id, pCodex2.id);
+
+    // 3. Inspect profiles with native registry
+    const inspectedOpenCode = await inspectAgencyProfile(pOpenCode, registry);
+    assert.equal(inspectedOpenCode.provider, 'opencode');
+    assert.equal(inspectedOpenCode.configurationStatus, 'available');
+    assert.equal(inspectedOpenCode.capabilities.canLaunch, true);
+
+    const inspectedPi = await inspectAgencyProfile(pPi, registry);
+    assert.equal(inspectedPi.provider, 'pi');
+    assert.equal(inspectedPi.configurationStatus, 'available');
+    assert.equal(inspectedPi.capabilities.canLaunch, true);
+
+    // 4. Rename / edit profile
+    const renamed = await f.store.configure(pOpenCode.id, {
+      label: 'OpenCode Renamed',
+      args: ['--model', 'remote'],
+    });
+    assert.equal(renamed.label, 'OpenCode Renamed');
+    assert.deepEqual(renamed.args, ['--model', 'remote']);
+
+    const fetched = await f.store.getDefinition(pOpenCode.id);
+    assert.equal(fetched?.label, 'OpenCode Renamed');
+    assert.deepEqual(fetched?.args, ['--model', 'remote']);
+
+    // 5. Delete profile and ensure persistence across reload
+    await f.store.deleteProfile(pOpenCode.id);
+    assert.equal(await f.store.getDefinition(pOpenCode.id), null);
+
+    const reloaded = new AgencyProfileStore(f.file);
+    assert.equal(await reloaded.getDefinition(pOpenCode.id), null);
+
+    // Built-in profile deletion does not resurrect
+    await f.store.deleteProfile(asId('codex-3'));
+    assert.equal(await f.store.getDefinition(asId('codex-3')), null);
+    const reloaded2 = new AgencyProfileStore(f.file);
+    assert.equal(await reloaded2.getDefinition(asId('codex-3')), null);
   } finally { await f.cleanup(); }
 });

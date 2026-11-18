@@ -66,7 +66,20 @@ export interface AgencyWorkspace {
   archivedAt?: IsoTimestamp | null;
 }
 
-export type CliProvider = 'codex' | 'antigravity' | 'claude-code';
+export type CliProvider = 'codex' | 'antigravity' | 'claude-code' | 'opencode' | 'pi';
+export const CLI_PROVIDERS: readonly CliProvider[] = ['codex', 'antigravity', 'claude-code', 'opencode', 'pi'] as const;
+
+export const PROFILE_ENV_RULES: Readonly<Record<string, RegExp>> = {
+  LANG: /^[A-Za-z0-9_.@-]{1,80}$/,
+  LC_ALL: /^[A-Za-z0-9_.@-]{1,80}$/,
+  LC_CTYPE: /^[A-Za-z0-9_.@-]{1,80}$/,
+  TERM: /^[A-Za-z0-9_.+-]{1,80}$/,
+  COLORTERM: /^(truecolor|24bit)$/,
+  NO_COLOR: /^(|1)$/,
+  FORCE_COLOR: /^[0-3]$/,
+};
+
+export const PROFILE_ALLOWED_ENV_KEYS = Object.keys(PROFILE_ENV_RULES) as readonly string[];
 export type ProfileStatus = 'available' | 'not-installed' | 'needs-authentication' | 'disabled' | 'error';
 export type SessionLifecycle = 'starting' | 'running' | 'stopping' | 'exited' | 'failed';
 export type SessionActivity = 'idle' | 'working' | 'awaiting-user' | 'awaiting-permission' | 'unknown' | 'offline';
@@ -202,6 +215,16 @@ export type AgencyClientMessage =
       environmentOverrides?: Readonly<Record<string, string>>;
       disabled?: boolean;
     })
+  | (AgencyClientRequest<'agency.profile.create'> & {
+      provider: CliProvider;
+      id?: CliProfileId;
+      label?: string;
+      executable: string;
+      args?: readonly string[];
+      environmentOverrides?: Readonly<Record<string, string>>;
+      disabled?: boolean;
+    })
+  | (AgencyClientRequest<'agency.profile.delete'> & { profileId: CliProfileId })
   | (AgencyClientRequest<'agency.profile.capabilities.get'> & { profileId: CliProfileId })
   | (AgencyClientRequest<'agency.sessions.list'> & { workspaceId?: WorkspaceId })
   /** Closed tabs and superseded attempts, newest first; not part of live snapshots. */
@@ -267,6 +290,8 @@ export type AgencyServerMessage =
   | { type: 'agency.workspace.deleted'; requestId: RequestId; workspaceId: WorkspaceId }
   | { type: 'agency.profiles.snapshot'; requestId: RequestId; profiles: readonly AgencyCliProfile[] }
   | { type: 'agency.profile.configured'; requestId: RequestId; profile: AgencyCliProfile }
+  | { type: 'agency.profile.created'; requestId: RequestId; profile: AgencyCliProfile }
+  | { type: 'agency.profile.deleted'; requestId: RequestId; profileId: CliProfileId }
   | { type: 'agency.profile.capabilities'; requestId: RequestId; profileId: CliProfileId; capabilities: AgencyProfileCapabilities }
   /** `workspaceId` is present only when the snapshot is scoped to one workspace (a scoped list request). */
   | { type: 'agency.sessions.snapshot'; requestId: RequestId; sessions: readonly AgencyRuntimeSession[]; workspaceId?: WorkspaceId }
@@ -277,7 +302,7 @@ export type AgencyServerMessage =
   /** Broadcasts are emitted to every authorized connected browser, not only the caller. */
   | { type: 'agency.project.changed'; change: 'created' | 'updated' | 'archived' | 'unarchived' | 'deleted' | 'reordered'; projectId: ProjectId; project?: AgencyProject; projects?: readonly AgencyProject[] }
   | { type: 'agency.workspace.changed'; change: 'created' | 'updated' | 'done' | 'restored' | 'archived' | 'deleted' | 'reordered'; workspaceId: WorkspaceId; workspace?: AgencyWorkspace; workspaces?: readonly AgencyWorkspace[] }
-  | { type: 'agency.profile.changed'; profileId: CliProfileId; profile: AgencyCliProfile }
+  | { type: 'agency.profile.changed'; profileId: CliProfileId; profile?: AgencyCliProfile; change?: 'created' | 'configured' | 'deleted' }
   | { type: 'agency.session.changed'; sessionId: RuntimeSessionId; session: AgencyRuntimeSession }
   | { type: 'agency.session.activity'; sessionId: RuntimeSessionId; workspaceId: WorkspaceId; activity: SessionActivity; lifecycle: SessionLifecycle }
   | NotificationServerMessage
@@ -469,6 +494,52 @@ export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | nu
         result.disabled = raw['disabled'];
       }
       return result;
+    }
+    case 'agency.profile.create': {
+      if (!hasOnlyKeys(raw, ['type', 'requestId', 'provider', 'id', 'label', 'executable', 'args', 'environmentOverrides', 'disabled'])) return null;
+      if (typeof raw['provider'] !== 'string' || !CLI_PROVIDERS.includes(raw['provider'] as CliProvider)) return null;
+      if (typeof raw['executable'] !== 'string' || raw['executable'].length > 4096 || /[\u0000-\u001f\u007f]/.test(raw['executable'])) return null;
+      const result: AgencyClientMessage = {
+        type: 'agency.profile.create',
+        requestId,
+        provider: raw['provider'] as CliProvider,
+        executable: raw['executable'],
+      };
+      if (raw['id'] !== undefined) {
+        if (typeof raw['id'] !== 'string' || raw['id'].trim().length < 1 || raw['id'].length > 64 || /[\u0000-\u001f\u007f]/.test(raw['id'])) return null;
+        result.id = raw['id'].trim() as CliProfileId;
+      }
+      if (raw['label'] !== undefined) {
+        if (typeof raw['label'] !== 'string' || raw['label'].trim().length < 1 || raw['label'].length > 80 || /[\u0000-\u001f\u007f]/.test(raw['label'])) return null;
+        result.label = raw['label'].trim();
+      }
+      if (raw['args'] !== undefined) {
+        if (!Array.isArray(raw['args']) || raw['args'].length > 64) return null;
+        for (const arg of raw['args']) {
+          if (typeof arg !== 'string' || arg.length > 4096 || /[\u0000-\u001f\u007f]/.test(arg)) return null;
+          if (CREDENTIAL_ARG_RE.test(arg)) return null;
+        }
+        result.args = [...raw['args']];
+      }
+      if (raw['environmentOverrides'] !== undefined) {
+        if (!isRecord(raw['environmentOverrides'])) return null;
+        const overrides: Record<string, string> = {};
+        for (const [k, v] of Object.entries(raw['environmentOverrides'])) {
+          if (typeof v !== 'string' || v.length > 1024 || /[\u0000-\u001f\u007f]/.test(k) || /[\u0000-\u001f\u007f]/.test(v)) return null;
+          overrides[k] = v;
+        }
+        result.environmentOverrides = overrides;
+      }
+      if (raw['disabled'] !== undefined) {
+        if (typeof raw['disabled'] !== 'boolean') return null;
+        result.disabled = raw['disabled'];
+      }
+      return result;
+    }
+    case 'agency.profile.delete': {
+      if (!hasOnlyKeys(raw, ['type', 'requestId', 'profileId']) ||
+          typeof raw['profileId'] !== 'string' || raw['profileId'].length < 1 || raw['profileId'].length > 64) return null;
+      return { type: 'agency.profile.delete', requestId, profileId: raw['profileId'] as CliProfileId };
     }
     case 'agency.profile.capabilities.get': {
       if (!hasOnlyKeys(raw, ['type', 'requestId', 'profileId']) ||
@@ -706,6 +777,14 @@ export function parseAgencyServerMessage(raw: unknown): AgencyServerMessage | nu
       if (typeof raw['requestId'] !== 'string' || !isAgencyCliProfile(raw['profile'])) return null;
       return { type: 'agency.profile.configured', requestId: raw['requestId'], profile: raw['profile'] };
     }
+    case 'agency.profile.created': {
+      if (typeof raw['requestId'] !== 'string' || !isAgencyCliProfile(raw['profile'])) return null;
+      return { type: 'agency.profile.created', requestId: raw['requestId'], profile: raw['profile'] };
+    }
+    case 'agency.profile.deleted': {
+      if (typeof raw['requestId'] !== 'string' || typeof raw['profileId'] !== 'string') return null;
+      return { type: 'agency.profile.deleted', requestId: raw['requestId'], profileId: raw['profileId'] as CliProfileId };
+    }
     case 'agency.profile.capabilities': {
       if (typeof raw['requestId'] !== 'string' || typeof raw['profileId'] !== 'string' || !isRecord(raw['capabilities'])) return null;
       return {
@@ -764,8 +843,17 @@ export function parseAgencyServerMessage(raw: unknown): AgencyServerMessage | nu
       };
     }
     case 'agency.profile.changed': {
-      if (typeof raw['profileId'] !== 'string' || !isAgencyCliProfile(raw['profile'])) return null;
-      return { type: 'agency.profile.changed', profileId: raw['profileId'] as CliProfileId, profile: raw['profile'] };
+      if (typeof raw['profileId'] !== 'string') return null;
+      if (raw['profile'] !== undefined && !isAgencyCliProfile(raw['profile'])) return null;
+      const change = typeof raw['change'] === 'string' && ['created', 'configured', 'deleted'].includes(raw['change'])
+        ? raw['change'] as 'created' | 'configured' | 'deleted'
+        : undefined;
+      return {
+        type: 'agency.profile.changed',
+        profileId: raw['profileId'] as CliProfileId,
+        ...(raw['profile'] !== undefined ? { profile: raw['profile'] } : {}),
+        ...(change !== undefined ? { change } : {}),
+      };
     }
     case 'agency.session.changed': {
       if (!isValidId(raw['sessionId']) || !isAgencyRuntimeSession(raw['session'])) return null;

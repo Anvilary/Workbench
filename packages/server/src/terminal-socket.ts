@@ -3821,8 +3821,43 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
             const { type: _, requestId, profileId, ...changes } = message;
             const def = await agencyProfileStore.configure(profileId, changes);
             const profile = await inspectAgencyProfile(def, agents, { identities: options.agencyIdentities });
-            broadcast({ type: 'agency.profile.changed', profileId: profile.id, profile });
+            broadcast({ type: 'agency.profile.changed', profileId: profile.id, profile, change: 'configured' });
             send(socket, { type: 'agency.profile.configured', requestId: message.requestId, profile });
+          } catch (error) {
+            send(socket, {
+              type: 'agency.error',
+              requestId: message.requestId,
+              code: 'invalid-request',
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+          break;
+        }
+
+        case 'agency.profile.create': {
+          try {
+            const { type: _, requestId, ...input } = message;
+            const def = await agencyProfileStore.createProfile(input);
+            const profile = await inspectAgencyProfile(def, agents, { identities: options.agencyIdentities });
+            broadcast({ type: 'agency.profile.changed', profileId: profile.id, profile, change: 'created' });
+            send(socket, { type: 'agency.profile.created', requestId: message.requestId, profile });
+          } catch (error) {
+            send(socket, {
+              type: 'agency.error',
+              requestId: message.requestId,
+              code: 'invalid-request',
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+          break;
+        }
+
+        case 'agency.profile.delete': {
+          try {
+            const { profileId } = message;
+            await agencyProfileStore.deleteProfile(profileId);
+            broadcast({ type: 'agency.profile.changed', profileId, change: 'deleted' });
+            send(socket, { type: 'agency.profile.deleted', requestId: message.requestId, profileId });
           } catch (error) {
             send(socket, {
               type: 'agency.error',

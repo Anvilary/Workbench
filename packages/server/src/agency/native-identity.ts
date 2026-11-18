@@ -68,7 +68,7 @@ export class NativeIdentities {
     }
     const bindings: Binding[] = [];
     for (const row of raw.identities) {
-      if (!record(row) || typeof row.profileId !== 'string' || !(raw.version === 1 ? row.provider === 'codex' : ['codex', 'antigravity', 'claude-code'].includes(row.provider as string)) ||
+      if (!record(row) || typeof row.profileId !== 'string' || !(raw.version === 1 ? row.provider === 'codex' : ['codex', 'antigravity', 'claude-code', 'opencode', 'pi'].includes(row.provider as string)) ||
           typeof row.executable !== 'string' || !Array.isArray(row.args) ||
           !row.args.every((arg) => typeof arg === 'string') || !record(row.environmentOverrides) ||
           !Object.values(row.environmentOverrides).every((value) => typeof value === 'string') ||
