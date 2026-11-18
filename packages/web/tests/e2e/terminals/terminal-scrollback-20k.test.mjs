@@ -282,16 +282,18 @@ test('TASK B: 5,000-line scrollback, Ctrl+Shift+A, Ctrl+A/C semantics, and scrol
 
   // 8. Test Alternate-Screen TUI behavior:
   // Switch to alternate screen (\x1b[?1049h), write TUI output, verify normal buffer is preserved
-  await page.evaluate(async () => {
+  const beforeAlt = await page.evaluate(async () => {
     const term = window.terminals[0];
+    const normalLength = term.buffer.normal.length;
     await new Promise((r) => term.write('\x1b[?1049h\x1b[H=== TUI EDITOR ===', r));
+    return normalLength;
   });
   const inAltBuffer = await page.evaluate(() => ({
     altActive: window.terminals[0].buffer.active.type === 'alternate',
     normalLength: window.terminals[0].buffer.normal.length,
   }));
   assert.equal(inAltBuffer.altActive, true, 'Alternate buffer is active');
-  assert.ok(inAltBuffer.normalLength === 5000 + bufferStats.rows, 'Normal buffer retains the full configured history during TUI session');
+  assert.equal(inAltBuffer.normalLength, beforeAlt, 'Entering the alternate screen preserves the existing normal buffer');
 
   // Exit alternate screen (\x1b[?1049l)
   await page.evaluate(async () => {

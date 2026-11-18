@@ -7,8 +7,8 @@
   "scripts": {
     "build": "vite build",
     "test:unit": "tsx --test \"tests/unit/**/*.test.{mjs,ts}\"",
-    "test:integration": "tsx --test \"tests/integration/**/*.test.mjs\"",
-    "test:e2e": "tsx --test tests/e2e/browser/*.test.mjs tests/e2e/panes/*.test.mjs tests/e2e/settings/*.test.mjs tests/e2e/terminals/*.test.mjs tests/e2e/workspaces/*.test.mjs",
+    "test:integration": "tsx --test --test-concurrency=2 \"tests/integration/**/*.test.mjs\"",
+    "test:e2e": "tsx --test --test-concurrency=2 \"tests/e2e/**/*.test.mjs\"",
     "test": "pnpm test:unit && pnpm test:integration && pnpm test:e2e",
     "typecheck": "tsc -p tsconfig.json"
   },

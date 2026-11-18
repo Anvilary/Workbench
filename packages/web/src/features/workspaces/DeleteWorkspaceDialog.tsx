@@ -34,7 +34,7 @@ export function DeleteWorkspaceDialog({
     (s) => s.kind === 'terminal' && (s.lifecycle === 'running' || s.lifecycle === 'starting'),
   ).length;
   const stoppingSessions = wsSessions.filter((s) => s.lifecycle === 'stopping').length;
-  const chatGptTabs = webTabs.filter((tab) => tab.workspaceId === workspace.id && !tab.closedAt).length;
+  const browserTabs = webTabs.filter((tab) => tab.workspaceId === workspace.id && !tab.closedAt).length;
   const openEditorTabs = editorTabs.filter((tab) => tab.workspaceId === workspace.id && !tab.closedAt);
   const dirtyIds = new Set(editorDraftStore.listDirtyTabIds());
   const dirtyEditorTabs = openEditorTabs.filter((tab) => dirtyIds.has(tab.id)).length;
@@ -42,7 +42,7 @@ export function DeleteWorkspaceDialog({
     (s) => s.lifecycle === 'exited' && s.tab?.current && !s.tab.closedAt,
   ).length;
 
-  const totalActive = runningClis + runningTerminals + stoppingSessions + chatGptTabs + openEditorTabs.length;
+  const totalActive = runningClis + runningTerminals + stoppingSessions + browserTabs + openEditorTabs.length;
   const totalResources = totalActive + exitedTabs;
 
   async function handleDelete() {
@@ -104,7 +104,7 @@ export function DeleteWorkspaceDialog({
             {runningClis > 0 && <li>{t('agency.ui.deleteResourcesActiveClis', { count: runningClis })}</li>}
             {runningTerminals > 0 && <li>{t('agency.ui.deleteResourcesActiveTerminals', { count: runningTerminals })}</li>}
             {stoppingSessions > 0 && <li>{t('agency.ui.deleteResourcesUnresolvedSessions', { count: stoppingSessions })}</li>}
-            {chatGptTabs > 0 && <li>{t('agency.ui.deleteResourcesChatGptTabs', { count: chatGptTabs })}</li>}
+            {browserTabs > 0 && <li>{t('agency.ui.deleteResourcesBrowserTabs', { count: browserTabs })}</li>}
             {openEditorTabs.length > 0 && (
               <li>
                 {t('agency.ui.deleteResourcesEditorTabs', { count: openEditorTabs.length })}

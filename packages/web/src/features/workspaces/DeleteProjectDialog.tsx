@@ -126,7 +126,7 @@ export function DeleteProjectDialog({
             {runningClis > 0 && <li>{t('agency.ui.deleteResourcesActiveClis', { count: runningClis })}</li>}
             {runningTerminals > 0 && <li>{t('agency.ui.deleteResourcesActiveTerminals', { count: runningTerminals })}</li>}
             {stoppingSessions > 0 && <li>{t('agency.ui.deleteResourcesUnresolvedSessions', { count: stoppingSessions })}</li>}
-            {browserTabs > 0 && <li>{t('agency.ui.deleteResourcesChatGptTabs', { count: browserTabs })}</li>}
+            {browserTabs > 0 && <li>{t('agency.ui.deleteResourcesBrowserTabs', { count: browserTabs })}</li>}
             {openEditors.length > 0 && (
               <li>
                 {t('agency.ui.deleteResourcesEditorTabs', { count: openEditors.length })}

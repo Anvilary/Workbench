@@ -339,7 +339,7 @@ function PaneLeaf(props: Props & {
                     <li>{t('agency.ui.deleteResourcesActiveTerminals', { count: activeTerminalsCount })}</li>
                   )}
                   {browserTabsCount > 0 && (
-                    <li>{t('agency.ui.deleteResourcesChatGptTabs', { count: browserTabsCount })}</li>
+                    <li>{t('agency.ui.deleteResourcesBrowserTabs', { count: browserTabsCount })}</li>
                   )}
                   {editorTabsInPane.length > 0 && (
                     <li>
