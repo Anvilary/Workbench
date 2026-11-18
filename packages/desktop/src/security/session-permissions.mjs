@@ -4,6 +4,10 @@ import {
   perplexityUrl as defaultPerplexityUrl,
 } from '../../policy.mjs';
 
+const CHAT_ALLOWED_ORIGINS = ['https://chatgpt.com', 'https://chat.openai.com'];
+const GITHUB_ALLOWED_ORIGINS = ['https://github.com'];
+const PERPLEXITY_ALLOWED_ORIGINS = ['https://www.perplexity.ai', 'https://perplexity.ai'];
+
 function isInteractivePermission(permission) {
   return permission === 'fullscreen' || permission === 'pointerLock' || permission === 'speaker-selection';
 }
@@ -20,6 +24,100 @@ function sameOriginMatch(contents, requestingUrl, allowedOrigins) {
 }
 
 /**
+ * Configures strict permission handlers (and local-network webRequest filtering
+ * for general browser partitions) for a single Electron provider session.
+ */
+export function configureProviderSessionPermissions({
+  provider,
+  session,
+  otherUrl = defaultOtherUrl,
+  authenticationUrl = defaultAuthenticationUrl,
+}) {
+  if (!session) return;
+
+  if (provider === 'other') {
+    session.setPermissionRequestHandler((_contents, permission, callback) => {
+      callback(isInteractivePermission(permission) || permission === 'clipboard-sanitized-write');
+    });
+    session.setPermissionCheckHandler((_contents, permission) => {
+      return (
+        isInteractivePermission(permission) ||
+        permission === 'automatic-fullscreen' ||
+        permission === 'clipboard-sanitized-write'
+      );
+    });
+    session.webRequest.onBeforeRequest((details, callback) => {
+      // Block direct local-network URLs, including subframes and fetches, in general web pages.
+      const network = /^(https?|wss?):/.test(details.url);
+      const checked = details.url.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
+      callback({
+        cancel:
+          network &&
+          !otherUrl(checked, 8192) &&
+          !(details.url.startsWith('https:') && authenticationUrl(details.url)),
+      });
+    });
+    return;
+  }
+
+  if (provider === 'chatgpt') {
+    // Permit clipboard writing and audio-only media only from official ChatGPT origins.
+    // Clipboard reading and all unrelated permissions remain denied.
+    const canWriteChatClipboard = (contents, requestingUrl) =>
+      sameOriginMatch(contents, requestingUrl, CHAT_ALLOWED_ORIGINS);
+
+    session.setPermissionRequestHandler((contents, permission, callback, details) => {
+      if (permission === 'media' && details?.mediaTypes?.includes('audio') && !details?.mediaTypes?.includes('video')) {
+        if (sameOriginMatch(contents, details?.requestingUrl, CHAT_ALLOWED_ORIGINS)) {
+          callback(true);
+          return;
+        }
+      }
+      callback(
+        isInteractivePermission(permission) ||
+          (permission === 'clipboard-sanitized-write' && canWriteChatClipboard(contents, details?.requestingUrl)),
+      );
+    });
+
+    session.setPermissionCheckHandler((contents, permission, requestingOrigin) => {
+      if (permission === 'media') {
+        return sameOriginMatch(contents, requestingOrigin, CHAT_ALLOWED_ORIGINS);
+      }
+      return (
+        isInteractivePermission(permission) ||
+        permission === 'automatic-fullscreen' ||
+        (permission === 'clipboard-sanitized-write' && canWriteChatClipboard(contents, requestingOrigin))
+      );
+    });
+    return;
+  }
+
+  const allowedClipboardOrigins = provider === 'github'
+    ? GITHUB_ALLOWED_ORIGINS
+    : provider === 'perplexity'
+      ? PERPLEXITY_ALLOWED_ORIGINS
+      : null;
+
+  if (!allowedClipboardOrigins) return;
+
+  const canWriteClipboard = (contents, requestingUrl) =>
+    sameOriginMatch(contents, requestingUrl, allowedClipboardOrigins);
+
+  session.setPermissionRequestHandler((contents, permission, callback, details) => {
+    callback(
+      isInteractivePermission(permission) ||
+        (permission === 'clipboard-sanitized-write' && canWriteClipboard(contents, details?.requestingUrl)),
+    );
+  });
+  session.setPermissionCheckHandler(
+    (contents, permission, requestingOrigin) =>
+      isInteractivePermission(permission) ||
+      permission === 'automatic-fullscreen' ||
+      (permission === 'clipboard-sanitized-write' && canWriteClipboard(contents, requestingOrigin)),
+  );
+}
+
+/**
  * Configures strict per-partition permission handlers and local-network webRequest
  * filtering across the isolated Electron browser sessions.
  */
@@ -31,88 +129,10 @@ export function configureBrowserSessionPermissions({
   otherUrl = defaultOtherUrl,
   authenticationUrl = defaultAuthenticationUrl,
 }) {
-  browserSession.setPermissionRequestHandler((_contents, permission, callback) => {
-    callback(isInteractivePermission(permission) || permission === 'clipboard-sanitized-write');
-  });
-  browserSession.setPermissionCheckHandler((_contents, permission) => {
-    return (
-      isInteractivePermission(permission) ||
-      permission === 'automatic-fullscreen' ||
-      permission === 'clipboard-sanitized-write'
-    );
-  });
-  browserSession.webRequest.onBeforeRequest((details, callback) => {
-    // Block direct local-network URLs, including subframes and fetches, in general web pages.
-    const network = /^(https?|wss?):/.test(details.url);
-    const checked = details.url.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
-    callback({
-      cancel:
-        network &&
-        !otherUrl(checked, 8192) &&
-        !(details.url.startsWith('https:') && authenticationUrl(details.url)),
-    });
-  });
-
-  // Permit clipboard writing only from the official ChatGPT origin.
-  // Clipboard reading and all unrelated permissions remain denied.
-  const canWriteChatClipboard = (contents, requestingUrl) =>
-    sameOriginMatch(contents, requestingUrl, ['https://chatgpt.com']);
-
-  chatSession.setPermissionRequestHandler((contents, permission, callback, details) => {
-    if (permission === 'media' && details?.mediaTypes?.includes('audio') && !details?.mediaTypes?.includes('video')) {
-      if (sameOriginMatch(contents, details?.requestingUrl, ['https://chatgpt.com'])) {
-        callback(true);
-        return;
-      }
-    }
-    callback(
-      isInteractivePermission(permission) ||
-        (permission === 'clipboard-sanitized-write' && canWriteChatClipboard(contents, details?.requestingUrl)),
-    );
-  });
-
-  chatSession.setPermissionCheckHandler((contents, permission, requestingOrigin) => {
-    if (permission === 'media') {
-      return sameOriginMatch(contents, requestingOrigin, ['https://chatgpt.com']);
-    }
-    return (
-      isInteractivePermission(permission) ||
-      permission === 'automatic-fullscreen' ||
-      (permission === 'clipboard-sanitized-write' && canWriteChatClipboard(contents, requestingOrigin))
-    );
-  });
-
-  const canWriteGithubClipboard = (contents, requestingUrl) =>
-    sameOriginMatch(contents, requestingUrl, ['https://github.com']);
-
-  githubSession.setPermissionRequestHandler((contents, permission, callback, details) => {
-    callback(
-      isInteractivePermission(permission) ||
-        (permission === 'clipboard-sanitized-write' && canWriteGithubClipboard(contents, details?.requestingUrl)),
-    );
-  });
-  githubSession.setPermissionCheckHandler(
-    (contents, permission, requestingOrigin) =>
-      isInteractivePermission(permission) ||
-      permission === 'automatic-fullscreen' ||
-      (permission === 'clipboard-sanitized-write' && canWriteGithubClipboard(contents, requestingOrigin)),
-  );
-
-  const canWritePerplexityClipboard = (contents, requestingUrl) =>
-    sameOriginMatch(contents, requestingUrl, ['https://www.perplexity.ai', 'https://perplexity.ai']);
-
-  perplexitySession.setPermissionRequestHandler((contents, permission, callback, details) => {
-    callback(
-      isInteractivePermission(permission) ||
-        (permission === 'clipboard-sanitized-write' && canWritePerplexityClipboard(contents, details?.requestingUrl)),
-    );
-  });
-  perplexitySession.setPermissionCheckHandler(
-    (contents, permission, requestingOrigin) =>
-      isInteractivePermission(permission) ||
-      permission === 'automatic-fullscreen' ||
-      (permission === 'clipboard-sanitized-write' && canWritePerplexityClipboard(contents, requestingOrigin)),
-  );
+  configureProviderSessionPermissions({ provider: 'other', session: browserSession, otherUrl, authenticationUrl });
+  configureProviderSessionPermissions({ provider: 'chatgpt', session: chatSession, otherUrl, authenticationUrl });
+  configureProviderSessionPermissions({ provider: 'github', session: githubSession, otherUrl, authenticationUrl });
+  configureProviderSessionPermissions({ provider: 'perplexity', session: perplexitySession, otherUrl, authenticationUrl });
 }
 
 function hasSensitiveParamsOrAuthPath(url, checkAuthPath = true) {
@@ -151,7 +171,7 @@ export function isDurableProviderPage(
   }
   try {
     const url = new URL(value);
-    return url.origin === 'https://chatgpt.com' && !hasSensitiveParamsOrAuthPath(url, true);
+    return CHAT_ALLOWED_ORIGINS.includes(url.origin) && !hasSensitiveParamsOrAuthPath(url, true);
   } catch {
     return false;
   }

@@ -120,7 +120,14 @@ const injectScript = `
     if (!options || !options.publicKey) {
       return originalCreate(options);
     }
-    // Creation can be passed through to original or handled if creation is requested
+    const res = await window.__mawWebAuthn.create({
+      rpId: options.publicKey.rp?.id || window.location.hostname,
+    });
+    if (!res || !res.success) {
+      const errName = res?.error?.name || 'NotSupportedError';
+      const errMsg = res?.error?.message || 'Security key registration (credentials.create) is not supported in this desktop session.';
+      throw new DOMException(errMsg, errName);
+    }
     return originalCreate(options);
   };
 })();

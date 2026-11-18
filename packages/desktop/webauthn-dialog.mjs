@@ -5,6 +5,7 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isValidWebAuthnPin } from './webauthn-policy.mjs';
 import crypto from 'node:crypto';
 import { calculatePinDialogPosition } from './webauthn-dialog-position.mjs';
 
@@ -81,7 +82,8 @@ export function requestPinDialog({
       settled = true;
       cleanup();
       try { win.close(); } catch {}
-      resolve(payload.pin);
+      if (isValidWebAuthnPin(payload.pin)) resolve(payload.pin);
+      else reject(new Error('NotAllowedError: Invalid security key PIN input'));
     };
 
     const onCancel = (event, payload) => {

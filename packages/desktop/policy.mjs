@@ -4,9 +4,21 @@ export const PARTITION = 'persist:maw-chatgpt';
 export const GITHUB_PARTITION = 'persist:maw-github';
 export const PERPLEXITY_PARTITION = 'persist:maw-perplexity';
 export const BROWSER_PARTITION = 'persist:maw-browser';
+export const DEFAULT_BROWSER_PROFILE_ID = 'main';
+const BROWSER_PROFILE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const BROWSER_PROFILE_SITES = new Set(['chatgpt', 'github', 'perplexity', 'browser']);
 export const CHANNEL = 'maw:chatgpt';
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const authHosts = new Set(['auth.openai.com', 'auth0.openai.com', 'accounts.google.com', 'appleid.apple.com', 'login.microsoftonline.com', 'login.live.com']);
+const authHosts = new Set([
+  'auth.openai.com',
+  'auth0.openai.com',
+  'accounts.google.com',
+  'appleid.apple.com',
+  'login.microsoftonline.com',
+  'login.live.com',
+  'login.microsoft.com',
+  'challenges.cloudflare.com',
+]);
 const fileDeliveryHosts = new Set(['files.oaiusercontent.com', 'oaistatic.com']);
 
 function httpsUrl(value, maxLength = 8192) {
@@ -288,18 +300,55 @@ function boundsOverlap(r1, r2) {
   return !(r1.x + r1.width <= r2.x || r2.x + r2.width <= r1.x || r1.y + r1.height <= r2.y || r2.y + r2.height <= r1.y);
 }
 
+export function isValidBrowserProfileId(value) {
+  return typeof value === 'string' && (value === DEFAULT_BROWSER_PROFILE_ID || BROWSER_PROFILE_ID_RE.test(value));
+}
+
+export function partitionForBrowserProfile(profileId, provider = 'chatgpt') {
+  const effective = isValidBrowserProfileId(profileId) ? profileId : DEFAULT_BROWSER_PROFILE_ID;
+  const suffix = provider === 'github' || provider === 'perplexity' ? provider : provider === 'other' ? 'browser' : 'chatgpt';
+  if (effective === DEFAULT_BROWSER_PROFILE_ID) {
+    return `persist:maw-${suffix}`;
+  }
+  return `persist:maw-profile-${effective}-${suffix}`;
+}
+
 export function validCommand(value) {
   if (!record(value)) return false;
   if (value.type === 'retain') return exact(value, ['type', 'ids']) && Array.isArray(value.ids) && value.ids.length <= 4096 && value.ids.every(id => typeof id === 'string' && UUID.test(id));
   if (value.type === 'open' || value.type === 'update') {
     if (!(typeof value.id === 'string' && UUID.test(value.id))) return false;
-    if (exact(value, ['type', 'id', 'url'])) return chatUrl(value.url);
-    if (!exact(value, ['type', 'id', 'url', 'provider'])) return false;
+    const hasProfile = 'profileId' in value;
+    if (hasProfile && !isValidBrowserProfileId(value.profileId)) return false;
+    const baseKeys = value.provider !== undefined ? ['type', 'id', 'url', 'provider'] : ['type', 'id', 'url'];
+    const expectedKeys = hasProfile ? [...baseKeys, 'profileId'] : baseKeys;
+    if (!exact(value, expectedKeys)) return false;
+    if (value.provider === undefined) return chatUrl(value.url);
     if (value.provider === 'chatgpt') return chatUrl(value.url);
     if (value.provider === 'github') return githubUrl(value.url);
     if (value.provider === 'perplexity') return perplexityUrl(value.url);
     if (value.provider === 'other') return otherUrl(value.url);
     return false;
+  }
+  if (value.type === 'clone-profile') {
+    const hasClearSites = 'clearSites' in value;
+    const expectedKeys = hasClearSites
+      ? ['type', 'sourceProfileId', 'targetProfileId', 'clearSites']
+      : ['type', 'sourceProfileId', 'targetProfileId'];
+    if (!exact(value, expectedKeys)) return false;
+    if (!isValidBrowserProfileId(value.sourceProfileId)) return false;
+    if (!isValidBrowserProfileId(value.targetProfileId)) return false;
+    if (value.targetProfileId === DEFAULT_BROWSER_PROFILE_ID) return false;
+    if (value.targetProfileId === value.sourceProfileId) return false;
+    if (hasClearSites) {
+      if (!Array.isArray(value.clearSites) || value.clearSites.length > 16) return false;
+      if (!value.clearSites.every(site => typeof site === 'string' && BROWSER_PROFILE_SITES.has(site))) return false;
+    }
+    return true;
+  }
+  if (value.type === 'clear-profile-site-auth') {
+    if (!exact(value, ['type', 'profileId', 'site'])) return false;
+    return isValidBrowserProfileId(value.profileId) && typeof value.site === 'string' && BROWSER_PROFILE_SITES.has(value.site);
   }
   if (value.type === 'browser-action') {
     const actions = ['back', 'forward', 'reload', 'copy-url', 'copy-selection', 'open-page', 'zoom-in', 'zoom-out', 'zoom-reset'];

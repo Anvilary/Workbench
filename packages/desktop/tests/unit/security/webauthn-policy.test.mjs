@@ -65,6 +65,7 @@ test('isValidRpId enforces W3C WebAuthn rpId constraints against origin', () => 
 
   // Rejections: top-level domain alone (e.g. .com)
   assert.equal(isValidRpId('com', 'https://openai.com'), false);
+  assert.equal(isValidRpId('co.uk', 'https://login.example.co.uk'), false);
 });
 
 test('generateClientData produces canonical WebAuthn JSON and SHA-256 hash', () => {
