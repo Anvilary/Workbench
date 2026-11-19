@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { execSync, spawn } from 'node:child_process';
+import { execFileSync, execSync, spawn } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { _electron as electron } from 'playwright';
 import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 
@@ -18,7 +19,7 @@ const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
 
 const hasRequiredDesktopTools = (() => {
   try {
-    execSync('which nautilus && which xdotool && which xwininfo', { stdio: 'ignore' });
+    execSync('which nautilus && which xdotool && which xwininfo && which xclip', { stdio: 'ignore' });
     return true;
   } catch {
     return false;
@@ -31,7 +32,7 @@ test('authoritative workspace copy-file rejects unauthorized paths and pastes in
     return;
   }
   if (!hasRequiredDesktopTools) {
-    t.skip('Nautilus, xdotool or xwininfo not available');
+    t.skip('Nautilus, xdotool, xwininfo or xclip not available');
     return;
   }
 
@@ -106,20 +107,7 @@ test('authoritative workspace copy-file rejects unauthorized paths and pastes in
     );
     assert.equal(traversalRes?.ok, false, 'Path traversal must be rejected');
 
-    // 3. Verify copy-file from authoritative workspace root succeeds
-    const copyRes = await page.evaluate(
-      async ({ ws, rel }) => {
-        return await window.mawChatGpt.command({
-          type: 'copy-file',
-          cwd: ws,
-          relative: rel,
-        });
-      },
-      { ws: workspaceDir, rel: sampleFileName },
-    );
-    assert.equal(copyRes?.ok, true, 'Copy-file on authoritative file must succeed');
-
-    // 4. Launch real Nautilus file manager in destDir using GDK_BACKEND=x11
+    // Launch Nautilus before handing it the clipboard.
     nautilusProc = spawn('nautilus', ['--new-window', destDir], {
       env: {
         ...process.env,
@@ -160,10 +148,21 @@ test('authoritative workspace copy-file rejects unauthorized paths and pastes in
     }
     assert.ok(wid, 'Expected visible Nautilus window to be found');
 
-    // Focus visible Nautilus window and simulate Ctrl+V paste
-    execSync(`xdotool windowfocus --sync ${wid}`, { env: process.env });
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    execSync(`xdotool key --window ${wid} ctrl+v`, { env: process.env });
+    const copyRes = await page.evaluate(
+      ({ ws, rel }) => window.mawChatGpt.command({ type: 'copy-file', cwd: ws, relative: rel }),
+      { ws: workspaceDir, rel: sampleFileName },
+    );
+    assert.equal(copyRes?.ok, true, 'Copy-file on authoritative file must succeed');
+    const offered = execFileSync('xclip', ['-o', '-selection', 'clipboard', '-t', 'x-special/gnome-copied-files'], {
+      encoding: 'utf8',
+      timeout: 3000,
+    });
+    assert.equal(offered, `copy\n${pathToFileURL(path.join(workspaceDir, sampleFileName)).href}`);
+
+    execFileSync('xdotool', ['windowfocus', '--sync', wid], { timeout: 3000 });
+    assert.equal(execFileSync('xdotool', ['getwindowfocus'], { encoding: 'utf8' }).trim(), wid);
+    // XTEST delivers the accelerator to the focused Nautilus window.
+    execFileSync('xdotool', ['key', '--clearmodifiers', 'ctrl+v'], { timeout: 3000 });
 
     // Poll for destination file to be created by Nautilus
     const pastedFilePath = path.join(destDir, sampleFileName);
