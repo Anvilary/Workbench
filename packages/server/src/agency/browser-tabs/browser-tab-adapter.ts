@@ -97,17 +97,25 @@ export class BrowserTabAdapter {
     if (!tab || tab.workspaceId !== workspaceId || tab.closedAt) throw new BrowserTabStoreError('not-found', 'Open tab does not belong to this workspace');
     return tab;
   }
-  private async change<T>(workspaceId: WorkspaceId, action: () => T | Promise<T>, options?: { allowInactiveWorkspace?: boolean }): Promise<T> {
+  private async change<T>(
+    workspaceId: WorkspaceId,
+    action: (markSelected: () => void) => T | Promise<T>,
+    options?: { allowInactiveWorkspace?: boolean },
+  ): Promise<T> {
     // The browser-tab store persists a complete cross-workspace snapshot.
     // Serialize mutations globally so another workspace cannot commit a change
     // that a concurrent, failing transaction must roll back.
-    return this.mutations.runExclusive('all-browser-tabs', async () => {
+    // Cross-adapter selection clearing runs AFTER releasing 'all-browser-tabs'
+    // so lock acquisition never forms an AB-BA cycle with EditorTabAdapter's
+    // 'all-editor-tabs' mutex (strict order: coordinator -> editor -> browser).
+    let didSelect = false;
+    const result = await this.mutations.runExclusive('all-browser-tabs', async () => {
       await this.assertWorkspaceValid(workspaceId, options);
       const before = this.listTabs(workspaceId, { includeClosed: true });
       try {
-        const result = await action();
+        const res = await action(() => { didSelect = true; });
         await this.store.save([...this.tabs.values()]);
-        return result;
+        return res;
       } catch (error) {
         // Restore only this workspace: concurrent mutations elsewhere remain intact.
         for (const tab of this.tabs.values()) if (tab.workspaceId === workspaceId) this.tabs.delete(tab.id);
@@ -115,16 +123,20 @@ export class BrowserTabAdapter {
         throw error;
       }
     });
+    if (didSelect) {
+      await this.selectionCoordinator?.unselectNativeTabs?.(workspaceId);
+    }
+    return result;
   }
-  private async select(workspaceId: WorkspaceId, id: string): Promise<void> {
+  private select(workspaceId: WorkspaceId, id: string, markSelected: () => void): void {
     const now = new Date().toISOString();
     for (const tab of this.tabs.values()) if (tab.workspaceId === workspaceId && !tab.closedAt && tab.selected !== (tab.id === id)) {
       tab.selected = tab.id === id; tab.updatedAt = now;
     }
-    await this.selectionCoordinator?.unselectNativeTabs?.(workspaceId);
+    markSelected();
   }
   async createTab(input: CreateWebTabInput): Promise<WebTab> {
-    return this.change(input.workspaceId, async () => {
+    return this.change(input.workspaceId, async (markSelected) => {
       if (input.launchId) {
         const existing = this.listTabs(input.workspaceId, { includeClosed: true }).find(tab => tab.launchId === input.launchId);
         if (existing) return existing;
@@ -139,12 +151,12 @@ export class BrowserTabAdapter {
         order: input.order !== undefined && Number.isSafeInteger(input.order) && input.order >= 0 ? input.order : Math.max(-1, ...this.listTabs(input.workspaceId).map(tab => tab.order)) + 1,
         selected: input.select !== false, closedAt: null, createdAt: now, updatedAt: now, runtimeState: 'client-managed', targetRef: null, cleanupRequired: false, launchId: input.launchId };
       this.tabs.set(tab.id, tab);
-      if (tab.selected) await this.select(input.workspaceId, tab.id);
+      if (tab.selected) this.select(input.workspaceId, tab.id, markSelected);
       return { ...tab };
     });
   }
   async selectTab(workspaceId: WorkspaceId, tabId: string): Promise<WebTab> {
-    return this.change(workspaceId, async () => { const tab = this.tab(workspaceId, tabId); await this.select(workspaceId, tabId); return { ...tab }; });
+    return this.change(workspaceId, (markSelected) => { const tab = this.tab(workspaceId, tabId); this.select(workspaceId, tabId, markSelected); return { ...tab }; });
   }
   async navigateTab(workspaceId: WorkspaceId, tabId: string, url: string): Promise<WebTab> {
     return this.change(workspaceId, () => {

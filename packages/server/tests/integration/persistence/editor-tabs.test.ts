@@ -804,3 +804,104 @@ test('P1 regressions: cross-store deadlock removal, snapshot cleanup, and bounde
     `Hanging restoreOtherTabs must time out within bounded duration (5000ms); elapsed: ${hangElapsed}ms`,
   );
 });
+
+test('concurrent opposing browser and editor selections across workspaces never AB-BA deadlock', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'maw-abba-deadlock-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+
+  const wsADir = path.join(root, 'wsA');
+  const wsBDir = path.join(root, 'wsB');
+  await mkdir(wsADir, { recursive: true });
+  await mkdir(wsBDir, { recursive: true });
+  await writeFile(path.join(wsADir, 'a.ts'), 'export const a = 1;\n');
+  await writeFile(path.join(wsBDir, 'b.ts'), 'export const b = 2;\n');
+
+  const workspaceStore = new AgencyWorkspaceStore(path.join(root, 'workspaces.json'));
+  await workspaceStore.load();
+  const project = await workspaceStore.createProject('AB-BA Project');
+  const wsA = await workspaceStore.createWorkspace(project.id, 'Workspace A', wsADir);
+  const wsB = await workspaceStore.createWorkspace(project.id, 'Workspace B', wsBDir);
+
+  const lock = new WorkspaceMutex();
+  const registry = Object.assign(new EventEmitter(), {
+    async open() {
+      const terminalId = randomUUID() as TerminalId;
+      return { terminalId, kind: 'shell', state: 'running', exitCode: null, pid: 100, alive: true };
+    },
+    get: () => null,
+    has: () => false,
+    list: () => [],
+    close: () => {},
+    activityOf: () => 'unknown',
+  });
+
+  const native = new AgencySessionRuntime({
+    registry: registry as unknown as ConstructorParameters<typeof AgencySessionRuntime>[0]['registry'],
+    store: new AgencySessionStore(path.join(root, 'sessions.json')),
+    profiles: { resolveLaunch: async () => { throw new Error('unused'); } },
+    workspaces: {
+      protectedDirectories: () => [],
+      withSessionReservation: (id, work) => lock.runExclusive(id, () => work(workspaceStore.getWorkspace(id))),
+    },
+  });
+  await native.initialize();
+  t.after(() => native.dispose());
+
+  const browserStore = new BrowserTabStore(path.join(root, 'browser-tabs.json'));
+  const browser = new BrowserTabAdapter({ store: browserStore, workspaceStore });
+  await browser.restore();
+
+  const editorStore = new EditorTabStore(path.join(root, 'editor-tabs.json'));
+  const editor = new EditorTabAdapter({ store: editorStore, workspaceStore });
+  await editor.restore();
+
+  const coordinator = new AgencyTabCoordinator(native, browser, workspaceStore, () => {}, undefined, editor);
+
+  const webA = await browser.createTab({ workspaceId: wsA.id, url: 'https://chatgpt.com/', title: 'Web A', select: false });
+  const edA = await editor.createTab({ workspaceId: wsA.id, filePath: 'a.ts', select: true });
+  const webB = await browser.createTab({ workspaceId: wsB.id, url: 'https://chatgpt.com/', title: 'Web B', select: true });
+  const edB = await editor.createTab({ workspaceId: wsB.id, filePath: 'b.ts', select: false });
+
+  // Inject an async yield inside native.clearWorkspaceSelection so both opposing
+  // operations overlap in the window where each previously held its global mutex
+  // while waiting on the other adapter's global mutex.
+  const origClear = native.clearWorkspaceSelection.bind(native);
+  native.clearWorkspaceSelection = async (wsId) => {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    return origClear(wsId);
+  };
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Deadlock detected: concurrent opposing selections exceeded deadline')), 3000);
+  });
+
+  try {
+    const [webRes, edRes] = await Promise.race([
+      Promise.all([
+        coordinator.webRequest({
+          type: 'agency.webTab.select',
+          requestId: 'abba-web',
+          workspaceId: wsA.id,
+          tabId: webA.id,
+        }),
+        coordinator.editorRequest({
+          type: 'agency.editorTab.select',
+          requestId: 'abba-ed',
+          workspaceId: wsB.id,
+          tabId: edB.id,
+        }),
+      ]),
+      deadline,
+    ]);
+
+    assert.equal(webRes?.type, 'agency.webTab.updated');
+    assert.equal(edRes?.type, 'agency.editorTab.updated');
+    assert.equal(browser.getTabState(webA.id)?.selected, true);
+    assert.equal(editor.getTabState(edA.id)?.selected, false);
+    assert.equal(editor.getTabState(edB.id)?.selected, true);
+    assert.equal(browser.getTabState(webB.id)?.selected, false);
+  } finally {
+    clearTimeout(timer);
+  }
+});
