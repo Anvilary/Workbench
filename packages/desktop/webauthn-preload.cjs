@@ -21,7 +21,15 @@ const injectScript = `
 
   function bufferToBase64Url(buf) {
     if (!buf) return '';
-    const bytes = new Uint8Array(buf);
+    let bytes;
+    if (buf instanceof ArrayBuffer) {
+      bytes = new Uint8Array(buf);
+    } else if (ArrayBuffer.isView(buf)) {
+      bytes = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+    } else {
+      return '';
+    }
+    if (bytes.byteLength === 0) return '';
     let binary = '';
     for (let i = 0; i < bytes.byteLength; i++) {
       binary += String.fromCharCode(bytes[i]);
@@ -55,10 +63,14 @@ const injectScript = `
     }
 
     const publicKey = options.publicKey;
+    const rawTimeoutMs = typeof publicKey.timeout === 'number' && Number.isFinite(publicKey.timeout) && publicKey.timeout > 0
+      ? publicKey.timeout
+      : 60000;
+    const clampedTimeoutSec = Math.max(1, Math.min(600, Math.ceil(rawTimeoutMs / 1000)));
     const serialized = {
       challenge: bufferToBase64Url(publicKey.challenge),
-      rpId: publicKey.rpId || window.location.hostname,
-      timeout: publicKey.timeout ? Math.floor(publicKey.timeout / 1000) : 60,
+      rpId: String(publicKey.rpId || window.location.hostname).toLowerCase(),
+      timeout: clampedTimeoutSec,
       userVerification: publicKey.userVerification || 'preferred',
       allowCredentials: (publicKey.allowCredentials || []).map(c => ({
         id: bufferToBase64Url(c.id),

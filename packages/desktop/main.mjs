@@ -986,6 +986,7 @@ async function start() {
     return result.filePaths[0];
   });
 
+  let activeWebAuthnAbort = null;
   if (isWebAuthnEnabled) {
     let assertionInProgress = false;
     const extraOrigins = (process.env.MAW_WEBAUTHN_EXTRA_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -1005,9 +1006,9 @@ async function start() {
       }
 
       const origin = event.senderFrame.origin;
-      const rpId = options?.rpId;
+      const rpId = typeof options?.rpId === 'string' ? options.rpId.toLowerCase() : options?.rpId;
       if (!isValidRpId(rpId, origin)) {
-        return { success: false, error: { name: 'SecurityError', message: `Requested rpId ${rpId} does not match origin ${origin}` } };
+        return { success: false, error: { name: 'SecurityError', message: `Requested rpId ${options?.rpId} does not match origin ${origin}` } };
       }
 
       const parentWin = BrowserWindow.fromWebContents(senderWebContents) || win;
@@ -1022,15 +1023,35 @@ async function start() {
         return { success: false, error: { name: 'NotAllowedError', message: 'A security key request is already in progress' } };
       }
       assertionInProgress = true;
+      const controller = new AbortController();
+      activeWebAuthnAbort = controller;
+      const abortRequest = () => {
+        if (!controller.signal.aborted) controller.abort();
+      };
+      const onStartNavigation = (_navEvent, _url, isInPlace, isMainFrame) => {
+        if (isMainFrame && !isInPlace) abortRequest();
+      };
+      senderWebContents.on('destroyed', abortRequest);
+      senderWebContents.on('render-process-gone', abortRequest);
+      senderWebContents.on('did-start-navigation', onStartNavigation);
+      senderWebContents.on('did-navigate', abortRequest);
       try {
         return await performWebAuthnAssertion({
-          options,
+          options: { ...options, rpId },
           origin,
           parentWin,
           paneBounds,
+          signal: controller.signal,
           deps: { requestPinDialog },
         });
       } finally {
+        if (activeWebAuthnAbort === controller) activeWebAuthnAbort = null;
+        if (!senderWebContents.isDestroyed()) {
+          senderWebContents.removeListener('destroyed', abortRequest);
+          senderWebContents.removeListener('render-process-gone', abortRequest);
+          senderWebContents.removeListener('did-start-navigation', onStartNavigation);
+          senderWebContents.removeListener('did-navigate', abortRequest);
+        }
         assertionInProgress = false;
       }
     });
@@ -1123,6 +1144,7 @@ async function start() {
     if (shuttingDown) return;
     event.preventDefault();
     shuttingDown = true;
+    try { activeWebAuthnAbort?.abort(); } catch {}
     clearInterval(checkInterval);
     resourceCollector.dispose();
     hideAll();

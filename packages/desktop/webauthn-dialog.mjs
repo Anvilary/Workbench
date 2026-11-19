@@ -31,8 +31,13 @@ export function requestPinDialog({
   title = 'Security Key PIN',
   error = '',
   timeoutMs = 60000,
+  signal = null,
 } = {}) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('NotAllowedError: security key operation cancelled'));
+      return;
+    }
     let settled = false;
     const requestId = crypto.randomUUID();
 
@@ -69,10 +74,19 @@ export function requestPinDialog({
       win.setPosition(pos.x, pos.y);
     }
 
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try { if (!win.isDestroyed()) win.close(); } catch {}
+      reject(new Error('NotAllowedError: security key operation cancelled'));
+    };
+
     const cleanup = () => {
       ipcMain.removeListener('maw:webauthn:pin-submit', onSubmit);
       ipcMain.removeListener('maw:webauthn:pin-cancel', onCancel);
       clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
     };
 
     const onSubmit = (event, payload) => {
@@ -104,6 +118,7 @@ export function requestPinDialog({
       reject(new Error('NotAllowedError: PIN entry timed out'));
     }, timeoutMs);
 
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
     ipcMain.on('maw:webauthn:pin-submit', onSubmit);
     ipcMain.on('maw:webauthn:pin-cancel', onCancel);
 

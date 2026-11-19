@@ -10,16 +10,90 @@ const execFileAsync = promisify(execFile);
 
 export const CANCELLED_MESSAGE = 'NotAllowedError: security key operation cancelled';
 export const NO_DEVICE_MESSAGE = 'NotAllowedError: No FIDO2 hardware device found. Please insert your security key.';
+export const DEFAULT_FIDO2_PROBE_TIMEOUT_MS = 5000;
+
+function attachStreamErrorGuards(proc) {
+  for (const stream of [proc?.stdin, proc?.stdout, proc?.stderr]) {
+    if (stream && typeof stream.on === 'function') {
+      stream.on('error', () => {});
+    }
+  }
+}
+
+function safeWriteStdin(stdin, data, shouldEnd = false) {
+  if (!stdin || stdin.destroyed || stdin.writableEnded) return false;
+  try {
+    if (typeof data === 'string' && data.length > 0 && typeof stdin.write === 'function') {
+      stdin.write(data);
+    }
+    if (shouldEnd && typeof stdin.end === 'function') {
+      stdin.end();
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function execWithTimeout(execFn, cmd, args, { timeoutMs = DEFAULT_FIDO2_PROBE_TIMEOUT_MS, signal = null } = {}) {
+  if (signal?.aborted) {
+    return Promise.reject(new Error(CANCELLED_MESSAGE));
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
+      fn(value);
+    };
+    const onAbort = () => finish(reject, new Error(CANCELLED_MESSAGE));
+    const timer = setTimeout(
+      () => finish(reject, new Error(`NotAllowedError: ${cmd} timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+    if (typeof timer.unref === 'function') timer.unref();
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+
+    const execOptions = { timeout: timeoutMs, killSignal: 'SIGKILL' };
+    if (signal) execOptions.signal = signal;
+
+    Promise.resolve()
+      .then(() => execFn(cmd, args, execOptions))
+      .then(
+        (res) => finish(resolve, res),
+        (err) => finish(reject, err),
+      );
+  });
+}
+
+function waitWithSignal(delayMs, signal) {
+  if (delayMs <= 0) return Promise.resolve();
+  if (signal?.aborted) return Promise.reject(new Error(CANCELLED_MESSAGE));
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new Error(CANCELLED_MESSAGE));
+    };
+    const timer = setTimeout(() => {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
 
 /**
  * Checks whether system fido2-tools are available on Linux.
  * @param {string} [fido2TokenPath]
+ * @param {{ timeoutMs?: number }} [options]
  * @returns {Promise<boolean>}
  */
-export async function isFido2ToolsAvailable(fido2TokenPath = 'fido2-token') {
+export async function isFido2ToolsAvailable(fido2TokenPath = 'fido2-token', { timeoutMs = DEFAULT_FIDO2_PROBE_TIMEOUT_MS } = {}) {
   if (process.platform !== 'linux') return false;
   try {
-    await execFileAsync(fido2TokenPath, ['-V']);
+    await execWithTimeout(execFileAsync, fido2TokenPath, ['-V'], { timeoutMs });
     return true;
   } catch {
     return false;
@@ -29,13 +103,18 @@ export async function isFido2ToolsAvailable(fido2TokenPath = 'fido2-token') {
 /**
  * Discovers connected FIDO2 devices using fido2-token -L.
  * @param {Function} [execFn]
+ * @param {{ timeoutMs?: number, signal?: AbortSignal|null }} [options]
  * @returns {Promise<Array<{ path: string, vendor: string, product: string, description: string }>>}
  */
-export async function discoverFido2Devices(execFn = execFileAsync) {
+export async function discoverFido2Devices(
+  execFn = execFileAsync,
+  { timeoutMs = DEFAULT_FIDO2_PROBE_TIMEOUT_MS, signal = null } = {},
+) {
+  if (signal?.aborted) return [];
   try {
-    const { stdout } = await execFn('fido2-token', ['-L']);
+    const { stdout } = await execWithTimeout(execFn, 'fido2-token', ['-L'], { timeoutMs, signal });
     const devices = [];
-    const lines = stdout.trim().split('\n');
+    const lines = String(stdout || '').trim().split('\n');
 
     for (const line of lines) {
       const trimmed = line.trim();
@@ -63,27 +142,32 @@ export async function discoverFido2Devices(execFn = execFileAsync) {
  * from capability probe failures (`hasClientPin: null, probeError: true`).
  * @param {string} devicePath
  * @param {Function} [execFn]
- * @param {{ retries?: number, retryDelayMs?: number }} [options]
+ * @param {{ retries?: number, retryDelayMs?: number, timeoutMs?: number, signal?: AbortSignal|null }} [options]
  * @returns {Promise<{ hasClientPin: boolean|null, hasCredMgmt: boolean, pinRetries: number|null, minPinLength: number, probeError: boolean, error?: string }>}
  */
 export async function getDeviceCapabilities(
   devicePath,
   execFn = execFileAsync,
-  { retries = 1, retryDelayMs = 50 } = {},
+  { retries = 1, retryDelayMs = 50, timeoutMs = DEFAULT_FIDO2_PROBE_TIMEOUT_MS, signal = null } = {},
 ) {
   let lastErr = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
+    if (signal?.aborted) {
+      lastErr = new Error(CANCELLED_MESSAGE);
+      break;
+    }
     try {
-      const { stdout } = await execFn('fido2-token', ['-I', devicePath]);
-      const optionsMatch = stdout.match(/options:\s*(.+)/);
+      const { stdout } = await execWithTimeout(execFn, 'fido2-token', ['-I', devicePath], { timeoutMs, signal });
+      const text = String(stdout || '');
+      const optionsMatch = text.match(/options:\s*(.+)/);
       const options = optionsMatch ? optionsMatch[1].split(',').map(s => s.trim()) : [];
       const hasClientPin = options.includes('clientPin');
       const hasCredMgmt = options.includes('credMgmt');
 
-      const retriesMatch = stdout.match(/pin retries:\s*(\d+)/i);
+      const retriesMatch = text.match(/pin retries:\s*(\d+)/i);
       const pinRetries = retriesMatch ? parseInt(retriesMatch[1], 10) : null;
 
-      const minPinMatch = stdout.match(/minpinlen:\s*(\d+)/i);
+      const minPinMatch = text.match(/minpinlen:\s*(\d+)/i);
       const minPinLength = minPinMatch ? parseInt(minPinMatch[1], 10) : 4;
 
       return {
@@ -95,8 +179,14 @@ export async function getDeviceCapabilities(
       };
     } catch (err) {
       lastErr = err;
+      if (signal?.aborted) break;
       if (attempt < retries && retryDelayMs > 0) {
-        await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+        try {
+          await waitWithSignal(retryDelayMs, signal);
+        } catch (abortErr) {
+          lastErr = abortErr;
+          break;
+        }
       }
     }
   }
@@ -119,6 +209,7 @@ export async function getDeviceCapabilities(
  * @param {string} params.rpId
  * @param {string|null} [params.pin]
  * @param {number} [params.timeoutMs]
+ * @param {AbortSignal|null} [params.signal]
  * @param {Function} [params.spawnFn]
  * @returns {Promise<Array<{ credentialId: string, userId: string|null }>>}
  */
@@ -127,10 +218,11 @@ export function listResidentCredentials({
   rpId,
   pin = null,
   timeoutMs = 5000,
+  signal = null,
   spawnFn = spawn,
 }) {
   return new Promise((resolve) => {
-    if (!devicePath || !rpId) {
+    if (!devicePath || !rpId || signal?.aborted) {
       resolve([]);
       return;
     }
@@ -146,6 +238,8 @@ export function listResidentCredentials({
       return;
     }
 
+    attachStreamErrorGuards(proc);
+
     let stdout = '';
     let stderr = '';
     let settled = false;
@@ -159,12 +253,27 @@ export function listResidentCredentials({
       }
     };
 
+    const cleanup = () => {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
+    };
+
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
+      cleanup();
       killProcessGroup();
       resolve([]);
     }, timeoutMs);
+
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      killProcessGroup();
+      resolve([]);
+    };
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
 
     proc.stdout.on('data', chunk => {
       stdout += chunk.toString('utf8');
@@ -174,28 +283,25 @@ export function listResidentCredentials({
       stderr += chunk.toString('utf8');
       if (pin && !pinWritten && stderr.includes('Enter PIN for')) {
         pinWritten = true;
-        try {
-          proc.stdin.write(pin + '\n');
-          proc.stdin.end();
-        } catch {}
+        safeWriteStdin(proc.stdin, pin + '\n', true);
       }
     });
 
     if (!pin) {
-      try { proc.stdin.end(); } catch {}
+      safeWriteStdin(proc.stdin, '', true);
     }
 
     proc.on('error', () => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      cleanup();
       resolve([]);
     });
 
     proc.on('close', code => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      cleanup();
       if (code !== 0) {
         resolve([]);
         return;
@@ -281,6 +387,8 @@ export function executeAssertion({
       return;
     }
 
+    attachStreamErrorGuards(proc);
+
     let stdout = '';
     let stderr = '';
     let settled = false;
@@ -297,6 +405,7 @@ export function executeAssertion({
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
+      if (signal) signal.removeEventListener('abort', onAbort);
       killProcessGroup();
       reject(new Error(`NotAllowedError: fido2-assert timed out after ${timeoutMs}ms waiting for security key interaction`));
     }, timeoutMs);
@@ -324,25 +433,18 @@ export function executeAssertion({
       // Monitor for PIN prompt from libfido2 readpassphrase fallback
       if (pin && !pinWritten && stderr.includes('Enter PIN for')) {
         pinWritten = true;
-        try {
-          proc.stdin.write(pin + '\n');
-          proc.stdin.end();
-        } catch {}
+        safeWriteStdin(proc.stdin, pin + '\n', true);
       }
     });
 
-    // Write parameters to stdin
-    try {
-      proc.stdin.write(inputLines.join('\n') + '\n');
-      if (!pin) {
-        proc.stdin.end();
-      }
-    } catch (err) {
+    // Write parameters to stdin (async EPIPE errors are absorbed by attachStreamErrorGuards)
+    if (!safeWriteStdin(proc.stdin, inputLines.join('\n') + '\n', !pin)) {
       if (!settled) {
         settled = true;
         clearTimeout(timer);
+        if (signal) signal.removeEventListener('abort', onAbort);
         killProcessGroup();
-        reject(err);
+        reject(new Error('NotAllowedError: Failed to write assertion parameters to fido2-assert'));
       }
       return;
     }

@@ -2,6 +2,7 @@
 // Designed for safe FIDO2 operations with no side effects.
 
 import { createHash } from 'node:crypto';
+import { isIP } from 'node:net';
 
 export const DEFAULT_WEBAUTHN_ORIGINS = Object.freeze([
   'https://chatgpt.com',
@@ -50,6 +51,12 @@ export function isValidRpId(rpId, origin) {
     if (originUrl.protocol !== 'https:') return false;
     const originHost = originUrl.hostname.toLowerCase();
     const candidateRpId = rpId.toLowerCase();
+
+    // W3C WebAuthn requires a valid domain string (never an IP literal, single label, or trailing dot)
+    const bareOrigin = originHost.replace(/^\[|\]$/g, '');
+    const bareCandidate = candidateRpId.replace(/^\[|\]$/g, '');
+    if (isIP(bareOrigin) || isIP(bareCandidate)) return false;
+    if (!candidateRpId.includes('.') || candidateRpId.endsWith('.') || candidateRpId.startsWith('.')) return false;
 
     // Exact match
     if (originHost === candidateRpId) return true;
@@ -103,7 +110,7 @@ export function validAssertionOptions(options, origin) {
 
 export function verifyAssertionData(data, rpId, requireUv) {
   const authenticatorData = base64UrlToBuffer(data.authenticatorData);
-  const rpIdHash = createHash('sha256').update(rpId).digest();
+  const rpIdHash = createHash('sha256').update(String(rpId || '').toLowerCase()).digest();
   if (authenticatorData.length < 37 || !authenticatorData.subarray(0, 32).equals(rpIdHash) ||
       !(authenticatorData[32] & 1) || (requireUv && !(authenticatorData[32] & 4))) {
     throw new Error('NotAllowedError: Invalid authenticator data or missing user verification');
@@ -200,27 +207,35 @@ export function parseFido2AssertOutput(
 
   // Heuristic for fido2-tools output:
   // When echoing input lines: line 0 is client data hash, line 1 is rpId.
+  // Some versions echo rpId at line 0 without clientDataHash.
   // The actual assertion data lines follow:
   // data line 0: CBOR authData (base64)
   // data line 1: signature (base64)
   // data line 2 (optional): userHandle (base64)
   // Note: fido2-assert -G -r may emit multiple assertions back-to-back;
   // slice only the first assertion so a subsequent assertion's hash is not read as userHandle.
+  const normalizedRpId = typeof rpId === 'string' ? rpId.toLowerCase() : '';
+  const isRpLine = (idx) => normalizedRpId.length > 0 && idx < lines.length && lines[idx].toLowerCase() === normalizedRpId;
+
   let dataLines = lines;
-  if (lines.length >= 4 && (lines[1] === rpId || lines[0] === rpId)) {
-    if (lines[1] === rpId) {
-      if (lines.length >= 6 && lines[5] === rpId) {
-        dataLines = lines.slice(2, 4);
-      } else if (lines.length >= 7 && lines[6] === rpId) {
-        dataLines = lines.slice(2, 5);
-      } else {
-        dataLines = lines.slice(2);
-      }
+  if (lines.length >= 4 && isRpLine(1)) {
+    if (lines.length >= 6 && isRpLine(5)) {
+      dataLines = lines.slice(2, 4);
+    } else if (lines.length >= 7 && isRpLine(6)) {
+      dataLines = lines.slice(2, 5);
     } else {
-      dataLines = lines.slice(2);
+      dataLines = lines.slice(2, 5);
     }
-  } else if (lines.length >= 3 && lines[0] === rpId) {
-    dataLines = lines.slice(1);
+  } else if (lines.length >= 3 && isRpLine(0)) {
+    if (lines.length >= 4 && isRpLine(3)) {
+      dataLines = lines.slice(1, 3);
+    } else if (lines.length >= 5 && isRpLine(4)) {
+      dataLines = lines.slice(1, 4);
+    } else {
+      dataLines = lines.slice(1, 4);
+    }
+  } else {
+    dataLines = lines.slice(0, 3);
   }
 
   if (dataLines.length < 2) {

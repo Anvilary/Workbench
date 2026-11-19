@@ -14,6 +14,7 @@ import {
   verifyAssertionData,
 } from '../../webauthn-policy.mjs';
 import {
+  CANCELLED_MESSAGE,
   NO_DEVICE_MESSAGE,
   discoverFido2Devices,
   getDeviceCapabilities,
@@ -66,6 +67,7 @@ export async function performWebAuthnAssertion({
   origin,
   parentWin = null,
   paneBounds = null,
+  signal = null,
   deps = {},
 }) {
   const discoverDevices = deps.discoverFido2Devices || discoverFido2Devices;
@@ -76,11 +78,25 @@ export async function performWebAuthnAssertion({
   const parseOutput = deps.parseFido2AssertOutput || parseFido2AssertOutput;
   const classifyError = deps.classifyWebAuthnError || classifyWebAuthnError;
 
+  const cancelledResult = () => ({
+    success: false,
+    error: { name: 'NotAllowedError', message: CANCELLED_MESSAGE },
+  });
+
+  if (signal?.aborted) {
+    return cancelledResult();
+  }
+
   if (!validAssertionOptions(options, origin)) {
     return { success: false, error: { name: 'SecurityError', message: 'Invalid WebAuthn assertion options' } };
   }
 
-  const discovered = await discoverDevices();
+  const discovered = deps.discoverFido2Devices
+    ? await discoverDevices({ signal })
+    : await discoverDevices(undefined, { signal });
+  if (signal?.aborted) {
+    return cancelledResult();
+  }
   if (!Array.isArray(discovered) || discovered.length === 0) {
     return {
       success: false,
@@ -91,8 +107,16 @@ export async function performWebAuthnAssertion({
   const devices = discovered.slice(0, MAX_WEBAUTHN_DEVICES);
   const probed = [];
   for (const device of devices) {
-    const caps = await readCaps(device.path);
+    if (signal?.aborted) {
+      return cancelledResult();
+    }
+    const caps = deps.getDeviceCapabilities
+      ? await readCaps(device.path, { signal })
+      : await readCaps(device.path, undefined, { signal });
     probed.push({ device, caps });
+  }
+  if (signal?.aborted) {
+    return cancelledResult();
   }
 
   // Prefer devices whose capability probe succeeded before devices with probe errors.
@@ -101,7 +125,7 @@ export async function performWebAuthnAssertion({
     ...probed.filter(entry => entry.caps?.probeError),
   ];
 
-  const rpId = options?.rpId;
+  const rpId = String(options.rpId).toLowerCase();
   const challengeBase64Url = options?.challenge || '';
   const { clientDataJSONBuffer, clientDataHash } = generateClientData('webauthn.get', challengeBase64Url, origin);
   const userVerification = options?.userVerification || 'preferred';
@@ -112,6 +136,9 @@ export async function performWebAuthnAssertion({
   let lastError = null;
 
   const tryDeviceWithPin = async (device, caps, pin) => {
+    if (signal?.aborted) {
+      throw new Error(CANCELLED_MESSAGE);
+    }
     if (isResident) {
       const stdout = await runAssertion({
         devicePath: device.path,
@@ -121,7 +148,12 @@ export async function performWebAuthnAssertion({
         isResident: true,
         pin,
         timeoutMs,
+        signal,
       });
+
+      if (signal?.aborted) {
+        throw new Error(CANCELLED_MESSAGE);
+      }
 
       let residentCredentials = [];
       if (pin && caps?.hasCredMgmt !== false && typeof listResident === 'function') {
@@ -130,10 +162,15 @@ export async function performWebAuthnAssertion({
             devicePath: device.path,
             rpId,
             pin,
+            signal,
           });
         } catch {
           residentCredentials = [];
         }
+      }
+
+      if (signal?.aborted) {
+        throw new Error(CANCELLED_MESSAGE);
       }
 
       const data = parseOutput(stdout, {
@@ -147,6 +184,9 @@ export async function performWebAuthnAssertion({
     }
 
     for (const cred of allowCredentials) {
+      if (signal?.aborted) {
+        throw new Error(CANCELLED_MESSAGE);
+      }
       try {
         const stdout = await runAssertion({
           devicePath: device.path,
@@ -156,6 +196,7 @@ export async function performWebAuthnAssertion({
           isResident: false,
           pin,
           timeoutMs,
+          signal,
         });
         const data = parseOutput(stdout, {
           rpId,
@@ -165,6 +206,7 @@ export async function performWebAuthnAssertion({
         verifyAssertionData(data, rpId, userVerification === 'required');
         return { matched: true, data };
       } catch (err) {
+        if (signal?.aborted) throw err;
         if (hasFidoError(err, 'FIDO_ERR_NO_CREDENTIALS', 'No matching credentials')) {
           lastError = err;
           continue;
@@ -177,6 +219,9 @@ export async function performWebAuthnAssertion({
   };
 
   for (const { device, caps } of orderedDevices) {
+    if (signal?.aborted) {
+      return cancelledResult();
+    }
     if (userVerification === 'required' && caps?.hasClientPin === false && !caps?.probeError) {
       lastError = new Error('NotAllowedError: Security key cannot verify the user with a PIN');
       continue;
@@ -198,6 +243,9 @@ export async function performWebAuthnAssertion({
         }
         continue;
       } catch (err) {
+        if (signal?.aborted) {
+          return cancelledResult();
+        }
         if (hasFidoError(err, 'FIDO_ERR_PIN_REQUIRED', 'requires a PIN') && typeof promptPin === 'function') {
           needsPin = true;
         } else if (hasFidoError(err, 'FIDO_ERR_NO_CREDENTIALS', 'No matching credentials')) {
@@ -221,6 +269,9 @@ export async function performWebAuthnAssertion({
       let pinError = '';
       const maxAttempts = Math.min(MAX_PIN_ATTEMPTS, caps?.pinRetries ?? MAX_PIN_ATTEMPTS);
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (signal?.aborted) {
+          return cancelledResult();
+        }
         let pin = null;
         try {
           pin = await promptPin({
@@ -229,9 +280,13 @@ export async function performWebAuthnAssertion({
             rpId,
             title: 'Security Key PIN',
             error: pinError,
+            signal,
           });
         } catch (dialogErr) {
           return { success: false, error: classifyError(dialogErr) };
+        }
+        if (signal?.aborted) {
+          return cancelledResult();
         }
         if (!isValidWebAuthnPin(pin)) {
           return { success: false, error: { name: 'NotAllowedError', message: 'Invalid security key PIN input' } };
@@ -244,6 +299,9 @@ export async function performWebAuthnAssertion({
           }
           break;
         } catch (err) {
+          if (signal?.aborted) {
+            return cancelledResult();
+          }
           if (hasFidoError(err, 'FIDO_ERR_PIN_BLOCKED', 'PIN is blocked') ||
               hasFidoError(err, 'FIDO_ERR_PIN_AUTH_BLOCKED', 'temporarily blocked')) {
             return { success: false, error: classifyError(err) };
@@ -256,6 +314,9 @@ export async function performWebAuthnAssertion({
               }
               break;
             } catch (fallbackErr) {
+              if (signal?.aborted) {
+                return cancelledResult();
+              }
               lastError = fallbackErr;
               break;
             }

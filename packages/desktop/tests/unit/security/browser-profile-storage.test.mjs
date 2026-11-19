@@ -280,3 +280,46 @@ test('WebAuthn rejects malformed allow-lists and does not downgrade required ver
   assert.equal(unverifiable.error.name, 'NotAllowedError');
   assert.equal(assertionCalls, 0);
 });
+
+test('WebAuthn Orchestrator honors AbortSignal and normalizes mixed-case rpId', async () => {
+  const controller = new AbortController();
+  let assertionSignal = null;
+  let capturedRpId = null;
+
+  // Aborting during assertion returns NotAllowedError cleanly
+  const abortedPromise = performWebAuthnAssertion({
+    options: { rpId: 'ChatGPT.COM', challenge: 'Y2hhbGxlbmdl', userVerification: 'discouraged' },
+    origin: 'https://chatgpt.com',
+    signal: controller.signal,
+    deps: {
+      discoverFido2Devices: async () => [{ path: '/dev/hidraw0' }],
+      getDeviceCapabilities: async () => ({ hasClientPin: false }),
+      executeAssertion: async ({ rpId, signal }) => {
+        capturedRpId = rpId;
+        assertionSignal = signal;
+        controller.abort();
+        throw new Error('NotAllowedError: security key operation cancelled');
+      },
+    },
+  });
+  const aborted = await abortedPromise;
+  assert.equal(capturedRpId, 'chatgpt.com');
+  assert.equal(assertionSignal, controller.signal);
+  assert.equal(aborted.success, false);
+  assert.equal(aborted.error.name, 'NotAllowedError');
+  assert.match(aborted.error.message, /cancelled/i);
+
+  // Already-aborted signal short-circuits before discovery
+  let discoveryCalled = false;
+  const preAborted = await performWebAuthnAssertion({
+    options: { rpId: 'chatgpt.com', challenge: 'Y2hhbGxlbmdl' },
+    origin: 'https://chatgpt.com',
+    signal: controller.signal,
+    deps: {
+      discoverFido2Devices: async () => { discoveryCalled = true; return []; },
+    },
+  });
+  assert.equal(discoveryCalled, false);
+  assert.equal(preAborted.success, false);
+  assert.equal(preAborted.error.name, 'NotAllowedError');
+});
