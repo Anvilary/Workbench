@@ -3,16 +3,30 @@ import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { _electron as electron } from 'playwright';
+import { runtimeFor } from '../../../scripts/maw/desktop-runtime.mjs';
 
 const require = createRequire(import.meta.url);
-const here = path.dirname(new URL(import.meta.url).pathname);
+const here = path.dirname(fileURLToPath(import.meta.url));
 const desktopDir = path.resolve(here, '..');
 const repoRoot = path.resolve(desktopDir, '../..');
-const electronExecutable = existsSync('/opt/maw-electron/45.2.0/electron')
-  ? '/opt/maw-electron/45.2.0/electron'
-  : require('electron');
+const { directory: installedRuntimeDir } = await runtimeFor(repoRoot);
+const installedElectron = path.join(installedRuntimeDir, 'electron');
+const electronExecutable = process.env.MAW_ELECTRON_EXECUTABLE
+  || (existsSync(installedElectron) ? installedElectron : require('electron'));
+
+const VALID_SUITES = new Set([
+  'all',
+  'lifecycle',
+  'tab-switch',
+  'pane-resize',
+  'overlay-capture',
+  'browser-profiles',
+  'concurrent-stream',
+  'resource-matrix',
+]);
 
 function stats(samples) {
   if (samples.length === 0) return { mean: 0, min: 0, max: 0, p50: 0, p95: 0, p99: 0 };
@@ -50,6 +64,9 @@ function readProcessSmaps(pid) {
 }
 
 async function runBenchmarkSuite(targetSuite = 'all') {
+  if (!VALID_SUITES.has(targetSuite)) {
+    throw new Error(`Unknown benchmark suite '${targetSuite}'. Expected one of: ${[...VALID_SUITES].join(', ')}`);
+  }
   console.log(`\n======================================================`);
   console.log(` MAW Embedded Webview Automated Benchmark Suite`);
   console.log(` Target Suite: ${targetSuite}`);
@@ -77,12 +94,16 @@ async function runBenchmarkSuite(targetSuite = 'all') {
   };
 
   try {
+    const cleanEnv = { ...process.env };
+    for (const key of Object.keys(cleanEnv)) {
+      if (/^(MAW_|AGENT_WORKBENCH_|ELECTRON_RUN_AS_NODE$)/.test(key)) delete cleanEnv[key];
+    }
     desktop = await electron.launch({
       chromiumSandbox: true,
       executablePath: electronExecutable,
       args: [desktopDir, '--ozone-platform=x11'],
       env: {
-        ...process.env,
+        ...cleanEnv,
         MAW_DESKTOP_URL: `http://127.0.0.1:${serverPort}/`,
         MAW_DESKTOP_DATA_DIR: dataDir,
         MAW_MAX_RESIDENT_VIEWS: '10',
@@ -94,7 +115,7 @@ async function runBenchmarkSuite(targetSuite = 'all') {
 
     // 1. BENCHMARK: Lifecycle Primitives
     if (targetSuite === 'all' || targetSuite === 'lifecycle') {
-      console.log('Running Benchmark: Native View Lifecycle Primitives (N=20)...');
+      console.log('Running Benchmark: Native View Lifecycle Primitives (N=20, 2 warmup)...');
       const lifecycleData = await desktop.evaluate(async ({ WebContentsView, BrowserWindow }) => {
         const mainWin = BrowserWindow.getAllWindows()[0];
         const measurements = {
@@ -105,31 +126,36 @@ async function runBenchmarkSuite(targetSuite = 'all') {
           close: [],
         };
 
-        for (let i = 0; i < 20; i++) {
+        for (let i = -2; i < 20; i++) {
           const t0 = performance.now();
           const view = new WebContentsView();
           const t1 = performance.now();
-          measurements.create.push(t1 - t0);
 
           const t2 = performance.now();
           mainWin.contentView.addChildView(view);
           const t3 = performance.now();
-          measurements.attach.push(t3 - t2);
 
           const t4 = performance.now();
           view.setBounds({ x: 50, y: 50, width: 800, height: 600 });
           const t5 = performance.now();
-          measurements.setBounds.push(t5 - t4);
 
           const t6 = performance.now();
           mainWin.contentView.removeChildView(view);
           const t7 = performance.now();
-          measurements.detach.push(t7 - t6);
 
+          const destroyed = new Promise((resolve) => view.webContents.once('destroyed', resolve));
           const t8 = performance.now();
           view.webContents.close();
+          await destroyed;
           const t9 = performance.now();
-          measurements.close.push(t9 - t8);
+
+          if (i >= 0) {
+            measurements.create.push(t1 - t0);
+            measurements.attach.push(t3 - t2);
+            measurements.setBounds.push(t5 - t4);
+            measurements.detach.push(t7 - t6);
+            measurements.close.push(t9 - t8);
+          }
         }
 
         return measurements;
@@ -237,19 +263,32 @@ async function runBenchmarkSuite(targetSuite = 'all') {
             '<style>body{background:linear-gradient(120deg,#123,#abc);font:32px sans-serif;color:white}</style>' +
             '<main>Native overlay capture fixture</main>',
           ));
+          await view.webContents.executeJavaScript(
+            'new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))',
+          );
           const captures = [];
+          const emptyPrefixLen = Buffer.byteLength('data:image/png;base64,');
           for (let i = 0; i < 10; i++) {
             const t0 = performance.now();
             const img = await view.webContents.capturePage();
             const t1 = performance.now();
-            if (img.isEmpty()) throw new Error('Native overlay capture returned an empty image');
+            const size = img.getSize();
+            if (img.isEmpty() || size.width <= 0 || size.height <= 0) {
+              throw new Error(`Native overlay capture returned an empty image (${size.width}x${size.height})`);
+            }
+            const png = img.toPNG();
             const dataUrl = img.toDataURL();
             const t2 = performance.now();
+            const dataUrlBytes = Buffer.byteLength(dataUrl);
+            if (png.length === 0 || dataUrlBytes <= emptyPrefixLen) {
+              throw new Error(`Native overlay PNG encoding produced empty payload (${png.length} PNG bytes, ${dataUrlBytes} dataURL bytes)`);
+            }
             captures.push({
               captureMs: t1 - t0,
               encodeMs: t2 - t1,
               totalMs: t2 - t0,
-              bytes: Buffer.byteLength(dataUrl),
+              bytes: dataUrlBytes,
+              pngBytes: png.length,
             });
           }
           return captures;
@@ -314,6 +353,59 @@ async function runBenchmarkSuite(targetSuite = 'all') {
       console.table(results.benchmarks.browserProfiles);
     }
 
+    // 5. BENCHMARK: Concurrent Streaming Load across Multiple Native Views
+    if (targetSuite === 'all' || targetSuite === 'concurrent-stream') {
+      console.log('\nRunning Benchmark: Concurrent Streaming Views (3 views x 40 bursts)...');
+      const streamData = await desktop.evaluate(async ({ WebContentsView, BrowserWindow }) => {
+        const mainWin = BrowserWindow.getAllWindows()[0];
+        const views = [new WebContentsView(), new WebContentsView(), new WebContentsView()];
+        const streamHtml = 'data:text/html,' + encodeURIComponent(
+          '<!doctype html><html><body><pre id="out"></pre><script>' +
+          'let count = 0; const out = document.getElementById("out");' +
+          'window.__streamBurst = (n) => { const lines = []; for (let i = 0; i < n; i++) lines.push("line-" + (++count) + " " + "x".repeat(64)); out.textContent = (out.textContent + "\\n" + lines.join("\\n")).slice(-16384); return count; };' +
+          '</script></body></html>',
+        );
+        try {
+          for (let i = 0; i < views.length; i++) {
+            mainWin.contentView.addChildView(views[i]);
+            views[i].setBounds({ x: i * 260, y: 0, width: 260, height: 500 });
+            await views[i].webContents.loadURL(streamHtml);
+          }
+          const burstLatencies = [];
+          const boundsLatencies = [];
+          for (let burst = -2; burst < 40; burst++) {
+            const t0 = performance.now();
+            await Promise.all(views.map((v) => v.webContents.executeJavaScript('window.__streamBurst(20)')));
+            const t1 = performance.now();
+            const b0 = performance.now();
+            views[0].setBounds({ x: 0, y: 0, width: 260 + (burst % 2) * 10, height: 500 });
+            const b1 = performance.now();
+            if (burst >= 0) {
+              burstLatencies.push(t1 - t0);
+              boundsLatencies.push(b1 - b0);
+            }
+          }
+          return { burstLatencies, boundsLatencies };
+        } finally {
+          for (const view of views) {
+            mainWin.contentView.removeChildView(view);
+            view.webContents.close();
+          }
+        }
+      });
+
+      results.benchmarks.concurrentStream = {
+        concurrentBurstMs: stats(streamData.burstLatencies),
+        interleavedSetBoundsMs: stats(streamData.boundsLatencies),
+      };
+
+      console.log('Concurrent Stream Results (ms):');
+      console.table({
+        'Concurrent 3-View Burst': results.benchmarks.concurrentStream.concurrentBurstMs,
+        'Interleaved setBounds': results.benchmarks.concurrentStream.interleavedSetBoundsMs,
+      });
+    }
+
     // Resource Matrix Accounting
     if (targetSuite === 'all' || targetSuite === 'resource-matrix') {
       console.log('\nRunning Benchmark: Multi-Workload Resource Matrix...');
@@ -357,10 +449,10 @@ async function runBenchmarkSuite(targetSuite = 'all') {
       console.log(`Total RSS: ${results.benchmarks.resourceMatrix.totalRssMiB} MiB | Total PSS: ${results.benchmarks.resourceMatrix.totalPssMiB} MiB | Total Private: ${results.benchmarks.resourceMatrix.totalPrivateMiB} MiB`);
     }
 
-    // Save output evidence file
+    // Save output evidence file (avoid dirtying tracked docs unless explicitly requested)
     const evidenceDir = process.env.MAW_WEBVIEW_EVIDENCE_DIR
       ? path.resolve(process.env.MAW_WEBVIEW_EVIDENCE_DIR)
-      : path.resolve(repoRoot, 'docs/maw/webview-performance/evidence');
+      : path.join(tmpdir(), 'maw-webview-bench-evidence');
     await mkdir(evidenceDir, { recursive: true });
     const evidencePath = path.resolve(evidenceDir, 'latest-benchmark.json');
     await writeFile(evidencePath, JSON.stringify(results, null, 2), 'utf8');

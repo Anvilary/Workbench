@@ -15,15 +15,39 @@ const root = await mkdtemp(path.join(tmpdir(), 'maw-round2-soak-'));
 const out = path.resolve(process.env.MAW_ROUND2_OUT || path.join(root, 'evidence'));
 const duration = Number(process.env.MAW_ROUND2_SECONDS || 60);
 assert.ok(Number.isFinite(duration) && duration >= 0 && duration <= 3600);
-const home = path.join(root, 'home'), config = path.join(root, 'config/agent-workbench');
-await Promise.all([mkdir(home), mkdir(config, { recursive: true }), mkdir(out, { recursive: true })]);
+const home = path.join(root, 'home'), config = path.join(root, 'config/agent-workbench'), runtime = path.join(root, 'runtime');
+await Promise.all([mkdir(home), mkdir(config, { recursive: true }), mkdir(out, { recursive: true }), mkdir(runtime, { recursive: true, mode: 0o700 })]);
 const now = new Date().toISOString();
 const projects = ['One', 'Two'].map(name => ({ id: randomUUID(), name, status: 'active', createdAt: now, updatedAt: now, archivedAt: null }));
 const workspaces = Array.from({ length: 4 }, (_, i) => ({ id: randomUUID(), projectId: projects[i % 2].id, name: 'Workspace ' + i, cwd: root, status: 'active', createdAt: now, updatedAt: now, doneAt: null, archivedAt: null }));
 await writeFile(path.join(config, 'agency-state.json'), JSON.stringify({ version: 1, projects, workspaces }), { mode: 0o600 });
 await writeFile(path.join(home, '.bashrc'), '# isolated shell\n');
-const env = { ...process.env, HOME: home, USERPROFILE: home, SHELL: '/bin/bash', XDG_CONFIG_HOME: path.dirname(config), XDG_DATA_HOME: path.join(root, 'data'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_STATE_HOME: path.join(root, 'state'), CODEX_HOME: path.join(home, '.codex'), APPDATA: path.join(root, 'appdata'), PI_CODING_AGENT_DIR: path.join(home, '.pi/agent'), PI_CODING_AGENT_SESSION_DIR: path.join(home, '.pi/sessions'), AGENT_WORKBENCH_NO_OPEN: '1', AGENT_WORKBENCH_NO_RESTORE: '1' };
-for (const key of Object.keys(env)) if (/^(AGENT_WORKBENCH_PORT)/.test(key)) delete env[key];
+const baseEnv = { ...process.env };
+for (const key of Object.keys(baseEnv)) {
+  if (/^(MAW_|AGENT_WORKBENCH_|ELECTRON_RUN_AS_NODE$)/.test(key)) delete baseEnv[key];
+}
+const env = {
+  ...baseEnv,
+  HOME: home,
+  USERPROFILE: home,
+  SHELL: '/bin/bash',
+  XDG_CONFIG_HOME: path.dirname(config),
+  XDG_DATA_HOME: path.join(root, 'data'),
+  XDG_CACHE_HOME: path.join(root, 'cache'),
+  XDG_STATE_HOME: path.join(root, 'state'),
+  XDG_RUNTIME_DIR: runtime,
+  CODEX_HOME: path.join(home, '.codex'),
+  APPDATA: path.join(root, 'appdata'),
+  PI_CODING_AGENT_DIR: path.join(home, '.pi/agent'),
+  PI_CODING_AGENT_SESSION_DIR: path.join(home, '.pi/sessions'),
+  AGENT_WORKBENCH_NO_OPEN: '1',
+  AGENT_WORKBENCH_NO_RESTORE: '1',
+  MAW_DISABLE_PTYD: '1',
+  MAW_PERSISTENT_PTY: '0',
+  MAW_AUTO_SPAWN_PTYD: '0',
+  MAW_PTYD_SOCKET: path.join(runtime, 'ptyd.sock'),
+  MAW_PTYD_AUTH_FILE: path.join(runtime, 'ptyd.sock.auth'),
+};
 let child, socket, browser, address, log = '', messages = 0, bytes = 0, reconnects = 0;
 const pending = new Map(), samples = [], errors = [];
 let cdp;
@@ -139,7 +163,7 @@ try {
     for (let i = 0; i < 20; i++) await select(sessions[(cycle + i) % sessions.length]);
     await disconnect(); await connect(); reconnects++;
     const s = (await request({ type: 'agency.session.create', workspaceId: workspaces[0].id, kind: 'terminal', cols: 80, rows: 24, launchId: randomUUID() })).session;
-    socket.send(JSON.stringify({ type: 'terminal.attach', terminalId: s.terminalId }));
+    socket.send(JSON.stringify({ type: 'terminal.attach', terminalId: s.terminalId, cols: 80, rows: 24 }));
     socket.send(JSON.stringify({ type: 'input', terminalId: s.terminalId, data: 'printf "SOAK_OUTPUT\\n"\r' }));
     await request({ type: 'agency.tab.action', workspaceId: s.workspaceId, tabId: s.tab.id, action: 'close' });
     if (cycle % 10 === 0) { await page.reload(); await page.locator('.agency-app').waitFor(); await sample('workload-' + cycle); console.log('cycle', cycle); }
