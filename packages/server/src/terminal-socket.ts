@@ -4208,9 +4208,11 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
 
         case 'agency.layout.get': {
           const layout = tabCoordinator.reconcileLayout(message.workspaceId) ?? agencyLayoutStore.get(message.workspaceId);
-          if (layout) {
-            send(socket, { type: 'agency.layout.changed', workspaceId: message.workspaceId, layout });
-          }
+          send(socket, {
+            type: 'agency.layouts.snapshot',
+            requestId: message.requestId,
+            layouts: layout ? [layout] : [],
+          });
           break;
         }
 
@@ -4412,6 +4414,13 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
     for (const terminalId of historyStores.keys()) retireHistoryStore(terminalId);
     for (const client of wss.clients) client.terminate();
     wss.close();
-    return Promise.all(historyDisposals).then(() => undefined);
+    const privateFlushes: Promise<unknown>[] = [];
+    if (!options.agencyEditorTabs) privateFlushes.push(agencyEditorTabs.flush());
+    if (!options.agencyBrowserProfileStore) privateFlushes.push(agencyBrowserProfileStore.flush());
+    if (!options.agencyBrowserTabs) privateFlushes.push(agencyBrowserTabs.flush());
+    if (!options.agencyLayoutStore) privateFlushes.push(agencyLayoutStore.flush());
+    if (!options.agencyActivityManager) privateFlushes.push(agencyActivityManager.flush());
+    if (!options.agencyNotificationStore) privateFlushes.push(agencyNotificationStore.flush());
+    return Promise.allSettled([...historyDisposals, ...privateFlushes]).then(() => undefined);
   };
 }

@@ -905,3 +905,57 @@ test('concurrent opposing browser and editor selections across workspaces never 
     clearTimeout(timer);
   }
 });
+
+test('P2 A-05: agency.editorTab.order reorders open editor tabs, broadcasts ordered change, and rejects invalid orders', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'maw-a05-editor-order-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(path.join(root, 'one.ts'), 'export const one = 1;\n');
+  await writeFile(path.join(root, 'two.ts'), 'export const two = 2;\n');
+
+  const workspaceStore = new AgencyWorkspaceStore(path.join(root, 'workspaces.json'));
+  await workspaceStore.load();
+  const project = await workspaceStore.createProject('Order Project');
+  const ws = await workspaceStore.createWorkspace(project.id, 'Order WS', root);
+
+  const editor = new EditorTabAdapter({
+    store: new EditorTabStore(path.join(root, 'editor-tabs.json')),
+    workspaceStore,
+  });
+  await editor.restore();
+
+  const tab1 = await editor.createTab({ workspaceId: ws.id, filePath: 'one.ts' });
+  const tab2 = await editor.createTab({ workspaceId: ws.id, filePath: 'two.ts' });
+  assert.deepEqual(editor.listTabs(ws.id).map((tab) => tab.id), [tab1.id, tab2.id]);
+
+  const { handleEditorTabMessage } = await import('../../../src/agency/editor-tabs/editor-tab-handler.js');
+  const published: any[] = [];
+  const res = await handleEditorTabMessage(
+    {
+      type: 'agency.editorTab.order',
+      requestId: 'req-order-1',
+      workspaceId: ws.id,
+      tabIds: [tab2.id, tab1.id],
+    },
+    { adapter: editor, publish: (m) => published.push(m) },
+  );
+
+  assert.ok(res !== null, 'agency.editorTab.order must not be silently dropped');
+  assert.equal(res.type, 'agency.editorTabs.snapshot');
+  assert.equal(res.requestId, 'req-order-1');
+  assert.deepEqual(res.tabs.map((tab) => tab.id), [tab2.id, tab1.id]);
+  assert.equal(published.length, 1);
+  assert.equal(published[0].type, 'agency.editorTab.changed');
+  assert.equal(published[0].change, 'ordered');
+
+  const invalidRes = await handleEditorTabMessage(
+    {
+      type: 'agency.editorTab.order',
+      requestId: 'req-order-bad',
+      workspaceId: ws.id,
+      tabIds: [tab1.id],
+    },
+    { adapter: editor },
+  );
+  assert.equal(invalidRes?.type, 'agency.error');
+  assert.equal(invalidRes?.requestId, 'req-order-bad');
+});

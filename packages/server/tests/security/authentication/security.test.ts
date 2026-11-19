@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { IncomingMessage } from 'node:http';
-import { authorizeRequest, matchCredential } from '../../../src/security.js';
+import { applyFrameProtectionHeaders, authorizeRequest, matchCredential } from '../../../src/security.js';
 
 test('malformed authentication cookies fail closed without throwing before WS authentication', () => {
   for (const value of ['%', '%GG', '%FF', '%E0%A4%A']) {
@@ -14,4 +14,15 @@ test('malformed authentication cookies fail closed without throwing before WS au
   assert.equal(authorizeRequest(req,41001,'fixture-token',null).ok,true);
   req.headers.origin='https://foreign.example';
   assert.deepEqual(authorizeRequest(req,41001,'fixture-token',null),{ok:false,reason:'bad-origin'});
+});
+
+test('P2 B-02: HTTP frame protection headers deny framing via X-Frame-Options and CSP frame-ancestors', () => {
+  const headers = new Map<string, string>();
+  applyFrameProtectionHeaders({
+    setHeader(name: string, value: string) {
+      headers.set(name, value);
+    },
+  });
+  assert.equal(headers.get('X-Frame-Options'), 'DENY');
+  assert.equal(headers.get('Content-Security-Policy'), "frame-ancestors 'none'");
 });

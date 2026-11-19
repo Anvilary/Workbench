@@ -108,18 +108,31 @@ function checkDataCompatibility(target) {
   }
   if (supportedAssignments < 1) {
     const workspaceStorePath = path.join(configRoot, 'agent-workbench', 'agency-state.json');
-    for (const candidate of [workspaceStorePath, `${workspaceStorePath}.bak`]) {
+    const readWorkspaceSnapshot = (candidate) => {
       let stat;
       try { stat = lstatSync(candidate); }
-      catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+      catch (error) { if (error.code === 'ENOENT') return { missing: true }; throw error; }
       if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`Workspace store path is unsafe: ${candidate}`);
-      const snapshot = JSON.parse(readFileSync(candidate, 'utf8'));
+      let snapshot;
+      try { snapshot = JSON.parse(readFileSync(candidate, 'utf8')); }
+      catch { return { corrupt: true, candidate }; }
       if (!Array.isArray(snapshot?.projects) || !Array.isArray(snapshot?.workspaces)) {
-        throw new Error(`Workspace store cannot be safely inspected: ${candidate}`);
+        return { corrupt: true, candidate };
       }
-      if ([...snapshot.projects, ...snapshot.workspaces].some(row => row?.browserProfileId != null)) {
-        throw new Error('Target does not preserve browser profile assignments. Clear the assignments in Workbench before rolling back.');
+      return { snapshot };
+    };
+    const primary = readWorkspaceSnapshot(workspaceStorePath);
+    let activeSnapshot = primary.snapshot;
+    if (!activeSnapshot) {
+      const backup = readWorkspaceSnapshot(`${workspaceStorePath}.bak`);
+      if (backup.snapshot) {
+        activeSnapshot = backup.snapshot;
+      } else if (primary.corrupt || backup.corrupt) {
+        throw new Error(`Workspace store cannot be safely inspected: ${primary.corrupt ? workspaceStorePath : `${workspaceStorePath}.bak`}`);
       }
+    }
+    if (activeSnapshot && [...activeSnapshot.projects, ...activeSnapshot.workspaces].some(row => row?.browserProfileId != null)) {
+      throw new Error('Target does not preserve browser profile assignments. Clear the assignments in Workbench before rolling back.');
     }
   }
 }

@@ -202,31 +202,33 @@ export class BrowserTabStore {
    * Persist full snapshot atomically to disk.
    */
   save(tabs?: readonly WebTab[]): Promise<void> {
-    if (tabs) {
-      this.inMemoryTabs.clear();
-      for (const tab of tabs) {
-        this.inMemoryTabs.set(tab.id, tab);
-      }
-    }
+    const inputTabs = tabs ? tabs.map((tab) => ({ ...tab })) : undefined;
 
-    const allTabs = Array.from(this.inMemoryTabs.values());
-    const sanitized = normalizeWorkspaceSelections(allTabs.map(sanitizeForDurableStorage));
+    return this.saveQueue.run(async () => {
+      const allTabs = inputTabs ?? Array.from(this.inMemoryTabs.values());
+      const sanitized = normalizeWorkspaceSelections(allTabs.map(sanitizeForDurableStorage));
 
-    const snapshot: BrowserTabSnapshot = {
-      version: sanitized.some(tab => tab.provider === 'other') ? BROWSER_TAB_STORE_VERSION : 1,
-      tabs: sanitized,
-    };
+      const snapshot: BrowserTabSnapshot = {
+        version: sanitized.some(tab => tab.provider === 'other') ? BROWSER_TAB_STORE_VERSION : 1,
+        tabs: sanitized,
+      };
 
-    const serialized = Buffer.from(JSON.stringify(snapshot, null, 2) + '\n', 'utf8');
+      const serialized = Buffer.from(JSON.stringify(snapshot, null, 2) + '\n', 'utf8');
 
-    return this.saveQueue.run(() =>
-      writeSnapshotWithBackup({
+      await writeSnapshotWithBackup({
         filePath: this.filePath,
         content: serialized,
         dirMode: 0o700,
         fileMode: 0o600,
-      }),
-    );
+      });
+
+      if (inputTabs) {
+        this.inMemoryTabs.clear();
+        for (const tab of inputTabs) {
+          this.inMemoryTabs.set(tab.id, tab);
+        }
+      }
+    });
   }
 
   flush(): Promise<void> {

@@ -4,6 +4,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+// @ts-expect-error - standalone pure-ESM supervisor script
 import { PtySupervisor, SupervisorOutputBuffer } from '../../../src/pty-host/maw-ptyd.mjs';
 import { PtyHostClient } from '../../../src/pty-host/pty-host-client.js';
 import { MAX_PAYLOAD_SIZE, PTY_PROTOCOL_VERSION } from '../../../src/pty-host/pty-host-types.js';
@@ -216,7 +217,7 @@ test('A-11/D-04: tombstone cap, resize NaN/float rejection, duplicate kill timer
   assert.ok(liveSession);
 
   // Resize with NaN / float / negative must be rejected without mutating session cols/rows
-  for (const [badCols, badRows] of [[NaN, 24], [80, NaN], [80.5, 24], [80, 24.2], [Infinity, 24], [-1, 24]]) {
+  for (const [badCols, badRows] of [[NaN, 24], [80, NaN], [80.5, 24], [80, 24.2], [Infinity, 24], [-1, 24]] as const) {
     client.resize('live-1', badCols, badRows);
   }
   await new Promise((r) => setTimeout(r, 50));

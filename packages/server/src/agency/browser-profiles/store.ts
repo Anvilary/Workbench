@@ -148,6 +148,10 @@ export class BrowserProfileStore {
     return this.state.profiles.map((p) => ({ ...p }));
   }
 
+  flush(): Promise<void> {
+    return this.queue.flush();
+  }
+
   getProfile(id: BrowserProfileId): BrowserProfile | null {
     this.ensureReady();
     const item = this.state.profiles.find((p) => p.id === id);

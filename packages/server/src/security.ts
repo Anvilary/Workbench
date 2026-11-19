@@ -277,3 +277,18 @@ export function authorizeRequestNoAuth(
 export function isLocalNoAuthEnabled(): boolean {
   return process.env['MAW_UNSAFE_LOCAL_NO_AUTH'] === '1';
 }
+
+/**
+ * Clickjacking defense headers applied to every HTTP response served by Workbench.
+ */
+export const FRAME_PROTECTION_HEADERS = Object.freeze({
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "frame-ancestors 'none'",
+});
+
+export function applyFrameProtectionHeaders(
+  response: { setHeader(name: string, value: string): unknown },
+): void {
+  response.setHeader('X-Frame-Options', FRAME_PROTECTION_HEADERS['X-Frame-Options']);
+  response.setHeader('Content-Security-Policy', FRAME_PROTECTION_HEADERS['Content-Security-Policy']);
+}

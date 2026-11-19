@@ -1253,6 +1253,7 @@ test('P1 A-02: opencode and pi providers validate, launch, persist, and reload c
       rows: 24,
     });
     assert.equal(created.lifecycle, 'running');
+    assert.equal(created.kind, 'agent');
     assert.equal(created.nativeIdentity?.provider, provider);
     f.runtime.dispose();
   }
@@ -1260,7 +1261,7 @@ test('P1 A-02: opencode and pi providers validate, launch, persist, and reload c
   // Reload from disk via a fresh AgencySessionStore to verify validSession accepts opencode and pi
   const reloadedStore = new AgencySessionStore(sessionFile);
   const loaded = await reloadedStore.load();
-  const providers = new Set(loaded.map((s) => s.nativeIdentity?.provider));
+  const providers = new Set(loaded.map((s) => (s.kind === 'agent' ? s.nativeIdentity?.provider : undefined)));
   assert.ok(providers.has('opencode'), 'opencode session must reload from AgencySessionStore');
   assert.ok(providers.has('pi'), 'pi session must reload from AgencySessionStore');
 });

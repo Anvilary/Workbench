@@ -103,7 +103,7 @@ export interface AgencyWorkspaceSource {
 export type AgencyTerminalRegistry = Pick<
   TerminalRegistry,
   'open' | 'get' | 'list' | 'has' | 'close' | 'activityOf' | 'on' | 'off'
-> & Partial<Pick<TerminalRegistry, 'consumeTombstone' | 'isPersistent' | 'pidOf' | 'isSupervisorSessionUnconfirmed' | 'isAgencyManaged' | 'activeCount'>>;
+> & Partial<Pick<TerminalRegistry, 'terminate' | 'consumeTombstone' | 'isPersistent' | 'pidOf' | 'isSupervisorSessionUnconfirmed' | 'isAgencyManaged' | 'activeCount'>>;
 
 export interface AgencyRuntimeOptions {
   registry: AgencyTerminalRegistry;

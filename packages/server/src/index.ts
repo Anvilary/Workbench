@@ -26,6 +26,7 @@ import { RemoteAccessService } from './remote-access-service.js';
 import { RemoteDevicesStore } from './remote-devices-store.js';
 import {
   LOOPBACK_HOST,
+  applyFrameProtectionHeaders,
   authorizeRequest,
   isLocalNoAuthEnabled,
   buildDeviceCookie,
@@ -73,6 +74,7 @@ import {
 import { buildAgencyProfileLaunch } from './agency/agency-profile-capabilities.js';
 import { WorkspaceMutex } from './agency/workspace-lock.js';
 import { BrowserTabAdapter, BrowserTabStore } from './agency/browser-tabs/index.js';
+import { EditorTabAdapter, EditorTabStore } from './agency/editor-tabs/index.js';
 import { AgencyNotificationStore } from './agency/agency-notification-store.js';
 import { AgencyLayoutStore } from './agency/agency-layout-store.js';
 import { TabActivityManager } from './agency/tab-activity-manager.js';
@@ -464,6 +466,10 @@ async function main(): Promise<void> {
 
   const app = express();
   app.disable('x-powered-by');
+  app.use((_request: Request, response: Response, next: NextFunction) => {
+    applyFrameProtectionHeaders(response);
+    next();
+  });
 
   const httpServer = createServer(app);
 
@@ -561,6 +567,12 @@ async function main(): Promise<void> {
 
   const agencyBrowserTabs = new BrowserTabAdapter({ store: new BrowserTabStore(), workspaceStore: agencyWorkspaceStore });
   await agencyBrowserTabs.restore();
+  const agencyEditorTabs = new EditorTabAdapter({
+    store: new EditorTabStore(),
+    workspaceStore: agencyWorkspaceStore,
+    protectedDirsProvider: () => agents.protectedDirs(),
+  });
+  await agencyEditorTabs.restore();
   const agencyNotificationStore = new AgencyNotificationStore();
   const agencyActivityManager = new TabActivityManager({ notificationStore: agencyNotificationStore });
   const agencyLayoutStore = new AgencyLayoutStore();
@@ -618,6 +630,7 @@ async function main(): Promise<void> {
     agencyIdentities,
     agencyRuntime,
     agencyBrowserTabs,
+    agencyEditorTabs,
     agencyNotificationStore,
     agencyActivityManager,
     agencyLayoutStore,
@@ -734,6 +747,9 @@ async function main(): Promise<void> {
     void Promise.allSettled([
       historyFlushed,
       agencyBrowserTabs.flush(),
+      agencyEditorTabs.flush(),
+      agencyBrowserProfileStore.flush(),
+      settings.flush(),
       store.flush(),
       agencySessionStore.flush(),
       agencyWorkspaceStore.flush(),

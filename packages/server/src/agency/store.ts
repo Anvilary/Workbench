@@ -6,7 +6,7 @@
  * A corrupt primary is never silently treated as an empty state.
  */
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, realpath, rename, stat } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, realpath, rename, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type {
   AgencyErrorCode, AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId,
@@ -236,8 +236,18 @@ export class AgencyWorkspaceStore {
       const [next, value] = await fn(this.state);
       await mkdir(path.dirname(this.filePath), { recursive: true, mode: 0o700 });
       const serialized = Buffer.from(JSON.stringify(next, null, 2) + '\n', 'utf8');
-      await writeAtomically(this.filePath + '.bak', serialized, { mode: 0o600 });
+      let hadPrimary = true;
+      await copyFile(this.filePath, this.filePath + '.bak').catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') {
+          hadPrimary = false;
+          return;
+        }
+        throw error;
+      });
       await writeAtomically(this.filePath, serialized, { mode: 0o600 });
+      if (!hadPrimary) {
+        await writeAtomically(this.filePath + '.bak', serialized, { mode: 0o600 });
+      }
       this.state = next;
       return value;
     });
