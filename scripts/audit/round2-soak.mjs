@@ -111,8 +111,10 @@ try {
   const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
   await context.tracing.start({ screenshots: true, snapshots: true });
   const page = await context.newPage(); cdp = await context.newCDPSession(page); page.on('pageerror', e => errors.push(e.message));
+  const activeWorkspace = page.locator('.agency-workspace-slot:not([hidden])');
+  const activeTerminal = activeWorkspace.locator('.maw-session-pane:not([hidden])');
   await page.addInitScript(id => { localStorage.setItem('agency-ui.selected-workspace.v1', id); window.auditLongTasks = []; window.auditShifts = []; new PerformanceObserver(list => window.auditLongTasks.push(...list.getEntries().map(e => e.duration))).observe({ type: 'longtask', buffered: true }); new PerformanceObserver(list => window.auditShifts.push(...list.getEntries().filter(e => !e.hadRecentInput).map(e => e.value))).observe({ type: 'layout-shift', buffered: true }); }, workspaces[0].id);
-  await page.goto(address.url); await page.locator('.maw-session-pane:not([hidden]) .xterm-screen').waitFor();
+  await page.goto(address.url); await activeTerminal.locator('.xterm-screen').waitFor();
   const switchTimes = await page.evaluate(async ids => {
     const times = [];
     for (let i = 0; i < 100; i++) {
@@ -141,20 +143,20 @@ try {
     const control = page.locator(`[data-sidebar-workspace-id="${workspace.id}"] .agency-workspace-nav-button`);
     await control.click();
     await page.waitForFunction(id => document.querySelector(`[data-sidebar-workspace-id="${id}"] button[aria-current="page"]`), workspace.id);
-    await page.locator('.maw-session-pane:not([hidden]) .xterm-screen').waitFor();
+    await activeTerminal.locator('.xterm-screen').waitFor();
     workspaceTimes.push(performance.now() - began);
   }
   results.workspaceSwitchMs = summarize(workspaceTimes);
   for (const [width,height] of [[390,844],[768,1024],[1280,720],[1366,768],[1920,1080],[2560,1440]]) {
     await page.setViewportSize({width,height});
-    const tab = page.locator('[role=tab][aria-selected=true]'); await tab.press('F2');
+    const tab = activeWorkspace.getByRole('tab', { selected: true }); await tab.press('F2');
     const input = page.getByLabel('Tab title',{exact:true}); await input.fill('Shell ' + width); await input.press('Enter'); await page.getByRole('tab',{name:'Shell ' + width}).waitFor();
     await page.locator('.maw-menu-button').click();
     await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
     await page.getByRole('dialog', { name: 'Settings' }).waitFor();
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     await page.screenshot({path:path.join(out, 'controls-' + width + 'x' + height + '.png')}); await page.keyboard.press('Escape');
-    await page.locator('.maw-session-pane:not([hidden]) .xterm-helper-textarea').focus(); await page.keyboard.type('printf "ROUND2_INPUT_OK\\n"'); await page.keyboard.press('Enter');
+    await activeTerminal.locator('.xterm-helper-textarea').focus(); await page.keyboard.type('printf "ROUND2_INPUT_OK\\n"'); await page.keyboard.press('Enter');
   }
   results.interactionUi = await page.evaluate(() => ({ longTasksMs: window.auditLongTasks, layoutShift: window.auditShifts.reduce((a,b)=>a+b,0) }));
   await sample('ui-warm');
