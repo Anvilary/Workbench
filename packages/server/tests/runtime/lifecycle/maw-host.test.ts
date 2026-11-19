@@ -100,6 +100,7 @@ test('control url outputs authenticated loopback URL and open launches specified
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   const control = fileURLToPath(new URL('../../../../../scripts/maw/control.mjs', import.meta.url));
   const maw = fileURLToPath(new URL('../../../../../scripts/maw/maw', import.meta.url));
+  const anvilBench = fileURLToPath(new URL('../../../../../scripts/maw/anvil-bench', import.meta.url));
   const runtime = path.join(temp, 'maw');
   const expectedUrl = `http://127.0.0.1:${address.port}/?token=disposable-secret`;
   const clear = await publishReadiness(runtime, expectedUrl);
@@ -133,9 +134,15 @@ test('control url outputs authenticated loopback URL and open launches specified
     ]);
 
     const helpOut = await run(maw, ['help'], { cwd: '/', env: environment });
-    assert.match(helpOut.stdout, /Usage: maw \{desktop\|start\|stop\|restart\|rollback\|status\|logs \[--follow\]\|url\|open \[browser\]\|update \[--no-restart\|--restart\] \[--ref <ref> --allow-unapproved-ref\]\|help\}/);
+    assert.match(helpOut.stdout, /Usage: maw \{desktop\|start \[--force\]\|stop\|restart \[--force\]\|rollback\|status\|logs \[--follow\]\|url\|open \[browser\]\|update \[--no-restart\|--restart\] \[--ref <ref> --allow-unapproved-ref\]\|help\}/);
+
+    const anvilUrlOut = await run(anvilBench, ['url'], { cwd: '/', env: environment });
+    assert.equal(anvilUrlOut.stdout.trim(), expectedUrl);
+    const anvilHelpOut = await run(anvilBench, ['help'], { cwd: '/', env: environment });
+    assert.match(anvilHelpOut.stdout, /Usage: anvil-bench \{desktop\|start \[--force\]\|stop\|restart \[--force\]\|rollback\|status\|logs \[--follow\]\|url\|open \[browser\]\|update \[--no-restart\|--restart\] \[--ref <ref> --allow-unapproved-ref\]\|help\}/);
 
     await assert.rejects(run(maw, ['url', 'extra'], { cwd: '/', env: environment }));
+    await assert.rejects(run(anvilBench, ['url', 'extra'], { cwd: '/', env: environment }));
     await assert.rejects(run(maw, ['open', 'b1', 'b2'], { cwd: '/', env: environment }));
   } finally {
     await clear();

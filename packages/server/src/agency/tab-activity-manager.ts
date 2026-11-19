@@ -78,10 +78,11 @@ export class TabActivityManager extends EventEmitter {
   private readonly committedStates = new Map<string, TabActivityRecord>();
   private readonly tabTurnSequences = new Map<string, number>();
   private readonly shellParsers = new Map<string, ShellIntegrationParser>();
+  private readonly shellParserWorkspaces = new Map<string, WorkspaceId>();
   private readonly shellCommandCounters = new Map<string, number>();
   private readonly browserProviders = new Map<string, BrowserActivityProvider>();
+  private readonly purgedWorkspaces = new Set<WorkspaceId>();
   private readonly notificationStore: AgencyNotificationStore;
-  private readonly tabNames = new Map<string, string>();
   private readonly notifyOnNeedsInput: boolean;
   readonly longRunningThresholdMs: number;
   readonly file: string;
@@ -253,9 +254,9 @@ export class TabActivityManager extends EventEmitter {
     }
   }
 
-  private async saveActivity(record: TabActivityRecord, notification?: CreateNotificationInput, tabName?: string): Promise<void> {
+  private async saveActivity(record: TabActivityRecord, notification?: CreateNotificationInput, _tabName?: string): Promise<void> {
+    if (this.purgedWorkspaces.has(record.workspaceId)) return;
     const key = this.makeKey(record.workspaceId, record.tabId);
-    if (tabName) this.tabNames.set(key, tabName);
     const previous = this.states.get(key);
     const dedup = notification?.deduplicationKey;
     const previousReceipt = dedup ? this.pendingNotifications.get(dedup) : undefined;
@@ -325,6 +326,7 @@ export class TabActivityManager extends EventEmitter {
     if (input.sessionId && input.sessionId !== existing?.sessionId) {
       this.shellParsers.get(input.tabId)?.dispose();
       this.shellParsers.delete(input.tabId);
+      this.shellParserWorkspaces.delete(input.tabId);
       this.shellCommandCounters.delete(input.tabId);
     }
     this.emit('tabActivity', next);
@@ -338,10 +340,72 @@ export class TabActivityManager extends EventEmitter {
     return this.mutate(() => this.closeTabInner(workspaceId, tabId));
   }
 
+  /** Removes all persisted activity and parser state for a deleted workspace. */
+  purgeWorkspace(workspaceId: WorkspaceId): Promise<void> {
+    return this.mutate(async () => {
+      const records = [...this.states].filter(([, record]) => record.workspaceId === workspaceId);
+      const receipts = [...this.pendingNotifications].filter(([, receipt]) => receipt.workspaceId === workspaceId);
+      const wasPurged = this.purgedWorkspaces.has(workspaceId);
+      this.purgedWorkspaces.add(workspaceId);
+      for (const [key] of records) this.states.delete(key);
+      for (const [key] of receipts) this.pendingNotifications.delete(key);
+      if (records.length > 0 || receipts.length > 0) {
+        try {
+          await this.persist();
+        } catch (error) {
+          if (!wasPurged) this.purgedWorkspaces.delete(workspaceId);
+          for (const [key, record] of records) this.states.set(key, record);
+          for (const [key, receipt] of receipts) this.pendingNotifications.set(key, receipt);
+          throw error;
+        }
+      }
+      const keyPrefix = `${workspaceId}::`;
+      for (const key of [...this.tabTurnSequences.keys()]) {
+        if (key.startsWith(keyPrefix)) this.tabTurnSequences.delete(key);
+      }
+      const parserTabs = new Set<string>(records.map(([, record]) => record.tabId));
+      for (const [tabId, wsId] of this.shellParserWorkspaces) {
+        if (wsId === workspaceId) parserTabs.add(tabId);
+      }
+      for (const tabId of parserTabs) {
+        this.shellParsers.get(tabId)?.dispose();
+        this.shellParsers.delete(tabId);
+        this.shellParserWorkspaces.delete(tabId);
+        this.shellCommandCounters.delete(tabId);
+      }
+    });
+  }
+
   private async closeTabInner(workspaceId: WorkspaceId, tabId: string): Promise<void> {
     const key = this.makeKey(workspaceId, tabId);
-    const existing = this.states.get(key);
     const removedReceipts = [...this.pendingNotifications].filter(([, receipt]) => receipt.workspaceId === workspaceId && receipt.tabId === tabId);
+
+    const disposeTabParsers = (): void => {
+      const parser = this.shellParsers.get(tabId);
+      if (parser) {
+        parser.dispose();
+        this.shellParsers.delete(tabId);
+      }
+      this.shellParserWorkspaces.delete(tabId);
+      this.shellCommandCounters.delete(tabId);
+      this.tabTurnSequences.delete(key);
+    };
+
+    // Never resurrect a TabActivityRecord for a workspace that has already been purged.
+    if (this.purgedWorkspaces.has(workspaceId)) {
+      if (removedReceipts.length > 0) {
+        for (const [dedup] of removedReceipts) this.pendingNotifications.delete(dedup);
+        try { await this.persist(); }
+        catch (error) {
+          for (const [dedup, receipt] of removedReceipts) this.pendingNotifications.set(dedup, receipt);
+          throw error;
+        }
+      }
+      disposeTabParsers();
+      return;
+    }
+
+    const existing = this.states.get(key);
     for (const [dedup] of removedReceipts) this.pendingNotifications.delete(dedup);
     {
       const next: TabActivityRecord = {
@@ -363,12 +427,7 @@ export class TabActivityManager extends EventEmitter {
       }
       this.emit('tabActivity', next);
     }
-    const parser = this.shellParsers.get(tabId);
-    if (parser) {
-      parser.dispose();
-      this.shellParsers.delete(tabId);
-    }
-    this.shellCommandCounters.delete(tabId);
+    disposeTabParsers();
   }
 
   /**
@@ -672,25 +731,31 @@ export class TabActivityManager extends EventEmitter {
     if (!parser) {
       parser = new ShellIntegrationParser();
       this.shellParsers.set(tabId, parser);
+      this.shellParserWorkspaces.set(tabId, workspaceId);
 
       const key = this.makeKey(workspaceId, tabId);
-      const existing = this.states.get(key);
+      const existing = this.committedStates.get(key) ?? this.states.get(key);
       this.shellCommandCounters.set(tabId, existing?.turnSequence ?? 0);
 
-      // If no persisted state exists or if in-flight on restart, initialize
-      if (!existing) {
-        this.states.set(key, {
-          workspaceId,
-          tabId,
-          ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
-          state: 'unknown',
-          updatedAt: NOW(),
-          reliableSignal: false,
-          source: 'shell',
-          detail: 'Awaiting shell integration hooks',
-          closed: false,
-        });
-      }
+      // Synchronize initial state registration through the mutation queue so it
+      // never races with in-flight closeTab, purgeWorkspace, or persist/rollback.
+      void this.mutate(async () => {
+        if (this.disposed || this.purgedWorkspaces.has(workspaceId)) return;
+        if (this.shellParsers.get(tabId) !== parser) return;
+        if (!this.states.has(key)) {
+          this.states.set(key, {
+            workspaceId,
+            tabId,
+            ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
+            state: 'unknown',
+            updatedAt: NOW(),
+            reliableSignal: false,
+            source: 'shell',
+            detail: 'Awaiting shell integration hooks',
+            closed: false,
+          });
+        }
+      }).catch(() => undefined);
 
       parser.on('commandStart', () => {
         const count = (this.shellCommandCounters.get(tabId) ?? 0) + 1;
@@ -702,6 +767,7 @@ export class TabActivityManager extends EventEmitter {
         const count = this.shellCommandCounters.get(tabId) ?? 0;
         const reliableSignal = parser!.hasIntegration() && state !== 'unknown';
         void this.mutate(async () => {
+          if (this.disposed || this.purgedWorkspaces.has(workspaceId)) return;
           const current = this.states.get(key);
           if (current?.closed || (options?.sessionId && current?.sessionId && current.sessionId !== options.sessionId)) return;
           // Ordinary shell command completion must not leave a persistent "finished" badge on its terminal tab.
@@ -742,9 +808,14 @@ export class TabActivityManager extends EventEmitter {
       parser.dispose();
     }
     this.shellParsers.clear();
+    this.shellParserWorkspaces.clear();
     this.shellCommandCounters.clear();
     this.tabTurnSequences.clear();
     this.browserProviders.clear();
+    this.states.clear();
+    this.committedStates.clear();
+    this.pendingNotifications.clear();
+    this.purgedWorkspaces.clear();
     this.removeAllListeners();
   }
 }

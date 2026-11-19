@@ -20,6 +20,7 @@ maw_init_paths
 
 control_script="${MAW_CONTROL_SCRIPT:-$self_dir/control.mjs}"
 timeout_seconds="${MAW_READY_TIMEOUT:-20}"
+cli_name="${MAW_CLI_NAME:-maw}"
 mode=restart
 force=false
 
@@ -41,7 +42,7 @@ if ! maw_lock_restart; then
   exit 1
 fi
 if ! maw_lock_update 30; then
-  printf '%s\n' 'An update is still being staged; retry maw restart when it finishes.' >&2
+  printf '%s\n' "An update is still being staged; retry $cli_name restart when it finishes." >&2
   exit 1
 fi
 
@@ -49,7 +50,7 @@ phase=start
 on_signal() {
   trap '' HUP INT TERM
   maw_log activation-interrupted signal "$1" phase "$phase" current "$(basename "$(maw_pointer_raw current)")"
-  printf '%s\n' "Restart helper interrupted ($1) during $phase. 'current' may be unverified; run 'maw restart' to verify or roll back." >&2
+  printf '%s\n' "Restart helper interrupted ($1) during $phase. 'current' may be unverified; run '$cli_name restart' to verify or roll back." >&2
   exit 130
 }
 trap 'on_signal HUP' HUP
@@ -61,6 +62,10 @@ sctl() { maw_sctl "$@"; }
 unit_state() { sctl show "$unit" --property=ActiveState --value 2>/dev/null || true; }
 ptyd_unit_state() { sctl show "${MAW_PTYD_UNIT:-maw-ptyd.service}" --property=ActiveState --value 2>/dev/null || true; }
 
+backend_may_write() {
+  case "$(unit_state)" in inactive|failed) return 1 ;; *) return 0 ;; esac
+}
+
 # probe RELEASE_ID -> authenticated readiness of the unit's MainPID, serving exactly RELEASE_ID
 # (empty RELEASE_ID = unmanaged legacy target; readiness only).
 probe() {
@@ -70,10 +75,16 @@ probe() {
 # start_and_verify DIR -> 0 when the service started from DIR reports DIR's release ID.
 fail_reason=""
 backend_stopped=false
+ptyd_promoted=false
+ptyd_bundle_changed() {
+  ! cmp -s "$1/packages/server/dist/maw-ptyd.mjs" "$2/packages/server/dist/maw-ptyd.mjs" ||
+    ! cmp -s "$1/packages/server/dist/terminal-state.mjs" "$2/packages/server/dist/terminal-state.mjs"
+}
 start_and_verify() {
   _id=$(maw_release_id "$1")
   sctl reset-failed "$unit" "${MAW_PTYD_UNIT:-maw-ptyd.service}" >/dev/null 2>&1 || true
   if [ "$restart_ptyd" = true ]; then
+    ptyd_promoted=true
     if ! sctl restart "${MAW_PTYD_UNIT:-maw-ptyd.service}"; then
       fail_reason="PTY supervisor restart failed"
       return 1
@@ -82,7 +93,7 @@ start_and_verify() {
   fi
   if [ "$backend_stopped" = true ]; then
     if ! sctl start "$unit"; then
-      fail_reason="systemctl start failed after PTY supervisor promotion"
+      fail_reason="systemctl start failed after backend quiescence"
       return 1
     fi
     backend_stopped=false
@@ -132,7 +143,7 @@ previous=$(maw_pointer previous)
 if [ "$mode" = start ] && [ "$(unit_state)" = active ]; then
   if ! maw_valid_release "$current_raw" || ! probe "$(maw_release_id "$current_raw")"; then
     maw_log start-unhealthy release "$(basename "$current_raw")"
-    printf '%s\n' 'MAW is active but authenticated readiness failed. Inspect maw status and maw logs; use maw restart to activate a repaired release.' >&2
+    printf '%s\n' "MAW is active but authenticated readiness failed. Inspect $cli_name status and $cli_name logs; use $cli_name restart to activate a repaired release." >&2
     exit 1
   fi
   if [ "$current_raw" != "$healthy" ]; then
@@ -153,7 +164,7 @@ fi
 
 if [ -n "$staged" ]; then target="$staged"; else target="$current_raw"; fi
 if [ -z "$target" ]; then
-  printf '%s\n' "CRITICAL: no release to start ($state_dir/current is missing). Run the installer or maw update." >&2
+  printf '%s\n' "CRITICAL: no release to start ($state_dir/current is missing). Run the installer or $cli_name update." >&2
   maw_log activation-critical reason 'no current release'
   exit 3
 fi
@@ -162,8 +173,8 @@ managed=true
 maw_valid_release "$target" || managed=false
 
 if ! "$node_bin" "$control_script" check-data "$target"; then
-  maw_log activation-blocked target "$target_name" reason 'target release cannot read existing browser tab data'
-  printf '%s\n' 'Activation refused to protect browser tab data. Archive the v2 browser tab store and perform an explicit data migration before using this older release.' \
+  maw_log activation-blocked target "$target_name" reason 'target release cannot preserve existing browser data'
+  printf '%s\n' 'Activation refused to protect browser data.' \
     'No release pointer or service was changed.' >&2
   exit 1
 fi
@@ -173,25 +184,21 @@ fi
 # confirms there are no live PTYs; authentication or snapshot failures defer
 # the activation before any release pointer or service is changed.
 restart_ptyd=false
-quiesce_backend=false
-if [ "$managed" = true ] && maw_valid_release "$current_raw" &&
-  ! cmp -s "$current_raw/packages/server/dist/maw-ptyd.mjs" "$target/packages/server/dist/maw-ptyd.mjs" &&
-  [ "$(ptyd_unit_state)" = active ]; then
-  if ! "$node_bin" "$control_script" ptyd-empty >/dev/null 2>&1; then
-    maw_log activation-blocked target "$target_name" reason 'PTY supervisor is not authenticated or has live sessions'
-    printf '%s\n' 'Activation deferred: the PTY supervisor could not be authenticated or still has live sessions.' \
-      'Close all MAW terminal sessions, then run maw restart again. No release pointer or service was changed.' >&2
+running_ptyd=""
+if [ "$managed" = true ] && [ "$(ptyd_unit_state)" = active ]; then
+  if ! running_ptyd=$("$node_bin" "$control_script" ptyd-release) || ! maw_valid_release "$running_ptyd"; then
+    maw_log activation-blocked target "$target_name" reason 'could not verify running PTY supervisor release'
+    printf '%s\n' 'Activation deferred: the running PTY supervisor release could not be verified.' >&2
     exit 1
   fi
-  restart_ptyd=true
-  if [ "$(unit_state)" = active ]; then
-    _backend_mode=$("$node_bin" "$control_script" backend-mode 2>/dev/null) || {
-      maw_log activation-blocked target "$target_name" reason 'could not determine backend PTY mode'
-      printf '%s\n' 'Activation deferred: could not determine whether the active backend owns in-process PTYs.' \
-        'No release pointer or service was changed.' >&2
+  if ptyd_bundle_changed "$running_ptyd" "$target"; then
+    if ! "$node_bin" "$control_script" ptyd-empty >/dev/null 2>&1; then
+      maw_log activation-blocked target "$target_name" reason 'PTY supervisor is not authenticated or has live sessions'
+      printf '%s\n' 'Activation deferred: the PTY supervisor could not be authenticated or still has live sessions.' \
+        "Retry $cli_name restart after all terminal sessions have finished. No release pointer or service was changed." >&2
       exit 1
-    }
-    [ "$_backend_mode" = persistent ] && quiesce_backend=true
+    fi
+    restart_ptyd=true
   fi
 fi
 
@@ -201,26 +208,33 @@ printf '%s\n' "Activating $target_name on $unit..."
 # Activation guard: protect active coding agents from being killed by backend restart
 guard_script="${MAW_ACTIVATE_GUARD:-$self_dir/maw-activate-guard.sh}"
 if [ "$force" != true ] && [ -x "$guard_script" ]; then
-  if ! "$guard_script" --unit "$unit"; then
+  if ! MAW_CLI_NAME="$cli_name" "$guard_script" --unit "$unit"; then
     maw_log activation-blocked target "$target_name" reason 'active coding agents in unit cgroup'
     printf '%s\n' 'Activation refused: active coding agents detected in service cgroup.' \
-      'Wait for tasks to finish, or pass --force (e.g. maw restart --force) to override.' >&2
+      "Wait for tasks to finish, or pass --force (e.g. $cli_name restart --force) to override." >&2
     exit 1
   fi
 fi
 
-# Prevent the persistent backend from creating a PTY between the empty snapshot
-# and supervisor restart. The first check above avoids stopping MAW on the
-# normal refusal path; this second check happens only after MAW is quiesced.
-if [ "$quiesce_backend" = true ]; then
+# Stop admission and let pending writes flush before changing release or
+# replacing the supervisor. The preflight checks keep refusals non-disruptive.
+if { [ "$target" != "$current_raw" ] || [ "$restart_ptyd" = true ]; } && backend_may_write; then
   backend_stopped=true
   if ! sctl stop "$unit"; then
     restore_backend || true
-    maw_log activation-blocked target "$target_name" reason 'could not quiesce backend before supervisor promotion'
-    printf '%s\n' 'Activation deferred: MAW could not be stopped safely for supervisor promotion.' >&2
+    maw_log activation-blocked target "$target_name" reason 'could not quiesce backend before release switch'
+    printf '%s\n' 'Activation deferred: MAW could not be stopped safely for the release switch.' >&2
     exit 1
   fi
-  if ! "$node_bin" "$control_script" ptyd-empty >/dev/null 2>&1; then
+  if ! "$node_bin" "$control_script" check-data "$target"; then
+    maw_log activation-blocked target "$target_name" reason 'target cannot preserve data flushed by the backend'
+    printf '%s\n' 'Activation refused to protect browser data. No release pointer was changed.' >&2
+    if ! restore_backend; then
+      printf '%s\n' "Warning: previous backend readiness was not restored. Inspect $cli_name status." >&2
+    fi
+    exit 1
+  fi
+  if [ "$restart_ptyd" = true ] && ! "$node_bin" "$control_script" ptyd-empty >/dev/null 2>&1; then
     _restored=false
     restore_backend && _restored=true
     maw_log activation-blocked target "$target_name" reason 'PTY sessions appeared while backend was quiesced'
@@ -229,7 +243,7 @@ if [ "$quiesce_backend" = true ]; then
     if [ "$_restored" = true ]; then
       printf '%s\n' 'The previous backend is healthy.' >&2
     else
-      printf '%s\n' 'Warning: previous backend readiness was not restored; inspect maw status.' >&2
+      printf '%s\n' "Warning: previous backend readiness was not restored; inspect $cli_name status." >&2
     fi
     exit 1
   fi
@@ -244,7 +258,7 @@ if [ "$managed" = true ] && [ "$target" != "$current_raw" ]; then
       if restore_backend; then
         printf '%s\n' 'The previous backend is healthy; the supervisor was not restarted.' >&2
       else
-        printf '%s\n' 'Warning: previous backend readiness was not restored; inspect maw status.' >&2
+        printf '%s\n' "Warning: previous backend readiness was not restored; inspect $cli_name status." >&2
       fi
     fi
     exit 1
@@ -266,7 +280,7 @@ if start_and_verify "$target"; then
   # Garbage-collect unreferenced releases (never the pointed-to ones, never non-release paths).
   keep="${MAW_KEEP_RELEASES:-1}"
   rr=$(cd "$releases_dir" 2>/dev/null && pwd -P) || exit 0
-  refs=" $(maw_pointer_raw current) $(maw_pointer_raw staged) $(maw_pointer_raw healthy) $(maw_pointer_raw previous) "
+  refs=" $(maw_pointer_raw current) $(maw_pointer_raw staged) $(maw_pointer_raw healthy) $(maw_pointer_raw previous) $running_ptyd "
   # shellcheck disable=SC2012
   ls -1 "$rr" 2>/dev/null | sort -r | while IFS= read -r name; do
     d="$rr/$name"
@@ -287,14 +301,40 @@ printf '%s\n' "Error: release $target_name failed activation: $failed_reason." >
 phase=rollback
 if [ -n "$healthy" ] && [ "$healthy" != "$target" ]; then
   healthy_name=$(basename "$healthy")
+  if [ "$backend_stopped" = false ] && backend_may_write; then
+    if ! sctl stop "$unit"; then
+      maw_log rollback-failure release "$healthy_name" failed "$target_name" reason 'could not quiesce backend before rollback'
+      printf '%s\n' 'CRITICAL: automatic rollback was deferred because MAW could not be stopped safely.' >&2
+      exit 3
+    fi
+    backend_stopped=true
+  fi
   if ! "$node_bin" "$control_script" check-data "$healthy"; then
-    maw_log rollback-failure release "$healthy_name" failed "$target_name" reason 'target release cannot read existing browser tab data'
-    printf '%s\n' "CRITICAL: automatic rollback to $healthy_name was blocked to protect browser tab data." \
-      'The browser tab store was preserved. Inspect maw status and maw logs before choosing a compatible release.' >&2
+    maw_log rollback-failure release "$healthy_name" failed "$target_name" reason 'target release cannot preserve existing browser data'
+    printf '%s\n' "CRITICAL: automatic rollback to $healthy_name was blocked to protect browser data." \
+      "The browser tab store was preserved. Inspect $cli_name status and $cli_name logs before choosing a compatible release." >&2
+    exit 3
+  fi
+  if [ "$ptyd_promoted" = true ] && [ "$(ptyd_unit_state)" = active ] &&
+    ! "$node_bin" "$control_script" ptyd-empty >/dev/null 2>&1; then
+    maw_log rollback-failure release "$healthy_name" failed "$target_name" reason 'live PTY sessions or unverifiable supervisor'
+    printf '%s\n' 'CRITICAL: automatic rollback was deferred to protect PTY sessions.' \
+      "The supervisor is still running. Inspect $cli_name status and $cli_name logs." >&2
     exit 3
   fi
   printf '%s\n' "Rolling back to last verified healthy release $healthy_name..." >&2
   printf '%s\n' 'Executable rollback does not guarantee historical-data compatibility; older releases cannot display split session history.' >&2
+  if [ "$ptyd_promoted" = true ]; then
+    if [ -f "$healthy/packages/server/dist/maw-ptyd.mjs" ] && [ -f "$healthy/packages/server/dist/terminal-state.mjs" ]; then
+      restart_ptyd=true
+    else
+      restart_ptyd=false
+      if ! sctl stop "${MAW_PTYD_UNIT:-maw-ptyd.service}"; then
+        maw_log rollback-failure release "$healthy_name" failed "$target_name" reason 'could not stop the empty supervisor'
+        exit 3
+      fi
+    fi
+  fi
   if maw_set_pointer current "$healthy" && start_and_verify "$healthy"; then
     maw_log rollback-success release "$healthy_name" failed "$target_name"
     printf '%s\n' "UPDATE FAILED, SERVICE RECOVERED: $healthy_name is active and verified healthy." \
@@ -303,7 +343,7 @@ if [ -n "$healthy" ] && [ "$healthy" != "$target" ]; then
   fi
   maw_log rollback-failure release "$healthy_name" failed "$target_name" reason "$fail_reason"
   printf '%s\n' "CRITICAL: rollback to $healthy_name also failed ($fail_reason). MAW is DOWN." \
-    "Inspect: maw logs; systemctl --user status $unit" >&2
+    "Inspect: $cli_name logs; systemctl --user status $unit" >&2
   exit 3
 fi
 
@@ -314,6 +354,6 @@ else
   maw_log activation-critical reason 'no verified healthy release to roll back to' release "$target_name"
   printf '%s\n' "CRITICAL: no verified healthy release is available for rollback. MAW is DOWN." >&2
 fi
-printf '%s\n' "Inspect: maw logs; systemctl --user status $unit" >&2
-[ -n "$previous" ] && printf '%s\n' "An older verified release exists ($(basename "$previous")): maw rollback" >&2
+printf '%s\n' "Inspect: $cli_name logs; systemctl --user status $unit" >&2
+[ -n "$previous" ] && printf '%s\n' "An older verified release exists ($(basename "$previous")): $cli_name rollback" >&2
 exit 3

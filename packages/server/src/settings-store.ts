@@ -285,6 +285,10 @@ export class SettingsStore {
     return this.current;
   }
 
+  flush(): Promise<void> {
+    return this.queue;
+  }
+
   /**
    * Aplica un cambio y lo escribe. Lanza si la carpeta no es absoluta, si el
    * puerto no sirve o si no se pudo escribir; en todos los casos `get()` sigue

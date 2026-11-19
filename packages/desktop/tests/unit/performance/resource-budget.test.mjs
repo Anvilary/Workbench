@@ -5,6 +5,8 @@ import {
   selectEvictionCandidate,
   MemoryPressureTier,
   isProtectedProvider,
+  isTypingInput,
+  canEvictView,
 } from '../../../resource-budget.mjs';
 
 const GB = 1024 * 1024 * 1024;
@@ -625,4 +627,69 @@ test('calculateResourceBudget: tierOverride deterministically controls memory pr
   const normal = calculateResourceBudget({ ...base, tierOverride: 'normal' });
   assert.equal(normal.memoryTier, MemoryPressureTier.NORMAL);
   assert.equal(normal.budget, 3);
+});
+
+test('isTypingInput distinguishes text-editing keys from shortcuts and navigation', () => {
+  assert.equal(isTypingInput({ type: 'keyDown', key: 'a' }), true);
+  assert.equal(isTypingInput({ type: 'keyDown', key: 'Enter' }), true);
+  assert.equal(isTypingInput({ type: 'keyDown', key: 'Backspace' }), true);
+  assert.equal(isTypingInput({ type: 'keyDown', key: 'Delete' }), true);
+
+  assert.equal(isTypingInput({ type: 'keyUp', key: 'a' }), false);
+  assert.equal(isTypingInput({ type: 'keyDown', control: true, key: 'Tab' }), false);
+  assert.equal(isTypingInput({ type: 'keyDown', control: true, key: 'w' }), false);
+  assert.equal(isTypingInput({ type: 'keyDown', control: true, key: 'c' }), false);
+  assert.equal(isTypingInput({ type: 'keyDown', meta: true, key: 'l' }), false);
+  assert.equal(isTypingInput({ type: 'keyDown', key: 'Tab' }), false);
+  assert.equal(isTypingInput({ type: 'keyDown', key: 'Escape' }), false);
+  assert.equal(isTypingInput({ type: 'keyDown', key: 'ArrowDown' }), false);
+  assert.equal(isTypingInput({ type: 'keyDown', key: 'F11' }), false);
+  assert.equal(isTypingInput({ type: 'keyDown', key: 'Shift' }), false);
+});
+
+test('canEvictView protects AI and typed tabs in normal pressure but permits emergency eviction under CRITICAL pressure', () => {
+  const makeView = (url) => ({
+    webContents: {
+      isDestroyed: () => false,
+      isLoading: () => false,
+      getURL: () => url,
+    },
+  });
+  const base = {
+    attachedViews: new Map(),
+    layoutFocusedId: null,
+    activeDownloads: new Map(),
+    popupOwners: new Map(),
+    views: new Map([
+      ['chatgpt-bg', makeView('https://chatgpt.com/c/123')],
+      ['github-typed', makeView('https://github.com/org/repo')],
+      ['github-plain', makeView('https://github.com/org/other')],
+    ]),
+    providers: new Map([
+      ['chatgpt-bg', 'chatgpt'],
+      ['github-typed', 'github'],
+      ['github-plain', 'github'],
+    ]),
+    interactionProtected: new Set(['github-typed']),
+    durablePage: () => true,
+  };
+
+  // Normal pressure: plain background tab evictable; AI and typed tabs protected
+  assert.equal(canEvictView({ ...base, id: 'github-plain', memoryTier: MemoryPressureTier.NORMAL }), true);
+  assert.equal(canEvictView({ ...base, id: 'chatgpt-bg', memoryTier: MemoryPressureTier.NORMAL }), false);
+  assert.equal(canEvictView({ ...base, id: 'github-typed', memoryTier: MemoryPressureTier.NORMAL }), false);
+
+  // Critical pressure: background AI and typed tabs become emergency eviction candidates
+  assert.equal(canEvictView({ ...base, id: 'chatgpt-bg', memoryTier: MemoryPressureTier.CRITICAL }), true);
+  assert.equal(canEvictView({ ...base, id: 'github-typed', memoryTier: MemoryPressureTier.CRITICAL }), true);
+
+  // Attached or focused views are NEVER evictable even under CRITICAL pressure
+  assert.equal(
+    canEvictView({ ...base, id: 'chatgpt-bg', attachedViews: new Map([['chatgpt-bg', {}]]), memoryTier: MemoryPressureTier.CRITICAL }),
+    false,
+  );
+  assert.equal(
+    canEvictView({ ...base, id: 'github-plain', layoutFocusedId: 'github-plain', memoryTier: MemoryPressureTier.CRITICAL }),
+    false,
+  );
 });

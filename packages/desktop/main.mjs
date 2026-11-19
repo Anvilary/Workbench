@@ -2,17 +2,18 @@ import { app, BrowserWindow, WebContentsView, Menu, ipcMain, session, shell, dia
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import { PARTITION, GITHUB_PARTITION, PERPLEXITY_PARTITION, BROWSER_PARTITION, otherUrl, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, targetWebProvider, isSameSite, authenticationUrl, decideWindowOpen, getBrowserZoomAction, selectBestFavicon } from './policy.mjs';
+import { DEFAULT_BROWSER_PROFILE_ID, isValidBrowserProfileId, partitionForBrowserProfile, otherUrl, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, targetWebProvider, isSameSite, authenticationUrl, decideWindowOpen, getBrowserZoomAction, selectBestFavicon } from './policy.mjs';
 import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
-import { calculateResourceBudget, selectEvictionCandidate, isProtectedProvider, readSystemMemory } from './resource-budget.mjs';
+import { calculateResourceBudget, selectEvictionCandidate, isProtectedProvider, readSystemMemory, isTypingInput, canEvictView } from './resource-budget.mjs';
 import { ResourceCollector } from './resource-monitor.mjs';
 import { browserDownloadHandler } from './browser-downloads.mjs';
-import { isAllowedWebAuthnOrigin, isValidRpId, generateClientData, parseFido2AssertOutput, classifyWebAuthnError } from './webauthn-policy.mjs';
-import { isFido2ToolsAvailable, discoverFido2Devices, getDeviceCapabilities, executeAssertion } from './webauthn-backend.mjs';
+import { isAllowedWebAuthnOrigin, isValidRpId } from './webauthn-policy.mjs';
+import { isFido2ToolsAvailable } from './webauthn-backend.mjs';
 import { requestPinDialog } from './webauthn-dialog.mjs';
-import { isOAuthLoopbackCallback } from './src/security/oauth-loopback.mjs';
-import { configureBrowserSessionPermissions, isDurableProviderPage } from './src/security/session-permissions.mjs';
+import { isOAuthLoopbackCallback, createOAuthLoopbackGate } from './src/security/oauth-loopback.mjs';
+import { configureProviderSessionPermissions, configureShellSessionSecurity, isDurableProviderPage } from './src/security/session-permissions.mjs';
+import { cloneBrowserProfileStorage, clearProfileSiteAuth, deleteBrowserProfileStorage } from './src/security/browser-profile-storage.mjs';
+import { performWebAuthnAssertion, resolveWebAuthnPaneBounds } from './src/security/webauthn-orchestrator.mjs';
 import { discoverBackendReadiness } from './src/ipc/backend-readiness.mjs';
 import { applyWebContentsZoom } from './src/browser/zoom-controller.mjs';
 
@@ -21,7 +22,7 @@ export { isOAuthLoopbackCallback };
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Deliberately distinct from both production MAW and any Brave/Neko profile.
 app.setPath('userData', path.resolve(process.env.MAW_DESKTOP_DATA_DIR || path.join(app.getPath('appData'), 'maw-desktop-prototype')));
-app.setName(process.env.MAW_DESKTOP_PRODUCTION === '1' ? 'My Amazing Workspace' : 'MAW ChatGPT Prototype');
+app.setName(process.env.MAW_DESKTOP_PRODUCTION === '1' ? 'Anvilary Workbench' : 'Anvilary Workbench Prototype');
 if (process.platform === 'linux') app.setDesktopName('maw.desktop');
 if (app.commandLine.hasSwitch('no-sandbox')) throw new Error('MAW desktop requires Chromium sandboxing');
 app.enableSandbox();
@@ -30,9 +31,6 @@ app.commandLine.appendSwitch('enable-webgl');
 app.commandLine.appendSwitch('disable-accelerated-video-decode');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 if (!process.env.DRI_PRIME) process.env.DRI_PRIME = '0';
-if (!process.env.VK_DRIVER_FILES && !process.env.VK_ICD_FILENAMES && existsSync('/usr/share/vulkan/icd.d/radeon_icd.json')) {
-  process.env.VK_DRIVER_FILES = '/usr/share/vulkan/icd.d/radeon_icd.json';
-}
 let local = serviceUrl(process.env.MAW_DESKTOP_URL || '');
 delete process.env.MAW_DESKTOP_URL;
 if (!app.requestSingleInstanceLock({ serviceUrl: local.href })) app.exit(0);
@@ -46,29 +44,26 @@ async function start() {
   const isWebAuthnEnabled = process.env.MAW_WEBAUTHN_ENABLED !== '0';
   const webauthnPreload = path.join(here, 'webauthn-preload.cjs');
   const secure = { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: false, allowRunningInsecureContent: false };
-  const chatSession = session.fromPartition(PARTITION);
-  const githubSession = session.fromPartition(GITHUB_PARTITION);
-  const perplexitySession = session.fromPartition(PERPLEXITY_PARTITION);
-  const browserSession = session.fromPartition(BROWSER_PARTITION);
-  configureBrowserSessionPermissions({
-    chatSession,
-    githubSession,
-    perplexitySession,
-    browserSession,
-    otherUrl,
-    authenticationUrl,
-  });
 
   const iconPath = path.join(here, 'icon.png');
-  const win = new BrowserWindow({ width: 1280, height: 860, title: 'MAW · ChatGPT feasibility prototype', autoHideMenuBar: true,
+  const win = new BrowserWindow({ width: 1280, height: 860, title: 'Anvilary Workbench', autoHideMenuBar: true,
     backgroundColor: '#0e0e10',
     icon: iconPath,
     webPreferences: { ...secure, partition: 'persist:maw-shell-prototype', preload: path.join(here, 'preload.cjs') } });
+  configureShellSessionSecurity({
+    session: win.webContents.session,
+    getLocalOrigin: () => local.origin,
+    externalUrl,
+  });
   const views = new Map();
   const urls = new Map();
   const providers = new Map();
+  const profileIds = new Map(); // id -> browserProfileId
+  const cloningProfiles = new Set();
   const requestedUrls = new Map();
   const failures = new Map();
+  const configuredPartitions = new Map(); // partitionName -> Electron.Session
+  const sessionProviders = new Map(); // Electron.Session -> provider
   let layoutFocusedId = null;
   // Native clicks must not make an unchanged renderer layout look like a new focus request.
   let reportedFocusedId = null;
@@ -76,7 +71,7 @@ async function start() {
   const popupOwners = new Map(); // popup WebContents -> tabId
   const authEntryUrls = new WeakMap(); // WebContents -> relying-party URL before sign-in
   const attachedViews = new Map(); // id -> WebContentsView (up to 4 simultaneously visible)
-  const suspendedTabs = new Map(); // id -> { id, provider, url, requestedUrl, zoomLevel, suspendedAt }
+  const suspendedTabs = new Map(); // id -> { id, provider, profileId, url, requestedUrl, zoomLevel, suspendedAt }
   const lastAccessedAt = new Map(); // id -> number (timestamp)
   const activeDownloads = new Map(); // id -> number (count)
   const interactionProtected = new Set();
@@ -95,6 +90,18 @@ async function start() {
     return true;
   }
 
+  function flushBrowserSession(sess) {
+    if (!sess) return;
+    try {
+      if (typeof sess.flushStorageData === 'function') sess.flushStorageData();
+    } catch {}
+    try {
+      if (sess.cookies && typeof sess.cookies.flushStore === 'function') {
+        void sess.cookies.flushStore().catch(() => {});
+      }
+    } catch {}
+  }
+
   const getBackendReadiness = () => discoverBackendReadiness({ serviceUrl });
 
   const resourceCollector = new ResourceCollector({
@@ -111,9 +118,22 @@ async function start() {
     },
   });
 
-  const browserSessions = { chatgpt: chatSession, github: githubSession, perplexity: perplexitySession, other: browserSession };
-  for (const [provider, browser] of Object.entries(browserSessions)) {
-    browser.on('will-download', browserDownloadHandler({
+  function ensurePartitionSession(profileId, provider = 'chatgpt') {
+    const effectiveProfileId = isValidBrowserProfileId(profileId) ? profileId : DEFAULT_BROWSER_PROFILE_ID;
+    const partitionName = partitionForBrowserProfile(effectiveProfileId, provider);
+    const existing = configuredPartitions.get(partitionName);
+    if (existing) return existing;
+
+    const targetSession = session.fromPartition(partitionName);
+    configuredPartitions.set(partitionName, targetSession);
+    sessionProviders.set(targetSession, provider);
+    configureProviderSessionPermissions({
+      provider,
+      session: targetSession,
+      otherUrl,
+      authenticationUrl,
+    });
+    targetSession.on('will-download', browserDownloadHandler({
       provider, views, providers, popupOwners, popups, activeDownloads,
       allowedOrigin: (value) => {
         try {
@@ -139,6 +159,11 @@ async function start() {
         trimCapacity();
       },
     }));
+    return targetSession;
+  }
+
+  for (const defaultProvider of ['chatgpt', 'github', 'perplexity', 'other']) {
+    ensurePartitionSession(DEFAULT_BROWSER_PROFILE_ID, defaultProvider);
   }
 
   function hideAll() {
@@ -146,6 +171,7 @@ async function start() {
       if (!win.isDestroyed() && !view.webContents.isDestroyed()) {
         try { win.contentView.removeChildView(view); } catch {}
         try { view.setVisible(false); } catch {}
+        try { view.webContents.setBackgroundThrottling(true); } catch {}
       }
     }
     attachedViews.clear();
@@ -158,6 +184,7 @@ async function start() {
         if (!win.isDestroyed() && !view.webContents.isDestroyed()) {
           try { win.contentView.removeChildView(view); } catch {}
           try { view.setVisible(false); } catch {}
+          try { view.webContents.setBackgroundThrottling(true); } catch {}
         }
         attachedViews.delete(id);
       }
@@ -192,21 +219,33 @@ async function start() {
     applyWebContentsZoom(id, contents, action, zoomLevels, send);
   }
 
+  const allowOAuthLoopback = createOAuthLoopbackGate({ maxRequests: 3, windowMs: 10_000 });
+
+  function isContentsInAuthFlow(contents, provider) {
+    if (!contents || contents.isDestroyed()) return false;
+    if (authEntryUrls.has(contents)) return true;
+    let currentUrl = '';
+    try { currentUrl = contents.getURL() || ''; } catch {}
+    if (!currentUrl) return false;
+    if (authenticationUrl(currentUrl)) return true;
+    if (provider === 'github' && /^https:\/\/github\.com\/(?:login|sessions)\//i.test(currentUrl)) return true;
+    return false;
+  }
+
+  function tryOpenOAuthLoopback(url, sourceKey = 'global') {
+    if (!isOAuthLoopbackCallback(url, { excludePort: local.port })) return false;
+    if (process.env.MAW_EXTERNAL_POLICY === 'deny') {
+      send({ type: 'error', message: 'External browser opening was cancelled.' });
+      return true;
+    }
+    if (!allowOAuthLoopback(sourceKey)) return true;
+    void shell.openExternal(url).catch(() => {});
+    return true;
+  }
+
   function guard(contents, provider = 'chatgpt', allowPopup = true) {
     const getTabId = () => [...views.entries()].find(([, v]) => v.webContents === contents)?.[0] || popupOwners.get(contents);
-    const isAuthFlow = () => {
-      if (!allowPopup || popupOwners.has(contents)) return true;
-      try {
-        const parentWin = BrowserWindow.fromWebContents(contents);
-        if (parentWin && popups.has(parentWin)) return true;
-      } catch {}
-      if (authEntryUrls.has(contents)) return true;
-      let currentUrl = '';
-      try { currentUrl = contents.getURL() || ''; } catch {}
-      if (currentUrl && (authenticationUrl(currentUrl) || authEntryUrls.has(contents))) return true;
-      if (provider === 'chatgpt' || provider === 'github' || provider === 'perplexity') return true;
-      return false;
-    };
+    const isAuthFlow = () => isContentsInAuthFlow(contents, provider);
     const handleFileDelivery = (event, url) => {
       if (provider === 'chatgpt' && isDownloadOrFileDeliveryUrl(url)) {
         event.preventDefault();
@@ -244,9 +283,8 @@ async function start() {
     const navigation = (event, url, isInPlace, isMainFrame) => {
       if (isMainFrame === false) return;
       if (handleFileDelivery(event, url)) return;
-      if (isOAuthLoopbackCallback(url) && isAuthFlow()) {
+      if (isAuthFlow() && tryOpenOAuthLoopback(url, getTabId() || 'popup')) {
         event.preventDefault();
-        void shell.openExternal(url).catch(() => {});
         return;
       }
       if (isSameSiteOrAllowed(url)) return;
@@ -263,9 +301,8 @@ async function start() {
     const redirect = (event, url, isInPlace, isMainFrame) => {
       if (isMainFrame === false) return;
       if (handleFileDelivery(event, url)) return;
-      if (isOAuthLoopbackCallback(url) && isAuthFlow()) {
+      if (isAuthFlow() && tryOpenOAuthLoopback(url, getTabId() || 'popup')) {
         event.preventDefault();
-        void shell.openExternal(url).catch(() => {});
         return;
       }
       if (navigationAllowed(provider, url) || authenticationUrl(url)) return;
@@ -277,15 +314,14 @@ async function start() {
     contents.on('will-attach-webview', event => event.preventDefault());
     const popupWindow = () => ({ action: 'allow', overrideBrowserWindowOptions: {
       parent: win, autoHideMenuBar: true, width: 640, height: 760,
-      webPreferences: { ...secure, session: browserSessions[provider] ?? chatSession, preload: isWebAuthnEnabled && provider === 'chatgpt' ? webauthnPreload : '', backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required', webgl: true },
+      webPreferences: { ...secure, session: contents.session, preload: isWebAuthnEnabled && provider === 'chatgpt' ? webauthnPreload : '', backgroundThrottling: true, autoplayPolicy: 'no-user-gesture-required', webgl: true },
     } });
     contents.setWindowOpenHandler(({ url, disposition, features }) => {
       if (provider === 'chatgpt' && isDownloadOrFileDeliveryUrl(url)) {
         contents.downloadURL(url);
         return { action: 'deny' };
       }
-      if (isOAuthLoopbackCallback(url) && isAuthFlow()) {
-        void shell.openExternal(url).catch(() => {});
+      if (isAuthFlow() && tryOpenOAuthLoopback(url, getTabId() || 'popup')) {
         return { action: 'deny' };
       }
       const decision = decideWindowOpen({
@@ -325,12 +361,12 @@ async function start() {
       popup.on('closed', () => {
         popupOwners.delete(popupContents);
         popups.delete(popup);
+        flushBrowserSession(contents.session);
         invalidate();
       });
     });
     contents.on('before-input-event', (event, input) => {
       const id = getTabId();
-      if (id && input.type === 'keyDown') interactionProtected.add(id);
       if (input.type === 'keyDown' && input.control && input.key.toLowerCase() === 'l') {
         event.preventDefault(); send({ type: 'address-shortcut', id }); return;
       }
@@ -340,6 +376,7 @@ async function start() {
         applyBrowserZoom(id, contents, zoomAction);
         return;
       }
+      if (id && isTypingInput(input)) interactionProtected.add(id);
       desktopShortcut(event, input);
     });
     contents.on('context-menu', (event, params) => {
@@ -372,22 +409,19 @@ async function start() {
     return isDurableProviderPage(provider, value, { otherUrl, perplexityUrl });
   }
 
-  function canEvict(id) {
-    if (attachedViews.has(id)) return false;
-    if (layoutFocusedId === id) return false;
-    if ((activeDownloads.get(id) ?? 0) > 0) return false;
-    for (const ownerId of popupOwners.values()) {
-      if (ownerId === id) return false;
-    }
-    const view = views.get(id);
-    if (!view || view.webContents.isDestroyed()) return false;
-    if (view.webContents.isLoading()) return false;
-
-    // A budget is soft when a page may hold unsaved input. Never trade drafts for RAM.
-    if (interactionProtected.has(id) || isProtectedProvider(providers.get(id) ?? 'chatgpt')) return false;
-    if (!durablePage(providers.get(id), view.webContents.getURL())) return false;
-
-    return true;
+  function canEvict(id, memoryTier) {
+    return canEvictView({
+      id,
+      attachedViews,
+      layoutFocusedId,
+      activeDownloads,
+      popupOwners,
+      views,
+      providers,
+      interactionProtected,
+      durablePage,
+      memoryTier,
+    });
   }
 
   function getResourceBudgetInfo() {
@@ -431,11 +465,13 @@ async function start() {
     } catch {}
 
     const provider = providers.get(id) ?? 'chatgpt';
+    const profileId = profileIds.get(id) ?? DEFAULT_BROWSER_PROFILE_ID;
     const zoomLevel = zoomLevels.get(id) ?? 0;
 
     suspendedTabs.set(id, {
       id,
       provider,
+      profileId,
       url: currentUrl,
       requestedUrl: requestedUrls.get(id) || currentUrl,
       zoomLevel,
@@ -456,13 +492,15 @@ async function start() {
   }
 
   function trimCapacity(excludeId, reserve = 0) {
-    const { budget } = getResourceBudgetInfo();
+    if (views.size === 0) return;
+    if (reserve === 0 && views.size <= attachedViews.size) return;
+    const { budget, memoryTier } = getResourceBudgetInfo();
     while (views.size > Math.max(0, budget - reserve)) {
       const candidateId = selectEvictionCandidate({
         residentIds: views.keys(),
         lastAccessedAt,
-        canEvict,
-        isProtected: (id) => isProtectedProvider(providers.get(id) ?? 'chatgpt'),
+        canEvict: (id) => canEvict(id, memoryTier),
+        isProtected: (id) => isProtectedProvider(providers.get(id) ?? 'chatgpt') || interactionProtected.has(id),
         excludeId,
       });
 
@@ -471,44 +509,61 @@ async function start() {
     }
   }
 
-  function open(id, url, provider = 'chatgpt', explicit = true) {
+  function resolveTabProfileIdOrFail(id, requestedProfileId) {
+    if (requestedProfileId !== undefined && !isValidBrowserProfileId(requestedProfileId)) {
+      throw new Error('Invalid browser profile ID');
+    }
+    const knownProfileId = profileIds.get(id) ?? suspendedTabs.get(id)?.profileId;
+    if (requestedProfileId === undefined && knownProfileId && knownProfileId !== DEFAULT_BROWSER_PROFILE_ID) {
+      throw new Error('Browser profileId is required for custom-profile tabs');
+    }
+    return requestedProfileId ?? knownProfileId ?? DEFAULT_BROWSER_PROFILE_ID;
+  }
+
+  function open(id, url, provider = 'chatgpt', explicit = true, requestedProfileId = undefined) {
     const providerName = provider === 'other' ? 'Browser' : provider === 'github' ? 'GitHub' : provider === 'perplexity' ? 'Perplexity' : 'ChatGPT';
-    const targetSession = browserSessions[provider] ?? chatSession;
+    const effectiveProfileId = resolveTabProfileIdOrFail(id, requestedProfileId);
+    if (cloningProfiles.has(effectiveProfileId)) throw new Error('Browser profile operation is in progress');
+    const targetSession = ensurePartitionSession(effectiveProfileId, provider);
     if (views.has(id)) {
       lastAccessedAt.set(id, Date.now());
       if ((providers.get(id) ?? 'chatgpt') !== provider) {
         send({ type: 'error', id, message: 'This tab cannot change browser provider.' });
         return;
       }
-      const contents = views.get(id).webContents;
-      if (contents.isDestroyed()) {
+      if ((profileIds.get(id) ?? DEFAULT_BROWSER_PROFILE_ID) !== effectiveProfileId) {
         closeView(id);
-      } else if (failures.has(id)) {
-        if (explicit) {
-          closeView(id);
-        } else {
-          send({ type: 'error', id, message: failures.get(id) || `${providerName} renderer stopped. Use Reload page to retry.` });
-          return;
-        }
       } else {
-        if (!explicit && requestedUrls.get(id) !== url) {
-          requestedUrls.set(id, url);
-          if (urls.get(id) !== url && contents.getURL() !== url) {
-            urls.set(id, url);
+        const contents = views.get(id).webContents;
+        if (contents.isDestroyed()) {
+          closeView(id);
+        } else if (failures.has(id)) {
+          if (explicit) {
+            closeView(id);
+          } else {
+            send({ type: 'error', id, message: failures.get(id) || `${providerName} renderer stopped. Use Reload page to retry.` });
+            return;
+          }
+        } else {
+          if (!explicit && requestedUrls.get(id) !== url) {
+            requestedUrls.set(id, url);
+            if (urls.get(id) !== url && contents.getURL() !== url) {
+              urls.set(id, url);
+              void contents.loadURL(url).catch(() => {});
+            }
+          } else if (!contents.isLoading() && !durablePage(provider, contents.getURL())) {
             void contents.loadURL(url).catch(() => {});
           }
-        } else if (!contents.isLoading() && !durablePage(provider, contents.getURL())) {
-          void contents.loadURL(url).catch(() => {});
-        }
-        if (!contents.isLoading() && durablePage(provider, contents.getURL())) {
-          send({ type: 'ready', id });
-          reportNavigation(id);
-          if (urls.get(id) !== contents.getURL() || contents.getURL() !== url) {
-            urls.set(id, contents.getURL());
-            send({ type: 'committed', id, url: contents.getURL() });
+          if (!contents.isLoading() && durablePage(provider, contents.getURL())) {
+            send({ type: 'ready', id });
+            reportNavigation(id);
+            if (urls.get(id) !== contents.getURL() || contents.getURL() !== url) {
+              urls.set(id, contents.getURL());
+              send({ type: 'committed', id, url: contents.getURL() });
+            }
           }
+          return;
         }
-        return;
       }
     }
 
@@ -518,7 +573,7 @@ async function start() {
     if (suspendedTabs.has(id)) {
       const suspended = suspendedTabs.get(id);
       suspendedTabs.delete(id);
-      if (suspended) {
+      if (suspended?.profileId === effectiveProfileId) {
         if (durablePage(provider, suspended.url)) {
           targetUrl = suspended.url;
         }
@@ -530,11 +585,12 @@ async function start() {
 
     trimCapacity(id, 1);
     const viewPreload = isWebAuthnEnabled && provider === 'chatgpt' ? webauthnPreload : '';
-    const view = new WebContentsView({ webPreferences: { ...secure, session: targetSession, preload: viewPreload, backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required', webgl: true } });
+    const view = new WebContentsView({ webPreferences: { ...secure, session: targetSession, preload: viewPreload, backgroundThrottling: true, autoplayPolicy: 'no-user-gesture-required', webgl: true } });
     view.setVisible(false);
     view.setBackgroundColor('#212121');
     views.set(id, view);
     providers.set(id, provider);
+    profileIds.set(id, effectiveProfileId);
     urls.set(id, targetUrl);
     requestedUrls.set(id, targetUrl);
     lastAccessedAt.set(id, Date.now());
@@ -552,10 +608,10 @@ async function start() {
     // Observe native pointer activation without cancelling page input. Bare focus events
     // also occur during attachment and programmatic focus, so they are not user intent.
     view.webContents.on('before-mouse-event', (_event, mouse) => {
-      if (mouse.type === 'mouseDown') { interactionProtected.add(id); reportFocus(); }
+      if (mouse.type === 'mouseDown') reportFocus();
     });
     const committed = (_event, url, isMainFrame = true) => {
-      if (!isMainFrame) return;
+      if (!isMainFrame || views.get(id) !== view) return;
       reportNavigation(id);
       if (!durablePage(provider, url)) return;
       const prevUrl = urls.get(id);
@@ -568,11 +624,17 @@ async function start() {
       } catch {}
       send({ type: 'committed', id, url });
     };
-    view.webContents.on('did-navigate', (event, url) => { interactionProtected.delete(id); committed(event, url); });
+    view.webContents.on('did-navigate', (event, url) => {
+      interactionProtected.delete(id);
+      if (!authenticationUrl(url) && durablePage(provider, url)) {
+        authEntryUrls.delete(view.webContents);
+      }
+      committed(event, url);
+    });
     view.webContents.on('did-navigate-in-page', committed);
     view.webContents.on('page-favicon-updated', (_event, favicons) => {
       if (views.get(id) !== view || view.webContents.isDestroyed()) return;
-      const best = selectBestFavicon(favicons, { allowLoopback: provider === 'other' });
+      const best = selectBestFavicon(favicons);
       if (best) {
         tabFavicons.set(id, best);
         send({ type: 'favicon', id, favicon: best });
@@ -624,12 +686,27 @@ async function start() {
     zoomLevels.delete(id);
     activeDownloads.delete(id);
     tabFavicons.delete(id);
+    linkOpenHistory.delete(id);
+    if (layoutFocusedId === id) layoutFocusedId = null;
+    if (reportedFocusedId === id) reportedFocusedId = null;
+    for (const [popupContents, ownerId] of [...popupOwners.entries()]) {
+      if (ownerId !== id) continue;
+      popupOwners.delete(popupContents);
+      for (const popup of [...popups]) {
+        try {
+          if (!popup.isDestroyed() && popup.webContents === popupContents) {
+            popups.delete(popup);
+            popup.destroy();
+          }
+        } catch {}
+      }
+    }
     const view = views.get(id);
     if (view) {
       hide(id);
       if (!view.webContents.isDestroyed()) view.webContents.close();
     }
-    views.delete(id); urls.delete(id); providers.delete(id); requestedUrls.delete(id); failures.delete(id);
+    views.delete(id); urls.delete(id); providers.delete(id); profileIds.delete(id); requestedUrls.delete(id); failures.delete(id);
   }
 
   function reportNavigation(id) {
@@ -703,15 +780,23 @@ async function start() {
       const snapshot = await resourceCollector.refresh();
       return { ok: true, snapshot };
     }
-    if (command.type === 'open') open(command.id, command.url, command.provider ?? 'chatgpt', true);
+    if (command.type === 'open') {
+      open(command.id, command.url, command.provider ?? 'chatgpt', true, command.profileId);
+    }
     if (command.type === 'update') {
+      const effectiveProfileId = resolveTabProfileIdOrFail(command.id, command.profileId);
       if (views.has(command.id)) {
-        open(command.id, command.url, command.provider ?? providers.get(command.id) ?? 'chatgpt', false);
+        open(command.id, command.url, command.provider ?? providers.get(command.id) ?? 'chatgpt', false, effectiveProfileId);
       } else if (suspendedTabs.has(command.id)) {
         const item = suspendedTabs.get(command.id);
         if (item) {
           if (command.provider && command.provider !== item.provider) throw new Error('This tab cannot change browser provider.');
-          if (item.url !== command.url && item.history?.entries?.length) {
+          if (effectiveProfileId !== item.profileId) {
+            item.history = null;
+            item.zoomLevel = 0;
+            item.profileId = effectiveProfileId;
+            profileIds.set(command.id, effectiveProfileId);
+          } else if (item.url !== command.url && item.history?.entries?.length) {
             const entries = [...item.history.entries.slice(0, item.history.index + 1), { url: command.url, title: '' }];
             item.history = { entries, index: entries.length - 1 };
           }
@@ -719,6 +804,124 @@ async function start() {
           item.requestedUrl = command.url;
           if (command.provider) item.provider = command.provider;
         }
+      } else if (command.profileId) {
+        profileIds.set(command.id, effectiveProfileId);
+      }
+    }
+    if (command.type === 'clone-profile') {
+      const { sourceProfileId, targetProfileId, clearSites } = command;
+      if (cloningProfiles.has(sourceProfileId) || cloningProfiles.has(targetProfileId) ||
+          [...profileIds.values()].includes(targetProfileId)) {
+        throw new Error('Browser profile clone destination is in use');
+      }
+      cloningProfiles.add(sourceProfileId);
+      cloningProfiles.add(targetProfileId);
+      try {
+        return await cloneBrowserProfileStorage({ sessionApi: session, sourceProfileId, targetProfileId, clearSites });
+      } finally {
+        cloningProfiles.delete(sourceProfileId);
+        cloningProfiles.delete(targetProfileId);
+      }
+    }
+    if (command.type === 'clear-profile-site-auth') {
+      if (cloningProfiles.has(command.profileId)) throw new Error('Browser profile operation is in progress');
+      const targetProvider = command.site === 'browser' ? 'other' : command.site;
+      const targetSession = session.fromPartition(partitionForBrowserProfile(
+        command.profileId, targetProvider,
+      ));
+      cloningProfiles.add(command.profileId);
+      try {
+        for (const popup of [...popups]) {
+          try {
+            if (!popup.isDestroyed() && popup.webContents.session === targetSession) {
+              popupOwners.delete(popup.webContents);
+              popups.delete(popup);
+              popup.destroy();
+            }
+          } catch {}
+        }
+        // Quiesce live views on the target partition before clearing storage/cache
+        // so active page scripts cannot race and re-persist auth state.
+        const viewsToReload = [];
+        for (const [id, view] of views.entries()) {
+          if (!view.webContents.isDestroyed() && view.webContents.session === targetSession) {
+            const reloadUrl = requestedUrls.get(id) || urls.get(id);
+            viewsToReload.push({ id, view, reloadUrl });
+            failures.delete(id);
+            tabFavicons.delete(id);
+            try { view.webContents.stop(); } catch {}
+            await view.webContents.loadURL('about:blank').catch(() => {});
+          }
+        }
+        for (const [id, item] of [...suspendedTabs.entries()]) {
+          if (item.profileId === command.profileId && item.provider === targetProvider) {
+            suspendedTabs.delete(id);
+            tabFavicons.delete(id);
+          }
+        }
+        const result = await clearProfileSiteAuth({
+          sessionApi: session,
+          profileId: command.profileId,
+          site: command.site,
+        });
+        for (const { id, view, reloadUrl } of viewsToReload) {
+          if (views.get(id) === view && !view.webContents.isDestroyed()) {
+            if (reloadUrl) {
+              void view.webContents.loadURL(reloadUrl).catch(() => {});
+            } else {
+              view.webContents.reload();
+            }
+          }
+        }
+        return result;
+      } finally {
+        cloningProfiles.delete(command.profileId);
+      }
+    }
+    if (command.type === 'delete-profile') {
+      if (cloningProfiles.has(command.profileId)) throw new Error('Browser profile operation is in progress');
+      cloningProfiles.add(command.profileId);
+      try {
+        const tabsToClose = new Set();
+        for (const [id, pid] of profileIds.entries()) {
+          if (pid === command.profileId) tabsToClose.add(id);
+        }
+        for (const [id, item] of suspendedTabs.entries()) {
+          if (item.profileId === command.profileId) tabsToClose.add(id);
+        }
+        for (const id of tabsToClose) {
+          closeView(id);
+        }
+        const partitionNames = ['chatgpt', 'github', 'perplexity', 'other'].map(
+          (provider) => partitionForBrowserProfile(command.profileId, provider),
+        );
+        const partitionSessions = new Set(
+          partitionNames.map((name) => configuredPartitions.get(name) || session.fromPartition(name)),
+        );
+        for (const popup of [...popups]) {
+          try {
+            if (!popup.isDestroyed() && partitionSessions.has(popup.webContents.session)) {
+              popupOwners.delete(popup.webContents);
+              popups.delete(popup);
+              popup.destroy();
+            }
+          } catch {}
+        }
+        const result = await deleteBrowserProfileStorage({
+          sessionApi: session,
+          profileId: command.profileId,
+        });
+        for (const name of partitionNames) {
+          const sess = configuredPartitions.get(name);
+          if (sess) sessionProviders.delete(sess);
+          configuredPartitions.delete(name);
+        }
+        for (const sess of partitionSessions) {
+          sessionProviders.delete(sess);
+        }
+        return result;
+      } finally {
+        cloningProfiles.delete(command.profileId);
       }
     }
     if (command.type === 'browser-action') {
@@ -736,8 +939,7 @@ async function start() {
       if (command.action === 'copy-selection') contents.copy();
       if (command.action === 'open-page') void openExternal(contents.getURL());
       if (command.action === 'open-link') {
-        if (isOAuthLoopbackCallback(command.url)) {
-          void shell.openExternal(command.url).catch(() => {});
+        if (isContentsInAuthFlow(contents, providers.get(command.id)) && tryOpenOAuthLoopback(command.url, command.id)) {
           return;
         }
         if (authenticationUrl(command.url)) {
@@ -800,22 +1002,34 @@ async function start() {
     }
     if (command.type === 'close') closeView(command.id);
     if (command.type === 'retain') {
-      for (const id of views.keys()) if (!command.ids.includes(id)) closeView(id);
+      for (const id of [...views.keys()]) if (!command.ids.includes(id)) closeView(id);
       for (const id of [...suspendedTabs.keys()]) if (!command.ids.includes(id)) closeView(id);
+      for (const id of [...profileIds.keys()]) if (!command.ids.includes(id)) profileIds.delete(id);
     }
 
     // FEATURE 4: In-memory visual capture fallback for overlapping overlays
-    if (command.type === 'capture' && views.has(command.id)) {
+    if (command.type === 'capture') {
       const view = views.get(command.id);
-      if (view && !view.webContents.isDestroyed()) {
-        try {
-          const image = await view.webContents.capturePage();
-          return { ok: true, dataUrl: image.toDataURL() };
-        } catch {
+      if (!view || view.webContents.isDestroyed()) {
+        return { ok: false };
+      }
+      let timeoutId;
+      try {
+        const image = await Promise.race([
+          view.webContents.capturePage(),
+          new Promise((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error('capture-timeout')), 1500);
+          }),
+        ]);
+        if (!image || (typeof image.isEmpty === 'function' && image.isEmpty())) {
           return { ok: false };
         }
+        return { ok: true, dataUrl: image.toDataURL() };
+      } catch {
+        return { ok: false };
+      } finally {
+        clearTimeout(timeoutId);
       }
-      return { ok: false };
     }
 
     // FEATURE 3: Centralized Multi-WebContentsView layout coordinator (atomic reconciliation)
@@ -847,6 +1061,9 @@ async function start() {
         if (!targetIds.has(attachedId)) {
           win.contentView.removeChildView(attachedView);
           attachedView.setVisible(false);
+          if (!attachedView.webContents.isDestroyed()) {
+            try { attachedView.webContents.setBackgroundThrottling(true); } catch {}
+          }
           attachedViews.delete(attachedId);
         }
       }
@@ -866,6 +1083,7 @@ async function start() {
 
         view.setBounds(bounds);
         view.setVisible(true);
+        try { view.webContents.setBackgroundThrottling(false); } catch {}
       }
 
       // Geometry updates and overlay restoration must preserve focus in MAW controls.
@@ -878,164 +1096,133 @@ async function start() {
     }
   });
 
-  ipcMain.handle('maw:browse-executable', async (event, options) => {
-    if (!trustedSender(event, win.webContents, local.origin)) throw new Error('Invalid desktop request');
-    const result = await dialog.showOpenDialog(win, {
-      title: (typeof options?.title === 'string' && options.title) ? options.title : 'Select CLI Executable',
-      properties: ['openFile'],
-      filters: process.platform === 'win32'
-        ? [{ name: 'Executables', extensions: ['exe', 'cmd', 'bat', 'ps1', '*'] }]
-        : undefined,
-    });
-    if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
-      return null;
-    }
-    return result.filePaths[0];
-  });
-
+  let activeWebAuthnAbort = null;
   if (isWebAuthnEnabled) {
-    ipcMain.handle('maw:webauthn:is-available', async () => {
-      return { available: await isFido2ToolsAvailable() };
+    let assertionInProgress = false;
+    const extraOrigins = (process.env.MAW_WEBAUTHN_EXTRA_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+    const allowedFrame = ({ sender, senderFrame }) => sender && !sender.isDestroyed() &&
+      senderFrame && senderFrame === sender.mainFrame &&
+      sessionProviders.get(sender.session) === 'chatgpt' &&
+      isAllowedWebAuthnOrigin(senderFrame.origin, extraOrigins);
+
+    ipcMain.handle('maw:webauthn:is-available', async (event) => {
+      return { available: allowedFrame(event) && await isFido2ToolsAvailable() };
     });
 
     ipcMain.handle('maw:webauthn:get', async (event, options) => {
       const senderWebContents = event.sender;
-      if (!senderWebContents || senderWebContents.isDestroyed() || senderWebContents.session !== chatSession) {
+      if (!allowedFrame(event)) {
         return { success: false, error: { name: 'SecurityError', message: 'WebAuthn is only permitted within the ChatGPT session' } };
       }
 
-      let origin = '';
-      try {
-        origin = event.senderFrame?.origin || new URL(senderWebContents.getURL()).origin;
-      } catch {
-        return { success: false, error: { name: 'SecurityError', message: 'Could not determine frame origin' } };
-      }
-
-      const extraOrigins = (process.env.MAW_WEBAUTHN_EXTRA_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
-      if (!isAllowedWebAuthnOrigin(origin, extraOrigins)) {
-        return { success: false, error: { name: 'SecurityError', message: `Origin ${origin} is not authorized for WebAuthn` } };
-      }
-
-      const rpId = options?.rpId;
+      const origin = event.senderFrame.origin;
+      const rpId = typeof options?.rpId === 'string' ? options.rpId.toLowerCase() : options?.rpId;
       if (!isValidRpId(rpId, origin)) {
-        return { success: false, error: { name: 'SecurityError', message: `Requested rpId ${rpId} does not match origin ${origin}` } };
+        return { success: false, error: { name: 'SecurityError', message: `Requested rpId ${options?.rpId} does not match origin ${origin}` } };
       }
 
-      const devices = await discoverFido2Devices();
-      if (devices.length === 0) {
-        return { success: false, error: { name: 'NotAllowedError', message: 'No FIDO2 hardware device found. Please insert your security key.' } };
+      const parentWin = BrowserWindow.fromWebContents(senderWebContents) || win;
+      const paneBounds = resolveWebAuthnPaneBounds({
+        parentWin,
+        mainWin: win,
+        senderWebContents,
+        attachedViews,
+      });
+
+      if (assertionInProgress) {
+        return { success: false, error: { name: 'NotAllowedError', message: 'A security key request is already in progress' } };
       }
-      const device = devices[0];
-
-      const caps = await getDeviceCapabilities(device.path);
-      let pin = null;
-      const userVerification = options?.userVerification || 'preferred';
-      const pinRequired = caps.hasClientPin && (userVerification === 'required' || userVerification === 'preferred');
-
-      if (pinRequired) {
-        const parentWin = BrowserWindow.fromWebContents(senderWebContents) || win;
-        let paneBounds = null;
-        for (const [id, view] of attachedViews.entries()) {
-          if (view.webContents === senderWebContents) {
-            try {
-              paneBounds = view.getBounds();
-            } catch {}
-            break;
-          }
-        }
-        if (!paneBounds && popupOwners.has(senderWebContents)) {
-          const ownerId = popupOwners.get(senderWebContents);
-          const ownerView = attachedViews.get(ownerId);
-          if (ownerView) {
-            try {
-              paneBounds = ownerView.getBounds();
-            } catch {}
-          }
-        }
-        try {
-          pin = await requestPinDialog({
-            parentWindow: parentWin,
-            paneBounds,
-            rpId,
-            title: 'Security Key PIN',
-          });
-        } catch (err) {
-          return { success: false, error: classifyWebAuthnError(err) };
-        }
-      }
-
-      const challengeBase64Url = options?.challenge || '';
-      const { clientDataJSONBuffer, clientDataHash } = generateClientData('webauthn.get', challengeBase64Url, origin);
-
-      const allowCredentials = Array.isArray(options?.allowCredentials) ? options.allowCredentials : [];
-      const isResident = allowCredentials.length === 0;
-      const credId = !isResident ? allowCredentials[0]?.id : '';
-
+      assertionInProgress = true;
+      const controller = new AbortController();
+      activeWebAuthnAbort = controller;
+      const abortRequest = () => {
+        if (!controller.signal.aborted) controller.abort();
+      };
+      const onStartNavigation = (_navEvent, _url, isInPlace, isMainFrame) => {
+        if (isMainFrame && !isInPlace) abortRequest();
+      };
+      senderWebContents.on('destroyed', abortRequest);
+      senderWebContents.on('render-process-gone', abortRequest);
+      senderWebContents.on('did-start-navigation', onStartNavigation);
+      senderWebContents.on('did-navigate', abortRequest);
       try {
-        const stdout = await executeAssertion({
-          devicePath: device.path,
-          rpId,
-          clientDataHash,
-          credentialId: credId,
-          isResident,
-          pin,
-          timeoutMs: (options?.timeout ? options.timeout * 1000 : 60000),
+        return await performWebAuthnAssertion({
+          options: { ...options, rpId },
+          origin,
+          parentWin,
+          paneBounds,
+          signal: controller.signal,
+          deps: { requestPinDialog },
         });
-
-        const parsed = parseFido2AssertOutput(stdout, {
-          rpId,
-          credentialId: credId,
-          clientDataJSONBuffer,
-        });
-
-        return { success: true, data: parsed };
-      } catch (err) {
-        return { success: false, error: classifyWebAuthnError(err) };
       } finally {
-        pin = null;
+        if (activeWebAuthnAbort === controller) activeWebAuthnAbort = null;
+        if (!senderWebContents.isDestroyed()) {
+          senderWebContents.removeListener('destroyed', abortRequest);
+          senderWebContents.removeListener('render-process-gone', abortRequest);
+          senderWebContents.removeListener('did-start-navigation', onStartNavigation);
+          senderWebContents.removeListener('did-navigate', abortRequest);
+        }
+        assertionInProgress = false;
       }
     });
   }
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (isOAuthLoopbackCallback(url)) {
-      void shell.openExternal(url).catch(() => {});
+    if (tryOpenOAuthLoopback(url, 'shell')) {
       return { action: 'deny' };
     }
     void openExternal(url).catch(() => {});
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
-    if (isOAuthLoopbackCallback(url)) {
+    if (tryOpenOAuthLoopback(url, 'shell')) {
       event.preventDefault();
-      void shell.openExternal(url).catch(() => {});
       return;
     }
     try { if (new URL(url).origin === local.origin && new URL(url).pathname === '/') return; } catch {}
     event.preventDefault();
   });
   win.webContents.on('will-redirect', (event, url) => {
-    if (isOAuthLoopbackCallback(url)) {
+    if (tryOpenOAuthLoopback(url, 'shell')) {
       event.preventDefault();
-      void shell.openExternal(url).catch(() => {});
       return;
     }
-    if (new URL(url).origin !== local.origin) event.preventDefault();
+    try { if (new URL(url).origin !== local.origin) event.preventDefault(); } catch { event.preventDefault(); }
   });
   win.webContents.on('did-start-loading', () => {
     hideAll();
+    layoutFocusedId = null;
+    reportedFocusedId = null;
     if (performanceSubscribed) resourceCollector.unsubscribe();
     performanceSubscribed = false;
   });
-  win.webContents.on('render-process-gone', hideAll);
+  win.webContents.on('render-process-gone', () => {
+    hideAll();
+    layoutFocusedId = null;
+    reportedFocusedId = null;
+    if (performanceSubscribed) {
+      resourceCollector.unsubscribe();
+      performanceSubscribed = false;
+    }
+    for (const popup of [...popups]) {
+      try {
+        if (!popup.isDestroyed()) popup.destroy();
+      } catch {}
+    }
+    popups.clear();
+    popupOwners.clear();
+  });
   for (const event of ['minimize', 'restore', 'enter-full-screen', 'leave-full-screen']) win.on(event, invalidate);
   win.on('resize', () => send({ type: 'layout-needed' }));
   win.webContents.on('before-input-event', desktopShortcut);
 
   let backendFailureCount = 0;
+  let trimTick = 0;
   const checkInterval = setInterval(async () => {
     if (shuttingDown) return;
-    trimCapacity();
+    if (views.size > attachedViews.size && ++trimTick % 5 === 0) {
+      trimCapacity();
+    }
     try {
       const probe = await fetch(local, { signal: AbortSignal.timeout(1200), redirect: 'error' });
       if (probe.ok || probe.status === 401) {
@@ -1087,6 +1274,7 @@ async function start() {
     if (shuttingDown) return;
     event.preventDefault();
     shuttingDown = true;
+    try { activeWebAuthnAbort?.abort(); } catch {}
     clearInterval(checkInterval);
     resourceCollector.dispose();
     hideAll();
@@ -1104,16 +1292,12 @@ async function start() {
     interactionProtected.clear();
     zoomLevels.clear();
     activeDownloads.clear();
-    chatSession.flushStorageData();
-    githubSession.flushStorageData();
-    perplexitySession.flushStorageData();
-    browserSession.flushStorageData();
-    void Promise.allSettled([
-      chatSession.cookies.flushStore(),
-      githubSession.cookies.flushStore(),
-      perplexitySession.cookies.flushStore(),
-      browserSession.cookies.flushStore(),
-    ]).finally(() => win.close());
+    for (const partitionSession of configuredPartitions.values()) {
+      try { partitionSession.flushStorageData(); } catch {}
+    }
+    void Promise.allSettled(
+      [...configuredPartitions.values()].map((partitionSession) => partitionSession.cookies.flushStore()),
+    ).finally(() => win.close());
   });
   app.on('window-all-closed', () => app.quit());
   await win.loadURL(local.href);

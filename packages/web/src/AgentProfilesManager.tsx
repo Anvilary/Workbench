@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   PROFILE_ALLOWED_ENV_KEYS,
   PROFILE_ENV_RULES,
@@ -12,25 +12,30 @@ import type { AgentConnection } from './connection.js';
 import { t } from './i18n/index.js';
 import { parseProfileArgv } from './agency/model.js';
 import { suggestedExecutable } from './agency/profile-suggestions.js';
+import { CollapsibleSubsection } from './features/settings/CollapsibleSubsection.js';
+import { ProviderIcon } from './features/settings/SettingsIcons.js';
+import { useEscapeKey } from './shared/hooks/useEscapeKey.js';
+import { useFocusTrap } from './shared/hooks/useFocusTrap.js';
 
 export interface AgentProfilesManagerProps {
   agents?: readonly AgentInfo[];
   connection?: AgentConnection;
   remoteClient?: boolean;
+  highlightedCardId?: string | null;
+  expandSignal?: number;
 }
 
 interface ProviderMeta {
   readonly id: CliProvider;
   readonly label: string;
-  readonly icon: string;
 }
 
 const PROVIDERS: readonly ProviderMeta[] = [
-  { id: 'codex', label: 'Codex', icon: '⚡' },
-  { id: 'claude-code', label: 'Claude Code', icon: '🤖' },
-  { id: 'antigravity', label: 'Antigravity CLI', icon: '🚀' },
-  { id: 'opencode', label: 'OpenCode', icon: '💻' },
-  { id: 'pi', label: 'Pi', icon: '🥧' },
+  { id: 'codex', label: 'Codex' },
+  { id: 'claude-code', label: 'Claude Code' },
+  { id: 'antigravity', label: 'Antigravity CLI' },
+  { id: 'opencode', label: 'OpenCode' },
+  { id: 'pi', label: 'Pi' },
 ];
 
 export async function browseNativeExecutable(): Promise<string | null> {
@@ -56,6 +61,8 @@ export function AgentProfilesManager({
   agents = [],
   connection,
   remoteClient = false,
+  highlightedCardId = null,
+  expandSignal,
 }: AgentProfilesManagerProps): JSX.Element {
   const [profiles, setProfiles] = useState<readonly AgencyCliProfile[]>([]);
   const [collapsedProviders, setCollapsedProviders] = useState<Record<string, boolean>>({});
@@ -64,6 +71,26 @@ export function AgentProfilesManager({
   const [removingProfile, setRemovingProfile] = useState<AgencyCliProfile | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const addModalRef = useRef<HTMLDivElement | null>(null);
+  const editModalRef = useRef<HTMLDivElement | null>(null);
+  const removeModalRef = useRef<HTMLDivElement | null>(null);
+
+  useFocusTrap(addModalRef, showAddModal, { restoreFocus: true });
+  useFocusTrap(editModalRef, Boolean(editingProfile), { restoreFocus: true });
+  useFocusTrap(removeModalRef, Boolean(removingProfile), { restoreFocus: true });
+
+  useEscapeKey((event) => {
+    if (saving) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (removingProfile) {
+      setRemovingProfile(null);
+    } else if (editingProfile) {
+      setEditingProfile(null);
+    } else if (showAddModal) {
+      setShowAddModal(false);
+    }
+  }, showAddModal || Boolean(editingProfile) || Boolean(removingProfile));
 
   // New profile form state
   const [newProvider, setNewProvider] = useState<CliProvider>('codex');
@@ -78,8 +105,6 @@ export function AgentProfilesManager({
   const [editArgs, setEditArgs] = useState('[]');
   const [editDisabled, setEditDisabled] = useState(false);
   const [editEnvOverrides, setEditEnvOverrides] = useState<[string, string][]>([]);
-
-  const headingId = useId();
 
   // Load profiles from server
   const loadProfiles = useCallback(() => {
@@ -378,15 +403,16 @@ export function AgentProfilesManager({
   };
 
   return (
-    <div className="maw-settings-card" id="setting-card-profiles">
-      <div className="maw-settings-card-header maw-profiles-header">
-        <div className="maw-profiles-header-info">
-          <span id={headingId} className="maw-settings-card-title">
-            {t('settings.profiles.sectionTitle')}
-          </span>
-          <p className="maw-settings-hint">{t('settings.profiles.sectionDesc')}</p>
-        </div>
-        {!remoteClient && (
+    <CollapsibleSubsection
+      id="setting-card-profiles"
+      title={t('settings.profiles.sectionTitle')}
+      description={t('settings.profiles.sectionDesc')}
+      highlighted={highlightedCardId === 'setting-card-profiles'}
+      forceExpanded={highlightedCardId === 'setting-card-profiles'}
+      expandSignal={expandSignal}
+      bodyClassName="maw-profiles-body"
+      headerActions={
+        !remoteClient ? (
           <button
             type="button"
             className="action-button primary maw-add-profile-btn"
@@ -394,36 +420,35 @@ export function AgentProfilesManager({
           >
             + {t('settings.profiles.add')}
           </button>
-        )}
-      </div>
+        ) : undefined
+      }
+    >
+      {PROVIDERS.map((provider) => {
+        const providerProfiles = profilesByProvider[provider.id] || [];
+        const count = providerProfiles.length;
+        const collapsed = isGroupCollapsed(provider.id);
 
-      <div className="maw-settings-card-body maw-profiles-body">
-        {PROVIDERS.map((provider) => {
-          const providerProfiles = profilesByProvider[provider.id] || [];
-          const count = providerProfiles.length;
-          const collapsed = isGroupCollapsed(provider.id);
-
-          return (
-            <div key={provider.id} className="maw-provider-group">
-              <button
-                type="button"
-                className="maw-provider-group-toggle"
-                onClick={() => toggleGroup(provider.id)}
-                aria-expanded={!collapsed}
-              >
-                <div className="maw-provider-title-wrapper">
-                  <span className="maw-provider-icon" aria-hidden="true">
-                    {provider.icon}
-                  </span>
-                  <span className="maw-provider-name">{provider.label}</span>
-                  <span className="maw-profiles-count">
-                    ({count} {count === 1 ? t('settings.profiles.countSingle') : t('settings.profiles.countPlural')})
-                  </span>
-                </div>
-                <span className={`maw-provider-chevron ${collapsed ? 'collapsed' : 'expanded'}`} aria-hidden="true">
-                  ▾
+        return (
+          <div key={provider.id} className="maw-provider-group">
+            <button
+              type="button"
+              className="maw-provider-group-toggle"
+              onClick={() => toggleGroup(provider.id)}
+              aria-expanded={!collapsed}
+            >
+              <div className="maw-provider-title-wrapper">
+                <span className="maw-provider-icon" aria-hidden="true">
+                  <ProviderIcon provider={provider.id} size={16} />
                 </span>
-              </button>
+                <span className="maw-provider-name">{provider.label}</span>
+                <span className="maw-profiles-count">
+                  ({count} {count === 1 ? t('settings.profiles.countSingle') : t('settings.profiles.countPlural')})
+                </span>
+              </div>
+              <span className={`maw-provider-chevron ${collapsed ? 'collapsed' : 'expanded'}`} aria-hidden="true">
+                ▾
+              </span>
+            </button>
 
               {!collapsed && (
                 <div className="maw-provider-profiles-list">
@@ -500,12 +525,12 @@ export function AgentProfilesManager({
             </div>
           );
         })}
-      </div>
 
       {/* Add Profile Modal */}
       {showAddModal && (
         <div className="agency-modal-backdrop" onClick={() => !saving && setShowAddModal(false)}>
           <div
+            ref={addModalRef}
             className="agency-dialog maw-profile-form-dialog"
             role="dialog"
             aria-modal="true"
@@ -689,6 +714,7 @@ export function AgentProfilesManager({
       {editingProfile && (
         <div className="agency-modal-backdrop" onClick={() => !saving && setEditingProfile(null)}>
           <div
+            ref={editModalRef}
             className="agency-dialog maw-profile-form-dialog"
             role="dialog"
             aria-modal="true"
@@ -833,6 +859,7 @@ export function AgentProfilesManager({
       {removingProfile && (
         <div className="agency-modal-backdrop" onClick={() => !saving && setRemovingProfile(null)}>
           <div
+            ref={removeModalRef}
             className="agency-dialog maw-profile-remove-dialog"
             role="dialog"
             aria-modal="true"
@@ -874,6 +901,6 @@ export function AgentProfilesManager({
           </div>
         </div>
       )}
-    </div>
+    </CollapsibleSubsection>
   );
 }

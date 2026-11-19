@@ -5,6 +5,7 @@ import type { WorkspaceTab } from '../../agency/model.js';
 export interface UseBrowserZoomShortcutsOptions {
   layoutRef: MutableRefObject<WorkspacePaneLayout>;
   tabs: readonly WorkspaceTab[];
+  enabled?: boolean;
 }
 
 /**
@@ -14,8 +15,10 @@ export interface UseBrowserZoomShortcutsOptions {
 export function useBrowserZoomShortcuts({
   layoutRef,
   tabs,
+  enabled = true,
 }: UseBrowserZoomShortcutsOptions): void {
   useEffect(() => {
+    if (!enabled) return;
     const onZoomKeyDown = (event: KeyboardEvent) => {
       if ((!event.ctrlKey && !event.metaKey) || event.altKey) return;
       const key = event.key;
@@ -56,5 +59,5 @@ export function useBrowserZoomShortcuts({
 
     window.addEventListener('keydown', onZoomKeyDown);
     return () => window.removeEventListener('keydown', onZoomKeyDown);
-  }, [layoutRef, tabs]);
+  }, [layoutRef, tabs, enabled]);
 }

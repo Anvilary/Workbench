@@ -12,7 +12,7 @@ import type {
   SessionActivity,
   WorkspaceId,
 } from '@agent-workbench/shared';
-import { validateWebTabTitle } from '@agent-workbench/shared';
+import { CLI_PROVIDERS, validateWebTabTitle } from '@agent-workbench/shared';
 import type { AgentId, TerminalActivity, TerminalId } from '@agent-workbench/shared';
 import type { OpenTerminalOptions, TerminalRegistry } from '../terminal-registry.js';
 import { isInsideProtected } from '../directory-picker.js';
@@ -103,7 +103,7 @@ export interface AgencyWorkspaceSource {
 export type AgencyTerminalRegistry = Pick<
   TerminalRegistry,
   'open' | 'get' | 'list' | 'has' | 'close' | 'activityOf' | 'on' | 'off'
-> & Partial<Pick<TerminalRegistry, 'consumeTombstone' | 'isPersistent' | 'pidOf' | 'isSupervisorSessionUnconfirmed' | 'isAgencyManaged' | 'activeCount'>>;
+> & Partial<Pick<TerminalRegistry, 'terminate' | 'consumeTombstone' | 'isPersistent' | 'pidOf' | 'isSupervisorSessionUnconfirmed' | 'isAgencyManaged' | 'activeCount'>>;
 
 export interface AgencyRuntimeOptions {
   registry: AgencyTerminalRegistry;
@@ -152,7 +152,7 @@ function checkId(value: string): void {
 }
 
 function validateLaunch(plan: ValidatedNativeLaunch): void {
-  if (!['codex', 'claude-code', 'antigravity'].includes(plan.provider) ||
+  if (!CLI_PROVIDERS.includes(plan.provider) ||
       typeof plan.file !== 'string' || plan.file.trim().length === 0 ||
       plan.file.includes('\0') || !Array.isArray(plan.args) ||
       !plan.args.every((arg) => typeof arg === 'string' && !arg.includes('\0')) ||
@@ -644,11 +644,37 @@ export class AgencySessionRuntime extends EventEmitter {
     checkId(sessionId);
     const session = this.sessions.get(sessionId);
     if (session === undefined) throw new AgencyRuntimeError('not-found', 'Session does not exist');
-    if (!ACTIVE.has(session.lifecycle) || session.lifecycle === 'stopping') return session;
-    const stopping = { ...session, stoppedByUser: true, lifecycle: 'stopping' as const, updatedAt: NOW() };
-    this.sessions.set(sessionId, stopping);
-    try { await this.publish(stopping); } catch (error) { this.sessions.set(sessionId, session); throw error; }
+    if (!ACTIVE.has(session.lifecycle)) return session;
+
+    let stopping = session;
+    if (session.lifecycle !== 'stopping') {
+      stopping = { ...session, stoppedByUser: true, lifecycle: 'stopping' as const, updatedAt: NOW() };
+      this.sessions.set(sessionId, stopping);
+      try { await this.publish(stopping); } catch (error) { this.sessions.set(sessionId, session); throw error; }
+    }
+
     if (stopping.terminalId === null) return stopping; // pending open resolves and stops itself
+
+    if (typeof this.registry.terminate === 'function') {
+      const outcome = await this.registry.terminate(stopping.terminalId);
+      if (outcome === 'exited') {
+        const exitCode = this.registry.get(stopping.terminalId)?.exitCode ?? null;
+        return this.finish(sessionId, exitCode, 'exited');
+      }
+      if (outcome === 'unconfirmed') {
+        throw new AgencyRuntimeError(
+          'session-unavailable',
+          'PTY termination could not be confirmed; retry or wait for supervisor recovery',
+        );
+      }
+      return this.sessions.get(sessionId) ?? stopping;
+    }
+
+    const terminal = this.registry.get(stopping.terminalId);
+    if (!terminal || (!terminal.alive && !this.registry.isSupervisorSessionUnconfirmed?.(stopping.terminalId))) {
+      this.registry.close(stopping.terminalId);
+      return this.finish(sessionId, terminal?.exitCode ?? null, 'exited');
+    }
     if (!this.registry.close(stopping.terminalId)) {
       return this.finish(sessionId, null, 'exited');
     }

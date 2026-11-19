@@ -1,7 +1,7 @@
 # Template rendered by install.sh (@NODE_BIN@, @STATE_DIR@, @PATH@, @RUNTIME_NAME@).
 # The service always boots `current`; only the restart helper changes `current` (see maw-lib.sh).
 [Unit]
-Description=My Amazing Workspace
+Description=Anvilary Workbench
 # Start maw-ptyd.service if not already running so the persistent supervisor is available.
 # Restarting maw.service does NOT stop maw-ptyd.service (no PartOf=).
 Wants=maw-ptyd.service
@@ -13,11 +13,12 @@ StartLimitBurst=3
 Type=exec
 WorkingDirectory=@STATE_DIR@/current
 ExecStartPre=/usr/bin/test -f @STATE_DIR@/current/.maw-release-meta.json
-ExecStartPre=/usr/bin/test -f @STATE_DIR@/current/packages/server/src/maw-host.ts
-ExecStart=@NODE_BIN@ --import @STATE_DIR@/current/packages/server/node_modules/tsx/dist/loader.mjs @STATE_DIR@/current/packages/server/src/index.ts --prod
+ExecStartPre=/usr/bin/test -f @STATE_DIR@/current/packages/server/dist/index.mjs
+ExecStart=@NODE_BIN@ @STATE_DIR@/current/packages/server/dist/index.mjs --prod
 Environment=PATH=@PATH@
 Environment=AGENT_WORKBENCH_NO_OPEN=1
 Environment=MAW_RUNTIME_DIR=%t/@RUNTIME_NAME@
+Environment=MAW_PERSISTENT_PTY=1
 Environment=MAW_AUTO_SPAWN_PTYD=0
 # Optional persistent connection settings; secrets never belong in a release.
 EnvironmentFile=-@ENV_FILE@

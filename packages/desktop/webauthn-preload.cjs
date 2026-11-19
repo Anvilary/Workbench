@@ -7,7 +7,6 @@ const { contextBridge, ipcRenderer, webFrame } = require('electron');
 // Expose minimal, unprivileged WebAuthn bridge to the isolated world
 contextBridge.exposeInMainWorld('__mawWebAuthn', Object.freeze({
   get: (options) => ipcRenderer.invoke('maw:webauthn:get', options),
-  create: (options) => ipcRenderer.invoke('maw:webauthn:create', options),
   isAvailable: () => ipcRenderer.invoke('maw:webauthn:is-available'),
 }));
 
@@ -19,11 +18,18 @@ const injectScript = `
   window.__mawWebAuthnInstalled = true;
 
   const originalGet = navigator.credentials.get.bind(navigator.credentials);
-  const originalCreate = navigator.credentials.create.bind(navigator.credentials);
 
   function bufferToBase64Url(buf) {
     if (!buf) return '';
-    const bytes = new Uint8Array(buf);
+    let bytes;
+    if (buf instanceof ArrayBuffer) {
+      bytes = new Uint8Array(buf);
+    } else if (ArrayBuffer.isView(buf)) {
+      bytes = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+    } else {
+      return '';
+    }
+    if (bytes.byteLength === 0) return '';
     let binary = '';
     for (let i = 0; i < bytes.byteLength; i++) {
       binary += String.fromCharCode(bytes[i]);
@@ -52,12 +58,19 @@ const injectScript = `
     if (options.mediation === 'conditional') {
       return originalGet(options);
     }
+    if (!(await window.__mawWebAuthn.isAvailable()).available) {
+      return originalGet(options);
+    }
 
     const publicKey = options.publicKey;
+    const rawTimeoutMs = typeof publicKey.timeout === 'number' && Number.isFinite(publicKey.timeout) && publicKey.timeout > 0
+      ? publicKey.timeout
+      : 60000;
+    const clampedTimeoutSec = Math.max(1, Math.min(600, Math.ceil(rawTimeoutMs / 1000)));
     const serialized = {
       challenge: bufferToBase64Url(publicKey.challenge),
-      rpId: publicKey.rpId || window.location.hostname,
-      timeout: publicKey.timeout ? Math.floor(publicKey.timeout / 1000) : 60,
+      rpId: String(publicKey.rpId || window.location.hostname).toLowerCase(),
+      timeout: clampedTimeoutSec,
       userVerification: publicKey.userVerification || 'preferred',
       allowCredentials: (publicKey.allowCredentials || []).map(c => ({
         id: bufferToBase64Url(c.id),
@@ -116,18 +129,7 @@ const injectScript = `
     return credential;
   };
 
-  navigator.credentials.create = async function(options) {
-    if (!options || !options.publicKey) {
-      return originalCreate(options);
-    }
-    // Creation can be passed through to original or handled if creation is requested
-    return originalCreate(options);
-  };
 })();
 `;
 
-try {
-  webFrame.executeJavaScript(injectScript);
-} catch (err) {
-  // Graceful degradation
-}
+void webFrame.executeJavaScript(injectScript).catch(() => {});

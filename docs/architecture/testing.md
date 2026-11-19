@@ -28,10 +28,15 @@ Every test tree uses dedicated root helpers (`tests/helpers/paths.ts` for `@agen
 - `pnpm typecheck`: Type-checks `shared`, `server` (including `tests/**/*.ts`), and `web` (including `tests/**/*.ts`).
 - `pnpm test:unit`: Fast pure-Node unit tests across desktop, server, and web (no browser or Electron binary required).
 - `pnpm test:integration`: Store, protocol, and integration tests across desktop, server, and web.
-- `pnpm test:runtime`: Server PTY supervisor, lifecycle, concurrency, and recovery tests.
-- `pnpm test:security`: Server authentication, filesystem isolation, and IPC boundary tests.
+- `pnpm test:production`: Ubuntu desktop `.deb` package and launcher integration checks.
+- `pnpm test:runtime`: Server PTY supervisor, lifecycle, concurrency, and recovery tests plus desktop resource-pool runtime tests.
+- `pnpm test:security`: Server authentication, filesystem isolation, and IPC boundary tests plus desktop browser security tests.
+- `pnpm test:e2e`: Headless Chromium web E2E suite and sandboxed Electron desktop E2E suite.
+- `pnpm test:staging:shell`: Shell release-staging and activation-guard regression suites.
+- `pnpm test:staging`: Shell staging suites plus sandboxed Electron staging-release tests.
 - `pnpm test`: Runs default package suites (`desktop`, `server`, `web`).
 - `pnpm check`: Runs 32 server invariant check scripts (`packages/server/scripts/check-*.mjs`).
+- `pnpm check:e2e`, `pnpm check:systemd`, `pnpm check:package`, `pnpm check:native-context`: Run the remaining browser-backed, real-systemd, npm-package, and operator-context check scripts under `packages/server/scripts/`.
 
 ### Environment Notes
 
@@ -39,10 +44,6 @@ Every test tree uses dedicated root helpers (`tests/helpers/paths.ts` for `@agen
 - `MAW_REAL_SYSTEMD=1`: Enables the 3 live user-systemd tests in `packages/server/tests/runtime/lifecycle/maw-systemd-acceptance.test.ts` (automatically skipped when unset).
 - `MAW_TEST_ARTIFACTS_DIR`: Overrides where acceptance UI screenshots are written (defaults under OS `tmpdir()`).
 
-## CI Tiering (`.github/workflows/ci.yml`)
+## CI tiers
 
-- `fast-checks`: Node 22 Linux fast gate (`pnpm typecheck`, `pnpm test:unit`, `pnpm test:security`, desktop policy suite, `pnpm build`).
-- `windows-validation`: Windows Node 22 checks (`pnpm typecheck`, focused domain/model tests, `pnpm check`).
-- `server-runtime-and-integration`: Full backend `test:integration` and `test:runtime` suites.
-- `desktop-and-browser-e2e`: Playwright Chromium installation, web `test:integration` and `test:e2e`, Debian desktop package build + `production.test.mjs`, sandboxed Electron lifecycle (`test:electron`), and `test:staging`.
-- `package`, `smoke`, and `android`: Artifact allowlist verification, cross-OS Node 20/22 npm tarball installation smoke matrix, and Android Gradle unit/lint/debug APK checks.
+The [CI and release runbook](./ci-and-release-runbook.md) lists the automatic jobs, full-run authorization and required check semantics. Browser-backed web tests are integration or E2E. The web commands discover tests recursively within each tier, and cap concurrent browser test files to reduce runner contention. Desktop security E2E uses real sandboxed Electron, while its policy and orchestrator unit cases require only Node.

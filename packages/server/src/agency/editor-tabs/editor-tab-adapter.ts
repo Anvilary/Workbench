@@ -371,17 +371,30 @@ export class EditorTabAdapter {
   async orderTabs(
     workspaceId: WorkspaceId,
     tabIds: readonly string[],
-    positions: Map<string, number>,
-  ): Promise<void> {
+    positions?: ReadonlyMap<string, number>,
+  ): Promise<readonly EditorTab[]> {
     return this.change(workspaceId, async () => {
+      const open = this.listTabs(workspaceId);
+      if (
+        tabIds.length !== open.length ||
+        new Set(tabIds).size !== tabIds.length ||
+        open.some((tab) => !tabIds.includes(tab.id))
+      ) {
+        throw new EditorTabStoreError('invalid-request', 'Order must contain every open editor tab exactly once');
+      }
       const now = new Date().toISOString();
-      for (const id of tabIds) {
+      for (let index = 0; index < tabIds.length; index++) {
+        const id = tabIds[index]!;
+        const order = positions ? positions.get(id) : index;
+        if (order === undefined || !Number.isSafeInteger(order) || order < 0) {
+          throw new EditorTabStoreError('invalid-request', 'Invalid order');
+        }
         const tab = this.tabs.get(id);
         if (tab && tab.workspaceId === workspaceId && !tab.closedAt) {
-          const order = positions.get(id) ?? tab.order;
           this.tabs.set(id, { ...tab, order, updatedAt: now });
         }
       }
+      return this.listTabs(workspaceId);
     });
   }
 

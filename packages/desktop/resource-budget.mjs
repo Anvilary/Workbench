@@ -41,6 +41,65 @@ export function isProtectedProvider(provider) {
   return provider === 'chatgpt' || provider === 'perplexity';
 }
 
+const NON_TYPING_KEYS = new Set([
+  'Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock', 'NumLock', 'ScrollLock',
+  'Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'Home', 'End', 'PageUp', 'PageDown', 'Insert', 'ContextMenu', 'PrintScreen', 'Pause',
+  'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
+  'F13', 'F14', 'F15', 'F16', 'F17', 'F18', 'F19', 'F20', 'F21', 'F22', 'F23', 'F24',
+]);
+
+/**
+ * Returns true only for non-modifier keyboard input that may edit page form/draft
+ * content, excluding shortcuts and navigation keys.
+ */
+export function isTypingInput(input) {
+  if (!input || input.type !== 'keyDown') return false;
+  if (input.control || input.meta || input.alt) return false;
+  const key = typeof input.key === 'string' ? input.key : '';
+  if (!key || NON_TYPING_KEYS.has(key)) return false;
+  return key.length === 1 || key === 'Enter' || key === 'Backspace' || key === 'Delete';
+}
+
+/**
+ * Evaluates whether a resident browser view is eligible for background eviction.
+ * Attached, focused, loading, downloading, and popup-owning views are never evicted.
+ * Protected AI providers and views with unsaved typing input are preserved under
+ * NORMAL/MODERATE/HIGH memory pressure and only become emergency eviction candidates
+ * under CRITICAL pressure (after unprotected tabs via selectEvictionCandidate).
+ */
+export function canEvictView({
+  id,
+  attachedViews,
+  layoutFocusedId,
+  activeDownloads,
+  popupOwners,
+  views,
+  providers,
+  interactionProtected,
+  durablePage,
+  memoryTier = MemoryPressureTier.NORMAL,
+}) {
+  if (attachedViews.has(id)) return false;
+  if (layoutFocusedId === id) return false;
+  if ((activeDownloads.get(id) ?? 0) > 0) return false;
+  for (const ownerId of popupOwners.values()) {
+    if (ownerId === id) return false;
+  }
+  const view = views.get(id);
+  if (!view || view.webContents.isDestroyed()) return false;
+  if (view.webContents.isLoading()) return false;
+
+  const provider = providers.get(id) ?? 'chatgpt';
+  if (!durablePage(provider, view.webContents.getURL())) return false;
+
+  if (memoryTier !== MemoryPressureTier.CRITICAL) {
+    if (interactionProtected.has(id) || isProtectedProvider(provider)) return false;
+  }
+
+  return true;
+}
+
 /**
  * Calculates the resident browser view budget according to available system memory,
  * memory pressure tier, measured Tab renderer working set, and currently visible panes.

@@ -1,5 +1,6 @@
 import { t } from '../../../i18n/index.js';
 import { HIDEABLE_PANELS, type HideablePanel, type PanelVisibility } from '../../../panel-visibility.js';
+import { CollapsibleSubsection } from '../CollapsibleSubsection.js';
 import { PANEL_NAMES } from '../settings-search.js';
 
 export interface PanelsSettingsSectionProps {
@@ -7,6 +8,7 @@ export interface PanelsSettingsSectionProps {
   consoleCount: number;
   confirmingConsole: boolean;
   highlightedCardId: string | null;
+  expandSignal?: number;
   onTogglePanel: (panel: HideablePanel, visible: boolean) => void;
   onConfirmHideConsole: () => void;
   onCancelHideConsole: () => void;
@@ -17,55 +19,54 @@ export function PanelsSettingsSection({
   consoleCount,
   confirmingConsole,
   highlightedCardId,
+  expandSignal,
   onTogglePanel,
   onConfirmHideConsole,
   onCancelHideConsole,
 }: PanelsSettingsSectionProps): JSX.Element {
   return (
     <div className="maw-settings-groups">
-      <div
+      <CollapsibleSubsection
         id="setting-card-panels"
-        className={`maw-settings-card ${highlightedCardId === 'setting-card-panels' ? 'maw-settings-card-highlighted' : ''}`}
+        title={t('settings.section.panels')}
+        highlighted={highlightedCardId === 'setting-card-panels'}
+        forceExpanded={highlightedCardId === 'setting-card-panels'}
+        expandSignal={expandSignal}
       >
-        <div className="maw-settings-card-header">
-          <span className="maw-settings-card-title">{t('settings.section.panels')}</span>
+        <div className="maw-settings-panels-grid">
+          {HIDEABLE_PANELS.map((panel) => (
+            <label key={panel} className="maw-settings-choice">
+              <input
+                type="checkbox"
+                checked={panels.isVisible(panel)}
+                onChange={(event) => onTogglePanel(panel, event.target.checked)}
+              />
+              <span className="maw-settings-choice-label">{t(PANEL_NAMES[panel])}</span>
+            </label>
+          ))}
         </div>
-        <div className="maw-settings-card-body">
-          <div className="maw-settings-panels-grid">
-            {HIDEABLE_PANELS.map((panel) => (
-              <label key={panel} className="maw-settings-choice">
-                <input
-                  type="checkbox"
-                  checked={panels.isVisible(panel)}
-                  onChange={(event) => onTogglePanel(panel, event.target.checked)}
-                />
-                <span className="maw-settings-choice-label">{t(PANEL_NAMES[panel])}</span>
-              </label>
-            ))}
-          </div>
-          {confirmingConsole && (
-            <div className="maw-settings-confirm" role="alert">
-              <span>{t('settings.panels.consoleConfirm', { count: consoleCount })}</span>
-              <div className="maw-settings-confirm-actions">
-                <button
-                  type="button"
-                  className="link-button"
-                  onClick={onConfirmHideConsole}
-                >
-                  {t('settings.panels.consoleConfirmYes')}
-                </button>
-                <button
-                  type="button"
-                  className="link-button"
-                  onClick={onCancelHideConsole}
-                >
-                  {t('common.cancel')}
-                </button>
-              </div>
+        {confirmingConsole && (
+          <div className="maw-settings-confirm" role="alert">
+            <span>{t('settings.panels.consoleConfirm', { count: consoleCount })}</span>
+            <div className="maw-settings-confirm-actions">
+              <button
+                type="button"
+                className="link-button"
+                onClick={onConfirmHideConsole}
+              >
+                {t('settings.panels.consoleConfirmYes')}
+              </button>
+              <button
+                type="button"
+                className="link-button"
+                onClick={onCancelHideConsole}
+              >
+                {t('common.cancel')}
+              </button>
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        )}
+      </CollapsibleSubsection>
     </div>
   );
 }

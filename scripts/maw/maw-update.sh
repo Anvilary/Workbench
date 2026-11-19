@@ -14,7 +14,8 @@ maw_init_paths
 maw_bin="$self_dir/maw"
 [ -f "$maw_bin" ] || maw_bin="${MAW_BIN_DIR:-$HOME/.local/bin}/maw"
 
-usage='Usage: maw update [--restart|--no-restart] [--ref <git-ref> --allow-unapproved-ref] [--source <dir>]'
+cli_name="${MAW_CLI_NAME:-maw}"
+usage="Usage: $cli_name update [--restart|--no-restart] [--ref <git-ref> --allow-unapproved-ref] [--source <dir>]"
 
 # Strip optional leading "update" subcommand if invoked via wrapper: maw update "$@"
 if [ "${1:-}" = "update" ]; then shift; fi
@@ -147,11 +148,11 @@ if [ -z "$base_commit" ] && [ -n "$current_raw" ]; then
 fi
 
 if [ "$initial" = true ] && maw_valid_release "$current_raw"; then
-  printf '%s\n' 'MAW already has an initial release; use maw update.'
+  printf '%s\n' "MAW already has an initial release; use $cli_name update."
   exit 0
 fi
 if [ -n "$staged_dir" ] && [ "$(maw_release_commit "$staged_dir")" = "$target_commit" ]; then
-  printf '%s\n' "Release $(basename "$staged_dir") for $target_commit is already staged. Activate it with: maw restart"
+  printf '%s\n' "Release $(basename "$staged_dir") for $target_commit is already staged. Activate it with: $cli_name restart"
   exit 0
 fi
 if [ "$initial" != true ] && [ "$base_commit" = "$target_commit" ] && [ -z "$staged_dir" ]; then
@@ -248,14 +249,25 @@ run_step corepack pnpm install --frozen-lockfile || handle_candidate_failure dep
 printf '%s\n' 'Running TypeScript typecheck...'
 run_step corepack pnpm typecheck || handle_candidate_failure typecheck 'typecheck failed'
 printf '%s\n' 'Building production bundles...'
+if [ -z "${MAW_HEADLESS:-}" ] && [ -f "$state_dir/headless" ]; then
+  export MAW_HEADLESS=1
+fi
+if [ -z "${MAW_LIB_DIR:-}" ] && [ -f "$self_dir/activation-helper-api" ]; then
+  export MAW_LIB_DIR="$self_dir"
+fi
 run_step corepack pnpm build || handle_candidate_failure build 'build failed'
 # Verify server bundle artifacts exist
-if [ ! -f "$candidate_dir/packages/server/dist/index.mjs" ] || [ ! -f "$candidate_dir/packages/server/dist/maw-ptyd.mjs" ]; then
-  handle_candidate_failure validate 'missing server bundle artifacts (dist/index.mjs or dist/maw-ptyd.mjs)'
+if [ ! -f "$candidate_dir/packages/server/dist/index.mjs" ] ||
+   [ ! -f "$candidate_dir/packages/server/dist/maw-ptyd.mjs" ] ||
+   [ ! -f "$candidate_dir/packages/server/dist/terminal-state.mjs" ]; then
+  handle_candidate_failure validate 'missing server bundle artifacts (dist/index.mjs, dist/maw-ptyd.mjs, or dist/terminal-state.mjs)'
 fi
-# Verify supervisor is valid JavaScript
+# Verify supervisor and terminal-state helper are valid JavaScript
 if ! "$node_bin" -c "$candidate_dir/packages/server/dist/maw-ptyd.mjs" 2>/dev/null; then
   handle_candidate_failure validate 'supervisor dist/maw-ptyd.mjs is not valid JavaScript'
+fi
+if ! "$node_bin" -c "$candidate_dir/packages/server/dist/terminal-state.mjs" 2>/dev/null; then
+  handle_candidate_failure validate 'supervisor dist/terminal-state.mjs is not valid JavaScript'
 fi
 # Verify node-pty native addon is present (required at runtime by both server and supervisor)
 if [ ! -d "$candidate_dir/packages/server/node_modules/node-pty" ]; then
@@ -284,7 +296,7 @@ if [ "$initial" = true ]; then
   # first `maw start`/`maw restart` verifies it.
   maw_set_pointer current "$candidate_dir"
   maw_log initial-release release "$release_id" commit "$target_commit"
-  printf '%s\n' "Initial release $release_id installed. Start it with: maw start"
+  printf '%s\n' "Initial release $release_id installed. Start it with: $cli_name start"
   exit 0
 fi
 
@@ -309,11 +321,11 @@ esac
 
 if [ "$should_restart" = false ]; then
   printf '%s\n' 'Update staged. The service keeps booting the current release, even after a crash or reboot.' \
-    'Activate the staged release with: maw restart'
+    "Activate the staged release with: $cli_name restart"
   exit 0
 fi
 
 # Release the update lock before handing over: activation takes it again (flock locks belong to the open
 # file description, so an inherited descriptor would make the helper wait on itself).
 exec 9>&-
-exec /bin/sh "$maw_bin" restart
+exec env MAW_CLI_NAME="$cli_name" /bin/sh "$maw_bin" restart

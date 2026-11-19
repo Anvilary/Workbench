@@ -188,27 +188,27 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
     await page.click('#btn-start');
 
     const getChatView = () => desktop.evaluate(({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Workbench'));
       return win?.contentView?.children?.find((v) => v.webContents);
     });
 
     await eventually(async () => {
       const count = await desktop.evaluate(({ BrowserWindow }) => {
-        const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+        const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Workbench'));
         return win?.contentView?.children?.filter((v) => v.webContents)?.length;
       });
       return count === 1;
     });
 
     await eventually(() => desktop.evaluate(({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Workbench'));
       const contents = win?.contentView?.children?.find((v) => v.webContents)?.webContents;
       return contents?.getURL() === 'https://chatgpt.com/' && !contents.isLoading();
     }));
 
     // Helper to get native view state
     const nativeState = () => desktop.evaluate(({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Workbench'));
       const view = win?.contentView?.children?.find((v) => v.webContents);
       return {
         url: view?.webContents?.getURL(),
@@ -218,7 +218,7 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
 
     // 1. Direct attachment download via user click
     await desktop.evaluate(async ({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Workbench'));
       const view = win.contentView.children.find((v) => v.webContents);
       await view.webContents.executeJavaScript(`document.getElementById('dl-direct').click()`);
     });
@@ -238,7 +238,7 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
 
     // 1b. Direct attachment download from https://chatgpt.com/report.pdf (exercising chatUrl allowlist in will-download)
     await desktop.evaluate(async ({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Workbench'));
       const view = win.contentView.children.find((v) => v.webContents);
       await view.webContents.executeJavaScript(`document.getElementById('dl-chatgpt-report').click()`);
     });
@@ -258,7 +258,7 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
 
     // 2. Popup-initiated download via user click
     await desktop.evaluate(async ({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Workbench'));
       const view = win.contentView.children.find((v) => v.webContents);
       await view.webContents.executeJavaScript(`document.getElementById('dl-popup').click()`);
     });
@@ -280,7 +280,7 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
 
     // 3. Redirect through allowed file-delivery host
     await desktop.evaluate(async ({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Workbench'));
       const view = win.contentView.children.find((v) => v.webContents);
       await view.webContents.executeJavaScript(`document.getElementById('dl-redirect').click()`);
     });
@@ -300,7 +300,7 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
 
     // 4. Inline PDF response (navigation to file delivery URL without attachment header)
     await desktop.evaluate(async ({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Workbench'));
       const view = win.contentView.children.find((v) => v.webContents);
       await view.webContents.executeJavaScript(`document.getElementById('dl-inline').click()`);
     });
@@ -320,7 +320,7 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
 
     // 5. Save As cancellation
     await desktop.evaluate(async ({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Workbench'));
       const view = win.contentView.children.find((v) => v.webContents);
       view.webContents.session.once('will-download', (_e, item) => {
         setImmediate(() => item.cancel());
@@ -339,7 +339,7 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
 
     // 6. Download failure followed by another download
     await desktop.evaluate(async ({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Workbench'));
       const view = win.contentView.children.find((v) => v.webContents);
       await view.webContents.executeJavaScript(`document.getElementById('dl-fail').click()`);
     });
@@ -350,7 +350,7 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
 
     // Second download succeeds immediately after
     await desktop.evaluate(async ({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Workbench'));
       const view = win.contentView.children.find((v) => v.webContents);
       await view.webContents.executeJavaScript(`document.getElementById('dl-direct').click()`);
     });
@@ -368,7 +368,7 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
 
     // 7. Verify did-stop-loading cannot mark a failed navigation successful
     await desktop.evaluate(({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Workbench'));
       const view = win.contentView.children.find((v) => v.webContents);
       view.webContents.emit('did-fail-load', {}, -105, 'ERR_NAME_NOT_RESOLVED', 'https://chatgpt.com/error', true);
       view.webContents.emit('did-stop-loading');
@@ -385,7 +385,7 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
 
     // 8. Verify recovery via reload
     await desktop.evaluate(async ({ BrowserWindow }, tabId) => {
-      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Workbench'));
       await win.webContents.executeJavaScript(`window.mawChatGpt.command({ type: 'browser-action', id: '${tabId}', action: 'reload' })`);
     }, id);
     await eventually(async () => {
@@ -400,7 +400,7 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
 
     // 9. Navigation reconciliation: in-page navigation must not navigate backward when delayed checkpoint sends old URL
     await desktop.evaluate(async ({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Workbench'));
       const view = win.contentView.children.find((v) => v.webContents);
       // Simulate live in-page navigation (e.g. user opening conversation /c/active-conversation)
       await view.webContents.executeJavaScript(`window.history.pushState({}, '', '/c/active-conversation')`);
@@ -417,7 +417,7 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
 
     // Send an unrelated tab update with the OLD persisted URL (checkpoint delayed)
     await desktop.evaluate(async ({ BrowserWindow }, tabId) => {
-      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Workbench'));
       await win.webContents.executeJavaScript(`window.mawChatGpt.command({ type: 'update', id: '${tabId}', url: 'https://chatgpt.com/' })`);
     }, id);
 
@@ -429,7 +429,7 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
 
     // Now send the updated checkpoint once the server confirms it
     await desktop.evaluate(async ({ BrowserWindow }, tabId) => {
-      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('MAW'));
+      const win = BrowserWindow.getAllWindows().find((w) => w.getTitle().includes('Workbench'));
       await win.webContents.executeJavaScript(`window.mawChatGpt.command({ type: 'update', id: '${tabId}', url: 'https://chatgpt.com/c/active-conversation' })`);
     }, id);
 

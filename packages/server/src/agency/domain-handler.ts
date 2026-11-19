@@ -8,11 +8,14 @@
 import type {
   AgencyClientMessage, AgencyServerMessage, AgencyErrorCode, ProjectId, WorkspaceId,
 } from '@agent-workbench/shared';
+import { isValidBrowserProfileId } from '@agent-workbench/shared';
 import { DirectoryPickers, DirectoryPickerError } from '../directory-picker.js';
 import { AgencyWorkspaceStore, AgencyStoreError, type HasBlockingWorkspaceSessions } from './store.js';
+import type { BrowserProfileStore } from './browser-profiles/store.js';
 import { AgencyRuntimeError } from './agency-session-runtime.js';
 import { BrowserTabStoreError } from './browser-tabs/browser-tab-store.js';
 import { EditorTabStoreError } from './editor-tabs/editor-tab-store.js';
+import { DomainError } from '../shared/index.js';
 
 type DomainType =
   | 'agency.projects.list' | 'agency.project.create' | 'agency.project.update' | 'agency.project.delete'
@@ -26,14 +29,14 @@ type DomainBroadcast = Extract<AgencyServerMessage, { type: 'agency.project.chan
 const fields: Record<DomainType, readonly string[]> = {
   'agency.projects.list': [],
   'agency.project.create': ['name'],
-  'agency.project.update': ['projectId', 'name'],
+  'agency.project.update': ['projectId', 'name', 'browserProfileId'],
   'agency.project.archive': ['projectId'],
   'agency.project.unarchive': ['projectId'],
-  'agency.project.delete': ['projectId'],
+  'agency.project.delete': ['projectId', 'cascade'],
   'agency.projects.order': ['projectIds'],
   'agency.workspaces.list': ['projectId'],
   'agency.workspace.create': ['projectId', 'name', 'pickerId'],
-  'agency.workspace.update': ['workspaceId', 'name'],
+  'agency.workspace.update': ['workspaceId', 'name', 'browserProfileId'],
   'agency.workspace.archive': ['workspaceId'],
   'agency.workspace.done': ['workspaceId'],
   'agency.workspace.restore': ['workspaceId'],
@@ -62,6 +65,14 @@ export function parseAgencyDomainRequest(value: unknown): AgencyDomainRequest | 
   if (Object.keys(value).some((key) => !allowed.has(key))) bad('Unexpected Agency request field');
   for (const key of fields[type]) {
     if (key === 'projectId' && type === 'agency.workspaces.list' && value[key] === undefined) continue;
+    if (key === 'cascade' && type === 'agency.project.delete') {
+      if (value[key] !== undefined && typeof value[key] !== 'boolean') bad('Invalid cascade flag');
+      continue;
+    }
+    if ((key === 'name' || key === 'browserProfileId') &&
+        (type === 'agency.project.update' || type === 'agency.workspace.update')) {
+      continue;
+    }
     if (key === 'projectId' || key === 'workspaceId') {
       if (typeof value[key] !== 'string' || !uuid.test(value[key])) bad('Invalid Agency object ID');
     } else if (key === 'name') {
@@ -75,11 +86,21 @@ export function parseAgencyDomainRequest(value: unknown): AgencyDomainRequest | 
       }
     }
   }
+  if (type === 'agency.project.update' || type === 'agency.workspace.update') {
+    const hasName = value['name'] !== undefined;
+    const hasProfile = value['browserProfileId'] !== undefined;
+    if (!hasName && !hasProfile) bad('Update requires name or browserProfileId');
+    if (hasName && typeof value['name'] !== 'string') bad('Invalid Agency name');
+    if (hasProfile && value['browserProfileId'] !== null && !isValidBrowserProfileId(value['browserProfileId'])) {
+      bad('Invalid browserProfileId');
+    }
+  }
   return value as unknown as AgencyDomainRequest;
 }
 
 export interface AgencyDomainContext {
   store: AgencyWorkspaceStore;
+  browserProfiles?: BrowserProfileStore;
   /** The DirectoryPickers instance must belong to the requesting /ws socket. */
   pickers: DirectoryPickers;
   /**
@@ -97,10 +118,38 @@ export interface AgencyDomainContext {
    * references, not only currently alive PTYs. Unknown state refuses delete.
    */
   withSessionReservationLock?: (workspaceId: WorkspaceId, action: () => Promise<void>) => Promise<void>;
+  /** Serializes coordinator tab/layout mutations alongside workspace deletion. */
+  runWorkspaceExclusive?: (workspaceId: WorkspaceId, action: () => Promise<void>) => Promise<void>;
   /** Broadcast after a committed write, never to implement the write itself. */
   publish?: (message: DomainBroadcast) => void;
   /** Explicit coordinated shutdown of active workspace sessions and tabs before deletion. */
   shutdownWorkspace?: (workspaceId: WorkspaceId) => Promise<void>;
+}
+
+async function deleteWorkspaceWithCleanup(
+  workspaceId: WorkspaceId,
+  context: AgencyDomainContext,
+): Promise<boolean> {
+  if (typeof context.hasBlockingSessions !== 'function' ||
+      typeof context.withSessionReservationLock !== 'function') {
+    throw new AgencyStoreError('session-unavailable', 'Session guard and shared reservation lock are required');
+  }
+  let deleted = false;
+  const runDelete = async (): Promise<void> => {
+    if (!context.store.getWorkspace(workspaceId)) return;
+    if (typeof context.shutdownWorkspace === 'function') {
+      await context.shutdownWorkspace(workspaceId);
+    }
+    await context.withSessionReservationLock!(workspaceId, () =>
+      context.store.deleteWorkspace(workspaceId, context.hasBlockingSessions!));
+    deleted = true;
+  };
+  if (typeof context.runWorkspaceExclusive === 'function') {
+    await context.runWorkspaceExclusive(workspaceId, runDelete);
+  } else {
+    await runDelete();
+  }
+  return deleted;
 }
 
 function publishSafely(context: AgencyDomainContext, message: DomainBroadcast): void {
@@ -134,7 +183,15 @@ export async function handleAgencyDomainRequest(
         return { type: 'agency.project.created', requestId, project };
       }
       case 'agency.project.update': {
-        const project = await context.store.renameProject(request.projectId, request.name);
+        if (request.browserProfileId !== undefined && request.browserProfileId !== null && context.browserProfiles) {
+          if (!context.browserProfiles.getProfile(request.browserProfileId)) {
+            throw new AgencyStoreError('not-found', `Browser profile ${request.browserProfileId} not found`);
+          }
+        }
+        const project = await context.store.updateProject(request.projectId, {
+          ...(request.name !== undefined ? { name: request.name } : {}),
+          ...(request.browserProfileId !== undefined ? { browserProfileId: request.browserProfileId } : {}),
+        });
         publishSafely(context, { type: 'agency.project.changed', change: 'updated', projectId: project.id, project });
         return { type: 'agency.project.updated', requestId, project };
       }
@@ -148,10 +205,23 @@ export async function handleAgencyDomainRequest(
         publishSafely(context, { type: 'agency.project.changed', change: 'unarchived', projectId: project.id, project });
         return { type: 'agency.project.unarchived', requestId, project };
       }
-      case 'agency.project.delete':
+      case 'agency.project.delete': {
+        if (!context.store.listProjects().some((project) => project.id === request.projectId)) {
+          return { type: 'agency.project.deleted', requestId, projectId: request.projectId };
+        }
+        if (request.cascade) {
+          const children = context.store.listWorkspaces(request.projectId);
+          for (const ws of children) {
+            const deleted = await deleteWorkspaceWithCleanup(ws.id, context);
+            if (deleted) {
+              publishSafely(context, { type: 'agency.workspace.changed', change: 'deleted', workspaceId: ws.id });
+            }
+          }
+        }
         await context.store.deleteProject(request.projectId);
         publishSafely(context, { type: 'agency.project.changed', change: 'deleted', projectId: request.projectId });
         return { type: 'agency.project.deleted', requestId, projectId: request.projectId };
+      }
       case 'agency.projects.order': {
         const projects = await context.store.orderProjects(request.projectIds);
         publishSafely(context, {
@@ -172,7 +242,15 @@ export async function handleAgencyDomainRequest(
         return { type: 'agency.workspace.created', requestId, workspace };
       }
       case 'agency.workspace.update': {
-        const workspace = await context.store.renameWorkspace(request.workspaceId, request.name);
+        if (request.browserProfileId !== undefined && request.browserProfileId !== null && context.browserProfiles) {
+          if (!context.browserProfiles.getProfile(request.browserProfileId)) {
+            throw new AgencyStoreError('not-found', `Browser profile ${request.browserProfileId} not found`);
+          }
+        }
+        const workspace = await context.store.updateWorkspaceFields(request.workspaceId, {
+          ...(request.name !== undefined ? { name: request.name } : {}),
+          ...(request.browserProfileId !== undefined ? { browserProfileId: request.browserProfileId } : {}),
+        });
         publishSafely(context, { type: 'agency.workspace.changed', change: 'updated', workspaceId: workspace.id, workspace });
         return { type: 'agency.workspace.updated', requestId, workspace };
       }
@@ -192,22 +270,10 @@ export async function handleAgencyDomainRequest(
         return { type: 'agency.workspace.restored', requestId, workspace };
       }
       case 'agency.workspace.delete': {
-        if (typeof context.hasBlockingSessions !== 'function' ||
-            typeof context.withSessionReservationLock !== 'function') {
-          throw new AgencyStoreError('session-unavailable', 'Session guard and shared reservation lock are required');
+        const deleted = await deleteWorkspaceWithCleanup(request.workspaceId, context);
+        if (deleted) {
+          publishSafely(context, { type: 'agency.workspace.changed', change: 'deleted', workspaceId: request.workspaceId });
         }
-        if (!context.store.getWorkspace(request.workspaceId)) {
-          return { type: 'agency.workspace.deleted', requestId, workspaceId: request.workspaceId };
-        }
-        if (typeof context.shutdownWorkspace === 'function') {
-          await context.shutdownWorkspace(request.workspaceId);
-        }
-        // Use the same critical section as Lane C's reservation path.
-        // The guard and committed metadata deletion must not be interleaved
-        // with a session launch, including an in-flight launch.
-        await context.withSessionReservationLock(request.workspaceId, () =>
-          context.store.deleteWorkspace(request.workspaceId, context.hasBlockingSessions!));
-        publishSafely(context, { type: 'agency.workspace.changed', change: 'deleted', workspaceId: request.workspaceId });
         return { type: 'agency.workspace.deleted', requestId, workspaceId: request.workspaceId };
       }
       case 'agency.workspaces.order': {
@@ -225,7 +291,10 @@ export async function handleAgencyDomainRequest(
   } catch (error) {
     let code: AgencyErrorCode = 'internal-error';
     let message = 'Agency operation failed';
-    if (error instanceof AgencyStoreError) {
+    if (error instanceof DomainError) {
+      code = error.code as AgencyErrorCode;
+      message = error.message;
+    } else if (error instanceof AgencyStoreError) {
       code = error.code;
       message = error.message;
     } else if (error instanceof AgencyRuntimeError) {

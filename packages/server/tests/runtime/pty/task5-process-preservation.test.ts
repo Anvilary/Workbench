@@ -36,6 +36,14 @@ import { AgencyWorkspaceStore } from '../../../src/agency/store.js';
 import { AgencyProfileStore } from '../../../src/agency/agency-profile-store.js';
 import { AgencySessionRuntime } from '../../../src/agency/agency-session-runtime.js';
 import { SplitAgencySessionStore } from '../../../src/agency/agency-session-store.js';
+import { AgencyNotificationStore } from '../../../src/agency/agency-notification-store.js';
+import { TabActivityManager } from '../../../src/agency/tab-activity-manager.js';
+import { AgencyLayoutStore } from '../../../src/agency/agency-layout-store.js';
+import { BrowserTabAdapter, BrowserTabStore } from '../../../src/agency/browser-tabs/index.js';
+import { BrowserProfileStore } from '../../../src/agency/browser-profiles/store.js';
+import { EditorTabAdapter, EditorTabStore } from '../../../src/agency/editor-tabs/index.js';
+import { PasteStore } from '../../../src/paste-store.js';
+import { TerminalHistoryStore } from '../../../src/terminal-history-store.js';
 import { WorkspaceMutex } from '../../../src/agency/workspace-lock.js';
 import { encodeClientMessage, parseServerMessage, type ServerMessage } from '@agent-workbench/shared';
 import { SERVER_SRC } from '../../helpers/paths.js';
@@ -141,6 +149,30 @@ async function createDisposableBackend(options: {
   await agencyWorkspaceStore.load();
   const agencyProfileStore = new AgencyProfileStore(path.join(options.configDir, 'agency-profiles.json'));
   await agencyProfileStore.listDefinitions();
+  const agencyNotificationStore = new AgencyNotificationStore(path.join(options.configDir, 'agency-notifications.json'));
+  await agencyNotificationStore.initialize();
+  const agencyActivityManager = new TabActivityManager({
+    notificationStore: agencyNotificationStore,
+    storageDir: options.configDir,
+  });
+  await agencyActivityManager.initialize();
+  const agencyLayoutStore = new AgencyLayoutStore(path.join(options.configDir, 'agency-layouts.json'));
+  await agencyLayoutStore.initialize();
+  const agencyBrowserProfileStore = new BrowserProfileStore(path.join(options.configDir, 'agency-browser-profiles.json'));
+  await agencyBrowserProfileStore.load();
+  const agencyBrowserTabs = new BrowserTabAdapter({
+    store: new BrowserTabStore(path.join(options.configDir, 'agency-web-tabs.json')),
+    workspaceStore: agencyWorkspaceStore,
+  });
+  await agencyBrowserTabs.restore();
+  const agencyEditorTabs = new EditorTabAdapter({
+    store: new EditorTabStore(path.join(options.configDir, 'agency-editor-tabs.json')),
+    workspaceStore: agencyWorkspaceStore,
+    protectedDirsProvider: () => agents.protectedDirs(),
+  });
+  await agencyEditorTabs.restore();
+  const pasteStore = new PasteStore(path.join(options.configDir, 'pastes'));
+  const historyBaseDir = path.join(options.configDir, 'terminal-history');
   const workspaceLock = new WorkspaceMutex();
   const agencySessionStore = new SplitAgencySessionStore(path.join(options.configDir, 'agency-sessions.json'));
   const agencyRuntime = new AgencySessionRuntime({
@@ -175,36 +207,74 @@ async function createDisposableBackend(options: {
     vault,
     remote,
     worktrees,
+    pasteStore,
+    historyStoreFactory: (id) => new TerminalHistoryStore(id, { baseDir: historyBaseDir }),
     agencyWorkspaceStore,
     agencyProfileStore,
     agencyRuntime,
+    agencyNotificationStore,
+    agencyActivityManager,
+    agencyLayoutStore,
+    agencyBrowserTabs,
+    agencyBrowserProfileStore,
+    agencyEditorTabs,
     workspaceLock,
   });
 
   let closed = false;
 
-  const shutdown = async () => {
-    if (closed) return;
-    closed = true;
-    detachSocket();
+  const disposeShared = async () => {
+    await detachSocket();
     await detachReadiness();
     vault.dispose();
     conversations.disposeAll();
     repos.disposeAll();
-    void memory.disposeAll();
+    await memory.disposeAll().catch(() => {});
     agencyRuntime.dispose();
-    registry.disposeAll(); // Detaches without terminating supervisor child PTYs
+    agencyActivityManager.dispose();
+    agencyNotificationStore.dispose();
     remote.dispose();
+    await Promise.allSettled([
+      store.flush(),
+      archived.flush(),
+      settings.flush(),
+      notes.flush(),
+      drafts.flush(),
+      worktreeStore.flush(),
+      remote.flush(),
+      agencySessionStore.flush(),
+      agencyWorkspaceStore.flush(),
+      agencyProfileStore.flush(),
+      agencyBrowserTabs.flush(),
+      agencyBrowserProfileStore.flush(),
+      agencyEditorTabs.flush(),
+      agencyLayoutStore.flush(),
+      agencyActivityManager.flush(),
+      agencyNotificationStore.flush(),
+    ]);
+    httpServer.closeAllConnections?.();
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+  };
+
+  const shutdown = async () => {
+    if (closed) return;
+    closed = true;
+    registry.disposeAll(); // Detaches without terminating supervisor child PTYs
+    await disposeShared();
   };
 
   const killUngraceful = async () => {
     if (closed) return;
     closed = true;
-    detachSocket();
-    await detachReadiness();
-    // Ungraceful kill: do NOT call registry.disposeAll(), destroy server immediately
-    await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    // Ungraceful kill: do NOT call registry.disposeAll() or kill child PTYs,
+    // but sever the dead backend's local IPC handle so no background reconnect timers leak.
+    const internalReg = registry as any;
+    const rawClient = internalReg.client;
+    internalReg.client = null;
+    if (rawClient?.socket && !rawClient.socket.destroyed) {
+      rawClient.socket.destroy();
+    }
+    await disposeShared();
   };
 
   return {
@@ -324,9 +394,11 @@ async function runTask5Acceptance() {
   const configDir = path.join(tmpBase, 'config');
   const socketPath = path.join(runtimeDir, 'ptyd.sock');
   const authPath = path.join(runtimeDir, 'ptyd.auth');
+  const savedXdgConfigHome = process.env.XDG_CONFIG_HOME;
 
   await fs.promises.mkdir(runtimeDir, { recursive: true, mode: 0o700 });
   await fs.promises.mkdir(configDir, { recursive: true, mode: 0o700 });
+  process.env.XDG_CONFIG_HOME = configDir;
 
   let backend1: DisposableBackend | null = null;
   let backend2: DisposableBackend | null = null;
@@ -519,6 +591,8 @@ async function runTask5Acceptance() {
         }
       } catch {}
     }
+    if (savedXdgConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = savedXdgConfigHome;
     await rm(tmpBase, { recursive: true, force: true }).catch(() => {});
   }
 }
@@ -538,12 +612,15 @@ test('registry reconnects to the real supervisor after socket loss and keeps the
   const configDir = path.join(tmpBase, 'config');
   const socketPath = path.join(runtimeDir, 'ptyd.sock');
   const authPath = path.join(runtimeDir, 'ptyd.auth');
+  const savedXdgConfigHome = process.env.XDG_CONFIG_HOME;
   await fs.promises.mkdir(runtimeDir, { recursive: true, mode: 0o700 });
   await fs.promises.mkdir(configDir, { recursive: true, mode: 0o700 });
+  process.env.XDG_CONFIG_HOME = configDir;
 
   const supervisor = new PtySupervisor({ socketPath, authPath });
   let backend: DisposableBackend | null = null;
   let audit: PtyHostClient | null = null;
+  let unverified: TerminalRegistry | null = null;
   try {
     await supervisor.listen();
     backend = await createDisposableBackend({ runtimeDir, configDir, socketPath, authPath, shellScript: SYNTHETIC_AGENT_PATH });
@@ -556,7 +633,7 @@ test('registry reconnects to the real supervisor after socket loss and keeps the
     const unsafeAuthPath = path.join(runtimeDir, 'unsafe-ptyd.auth');
     await fs.promises.symlink(authPath, unsafeAuthPath);
     // A second backend must not continue into startup recovery with no authenticated inventory.
-    const unverified = new TerminalRegistry(
+    unverified = new TerminalRegistry(
       createAgentRegistry([]), { file: process.execPath, args: [SYNTHETIC_AGENT_PATH], name: 'synthetic-shell' },
       new WorkspaceStore(), undefined, undefined, undefined,
       { persistentPty: true, socketPath, authPath: unsafeAuthPath },
@@ -598,9 +675,12 @@ test('registry reconnects to the real supervisor after socket loss and keeps the
     const sessions = await audit.list();
     assert.equal(sessions.sessions.filter((session) => session.id === terminalId).length, 1, 'recovery did not spawn a duplicate');
   } finally {
+    unverified?.disposeAll();
     audit?.detach();
     await backend?.shutdown();
     supervisor.close({ killAll: true });
+    if (savedXdgConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = savedXdgConfigHome;
     await rm(tmpBase, { recursive: true, force: true });
   }
 });
@@ -611,9 +691,11 @@ async function runTask5Concurrency() {
   const configDir = path.join(tmpBase, 'config');
   const socketPath = path.join(runtimeDir, 'ptyd.sock');
   const authPath = path.join(runtimeDir, 'ptyd.auth');
+  const savedXdgConfigHome = process.env.XDG_CONFIG_HOME;
 
   await fs.promises.mkdir(runtimeDir, { recursive: true, mode: 0o700 });
   await fs.promises.mkdir(configDir, { recursive: true, mode: 0o700 });
+  process.env.XDG_CONFIG_HOME = configDir;
 
   let backend1: DisposableBackend | null = null;
   let backend2: DisposableBackend | null = null;
@@ -684,6 +766,8 @@ async function runTask5Concurrency() {
         }
       } catch {}
     }
+    if (savedXdgConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = savedXdgConfigHome;
     await rm(tmpBase, { recursive: true, force: true }).catch(() => {});
   }
 }

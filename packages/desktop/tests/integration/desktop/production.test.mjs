@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, chmod, symlink, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { pathToFileURL } from 'node:url';
 import { REPO_ROOT } from '../../helpers/paths.mjs';
 const exec = promisify(execFile);
 const root = REPO_ROOT;
@@ -35,8 +37,15 @@ test('old updater build entry refuses missing production desktop runtime before 
   await assert.rejects(exec(process.execPath,[path.join(root,'scripts/maw/check-desktop-build.mjs')],{cwd:dir}), e=>{assert.match(e.stderr,/No release was activated/);return true;});
 });
 
-test('Ubuntu package owns its sandbox and does not contain state or service installation', async () => {
-  const deb = path.join(root,'dist-desktop/maw-electron-45.2.0_amd64.deb');
+test('Ubuntu package owns its sandbox and does not contain state or service installation', async t => {
+  const defaultDeb = path.join(root,'dist-desktop/maw-electron-45.2.0_amd64.deb');
+  let deb = defaultDeb;
+  if (!existsSync(defaultDeb)) {
+    const tmpOut = await mkdtemp(path.join(tmpdir(), 'maw-desktop-deb-out-'));
+    t.after(() => rm(tmpOut, { recursive: true, force: true }));
+    await exec(process.execPath, [path.join(root, 'scripts/maw/build-desktop-deb.mjs'), tmpOut], { cwd: root });
+    deb = path.join(tmpOut, 'maw-electron-45.2.0_amd64.deb');
+  }
   const {stdout}=await exec('dpkg-deb',['--contents',deb],{maxBuffer:1024*1024});
   assert.match(stdout,/rwsr-xr-x root\/root.*chrome-sandbox/);
   assert.match(stdout,/rwxr-xr-x root\/root.*\/electron\n/);
@@ -93,6 +102,10 @@ test('commands installation preserves existing user state and is repeatable', as
   await writeFile(path.join(dir,'lib/desktop-runtime-version'),'44.0.0');
   await exec('/bin/sh',[path.join(root,'scripts/maw/install.sh'),'--commands-only'],{env});
   assert.equal(await readFile(path.join(dir,'lib/desktop-runtime-version'),'utf8'),'44.0.0');
+  const anvilHelp = await exec(path.join(dir,'bin/anvil-bench'), ['help'], { env });
+  assert.match(anvilHelp.stdout, /^Usage: anvil-bench /);
+  const mawHelp = await exec(path.join(dir,'bin/maw'), ['help'], { env });
+  assert.match(mawHelp.stdout, /^Usage: maw /);
 });
 
 test('desktop installer creates a graphical entry without service activation (apt fixture)', async t => {
@@ -104,7 +117,7 @@ test('desktop installer creates a graphical entry without service activation (ap
   const env={...process.env,PATH:tools+':'+process.env.PATH,MAW_STATE_DIR:path.join(dir,'state'),MAW_LIB_DIR:path.join(dir,'lib'),MAW_BIN_DIR:path.join(dir,'bin with spaces'),MAW_NODE_BIN:nodeWrapper,XDG_DATA_HOME:path.join(dir,'data')};
   await exec('/bin/sh',[path.join(root,'scripts/maw/install.sh'),'--desktop'],{env});
   const entry=await readFile(path.join(dir,'data/applications/maw.desktop'),'utf8');
-  assert.match(entry,/^Name=MaW$/m);assert.match(entry,/^GenericName=My Amazing Workspace$/m);assert.ok(entry.includes('Exec="'+path.join(dir,'bin with spaces/maw')+'" desktop'));
+  assert.match(entry,/^Name=Workbench$/m);assert.match(entry,/^GenericName=Anvilary Workbench$/m);assert.ok(entry.includes('Exec="'+path.join(dir,'bin with spaces/anvil-bench')+'" desktop'));
   assert.match(entry,/^Icon=maw-workspace$/m);
   assert.match(await readFile(path.join(dir,'apt-args'),'utf8'),/^apt-get\ninstall\n/);
 });
@@ -124,7 +137,7 @@ test('desktop integration enables login startup and refreshes search assets with
   assert.equal((await readFile(calls, 'utf8')).trim(), '--user enable maw.service maw-ptyd.service');
   for (const name of ['maw.service', 'maw-ptyd.service']) assert.equal(await readFile(path.join(units, name), 'utf8'), `installed ${name}`);
   assert.equal((await readFile(path.join(env.MAW_LIB_DIR, 'activation-helper-api'), 'utf8')).trim(), '2');
-  assert.match(await readFile(path.join(env.XDG_DATA_HOME, 'applications/maw.desktop'), 'utf8'), /^Name=MaW$/m);
+  assert.match(await readFile(path.join(env.XDG_DATA_HOME, 'applications/maw.desktop'), 'utf8'), /^Name=Workbench$/m);
   assert.deepEqual(await readFile(path.join(env.XDG_DATA_HOME, 'icons/hicolor/256x256/apps/maw-workspace.png')),
     await readFile(path.join(root, 'packages/desktop/assets/icons/maw-256.png')));
 });

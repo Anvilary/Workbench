@@ -2,6 +2,7 @@ import { useEffect, type MutableRefObject } from 'react';
 import {
   classifyWebTabUrl,
   getPaneNodes,
+  isLoopbackHost,
   validateOtherWebUrl,
   type WebTabProvider,
   type WorkspaceId,
@@ -51,13 +52,25 @@ export function useNativeWebTabLinks({
       const targetPaneId = sourcePane?.id ?? layoutRef.current.focusedPaneId;
 
       const classification = classifyWebTabUrl(targetUrl);
-      if (!classification.valid && !validateOtherWebUrl(targetUrl).valid) {
+      const otherValidation = validateOtherWebUrl(targetUrl);
+      if (!classification.valid && !otherValidation.valid) {
         onError(t('agency.web.invalidUrl'));
         return;
       }
 
       const provider: WebTabProvider = classification.provider ?? 'other';
-      const urlToOpen = classification.normalizedUrl ?? targetUrl;
+      const urlToOpen = classification.normalizedUrl ?? otherValidation.normalizedUrl ?? targetUrl;
+      if (provider === 'other') {
+        try {
+          if (isLoopbackHost(new URL(urlToOpen).hostname)) {
+            onError(t('agency.web.invalidUrl'));
+            return;
+          }
+        } catch {
+          onError(t('agency.web.invalidUrl'));
+          return;
+        }
+      }
       let title = '';
       try {
         if (provider === 'github') title = 'GitHub';

@@ -17,6 +17,7 @@ Thumbs.db
 .check-git/
 
 # Lanzador generado por "pnpm package"
+/Anvilary Workbench.cmd
 /Agent Workbench.cmd
 
 # Paquete generado por "pnpm build:npm"

@@ -2101,7 +2101,7 @@ export function App(): JSX.Element {
   return (
     <div className="app">
       <header className="app-header">
-        <span className="app-name">Agent Workbench</span>
+        <span className="app-name">Anvilary Workbench</span>
         <span className={`status status-${status}`}>{t(STATUS_LABEL_KEYS[status])}</span>
         {activeTerminal !== null && (
           <span className="meta" title={activeTerminal.cwd}>

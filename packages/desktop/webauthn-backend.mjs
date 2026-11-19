@@ -4,22 +4,96 @@
 
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { base64UrlToBuffer } from './webauthn-policy.mjs';
+import { base64UrlToBuffer, bufferToBase64Url } from './webauthn-policy.mjs';
 
 const execFileAsync = promisify(execFile);
 
 export const CANCELLED_MESSAGE = 'NotAllowedError: security key operation cancelled';
 export const NO_DEVICE_MESSAGE = 'NotAllowedError: No FIDO2 hardware device found. Please insert your security key.';
+export const DEFAULT_FIDO2_PROBE_TIMEOUT_MS = 5000;
+
+function attachStreamErrorGuards(proc) {
+  for (const stream of [proc?.stdin, proc?.stdout, proc?.stderr]) {
+    if (stream && typeof stream.on === 'function') {
+      stream.on('error', () => {});
+    }
+  }
+}
+
+function safeWriteStdin(stdin, data, shouldEnd = false) {
+  if (!stdin || stdin.destroyed || stdin.writableEnded) return false;
+  try {
+    if (typeof data === 'string' && data.length > 0 && typeof stdin.write === 'function') {
+      stdin.write(data);
+    }
+    if (shouldEnd && typeof stdin.end === 'function') {
+      stdin.end();
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function execWithTimeout(execFn, cmd, args, { timeoutMs = DEFAULT_FIDO2_PROBE_TIMEOUT_MS, signal = null } = {}) {
+  if (signal?.aborted) {
+    return Promise.reject(new Error(CANCELLED_MESSAGE));
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
+      fn(value);
+    };
+    const onAbort = () => finish(reject, new Error(CANCELLED_MESSAGE));
+    const timer = setTimeout(
+      () => finish(reject, new Error(`NotAllowedError: ${cmd} timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+    if (typeof timer.unref === 'function') timer.unref();
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+
+    const execOptions = { timeout: timeoutMs, killSignal: 'SIGKILL' };
+    if (signal) execOptions.signal = signal;
+
+    Promise.resolve()
+      .then(() => execFn(cmd, args, execOptions))
+      .then(
+        (res) => finish(resolve, res),
+        (err) => finish(reject, err),
+      );
+  });
+}
+
+function waitWithSignal(delayMs, signal) {
+  if (delayMs <= 0) return Promise.resolve();
+  if (signal?.aborted) return Promise.reject(new Error(CANCELLED_MESSAGE));
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new Error(CANCELLED_MESSAGE));
+    };
+    const timer = setTimeout(() => {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
 
 /**
  * Checks whether system fido2-tools are available on Linux.
  * @param {string} [fido2TokenPath]
+ * @param {{ timeoutMs?: number }} [options]
  * @returns {Promise<boolean>}
  */
-export async function isFido2ToolsAvailable(fido2TokenPath = 'fido2-token') {
+export async function isFido2ToolsAvailable(fido2TokenPath = 'fido2-token', { timeoutMs = DEFAULT_FIDO2_PROBE_TIMEOUT_MS } = {}) {
   if (process.platform !== 'linux') return false;
   try {
-    await execFileAsync(fido2TokenPath, ['-V']);
+    await execWithTimeout(execFileAsync, fido2TokenPath, ['-V'], { timeoutMs });
     return true;
   } catch {
     return false;
@@ -29,13 +103,18 @@ export async function isFido2ToolsAvailable(fido2TokenPath = 'fido2-token') {
 /**
  * Discovers connected FIDO2 devices using fido2-token -L.
  * @param {Function} [execFn]
+ * @param {{ timeoutMs?: number, signal?: AbortSignal|null }} [options]
  * @returns {Promise<Array<{ path: string, vendor: string, product: string, description: string }>>}
  */
-export async function discoverFido2Devices(execFn = execFileAsync) {
+export async function discoverFido2Devices(
+  execFn = execFileAsync,
+  { timeoutMs = DEFAULT_FIDO2_PROBE_TIMEOUT_MS, signal = null } = {},
+) {
+  if (signal?.aborted) return [];
   try {
-    const { stdout } = await execFn('fido2-token', ['-L']);
+    const { stdout } = await execWithTimeout(execFn, 'fido2-token', ['-L'], { timeoutMs, signal });
     const devices = [];
-    const lines = stdout.trim().split('\n');
+    const lines = String(stdout || '').trim().split('\n');
 
     for (const line of lines) {
       const trimmed = line.trim();
@@ -59,35 +138,191 @@ export async function discoverFido2Devices(execFn = execFileAsync) {
 
 /**
  * Reads capabilities of the specified FIDO2 device using fido2-token -I.
+ * Distinguishes confirmed absence of clientPin (`hasClientPin: false, probeError: false`)
+ * from capability probe failures (`hasClientPin: null, probeError: true`).
  * @param {string} devicePath
  * @param {Function} [execFn]
- * @returns {Promise<{ hasClientPin: boolean, pinRetries: number|null, minPinLength: number }>}
+ * @param {{ retries?: number, retryDelayMs?: number, timeoutMs?: number, signal?: AbortSignal|null }} [options]
+ * @returns {Promise<{ hasClientPin: boolean|null, hasCredMgmt: boolean, pinRetries: number|null, minPinLength: number, probeError: boolean, error?: string }>}
  */
-export async function getDeviceCapabilities(devicePath, execFn = execFileAsync) {
-  try {
-    const { stdout } = await execFn('fido2-token', ['-I', devicePath]);
-    const optionsMatch = stdout.match(/options:\s*(.+)/);
-    const options = optionsMatch ? optionsMatch[1].split(',').map(s => s.trim()) : [];
-    const hasClientPin = options.includes('clientPin');
+export async function getDeviceCapabilities(
+  devicePath,
+  execFn = execFileAsync,
+  { retries = 1, retryDelayMs = 50, timeoutMs = DEFAULT_FIDO2_PROBE_TIMEOUT_MS, signal = null } = {},
+) {
+  let lastErr = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (signal?.aborted) {
+      lastErr = new Error(CANCELLED_MESSAGE);
+      break;
+    }
+    try {
+      const { stdout } = await execWithTimeout(execFn, 'fido2-token', ['-I', devicePath], { timeoutMs, signal });
+      const text = String(stdout || '');
+      const optionsMatch = text.match(/options:\s*(.+)/);
+      const options = optionsMatch ? optionsMatch[1].split(',').map(s => s.trim()) : [];
+      const hasClientPin = options.includes('clientPin');
+      const hasCredMgmt = options.includes('credMgmt');
 
-    const retriesMatch = stdout.match(/pin retries:\s*(\d+)/i);
-    const pinRetries = retriesMatch ? parseInt(retriesMatch[1], 10) : null;
+      const retriesMatch = text.match(/pin retries:\s*(\d+)/i);
+      const pinRetries = retriesMatch ? parseInt(retriesMatch[1], 10) : null;
 
-    const minPinMatch = stdout.match(/minpinlen:\s*(\d+)/i);
-    const minPinLength = minPinMatch ? parseInt(minPinMatch[1], 10) : 4;
+      const minPinMatch = text.match(/minpinlen:\s*(\d+)/i);
+      const minPinLength = minPinMatch ? parseInt(minPinMatch[1], 10) : 4;
 
-    return {
-      hasClientPin,
-      pinRetries,
-      minPinLength,
-    };
-  } catch {
-    return {
-      hasClientPin: false,
-      pinRetries: null,
-      minPinLength: 4,
-    };
+      return {
+        hasClientPin,
+        hasCredMgmt,
+        pinRetries,
+        minPinLength,
+        probeError: false,
+      };
+    } catch (err) {
+      lastErr = err;
+      if (signal?.aborted) break;
+      if (attempt < retries && retryDelayMs > 0) {
+        try {
+          await waitWithSignal(retryDelayMs, signal);
+        } catch (abortErr) {
+          lastErr = abortErr;
+          break;
+        }
+      }
+    }
   }
+
+  return {
+    hasClientPin: null,
+    hasCredMgmt: false,
+    pinRetries: null,
+    minPinLength: 4,
+    probeError: true,
+    error: lastErr instanceof Error ? lastErr.message : String(lastErr || 'Capability probe failed'),
+  };
+}
+
+/**
+ * Lists resident (discoverable) credentials for a given rpId using `fido2-token -L -k`.
+ * Returns an empty array if credential management is unsupported or querying fails.
+ * @param {object} params
+ * @param {string} params.devicePath
+ * @param {string} params.rpId
+ * @param {string|null} [params.pin]
+ * @param {number} [params.timeoutMs]
+ * @param {AbortSignal|null} [params.signal]
+ * @param {Function} [params.spawnFn]
+ * @returns {Promise<Array<{ credentialId: string, userId: string|null }>>}
+ */
+export function listResidentCredentials({
+  devicePath,
+  rpId,
+  pin = null,
+  timeoutMs = 5000,
+  signal = null,
+  spawnFn = spawn,
+}) {
+  return new Promise((resolve) => {
+    if (!devicePath || !rpId || signal?.aborted) {
+      resolve([]);
+      return;
+    }
+
+    let proc;
+    try {
+      proc = spawnFn('fido2-token', ['-L', '-k', rpId, devicePath], {
+        detached: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch {
+      resolve([]);
+      return;
+    }
+
+    attachStreamErrorGuards(proc);
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let pinWritten = false;
+
+    const killProcessGroup = () => {
+      try {
+        if (proc.pid) process.kill(-proc.pid, 'SIGKILL');
+      } catch {
+        try { proc.kill('SIGKILL'); } catch {}
+      }
+    };
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
+    };
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      killProcessGroup();
+      resolve([]);
+    }, timeoutMs);
+
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      killProcessGroup();
+      resolve([]);
+    };
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+
+    proc.stdout.on('data', chunk => {
+      stdout += chunk.toString('utf8');
+    });
+
+    proc.stderr.on('data', chunk => {
+      stderr += chunk.toString('utf8');
+      if (pin && !pinWritten && stderr.includes('Enter PIN for')) {
+        pinWritten = true;
+        safeWriteStdin(proc.stdin, pin + '\n', true);
+      }
+    });
+
+    if (!pin) {
+      safeWriteStdin(proc.stdin, '', true);
+    }
+
+    proc.on('error', () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve([]);
+    });
+
+    proc.on('close', code => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (code !== 0) {
+        resolve([]);
+        return;
+      }
+      const results = [];
+      for (const rawLine of stdout.split('\n')) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        // The display name may contain whitespace. The user ID precedes the
+        // algorithm and protection fields, followed by an optional payment flag.
+        const match = line.match(/^\d+:\s+(\S+)\s+.*?\s+([a-zA-Z0-9+/]+={0,2})\s+(?:es256|es384|rs256|eddsa|unknown)\s+\S+(?:\s+(?:no)?pay)?$/);
+        if (!match) continue;
+        try {
+          const credentialId = bufferToBase64Url(Buffer.from(match[1], 'base64'));
+          const userId = match[2] ? bufferToBase64Url(Buffer.from(match[2], 'base64')) : null;
+          if (credentialId) results.push({ credentialId, userId });
+        } catch {}
+      }
+      resolve(results);
+    });
+  });
 }
 
 /**
@@ -152,6 +387,8 @@ export function executeAssertion({
       return;
     }
 
+    attachStreamErrorGuards(proc);
+
     let stdout = '';
     let stderr = '';
     let settled = false;
@@ -168,6 +405,7 @@ export function executeAssertion({
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
+      if (signal) signal.removeEventListener('abort', onAbort);
       killProcessGroup();
       reject(new Error(`NotAllowedError: fido2-assert timed out after ${timeoutMs}ms waiting for security key interaction`));
     }, timeoutMs);
@@ -193,26 +431,20 @@ export function executeAssertion({
       stderr += text;
 
       // Monitor for PIN prompt from libfido2 readpassphrase fallback
-      if (pin && !pinWritten && text.includes('Enter PIN for')) {
+      if (pin && !pinWritten && stderr.includes('Enter PIN for')) {
         pinWritten = true;
-        try {
-          proc.stdin.write(pin + '\n');
-        } catch {}
+        safeWriteStdin(proc.stdin, pin + '\n', true);
       }
     });
 
-    // Write parameters to stdin
-    try {
-      proc.stdin.write(inputLines.join('\n') + '\n');
-      if (!pin) {
-        proc.stdin.end();
-      }
-    } catch (err) {
+    // Write parameters to stdin (async EPIPE errors are absorbed by attachStreamErrorGuards)
+    if (!safeWriteStdin(proc.stdin, inputLines.join('\n') + '\n', !pin)) {
       if (!settled) {
         settled = true;
         clearTimeout(timer);
+        if (signal) signal.removeEventListener('abort', onAbort);
         killProcessGroup();
-        reject(err);
+        reject(new Error('NotAllowedError: Failed to write assertion parameters to fido2-assert'));
       }
       return;
     }
@@ -235,12 +467,23 @@ export function executeAssertion({
         resolve(stdout);
       } else {
         const stderrSanitized = stderr.replace(/Enter PIN for[^\n]*/g, '[PIN prompt]').trim();
+        const makeFidoError = (message, fidoCode) => {
+          const err = new Error(message);
+          if (fidoCode) err.fidoCode = fidoCode;
+          return err;
+        };
         if (stderrSanitized.includes('FIDO_ERR_PIN_INVALID') || stderrSanitized.includes('bad PIN')) {
-          reject(new Error('NotAllowedError: Invalid PIN for security key'));
+          reject(makeFidoError('NotAllowedError: Invalid PIN for security key', 'FIDO_ERR_PIN_INVALID'));
         } else if (stderrSanitized.includes('FIDO_ERR_PIN_BLOCKED')) {
-          reject(new Error('NotAllowedError: Security key PIN is blocked due to too many failed attempts'));
+          reject(makeFidoError('NotAllowedError: Security key PIN is blocked due to too many failed attempts', 'FIDO_ERR_PIN_BLOCKED'));
+        } else if (stderrSanitized.includes('FIDO_ERR_PIN_AUTH_BLOCKED')) {
+          reject(makeFidoError('NotAllowedError: Security key PIN authentication is temporarily blocked. Reinsert your security key.', 'FIDO_ERR_PIN_AUTH_BLOCKED'));
+        } else if (stderrSanitized.includes('FIDO_ERR_PIN_NOT_SET')) {
+          reject(makeFidoError('NotAllowedError: Security key does not have a PIN configured', 'FIDO_ERR_PIN_NOT_SET'));
+        } else if (stderrSanitized.includes('FIDO_ERR_PIN_REQUIRED')) {
+          reject(makeFidoError('NotAllowedError: Security key requires a PIN', 'FIDO_ERR_PIN_REQUIRED'));
         } else if (stderrSanitized.includes('FIDO_ERR_NO_CREDENTIALS')) {
-          reject(new Error('NotAllowedError: No matching credentials found on security key'));
+          reject(makeFidoError('NotAllowedError: No matching credentials found on security key', 'FIDO_ERR_NO_CREDENTIALS'));
         } else {
           reject(new Error(`NotAllowedError: fido2-assert exited with code ${code}: ${stderrSanitized || 'Device error'}`));
         }

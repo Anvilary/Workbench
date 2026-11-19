@@ -679,7 +679,7 @@ const adapter = createClaudeCodeAdapter();
   // El de antes, con sus tildes y en tuteo (§6.23).
   const missingToday =
     'No se encontró el comando "claude" en el PATH. ' +
-    'Agent Workbench usa la CLI que ya tengas instalada: no la incluye ni la descarga. ' +
+    'Anvilary Workbench usa la CLI que ya tengas instalada: no la incluye ni la descarga. ' +
     'Instálala desde https://docs.claude.com/en/docs/claude-code/setup y vuelve a arrancar.';
   check('missingMessage igual, byte por byte, al de antes', esText(adapter.missingMessage()) === missingToday, esText(adapter.missingMessage()));
 

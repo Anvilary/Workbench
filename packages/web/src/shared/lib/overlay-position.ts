@@ -58,3 +58,49 @@ export function calculateViewportMenuPosition(params: ViewportPlacementParams): 
 
   return { left, top };
 }
+
+/**
+ * Places a confirmation beside its trigger or centered over its pane,
+ * clamped inside the visible viewport.
+ */
+export function calculateAnchoredDialogPosition(params: {
+  triggerRect: { left: number; top: number; right: number; bottom: number };
+  dialogWidth: number;
+  dialogHeight: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  alignment?: 'adjacent' | 'center';
+  margin?: number;
+  offset?: number;
+}): { left: number; top: number } {
+  const { triggerRect, dialogWidth, dialogHeight, viewportWidth, viewportHeight } = params;
+  const margin = params.margin ?? 12;
+  const offset = params.offset ?? 10;
+
+  if (params.alignment === 'center') {
+    const left = (triggerRect.left + triggerRect.right - dialogWidth) / 2;
+    const top = (triggerRect.top + triggerRect.bottom - dialogHeight) / 2;
+    return {
+      left: Math.round(Math.max(margin, Math.min(left, viewportWidth - dialogWidth - margin))),
+      top: Math.round(Math.max(margin, Math.min(top, viewportHeight - dialogHeight - margin))),
+    };
+  }
+
+  let left = triggerRect.right + offset;
+  if (left + dialogWidth > viewportWidth - margin) {
+    left = Math.max(margin, viewportWidth - dialogWidth - margin);
+  }
+  if (left < margin) {
+    left = margin;
+  }
+
+  let top = triggerRect.top - 8;
+  if (top + dialogHeight > viewportHeight - margin) {
+    top = Math.max(margin, viewportHeight - dialogHeight - margin);
+  }
+  if (top < margin) {
+    top = margin;
+  }
+
+  return { left: Math.round(left), top: Math.round(top) };
+}

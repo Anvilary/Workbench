@@ -2,6 +2,7 @@
 // Designed for safe FIDO2 operations with no side effects.
 
 import { createHash } from 'node:crypto';
+import { isIP } from 'node:net';
 
 export const DEFAULT_WEBAUTHN_ORIGINS = Object.freeze([
   'https://chatgpt.com',
@@ -22,6 +23,7 @@ export function isAllowedWebAuthnOrigin(origin, extraOrigins = []) {
     const parsed = new URL(origin);
     if (parsed.protocol !== 'https:') return false;
     const normalized = parsed.origin;
+    if (origin !== normalized) return false;
     if (DEFAULT_WEBAUTHN_ORIGINS.includes(normalized)) return true;
     for (const extra of extraOrigins) {
       if (typeof extra === 'string' && extra.trim() === normalized) return true;
@@ -50,24 +52,19 @@ export function isValidRpId(rpId, origin) {
     const originHost = originUrl.hostname.toLowerCase();
     const candidateRpId = rpId.toLowerCase();
 
+    // W3C WebAuthn requires a valid domain string (never an IP literal, single label, or trailing dot)
+    const bareOrigin = originHost.replace(/^\[|\]$/g, '');
+    const bareCandidate = candidateRpId.replace(/^\[|\]$/g, '');
+    if (isIP(bareOrigin) || isIP(bareCandidate)) return false;
+    if (!candidateRpId.includes('.') || candidateRpId.endsWith('.') || candidateRpId.startsWith('.')) return false;
+
     // Exact match
     if (originHost === candidateRpId) return true;
 
-    // Subdomain match: originHost ends with .candidateRpId
-    if (originHost.endsWith('.' + candidateRpId) && originHost.length > candidateRpId.length + 1) {
-      // Must not allow public suffixes like ".com" or ".co.uk" alone
-      const parts = candidateRpId.split('.');
-      if (parts.length >= 2 && parts[parts.length - 1].length > 0) {
-        return true;
-      }
-    }
-
-    // Special recognized affiliation: chatgpt.com is affiliated with openai.com
-    if ((originHost === 'chatgpt.com' || originHost.endsWith('.chatgpt.com')) && candidateRpId === 'openai.com') {
-      return true;
-    }
-
-    return false;
+    // The built-in OpenAI sign-in flow uses this parent/related RP.
+    // Configured extra origins accept their exact host only.
+    return candidateRpId === 'openai.com' &&
+      (originHost.endsWith('.openai.com') || originHost === 'chatgpt.com');
   } catch {
     return false;
   }
@@ -89,6 +86,35 @@ export function bufferToBase64Url(buf) {
  */
 export function base64UrlToBuffer(str) {
   return Buffer.from(str, 'base64url');
+}
+
+export function isValidWebAuthnPin(pin) {
+  return typeof pin === 'string' && pin.length > 0 && Buffer.byteLength(pin) <= 63 && !/[\r\n\0]/.test(pin);
+}
+
+function isBase64Url(value, maxLength) {
+  return typeof value === 'string' && value.length <= maxLength && /^[a-zA-Z0-9_-]+$/.test(value) &&
+    base64UrlToBuffer(value).toString('base64url') === value;
+}
+
+export function validAssertionOptions(options, origin) {
+  return options && isValidRpId(options.rpId, origin) &&
+    isBase64Url(options.challenge, 4096) &&
+    (options.timeout === undefined || (Number.isFinite(options.timeout) && options.timeout >= 0 && options.timeout <= 600)) &&
+    (options.userVerification === undefined || ['required', 'preferred', 'discouraged'].includes(options.userVerification)) &&
+    (options.allowCredentials === undefined || (
+      Array.isArray(options.allowCredentials) && options.allowCredentials.length <= 16 &&
+      options.allowCredentials.every(credential => credential?.type === 'public-key' && isBase64Url(credential.id, 4096))
+    ));
+}
+
+export function verifyAssertionData(data, rpId, requireUv) {
+  const authenticatorData = base64UrlToBuffer(data.authenticatorData);
+  const rpIdHash = createHash('sha256').update(String(rpId || '').toLowerCase()).digest();
+  if (authenticatorData.length < 37 || !authenticatorData.subarray(0, 32).equals(rpIdHash) ||
+      !(authenticatorData[32] & 1) || (requireUv && !(authenticatorData[32] & 4))) {
+    throw new Error('NotAllowedError: Invalid authenticator data or missing user verification');
+  }
 }
 
 /**
@@ -166,7 +192,10 @@ export function unwrapCborByteString(buf) {
  *   type: string
  * }}
  */
-export function parseFido2AssertOutput(stdout, { rpId, credentialId = '', clientDataJSONBuffer }) {
+export function parseFido2AssertOutput(
+  stdout,
+  { rpId, credentialId = '', clientDataJSONBuffer, residentCredentials = [] } = {},
+) {
   if (typeof stdout !== 'string') {
     throw new Error('NotAllowedError: Invalid fido2-assert output format');
   }
@@ -177,16 +206,36 @@ export function parseFido2AssertOutput(stdout, { rpId, credentialId = '', client
   }
 
   // Heuristic for fido2-tools output:
-  // When echoing input lines: line 0 may be client data hash, line 1 may be rpId.
+  // When echoing input lines: line 0 is client data hash, line 1 is rpId.
+  // Some versions echo rpId at line 0 without clientDataHash.
   // The actual assertion data lines follow:
   // data line 0: CBOR authData (base64)
   // data line 1: signature (base64)
   // data line 2 (optional): userHandle (base64)
+  // Note: fido2-assert -G -r may emit multiple assertions back-to-back;
+  // slice only the first assertion so a subsequent assertion's hash is not read as userHandle.
+  const normalizedRpId = typeof rpId === 'string' ? rpId.toLowerCase() : '';
+  const isRpLine = (idx) => normalizedRpId.length > 0 && idx < lines.length && lines[idx].toLowerCase() === normalizedRpId;
+
   let dataLines = lines;
-  if (lines.length >= 4 && (lines[1] === rpId || lines[0] === rpId)) {
-    dataLines = lines.slice(2);
-  } else if (lines.length >= 3 && lines[0] === rpId) {
-    dataLines = lines.slice(1);
+  if (lines.length >= 4 && isRpLine(1)) {
+    if (lines.length >= 6 && isRpLine(5)) {
+      dataLines = lines.slice(2, 4);
+    } else if (lines.length >= 7 && isRpLine(6)) {
+      dataLines = lines.slice(2, 5);
+    } else {
+      dataLines = lines.slice(2, 5);
+    }
+  } else if (lines.length >= 3 && isRpLine(0)) {
+    if (lines.length >= 4 && isRpLine(3)) {
+      dataLines = lines.slice(1, 3);
+    } else if (lines.length >= 5 && isRpLine(4)) {
+      dataLines = lines.slice(1, 4);
+    } else {
+      dataLines = lines.slice(1, 4);
+    }
+  } else {
+    dataLines = lines.slice(0, 3);
   }
 
   if (dataLines.length < 2) {
@@ -202,7 +251,13 @@ export function parseFido2AssertOutput(stdout, { rpId, credentialId = '', client
     userHandleBase64Url = bufferToBase64Url(Buffer.from(dataLines[2], 'base64'));
   }
 
-  const credId = credentialId || (userHandleBase64Url ? userHandleBase64Url : 'fido2-credential');
+  const matches = credentialId || !userHandleBase64Url
+    ? []
+    : residentCredentials.filter(entry => entry?.userId === userHandleBase64Url);
+  const credId = credentialId || (matches.length === 1 ? matches[0].credentialId : '');
+  if (!credId || signatureBuf.length === 0) {
+    throw new Error('NotAllowedError: Could not identify the asserted credential');
+  }
 
   return {
     credentialId: credId,
@@ -224,10 +279,19 @@ export function classifyWebAuthnError(err) {
   const msg = err instanceof Error ? err.message : String(err || '');
   const lower = msg.toLowerCase();
 
+  if (lower.includes('notsupportederror') || lower.includes('not supported')) {
+    return { name: 'NotSupportedError', message: msg };
+  }
   if (lower.includes('securityerror') || lower.includes('origin') || lower.includes('rpid')) {
     return { name: 'SecurityError', message: msg };
   }
-  if (lower.includes('invalidstateerror') || lower.includes('invalid')) {
+  if (lower.includes('invalidstateerror')) {
+    return { name: 'InvalidStateError', message: msg };
+  }
+  if (lower.includes('notallowederror')) {
+    return { name: 'NotAllowedError', message: msg };
+  }
+  if (lower.includes('invalid')) {
     return { name: 'InvalidStateError', message: msg };
   }
   return { name: 'NotAllowedError', message: msg || 'The operation either timed out or was not allowed.' };

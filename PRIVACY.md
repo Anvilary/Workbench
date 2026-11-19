@@ -62,4 +62,4 @@ repository's history.
 ## Contact
 
 Open an issue at
-[github.com/cvelasquez/agent-workbench/issues](https://github.com/cvelasquez/agent-workbench/issues).
+[github.com/Anvilary/Workbench/issues](https://github.com/Anvilary/Workbench/issues).

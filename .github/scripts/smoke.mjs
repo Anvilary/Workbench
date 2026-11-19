@@ -33,9 +33,10 @@ const isWindows = process.platform === 'win32';
 const root = mkdtempSync(path.join(tmpdir(), 'aw-smoke-'));
 const appDir = path.join(root, 'app');
 const homeDir = path.join(root, 'home');
+const runtimeDir = path.join(root, 'runtime');
 let failures = 0;
 const check = (label, ok, extra = '') => {
-  console.log(`${ok ? 'OK  ' : 'FAIL'} ${label}${extra ? ` — ${extra}` : ''}`);
+  console.log(`${ok ? 'OK  ' : 'FAIL'} ${label}${extra ? ` - ${extra}` : ''}`);
   if (!ok) failures++;
 };
 
@@ -43,6 +44,7 @@ console.log(`Node ${process.version} on ${process.platform} ${process.arch}`);
 console.log(`Installing ${path.basename(tarball)} in ${appDir} ...`);
 mkdirSync(appDir, { recursive: true });
 mkdirSync(homeDir, { recursive: true });
+mkdirSync(runtimeDir, { recursive: true, mode: 0o700 });
 // A copy with a plain relative name: nothing to quote for the shell npm needs on Windows.
 copyFileSync(tarball, path.join(appDir, 'package.tgz'));
 execFileSync('npm', ['init', '-y'], { cwd: appDir, stdio: 'ignore', shell: process.platform === 'win32' });
@@ -60,16 +62,27 @@ try {
 
 const packageDir = path.join(appDir, 'node_modules', 'agent-workbench');
 const serverFile = path.join(packageDir, 'dist', 'server.js');
+const ptydFile = path.join(packageDir, 'dist', 'maw-ptyd.mjs');
+const ptydStateFile = path.join(packageDir, 'dist', 'terminal-state.mjs');
+const anvilBin = path.join(appDir, 'node_modules', '.bin', isWindows ? 'anvil-bench.cmd' : 'anvil-bench');
 check('the package installs its server', existsSync(serverFile));
-check('the bin shim exists', existsSync(path.join(appDir, 'node_modules', '.bin', isWindows ? 'agent-workbench.cmd' : 'agent-workbench')));
+check('the package installs its PTY supervisor', existsSync(ptydFile) && existsSync(ptydStateFile));
+check('the anvil-bench bin shim exists', existsSync(anvilBin));
+check('the legacy bin shim exists', existsSync(path.join(appDir, 'node_modules', '.bin', isWindows ? 'agent-workbench.cmd' : 'agent-workbench')));
 
 // ---- 1. the server ----------------------------------------------------------
 
+const baseEnv = { ...process.env };
+for (const key of Object.keys(baseEnv)) {
+  if (/^(MAW_|AGENT_WORKBENCH_|ELECTRON_RUN_AS_NODE$)/.test(key)) delete baseEnv[key];
+}
 const env = {
-  ...process.env,
+  ...baseEnv,
   AGENT_WORKBENCH_NO_OPEN: '1',
   AGENT_WORKBENCH_NO_RESTORE: '1',
-  // Its own home: nothing is written in the profile of whoever runs this.
+  MAW_DISABLE_PTYD: '1',
+  MAW_AUTO_SPAWN_PTYD: '0',
+  // Its own home and runtime dir: nothing leaks from or into the caller's environment.
   HOME: homeDir,
   USERPROFILE: homeDir,
   APPDATA: path.join(homeDir, 'AppData', 'Roaming'),
@@ -78,8 +91,9 @@ const env = {
   XDG_DATA_HOME: path.join(homeDir, '.local', 'share'),
   XDG_CACHE_HOME: path.join(homeDir, '.cache'),
   XDG_STATE_HOME: path.join(homeDir, '.local', 'state'),
+  XDG_RUNTIME_DIR: runtimeDir,
 };
-const server = spawn(process.execPath, [serverFile], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
+const server = spawn(anvilBin, [], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'], shell: isWindows });
 let log = '';
 const url = await new Promise((resolve) => {
   const onData = (chunk) => {
@@ -101,7 +115,7 @@ if (!url.startsWith('http')) {
   const get = (target, headers = {}) => fetch(target, { headers, redirect: 'manual' }).then(async (r) => ({ status: r.status, body: await r.text() }));
   try {
     const withToken = await get(url);
-    check('with the token: the interface', withToken.status === 200 && withToken.body.includes('My Amazing Workspace'), `HTTP ${withToken.status}`);
+    check('with the token: the interface', withToken.status === 200 && withToken.body.includes('Anvilary Workbench'), `HTTP ${withToken.status}`);
     const withoutToken = await get(`${base.origin}/`);
     check('without the token: refused', withoutToken.status === 401, `HTTP ${withoutToken.status}`);
     const foreign = await get(url, { Origin: 'http://evil.example' });

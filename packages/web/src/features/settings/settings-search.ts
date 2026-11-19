@@ -1,4 +1,4 @@
-import type { AgentInfo, BrowserFavorite, ConsoleShellId, SearchEngine } from '@agent-workbench/shared';
+import type { AgentInfo, BrowserFavorite, BrowserProfile, ConsoleShellId, SearchEngine } from '@agent-workbench/shared';
 import { t, type MessageKey } from '../../i18n/index.js';
 import { HIDEABLE_PANELS, type HideablePanel, type PanelVisibility } from '../../panel-visibility.js';
 import type { TerminalThemePreference } from '../../useTerminalTheme.js';
@@ -63,6 +63,7 @@ export interface BuildSearchCatalogParams {
   shellChoices: readonly { id: ConsoleShellId; label: string }[];
   searchEngines: readonly SearchEngine[];
   favorites: readonly BrowserFavorite[];
+  browserProfiles?: readonly BrowserProfile[];
   agents: readonly AgentInfo[];
   shouldOfferPanels: boolean;
   panels?: PanelVisibility;
@@ -77,6 +78,7 @@ export function buildSettingsSearchCatalog({
   shellChoices,
   searchEngines,
   favorites,
+  browserProfiles = [],
   agents,
   shouldOfferPanels,
   panels,
@@ -182,6 +184,28 @@ export function buildSettingsSearchCatalog({
       title: engine.name,
       description: engine.homeUrl,
       keywords: ['search', engine.id, engine.name, 'engine', engine.homeUrl, engine.searchUrl],
+    });
+  }
+
+  items.push({
+    id: 'browser-profiles',
+    tabId: 'browser',
+    targetId: 'setting-card-browser-profiles',
+    categoryName: t('settings.category.browser'),
+    title: t('settings.browser.profiles'),
+    description: t('settings.browser.profilesDesc'),
+    keywords: ['browser profiles', 'profiles', 'sessions', 'cookies', 'clone', 'isolation', 'main', 'auth'],
+  });
+
+  for (const profile of browserProfiles) {
+    items.push({
+      id: `browser-profile-${profile.id}`,
+      tabId: 'browser',
+      targetId: 'setting-card-browser-profiles',
+      categoryName: t('settings.category.browser'),
+      title: profile.name,
+      description: t('settings.browser.profiles'),
+      keywords: ['browser', 'profile', profile.id, profile.name, 'session', 'cookies'],
     });
   }
 

@@ -29,3 +29,4 @@ export * from './split-layout.js';
 export * from './performance.js';
 export * from './agents-usage.js';
 export * from './browser-settings.js';
+export * from './browser-profiles.js';

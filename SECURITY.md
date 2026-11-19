@@ -1,13 +1,13 @@
 # Security
 
-Agent Workbench runs a local server that launches processes, so security
+Anvilary Workbench runs a local server that launches processes, so security
 reports are taken seriously.
 
 ## Reporting a vulnerability
 
 Please **don't open a public issue**. Use GitHub's private reporting:
 **Security → Report a vulnerability** on this repository
-([direct link](https://github.com/cvelasquez/agent-workbench/security/advisories/new)).
+([direct link](https://github.com/Anvilary/Workbench/security/advisories/new)).
 
 Include what you did, what happened and what you expected. You'll get an answer
 within a few days. Fixes ship in the next release and are credited in the

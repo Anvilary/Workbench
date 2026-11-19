@@ -1,6 +1,6 @@
 name: Publish
 
-# Runs on a vX.Y.Z tag. Publishes `dist-npm/` to npm with provenance through
+# Runs on a vX.Y.Z tag. Publishes the CI-verified tarball to npm with provenance through
 # trusted publishing (OIDC): npm trusts this repository and this workflow, so
 # there is no long-lived token anywhere. Then it creates the GitHub release.
 #
@@ -11,6 +11,8 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+permissions: {}
+
 env:
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
 
@@ -20,45 +22,55 @@ jobs:
   # somewhere can't be published. (0.3.0 went out broken on macOS: this is why.)
   ci:
     uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+    with:
+      run_heavy: true
 
   npm:
     needs: ci
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
           registry-url: https://registry.npmjs.org
-          cache: pnpm
+          package-manager-cache: false
       - name: Tag matches package.json
         if: github.ref_type == 'tag'
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           PKG=$(node -p "require('./package.json').version")
           test "$TAG" = "$PKG" || { echo "tag $TAG != package.json $PKG"; exit 1; }
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build:npm
-      - run: node .github/scripts/check-tarball.mjs
-      # Trusted publishing needs npm >= 11.5.1; Node 22 ships 10.x.
-      - run: npm install -g npm@latest
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: tarball
+      # Trusted publishing needs npm >= 11.5.1; Node 22 ships 10.x. Pin an explicit version.
+      - run: npm install -g npm@11.5.1
       - name: Publish
         if: github.ref_type == 'tag'
-        run: npm publish --provenance --access public
-        working-directory: dist-npm
+        run: npm publish ./agent-workbench-*.tgz --provenance --access public
       - name: Rehearsal (nothing is uploaded)
         if: github.ref_type != 'tag'
-        run: npm publish --dry-run --access public
-        working-directory: dist-npm
+        run: npm publish ./agent-workbench-*.tgz --dry-run --access public
       - name: GitHub release with the changelog section
         if: github.ref_type == 'tag'
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          awk -v v="$VERSION" '$0 ~ "^## "v"( |$)" {on=1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md
+          awk -v h="## ${VERSION}" '
+            $0 == h || index($0, h " ") == 1 { on=1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "Error: CHANGELOG.md has no release notes section for ${VERSION}" >&2
+            exit 1
+          fi
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
             || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
         env:

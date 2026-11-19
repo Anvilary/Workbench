@@ -37,7 +37,7 @@ try {
   desktop = spawn('pnpm', ['--filter', '@agent-workbench/desktop', 'start'], { cwd: root, detached: true, stdio: 'inherit', env: {
     ...process.env, MAW_DESKTOP_URL: url, MAW_DESKTOP_DATA_DIR: path.join(data, 'chromium'),
   } });
-  console.log('Isolated MAW desktop prototype started. Close its window to stop the isolated backend.');
+  console.log('Isolated Anvilary Workbench desktop prototype started. Close its window to stop the isolated backend.');
   const code = await new Promise(resolve => desktop.on('exit', resolve));
   process.exitCode = typeof code === 'number' ? code : 1;
 } finally {

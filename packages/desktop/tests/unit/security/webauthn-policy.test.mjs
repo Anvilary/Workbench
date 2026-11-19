@@ -65,6 +65,16 @@ test('isValidRpId enforces W3C WebAuthn rpId constraints against origin', () => 
 
   // Rejections: top-level domain alone (e.g. .com)
   assert.equal(isValidRpId('com', 'https://openai.com'), false);
+  assert.equal(isValidRpId('co.uk', 'https://login.example.co.uk'), false);
+
+  // Rejections: IP literals, single-label hosts, trailing/leading dots (B-13)
+  assert.equal(isValidRpId('127.0.0.1', 'https://127.0.0.1'), false);
+  assert.equal(isValidRpId('[::1]', 'https://[::1]'), false);
+  assert.equal(isValidRpId('::1', 'https://[::1]'), false);
+  assert.equal(isValidRpId('192.168.1.1', 'https://192.168.1.1'), false);
+  assert.equal(isValidRpId('localhost', 'https://localhost'), false);
+  assert.equal(isValidRpId('chatgpt.com.', 'https://chatgpt.com.'), false);
+  assert.equal(isValidRpId('.chatgpt.com', 'https://chatgpt.com'), false);
 });
 
 test('generateClientData produces canonical WebAuthn JSON and SHA-256 hash', () => {
@@ -153,6 +163,17 @@ test('parseFido2AssertOutput parses raw and echoed output formats cleanly', () =
   assert.equal(resultEcho.credentialId, 'cred-999');
   assert.equal(resultEcho.userHandle, bufferToBase64Url(fakeUserId));
   assert.equal(resultEcho.signature, bufferToBase64Url(fakeSig));
+
+  // Format 3: 4-line rpId-first echo format (rpId, authData, sig, userId)
+  const stdoutRpFirst4 = `auth.openai.com\n${authDataBase64}\n${sigBase64}\n${userIdBase64}\n`;
+  const resultRpFirst4 = parseFido2AssertOutput(stdoutRpFirst4, {
+    rpId: 'AUTH.OPENAI.COM',
+    credentialId: 'cred-999',
+    clientDataJSONBuffer,
+  });
+  assert.equal(resultRpFirst4.authenticatorData, bufferToBase64Url(Buffer.alloc(37, 0x42)));
+  assert.equal(resultRpFirst4.signature, bufferToBase64Url(fakeSig));
+  assert.equal(resultRpFirst4.userHandle, bufferToBase64Url(fakeUserId));
 
   // Failure cases: empty or truncated output
   assert.throws(() => parseFido2AssertOutput('', { rpId: 'auth.openai.com', clientDataJSONBuffer }), /Incomplete output/);

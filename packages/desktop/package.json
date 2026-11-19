@@ -15,14 +15,14 @@
     "test:e2e": "node --test --test-concurrency=1 tests/e2e/smoke/*.test.mjs tests/e2e/browser/*.test.mjs tests/e2e/panes/*.test.mjs tests/e2e/terminals/*.test.mjs",
     "test": "node --test tests/unit/browser/*.test.mjs tests/unit/desktop/*.test.mjs tests/unit/filesystem/*.test.mjs tests/unit/performance/*.test.mjs tests/unit/security/*.test.mjs tests/integration/authentication/*.test.mjs tests/integration/desktop/reproduce-perf-and-ownership.test.mjs tests/e2e/terminals/terminal-clipboard.test.mjs",
     "test:terminal": "node --test tests/e2e/terminals/terminal-rendering.test.mjs",
-    "test:electron": "node --test --test-concurrency=1 tests/e2e/smoke/smoke.test.mjs tests/security/browser/browser-capabilities.test.mjs tests/e2e/browser/browser-release.test.mjs tests/e2e/browser/browser-link-navigation-electron.test.mjs tests/security/browser/browser-auth-popup.test.mjs tests/e2e/terminals/nautilus-clipboard.test.mjs tests/e2e/browser/download-smoke.test.mjs tests/runtime/lifecycle/resource-tab-pool.test.mjs",
+    "test:electron": "node --test --test-concurrency=1 tests/e2e/smoke/smoke.test.mjs tests/e2e/smoke/split-smoke.test.mjs tests/security/browser/browser-capabilities.test.mjs tests/e2e/browser/browser-release.test.mjs tests/e2e/browser/browser-link-navigation-electron.test.mjs tests/security/browser/browser-auth-popup.test.mjs tests/e2e/browser/download-smoke.test.mjs tests/e2e/panes/pane-inspection.test.mjs tests/e2e/panes/pane-interactions.test.mjs tests/e2e/terminals/nautilus-clipboard.test.mjs tests/e2e/terminals/terminal-clipboard.test.mjs tests/e2e/terminals/terminal-rendering.test.mjs tests/runtime/lifecycle/resource-tab-pool.test.mjs",
     "test:staging": "node --test tests/runtime/lifecycle/staging-release.test.mjs",
     "bench:webview": "node bench/webview-benchmarks.mjs all",
     "bench:lifecycle": "node bench/webview-benchmarks.mjs lifecycle",
     "bench:tab-switch": "node bench/webview-benchmarks.mjs tab-switch",
     "bench:pane-resize": "node bench/webview-benchmarks.mjs pane-resize",
     "bench:overlay-capture": "node bench/webview-benchmarks.mjs overlay-capture",
-    "bench:concurrent-stream": "node bench/webview-benchmarks.mjs lifecycle",
+    "bench:concurrent-stream": "node bench/webview-benchmarks.mjs concurrent-stream",
     "bench:resource-matrix": "node bench/webview-benchmarks.mjs resource-matrix"
   },
   "devDependencies": {

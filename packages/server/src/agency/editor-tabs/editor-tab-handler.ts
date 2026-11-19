@@ -86,6 +86,21 @@ export async function handleEditorTabMessage(
         };
       }
 
+      case 'agency.editorTab.order': {
+        const tabs = await context.adapter.orderTabs(message.workspaceId, message.tabIds);
+        context.publish?.({
+          type: 'agency.editorTab.changed',
+          change: 'ordered',
+          workspaceId: message.workspaceId,
+          tabs,
+        });
+        return {
+          type: 'agency.editorTabs.snapshot',
+          requestId,
+          tabs,
+        };
+      }
+
       case 'agency.editorTab.close': {
         const tab = await context.adapter.closeTab(message.workspaceId, message.tabId);
         context.publish?.({

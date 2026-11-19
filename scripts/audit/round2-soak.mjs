@@ -15,15 +15,39 @@ const root = await mkdtemp(path.join(tmpdir(), 'maw-round2-soak-'));
 const out = path.resolve(process.env.MAW_ROUND2_OUT || path.join(root, 'evidence'));
 const duration = Number(process.env.MAW_ROUND2_SECONDS || 60);
 assert.ok(Number.isFinite(duration) && duration >= 0 && duration <= 3600);
-const home = path.join(root, 'home'), config = path.join(root, 'config/agent-workbench');
-await Promise.all([mkdir(home), mkdir(config, { recursive: true }), mkdir(out, { recursive: true })]);
+const home = path.join(root, 'home'), config = path.join(root, 'config/agent-workbench'), runtime = path.join(root, 'runtime');
+await Promise.all([mkdir(home), mkdir(config, { recursive: true }), mkdir(out, { recursive: true }), mkdir(runtime, { recursive: true, mode: 0o700 })]);
 const now = new Date().toISOString();
 const projects = ['One', 'Two'].map(name => ({ id: randomUUID(), name, status: 'active', createdAt: now, updatedAt: now, archivedAt: null }));
 const workspaces = Array.from({ length: 4 }, (_, i) => ({ id: randomUUID(), projectId: projects[i % 2].id, name: 'Workspace ' + i, cwd: root, status: 'active', createdAt: now, updatedAt: now, doneAt: null, archivedAt: null }));
 await writeFile(path.join(config, 'agency-state.json'), JSON.stringify({ version: 1, projects, workspaces }), { mode: 0o600 });
 await writeFile(path.join(home, '.bashrc'), '# isolated shell\n');
-const env = { ...process.env, HOME: home, USERPROFILE: home, SHELL: '/bin/bash', XDG_CONFIG_HOME: path.dirname(config), XDG_DATA_HOME: path.join(root, 'data'), XDG_CACHE_HOME: path.join(root, 'cache'), XDG_STATE_HOME: path.join(root, 'state'), CODEX_HOME: path.join(home, '.codex'), APPDATA: path.join(root, 'appdata'), PI_CODING_AGENT_DIR: path.join(home, '.pi/agent'), PI_CODING_AGENT_SESSION_DIR: path.join(home, '.pi/sessions'), AGENT_WORKBENCH_NO_OPEN: '1', AGENT_WORKBENCH_NO_RESTORE: '1' };
-for (const key of Object.keys(env)) if (/^(AGENT_WORKBENCH_PORT)/.test(key)) delete env[key];
+const baseEnv = { ...process.env };
+for (const key of Object.keys(baseEnv)) {
+  if (/^(MAW_|AGENT_WORKBENCH_|ELECTRON_RUN_AS_NODE$)/.test(key)) delete baseEnv[key];
+}
+const env = {
+  ...baseEnv,
+  HOME: home,
+  USERPROFILE: home,
+  SHELL: '/bin/bash',
+  XDG_CONFIG_HOME: path.dirname(config),
+  XDG_DATA_HOME: path.join(root, 'data'),
+  XDG_CACHE_HOME: path.join(root, 'cache'),
+  XDG_STATE_HOME: path.join(root, 'state'),
+  XDG_RUNTIME_DIR: runtime,
+  CODEX_HOME: path.join(home, '.codex'),
+  APPDATA: path.join(root, 'appdata'),
+  PI_CODING_AGENT_DIR: path.join(home, '.pi/agent'),
+  PI_CODING_AGENT_SESSION_DIR: path.join(home, '.pi/sessions'),
+  AGENT_WORKBENCH_NO_OPEN: '1',
+  AGENT_WORKBENCH_NO_RESTORE: '1',
+  MAW_DISABLE_PTYD: '1',
+  MAW_PERSISTENT_PTY: '0',
+  MAW_AUTO_SPAWN_PTYD: '0',
+  MAW_PTYD_SOCKET: path.join(runtime, 'ptyd.sock'),
+  MAW_PTYD_AUTH_FILE: path.join(runtime, 'ptyd.sock.auth'),
+};
 let child, socket, browser, address, log = '', messages = 0, bytes = 0, reconnects = 0;
 const pending = new Map(), samples = [], errors = [];
 let cdp;
@@ -64,7 +88,16 @@ async function sample(phase) {
 const summarize = values => { const sorted = [...values].sort((a,b) => a-b); return { n: values.length, p50: sorted[Math.floor(sorted.length * .5)], p95: sorted[Math.floor(sorted.length * .95)], p99: sorted[Math.floor(sorted.length * .99)] }; };
 const results = { fixture: 'real server, disposable Bash PTYs, production UI; shared host; double-rAF paint opportunity, not hardware paint', node: process.version, durationSeconds: duration, samples, errors };
 try {
-  results.startupMs = await start(); await sample('baseline');
+  results.startupMs = await start();
+  const idleStart = await sample('idle-start');
+  await delay(3000);
+  const idleEnd = await sample('idle-end');
+  results.idle = {
+    durationMs: idleEnd.at - idleStart.at,
+    cpuTicks: idleEnd.cpuTicks - idleStart.cpuTicks,
+    rssKiB: idleEnd.rssKiB,
+    pssKiB: idleEnd.pssKiB,
+  };
   const sessions = [];
   for (let i = 0; i < 15; i++) sessions.push((await request({ type: 'agency.session.create', workspaceId: workspaces[i % 4].id, kind: 'terminal', cols: 80, rows: 24, launchId: randomUUID() })).session);
   const select = s => request({ type: 'agency.tab.action', workspaceId: s.workspaceId, tabId: s.tab.id, action: 'select' });
@@ -78,8 +111,10 @@ try {
   const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
   await context.tracing.start({ screenshots: true, snapshots: true });
   const page = await context.newPage(); cdp = await context.newCDPSession(page); page.on('pageerror', e => errors.push(e.message));
+  const activeWorkspace = page.locator('.agency-workspace-slot:not([hidden])');
+  const activeTerminal = activeWorkspace.locator('.maw-session-pane:not([hidden])');
   await page.addInitScript(id => { localStorage.setItem('agency-ui.selected-workspace.v1', id); window.auditLongTasks = []; window.auditShifts = []; new PerformanceObserver(list => window.auditLongTasks.push(...list.getEntries().map(e => e.duration))).observe({ type: 'longtask', buffered: true }); new PerformanceObserver(list => window.auditShifts.push(...list.getEntries().filter(e => !e.hadRecentInput).map(e => e.value))).observe({ type: 'layout-shift', buffered: true }); }, workspaces[0].id);
-  await page.goto(address.url); await page.locator('.maw-session-pane:not([hidden]) .xterm-screen').waitFor();
+  await page.goto(address.url); await activeTerminal.locator('.xterm-screen').waitFor();
   const switchTimes = await page.evaluate(async ids => {
     const times = [];
     for (let i = 0; i < 100; i++) {
@@ -91,16 +126,37 @@ try {
     return times;
   }, [sessions[0].tab.id, sessions[4].tab.id]);
   results.visibleTabSwitchMs = summarize(switchTimes);
-  const inbox = await page.evaluate(async () => { const times = []; for (let i = 0; i < 100; i++) { const start = performance.now(); document.querySelector('.maw-bell-button').click(); await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); times.push(performance.now() - start); } return times; });
-  results.inboxToggleMs = summarize(inbox);
+  const settingsTimes = [];
+  for (let i = 0; i < 12; i++) {
+    const began = performance.now();
+    await page.locator('.maw-menu-button').click();
+    await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Settings' }).waitFor();
+    settingsTimes.push(performance.now() - began);
+    await page.keyboard.press('Escape');
+  }
+  results.settingsOpenMs = summarize(settingsTimes);
+  const workspaceTimes = [];
+  for (let i = 0; i < 12; i++) {
+    const workspace = workspaces[1 - i % 2];
+    const began = performance.now();
+    const control = page.locator(`[data-sidebar-workspace-id="${workspace.id}"] .agency-workspace-nav-button`);
+    await control.click();
+    await page.waitForFunction(id => document.querySelector(`[data-sidebar-workspace-id="${id}"] button[aria-current="page"]`), workspace.id);
+    await activeTerminal.locator('.xterm-screen').waitFor();
+    workspaceTimes.push(performance.now() - began);
+  }
+  results.workspaceSwitchMs = summarize(workspaceTimes);
   for (const [width,height] of [[390,844],[768,1024],[1280,720],[1366,768],[1920,1080],[2560,1440]]) {
     await page.setViewportSize({width,height});
-    const tab = page.locator('[role=tab][aria-selected=true]'); await tab.press('F2');
+    const tab = activeWorkspace.getByRole('tab', { selected: true }); await tab.press('F2');
     const input = page.getByLabel('Tab title',{exact:true}); await input.fill('Shell ' + width); await input.press('Enter'); await page.getByRole('tab',{name:'Shell ' + width}).waitFor();
-    await page.locator('.maw-bell-button').click(); await page.locator('.maw-notification-inbox').waitFor();
+    await page.locator('.maw-menu-button').click();
+    await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Settings' }).waitFor();
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     await page.screenshot({path:path.join(out, 'controls-' + width + 'x' + height + '.png')}); await page.keyboard.press('Escape');
-    await page.locator('.maw-session-pane:not([hidden]) .xterm-helper-textarea').focus(); await page.keyboard.type('printf "ROUND2_INPUT_OK\\n"'); await page.keyboard.press('Enter');
+    await activeTerminal.locator('.xterm-helper-textarea').focus(); await page.keyboard.type('printf "ROUND2_INPUT_OK\\n"'); await page.keyboard.press('Enter');
   }
   results.interactionUi = await page.evaluate(() => ({ longTasksMs: window.auditLongTasks, layoutShift: window.auditShifts.reduce((a,b)=>a+b,0) }));
   await sample('ui-warm');
@@ -109,7 +165,7 @@ try {
     for (let i = 0; i < 20; i++) await select(sessions[(cycle + i) % sessions.length]);
     await disconnect(); await connect(); reconnects++;
     const s = (await request({ type: 'agency.session.create', workspaceId: workspaces[0].id, kind: 'terminal', cols: 80, rows: 24, launchId: randomUUID() })).session;
-    socket.send(JSON.stringify({ type: 'terminal.attach', terminalId: s.terminalId }));
+    socket.send(JSON.stringify({ type: 'terminal.attach', terminalId: s.terminalId, cols: 80, rows: 24 }));
     socket.send(JSON.stringify({ type: 'input', terminalId: s.terminalId, data: 'printf "SOAK_OUTPUT\\n"\r' }));
     await request({ type: 'agency.tab.action', workspaceId: s.workspaceId, tabId: s.tab.id, action: 'close' });
     if (cycle % 10 === 0) { await page.reload(); await page.locator('.agency-app').waitFor(); await sample('workload-' + cycle); console.log('cycle', cycle); }

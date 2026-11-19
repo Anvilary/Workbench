@@ -169,6 +169,7 @@ html,body,#root{height:100%;margin:0}
 .agency-agent-body{flex:1;position:relative;min-height:0}
 .agency-xterm-host,.terminal-surface{position:absolute;inset:0}
 .terminal-surface-hidden{visibility:hidden}
+.maw-browser-pane{flex:1;display:flex;min-height:0;min-width:0}
 .maw-browser-viewer{height:100%;width:100%}
 .maw-split-divider-row{width:6px;flex-shrink:0;cursor:col-resize}
 .maw-split-divider-column{height:6px;flex-shrink:0;cursor:row-resize}

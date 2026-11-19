@@ -14,6 +14,8 @@ import { PaneHeader } from './PaneHeader.js';
 import { SplitDivider } from './SplitDivider.js';
 import { EmptyPaneChooser } from './EmptyPaneChooser.js';
 import { BrowserDestinationPicker } from './BrowserDestinationPicker.js';
+import { useTabDragPreview } from './tab-drag-store.js';
+import { ModalDialog } from '../../shared/ui/ModalDialog.js';
 import { DEFAULT_BROWSER_FAVORITES, getSearchEngine, type WebTabProvider } from '@agent-workbench/shared';
 
 function PaneBody({
@@ -39,6 +41,7 @@ function PaneBody({
 
 interface Props {
   node: LayoutNode;
+  browserProfileId?: string;
   layout: WorkspacePaneLayout;
   tabs: WorkspaceTab[];
   profiles: readonly AgencyCliProfile[];
@@ -51,7 +54,7 @@ interface Props {
   onSelectTab: (paneId: string, tabId: string) => void;
   onCloseTab: (tab: WorkspaceTab) => void;
   onSplit: (targetPaneId: string, direction: SplitDirection, tabIdToMove?: string) => void;
-  onClosePane: (paneId: string) => void;
+  onClosePane: (paneId: string, closeAllTabs?: boolean) => void | Promise<void>;
   onToggleMaximize: (paneId: string) => void;
   onUpdateRatio: (splitId: string, ratio: number) => void;
   onSwapPane: (sourcePaneId: string, targetPaneId: string) => void;
@@ -155,6 +158,39 @@ function PaneLeaf(props: Props & {
   const isMaximized = layout.maximizedPaneId === node.id;
   const selectedTab = tabs.find((t) => t.id === node.selectedTabId);
   const toolbarOpen = node.selectedTabId ? (props.browserToolbarOpen?.[node.selectedTabId] ?? false) : false;
+  const tabDragPreview = useTabDragPreview();
+  const activeSplitTarget =
+    tabDragPreview?.splitTarget?.paneId === node.id ? tabDragPreview.splitTarget.direction : null;
+
+  const paneTabs = node.tabIds
+    .map((id) => tabs.find((tab) => tab.id === id))
+    .filter((tab): tab is WorkspaceTab => tab !== undefined);
+  const [confirmingClosePane, setConfirmingClosePane] = useState<{ centerOn: Element | null } | null>(null);
+
+  const handleRequestClosePane = useCallback(() => {
+    if (!canClose) return;
+    if (paneTabs.length === 0) {
+      void onClosePane(node.id, false);
+    } else {
+      setConfirmingClosePane({ centerOn: containerRef.current?.querySelector('.maw-pane-body') ?? null });
+    }
+  }, [canClose, node.id, onClosePane, paneTabs.length]);
+
+  const activeAgentsCount = paneTabs.filter(
+    (tab) =>
+      tab.kind === 'native' &&
+      tab.session.kind === 'agent' &&
+      ['starting', 'running', 'stopping'].includes(tab.session.lifecycle),
+  ).length;
+  const activeTerminalsCount = paneTabs.filter(
+    (tab) =>
+      tab.kind === 'native' &&
+      tab.session.kind === 'terminal' &&
+      ['starting', 'running', 'stopping'].includes(tab.session.lifecycle),
+  ).length;
+  const browserTabsCount = paneTabs.filter((tab) => tab.kind === 'web').length;
+  const editorTabsInPane = paneTabs.filter((tab) => tab.kind === 'editor');
+  const dirtyEditorsCount = editorTabsInPane.filter((tab) => props.isTabUnsaved?.(tab.id)).length;
 
   return (
     <div
@@ -198,8 +234,9 @@ function PaneLeaf(props: Props & {
         onCloseTab={onCloseTab}
         onSplitRight={() => onSplit(node.id, 'row')}
         onSplitDown={() => onSplit(node.id, 'column')}
+        onSplitPane={(targetPaneId, dir, tabId) => onSplit(targetPaneId, dir, tabId)}
         onToggleMaximize={() => onToggleMaximize(node.id)}
-        onClosePane={() => onClosePane(node.id)}
+        onClosePane={handleRequestClosePane}
         onAddTerminalClick={() => onAddTerminalClick(node.id)}
         onAddAgentClick={props.onAddAgentClick ? (profileId) => props.onAddAgentClick?.(node.id, profileId) : undefined}
         onAddWebTabClick={props.onOpenBrowserPicker ? props.onOpenBrowserPicker : () => onAddWebTabClick(node.id)}
@@ -225,6 +262,7 @@ function PaneLeaf(props: Props & {
           <NativeChatGptView
             key={selectedTab.id}
             tab={selectedTab.web}
+            profileId={props.browserProfileId}
             toolbarOpen={toolbarOpen}
             onExpandToolbar={props.onExpandBrowserToolbar ? () => props.onExpandBrowserToolbar?.(selectedTab.id) : undefined}
             onDisplayed={onTabDisplayed}
@@ -253,9 +291,74 @@ function PaneLeaf(props: Props & {
             onAddAgent={(profileId) => props.onAddAgentClick?.(node.id, profileId)}
             onAddBrowser={props.onOpenBrowserPicker ? props.onOpenBrowserPicker : () => onAddWebTabClick(node.id)}
             onOpenFile={props.onOpenFileClick ? () => props.onOpenFileClick?.(node.id) : () => {}}
-            onClosePane={() => onClosePane(node.id)}
+            onClosePane={handleRequestClosePane}
             onMoveTabToPane={onMoveTabToPane}
           />
+        )}
+
+        {confirmingClosePane && (
+          <ModalDialog
+            title={`${t('agency.splits.closePane')}?`}
+            titleId={`pane-close-title-${node.id}`}
+            className="maw-pane-close-dialog"
+            centerOn={confirmingClosePane.centerOn}
+            closeLabel={t('common.close')}
+            onClose={() => setConfirmingClosePane(null)}
+            actions={
+              <>
+                <button
+                  type="button"
+                  className="agency-secondary-button"
+                  onClick={() => setConfirmingClosePane(null)}
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="button"
+                  className="agency-danger-button"
+                  onClick={() => {
+                    setConfirmingClosePane(null);
+                    void onClosePane(node.id, true);
+                  }}
+                >
+                  {t('agency.splits.closePane')}
+                </button>
+              </>
+            }
+          >
+            <p className="agency-muted">
+              {t('agency.splits.closePaneWarning')}
+            </p>
+            <div className="agency-resource-summary maw-pane-close-summary">
+              <ul>
+                <li>
+                  {t('agency.splits.closePaneOpenTabs', { count: paneTabs.length })}
+                </li>
+                {activeAgentsCount > 0 && (
+                  <li>{t('agency.ui.deleteResourcesActiveClis', { count: activeAgentsCount })}</li>
+                )}
+                {activeTerminalsCount > 0 && (
+                  <li>{t('agency.ui.deleteResourcesActiveTerminals', { count: activeTerminalsCount })}</li>
+                )}
+                {browserTabsCount > 0 && (
+                  <li>{t('agency.ui.deleteResourcesBrowserTabs', { count: browserTabsCount })}</li>
+                )}
+                {editorTabsInPane.length > 0 && (
+                  <li>
+                    {t('agency.ui.deleteResourcesEditorTabs', { count: editorTabsInPane.length })}
+                    {dirtyEditorsCount > 0 ? ` (${t('agency.ui.deleteResourcesUnsavedCount', { count: dirtyEditorsCount })})` : ''}
+                  </li>
+                )}
+              </ul>
+            </div>
+            {(activeAgentsCount > 0 || activeTerminalsCount > 0 || dirtyEditorsCount > 0) && (
+              <p className="agency-error" role="alert">
+                {dirtyEditorsCount > 0
+                  ? t('agency.tabs.unsavedChangesWarning')
+                  : t('agency.ui.deleteInterruptionWarning')}
+              </p>
+            )}
+          </ModalDialog>
         )}
 
         {props.browserPickerOpen && (
@@ -263,7 +366,7 @@ function PaneLeaf(props: Props & {
             className="maw-pane-browser-picker-overlay maw-browser-picker-overlay"
             role="dialog"
             aria-modal="true"
-            aria-label={t('agency.browser.pickerTitle') || t('agency.web.newTab') || 'New Browser Tab'}
+            aria-label={t('agency.browser.pickerTitle')}
             onClick={(e) => {
               if (e.target === e.currentTarget) {
                 props.onCloseBrowserPicker?.();
@@ -295,36 +398,12 @@ function PaneLeaf(props: Props & {
       {canSplit && (
         <>
           <div
-            className="maw-pane-drop-edge maw-pane-drop-edge-right"
-            onDragOver={(e) => {
-              if (e.dataTransfer.types.includes('application/maw-tab-id')) {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-              }
-            }}
-            onDrop={(e) => {
-              const draggedId = e.dataTransfer.getData('application/maw-tab-id');
-              if (draggedId) {
-                e.preventDefault();
-                onSplit(node.id, 'row', draggedId);
-              }
-            }}
+            className={`maw-pane-drop-edge maw-pane-drop-edge-right${activeSplitTarget === 'row' ? ' is-active' : ''}`}
+            aria-hidden="true"
           />
           <div
-            className="maw-pane-drop-edge maw-pane-drop-edge-bottom"
-            onDragOver={(e) => {
-              if (e.dataTransfer.types.includes('application/maw-tab-id')) {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-              }
-            }}
-            onDrop={(e) => {
-              const draggedId = e.dataTransfer.getData('application/maw-tab-id');
-              if (draggedId) {
-                e.preventDefault();
-                onSplit(node.id, 'column', draggedId);
-              }
-            }}
+            className={`maw-pane-drop-edge maw-pane-drop-edge-bottom${activeSplitTarget === 'column' ? ' is-active' : ''}`}
+            aria-hidden="true"
           />
         </>
       )}

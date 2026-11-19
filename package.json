@@ -3,7 +3,7 @@
   "version": "0.8.1",
   "private": true,
   "type": "module",
-  "description": "Local visual interface for coding-agent CLIs: Claude Code, Codex, OpenCode, Antigravity CLI and Pi",
+  "description": "Anvilary Workbench: local visual interface for coding-agent CLIs (Claude Code, Codex, OpenCode, Antigravity CLI, and Pi)",
   "keywords": [
     "claude-code",
     "codex",
@@ -20,6 +20,14 @@
     "ui"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Anvilary/Workbench.git"
+  },
+  "homepage": "https://github.com/Anvilary/Workbench#readme",
+  "bugs": {
+    "url": "https://github.com/Anvilary/Workbench/issues"
+  },
   "funding": {
     "type": "buymeacoffee",
     "url": "https://buymeacoffee.com/cvelasquez"
@@ -39,10 +47,18 @@
     "typecheck": "pnpm -r typecheck",
     "vault:import": "pnpm --filter @agent-workbench/server vault:import",
     "check": "pnpm --filter @agent-workbench/server check",
+    "check:e2e": "pnpm --filter @agent-workbench/server exec tsx scripts/check-agency-e2e.mjs && pnpm --filter @agent-workbench/server exec tsx scripts/check-agency-remediation.mjs && pnpm --filter @agent-workbench/server exec tsx scripts/check-maw-integration.mjs",
+    "check:systemd": "pnpm --filter @agent-workbench/server exec tsx scripts/check-maw-lifecycle.mjs && pnpm --filter @agent-workbench/server exec tsx scripts/check-native-systemd.mjs",
+    "check:package": "pnpm --filter @agent-workbench/server exec tsx scripts/check-maw-package.mjs",
+    "check:native-context": "pnpm --filter @agent-workbench/server exec tsx scripts/check-native-context.mjs",
     "test:unit": "pnpm --filter @agent-workbench/desktop run test:unit && pnpm --filter @agent-workbench/server run test:unit && pnpm --filter @agent-workbench/web run test:unit",
     "test:integration": "pnpm --filter @agent-workbench/desktop run test:integration && pnpm --filter @agent-workbench/server run test:integration && pnpm --filter @agent-workbench/web run test:integration",
-    "test:runtime": "pnpm --filter @agent-workbench/server run test:runtime",
-    "test:security": "pnpm --filter @agent-workbench/server run test:security",
+    "test:production": "pnpm --filter @agent-workbench/desktop run test:production",
+    "test:e2e": "pnpm --filter @agent-workbench/web run test:e2e && pnpm --filter @agent-workbench/desktop run test:e2e",
+    "test:runtime": "pnpm --filter @agent-workbench/server run test:runtime && pnpm --filter @agent-workbench/desktop run test:runtime",
+    "test:security": "pnpm --filter @agent-workbench/server run test:security && pnpm --filter @agent-workbench/desktop run test:security",
+    "test:staging:shell": "sh scripts/maw/release-staging.test.sh && sh scripts/maw/maw-activate-guard.test.sh",
+    "test:staging": "pnpm test:staging:shell && pnpm --filter @agent-workbench/desktop run test:staging",
     "test": "pnpm --filter @agent-workbench/desktop test && pnpm --filter @agent-workbench/server test && pnpm --filter @agent-workbench/web test",
     "perf": "node scripts/perf-check.mjs",
     "perf:full": "node scripts/perf-check.mjs full",
@@ -55,6 +71,7 @@
     "typescript": "^5.7.3"
   },
   "mawCompatibility": {
-    "browserTabStore": 2
+    "browserTabStore": 2,
+    "browserProfileAssignments": 1
   }
 }

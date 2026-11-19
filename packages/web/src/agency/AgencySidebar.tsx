@@ -1,12 +1,15 @@
 import { t } from '../i18n/index.js';
 import { agencySessionText } from './agency-labels.js';
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
+import { DEFAULT_BROWSER_PROFILE_ID } from '@agent-workbench/shared';
 import type {
-  AgencyProject, AgencyRuntimeSession, AgencyWorkspace, ProjectId, WorkspaceId, WebTab,
+  AgencyProject, AgencyRuntimeSession, AgencyWorkspace, BrowserProfile, EditorTab, ProjectId, WorkspaceId, WebTab,
 } from '@agent-workbench/shared';
 import { activeByProject, isAttention, workspaceTabs } from './model.js';
 import { InlineRenameInput } from '../shared/ui/InlineRenameInput.js';
 import { StatusDot } from '../shared/ui/StatusDot.js';
+import type { AnchorRect } from '../shared/ui/ModalDialog.js';
 import { handleMenuArrowNavigation } from '../shared/hooks/useMenuKeyboardNav.js';
 import { calculateSidebarDropdownPosition } from '../shared/lib/overlay-position.js';
 import { AgencyDoneView } from '../features/workspaces/AgencyDoneView.js';
@@ -21,6 +24,8 @@ export interface AgencySidebarProps {
   workspaces: readonly AgencyWorkspace[];
   sessions: readonly AgencyRuntimeSession[];
   webTabs?: readonly WebTab[];
+  editorTabs?: readonly EditorTab[];
+  browserProfiles?: readonly BrowserProfile[];
   selected: WorkspaceId | null;
   showingDone?: boolean;
   onSelect: (id: WorkspaceId) => void;
@@ -33,8 +38,10 @@ export interface AgencySidebarProps {
   onDeleteWorkspace: (workspace: AgencyWorkspace) => Promise<void> | void;
   onRenameProject: (project: AgencyProject, newName: string) => void;
   onRenameWorkspace?: (workspace: AgencyWorkspace, newName: string) => void;
+  onUpdateProjectProfile?: (project: AgencyProject, profileId: string | null) => void;
+  onUpdateWorkspaceProfile?: (workspace: AgencyWorkspace, profileId: string | null) => void;
   onArchiveProject: (project: AgencyProject) => void;
-  onDeleteProject: (project: AgencyProject) => void;
+  onDeleteProject: (project: AgencyProject, cascade?: boolean) => Promise<void> | void;
   onRestore: (workspace: AgencyWorkspace) => void;
   onReorderProjects?: (projectIds: readonly ProjectId[]) => void;
   onReorderWorkspaces?: (projectId: ProjectId, workspaceIds: readonly WorkspaceId[]) => void;
@@ -60,19 +67,64 @@ export function SidebarToggleIcon(): JSX.Element {
   );
 }
 
+interface SidebarActiveDrag {
+  kind: 'project' | 'workspace';
+  id: string;
+  projectId: ProjectId;
+  label: string;
+  fromIndex: number;
+  insertIndex: number | null;
+  rowLeft: number;
+  rowWidth: number;
+  rowHeight: number;
+  displacement: number;
+  ghostTop: number;
+  valid: boolean;
+}
+
+function resolveInsertionIndex(
+  rects: readonly { top: number; height: number }[],
+  clientY: number,
+  sourceIndex: number,
+): number {
+  let rawIndex = rects.length;
+  for (let i = 0; i < rects.length; i += 1) {
+    const midY = rects[i]!.top + rects[i]!.height / 2;
+    if (clientY < midY) {
+      rawIndex = i;
+      break;
+    }
+  }
+  // Adjust raw slot so insertIndex is the final array index after removing sourceIndex
+  return rawIndex > sourceIndex ? rawIndex - 1 : rawIndex;
+}
+
+function siblingDisplacementPx(
+  index: number,
+  fromIndex: number,
+  insertIndex: number | null,
+  draggedHeight: number,
+): number {
+  if (insertIndex === null || index === fromIndex) return 0;
+  if (insertIndex > fromIndex && index > fromIndex && index <= insertIndex) return -draggedHeight;
+  if (insertIndex < fromIndex && index >= insertIndex && index < fromIndex) return draggedHeight;
+  return 0;
+}
+
 export function AgencySidebar({
-  projects, workspaces, sessions, webTabs = [], selected, showingDone = false,
+  projects, workspaces, sessions, webTabs = [], editorTabs = [], browserProfiles = [], selected, showingDone = false,
   onSelect, onCreate, onCreateProject, onDone, onArchiveWorkspace, onDeleteWorkspace,
-  onRenameProject, onRenameWorkspace, onArchiveProject, onDeleteProject, onCollapse,
-  onReorderProjects, onReorderWorkspaces,
+  onRenameProject, onRenameWorkspace, onUpdateProjectProfile, onUpdateWorkspaceProfile,
+  onArchiveProject, onDeleteProject, onCollapse, onReorderProjects, onReorderWorkspaces,
 }: AgencySidebarProps): JSX.Element {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [openMenu, setOpenMenu] = useState<{ type: 'project' | 'workspace'; id: string; trigger: 'click' | 'hover' } | null>(null);
-  const [draggedProjectId, setDraggedProjectId] = useState<ProjectId | null>(null);
-  const [projectDropTarget, setProjectDropTarget] = useState<{ id: ProjectId; position: 'before' | 'after' } | null>(null);
-  const [draggedWorkspace, setDraggedWorkspace] = useState<{ id: WorkspaceId; projectId: ProjectId } | null>(null);
-  const [workspaceDropTarget, setWorkspaceDropTarget] = useState<{ id: WorkspaceId; position: 'before' | 'after' } | null>(null);
+  const [activeDrag, setActiveDrag] = useState<SidebarActiveDrag | null>(null);
+  const [liveAnnouncement, setLiveAnnouncement] = useState('');
   const suppressClickUntil = useRef<number>(0);
+  const navRef = useRef<HTMLElement | null>(null);
+  const sideSectionRef = useRef<HTMLDivElement | null>(null);
+  const dragGhostRef = useRef<HTMLDivElement | null>(null);
 
   const [inlineRenamingProjectId, setInlineRenamingProjectId] = useState<ProjectId | null>(null);
   const [inlineRenameProjectValue, setInlineRenameProjectValue] = useState<string>('');
@@ -81,9 +133,9 @@ export function AgencySidebar({
 
   const [archivingProject, setArchivingProject] = useState<AgencyProject | null>(null);
   const [deletingProject, setDeletingProject] = useState<AgencyProject | null>(null);
-  const [projectDeleteBlocked, setProjectDeleteBlocked] = useState<AgencyProject | null>(null);
   const [archivingWorkspace, setArchivingWorkspace] = useState<AgencyWorkspace | null>(null);
   const [deletingWorkspace, setDeletingWorkspace] = useState<AgencyWorkspace | null>(null);
+  const [dialogAnchorRect, setDialogAnchorRect] = useState<AnchorRect | null>(null);
 
   const graceTimerRef = useRef<number | null>(null);
   const activeTriggerRef = useRef<HTMLElement | null>(null);
@@ -151,6 +203,279 @@ export function AgencySidebar({
   };
 
   const groups = activeByProject(projects, workspaces);
+  const groupsRef = useRef(groups);
+  groupsRef.current = groups;
+  const callbacksRef = useRef({ onReorderProjects, onReorderWorkspaces });
+  callbacksRef.current = { onReorderProjects, onReorderWorkspaces };
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => () => {
+    dragCleanupRef.current?.();
+    document.body.classList.remove('agency-sidebar-dragging');
+  }, []);
+
+  const beginPointerDrag = useCallback((
+    e: React.PointerEvent<HTMLElement>,
+    params: { kind: 'project' | 'workspace'; id: string; projectId: ProjectId; label: string; fromIndex: number },
+  ) => {
+    if (e.button !== 0 || !e.isPrimary || openMenu) return;
+    const targetEl = e.target as HTMLElement | null;
+    if (targetEl?.closest('.agency-dropdown, .agency-row-action, input')) return;
+    if (params.kind === 'project' && inlineRenamingProjectId === params.id) return;
+    if (params.kind === 'workspace' && inlineRenamingWorkspaceId === params.id) return;
+
+    if (params.kind === 'workspace') {
+      e.stopPropagation();
+    }
+
+    const scroller = sideSectionRef.current;
+    const navRect = navRef.current?.getBoundingClientRect();
+    if (!scroller || !navRect) return;
+    const viewport = scroller.getBoundingClientRect();
+    const scope = params.kind === 'project'
+      ? scroller
+      : scroller.querySelector<HTMLElement>(`[data-sidebar-project-children="${params.projectId}"]`);
+    if (!scope) return;
+    const bounds = scope.getBoundingClientRect();
+    const rows = Array.from(scope.querySelectorAll<HTMLElement>(
+      params.kind === 'project' ? '[data-sidebar-project-id]' : '[data-sidebar-workspace-id]',
+    ), row => {
+      const rect = row.getBoundingClientRect();
+      return { top: rect.top, height: rect.height };
+    });
+    const scrollStart = scroller.scrollTop;
+    const captureTarget = e.currentTarget;
+    const rowRect = captureTarget.getBoundingClientRect();
+    const projectSection = params.kind === 'project' ? captureTarget.closest('.agency-project') : null;
+    const displacement = projectSection
+      ? projectSection.getBoundingClientRect().height + (parseFloat(getComputedStyle(projectSection).marginBottom) || 0)
+      : rowRect.height;
+    const pointerId = e.pointerId;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const offsetY = startY - rowRect.top;
+    let started = false;
+    let hasCapture = false;
+    let shieldEl: HTMLDivElement | null = null;
+    let autoScrollRaf: number | null = null;
+    let ghostRaf: number | null = null;
+    let pendingGhostTop = rowRect.top;
+    let autoScrollDelta = 0;
+    let lastX = startX;
+    let lastY = startY;
+    let lastCommittedInsertIndex: number | null | undefined = undefined;
+    let lastCommittedValid: boolean | undefined = undefined;
+
+    const stopAutoScroll = () => {
+      if (autoScrollRaf !== null) {
+        window.cancelAnimationFrame(autoScrollRaf);
+        autoScrollRaf = null;
+      }
+      autoScrollDelta = 0;
+    };
+
+    const stopGhostRaf = () => {
+      if (ghostRaf !== null) {
+        window.cancelAnimationFrame(ghostRaf);
+        ghostRaf = null;
+      }
+    };
+
+    const scheduleGhostPosition = (ghostTop: number) => {
+      pendingGhostTop = ghostTop;
+      if (ghostRaf !== null) return;
+      ghostRaf = window.requestAnimationFrame(() => {
+        ghostRaf = null;
+        if (dragGhostRef.current) {
+          dragGhostRef.current.style.top = `${pendingGhostTop}px`;
+        }
+      });
+    };
+
+    const applyDragState = (next: SidebarActiveDrag, force = false) => {
+      scheduleGhostPosition(next.ghostTop);
+      if (
+        force ||
+        next.insertIndex !== lastCommittedInsertIndex ||
+        next.valid !== lastCommittedValid
+      ) {
+        lastCommittedInsertIndex = next.insertIndex;
+        lastCommittedValid = next.valid;
+        setActiveDrag(next);
+      }
+    };
+
+    const tickAutoScroll = () => {
+      autoScrollRaf = null;
+      if (autoScrollDelta === 0) return;
+      const previous = scroller.scrollTop;
+      scroller.scrollTop += autoScrollDelta;
+      if (previous === scroller.scrollTop) return;
+      applyDragState(computeState(lastX, lastY));
+      autoScrollRaf = window.requestAnimationFrame(tickAutoScroll);
+    };
+
+    const computeState = (clientX: number, clientY: number): SidebarActiveDrag => {
+      const scrollDelta = scroller.scrollTop - scrollStart;
+      const scopeDelta = params.kind === 'workspace' ? scrollDelta : 0;
+      const clampMinTop = Math.min(viewport.bottom, Math.max(viewport.top, bounds.top - scopeDelta));
+      const bottom = Math.max(clampMinTop, Math.min(viewport.bottom, bounds.bottom - scopeDelta));
+      const clampMaxTop = Math.max(clampMinTop, bottom - rowRect.height);
+      const valid = clientX >= navRect.left && clientX <= navRect.right &&
+        clientY >= clampMinTop - 12 && clientY <= bottom + 12 && rows.length > 0;
+      const insertIndex = valid ? resolveInsertionIndex(rows, clientY + scrollDelta, params.fromIndex) : null;
+      const ghostTop = Math.max(clampMinTop, Math.min(clampMaxTop, clientY - offsetY));
+
+      return {
+        kind: params.kind,
+        id: params.id,
+        projectId: params.projectId,
+        label: params.label,
+        fromIndex: params.fromIndex,
+        insertIndex,
+        rowLeft: rowRect.left,
+        rowWidth: rowRect.width,
+        rowHeight: rowRect.height,
+        displacement,
+        ghostTop,
+        valid,
+      };
+    };
+
+    const onLostPointerCapture = (capEvent: PointerEvent) => {
+      if (capEvent.pointerId === pointerId && hasCapture) {
+        hasCapture = false;
+        onCancel();
+      }
+    };
+
+    const cleanup = () => {
+      stopAutoScroll();
+      stopGhostRaf();
+      captureTarget.removeEventListener('lostpointercapture', onLostPointerCapture);
+      if (hasCapture) {
+        hasCapture = false;
+        try {
+          if (captureTarget.hasPointerCapture?.(pointerId)) {
+            captureTarget.releasePointerCapture(pointerId);
+          }
+        } catch {
+          // Ignore if target was detached before release.
+        }
+      }
+      shieldEl?.remove();
+      shieldEl = null;
+      document.body.classList.remove('agency-sidebar-dragging');
+      window.removeEventListener('pointermove', onPointerMove, true);
+      window.removeEventListener('pointerup', onPointerUp, true);
+      window.removeEventListener('pointercancel', onCancel, true);
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('blur', onCancel);
+      window.removeEventListener('resize', onCancel);
+      dragCleanupRef.current = null;
+    };
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      let justStarted = false;
+      if (!started) {
+        if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 5) return;
+        started = true;
+        justStarted = true;
+        suppressClickUntil.current = Date.now() + 300;
+        document.body.classList.add('agency-sidebar-dragging');
+        if (!document.querySelector('.agency-sidebar-drag-shield')) {
+          const shield = document.createElement('div');
+          shield.className = 'agency-sidebar-drag-shield';
+          shield.setAttribute('aria-hidden', 'true');
+          document.body.appendChild(shield);
+          shieldEl = shield;
+        }
+        try {
+          if (typeof captureTarget.setPointerCapture === 'function') {
+            captureTarget.setPointerCapture(pointerId);
+            hasCapture = true;
+            captureTarget.addEventListener('lostpointercapture', onLostPointerCapture);
+          }
+        } catch {
+          // Synthetic pointer events in tests may not support pointer capture.
+        }
+      }
+
+      lastX = moveEvent.clientX;
+      lastY = moveEvent.clientY;
+      if (lastX >= navRect.left && lastX <= navRect.right) {
+        if (lastY < viewport.top + 28) autoScrollDelta = -6;
+        else if (lastY > viewport.bottom - 28) autoScrollDelta = 6;
+        else autoScrollDelta = 0;
+        if (autoScrollDelta !== 0 && autoScrollRaf === null) {
+          autoScrollRaf = window.requestAnimationFrame(tickAutoScroll);
+        }
+      } else {
+        autoScrollDelta = 0;
+      }
+
+      applyDragState(computeState(lastX, lastY), justStarted);
+    };
+
+    const onCancel = () => {
+      cleanup();
+      if (started) suppressClickUntil.current = Date.now() + 300;
+      setActiveDrag(null);
+    };
+
+    const onKeyDown = (keyEvent: KeyboardEvent) => {
+      if (keyEvent.key === 'Escape') {
+        keyEvent.preventDefault();
+        keyEvent.stopPropagation();
+        onCancel();
+      }
+    };
+
+    const onPointerUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== pointerId) return;
+      const current = started ? computeState(upEvent.clientX, upEvent.clientY) : null;
+      cleanup();
+      setActiveDrag(null);
+      if (started) suppressClickUntil.current = Date.now() + 300;
+      if (!started || !current || !current.valid || current.insertIndex === null || current.insertIndex === current.fromIndex) {
+        return;
+      }
+      if (current.kind === 'project' && callbacksRef.current.onReorderProjects) {
+        const ids = groupsRef.current.map((g) => g.project.id);
+        const fromIdx = ids.indexOf(current.id as ProjectId);
+        if (fromIdx !== -1) {
+          const nextIds = [...ids];
+          nextIds.splice(fromIdx, 1);
+          const bounded = Math.max(0, Math.min(nextIds.length, current.insertIndex));
+          nextIds.splice(bounded, 0, current.id as ProjectId);
+          callbacksRef.current.onReorderProjects(nextIds);
+          setLiveAnnouncement(`Moved project ${current.label} to position ${bounded + 1} of ${nextIds.length}`);
+        }
+      } else if (current.kind === 'workspace' && callbacksRef.current.onReorderWorkspaces) {
+        const group = groupsRef.current.find((g) => g.project.id === current.projectId);
+        const ids = group ? group.items.map((w) => w.id) : [];
+        const fromIdx = ids.indexOf(current.id as WorkspaceId);
+        if (fromIdx !== -1) {
+          const nextIds = [...ids];
+          nextIds.splice(fromIdx, 1);
+          const bounded = Math.max(0, Math.min(nextIds.length, current.insertIndex));
+          nextIds.splice(bounded, 0, current.id as WorkspaceId);
+          callbacksRef.current.onReorderWorkspaces(current.projectId, nextIds);
+          setLiveAnnouncement(`Moved workspace ${current.label} to position ${bounded + 1} of ${nextIds.length}`);
+        }
+      }
+    };
+
+    dragCleanupRef.current?.();
+    dragCleanupRef.current = cleanup;
+    window.addEventListener('pointermove', onPointerMove, true);
+    window.addEventListener('pointerup', onPointerUp, true);
+    window.addEventListener('pointercancel', onCancel, true);
+    window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('blur', onCancel);
+    window.addEventListener('resize', onCancel);
+  }, [inlineRenamingProjectId, inlineRenamingWorkspaceId, openMenu]);
 
   function toggle(id: string) {
     setCollapsed((prev) => {
@@ -160,102 +485,80 @@ export function AgencySidebar({
     });
   }
 
+  function captureDialogAnchorRect(): AnchorRect | null {
+    const trigger = activeTriggerRef.current;
+    if (!trigger) return null;
+    const row = trigger.closest('.agency-project-row, .agency-workspace-nav-row') ?? trigger;
+    const rect = row.getBoundingClientRect();
+    return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+  }
+
   function handleProjectDeleteClick(project: AgencyProject) {
-    const projectWorkspaces = workspaces.filter((w) => w.projectId === project.id);
-    if (projectWorkspaces.length > 0) {
-      setProjectDeleteBlocked(project);
-    } else {
-      setDeletingProject(project);
-    }
+    setDialogAnchorRect(captureDialogAnchorRect());
+    setDeletingProject(project);
   }
 
   return (
     <>
-      <nav className="agency-sidebar-nav" aria-label={t('agency.ui.projectsAndWorkspaces')}>
+      <nav ref={navRef} className="agency-sidebar-nav" aria-label={t('agency.ui.projectsAndWorkspaces')}>
+        <div className="agency-sr-only" aria-live="polite" aria-atomic="true">
+          {liveAnnouncement}
+        </div>
         <header className="agency-nav-head">
           <div className="agency-nav-brand">
-            <img src="/brand/maw-logo-128.png" alt="" className="agency-nav-logo" width="56" height="56" />
+            <img src="/brand/workbench-logo-128.png" alt="" className="agency-nav-logo" width="56" height="56" />
             <strong>{t('agency.ui.agency')}</strong>
           </div>
           <button className="agency-icon-button" type="button" onClick={onCollapse} aria-label={t('agency.ui.collapseSidebar')} aria-expanded={true}>
             <SidebarToggleIcon />
           </button>
         </header>
-        <div className="agency-side-section">
+        <div ref={sideSectionRef} className="agency-side-section">
           <div className="agency-side-heading">
             <span>{t('agency.ui.projects')}</span>
-            <button className="agency-icon-button" type="button" onClick={onCreateProject} title={t('agency.ui.newProject')} aria-label={t('agency.ui.newProject')}>+</button>
+            <button className="agency-icon-button agency-add-project-btn" type="button" onClick={onCreateProject} title={t('agency.ui.newProject')} aria-label={t('agency.ui.newProject')}>+</button>
           </div>
           {groups.length === 0 && <p className="agency-muted agency-empty-nav">{t('agency.ui.createAProjectToBegin')}</p>}
-          {groups.map(({ project, items }) => {
+          {groups.map(({ project, items }, projectIndex) => {
             const isMenuOpen = openMenu?.type === 'project' && openMenu.id === project.id;
-            const isProjectDragging = draggedProjectId === project.id;
-            const isProjectTargetBefore = projectDropTarget?.id === project.id && projectDropTarget.position === 'before';
-            const isProjectTargetAfter = projectDropTarget?.id === project.id && projectDropTarget.position === 'after';
+            const isProjectDrag = activeDrag?.kind === 'project';
+            const isProjectDragging = isProjectDrag && activeDrag.id === project.id;
+            const projectDisplacement = isProjectDrag
+              ? siblingDisplacementPx(projectIndex, activeDrag.fromIndex, activeDrag.insertIndex, activeDrag.displacement)
+              : 0;
+            const projectInsert = isProjectDrag ? activeDrag.insertIndex : null;
+            const isProjectTargetBefore = isProjectDrag && projectInsert !== null && (
+              (projectInsert < activeDrag.fromIndex && projectIndex === projectInsert) ||
+              (projectInsert > activeDrag.fromIndex && projectIndex === projectInsert + 1)
+            );
+            const isProjectTargetAfter = isProjectDrag && projectInsert !== null &&
+              projectInsert === groups.length - 1 && projectIndex === groups.length - 1 && activeDrag.fromIndex !== projectIndex;
             const projectClassName = [
               'agency-project',
               isProjectDragging ? 'agency-is-dragging' : '',
               isProjectTargetBefore ? 'agency-drop-target-before' : '',
               isProjectTargetAfter ? 'agency-drop-target-after' : '',
             ].filter(Boolean).join(' ');
+            const projectStyle: CSSProperties | undefined = isProjectDrag && !isProjectDragging && projectDisplacement !== 0
+              ? { transform: `translateY(${projectDisplacement}px)` }
+              : undefined;
 
             return (
               <section
                 key={project.id}
+                data-sidebar-project-id={project.id}
                 className={projectClassName}
-                onDragOver={(e) => {
-                  if (e.dataTransfer.types.includes('application/maw-project-id') && draggedProjectId) {
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'move';
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const pos = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-                    if (projectDropTarget?.id !== project.id || projectDropTarget?.position !== pos) {
-                      setProjectDropTarget({ id: project.id, position: pos });
-                    }
-                  }
-                }}
-                onDragLeave={(e) => {
-                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                    if (projectDropTarget?.id === project.id) {
-                      setProjectDropTarget(null);
-                    }
-                  }
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  const sourceId = (e.dataTransfer.getData('application/maw-project-id') || draggedProjectId) as ProjectId;
-                  if (sourceId && onReorderProjects) {
-                    suppressClickUntil.current = Date.now() + 300;
-                    const currentIds = groups.map((g) => g.project.id);
-                    const fromIdx = currentIds.indexOf(sourceId);
-                    const toIdx = currentIds.indexOf(project.id);
-                    if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
-                      const nextIds = [...currentIds];
-                      nextIds.splice(fromIdx, 1);
-                      const insertIdx = projectDropTarget?.position === 'after'
-                        ? (toIdx > fromIdx ? toIdx : toIdx + 1)
-                        : (toIdx > fromIdx ? toIdx - 1 : toIdx);
-                      nextIds.splice(Math.max(0, Math.min(nextIds.length, insertIdx)), 0, sourceId);
-                      onReorderProjects(nextIds);
-                    }
-                  }
-                  setDraggedProjectId(null);
-                  setProjectDropTarget(null);
-                }}
+                style={projectStyle}
               >
                 <div
                   className="agency-project-row"
-                  draggable={!openMenu && inlineRenamingProjectId !== project.id}
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('application/maw-project-id', project.id);
-                    e.dataTransfer.effectAllowed = 'move';
-                    setDraggedProjectId(project.id);
-                  }}
-                  onDragEnd={() => {
-                    suppressClickUntil.current = Date.now() + 300;
-                    setDraggedProjectId(null);
-                    setProjectDropTarget(null);
-                  }}
+                  onPointerDown={(e) => beginPointerDrag(e, {
+                    kind: 'project',
+                    id: project.id,
+                    projectId: project.id,
+                    label: project.name,
+                    fromIndex: projectIndex,
+                  })}
                 >
                   <button
                     type="button"
@@ -278,6 +581,7 @@ export function AgencySidebar({
                             const nextIds = [...currentIds];
                             [nextIds[idx], nextIds[targetIdx]] = [nextIds[targetIdx]!, nextIds[idx]!];
                             onReorderProjects(nextIds);
+                            setLiveAnnouncement(`Moved project ${project.name} to position ${targetIdx + 1} of ${nextIds.length}`);
                           }
                         }
                       }
@@ -320,15 +624,24 @@ export function AgencySidebar({
                   </div>
                 </div>
                 {!collapsed.has(project.id) && (
-                  <div className="agency-project-children">
-                    {items.map((workspace) => {
+                  <div className="agency-project-children" data-sidebar-project-children={project.id}>
+                    {items.map((workspace, workspaceIndex) => {
                       const collection = workspaceTabs(sessions, workspace.id);
                       const attention = collection.some(item => isAttention(item.activity));
                       const working = collection.some(item => item.activity === 'working');
                       const isWsMenuOpen = openMenu?.type === 'workspace' && openMenu.id === workspace.id;
-                      const isWsDragging = draggedWorkspace?.id === workspace.id;
-                      const isWsTargetBefore = workspaceDropTarget?.id === workspace.id && workspaceDropTarget.position === 'before';
-                      const isWsTargetAfter = workspaceDropTarget?.id === workspace.id && workspaceDropTarget.position === 'after';
+                      const isWsDrag = activeDrag?.kind === 'workspace' && activeDrag.projectId === workspace.projectId;
+                      const isWsDragging = isWsDrag && activeDrag.id === workspace.id;
+                      const wsDisplacement = isWsDrag
+                        ? siblingDisplacementPx(workspaceIndex, activeDrag.fromIndex, activeDrag.insertIndex, activeDrag.displacement)
+                        : 0;
+                      const wsInsert = isWsDrag ? activeDrag.insertIndex : null;
+                      const isWsTargetBefore = isWsDrag && wsInsert !== null && (
+                        (wsInsert < activeDrag.fromIndex && workspaceIndex === wsInsert) ||
+                        (wsInsert > activeDrag.fromIndex && workspaceIndex === wsInsert + 1)
+                      );
+                      const isWsTargetAfter = isWsDrag && wsInsert !== null &&
+                        wsInsert === items.length - 1 && workspaceIndex === items.length - 1 && activeDrag.fromIndex !== workspaceIndex;
                       const wsRowClassName = [
                         'agency-workspace-nav-row',
                         selected === workspace.id && !showingDone ? 'selected' : '',
@@ -336,73 +649,24 @@ export function AgencySidebar({
                         isWsTargetBefore ? 'agency-drop-target-before' : '',
                         isWsTargetAfter ? 'agency-drop-target-after' : '',
                       ].filter(Boolean).join(' ');
+                      const wsStyle: CSSProperties | undefined = isWsDrag && !isWsDragging && wsDisplacement !== 0
+                        ? { transform: `translateY(${wsDisplacement}px)` }
+                        : undefined;
                       const statusTone = attention ? 'attention' : working ? 'working' : collection.some(item => item.lifecycle === 'running') ? 'idle' : 'muted';
 
                       return (
                         <div
                           className={wsRowClassName}
+                          style={wsStyle}
+                          data-sidebar-workspace-id={workspace.id}
                           key={workspace.id}
-                          draggable={!openMenu && inlineRenamingWorkspaceId !== workspace.id}
-                          onDragStart={(e) => {
-                            e.stopPropagation();
-                            e.dataTransfer.setData('application/maw-workspace-id', workspace.id);
-                            e.dataTransfer.setData('application/maw-workspace-project-id', workspace.projectId);
-                            e.dataTransfer.effectAllowed = 'move';
-                            setDraggedWorkspace({ id: workspace.id, projectId: workspace.projectId });
-                          }}
-                          onDragOver={(e) => {
-                            e.stopPropagation();
-                            if (e.dataTransfer.types.includes('application/maw-workspace-id') && draggedWorkspace) {
-                              if (draggedWorkspace.projectId !== workspace.projectId) {
-                                e.dataTransfer.dropEffect = 'none';
-                                return;
-                              }
-                              e.preventDefault();
-                              e.dataTransfer.dropEffect = 'move';
-                              const rect = e.currentTarget.getBoundingClientRect();
-                              const pos = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-                              if (workspaceDropTarget?.id !== workspace.id || workspaceDropTarget?.position !== pos) {
-                                setWorkspaceDropTarget({ id: workspace.id, position: pos });
-                              }
-                            }
-                          }}
-                          onDragLeave={(e) => {
-                            e.stopPropagation();
-                            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                              if (workspaceDropTarget?.id === workspace.id) {
-                                setWorkspaceDropTarget(null);
-                              }
-                            }
-                          }}
-                          onDrop={(e) => {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            const sourceId = (e.dataTransfer.getData('application/maw-workspace-id') || draggedWorkspace?.id) as WorkspaceId;
-                            const sourceProjectId = (e.dataTransfer.getData('application/maw-workspace-project-id') || draggedWorkspace?.projectId) as ProjectId;
-                            if (sourceId && sourceProjectId === workspace.projectId && onReorderWorkspaces) {
-                              suppressClickUntil.current = Date.now() + 300;
-                              const currentWsIds = items.map((w) => w.id);
-                              const fromIdx = currentWsIds.indexOf(sourceId);
-                              const toIdx = currentWsIds.indexOf(workspace.id);
-                              if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
-                                const nextIds = [...currentWsIds];
-                                nextIds.splice(fromIdx, 1);
-                                const insertIdx = workspaceDropTarget?.position === 'after'
-                                  ? (toIdx > fromIdx ? toIdx : toIdx + 1)
-                                  : (toIdx > fromIdx ? toIdx - 1 : toIdx);
-                                nextIds.splice(Math.max(0, Math.min(nextIds.length, insertIdx)), 0, sourceId);
-                                onReorderWorkspaces(workspace.projectId, nextIds);
-                              }
-                            }
-                            setDraggedWorkspace(null);
-                            setWorkspaceDropTarget(null);
-                          }}
-                          onDragEnd={(e) => {
-                            e.stopPropagation();
-                            suppressClickUntil.current = Date.now() + 300;
-                            setDraggedWorkspace(null);
-                            setWorkspaceDropTarget(null);
-                          }}
+                          onPointerDown={(e) => beginPointerDrag(e, {
+                            kind: 'workspace',
+                            id: workspace.id,
+                            projectId: workspace.projectId,
+                            label: workspace.name,
+                            fromIndex: workspaceIndex,
+                          })}
                         >
                           <button
                             className="agency-workspace-nav-button"
@@ -424,6 +688,7 @@ export function AgencySidebar({
                                     const nextIds = [...currentWsIds];
                                     [nextIds[idx], nextIds[targetIdx]] = [nextIds[targetIdx]!, nextIds[idx]!];
                                     onReorderWorkspaces(workspace.projectId, nextIds);
+                                    setLiveAnnouncement(`Moved workspace ${workspace.name} to position ${targetIdx + 1} of ${nextIds.length}`);
                                   }
                                 }
                               }
@@ -481,6 +746,26 @@ export function AgencySidebar({
         </div>
       </nav>
 
+      {activeDrag && typeof document !== 'undefined' && document.body && createPortal(
+        <div
+          ref={dragGhostRef}
+          className={`agency-sidebar-drag-ghost ${activeDrag.valid ? '' : 'is-invalid'}`.trim()}
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            left: `${activeDrag.rowLeft}px`,
+            top: `${activeDrag.ghostTop}px`,
+            width: `${activeDrag.rowWidth}px`,
+            height: `${activeDrag.rowHeight}px`,
+            pointerEvents: 'none',
+            zIndex: 1200,
+          }}
+        >
+          <span>{activeDrag.label}</span>
+        </div>,
+        document.body,
+      )}
+
       {openMenu && activeTriggerRef.current && (
         openMenu.type === 'project' ? (() => {
           const project = projects.find((p) => p.id === openMenu.id);
@@ -516,11 +801,42 @@ export function AgencySidebar({
               >
                 {t('agency.ui.renameProject')}
               </button>
+              {onUpdateProjectProfile && (
+                <div className="agency-dropdown-profile-row" onClick={(e) => e.stopPropagation()}>
+                  <label className="agency-dropdown-profile-label">
+                    <span>{t('settings.browser.profiles')}</span>
+                    <select
+                      className="agency-dropdown-profile-select"
+                      aria-label={t('settings.browser.profiles')}
+                      value={
+                        project.browserProfileId &&
+                        (browserProfiles.length === 0 || browserProfiles.some((bp) => bp.id === project.browserProfileId))
+                          ? project.browserProfileId
+                          : DEFAULT_BROWSER_PROFILE_ID
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        onUpdateProjectProfile(project, val === DEFAULT_BROWSER_PROFILE_ID ? null : val);
+                      }}
+                    >
+                      {(browserProfiles.length > 0
+                        ? browserProfiles
+                        : [{ id: DEFAULT_BROWSER_PROFILE_ID, name: t('settings.browser.mainProfile') }]
+                      ).map((prof) => (
+                        <option key={prof.id} value={prof.id}>
+                          {prof.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
               <button
                 type="button"
                 role="menuitem"
                 className="agency-dropdown-item"
                 onClick={() => {
+                  setDialogAnchorRect(captureDialogAnchorRect());
                   closeMenu();
                   setArchivingProject(project);
                 }}
@@ -532,8 +848,8 @@ export function AgencySidebar({
                 role="menuitem"
                 className="agency-dropdown-item agency-text-danger"
                 onClick={() => {
-                  closeMenu();
                   handleProjectDeleteClick(project);
+                  closeMenu();
                 }}
               >
                 {t('agency.ui.deleteProject')}
@@ -575,11 +891,51 @@ export function AgencySidebar({
               >
                 {t('agency.ui.markDone')}
               </button>
+              {onUpdateWorkspaceProfile && (
+                <div className="agency-dropdown-profile-row" onClick={(e) => e.stopPropagation()}>
+                  <label className="agency-dropdown-profile-label">
+                    <span>{t('settings.browser.profiles')}</span>
+                    <select
+                      className="agency-dropdown-profile-select"
+                      aria-label={t('settings.browser.profiles')}
+                      value={
+                        workspace.browserProfileId &&
+                        (browserProfiles.length === 0 || browserProfiles.some((bp) => bp.id === workspace.browserProfileId))
+                          ? workspace.browserProfileId
+                          : ''
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        onUpdateWorkspaceProfile(workspace, val || null);
+                      }}
+                    >
+                      <option value="">
+                        {t('settings.browser.inheritProfile', {
+                          name: (() => {
+                            const parent = projects.find((p) => p.id === workspace.projectId);
+                            const parentProfileId = parent?.browserProfileId ?? DEFAULT_BROWSER_PROFILE_ID;
+                            return browserProfiles.find((bp) => bp.id === parentProfileId)?.name ?? t('settings.browser.mainProfile');
+                          })(),
+                        })}
+                      </option>
+                      {(browserProfiles.length > 0
+                        ? browserProfiles
+                        : [{ id: DEFAULT_BROWSER_PROFILE_ID, name: t('settings.browser.mainProfile') }]
+                      ).map((prof) => (
+                        <option key={prof.id} value={prof.id}>
+                          {prof.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
               <button
                 type="button"
                 role="menuitem"
                 className="agency-dropdown-item"
                 onClick={() => {
+                  setDialogAnchorRect(captureDialogAnchorRect());
                   closeMenu();
                   setArchivingWorkspace(workspace);
                 }}
@@ -591,6 +947,7 @@ export function AgencySidebar({
                 role="menuitem"
                 className="agency-dropdown-item agency-text-danger"
                 onClick={() => {
+                  setDialogAnchorRect(captureDialogAnchorRect());
                   closeMenu();
                   setDeletingWorkspace(workspace);
                 }}
@@ -605,19 +962,20 @@ export function AgencySidebar({
       <SidebarConfirmDialogs
         archivingProject={archivingProject}
         deletingProject={deletingProject}
-        projectDeleteBlocked={projectDeleteBlocked}
         archivingWorkspace={archivingWorkspace}
         deletingWorkspace={deletingWorkspace}
+        anchorRect={dialogAnchorRect}
+        workspaces={workspaces}
         sessions={sessions}
         webTabs={webTabs}
-        onCloseArchiveProject={() => setArchivingProject(null)}
+        editorTabs={editorTabs}
+        onCloseArchiveProject={() => { setArchivingProject(null); setDialogAnchorRect(null); }}
         onConfirmArchiveProject={onArchiveProject}
-        onCloseProjectDeleteBlocked={() => setProjectDeleteBlocked(null)}
-        onCloseDeleteProject={() => setDeletingProject(null)}
+        onCloseDeleteProject={() => { setDeletingProject(null); setDialogAnchorRect(null); }}
         onConfirmDeleteProject={onDeleteProject}
-        onCloseArchiveWorkspace={() => setArchivingWorkspace(null)}
+        onCloseArchiveWorkspace={() => { setArchivingWorkspace(null); setDialogAnchorRect(null); }}
         onConfirmArchiveWorkspace={onArchiveWorkspace}
-        onCloseDeleteWorkspace={() => setDeletingWorkspace(null)}
+        onCloseDeleteWorkspace={() => { setDeletingWorkspace(null); setDialogAnchorRect(null); }}
         onConfirmDeleteWorkspace={onDeleteWorkspace}
       />
     </>

@@ -1,21 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { existsSync } from 'node:fs';
-import { execSync } from 'node:child_process';
-import { SERVER_ROOT } from '../../helpers/paths.js';
+import { REPO_ROOT, SERVER_ROOT } from '../../helpers/paths.js';
 
 const serverRoot = SERVER_ROOT;
 const bundlePath = path.join(serverRoot, 'dist/index.mjs');
+const webIndexPath = path.join(REPO_ROOT, 'packages/web/dist/index.html');
 
 test('Prebuilt production server bundle: exists and starts cleanly under raw node', async () => {
   if (!existsSync(bundlePath)) {
     execSync('node scripts/build-bundle.mjs', { cwd: serverRoot, stdio: 'inherit' });
   }
+  if (!existsSync(webIndexPath)) {
+    execSync('pnpm --filter @agent-workbench/web build', { cwd: REPO_ROOT, stdio: 'inherit' });
+  }
   assert.ok(existsSync(bundlePath), 'dist/index.mjs should exist');
+  assert.ok(existsSync(webIndexPath), 'packages/web/dist/index.html should exist');
 
   const tempHome = await mkdtemp(path.join(tmpdir(), 'maw-bundle-test-'));
 
@@ -67,11 +71,9 @@ test('Prebuilt production server bundle: exists and starts cleanly under raw nod
     assert.ok(started.port > 0, 'Should have bound to a valid loopback port');
     assert.ok(started.token.length > 0, 'Should have generated a token');
 
-    // Verify HTTP connectivity
     const response = await fetch(`http://127.0.0.1:${started.port}/?token=${started.token}`);
     assert.equal(response.status, 200);
 
-    // Shutdown gracefully
     child.kill('SIGTERM');
     await new Promise((resolve) => child.on('exit', resolve));
   } finally {

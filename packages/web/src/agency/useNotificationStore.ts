@@ -246,6 +246,9 @@ export function useNotificationStore(
 
         if (channel === 'os') {
           dispatchOsNotification(item);
+          if (typeof Notification === 'undefined' || Notification.permission !== 'granted') {
+            pushToast(item);
+          }
         } else {
           pushToast(item);
         }

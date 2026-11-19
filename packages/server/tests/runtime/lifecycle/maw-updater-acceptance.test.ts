@@ -85,7 +85,7 @@ if [ -n "\${PNPM_SLEEP:-}" ] && [ "\${SLEEP_STEP:-build}" = "$step" ]; then slee
 case "$step" in
   install) [ -f FAIL_INSTALL ] && exit 1; mkdir -p packages/server/node_modules/tsx/dist packages/server/node_modules/node-pty && echo '' > packages/server/node_modules/tsx/dist/loader.mjs ;;
   typecheck) [ -f FAIL_TYPECHECK ] && { echo "simulated typecheck failure" >&2; exit 1; } ;;
-  build) [ -f FAIL_BUILD ] && { echo "simulated build failure" >&2; exit 1; }; mkdir -p packages/web/dist packages/server/dist && echo "<html>built</html>" > packages/web/dist/index.html && echo "export {};" > packages/server/dist/index.mjs && echo "#!/usr/bin/env node" > packages/server/dist/maw-ptyd.mjs ;;
+  build) [ -f FAIL_BUILD ] && { echo "simulated build failure" >&2; exit 1; }; mkdir -p packages/web/dist packages/server/dist && echo "<html>built</html>" > packages/web/dist/index.html && echo "export {};" > packages/server/dist/index.mjs && echo "#!/usr/bin/env node" > packages/server/dist/maw-ptyd.mjs && echo "export {};" > packages/server/dist/terminal-state.mjs ;;
   test) [ -f FAIL_TEST ] && exit 1 ;;
 esac
 exit 0
@@ -105,12 +105,23 @@ case "$cmd" in
     esac
     echo ActiveState=active; exit 0 ;;
   restart|start)
-    case "$*" in *maw-ptyd.service*) n=$(( $(cat "$F/ptyd-restarts" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$F/ptyd-restarts"; exit 0 ;; esac
+    case "$*" in *maw-ptyd.service*)
+      n=$(( $(cat "$F/ptyd-restarts" 2>/dev/null || echo 0) + 1 ))
+      echo "$n" > "$F/ptyd-restarts"
+      readlink -f "${stateDir}/current" > "$F/ptyd-release"
+      exit 0 ;;
+    esac
     case "$cmd" in start) n=$(( $(cat "$F/backend-starts" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$F/backend-starts" ;; esac
     n=$(( $(cat "$F/restarts" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$F/restarts"
     if [ -e "$F/restart-fail-$n" ]; then : > "$F/running"; echo "Job failed: Start request repeated too quickly." >&2; exit 1; fi
     readlink -f "${stateDir}/current" > "$F/running"; exit 0 ;;
-  stop) : > "$F/backend-stops"; exit 0 ;;
+  stop)
+    case "$*" in *maw-ptyd.service*) : > "$F/ptyd-stopped"; exit 0 ;; esac
+    : > "$F/backend-stops"
+    if [ -e "$F/write-data-on-stop" ]; then
+      cp "$F/write-data-on-stop" "$XDG_CONFIG_HOME/agent-workbench/agency-web-tabs.json"
+    fi
+    exit 0 ;;
 esac
 exit 0
 `, { mode: 0o755 });
@@ -131,10 +142,16 @@ if (process.argv[2] === 'check-data') {
 }
 if (process.argv[2] === 'ptyd-empty') {
   if (fs.existsSync(F + '/ptyd-auth-fail')) process.exit(1);
+  if (fs.existsSync(F + '/ptyd-live-after-promotion') && fs.existsSync(F + '/ptyd-restarts')) process.exit(3);
   const checks = Number(fs.existsSync(F + '/ptyd-checks') ? fs.readFileSync(F + '/ptyd-checks', 'utf8') : 0) + 1;
   fs.writeFileSync(F + '/ptyd-checks', String(checks));
   if (fs.existsSync(F + '/ptyd-live-after-first') && checks > 1) process.exit(3);
   if (fs.existsSync(F + '/ptyd-live')) process.exit(3);
+  process.exit(0);
+}
+if (process.argv[2] === 'ptyd-release') {
+  const recorded = F + '/ptyd-release';
+  console.log(fs.existsSync(recorded) ? fs.readFileSync(recorded, 'utf8').trim() : ${JSON.stringify(initialDir)});
   process.exit(0);
 }
 if (process.argv[2] === 'backend-mode') {
@@ -176,6 +193,7 @@ async function makeRelease(dir: string, id: string, commit: string): Promise<voi
   await writeFile(path.join(dir, 'packages/server/node_modules/tsx/dist/loader.mjs'), '');
   await writeFile(path.join(dir, 'packages/server/dist/index.mjs'), 'export {};\n');
   await writeFile(path.join(dir, 'packages/server/dist/maw-ptyd.mjs'), '#!/usr/bin/env node\n');
+  await writeFile(path.join(dir, 'packages/server/dist/terminal-state.mjs'), 'export {};\n');
   await writeFile(path.join(dir, '.maw-release-meta.json'), JSON.stringify({ releaseId: id, commit }) + '\n');
 }
 
@@ -319,6 +337,14 @@ test('control check-data reads compatibility metadata and refuses a v2-to-v1 dow
   await writeFile(manifest, JSON.stringify({ mawCompatibility: { browserTabStore: 2 } }));
   await run();
   assert.equal(await readFile(store, 'utf8'), original);
+  const workspaceStore = path.join(configDir, 'agency-state.json');
+  const assignments = JSON.stringify({ version: 1, projects: [{ browserProfileId: 'custom' }], workspaces: [] });
+  await writeFile(workspaceStore, assignments);
+  await assert.rejects(run(), (error: { stderr: string }) => /does not preserve browser profile assignments/.test(error.stderr));
+  assert.equal(await readFile(workspaceStore, 'utf8'), assignments);
+  await writeFile(manifest, JSON.stringify({ mawCompatibility: { browserTabStore: 2, browserProfileAssignments: 1 } }));
+  await run();
+  assert.equal(await readFile(workspaceStore, 'utf8'), assignments);
 }));
 
 test('supervisor code promotion fails closed on auth/list failure without switching current', () => withFixture(async f => {
@@ -376,6 +402,42 @@ test('empty authenticated supervisor is restarted to load the staged PTY host co
   assert.equal((await readFile(path.join(f.root, 'restarts'), 'utf8')).trim(), '1');
 }));
 
+test('retry detects a running supervisor from before the current pointer switch', () => withFixture(async f => {
+  await pushUpstream(f, 'interrupted-supervisor-promotion');
+  await update(f);
+  await changeStagedSupervisor(f);
+  const staged = await pointer(f, 'staged');
+  assert.ok(staged);
+  await rm(path.join(f.stateDir, 'current'));
+  await symlink(path.join(f.releasesDir, staged), path.join(f.stateDir, 'current'));
+  await writeFile(path.join(f.root, 'ptyd-live'), '');
+  const before = await pointers(f);
+  const result = await helper(f);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Activation deferred/);
+  assert.deepEqual(await pointers(f), before);
+  assert.ok(!existsSync(path.join(f.root, 'restarts')));
+  assert.ok(!existsSync(path.join(f.root, 'ptyd-restarts')));
+}));
+
+test('failed activation defers supervisor rollback while a new PTY is live', () => withFixture(async f => {
+  await pushUpstream(f, 'failed-promotion-with-live-pty');
+  await update(f);
+  await changeStagedSupervisor(f);
+  const target = await pointer(f, 'staged');
+  assert.ok(target);
+  await writeFile(path.join(f.root, 'broken', target), '');
+  await writeFile(path.join(f.root, 'backend-persistent'), '');
+  await writeFile(path.join(f.root, 'ptyd-live-after-promotion'), '');
+  const result = await helper(f);
+  assert.equal(result.code, 3);
+  assert.match(result.stderr, /rollback .* deferred.*PTY/i);
+  assert.equal(await pointer(f, 'current'), target);
+  assert.equal(await pointer(f, 'healthy'), f.initialId);
+  assert.equal((await readFile(path.join(f.root, 'ptyd-restarts'), 'utf8')).trim(), '1');
+  assert.ok(!existsSync(path.join(f.root, 'ptyd-stopped')));
+}));
+
 test('restart refuses a browser store downgrade before changing current or restarting MAW', () => withFixture(async f => {
   await pushUpstream(f, 'browser-data-downgrade');
   await update(f);
@@ -389,7 +451,7 @@ test('restart refuses a browser store downgrade before changing current or resta
   const before = await pointers(f);
   const result = await helper(f, { XDG_CONFIG_HOME: configHome });
   assert.equal(result.code, 1);
-  assert.match(result.stderr, /Activation refused to protect browser tab data/);
+  assert.match(result.stderr, /Activation refused to protect browser data/);
   assert.deepEqual(await pointers(f), before);
   assert.equal(await readFile(storePath, 'utf8'), original);
   assert.ok(!existsSync(path.join(f.root, 'restarts')));
@@ -409,6 +471,25 @@ test('target that supports browser store v2 passes the read-only compatibility p
   assert.equal(await pointer(f, 'current'), target);
 }));
 
+test('activation rechecks the browser store after the previous backend flushes', () => withFixture(async f => {
+  await pushUpstream(f, 'browser-store-flush-race');
+  await update(f);
+  const configHome = path.join(f.root, 'config');
+  const configDir = path.join(configHome, 'agent-workbench');
+  await mkdir(configDir, { recursive: true });
+  const store = path.join(configDir, 'agency-web-tabs.json');
+  await writeFile(store, JSON.stringify({ version: 1, tabs: [] }));
+  const flushed = JSON.stringify({ version: 2, tabs: [] });
+  await writeFile(path.join(f.root, 'write-data-on-stop'), flushed);
+  const before = await pointers(f);
+  const result = await helper(f, { XDG_CONFIG_HOME: configHome });
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /Activation refused to protect browser data/);
+  assert.deepEqual(await pointers(f), before);
+  assert.equal(await readFile(store, 'utf8'), flushed);
+  assert.equal((await readFile(path.join(f.root, 'running'), 'utf8')).trim(), f.initialDir);
+}));
+
 test('failed activation cannot automatically roll back to an incompatible browser store reader', () => withFixture(async f => {
   await pushUpstream(f, 'automatic-rollback-from-v2');
   await update(f);
@@ -423,7 +504,7 @@ test('failed activation cannot automatically roll back to an incompatible browse
   await writeFile(backup, data);
   const result = await helper(f, { XDG_CONFIG_HOME: configHome });
   assert.equal(result.code, 3);
-  assert.match(result.stderr, /automatic rollback .* was blocked to protect browser tab data/);
+  assert.match(result.stderr, /automatic rollback .* was blocked to protect browser data/);
   assert.equal(await pointer(f, 'current'), target);
   assert.equal(await pointer(f, 'healthy'), f.initialId);
   assert.equal(await readFile(backup, 'utf8'), data);
@@ -446,7 +527,7 @@ test('maw rollback refuses an older target before mutating current or staged poi
     (error: { code: number; stderr: string }) => ({ code: error.code, stderr: error.stderr }),
   );
   assert.equal(result.code, 1);
-  assert.match(result.stderr, /Rollback refused to protect browser tab data/);
+  assert.match(result.stderr, /Rollback refused to protect browser data/);
   assert.deepEqual(await pointers(f), before);
   assert.ok(!existsSync(path.join(f.root, 'restarts')) || (await readFile(path.join(f.root, 'restarts'), 'utf8')).trim() === '1');
 }));
@@ -533,13 +614,13 @@ test('8. U-1: candidate that never becomes ready is rolled back to the verified 
   assert.match(await readFile(path.join(f.root, 'systemctl.log'), 'utf8'), /reset-failed/);
 }));
 
-test('9. U-1: a failing `systemctl restart` (start-limit / ExecStartPre) still reaches rollback', () => withFixture(async f => {
+test('9. U-1: a failing `systemctl start` after quiescence still reaches rollback', () => withFixture(async f => {
   await pushUpstream(f, 'v2');
   await update(f);
   await writeFile(path.join(f.root, 'restart-fail-1'), '');
   const r = await helper(f);
   assert.equal(r.code, 2, r.stderr);
-  assert.match(r.stderr, /systemctl restart failed/);
+  assert.match(r.stderr, /systemctl start failed after backend quiescence/);
   assert.equal((await pointers(f)).current, f.initialId);
   assert.ok((await logEvents(f)).some(e => e.event === 'rollback-success'));
 }));
@@ -742,6 +823,19 @@ test('23. unexpected parent exit does not abort or corrupt staging', () => withF
   await pushUpstream(f, 'v2');
   await exec('/bin/sh', ['-c', `"${MAW_UPDATE_BIN}" --no-restart >/dev/null 2>&1 & exit 0`], { env: f.env });
   for (let i = 0; i < 200 && !(await pointers(f)).staged; i++) await new Promise(r => setTimeout(r, 50));
+  // Wait for the detached updater to finish writing its log and release update.lock before fixture cleanup.
+  const lockPath = path.join(f.stateDir, 'update.lock');
+  for (let i = 0; i < 200; i++) {
+    const hasStagedLog = (await logEvents(f)).some(e => e.event === 'stage-success');
+    let unlocked = true;
+    try {
+      await exec('flock', ['-n', lockPath, 'true'], { env: f.env });
+    } catch {
+      unlocked = false;
+    }
+    if (hasStagedLog && unlocked) break;
+    await new Promise(r => setTimeout(r, 50));
+  }
   assert.ok((await pointers(f)).staged);
   assert.deepEqual(await registeredWorktrees(f), [f.sourceDir]);
 }));
@@ -768,7 +862,7 @@ test('25. U-11: `maw update --restart` leaves no lock behind (flock released on 
   assert.ok((await pointers(f)).staged);
 }));
 
-test('26. U-12: successful activation garbage-collects unreferenced releases, keeping one spare', () => withFixture(async f => {
+test('26. U-12: release collection keeps one spare and the running supervisor release', () => withFixture(async f => {
   const ids: string[] = [];
   for (const name of ['r1', 'r2', 'r3']) {
     await git(f.sourceDir, 'merge', '--ff-only', 'origin/main').catch(() => undefined);
@@ -787,8 +881,11 @@ test('26. U-12: successful activation garbage-collects unreferenced releases, ke
   const p = await pointers(f);
   assert.ok(left.includes(p.healthy!) && left.includes(p.previous!));
   assert.ok(left.includes('not-a-release'), 'never removes non-release entries');
-  assert.ok(!left.includes(f.initialId), 'oldest unreferenced release removed');
-  assert.equal(left.filter(n => n !== 'not-a-release').length, 3, left.join(','));
+  assert.ok(left.includes(f.initialId), 'running supervisor release retained after it is no longer pointed to');
+  const [oldest] = ids;
+  assert.ok(oldest);
+  assert.ok(!left.includes(oldest), 'oldest unreferenced release removed');
+  assert.equal(left.filter(n => n !== 'not-a-release').length, 4, left.join(','));
 }));
 
 // ---------------------------------------------------------------------------
@@ -869,7 +966,8 @@ test('31. U-3/U-13a: install --service builds an isolated first release and rend
   assert.equal((await lstat(path.join(state, 'healthy')).catch(() => null)), null, 'not healthy before first verified start');
   const unit = await readFile(path.join(f.root, 'units/maw-fixture.service'), 'utf8');
   assert.ok(!unit.includes('@'), 'all placeholders rendered');
-  assert.ok(unit.includes(`ExecStart=${process.execPath} --import ${state}/current/packages/server/node_modules/tsx/dist/loader.mjs`));
+  assert.ok(unit.includes(`ExecStart=${process.execPath} ${state}/current/packages/server/dist/index.mjs --prod`));
+  assert.ok(unit.includes('Environment=MAW_PERSISTENT_PTY=1'));
   assert.ok(unit.includes(`WorkingDirectory=${state}/current`));
   assert.match(unit, /ExecStartPre=\/usr\/bin\/test -f .*\.maw-release-meta\.json/);
 }));
@@ -890,7 +988,8 @@ test('31b. installed library renders and runs after the installer source is remo
   const rendered = await exec(path.join(env.MAW_LIB_DIR, 'maw-render-unit.sh'), [], { env, cwd: f.root });
   assert.ok(!rendered.stdout.includes('@'), 'installed template is fully rendered');
   assert.ok(rendered.stdout.includes(`WorkingDirectory=${f.stateDir}/current`));
-  assert.ok(rendered.stdout.includes(`ExecStart=${process.execPath} --import `));
+  assert.ok(rendered.stdout.includes(`ExecStart=${process.execPath} ${f.stateDir}/current/packages/server/dist/index.mjs --prod`));
+  assert.ok(rendered.stdout.includes('Environment=MAW_PERSISTENT_PTY=1'));
   assert.ok(rendered.stdout.includes('RuntimeDirectory=maw-installed-fixture'));
   const installedMaw = path.join(env.MAW_BIN_DIR, 'maw');
   assert.match((await exec(installedMaw, ['help'], { env, cwd: f.root })).stdout, /Usage: maw/);

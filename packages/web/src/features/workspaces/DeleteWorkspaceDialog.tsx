@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import type { AgencyRuntimeSession, AgencyWorkspace, WebTab } from '@agent-workbench/shared';
+import type { AgencyRuntimeSession, AgencyWorkspace, EditorTab, WebTab } from '@agent-workbench/shared';
 import { t } from '../../i18n/index.js';
-import { ModalDialog } from '../../shared/ui/ModalDialog.js';
+import { ModalDialog, type AnchorRect } from '../../shared/ui/ModalDialog.js';
+import { editorDraftStore } from '../../agency/editorDraftStore.js';
 
 export interface DeleteWorkspaceDialogProps {
   workspace: AgencyWorkspace;
   sessions: readonly AgencyRuntimeSession[];
   webTabs?: readonly WebTab[];
+  editorTabs?: readonly EditorTab[];
+  anchorRect?: AnchorRect | null;
   onConfirm: (workspace: AgencyWorkspace) => Promise<void> | void;
   onClose: () => void;
 }
@@ -15,6 +18,8 @@ export function DeleteWorkspaceDialog({
   workspace,
   sessions,
   webTabs = [],
+  editorTabs = [],
+  anchorRect = null,
   onConfirm,
   onClose,
 }: DeleteWorkspaceDialogProps): JSX.Element {
@@ -29,12 +34,15 @@ export function DeleteWorkspaceDialog({
     (s) => s.kind === 'terminal' && (s.lifecycle === 'running' || s.lifecycle === 'starting'),
   ).length;
   const stoppingSessions = wsSessions.filter((s) => s.lifecycle === 'stopping').length;
-  const chatGptTabs = webTabs.filter((tab) => tab.workspaceId === workspace.id && !tab.closedAt).length;
+  const browserTabs = webTabs.filter((tab) => tab.workspaceId === workspace.id && !tab.closedAt).length;
+  const openEditorTabs = editorTabs.filter((tab) => tab.workspaceId === workspace.id && !tab.closedAt);
+  const dirtyIds = new Set(editorDraftStore.listDirtyTabIds());
+  const dirtyEditorTabs = openEditorTabs.filter((tab) => dirtyIds.has(tab.id)).length;
   const exitedTabs = wsSessions.filter(
     (s) => s.lifecycle === 'exited' && s.tab?.current && !s.tab.closedAt,
   ).length;
 
-  const totalActive = runningClis + runningTerminals + stoppingSessions + chatGptTabs;
+  const totalActive = runningClis + runningTerminals + stoppingSessions + browserTabs + openEditorTabs.length;
   const totalResources = totalActive + exitedTabs;
 
   async function handleDelete() {
@@ -55,6 +63,7 @@ export function DeleteWorkspaceDialog({
     <ModalDialog
       title={t('agency.ui.confirmDeleteWorkspace', { name: workspace.name })}
       titleId="agency-del-ws-title"
+      anchorRect={anchorRect}
       onClose={onClose}
       closeLabel={t('common.close')}
       closeDisabled={busy}
@@ -65,7 +74,7 @@ export function DeleteWorkspaceDialog({
           </button>
           <button
             type="button"
-            className="agency-primary-button agency-text-danger"
+            className="agency-danger-button"
             disabled={busy}
             onClick={() => void handleDelete()}
           >
@@ -95,7 +104,13 @@ export function DeleteWorkspaceDialog({
             {runningClis > 0 && <li>{t('agency.ui.deleteResourcesActiveClis', { count: runningClis })}</li>}
             {runningTerminals > 0 && <li>{t('agency.ui.deleteResourcesActiveTerminals', { count: runningTerminals })}</li>}
             {stoppingSessions > 0 && <li>{t('agency.ui.deleteResourcesUnresolvedSessions', { count: stoppingSessions })}</li>}
-            {chatGptTabs > 0 && <li>{t('agency.ui.deleteResourcesChatGptTabs', { count: chatGptTabs })}</li>}
+            {browserTabs > 0 && <li>{t('agency.ui.deleteResourcesBrowserTabs', { count: browserTabs })}</li>}
+            {openEditorTabs.length > 0 && (
+              <li>
+                {t('agency.ui.deleteResourcesEditorTabs', { count: openEditorTabs.length })}
+                {dirtyEditorTabs > 0 ? ` (${t('agency.ui.deleteResourcesUnsavedCount', { count: dirtyEditorTabs })})` : ''}
+              </li>
+            )}
             {exitedTabs > 0 && <li>{t('agency.ui.deleteResourcesExitedTabs', { count: exitedTabs })}</li>}
           </ul>
         )}

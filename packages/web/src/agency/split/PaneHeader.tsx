@@ -46,6 +46,7 @@ interface Props {
   onAddWebTabClick: () => void;
   onOpenFileClick?: () => void;
   onMoveTabToPane: (tabId: string, targetPaneId: string, targetIndex?: number) => void;
+  onSplitPane?: (targetPaneId: string, direction: 'row' | 'column', tabIdToMove: string) => void;
   onRenameTab: (tab: WorkspaceTab, title: string) => Promise<void>;
   isTabUnsaved?: (tabId: string) => boolean;
   reportError: (error: string) => void;
@@ -94,6 +95,7 @@ export function PaneHeader({
   onAddWebTabClick,
   onOpenFileClick,
   onMoveTabToPane,
+  onSplitPane,
   onRenameTab,
   isTabUnsaved,
   reportError,
@@ -130,7 +132,6 @@ export function PaneHeader({
   }, []);
 
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [paneActionsOpen, setPaneActionsOpen] = useState(false);
   const [renameWidth, setRenameWidth] = useState<number | null>(null);
@@ -160,6 +161,7 @@ export function PaneHeader({
     profiles,
     favicons,
     onMoveTabToPane,
+    onSplitPane,
     request,
     reportError,
   });
@@ -226,25 +228,6 @@ export function PaneHeader({
   return (
     <div
       className={`maw-pane-header${isFocused ? ' is-focused' : ''}${dragPreview?.overPaneId === paneId && dragPreview.sourcePaneId !== paneId ? ' is-tab-drop' : ''}`}
-      onDragOver={(e) => {
-        if (e.dataTransfer.types.includes('application/maw-tab-id')) {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'move';
-        }
-      }}
-      onDrop={(e) => {
-        const draggedId = e.dataTransfer.getData('application/maw-tab-id');
-        if (draggedId) {
-          e.preventDefault();
-          onMoveTabToPane(draggedId, paneId, dragOverIndex ?? undefined);
-          setDragOverIndex(null);
-        }
-      }}
-      onDragLeave={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-          setDragOverIndex(null);
-        }
-      }}
     >
       <div
         className={'maw-pane-tabs' + (dragState ? ' is-dragging' : '')}
@@ -256,6 +239,7 @@ export function PaneHeader({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
+        onLostPointerCapture={onPointerCancel}
       >
         {paneTabs.map((tab, idx) => {
           const tabState = getTabActivity?.(workspaceId, tab.id);
@@ -271,7 +255,7 @@ export function PaneHeader({
             : 0;
 
           const isBeingDragged = dragPreview?.tabId === tab.id && dragPreview.sourcePaneId === paneId;
-          const isTargetBefore = (previewHere?.overIndex === idx && previewHere.tabId !== tab.id) || dragOverIndex === idx;
+          const isTargetBefore = previewHere?.overIndex === idx && previewHere.tabId !== tab.id;
           const isTargetAfter = previewHere?.overIndex === paneTabs.length && idx === paneTabs.length - 1 && previewHere.tabId !== tab.id;
           const isRenaming = renamingTabId === tab.id;
           const tabFavicon = favicons?.[tab.id];
@@ -392,7 +376,7 @@ export function PaneHeader({
                 {t('agency.tabs.newTerminal')}
               </button>
               <button type="button" role="menuitem" onClick={() => choose('agent')}>
-                {t('agency.tabs.codingAgent') || 'Coding Agent'}
+                {t('agency.tabs.codingAgent')}
               </button>
               <button
                 type="button"
@@ -550,6 +534,17 @@ export function PaneHeader({
           </PaneMenu>
         )}
         <PaneGrip paneId={paneId} workspaceId={workspaceId} disabled={moveDisabled} destinations={destinations} onSwap={onSwapPane} />
+        <button
+          type="button"
+          className="maw-pane-action-button maw-pane-close-button"
+          data-pane-close
+          title={t('agency.splits.closePane')}
+          aria-label={t('agency.splits.closePane')}
+          disabled={!canClose || !online || busy}
+          onClick={onClosePane}
+        >
+          ×
+        </button>
       </div>
     </div>
   );

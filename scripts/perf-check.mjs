@@ -85,15 +85,18 @@ async function step(name, fn) {
 
 // 1. Native layout coordinator idle rAF regression check
 await step('Native layout coordinator idle rAF elimination', async () => {
-  const { stdout } = await runCommand('node', ['--test', 'packages/web/tests/unit/panes/native-layout-coordinator.test.mjs'], { silent: true });
-  if (!stdout.includes('pass 2') && !stdout.includes('✔')) {
-    throw new Error('Native layout coordinator test suite failed or produced unexpected test counts');
+  const { stdout, durationMs } = await runCommand('node', ['--test', '--test-reporter=tap', 'packages/web/tests/integration/panes/native-layout-coordinator.test.mjs'], { silent: true });
+  const passMatch = stdout.match(/^# pass (\d+)$/m);
+  const skipMatch = stdout.match(/^# skipped (\d+)$/m);
+  const passed = passMatch ? Number(passMatch[1]) : 0;
+  const skipped = skipMatch ? Number(skipMatch[1]) : -1;
+  if (passed < 1 || skipped !== 0) {
+    throw new Error('Native layout coordinator cases were not all executed');
   }
   return {
     metrics: {
-      'measure() idle frequency': '<= 2 / 30 frames (idle rAF loop eliminated)',
-      'xterm repaint filtering': '0 repaints triggered (skips .xterm mutation repaints)',
-      'lifecycle unmount cleanup': 'verified (focused tab identity cleared on unregister/unmount)',
+      'TAP cases passed': `${passed} passed, ${skipped} skipped`,
+      'suite wall time': `${durationMs} ms`,
     },
   };
 });
@@ -108,7 +111,7 @@ await step('Codex watcher stat-only delta polling', async () => {
 
   // Quantitative micro-benchmark: verify that 20 consecutive polls on an unchanged rollout
   // preserve the cached path (0 directory traversals) and execute with O(1) sub-millisecond stat latency
-  const tmpRoot = path.join(tmpdir(), `maw-codex-stat-bench-${Date.now()}`);
+  const tmpRoot = path.join(tmpdir(), `maw-codex-stat-bench-${process.pid}-${Date.now()}`);
   mkdirSync(tmpRoot, { recursive: true });
   try {
     const { stdout } = await runCommand(
@@ -124,7 +127,7 @@ await step('Codex watcher stat-only delta polling', async () => {
         import path from 'node:path';
         import { randomUUID } from 'node:crypto';
 
-        const root = '${tmpRoot}';
+        const root = ${JSON.stringify(tmpRoot)};
         const sessionId = randomUUID();
         const sessionDir = path.join(root, 'sessions', '2026', '11', '03');
         fs.mkdirSync(sessionDir, { recursive: true });
@@ -165,9 +168,8 @@ await step('Codex watcher stat-only delta polling', async () => {
     }
     return {
       metrics: {
-        'path resolution': 'cached (0 re-resolutions across 20 polls)',
+        're-resolutions across 20 polls': `${bench.reResolutions}`,
         'steady-state polling latency': `${bench.avgPollMs} ms/poll`,
-        'unchanged file stat': 'O(1) inode & size delta check',
       },
     };
   } finally {
@@ -182,7 +184,7 @@ await step('Output buffer PTY throughput (256 KiB ring)', async () => {
     [
       '--import',
       './packages/server/node_modules/tsx/dist/loader.mjs',
-      'docs/research/maw-next-generation/evidence/bench/output-buffer-micro.mjs',
+      'scripts/bench/output-buffer-micro.mjs',
     ],
     {
       env: { TOTAL_MIB: mode === 'full' ? '16' : '4', REPS: mode === 'full' ? '3' : '1' },
@@ -213,52 +215,56 @@ await step('Output buffer PTY throughput (256 KiB ring)', async () => {
 
 // 4. Tab DnD pointermove cost & frame responsiveness
 await step('Tab drag-and-drop interaction responsiveness', async () => {
-  const tmpOut = path.join(tmpdir(), `maw-dnd-bench-${Date.now()}.json`);
+  const tmpOut = path.join(tmpdir(), `maw-dnd-bench-${process.pid}-${Date.now()}.json`);
   const reps = mode === 'full' ? 3 : 1;
   const moves = mode === 'full' ? 120 : 60;
-  await runCommand(
-    'node',
-    [
-      'docs/research/maw-next-generation/evidence/bench/dnd-pointermove-cost.mjs',
-      tmpOut,
-      '6',
-      String(moves),
-      String(reps),
-    ],
-    { silent: true }
-  );
-  if (!existsSync(tmpOut)) throw new Error('Benchmark output file not created');
-  const data = JSON.parse(readFileSync(tmpOut, 'utf8'));
-  if (!Array.isArray(data) || data.length === 0) {
-    throw new Error('Benchmark output contained no valid repetition data');
-  }
-  const avgScript = +(data.reduce((s, r) => s + r.scriptMs, 0) / data.length).toFixed(1);
-  const avgGbcr = +(data.reduce((s, r) => s + r.getBoundingClientRectPerMove, 0) / data.length).toFixed(2);
-  const avgRecalc = +(data.reduce((s, r) => s + (r.recalcStyleCount ?? 0), 0) / data.length).toFixed(1);
-  const maxLong = Math.max(...data.map(r => r.longTasks));
+  try {
+    await runCommand(
+      'node',
+      [
+        'scripts/bench/dnd-pointermove-cost.mjs',
+        tmpOut,
+        '6',
+        String(moves),
+        String(reps),
+      ],
+      { silent: true }
+    );
+    if (!existsSync(tmpOut)) throw new Error('Benchmark output file not created');
+    const data = JSON.parse(readFileSync(tmpOut, 'utf8'));
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error('Benchmark output contained no valid repetition data');
+    }
+    const avgScript = +(data.reduce((s, r) => s + r.scriptMs, 0) / data.length).toFixed(1);
+    const avgGbcr = +(data.reduce((s, r) => s + r.getBoundingClientRectPerMove, 0) / data.length).toFixed(2);
+    const avgRecalc = +(data.reduce((s, r) => s + (r.recalcStyleCount ?? 0), 0) / data.length).toFixed(1);
+    const maxLong = Math.max(...data.map(r => r.longTasks));
 
-  // Measurable regression assertions
-  if (avgGbcr > 1.0) {
-    throw new Error(`Regression: getBoundingClientRectPerMove is ${avgGbcr} (must be <= 1.0, baseline was 6.9)`);
+    // Measurable regression assertions
+    if (avgGbcr > 1.0) {
+      throw new Error(`Regression: getBoundingClientRectPerMove is ${avgGbcr} (must be <= 1.0, baseline was 6.9)`);
+    }
+    if (avgScript > 75.0) {
+      throw new Error(`Regression: scriptMs is ${avgScript} ms (baseline was 93.0 ms)`);
+    }
+    if (maxLong > 0) {
+      throw new Error(`Regression: encountered ${maxLong} long tasks (>50ms) during tab drag`);
+    }
+    const maxRecalc = mode === 'full' ? 190.0 : 130.0;
+    if (avgRecalc > maxRecalc) {
+      throw new Error(`Regression: recalcStyleCount is ${avgRecalc} (exceeds ${maxRecalc} limit for ${moves} moves)`);
+    }
+    return {
+      metrics: {
+        'script duration (mean)': `${avgScript} ms`,
+        'getBoundingClientRect per move': avgGbcr,
+        'style recalcs (rAF coalesced)': avgRecalc,
+        'long tasks (>50ms)': `${maxLong}`,
+      },
+    };
+  } finally {
+    try { rmSync(tmpOut, { force: true }); } catch {}
   }
-  if (avgScript > 75.0) {
-    throw new Error(`Regression: scriptMs is ${avgScript} ms (baseline was 93.0 ms)`);
-  }
-  if (maxLong > 0) {
-    throw new Error(`Regression: encountered ${maxLong} long tasks (>50ms) during tab drag`);
-  }
-  const maxRecalc = mode === 'full' ? 190.0 : 130.0;
-  if (avgRecalc > maxRecalc) {
-    throw new Error(`Regression: recalcStyleCount is ${avgRecalc} (exceeds ${maxRecalc} limit for ${moves} moves)`);
-  }
-  return {
-    metrics: {
-      'script duration (mean)': `${avgScript} ms (reduced from ~93 ms)`,
-      'getBoundingClientRect per move': `${avgGbcr} (reduced from 6.9, 98% reduction)`,
-      'style recalcs (rAF coalesced)': `${avgRecalc} (reduced from ~168)`,
-      'long tasks (>50ms)': `${maxLong}`,
-    },
-  };
 });
 
 // Summary

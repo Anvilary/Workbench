@@ -1221,3 +1221,47 @@ test('selection only publishes changed tabs; duplicate selection is write-free a
   assert.equal(f.runtime.get(sessions[1]!.id)?.tab?.selected,false);
   assert.equal(events.length,2);
 });
+
+test('P1 A-02: opencode and pi providers validate, launch, persist, and reload cleanly across runtime and store', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'maw-a02-providers-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const sessionFile = path.join(root, 'sessions.json');
+  const store = new AgencySessionStore(sessionFile);
+
+  for (const provider of ['opencode', 'pi'] as const) {
+    const f = fixture(root, {
+      store,
+      resolveLaunch: async (input) => ({
+        profileId: input.profileId,
+        provider,
+        file: '/bin/echo',
+        args: ['hello'],
+        env: { HOME: root },
+        session: { kind: 'known', sessionId: input.proposedSessionId },
+        launchToken: input.launchToken,
+        proposedSessionId: input.proposedSessionId,
+        cwd: input.cwd,
+        nativeIdentity: { provider, home: root },
+      }),
+    });
+    await f.runtime.initialize();
+    const created = await f.runtime.create({
+      kind: 'agent',
+      workspaceId: f.one.id,
+      profileId: `${provider}-default` as CliProfileId,
+      cols: 80,
+      rows: 24,
+    });
+    assert.equal(created.lifecycle, 'running');
+    assert.equal(created.kind, 'agent');
+    assert.equal(created.nativeIdentity?.provider, provider);
+    f.runtime.dispose();
+  }
+
+  // Reload from disk via a fresh AgencySessionStore to verify validSession accepts opencode and pi
+  const reloadedStore = new AgencySessionStore(sessionFile);
+  const loaded = await reloadedStore.load();
+  const providers = new Set(loaded.map((s) => (s.kind === 'agent' ? s.nativeIdentity?.provider : undefined)));
+  assert.ok(providers.has('opencode'), 'opencode session must reload from AgencySessionStore');
+  assert.ok(providers.has('pi'), 'pi session must reload from AgencySessionStore');
+});

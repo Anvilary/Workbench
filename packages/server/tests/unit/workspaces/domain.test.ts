@@ -464,3 +464,48 @@ test('project and workspace ordering: persistent, serialized and cross-project i
     (err: any) => err.code === 'invalid-request',
   );
 });
+
+test('P2 A-09: AgencyWorkspaceStore.transact keeps previous committed state in .bak and control check-data prefers primary over stale .bak', async (t) => {
+  const { dir, store } = await fixture(t);
+  const statePath = path.join(dir, 'state.json');
+
+  // 1st commit seeds both primary and .bak with Project A
+  const p1 = await store.createProject('Project A');
+  await store.updateProject(p1.id, { browserProfileId: 'bp_custom1234' as any });
+  // 2nd commit (clearing browserProfileId) rotates previous state into .bak and writes cleared state to primary
+  await store.updateProject(p1.id, { browserProfileId: null });
+
+  const primary = JSON.parse(await readFile(statePath, 'utf8'));
+  const backup = JSON.parse(await readFile(statePath + '.bak', 'utf8'));
+  assert.equal(primary.projects[0].browserProfileId, undefined);
+  assert.equal(backup.projects[0].browserProfileId, 'bp_custom1234', '.bak must hold the previous committed state');
+
+  // Verify scripts/maw/control.mjs check-data allows downgrade once primary has cleared assignments
+  // even when previous-state .bak still had browserProfileId, and falls back to .bak if primary is missing/corrupt.
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const execFileAsync = promisify(execFile);
+  const controlScript = path.resolve(process.cwd(), '../../scripts/maw/control.mjs');
+  const targetDir = path.join(dir, 'target-old');
+  const configHome = path.join(dir, 'xdg-config');
+  const configAppDir = path.join(configHome, 'agent-workbench');
+  await mkdir(targetDir, { recursive: true });
+  await mkdir(configAppDir, { recursive: true });
+  await writeFile(path.join(targetDir, 'package.json'), JSON.stringify({ mawCompatibility: { browserTabStore: 2 } }));
+  await writeFile(path.join(configAppDir, 'agency-state.json'), await readFile(statePath, 'utf8'));
+  await writeFile(path.join(configAppDir, 'agency-state.json.bak'), await readFile(statePath + '.bak', 'utf8'));
+
+  // Primary is valid and cleared -> check-data MUST succeed despite stale .bak!
+  await execFileAsync(process.execPath, [controlScript, 'check-data', targetDir], {
+    env: { ...process.env, XDG_CONFIG_HOME: configHome },
+  });
+
+  // Corrupt primary -> check-data MUST fall back to .bak and reject due to browserProfileId!
+  await writeFile(path.join(configAppDir, 'agency-state.json'), '{corrupt');
+  await assert.rejects(
+    execFileAsync(process.execPath, [controlScript, 'check-data', targetDir], {
+      env: { ...process.env, XDG_CONFIG_HOME: configHome },
+    }),
+    (err: any) => /does not preserve browser profile assignments/.test(err.stderr ?? ''),
+  );
+});

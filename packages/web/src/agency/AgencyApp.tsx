@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId, AgentInfo, ServerMessage } from '@agent-workbench/shared';
+import { DEFAULT_BROWSER_PROFILE_ID, resolveEffectiveBrowserProfileId } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import { AgencySidebar, AgencyDoneView, SidebarToggleIcon } from './AgencySidebar.js';
 import { AgencyWorkspaceCreator, AgencyProjectCreator } from './AgencyWorkspaceCreator.js';
@@ -91,7 +92,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
   const agencyTransport = useMemo(() => createAgencyTransport(connection), [connection]);
   const store = useAgencyStore(agencyTransport, connection);
   const { data, loaded, online, synchronized, notice } = store;
-  useNativeChatGptTabs(data.webTabs, online && synchronized, store.request);
+  useNativeChatGptTabs(data.webTabs, online && synchronized, store.request, data.projects, data.workspaces, data.browserProfiles);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [performanceOpen, setPerformanceOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -299,8 +300,34 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
     setDrafts((prev) => acknowledgeWorkspaceDraft(prev, workspaceId as WorkspaceId, original));
   }
 
+  const activeProjects = data.projects.filter((project) => project.status !== 'archived');
+  const activeWorkspaces = data.workspaces.filter(
+    (ws) => ws.status === 'active' && activeProjects.some((project) => project.id === ws.projectId),
+  );
+  const [mountedWorkspaceIds, setMountedWorkspaceIds] = useState<WorkspaceId[]>([]);
+
+  useEffect(() => {
+    const activeSet = new Set(activeWorkspaces.map((ws) => ws.id));
+    setMountedWorkspaceIds((prev) => {
+      const stillActive = prev.filter((id) => activeSet.has(id));
+      let next = stillActive;
+      if (selectedId && activeSet.has(selectedId)) {
+        next = [selectedId, ...stillActive.filter((id) => id !== selectedId)].slice(0, 8);
+      }
+      if (next.length === prev.length && next.every((id, idx) => id === prev[idx])) return prev;
+      return next;
+    });
+  }, [selectedId, data.workspaces, data.projects]);
+
+  const mountedWorkspaces = mountedWorkspaceIds
+    .map((id) => activeWorkspaces.find((ws) => ws.id === id))
+    .filter((ws): ws is AgencyWorkspace => Boolean(ws));
+  if (selected && activeWorkspaces.some((ws) => ws.id === selected.id) && !mountedWorkspaces.some((ws) => ws.id === selected.id)) {
+    mountedWorkspaces.unshift(selected);
+  }
+
   function openCreator(project?: ProjectId) {
-    if (data.projects.length === 0) { setCreatingProject(true); return; }
+    if (activeProjects.length === 0) { setCreatingProject(true); return; }
     setCreatorProject(project);
     setCreatingWorkspace(true);
   }
@@ -413,12 +440,22 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
     } catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.errors.internalError')); }
   }
 
-  async function deleteProject(project: AgencyProject) {
+  async function deleteProject(project: AgencyProject, cascade = false) {
     setError(null);
     try {
-      const answer = await store.deleteProject(project.id);
-      if (answer.type !== 'agency.project.deleted') throw new Error(t('agency.errors.internalError'));
-    } catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.errors.internalError')); }
+      const answer = await store.deleteProject(project.id, cascade);
+      if (answer.type !== 'agency.project.deleted') {
+        const msg = answer.type === 'agency.error' ? answer.message : t('agency.errors.internalError');
+        throw new Error(msg);
+      }
+      if (selected && selected.projectId === project.id) {
+        setSelectedId(null);
+      }
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : t('agency.errors.internalError');
+      setError(message);
+      throw reason;
+    }
   }
 
   async function restore(workspace: AgencyWorkspace) {
@@ -462,10 +499,12 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
           <>
             <AgencySidebar
               onCollapse={() => setSidebarOpen(false)}
-              projects={data.projects}
+              projects={activeProjects}
               workspaces={data.workspaces}
               sessions={data.sessions}
               webTabs={data.webTabs}
+              editorTabs={data.editorTabs}
+              browserProfiles={data.browserProfiles}
               selected={selectedId}
               showingDone={showingDone}
               onSelect={(id) => { setSelectedId(id); setShowingDone(false); }}
@@ -476,8 +515,10 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
               onDeleteWorkspace={deleteWorkspace}
               onRenameProject={(p, n) => { void renameProject(p, n); }}
               onRenameWorkspace={(ws, n) => { void renameWorkspace(ws, n); }}
+              onUpdateProjectProfile={(p, profileId) => { void store.updateProject(p.id, { browserProfileId: profileId }).catch((err) => setError(String(err))); }}
+              onUpdateWorkspaceProfile={(ws, profileId) => { void store.updateWorkspace(ws.id, { browserProfileId: profileId }).catch((err) => setError(String(err))); }}
               onArchiveProject={(p) => { void archiveProject(p); }}
-              onDeleteProject={(p) => { void deleteProject(p); }}
+              onDeleteProject={deleteProject}
               onRestore={(ws) => { void restore(ws); }}
               onReorderProjects={reorderProjects}
               onReorderWorkspaces={reorderWorkspaces}
@@ -513,7 +554,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
               >
                 <SidebarToggleIcon />
               </button>
-              <img src="/brand/maw-logo-128.png" alt="" className="agency-topbar-logo" width="36" height="36" />
+              <img src="/brand/workbench-logo-128.png" alt="" className="agency-topbar-logo" width="36" height="36" />
               <strong>{t('agency.ui.agency')}</strong>
             </div>
           )}
@@ -624,63 +665,80 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
         </div>}
         {!loaded ? (
           <div className="agency-welcome">
-            <img src="/brand/maw-logo-256.png" className="agency-welcome-logo" alt="MAW" width="84" height="84" />
+            <img src="/brand/workbench-logo-256.png" className="agency-welcome-logo" alt={t('agency.ui.agency')} width="84" height="84" />
             <h1>{t('agency.ui.agency')}</h1>
             <p>{t('agency.ui.loadingServerWorkspaceData')}</p>
           </div>
-        ) : showingDone ? (
-          <AgencyDoneView
-            workspaces={data.workspaces}
-            projects={data.projects}
-            sessions={data.sessions}
-            webTabs={data.webTabs}
-            onRestore={(ws) => { void restore(ws); }}
-            onArchiveWorkspace={(ws) => { void archiveWorkspace(ws); }}
-            onDeleteWorkspace={deleteWorkspace}
-          />
-        ) : selected ? (
-          <AgencyWorkspaceView
-            key={selected.id}
-            workspace={selected}
-            appSettings={appSettings}
-            connection={connection}
-            request={store.request}
-            sendImmediate={agencyTransport.sendImmediate}
-            online={online && synchronized}
-            profiles={data.profiles}
-            sessions={data.sessions}
-            webTabs={data.webTabs}
-            editorTabs={data.editorTabs}
-            onTabDisplayed={handleTabDisplayed}
-            draft={drafts[selected.id] ?? ''}
-            onDraft={(value) => updateDraft(selected.id, value)}
-            onDelivered={(value) => clearDelivered(selected.id, value)}
-            onDone={() => { void markDone(selected); }}
-            launchError={launchErrors[selected.id]}
-            placementWarning={data.layoutWarnings?.[selected.id] ?? null}
-            onClearPlacementWarning={() => store.clearLayoutWarning(selected.id)}
-            getTabActivity={notificationStore.getTabActivity}
-            getTabActivityVersion={(workspaceId, tabId) => notificationStore.activityStates.get(workspaceId + '::' + tabId)?.updatedAt ?? ''}
-            onAcknowledgeTab={notificationStore.acknowledgeTab}
-            savedLayout={data.layouts?.[selected.id]}
-            onSaveLayout={store.saveLayout}
-            onClearLaunchError={() => {
-              setLaunchErrors((prev) => {
-                const next = { ...prev };
-                delete next[selected.id];
-                return next;
-              });
-            }}
-          />
         ) : (
-          <div className="agency-welcome">
-            <img src="/brand/maw-logo-256.png" className="agency-welcome-logo" alt="MAW" width="96" height="96" />
-            <h1>{t('agency.ui.onePlaceForEveryDevelopmentLane')}</h1>
-            <p>{t('agency.ui.createAProjectAndAWorkspaceAttachAn')}</p>
-            <button type="button" className="agency-primary-button" onClick={() => openCreator()} disabled={!online}>
-              {data.projects.length === 0 ? t('agency.ui.createFirstProject') : t('agency.ui.newWorkspace')}
-            </button>
-          </div>
+          <>
+            {showingDone ? (
+              <AgencyDoneView
+                workspaces={data.workspaces}
+                projects={data.projects}
+                sessions={data.sessions}
+                webTabs={data.webTabs}
+                editorTabs={data.editorTabs}
+                onRestore={(ws) => { void restore(ws); }}
+                onArchiveWorkspace={(ws) => { void archiveWorkspace(ws); }}
+                onDeleteWorkspace={deleteWorkspace}
+              />
+            ) : !selected ? (
+              <div className="agency-welcome">
+                <img src="/brand/workbench-logo-256.png" className="agency-welcome-logo" alt={t('agency.ui.agency')} width="96" height="96" />
+                <h1>{t('agency.ui.onePlaceForEveryDevelopmentLane')}</h1>
+                <p>{t('agency.ui.createAProjectAndAWorkspaceAttachAn')}</p>
+                <button type="button" className="agency-primary-button" onClick={() => openCreator()} disabled={!online}>
+                  {activeProjects.length === 0 ? t('agency.ui.createFirstProject') : t('agency.ui.newWorkspace')}
+                </button>
+              </div>
+            ) : null}
+            {mountedWorkspaces.map((ws) => {
+              const isSelectedWorkspace = !showingDone && selected?.id === ws.id;
+              return (
+                <div
+                  key={ws.id}
+                  className="agency-workspace-slot"
+                  hidden={!isSelectedWorkspace}
+                  style={{ display: isSelectedWorkspace ? 'contents' : 'none' }}
+                >
+                  <AgencyWorkspaceView
+                    workspace={ws}
+                    activeWorkspace={isSelectedWorkspace}
+                    browserProfileId={resolveEffectiveBrowserProfileId(ws, data.projects.find(project => project.id === ws.projectId), data.browserProfiles)}
+                    appSettings={appSettings}
+                    connection={connection}
+                    request={store.request}
+                    sendImmediate={agencyTransport.sendImmediate}
+                    online={online && synchronized}
+                    profiles={data.profiles}
+                    sessions={data.sessions}
+                    webTabs={data.webTabs}
+                    editorTabs={data.editorTabs}
+                    onTabDisplayed={handleTabDisplayed}
+                    draft={drafts[ws.id] ?? ''}
+                    onDraft={(value) => updateDraft(ws.id, value)}
+                    onDelivered={(value) => clearDelivered(ws.id, value)}
+                    onDone={() => { void markDone(ws); }}
+                    launchError={launchErrors[ws.id]}
+                    placementWarning={data.layoutWarnings?.[ws.id] ?? null}
+                    onClearPlacementWarning={() => store.clearLayoutWarning(ws.id)}
+                    getTabActivity={notificationStore.getTabActivity}
+                    getTabActivityVersion={(workspaceId, tabId) => notificationStore.activityStates.get(workspaceId + '::' + tabId)?.updatedAt ?? ''}
+                    onAcknowledgeTab={notificationStore.acknowledgeTab}
+                    savedLayout={data.layouts?.[ws.id]}
+                    onSaveLayout={store.saveLayout}
+                    onClearLaunchError={() => {
+                      setLaunchErrors((prev) => {
+                        const next = { ...prev };
+                        delete next[ws.id];
+                        return next;
+                      });
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </>
         )}
       </div>
       {creatingProject && <AgencyProjectCreator
@@ -691,7 +749,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
         }} />}
       {creatingWorkspace && <AgencyWorkspaceCreator
         connection={connection}
-        projects={data.projects}
+        projects={activeProjects}
         profiles={data.profiles}
         initialProject={creatorProject}
         onClose={() => setCreatingWorkspace(false)}
@@ -724,6 +782,46 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
           onOpenRemote={null}
           connection={connection}
           initialTab={settingsInitialTab}
+          browserProfiles={data.browserProfiles}
+          onCreateBrowserProfile={async ({ name, sourceProfileId, clearSites }) => {
+            const bridge = window.mawChatGpt;
+            if (sourceProfileId && !bridge) throw new Error(t('agency.web.disconnected'));
+            const answer = await store.createBrowserProfile(name, { sourceProfileId, clearSites });
+            if (answer.type === 'agency.browserProfile.created' && sourceProfileId && bridge) {
+              try {
+                await bridge.command({
+                  type: 'clone-profile',
+                  sourceProfileId,
+                  targetProfileId: answer.profile.id,
+                  ...(clearSites && clearSites.length > 0 ? { clearSites } : {}),
+                });
+              } catch (error) {
+                await store.deleteBrowserProfile(answer.profile.id);
+                await bridge.command({ type: 'delete-profile', profileId: answer.profile.id }).catch(() => {});
+                throw error;
+              }
+            }
+          }}
+          onRenameBrowserProfile={async (profileId, name) => {
+            await store.renameBrowserProfile(profileId, name);
+          }}
+          onDeleteBrowserProfile={async (profileId) => {
+            await store.deleteBrowserProfile(profileId);
+            if (window.mawChatGpt && profileId !== DEFAULT_BROWSER_PROFILE_ID) {
+              await window.mawChatGpt.command({ type: 'delete-profile', profileId }).catch((err) => {
+                console.warn('[maw-browser-profile] delete-profile cleanup failed:', err);
+              });
+            }
+          }}
+          onClearBrowserProfileSiteAuth={window.mawChatGpt && (async (profileId, sites) => {
+            for (const site of sites) {
+              await window.mawChatGpt!.command({
+                type: 'clear-profile-site-auth',
+                profileId,
+                site,
+              });
+            }
+          })}
         />
       )}
       {notificationsEnabled && (

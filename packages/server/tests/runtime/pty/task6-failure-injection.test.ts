@@ -34,6 +34,14 @@ import { AgencyWorkspaceStore } from '../../../src/agency/store.js';
 import { AgencyProfileStore } from '../../../src/agency/agency-profile-store.js';
 import { AgencySessionRuntime } from '../../../src/agency/agency-session-runtime.js';
 import { SplitAgencySessionStore } from '../../../src/agency/agency-session-store.js';
+import { AgencyNotificationStore } from '../../../src/agency/agency-notification-store.js';
+import { TabActivityManager } from '../../../src/agency/tab-activity-manager.js';
+import { AgencyLayoutStore } from '../../../src/agency/agency-layout-store.js';
+import { BrowserTabAdapter, BrowserTabStore } from '../../../src/agency/browser-tabs/index.js';
+import { BrowserProfileStore } from '../../../src/agency/browser-profiles/store.js';
+import { EditorTabAdapter, EditorTabStore } from '../../../src/agency/editor-tabs/index.js';
+import { PasteStore } from '../../../src/paste-store.js';
+import { TerminalHistoryStore } from '../../../src/terminal-history-store.js';
 import { WorkspaceMutex } from '../../../src/agency/workspace-lock.js';
 import { encodeClientMessage, parseServerMessage, type ServerMessage } from '@agent-workbench/shared';
 import { SERVER_SRC } from '../../helpers/paths.js';
@@ -57,9 +65,11 @@ async function createHarness(): Promise<TestHarness> {
   const configDir = path.join(tmpBase, 'config');
   const socketPath = path.join(runtimeDir, 'ptyd.sock');
   const authPath = path.join(runtimeDir, 'ptyd.auth');
+  const savedXdgConfigHome = process.env.XDG_CONFIG_HOME;
 
   await fs.promises.mkdir(runtimeDir, { recursive: true, mode: 0o700 });
   await fs.promises.mkdir(configDir, { recursive: true, mode: 0o700 });
+  process.env.XDG_CONFIG_HOME = configDir;
 
   return {
     tmpBase,
@@ -79,6 +89,8 @@ async function createHarness(): Promise<TestHarness> {
           await client.shutdown(true).catch(() => {});
         }
       } catch {}
+      if (savedXdgConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = savedXdgConfigHome;
       await rm(tmpBase, { recursive: true, force: true }).catch(() => {});
     },
   };
@@ -165,6 +177,30 @@ async function createTestBackend(harness: TestHarness, overrides?: { persistentP
   await agencyWorkspaceStore.load();
   const agencyProfileStore = new AgencyProfileStore(path.join(harness.configDir, 'agency-profiles.json'));
   await agencyProfileStore.listDefinitions();
+  const agencyNotificationStore = new AgencyNotificationStore(path.join(harness.configDir, 'agency-notifications.json'));
+  await agencyNotificationStore.initialize();
+  const agencyActivityManager = new TabActivityManager({
+    notificationStore: agencyNotificationStore,
+    storageDir: harness.configDir,
+  });
+  await agencyActivityManager.initialize();
+  const agencyLayoutStore = new AgencyLayoutStore(path.join(harness.configDir, 'agency-layouts.json'));
+  await agencyLayoutStore.initialize();
+  const agencyBrowserProfileStore = new BrowserProfileStore(path.join(harness.configDir, 'agency-browser-profiles.json'));
+  await agencyBrowserProfileStore.load();
+  const agencyBrowserTabs = new BrowserTabAdapter({
+    store: new BrowserTabStore(path.join(harness.configDir, 'agency-web-tabs.json')),
+    workspaceStore: agencyWorkspaceStore,
+  });
+  await agencyBrowserTabs.restore();
+  const agencyEditorTabs = new EditorTabAdapter({
+    store: new EditorTabStore(path.join(harness.configDir, 'agency-editor-tabs.json')),
+    workspaceStore: agencyWorkspaceStore,
+    protectedDirsProvider: () => agents.protectedDirs(),
+  });
+  await agencyEditorTabs.restore();
+  const pasteStore = new PasteStore(path.join(harness.configDir, 'pastes'));
+  const historyBaseDir = path.join(harness.configDir, 'terminal-history');
   const workspaceLock = new WorkspaceMutex();
   const agencySessionStore = new SplitAgencySessionStore(path.join(harness.configDir, 'agency-sessions.json'));
   const agencyRuntime = new AgencySessionRuntime({
@@ -199,35 +235,72 @@ async function createTestBackend(harness: TestHarness, overrides?: { persistentP
     vault,
     remote,
     worktrees,
+    pasteStore,
+    historyStoreFactory: (id) => new TerminalHistoryStore(id, { baseDir: historyBaseDir }),
     agencyWorkspaceStore,
     agencyProfileStore,
     agencyRuntime,
+    agencyNotificationStore,
+    agencyActivityManager,
+    agencyLayoutStore,
+    agencyBrowserTabs,
+    agencyBrowserProfileStore,
+    agencyEditorTabs,
     workspaceLock,
   });
 
   let closed = false;
 
-  const shutdown = async () => {
-    if (closed) return;
-    closed = true;
-    detachSocket();
+  const disposeShared = async () => {
+    await detachSocket();
     await detachReadiness();
     vault.dispose();
     conversations.disposeAll();
     repos.disposeAll();
-    void memory.disposeAll();
+    await memory.disposeAll().catch(() => {});
     agencyRuntime.dispose();
-    registry.disposeAll();
+    agencyActivityManager.dispose();
+    agencyNotificationStore.dispose();
     remote.dispose();
+    await Promise.allSettled([
+      store.flush(),
+      archived.flush(),
+      settings.flush(),
+      notes.flush(),
+      drafts.flush(),
+      worktreeStore.flush(),
+      remote.flush(),
+      agencySessionStore.flush(),
+      agencyWorkspaceStore.flush(),
+      agencyProfileStore.flush(),
+      agencyBrowserTabs.flush(),
+      agencyBrowserProfileStore.flush(),
+      agencyEditorTabs.flush(),
+      agencyLayoutStore.flush(),
+      agencyActivityManager.flush(),
+      agencyNotificationStore.flush(),
+    ]);
+    httpServer.closeAllConnections?.();
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+  };
+
+  const shutdown = async () => {
+    if (closed) return;
+    closed = true;
+    registry.disposeAll();
+    await disposeShared();
   };
 
   const killUngraceful = async () => {
     if (closed) return;
     closed = true;
-    detachSocket();
-    await detachReadiness();
-    await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    const internalReg = registry as any;
+    const rawClient = internalReg.client;
+    internalReg.client = null;
+    if (rawClient?.socket && !rawClient.socket.destroyed) {
+      rawClient.socket.destroy();
+    }
+    await disposeShared();
   };
 
   return {

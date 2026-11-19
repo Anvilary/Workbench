@@ -6,8 +6,8 @@
  * dir, runtime directory and loopback port. Never touches maw.service, the real state dir or any live
  * process. The unit file, its runtime directory and the temp state are removed afterwards.
  *
- * Releases are minimal but real: the unit boots them exactly like production (node --import <release tsx
- * loader> <release>/packages/server/src/index.ts), and the healthy one serves an authenticated loopback
+ * Releases are minimal but real: the unit boots their bundled dist/index.mjs entry point
+ * and the healthy one serves an authenticated loopback
  * URL and publishes readiness with the repository's real publishReadiness/readReleaseIdentity.
  */
 import assert from 'node:assert/strict';
@@ -19,6 +19,7 @@ import path from 'node:path';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomBytes } from 'node:crypto';
+import { build } from 'esbuild';
 import { SCRIPTS_MAW_DIR, SERVER_SRC } from '../../helpers/paths.js';
 
 const exec = promisify(execFile);
@@ -62,7 +63,13 @@ async function makeRelease(releases: string, id: string, source: string): Promis
   await symlink(TSX!, path.join(dir, 'packages/server/node_modules/tsx'));
   await writeFile(path.join(dir, 'packages/server/src/maw-host.ts'), 'export {};\n');
   await writeFile(path.join(dir, 'packages/server/src/index.ts'), source);
-  await writeFile(path.join(dir, 'packages/server/dist/index.mjs'), 'export {};\n');
+  await build({
+    entryPoints: [path.join(dir, 'packages/server/src/index.ts')],
+    outfile: path.join(dir, 'packages/server/dist/index.mjs'),
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+  });
   await writeFile(path.join(dir, 'packages/server/dist/maw-ptyd.mjs'), '#!/usr/bin/env node\n');
   await writeFile(path.join(dir, '.maw-release-meta.json'), JSON.stringify({ releaseId: id, commit: id.split('-')[1] }) + '\n');
   return dir;
@@ -170,8 +177,10 @@ test('real systemd: a release built from this repository activates, is verified 
   const repoRoot = path.resolve(SCRIPT_DIR, '../..');
   const env = { ...process.env, MAW_STATE_DIR: state, MAW_UNIT: unit, MAW_RUNTIME_DIR: path.join(process.env['XDG_RUNTIME_DIR']!, runtimeName),
     MAW_NODE_BIN: process.execPath, MAW_READY_TIMEOUT: '20', MAW_CGROUP_FILE: path.join(root, 'none'), MAW_ENV_FILE: path.join(root, 'no-environment'),
-    MAW_PTYD_UNIT: ptydUnit, XDG_CONFIG_HOME: path.join(sandbox, 'config') };
+    MAW_PTYD_UNIT: ptydUnit, XDG_CONFIG_HOME: path.join(sandbox, 'config'),
+    MAW_LIB_DIR: path.join(root, 'lib'), MAW_BIN_DIR: path.join(root, 'bin') };
   try {
+    await exec('/bin/sh', [path.join(SCRIPT_DIR, 'install.sh'), '--commands-only'], { env });
     const built = await exec('/bin/sh', [path.join(SCRIPT_DIR, 'maw-update.sh'), '--initial', '--source', repoRoot, '--ref', 'HEAD', '--allow-unapproved-ref'],
       { env, maxBuffer: 64 * 1024 * 1024, timeout: 600_000 });
     assert.match(built.stdout, /Initial release (\S+) installed/);

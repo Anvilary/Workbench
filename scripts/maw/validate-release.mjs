@@ -6,10 +6,12 @@ import { existsSync, readdirSync, createWriteStream } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runtimeFor } from './desktop-runtime.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const { directory: electronRuntimeDir } = await runtimeFor(root);
 const phase = process.argv[2] ?? 'all';
-const evidence = path.resolve(process.argv[3] ?? '/tmp/maw-release-validation');
+const evidence = path.resolve(process.argv[3] ?? path.join(tmpdir(), 'maw-release-validation'));
 await mkdir(evidence, { recursive: true });
 const home = await mkdtemp(path.join(tmpdir(), 'maw-release-validation-home-'));
 const env = { ...process.env };
@@ -19,7 +21,7 @@ Object.assign(env, { HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(h
   XDG_DATA_HOME: path.join(home, 'data'), XDG_STATE_HOME: path.join(home, 'state'), XDG_RUNTIME_DIR: path.join(home, 'runtime'),
   MAW_AUTO_SPAWN_PTYD: '1',
   COREPACK_HOME: process.env.COREPACK_HOME ?? path.join(homedir(), '.cache/node/corepack'), COREPACK_ENABLE_NETWORK: '0',
-  ELECTRON_OVERRIDE_DIST_PATH: '/opt/maw-electron/45.2.0' });
+  ELECTRON_OVERRIDE_DIST_PATH: electronRuntimeDir });
 await mkdir(env.XDG_RUNTIME_DIR, { recursive: true, mode: 0o700 });
 const cache = path.join(homedir(), '.cache/ms-playwright');
 env.PLAYWRIGHT_CHROMIUM_EXECUTABLE = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ?? [
@@ -64,7 +66,7 @@ try {
   if (['all', 'desktop', 'acceptance'].includes(phase)) {
     const desktop = JSON.parse(await readFile(path.join(root, 'packages/desktop/package.json'), 'utf8'));
     if (phase !== 'acceptance') await run('electron', `GSK_RENDERER=cairo LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a dbus-run-session env MAW_NAUTILUS_TEST_ISOLATED=1 ${desktop.scripts['test:electron']}`, path.join(root, 'packages/desktop'));
-    await run('browser-acceptance', 'node --test --test-concurrency=1 packages/web/tests/e2e/browser/browser-tabs.test.mjs packages/web/tests/unit/workspaces/maw-root.test.mjs packages/web/tests/e2e/terminals/terminal-webgl.test.mjs packages/web/tests/unit/panes/native-layout-coordinator.test.mjs packages/web/tests/e2e/terminals/terminal-scrollback-20k.test.mjs');
+    await run('browser-acceptance', 'node --test --test-concurrency=1 packages/web/tests/e2e/browser/browser-tabs.test.mjs packages/web/tests/integration/workspaces/maw-root.test.mjs packages/web/tests/e2e/terminals/terminal-webgl.test.mjs packages/web/tests/integration/panes/native-layout-coordinator.test.mjs packages/web/tests/e2e/terminals/terminal-scrollback-20k.test.mjs');
   }
   if (['all', 'desktop', 'staging'].includes(phase)) await run('staging', 'xvfb-run -a node --test packages/desktop/tests/runtime/lifecycle/staging-release.test.mjs');
 } finally {

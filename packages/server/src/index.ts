@@ -26,6 +26,7 @@ import { RemoteAccessService } from './remote-access-service.js';
 import { RemoteDevicesStore } from './remote-devices-store.js';
 import {
   LOOPBACK_HOST,
+  applyFrameProtectionHeaders,
   authorizeRequest,
   isLocalNoAuthEnabled,
   buildDeviceCookie,
@@ -61,6 +62,7 @@ import { WorktreeLinks } from './worktrees/links.js';
 import { WorktreeService } from './worktrees/service.js';
 import { WorktreeStore } from './worktrees/store.js';
 import { AgencyWorkspaceStore } from './agency/store.js';
+import { BrowserProfileStore } from './agency/browser-profiles/store.js';
 import { NativeIdentities } from './agency/native-identity.js';
 import { AgencyProfileStore } from './agency/agency-profile-store.js';
 import { SplitAgencySessionStore } from './agency/agency-session-store.js';
@@ -72,6 +74,7 @@ import {
 import { buildAgencyProfileLaunch } from './agency/agency-profile-capabilities.js';
 import { WorkspaceMutex } from './agency/workspace-lock.js';
 import { BrowserTabAdapter, BrowserTabStore } from './agency/browser-tabs/index.js';
+import { EditorTabAdapter, EditorTabStore } from './agency/editor-tabs/index.js';
 import { AgencyNotificationStore } from './agency/agency-notification-store.js';
 import { AgencyLayoutStore } from './agency/agency-layout-store.js';
 import { TabActivityManager } from './agency/tab-activity-manager.js';
@@ -299,7 +302,7 @@ function describeStartup(
   const agentList: readonly AgentInfo[] = agents.list();
   const line = '-'.repeat(64);
   console.log(`\n${line}`);
-  console.log('  Agent Workbench');
+  console.log('  Anvilary Workbench');
   console.log(line);
   console.log(`  URL          ${url}`);
   console.log(`  Mode         ${isProduction ? 'production (compiled interface)' : 'development'}`);
@@ -463,6 +466,10 @@ async function main(): Promise<void> {
 
   const app = express();
   app.disable('x-powered-by');
+  app.use((_request: Request, response: Response, next: NextFunction) => {
+    applyFrameProtectionHeaders(response);
+    next();
+  });
 
   const httpServer = createServer(app);
 
@@ -517,6 +524,9 @@ async function main(): Promise<void> {
   const agencyWorkspaceStore = new AgencyWorkspaceStore(path.join(appConfigDir(), 'agency-state.json'));
   await agencyWorkspaceStore.load();
 
+  const agencyBrowserProfileStore = new BrowserProfileStore(path.join(appConfigDir(), 'agency-browser-profiles.json'));
+  await agencyBrowserProfileStore.load();
+
   const agencyIdentities = await NativeIdentities.loadForInteractive(path.join(appConfigDir(), 'agency-native-identities.json'));
   agents.protectNativeHomes(agencyIdentities.protectedDirs());
   const agencyProfileStore = new AgencyProfileStore(path.join(appConfigDir(), 'agency-profiles.json'));
@@ -557,6 +567,12 @@ async function main(): Promise<void> {
 
   const agencyBrowserTabs = new BrowserTabAdapter({ store: new BrowserTabStore(), workspaceStore: agencyWorkspaceStore });
   await agencyBrowserTabs.restore();
+  const agencyEditorTabs = new EditorTabAdapter({
+    store: new EditorTabStore(),
+    workspaceStore: agencyWorkspaceStore,
+    protectedDirsProvider: () => agents.protectedDirs(),
+  });
+  await agencyEditorTabs.restore();
   const agencyNotificationStore = new AgencyNotificationStore();
   const agencyActivityManager = new TabActivityManager({ notificationStore: agencyNotificationStore });
   const agencyLayoutStore = new AgencyLayoutStore();
@@ -609,10 +625,12 @@ async function main(): Promise<void> {
 
   const detachSocket = attachTerminalSocket({
     agencyWorkspaceStore,
+    agencyBrowserProfileStore,
     agencyProfileStore,
     agencyIdentities,
     agencyRuntime,
     agencyBrowserTabs,
+    agencyEditorTabs,
     agencyNotificationStore,
     agencyActivityManager,
     agencyLayoutStore,
@@ -692,8 +710,8 @@ async function main(): Promise<void> {
   if (noAuth) {
     console.warn(
       '\n  ⚠  TOKEN-FREE LOCAL MODE (MAW_UNSAFE_LOCAL_NO_AUTH=1)\n' +
-      '  Any process on this machine that can reach 127.0.0.1 can access MAW.\n' +
-      '  MAW executes shell commands. Loopback-only binding does not eliminate all risks.\n'
+      '  Any process on this machine that can reach 127.0.0.1 can access Anvilary Workbench.\n' +
+      '  Anvilary Workbench executes shell commands. Loopback-only binding does not eliminate all risks.\n'
     );
   }
   const runtimeDir = process.env['MAW_RUNTIME_DIR']
@@ -708,7 +726,7 @@ async function main(): Promise<void> {
   const shutdown = (): void => {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.log('\nClosing Agent Workbench...');
+    console.log('\nClosing Anvilary Workbench...');
 
     classicLifecycle.dispose();
     const historyFlushed = detachSocket();
@@ -729,6 +747,9 @@ async function main(): Promise<void> {
     void Promise.allSettled([
       historyFlushed,
       agencyBrowserTabs.flush(),
+      agencyEditorTabs.flush(),
+      agencyBrowserProfileStore.flush(),
+      settings.flush(),
       store.flush(),
       agencySessionStore.flush(),
       agencyWorkspaceStore.flush(),
@@ -768,6 +789,6 @@ main().catch((error: unknown) => {
       : typeof error === 'object' && error !== null
         ? JSON.stringify(error, Object.getOwnPropertyNames(error))
         : String(error);
-  console.error(`Agent Workbench couldn't start:\n${detail}`);
+  console.error(`Anvilary Workbench couldn't start:\n${detail}`);
   process.exit(1);
 });

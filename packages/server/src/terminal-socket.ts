@@ -65,6 +65,8 @@ import {
   type WorkspacePaneLayout,
 } from '@agent-workbench/shared';
 import { AgencyWorkspaceStore } from './agency/store.js';
+import { BrowserProfileStore } from './agency/browser-profiles/store.js';
+import { DomainError } from './shared/index.js';
 import { AgencyProfileStore } from './agency/agency-profile-store.js';
 import { AgencySessionRuntime, AgencyRuntimeError } from './agency/agency-session-runtime.js';
 import { AgencyNotificationStore } from './agency/agency-notification-store.js';
@@ -227,6 +229,7 @@ export interface TerminalSocketOptions {
   /** Las ramas aparte (`worktree.*`, hito 48, §6.38). */
   worktrees: WorktreeService;
   agencyWorkspaceStore: AgencyWorkspaceStore;
+  agencyBrowserProfileStore?: BrowserProfileStore;
   agencyProfileStore: AgencyProfileStore;
   agencyIdentities?: NativeIdentities;
   agencyRuntime: AgencySessionRuntime;
@@ -257,13 +260,10 @@ export async function handleAgencyNotificationDone(
     return;
   }
   const workspace = context.agencyWorkspaceStore.getWorkspace(item.workspaceId);
-  if (!workspace) {
-    context.send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Workspace not found' });
-    return;
-  }
 
   try {
-    // Durably acknowledge the notification item
+    // Durably acknowledge the notification item even if its workspace was already deleted,
+    // so orphaned notifications are never permanently undismissable.
     const updated = await context.agencyNotificationStore.acknowledge(message.notificationId);
     if (!updated) {
       context.send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Notification not found' });
@@ -272,11 +272,11 @@ export async function handleAgencyNotificationDone(
 
     // Atomic turn-specific acknowledgement before reporting success:
     // When old/legacy notifications lack identity, fail safely by completing only the inbox item,
-    // not guessing the current turn.
+    // not guessing the current turn. Skip tab activity update if the workspace was deleted.
     const notifTaskId = (item.metadata?.taskId as string | undefined) ?? (item.deduplicationKey?.split(':').slice(3).join(':') || undefined);
     const notifTurnSeq = item.metadata?.turnSequence as number | undefined;
 
-    if (item.tabId && (notifTaskId || notifTurnSeq !== undefined)) {
+    if (workspace && item.tabId && (notifTaskId || notifTurnSeq !== undefined)) {
       await context.agencyActivityManager.acknowledgeMatchingTurn(item.workspaceId, item.tabId, {
         taskId: notifTaskId,
         turnSequence: notifTurnSeq,
@@ -344,6 +344,9 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
   const chatgptProvider = new ChatGPTActivityProvider();
   agencyActivityManager.registerBrowserProvider(chatgptProvider);
   const agencyBrowserTabs = options.agencyBrowserTabs ?? new BrowserTabAdapter({ store: new BrowserTabStore(), workspaceStore: agencyWorkspaceStore });
+  const agencyBrowserProfileStore = options.agencyBrowserProfileStore ?? new BrowserProfileStore();
+  const projectMutations = new WorkspaceMutex();
+  const browserProfileMutations = new WorkspaceMutex();
   const agencyEditorTabs = options.agencyEditorTabs ?? new EditorTabAdapter({
     store: new EditorTabStore(),
     workspaceStore: agencyWorkspaceStore,
@@ -354,6 +357,7 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
     agencyNotificationStore.initialize(),
     agencyActivityManager.initialize(),
     agencyLayoutStore.initialize(),
+    options.agencyBrowserProfileStore ? Promise.resolve() : agencyBrowserProfileStore.load(),
     options.agencyBrowserTabs ? Promise.resolve() : agencyBrowserTabs.restore(),
     options.agencyEditorTabs ? Promise.resolve() : agencyEditorTabs.restore(),
   ]);
@@ -445,7 +449,29 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
     }
   };
 
-  const tabCoordinator = new AgencyTabCoordinator(agencyRuntime, agencyBrowserTabs, agencyWorkspaceStore, broadcast, agencyLayoutStore, agencyEditorTabs);
+  const tabCoordinator = new AgencyTabCoordinator(
+    agencyRuntime,
+    agencyBrowserTabs,
+    agencyWorkspaceStore,
+    broadcast,
+    agencyLayoutStore,
+    agencyEditorTabs,
+    {
+      closeTab: (workspaceId, tabId) => agencyActivityManager.closeTab(workspaceId, tabId),
+      purgeWorkspace: async (workspaceId) => {
+        await agencyActivityManager.purgeWorkspace(workspaceId);
+        const removed = await agencyNotificationStore.purgeWorkspace(workspaceId);
+        if (removed > 0) {
+          broadcast({
+            type: 'agency.notifications.snapshot',
+            requestId: '',
+            notifications: agencyNotificationStore.list(),
+            activityStates: agencyActivityManager.snapshot(),
+          });
+        }
+      },
+    },
+  );
   const hasOpenActivityTab = (workspaceId: import('@agent-workbench/shared').WorkspaceId, tabId: string): boolean => {
     if (!agencyWorkspaceStore.getWorkspace(workspaceId)) return false;
     return agencyRuntime.list(workspaceId).some(session => session.tab?.id === tabId && session.tab.current && !session.tab.closedAt) ||
@@ -3790,17 +3816,120 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
         case 'agency.workspaces.order': {
           const domainContext: AgencyDomainContext = {
             store: agencyWorkspaceStore,
+            browserProfiles: agencyBrowserProfileStore,
             pickers,
             withSessionReservationLock: (id, op) => workspaceLock.runExclusive(id, op),
+            runWorkspaceExclusive: (id, op) => tabCoordinator.mutations.runExclusive(id, op),
             hasBlockingSessions: async (id) => agencyRuntime.hasWorkspaceReferences(id) || tabCoordinator.hasBrowserReferences(id) || tabCoordinator.hasEditorReferences(id),
             publish: (broadcastMsg) => broadcast(broadcastMsg),
             shutdownWorkspace: (id) => tabCoordinator.shutdownWorkspace(id),
           };
-          const domainResponse = 'workspaceId' in message
-            ? await tabCoordinator.mutations.runExclusive(message.workspaceId, () => handleAgencyDomainRequest(message, domainContext))
-            : await handleAgencyDomainRequest(message, domainContext);
+          const handle = () => handleAgencyDomainRequest(message, domainContext);
+          const handleOrdered = () => {
+            if (message.type === 'agency.project.delete' || message.type === 'agency.workspace.create') {
+              return projectMutations.runExclusive(message.projectId, handle);
+            }
+            if ('workspaceId' in message && message.type !== 'agency.workspace.delete') {
+              return tabCoordinator.mutations.runExclusive(message.workspaceId, handle);
+            }
+            return handle();
+          };
+          const profileId = (message.type === 'agency.workspace.update' || message.type === 'agency.project.update')
+            ? message.browserProfileId : undefined;
+          const domainResponse = profileId
+            ? await browserProfileMutations.runExclusive(profileId, handleOrdered)
+            : await handleOrdered();
+          if (message.type === 'agency.project.delete' && domainResponse?.type === 'agency.project.deleted') {
+            const removed = await agencyNotificationStore.purgeProject(message.projectId).catch(() => 0);
+            if (removed > 0) {
+              broadcast({
+                type: 'agency.notifications.snapshot',
+                requestId: '',
+                notifications: agencyNotificationStore.list(),
+                activityStates: agencyActivityManager.snapshot(),
+              });
+            }
+          }
           if (domainResponse !== null) {
             send(socket, domainResponse);
+          }
+          break;
+        }
+
+        case 'agency.browserProfiles.list': {
+          send(socket, {
+            type: 'agency.browserProfiles.snapshot',
+            requestId: message.requestId,
+            profiles: agencyBrowserProfileStore.listProfiles(),
+          });
+          break;
+        }
+
+        case 'agency.browserProfile.create': {
+          try {
+            const profile = await agencyBrowserProfileStore.createProfile(message.name, message.sourceProfileId);
+            broadcast({ type: 'agency.browserProfile.changed', change: 'created', profileId: profile.id, profile });
+            send(socket, {
+              type: 'agency.browserProfile.created',
+              requestId: message.requestId,
+              profile,
+              ...(message.sourceProfileId !== undefined ? { sourceProfileId: message.sourceProfileId } : {}),
+              ...(message.clearSites !== undefined ? { clearSites: message.clearSites } : {}),
+            });
+          } catch (error) {
+            send(socket, {
+              type: 'agency.error',
+              requestId: message.requestId,
+              code: error instanceof DomainError ? (error.code as AgencyErrorCode) : 'invalid-request',
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+          break;
+        }
+
+        case 'agency.browserProfile.rename': {
+          try {
+            const profile = await agencyBrowserProfileStore.renameProfile(message.profileId, message.name);
+            broadcast({ type: 'agency.browserProfile.changed', change: 'renamed', profileId: profile.id, profile });
+            send(socket, { type: 'agency.browserProfile.renamed', requestId: message.requestId, profile });
+          } catch (error) {
+            send(socket, {
+              type: 'agency.error',
+              requestId: message.requestId,
+              code: error instanceof DomainError ? (error.code as AgencyErrorCode) : 'invalid-request',
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+          break;
+        }
+
+        case 'agency.browserProfile.delete': {
+          try {
+            await browserProfileMutations.runExclusive(message.profileId, async () => {
+              const profile = agencyBrowserProfileStore.getProfile(message.profileId);
+              if (profile?.isDefault) {
+                throw new DomainError('conflict', 'The default Main browser profile cannot be deleted');
+              }
+              const cleared = await agencyWorkspaceStore.clearBrowserProfile(message.profileId);
+              for (const project of cleared.projects) {
+                broadcast({ type: 'agency.project.changed', change: 'updated', projectId: project.id, project });
+              }
+              for (const workspace of cleared.workspaces) {
+                broadcast({ type: 'agency.workspace.changed', change: 'updated', workspaceId: workspace.id, workspace });
+              }
+              if (profile) {
+                await agencyBrowserProfileStore.deleteProfile(message.profileId);
+                broadcast({ type: 'agency.browserProfile.changed', change: 'deleted', profileId: message.profileId });
+              }
+            });
+            send(socket, { type: 'agency.browserProfile.deleted', requestId: message.requestId, profileId: message.profileId });
+          } catch (error) {
+            send(socket, {
+              type: 'agency.error',
+              requestId: message.requestId,
+              code: error instanceof DomainError ? (error.code as AgencyErrorCode) : 'invalid-request',
+              message: error instanceof Error ? error.message : String(error),
+            });
           }
           break;
         }
@@ -4058,12 +4187,11 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
         }
 
         case 'agency.layout.save': {
-          const ws = agencyWorkspaceStore.getWorkspace(message.workspaceId);
-          if (!ws) {
-            send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Workspace not found' });
-            break;
-          }
           await tabCoordinator.mutations.runExclusive(message.workspaceId, async () => {
+            if (!agencyWorkspaceStore.getWorkspace(message.workspaceId)) {
+              send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Workspace not found' });
+              return;
+            }
             const openTabIds = tabCoordinator.listOpenTabIds(message.workspaceId, { includeClosing: true });
             const decision = evaluateLayoutSave(message.workspaceId, message.layout, openTabIds);
             if (!decision.ok) {
@@ -4080,9 +4208,11 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
 
         case 'agency.layout.get': {
           const layout = tabCoordinator.reconcileLayout(message.workspaceId) ?? agencyLayoutStore.get(message.workspaceId);
-          if (layout) {
-            send(socket, { type: 'agency.layout.changed', workspaceId: message.workspaceId, layout });
-          }
+          send(socket, {
+            type: 'agency.layouts.snapshot',
+            requestId: message.requestId,
+            layouts: layout ? [layout] : [],
+          });
           break;
         }
 
@@ -4284,6 +4414,13 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
     for (const terminalId of historyStores.keys()) retireHistoryStore(terminalId);
     for (const client of wss.clients) client.terminate();
     wss.close();
-    return Promise.all(historyDisposals).then(() => undefined);
+    const privateFlushes: Promise<unknown>[] = [];
+    if (!options.agencyEditorTabs) privateFlushes.push(agencyEditorTabs.flush());
+    if (!options.agencyBrowserProfileStore) privateFlushes.push(agencyBrowserProfileStore.flush());
+    if (!options.agencyBrowserTabs) privateFlushes.push(agencyBrowserTabs.flush());
+    if (!options.agencyLayoutStore) privateFlushes.push(agencyLayoutStore.flush());
+    if (!options.agencyActivityManager) privateFlushes.push(agencyActivityManager.flush());
+    if (!options.agencyNotificationStore) privateFlushes.push(agencyNotificationStore.flush());
+    return Promise.allSettled([...historyDisposals, ...privateFlushes]).then(() => undefined);
   };
 }

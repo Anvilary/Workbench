@@ -31,14 +31,11 @@ if (!fs.existsSync(outdir)) {
   fs.mkdirSync(outdir, { recursive: true });
 }
 
+const serverPkg = JSON.parse(fs.readFileSync(path.join(serverRoot, 'package.json'), 'utf8'));
 const external = [
-  'node-pty',
-  'ws',
-  'chokidar',
-  'express',
-  'fzstd',
-  '@xterm/headless',
-  '@xterm/addon-serialize',
+  ...Object.entries(serverPkg.dependencies ?? {})
+    .filter(([, range]) => !String(range).startsWith('workspace:'))
+    .map(([name]) => name),
   'vite',
 ];
 

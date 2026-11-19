@@ -27,6 +27,10 @@ export class AgencyTabCoordinator {
     private readonly publish: (message: AgencyServerMessage) => void,
     readonly layouts?: AgencyLayoutStore,
     readonly editor?: EditorTabAdapter,
+    private readonly activityCleanup?: {
+      closeTab?(workspaceId: WorkspaceId, tabId: string): Promise<void>;
+      purgeWorkspace?(workspaceId: WorkspaceId): Promise<void>;
+    },
   ) {
     browser.setSelectionCoordinator({
       unselectNativeTabs: async (workspaceId) => {
@@ -414,60 +418,72 @@ export class AgencyTabCoordinator {
     const ws = this.workspaces.getWorkspace(workspaceId);
     if (!ws) return;
 
-    // 1. Request graceful shutdown of all active processes belonging to this workspace.
-    const sessions = this.native.list(workspaceId);
-    for (const session of sessions) {
-      if (['starting', 'running', 'stopping'].includes(session.lifecycle)) {
-        await this.native.stop(session.id).catch(() => undefined);
+    try {
+      // 1. Request graceful shutdown of all active processes belonging to this workspace.
+      const sessions = this.native.list(workspaceId);
+      for (const session of sessions) {
+        if (['starting', 'running', 'stopping'].includes(session.lifecycle)) {
+          await this.native.stop(session.id).catch(() => undefined);
+        }
       }
-    }
 
-    // 2. Bounded wait for process termination verification.
-    const deadline = Date.now() + terminationDeadlineMs;
-    while (this.native.list(workspaceId).some(s => ['starting', 'running', 'stopping'].includes(s.lifecycle))) {
-      if (Date.now() >= deadline) {
-        throw new AgencyRuntimeError('session-unavailable', 'Process termination could not be verified within deadline; workspace deletion aborted');
+      // 2. Bounded wait for process termination verification.
+      const deadline = Date.now() + terminationDeadlineMs;
+      while (this.native.list(workspaceId).some(s => ['starting', 'running', 'stopping'].includes(s.lifecycle))) {
+        if (Date.now() >= deadline) {
+          throw new AgencyRuntimeError('session-unavailable', 'Process termination could not be verified within deadline; workspace deletion aborted');
+        }
+        await new Promise(resolve => setTimeout(resolve, 25));
       }
-      await new Promise(resolve => setTimeout(resolve, 25));
-    }
 
-    // 3. Close each workspace-owned logical session tab through existing supported lifecycle.
-    for (const session of this.native.list(workspaceId)) {
-      if (session.tab?.current && !session.tab.closedAt) {
-        await this.native.tabAction(workspaceId, session.tab.id, 'close');
+      // 3. Close each workspace-owned logical session tab through existing supported lifecycle.
+      const closedTabIds = new Set<string>();
+      for (const session of this.native.list(workspaceId)) {
+        if (session.tab?.current && !session.tab.closedAt) {
+          closedTabIds.add(session.tab.id);
+          await this.native.tabAction(workspaceId, session.tab.id, 'close');
+        }
       }
-    }
 
-    // 4. Close all workspace-owned ChatGPT tabs through the browser-tab adapter.
-    // Authorized closure during workspace deletion permits inactive (done/archived) workspaces.
-    const webTabs = this.browser.listTabs(workspaceId, { includeClosed: false });
-    for (const tab of webTabs) {
-      await this.browser.closeTab(workspaceId, tab.id, { allowInactiveWorkspace: true });
-    }
-
-    // 5. Close all workspace-owned editor tabs through the editor-tab adapter.
-    if (this.editor) {
-      const editorTabs = this.editor.listTabs(workspaceId, { includeClosed: false });
-      for (const tab of editorTabs) {
-        await this.editor.closeTab(workspaceId, tab.id, { allowInactiveWorkspace: true });
+      // 4. Close all workspace-owned browser tabs through the browser-tab adapter.
+      // Authorized closure during workspace deletion permits inactive (done/archived) workspaces.
+      const webTabs = this.browser.listTabs(workspaceId, { includeClosed: false });
+      for (const tab of webTabs) {
+        closedTabIds.add(tab.id);
+        await this.browser.closeTab(workspaceId, tab.id, { allowInactiveWorkspace: true });
       }
+
+      // 5. Close all workspace-owned editor tabs through the editor-tab adapter.
+      if (this.editor) {
+        const editorTabs = this.editor.listTabs(workspaceId, { includeClosed: false });
+        for (const tab of editorTabs) {
+          closedTabIds.add(tab.id);
+          await this.editor.closeTab(workspaceId, tab.id, { allowInactiveWorkspace: true });
+        }
+      }
+
+      for (const tabId of closedTabIds) {
+        await this.activityCleanup?.closeTab?.(workspaceId, tabId);
+      }
+
+      // 6. Verify zero blocking references BEFORE deleting persistent layout/activity metadata.
+      if (this.native.hasWorkspaceReferences(workspaceId)) {
+        throw new AgencyRuntimeError('conflict', 'Native session references remain; workspace deletion aborted');
+      }
+      if (this.hasBrowserReferences(workspaceId)) {
+        throw new AgencyRuntimeError('conflict', 'Browser tab references remain; workspace deletion aborted');
+      }
+      if (this.hasEditorReferences(workspaceId)) {
+        throw new AgencyRuntimeError('conflict', 'Editor tab references remain; workspace deletion aborted');
+      }
+    } finally {
+      // 7. Always broadcast snapshots (even on partial failure) so clients and Electron
+      // reconcile any native, browser, or editor tabs that were already closed.
+      this.snapshot();
     }
 
-    // 6. Broadcast snapshots so clients and Electron reconcile/destroy native views.
-    this.snapshot();
-
-    // 7. Delete layout for deleted workspace if present.
+    // 8. Delete layout, activity, and notification metadata for deleted workspace.
     await this.layouts?.delete(workspaceId);
-
-    // 8. Recheck blocking resources before final deletion.
-    if (this.native.hasWorkspaceReferences(workspaceId)) {
-      throw new AgencyRuntimeError('conflict', 'Native session references remain; workspace deletion aborted');
-    }
-    if (this.hasBrowserReferences(workspaceId)) {
-      throw new AgencyRuntimeError('conflict', 'Browser tab references remain; workspace deletion aborted');
-    }
-    if (this.hasEditorReferences(workspaceId)) {
-      throw new AgencyRuntimeError('conflict', 'Editor tab references remain; workspace deletion aborted');
-    }
+    await this.activityCleanup?.purgeWorkspace?.(workspaceId);
   }
 }

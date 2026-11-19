@@ -1,8 +1,8 @@
 import { copyFile, mkdir, readFile, rename } from 'node:fs/promises';
-import { isAgencyTab } from '@agent-workbench/shared';
+import { CLI_PROVIDERS, isAgencyTab } from '@agent-workbench/shared';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { AgencyRuntimeSession } from '@agent-workbench/shared';
+import type { AgencyRuntimeSession, CliProvider } from '@agent-workbench/shared';
 import { writeAtomically } from '../atomic-write.js';
 import { appConfigDir } from '../paths.js';
 
@@ -42,7 +42,7 @@ function validSession(value: unknown): value is AgencyRuntimeSession {
   }
   if (value.launchDefinition !== undefined && (!record(value.launchDefinition) || typeof value.launchDefinition.executable !== 'string' || !path.isAbsolute(value.launchDefinition.executable) || !Array.isArray(value.launchDefinition.args) || !value.launchDefinition.args.every(arg => typeof arg === 'string') || (value.launchDefinition.contextRef !== null && typeof value.launchDefinition.contextRef !== 'string'))) return false;
   if (value.nativeIdentity != null && (!record(value.nativeIdentity) ||
-      !['codex', 'claude-code', 'antigravity'].includes(value.nativeIdentity.provider as string) ||
+      !CLI_PROVIDERS.includes(value.nativeIdentity.provider as CliProvider) ||
       (value.nativeIdentity.bindingId !== undefined && (typeof value.nativeIdentity.bindingId !== 'string' || !/^[a-f0-9]{64}$/.test(value.nativeIdentity.bindingId))) ||
       typeof value.nativeIdentity.home !== 'string' || !path.isAbsolute(value.nativeIdentity.home))) return false;
   if (value.historyAvailability !== undefined &&

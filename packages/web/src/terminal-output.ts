@@ -59,9 +59,15 @@ export class TerminalOutput {
     this.terminal.write('\x18', () => {
       if (this.disposed) return;
       const { cols, rows } = this.terminal;
-      this.restoring(true);
-      this.terminal.reset();
       const replay = item.replay!;
+      const preserveScrollback = Boolean(replay.truncated) && this.terminal.buffer.normal.baseY > 0;
+      this.restoring(true);
+      if (preserveScrollback) {
+        // Soft-reset modes/parser and exit alternate screen without wiping 42k-line scrollback.
+        this.terminal.write('\x1b[!p\x1b[?1049l\r\n');
+      } else {
+        this.terminal.reset();
+      }
       if (replay.cols && replay.rows) this.terminal.resize(replay.cols, replay.rows);
       this.terminal.write(item.data, () => {
         if (this.disposed) return;

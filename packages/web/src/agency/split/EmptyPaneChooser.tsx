@@ -27,7 +27,7 @@ export function EmptyPaneChooser({
   onAddBrowser,
   onOpenFile,
   onClosePane,
-  onMoveTabToPane,
+  onMoveTabToPane: _onMoveTabToPane,
 }: EmptyPaneChooserProps): JSX.Element {
   const [selectingProfile, setSelectingProfile] = useState(false);
 
@@ -45,29 +45,16 @@ export function EmptyPaneChooser({
     <div
       className="maw-empty-pane-chooser"
       data-pane-id={paneId}
-      onDragOver={(e) => {
-        if (e.dataTransfer.types.includes('application/maw-tab-id')) {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'move';
-        }
-      }}
-      onDrop={(e) => {
-        const draggedId = e.dataTransfer.getData('application/maw-tab-id');
-        if (draggedId && onMoveTabToPane) {
-          e.preventDefault();
-          onMoveTabToPane(draggedId, paneId);
-        }
-      }}
     >
       <div className="maw-empty-pane-card">
         {selectingProfile ? (
           <div className="maw-empty-pane-profiles-view">
             <div className="maw-empty-pane-header">
               <h3 className="maw-empty-pane-title">
-                {t('agency.tabs.selectAgent') || 'Select Coding Agent'}
+                {t('agency.tabs.selectAgent')}
               </h3>
               <p className="maw-empty-pane-subtitle">
-                {t('agency.tabs.emptySubtitle') || 'Choose a profile to launch in this pane'}
+                {t('agency.tabs.emptySubtitle')}
               </p>
             </div>
             <div className="maw-empty-pane-profile-list">
@@ -92,17 +79,17 @@ export function EmptyPaneChooser({
               className="maw-empty-pane-back-button"
               onClick={() => setSelectingProfile(false)}
             >
-              {t('common.cancel') || 'Cancel'}
+              {t('common.cancel')}
             </button>
           </div>
         ) : (
           <>
             <div className="maw-empty-pane-header">
               <h3 className="maw-empty-pane-title">
-                {t('agency.tabs.emptyTitle') || 'Open in this pane'}
+                {t('agency.tabs.emptyTitle')}
               </h3>
               <p className="maw-empty-pane-subtitle">
-                {t('agency.tabs.emptySubtitle') || 'Choose what to launch in this empty pane'}
+                {t('agency.tabs.emptySubtitle')}
               </p>
             </div>
 
@@ -128,8 +115,8 @@ export function EmptyPaneChooser({
                 className="maw-empty-pane-action"
                 disabled={disabled || profiles.length === 0}
                 onClick={handleAgentClick}
-                aria-label={t('agency.tabs.codingAgent') || 'Coding Agent'}
-                title={profiles.length === 0 ? 'No coding agent profiles configured' : undefined}
+                aria-label={t('agency.tabs.codingAgent')}
+                title={profiles.length === 0 ? t('agency.tabs.noAgentProfiles') : undefined}
               >
                 <span className="maw-empty-pane-icon" aria-hidden="true">
                   <svg viewBox="0 0 16 16" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
@@ -138,7 +125,7 @@ export function EmptyPaneChooser({
                     <path d="M6 11h4" />
                   </svg>
                 </span>
-                <span className="maw-empty-pane-label">{t('agency.tabs.codingAgent') || 'Coding Agent'}</span>
+                <span className="maw-empty-pane-label">{t('agency.tabs.codingAgent')}</span>
               </button>
 
               <button

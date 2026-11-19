@@ -269,6 +269,7 @@ maw_valid_release() {
   if maw_release_is_nextgen "$_dp"; then
     [ -f "$_dp/packages/server/dist/index.mjs" ] || return 1
     [ -f "$_dp/packages/server/dist/maw-ptyd.mjs" ] || return 1
+    [ -f "$_dp/packages/server/dist/terminal-state.mjs" ] || return 1
   fi
   return 0
 }

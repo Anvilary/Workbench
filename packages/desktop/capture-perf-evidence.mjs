@@ -10,7 +10,7 @@ import { ResourceCollector } from './resource-monitor.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const here = path.dirname(__filename);
 const root = path.resolve(here, '../..');
-const artifactDir = '/home/user/.local/share/agy-4-profile/home/.gemini/antigravity-cli/brain/78d2bbc9-821f-4727-9eea-bf5c93de7bfa';
+const artifactDir = process.env.MAW_EVIDENCE_ARTIFACT_DIR ? path.resolve(process.env.MAW_EVIDENCE_ARTIFACT_DIR) : null;
 
 const fixture = `
 import React, { useState, useEffect } from 'react';
@@ -371,16 +371,18 @@ async function main() {
   console.log(`[Capture] Server listening on http://127.0.0.1:${port}`);
 
   const evidenceDir = path.join(here, 'evidence');
-  const docsDir = path.resolve(root, 'docs/maw/performance-monitor');
+  const writeDocs = process.env.MAW_WRITE_DOCS_EVIDENCE === '1';
+  const docsDir = writeDocs ? path.resolve(root, 'docs/maw/performance-monitor') : null;
   await mkdir(evidenceDir, { recursive: true });
-  await mkdir(docsDir, { recursive: true });
-  await mkdir(artifactDir, { recursive: true });
+  if (docsDir) await mkdir(docsDir, { recursive: true });
+  if (artifactDir) await mkdir(artifactDir, { recursive: true });
 
-  console.log('[Capture] Launching Chromium to capture live application evidence...');
-  const browser = await chromium.launch({
-    executablePath: '/usr/bin/google-chrome',
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  });
+  console.log('[Capture] Launching Chromium to capture synthetic fixture evidence...');
+  const launchOptions = {};
+  if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE) {
+    launchOptions.executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+  }
+  const browser = await chromium.launch(launchOptions);
 
   const page = await browser.newPage({
     viewport: { width: 1280, height: 860 },
@@ -411,8 +413,8 @@ async function main() {
     const overviewBuf = await page.screenshot({ fullPage: true });
 
     await writeFile(path.join(evidenceDir, 'performance-panel-overview.png'), overviewBuf);
-    await writeFile(path.join(docsDir, 'performance-panel-overview.png'), overviewBuf);
-    await writeFile(path.join(artifactDir, 'performance-panel-overview.png'), overviewBuf);
+    if (docsDir) await writeFile(path.join(docsDir, 'performance-panel-overview.png'), overviewBuf);
+    if (artifactDir) await writeFile(path.join(artifactDir, 'performance-panel-overview.png'), overviewBuf);
     console.log('[Capture] Saved performance-panel-overview.png.');
 
     // 3. Click Pause button to demonstrate control and paused status badge
@@ -426,8 +428,8 @@ async function main() {
       const pausedBuf = await page.screenshot({ fullPage: true });
 
       await writeFile(path.join(evidenceDir, 'performance-panel-paused.png'), pausedBuf);
-      await writeFile(path.join(docsDir, 'performance-panel-paused.png'), pausedBuf);
-      await writeFile(path.join(artifactDir, 'performance-panel-paused.png'), pausedBuf);
+      if (docsDir) await writeFile(path.join(docsDir, 'performance-panel-paused.png'), pausedBuf);
+      if (artifactDir) await writeFile(path.join(artifactDir, 'performance-panel-paused.png'), pausedBuf);
       console.log('[Capture] Saved performance-panel-paused.png.');
 
       // Click Resume
@@ -445,11 +447,11 @@ async function main() {
       await new Promise((r) => setTimeout(r, 400));
     }
 
-    // 5. Retrieve snapshot JSON directly from live collector
+    // 5. Retrieve snapshot JSON directly from fixture collector
     const snapshot = await collector.sample();
     const metricsJson = JSON.stringify(snapshot, null, 2);
     await writeFile(path.join(evidenceDir, 'performance-metrics-sample.json'), metricsJson);
-    await writeFile(path.join(docsDir, 'performance-metrics-sample.json'), metricsJson);
+    if (docsDir) await writeFile(path.join(docsDir, 'performance-metrics-sample.json'), metricsJson);
     console.log('[Capture] Saved performance-metrics-sample.json.');
 
     // 6. Test Close

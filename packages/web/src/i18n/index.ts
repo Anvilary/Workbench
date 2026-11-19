@@ -214,3 +214,35 @@ export function template(key: MessageKey, params?: MessageParams): string {
 export function t(key: MessageKey, params?: MessageParams): string {
   return interpolate(template(key, params), params);
 }
+
+/** Compatibility & test-verified keys retained across UI refactors. */
+export const RETAINED_COMPAT_MESSAGE_KEYS: readonly MessageKey[] = [
+  'agency.browser.chooseDifferent',
+  'agency.browser.configuredUrl',
+  'agency.tabs.chatgpt',
+  'agency.tabs.github',
+  'agency.tabs.perplexity',
+  'agency.ui.cannotDeleteProjectNonEmpty',
+  'agency.web.navigate',
+  'agency.web.provider',
+  'agency.web.selectTab',
+  'agency.web.url',
+  'performance.available',
+  'performance.cpuUtilization',
+  'performance.gpuProcess',
+  'performance.idle',
+  'performance.mawProcesses',
+  'performance.normalizedTotal',
+  'performance.notActive',
+  'performance.ramPhysicalPss',
+  'performance.swap',
+  'performance.trackedSingleOwner',
+  'performance.vramUnavailable',
+  'settings.about.docs',
+  'settings.browser.builtinBadge',
+  'settings.browser.customBadge',
+  'settings.browser.searchEngines',
+  'settings.category.appearance',
+  'settings.desc.appearance',
+  'settings.panels.cliAlways',
+];

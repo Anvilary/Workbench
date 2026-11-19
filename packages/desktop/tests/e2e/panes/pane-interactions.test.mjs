@@ -27,7 +27,13 @@ async function setup(t,query){
  const url=await serveFixture(t),data=await mkdtemp(path.join(tmpdir(),'maw-pane-interactions-'));
  const env={...process.env,MAW_DESKTOP_URL:url+'/?'+query,MAW_DESKTOP_DATA_DIR:data,MAW_DOWNLOAD_AUTO_SAVE:'1'};
  let desktop;
- t.after(async()=>{if(desktop)await desktop.close();await rm(data,{recursive:true,force:true})});
+ const closeDesktop = async () => {
+  if (!desktop) return;
+  const child = desktop.process();
+  const deadline = setTimeout(() => child.kill('SIGKILL'), 5000);
+  try { await desktop.close(); } finally { clearTimeout(deadline); }
+ };
+ t.after(async()=>{await closeDesktop();await rm(data,{recursive:true,force:true})});
  const launch=async()=>{
   desktop=await electron.launch({chromiumSandbox:true,executablePath:electronExecutable,args:[here,'--ozone-platform=x11'],env});
   await desktop.evaluate(({session,app,BrowserWindow},data)=>{
@@ -81,7 +87,7 @@ async function setup(t,query){
   // This display contains only our synthetic, temporary Electron instance.
   await exec('ffmpeg',['-y','-loglevel','error','-f','x11grab','-video_size','1280x860','-i',process.env.DISPLAY+'+0,0','-frames:v','1',path.join(artifactDir,name)]);
  };
- return {page,desktop:()=>desktop,identities,attached,osDrag,mouse,point,screenshot,data,restart:async()=>{await desktop.close();return launch()}};
+ return {page,desktop:()=>desktop,identities,attached,osDrag,mouse,point,screenshot,data,restart:async()=>{await closeDesktop();return launch()}};
 }
 
 for(const query of ['mode=mixed','mode=cli-web','mode=web','mode=mixed&shape=four-grid','mode=web&shape=four-grid','mode=web&shape=four-asymmetric'])test('OS pane drag over native surfaces: '+query,{timeout:90000},async t=>{
@@ -112,7 +118,7 @@ test('native menu, creation, cancellation, clipboard, download and cold restart'
  if(artifactDir){await mkdir(artifactDir,{recursive:true});recording=spawn('ffmpeg',['-y','-loglevel','error','-f','x11grab','-framerate','12','-video_size','1280x860','-i',process.env.DISPLAY+'+0,0','-c:v','libvpx-vp9','-crf','38','-b:v','0',path.join(artifactDir,'pane-interactions.webm')],{stdio:['pipe','ignore','pipe']});t.after(async()=>{if(recording?.exitCode===null){recording.stdin.write('q');await new Promise(resolve=>recording.on('exit',resolve))}})}
  await pane(page,2).locator('.maw-pane-add-tab').click();
  await eventually(async()=> (await app.attached()).length<2);await frames(page);await app.screenshot('01-add-menu.png');
- await page.getByRole('menuitem',{name:'New ChatGPT tab',exact:true}).click();await page.getByRole('dialog').waitFor();await page.getByRole('button',{name:'Cancel',exact:true}).click();
+ await page.getByRole('menuitem',{name:'Browser',exact:true}).click();await page.getByRole('dialog').getByLabel('URL or Search Query',{exact:true}).waitFor();await page.getByRole('dialog').getByRole('button',{name:'Cancel',exact:true}).click();
  await eventually(async()=> (await app.attached()).length===2);
  await pane(page,2).locator('.maw-pane-add-tab').click();await page.getByRole('menuitem',{name:'New Terminal',exact:true}).click();
  await page.waitForFunction(()=>window.fixture.state.layout.tree.second.tabIds.length===2);await frames(page,16);
@@ -164,4 +170,42 @@ test('real Linux PTY PID, scrollback, selection and viewport survive native pane
  assert.equal(terminal.pid,pid);assert.doesNotThrow(()=>process.kill(pid,0));
  const after=await page.evaluate(()=>({selection:window.terminals[0].getSelection(),viewport:window.terminals[0].buffer.active.viewportY,disposed:window.disposed,attaches:window.fixture.requests.filter(m=>m.type==='terminal.attach').length,inputs:window.fixture.requests.filter(m=>m.type==='input')}));
  assert.equal(after.selection,initial.selection);assert.equal(after.viewport,initial.viewport);assert.equal(after.disposed,0);assert.equal(after.attaches,1);assert.deepEqual(after.inputs,[]);
+});
+
+test('native tab drag accepts the destination pane body and keeps the browser session', { timeout: 60000 }, async t => {
+  const app = await setup(t, 'mode=web');
+  const { page, mouse, point } = app;
+  const initial = await page.evaluate(() => window.fixture.state.layout.tree);
+  const originalViews = await app.identities();
+  const sourceTab = pane(page, 1).getByRole('tab').first();
+  const source = await point(sourceTab);
+  const destination = await point(pane(page, 2).locator('.maw-pane-body'));
+  async function startDrag() {
+    await mouse(source.x, source.y, 'mousedown', '1');
+    await mouse(source.x + 10, source.y);
+    await page.locator('.maw-tab-drag-ghost').waitFor();
+    await eventually(async () => (await app.attached()).length === 0, 'native views concealed for tab drag');
+    await mouse(destination.x, destination.y);
+  }
+  await startDrag();
+  await exec('xdotool', ['key', 'Escape']);
+  await exec('xdotool', ['mouseup', '1']);
+  await page.locator('.maw-tab-drag-ghost').waitFor({ state: 'detached' });
+  await eventually(async () => (await app.attached()).length === 2, 'native views restored after cancellation');
+  assert.deepEqual(await page.evaluate(() => window.fixture.state.layout.tree), initial);
+
+  await startDrag();
+  await app.screenshot('06-native-cross-pane-tab-preview.png');
+  await exec('xdotool', ['mouseup', '1']);
+  await page.waitForFunction(() => window.fixture.state.layout.tree.first.tabIds.length === 0);
+  const after = await page.evaluate(() => window.fixture.state.layout.tree);
+  assert.deepEqual(after.second.tabIds, [...initial.second.tabIds, ...initial.first.tabIds]);
+  assert.deepEqual(await app.identities(), originalViews);
+  await eventually(async () => (await app.attached()).length === 1, 'destination reattaches the selected browser');
+  assert.equal(await pane(page, 1).getByRole('tab').count(), 0);
+  await app.screenshot('07-native-cross-pane-tab-drop.png');
+  await pane(page, 1).locator('[data-pane-close]').click();
+  await page.waitForFunction(() => document.querySelectorAll('.maw-split-pane').length === 1);
+  assert.equal(await page.getByRole('dialog').count(), 0);
+  assert.deepEqual(await app.identities(), originalViews);
 });

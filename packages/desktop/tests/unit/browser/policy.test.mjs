@@ -231,9 +231,19 @@ test('authentication URLs stay distinguishable from ordinary pages and private h
     'https://login.microsoft.com/',
     'https://auth.openai.com/authorize',
     'https://auth0.openai.com/',
+    'https://auth.perplexity.ai/authorize',
     'https://acme.okta.com/login',
     'https://tenant.auth0.com/authorize',
     'https://corp.onelogin.com/trust',
+  ]) assert.equal(authenticationUrl(url), true, url);
+  for (const url of [
+    'https://accounts.google.com.evil.com/gsi/select',
+    'https://evil.com/gsi/select',
+    'https://evil.com/oauth/authorize',
+    'https://evil.com/oauth2/authorize',
+    'https://evil.com/o/oauth2/v2/auth',
+    'https://evil.com/oauth/callback',
+    'https://evil.com/oauth/authorized',
     'https://login.example.com/oauth/authorize',
     'https://idp.example.com/oauth/authorize/extra',
     'https://idp.example.com/oauth/v2/authorize',
@@ -244,12 +254,6 @@ test('authentication URLs stay distinguishable from ordinary pages and private h
     'https://idp.example.com/saml/SSO',
     'https://idp.example.com/saml2/acs',
     'https://idp.example.com/openid-connect/auth',
-  ]) assert.equal(authenticationUrl(url), true, url);
-  for (const url of [
-    'https://accounts.google.com.evil.com/gsi/select',
-    'https://evil.com/gsi/select',
-    'https://evil.com/oauth/callback',
-    'https://evil.com/oauth/authorized',
     'https://okta.com/login',
     'https://notokta.com/login',
     'https://login.example/oauth/authorize',
@@ -312,14 +316,25 @@ test('validateFaviconUrl: validates HTTPS URLs, data URIs, and rejects dangerous
   assert.equal(validateFaviconUrl('https://user:pass@chatgpt.com/favicon.ico'), null);
   assert.equal(validateFaviconUrl('https://chatgpt.com:8080/favicon.ico'), null);
 
-  // Local/private addresses rejected by default
+  // Local/private/loopback/HTTP addresses must always be rejected (SSRF defense)
   assert.equal(validateFaviconUrl('http://localhost:3000/favicon.ico'), null);
   assert.equal(validateFaviconUrl('http://127.0.0.1:8080/favicon.ico'), null);
+  assert.equal(validateFaviconUrl('http://127.0.0.2:8080/favicon.ico'), null);
+  assert.equal(validateFaviconUrl('http://[::1]:8080/favicon.ico'), null);
+  assert.equal(validateFaviconUrl('https://[::1]/favicon.ico'), null);
+  assert.equal(validateFaviconUrl('https://127.0.0.1/favicon.ico'), null);
+  assert.equal(validateFaviconUrl('https://localhost/favicon.ico'), null);
+  assert.equal(validateFaviconUrl('https://localhost./favicon.ico'), null);
   assert.equal(validateFaviconUrl('https://192.168.1.1/favicon.ico'), null);
+  assert.equal(validateFaviconUrl('https://intranet/favicon.ico'), null);
+  assert.equal(validateFaviconUrl('https://host.home.arpa/favicon.ico'), null);
+  assert.equal(validateFaviconUrl('https://host.local./favicon.ico'), null);
+  assert.equal(validateFaviconUrl('http://example.com/favicon.ico'), null);
 
-  // Loopback allowed when explicitly permitted
-  assert.equal(validateFaviconUrl('http://localhost:3000/favicon.ico', { allowLoopback: true }), 'http://localhost:3000/favicon.ico');
-  assert.equal(validateFaviconUrl('http://127.0.0.1:8080/favicon.ico', { allowLoopback: true }), 'http://127.0.0.1:8080/favicon.ico');
+  // Even if callers pass legacy allowLoopback option, loopback/private favicons stay rejected
+  assert.equal(validateFaviconUrl('http://localhost:3000/favicon.ico', { allowLoopback: true }), null);
+  assert.equal(validateFaviconUrl('http://127.0.0.1:8080/favicon.ico', { allowLoopback: true }), null);
+  assert.equal(validateFaviconUrl('https://localhost/favicon.ico', { allowLoopback: true }), null);
 
   // Invalid data URIs and oversized payloads
   assert.equal(validateFaviconUrl('data:text/html;base64,PHNjcmlwdD4='), null);

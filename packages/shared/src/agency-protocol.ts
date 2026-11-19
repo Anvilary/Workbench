@@ -31,6 +31,14 @@ import {
   isWorkspacePaneLayout,
 } from './split-layout.js';
 
+import {
+  type BrowserProfileClientMessage,
+  type BrowserProfileServerMessage,
+  isValidBrowserProfileId,
+  parseBrowserProfileClientMessage,
+  parseBrowserProfileServerMessage,
+} from './browser-profiles.js';
+
 /** IDs are deliberately distinct from native CLI sessions and Workbench terminal IDs. */
 export type ProjectId = string & { readonly __agencyProjectId: unique symbol };
 export type WorkspaceId = string & { readonly __agencyWorkspaceId: unique symbol };
@@ -46,6 +54,7 @@ export interface AgencyProject {
   id: ProjectId;
   name: string;
   status?: ProjectStatus;
+  browserProfileId?: string | null;
   createdAt: IsoTimestamp;
   updatedAt: IsoTimestamp;
   archivedAt?: IsoTimestamp | null;
@@ -60,6 +69,7 @@ export interface AgencyWorkspace {
   /** Absolute canonical realpath of an existing directory, assigned by the server. */
   cwd: string;
   status: WorkspaceStatus;
+  browserProfileId?: string | null;
   createdAt: IsoTimestamp;
   updatedAt: IsoTimestamp;
   doneAt: IsoTimestamp | null;
@@ -188,10 +198,10 @@ export interface AgencyClientRequest<T extends string> {
 export type AgencyClientMessage =
   | AgencyClientRequest<'agency.projects.list'>
   | (AgencyClientRequest<'agency.project.create'> & { name: string })
-  | (AgencyClientRequest<'agency.project.update'> & { projectId: ProjectId; name: string })
+  | (AgencyClientRequest<'agency.project.update'> & { projectId: ProjectId; name?: string; browserProfileId?: string | null })
   | (AgencyClientRequest<'agency.project.archive'> & { projectId: ProjectId })
   | (AgencyClientRequest<'agency.project.unarchive'> & { projectId: ProjectId })
-  | (AgencyClientRequest<'agency.project.delete'> & { projectId: ProjectId })
+  | (AgencyClientRequest<'agency.project.delete'> & { projectId: ProjectId; cascade?: boolean })
   | (AgencyClientRequest<'agency.projects.order'> & { projectIds: readonly ProjectId[] })
   | (AgencyClientRequest<'agency.workspaces.list'> & { projectId?: ProjectId })
   | (AgencyClientRequest<'agency.workspace.create'> & {
@@ -200,7 +210,7 @@ export type AgencyClientMessage =
       /** Existing picker ID bound to this socket; the server resolves its current directory. */
       pickerId: string;
     })
-  | (AgencyClientRequest<'agency.workspace.update'> & { workspaceId: WorkspaceId; name: string })
+  | (AgencyClientRequest<'agency.workspace.update'> & { workspaceId: WorkspaceId; name?: string; browserProfileId?: string | null })
   | (AgencyClientRequest<'agency.workspace.archive'> & { workspaceId: WorkspaceId })
   | (AgencyClientRequest<'agency.workspace.done'> & { workspaceId: WorkspaceId })
   | (AgencyClientRequest<'agency.workspace.restore'> & { workspaceId: WorkspaceId })
@@ -260,7 +270,8 @@ export type AgencyClientMessage =
   | NotificationClientMessage
   | WebTabClientMessage
   | LayoutClientMessage
-  | EditorTabClientMessage;
+  | EditorTabClientMessage
+  | BrowserProfileClientMessage;
 
 export type AgencyErrorCode =
   | 'invalid-request'
@@ -308,7 +319,8 @@ export type AgencyServerMessage =
   | NotificationServerMessage
   | WebTabServerMessage
   | LayoutServerMessage
-  | EditorTabServerMessage;
+  | EditorTabServerMessage
+  | BrowserProfileServerMessage;
 
 /**
  * Existing upstream PTY messages are NOT redefined here:
@@ -357,6 +369,7 @@ export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | nu
   if (!isRecord(raw) || typeof raw['type'] !== 'string') return null;
   if (raw.type.startsWith('agency.webTab')) return parseWebTabClientMessage(raw);
   if (raw.type.startsWith('agency.editorTab')) return parseEditorTabClientMessage(raw);
+  if (raw.type.startsWith('agency.browserProfile')) return parseBrowserProfileClientMessage(raw);
   const requestId = raw['requestId'];
   if (!isValidRequestId(requestId)) return null;
 
@@ -370,9 +383,20 @@ export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | nu
       return { type: 'agency.project.create', requestId, name: raw['name'] };
     }
     case 'agency.project.update': {
-      if (!hasOnlyKeys(raw, ['type', 'requestId', 'projectId', 'name']) ||
-          !isValidId(raw['projectId']) || !isValidName(raw['name'])) return null;
-      return { type: 'agency.project.update', requestId, projectId: raw['projectId'] as ProjectId, name: raw['name'] };
+      if (!hasOnlyKeys(raw, ['type', 'requestId', 'projectId', 'name', 'browserProfileId']) ||
+          !isValidId(raw['projectId'])) return null;
+      const hasName = raw['name'] !== undefined;
+      const hasProfile = raw['browserProfileId'] !== undefined;
+      if (!hasName && !hasProfile) return null;
+      if (hasName && !isValidName(raw['name'])) return null;
+      if (hasProfile && raw['browserProfileId'] !== null && !isValidBrowserProfileId(raw['browserProfileId'])) return null;
+      return {
+        type: 'agency.project.update',
+        requestId,
+        projectId: raw['projectId'] as ProjectId,
+        ...(hasName ? { name: raw['name'] as string } : {}),
+        ...(hasProfile ? { browserProfileId: raw['browserProfileId'] as string | null } : {}),
+      };
     }
     case 'agency.project.archive': {
       if (!hasOnlyKeys(raw, ['type', 'requestId', 'projectId']) || !isValidId(raw['projectId'])) return null;
@@ -383,8 +407,14 @@ export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | nu
       return { type: 'agency.project.unarchive', requestId, projectId: raw['projectId'] as ProjectId };
     }
     case 'agency.project.delete': {
-      if (!hasOnlyKeys(raw, ['type', 'requestId', 'projectId']) || !isValidId(raw['projectId'])) return null;
-      return { type: 'agency.project.delete', requestId, projectId: raw['projectId'] as ProjectId };
+      if (!hasOnlyKeys(raw, ['type', 'requestId', 'projectId', 'cascade']) || !isValidId(raw['projectId'])) return null;
+      if (raw['cascade'] !== undefined && typeof raw['cascade'] !== 'boolean') return null;
+      return {
+        type: 'agency.project.delete',
+        requestId,
+        projectId: raw['projectId'] as ProjectId,
+        ...(raw['cascade'] !== undefined ? { cascade: raw['cascade'] } : {}),
+      };
     }
     case 'agency.projects.order': {
       if (!hasOnlyKeys(raw, ['type', 'requestId', 'projectIds']) ||
@@ -414,13 +444,19 @@ export function parseAgencyClientMessage(raw: unknown): AgencyClientMessage | nu
       };
     }
     case 'agency.workspace.update': {
-      if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'name']) ||
-          !isValidId(raw['workspaceId']) || !isValidName(raw['name'])) return null;
+      if (!hasOnlyKeys(raw, ['type', 'requestId', 'workspaceId', 'name', 'browserProfileId']) ||
+          !isValidId(raw['workspaceId'])) return null;
+      const hasName = raw['name'] !== undefined;
+      const hasProfile = raw['browserProfileId'] !== undefined;
+      if (!hasName && !hasProfile) return null;
+      if (hasName && !isValidName(raw['name'])) return null;
+      if (hasProfile && raw['browserProfileId'] !== null && !isValidBrowserProfileId(raw['browserProfileId'])) return null;
       return {
         type: 'agency.workspace.update',
         requestId,
         workspaceId: raw['workspaceId'] as WorkspaceId,
-        name: raw['name'],
+        ...(hasName ? { name: raw['name'] as string } : {}),
+        ...(hasProfile ? { browserProfileId: raw['browserProfileId'] as string | null } : {}),
       };
     }
     case 'agency.workspace.archive': {
@@ -681,9 +717,14 @@ function isValidIsoTimestamp(value: unknown): value is IsoTimestamp {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value);
 }
 
+function isOptionalBrowserProfileId(value: unknown): boolean {
+  return value === undefined || value === null || isValidBrowserProfileId(value);
+}
+
 function isAgencyProject(value: unknown): value is AgencyProject {
   return isRecord(value) && isValidId(value['id']) && typeof value['name'] === 'string' &&
-    isValidIsoTimestamp(value['createdAt']) && isValidIsoTimestamp(value['updatedAt']);
+    isValidIsoTimestamp(value['createdAt']) && isValidIsoTimestamp(value['updatedAt']) &&
+    isOptionalBrowserProfileId(value['browserProfileId']);
 }
 
 function isAgencyWorkspace(value: unknown): value is AgencyWorkspace {
@@ -691,7 +732,8 @@ function isAgencyWorkspace(value: unknown): value is AgencyWorkspace {
     typeof value['name'] === 'string' && typeof value['cwd'] === 'string' &&
     (value['status'] === 'active' || value['status'] === 'done' || value['status'] === 'archived') &&
     isValidIsoTimestamp(value['createdAt']) && isValidIsoTimestamp(value['updatedAt']) &&
-    (value['doneAt'] === null || isValidIsoTimestamp(value['doneAt']));
+    (value['doneAt'] === null || isValidIsoTimestamp(value['doneAt'])) &&
+    isOptionalBrowserProfileId(value['browserProfileId']);
 }
 
 function isAgencyCliProfile(value: unknown): value is AgencyCliProfile {
@@ -727,6 +769,7 @@ export function parseAgencyServerMessage(raw: unknown): AgencyServerMessage | nu
   if (!isRecord(raw) || typeof raw['type'] !== 'string') return null;
   if (raw.type.startsWith('agency.webTab')) return parseWebTabServerMessage(raw);
   if (raw.type.startsWith('agency.editorTab')) return parseEditorTabServerMessage(raw);
+  if (raw.type.startsWith('agency.browserProfile')) return parseBrowserProfileServerMessage(raw);
 
   switch (raw['type']) {
     case 'agency.projects.snapshot': {
@@ -740,6 +783,14 @@ export function parseAgencyServerMessage(raw: unknown): AgencyServerMessage | nu
     case 'agency.project.updated': {
       if (typeof raw['requestId'] !== 'string' || !isAgencyProject(raw['project'])) return null;
       return { type: 'agency.project.updated', requestId: raw['requestId'], project: raw['project'] };
+    }
+    case 'agency.project.archived': {
+      if (typeof raw['requestId'] !== 'string' || !isAgencyProject(raw['project'])) return null;
+      return { type: 'agency.project.archived', requestId: raw['requestId'], project: raw['project'] };
+    }
+    case 'agency.project.unarchived': {
+      if (typeof raw['requestId'] !== 'string' || !isAgencyProject(raw['project'])) return null;
+      return { type: 'agency.project.unarchived', requestId: raw['requestId'], project: raw['project'] };
     }
     case 'agency.project.deleted': {
       if (typeof raw['requestId'] !== 'string' || !isValidId(raw['projectId'])) return null;
@@ -756,6 +807,10 @@ export function parseAgencyServerMessage(raw: unknown): AgencyServerMessage | nu
     case 'agency.workspace.updated': {
       if (typeof raw['requestId'] !== 'string' || !isAgencyWorkspace(raw['workspace'])) return null;
       return { type: 'agency.workspace.updated', requestId: raw['requestId'], workspace: raw['workspace'] };
+    }
+    case 'agency.workspace.archived': {
+      if (typeof raw['requestId'] !== 'string' || !isAgencyWorkspace(raw['workspace'])) return null;
+      return { type: 'agency.workspace.archived', requestId: raw['requestId'], workspace: raw['workspace'] };
     }
     case 'agency.workspace.done': {
       if (typeof raw['requestId'] !== 'string' || !isAgencyWorkspace(raw['workspace'])) return null;
@@ -825,21 +880,29 @@ export function parseAgencyServerMessage(raw: unknown): AgencyServerMessage | nu
       };
     }
     case 'agency.project.changed': {
-      if (!['created', 'updated', 'deleted'].includes(raw['change'] as string) || !isValidId(raw['projectId'])) return null;
+      if (!['created', 'updated', 'archived', 'unarchived', 'deleted', 'reordered'].includes(raw['change'] as string)) return null;
+      if (raw['change'] !== 'reordered' && !isValidId(raw['projectId'])) return null;
+      if (raw['change'] === 'reordered' && raw['projectId'] !== '' && !isValidId(raw['projectId'])) return null;
+      if (raw['projects'] !== undefined && (!Array.isArray(raw['projects']) || !raw['projects'].every(isAgencyProject))) return null;
       return {
         type: 'agency.project.changed',
-        change: raw['change'] as 'created' | 'updated' | 'deleted',
+        change: raw['change'] as 'created' | 'updated' | 'archived' | 'unarchived' | 'deleted' | 'reordered',
         projectId: raw['projectId'] as ProjectId,
         ...(raw['project'] && isAgencyProject(raw['project']) ? { project: raw['project'] } : {}),
+        ...(raw['projects'] !== undefined ? { projects: raw['projects'] as AgencyProject[] } : {}),
       };
     }
     case 'agency.workspace.changed': {
-      if (!['created', 'updated', 'done', 'restored', 'deleted'].includes(raw['change'] as string) || !isValidId(raw['workspaceId'])) return null;
+      if (!['created', 'updated', 'done', 'restored', 'archived', 'deleted', 'reordered'].includes(raw['change'] as string)) return null;
+      if (raw['change'] !== 'reordered' && !isValidId(raw['workspaceId'])) return null;
+      if (raw['change'] === 'reordered' && raw['workspaceId'] !== '' && !isValidId(raw['workspaceId'])) return null;
+      if (raw['workspaces'] !== undefined && (!Array.isArray(raw['workspaces']) || !raw['workspaces'].every(isAgencyWorkspace))) return null;
       return {
         type: 'agency.workspace.changed',
-        change: raw['change'] as 'created' | 'updated' | 'done' | 'restored' | 'deleted',
+        change: raw['change'] as 'created' | 'updated' | 'done' | 'restored' | 'archived' | 'deleted' | 'reordered',
         workspaceId: raw['workspaceId'] as WorkspaceId,
         ...(raw['workspace'] && isAgencyWorkspace(raw['workspace']) ? { workspace: raw['workspace'] } : {}),
+        ...(raw['workspaces'] !== undefined ? { workspaces: raw['workspaces'] as AgencyWorkspace[] } : {}),
       };
     }
     case 'agency.profile.changed': {

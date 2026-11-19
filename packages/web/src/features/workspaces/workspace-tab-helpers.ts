@@ -1,4 +1,5 @@
 import {
+  normalizeWebTabTitle,
   validateChatGptUrl,
   validateGithubUrl,
   validateOtherWebUrl,
@@ -45,7 +46,7 @@ export function resolveBrowserTabTarget(options: {
   }
 
   const title =
-    (customTitle && customTitle.trim()) ||
+    (customTitle && normalizeWebTabTitle(customTitle)) ||
     (provider === 'github'
       ? 'GitHub'
       : provider === 'perplexity'

@@ -5,6 +5,7 @@ import {
   isFido2ToolsAvailable,
   discoverFido2Devices,
   getDeviceCapabilities,
+  listResidentCredentials,
   executeAssertion,
   CANCELLED_MESSAGE,
 } from '../../../webauthn-backend.mjs';
@@ -177,4 +178,77 @@ test('executeAssertion cleans up and rejects on timeout', async () => {
     },
     /timed out after 50ms/
   );
+});
+
+test('discoverFido2Devices and getDeviceCapabilities time out instead of deadlocking', async () => {
+  const hangingExec = () => new Promise(() => {});
+
+  const devices = await discoverFido2Devices(hangingExec, { timeoutMs: 30 });
+  assert.deepEqual(devices, []);
+
+  const caps = await getDeviceCapabilities('/dev/hidraw0', hangingExec, {
+    retries: 0,
+    retryDelayMs: 0,
+    timeoutMs: 30,
+  });
+  assert.equal(caps.probeError, true);
+  assert.match(caps.error, /timed out/i);
+});
+
+test('executeAssertion and listResidentCredentials absorb async proc.stdin EPIPE errors without crashing', async () => {
+  class EpipeMockProcess extends EventEmitter {
+    constructor() {
+      super();
+      this.pid = 99998;
+      this.stdin = new EventEmitter();
+      this.stdin.write = () => {
+        setImmediate(() => {
+          const err = new Error('write EPIPE');
+          err.code = 'EPIPE';
+          this.stdin.emit('error', err);
+        });
+      };
+      this.stdin.end = () => {};
+      this.stdout = new EventEmitter();
+      this.stderr = new EventEmitter();
+    }
+    kill() {}
+  }
+
+  const assertProc = new EpipeMockProcess();
+  const mockSpawnAssert = () => {
+    setImmediate(() => {
+      assertProc.stderr.emit('data', Buffer.from('Enter PIN for /dev/hidraw0: '));
+      setTimeout(() => assertProc.emit('close', 1), 15);
+    });
+    return assertProc;
+  };
+  await assert.rejects(
+    () => executeAssertion({
+      devicePath: '/dev/hidraw0',
+      rpId: 'chatgpt.com',
+      clientDataHash: Buffer.alloc(32, 1),
+      pin: '1234',
+      timeoutMs: 1000,
+      spawnFn: mockSpawnAssert,
+    }),
+    /NotAllowedError/,
+  );
+
+  const listProc = new EpipeMockProcess();
+  const mockSpawnList = () => {
+    setImmediate(() => {
+      listProc.stderr.emit('data', Buffer.from('Enter PIN for /dev/hidraw0: '));
+      setTimeout(() => listProc.emit('close', 1), 15);
+    });
+    return listProc;
+  };
+  const creds = await listResidentCredentials({
+    devicePath: '/dev/hidraw0',
+    rpId: 'chatgpt.com',
+    pin: '1234',
+    timeoutMs: 1000,
+    spawnFn: mockSpawnList,
+  });
+  assert.deepEqual(creds, []);
 });

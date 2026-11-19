@@ -23,19 +23,32 @@ export interface ClippingAncestor {
 }
 
 function collectActiveOverlayRects(): OverlayRect[] {
-  const items = document.querySelectorAll<HTMLElement>(
-    '[role="dialog"], [role="menu"], .agency-modal-backdrop, .modal-backdrop, .agency-dropdown-menu, .maw-toast-item, .context-menu, .agency-dialog, .settings-dialog, .maw-performance-panel, .maw-notification-inbox, .maw-context-menu, .maw-pane-drag-shield, .maw-pane-browser-picker-overlay, .maw-browser-picker-overlay, .maw-browser-dest-picker'
-  );
-  if (items.length === 0) return [];
-
   const rects: OverlayRect[] = [];
+  if (document.body?.classList.contains('agency-sidebar-dragging')) {
+    rects.push({
+      left: 0,
+      top: 0,
+      right: window.innerWidth,
+      bottom: window.innerHeight,
+    });
+  }
+
+  const items = document.querySelectorAll<HTMLElement>(
+    '[role="dialog"], [role="menu"], .agency-modal-backdrop, .modal-backdrop, .agency-dropdown-menu, .maw-toast-item, .context-menu, .agency-dialog, .settings-dialog, .maw-performance-panel, .maw-notification-inbox, .maw-context-menu, .maw-pane-drag-shield, .agency-sidebar-drag-shield, .agency-sidebar-drag-ghost, .maw-pane-browser-picker-overlay, .maw-browser-picker-overlay, .maw-browser-dest-picker, .maw-pane-close-overlay, .agency-anchored-dialog'
+  );
+  if (items.length === 0) return rects;
+
   for (let i = 0; i < items.length; i++) {
     const item = items[i]!;
     const style = window.getComputedStyle(item);
     if (style.visibility === 'hidden' || style.display === 'none' || style.opacity === '0') continue;
 
     // Fullscreen backdrops immediately cover the entire viewport
-    if (item.classList.contains('agency-modal-backdrop') || item.classList.contains('modal-backdrop')) {
+    if (
+      item.classList.contains('agency-modal-backdrop') ||
+      item.classList.contains('modal-backdrop') ||
+      item.classList.contains('agency-sidebar-drag-shield')
+    ) {
       rects.push({
         left: 0,
         top: 0,
@@ -89,12 +102,17 @@ type TrackedView = NativeViewRegistration & {
   /** Bumped to invalidate an in-flight capturePage result. */
   captureEpoch: number;
   capturePending: boolean;
+  captureFailed: boolean;
+  captureTimedOut: boolean;
+  captureTimeoutId: number | null;
   backdropApplied: boolean;
   backdropReady: boolean;
   nativeVisible: boolean;
   captureBounds: string;
   clippingAncestors: ClippingAncestor[] | null;
 };
+
+const CAPTURE_FAIL_SAFE_MS = 350;
 
 class NativeLayoutCoordinator {
   private readonly views = new Map<string, TrackedView>();
@@ -118,10 +136,25 @@ class NativeLayoutCoordinator {
 
   /** Drop a capture that must not land on a visible view, and release its bitmap. */
   private cancelCapture(entry: TrackedView): void {
-    if (!entry.capturePending && !entry.hasBackdrop && !entry.backdropApplied) return;
+    if (
+      !entry.capturePending &&
+      !entry.hasBackdrop &&
+      !entry.backdropApplied &&
+      !entry.captureFailed &&
+      !entry.captureTimedOut &&
+      entry.captureTimeoutId === null
+    ) {
+      return;
+    }
+    if (entry.captureTimeoutId !== null) {
+      window.clearTimeout(entry.captureTimeoutId);
+      entry.captureTimeoutId = null;
+    }
     entry.backdropReady = false;
     entry.captureEpoch += 1;
     entry.capturePending = false;
+    entry.captureFailed = false;
+    entry.captureTimedOut = false;
     entry.hasBackdrop = false;
     if (entry.backdropApplied) {
       entry.backdropApplied = false;
@@ -165,6 +198,9 @@ class NativeLayoutCoordinator {
       hasBackdrop: false,
       captureEpoch: 0,
       capturePending: false,
+      captureFailed: false,
+      captureTimedOut: false,
+      captureTimeoutId: null,
       backdropApplied: false,
       backdropReady: false,
       nativeVisible: false,
@@ -183,8 +219,14 @@ class NativeLayoutCoordinator {
     return () => {
       const existing = this.views.get(reg.id);
       if (existing) {
+        if (existing.captureTimeoutId !== null) {
+          window.clearTimeout(existing.captureTimeoutId);
+          existing.captureTimeoutId = null;
+        }
         existing.captureEpoch += 1;
         existing.capturePending = false;
+        existing.captureFailed = false;
+        existing.captureTimedOut = false;
         existing.hasBackdrop = false;
         existing.backdropApplied = false;
         existing.onDisplayed(false);
@@ -463,13 +505,30 @@ class NativeLayoutCoordinator {
       if (reg.captureBounds !== boundsKey && !(paneDrag && reg.backdropReady)) this.cancelCapture(reg);
       reg.captureBounds = boundsKey;
       // Overlay input cannot wait for a remote page to finish loading.
-      if (!reg.hasBackdrop && !reg.capturePending) {
+      if (!reg.hasBackdrop && !reg.capturePending && !reg.captureFailed) {
         const epoch = ++reg.captureEpoch;
         reg.capturePending = true;
+        reg.captureTimedOut = false;
         reg.hasBackdrop = true;
+        if (reg.captureTimeoutId !== null) {
+          window.clearTimeout(reg.captureTimeoutId);
+        }
+        reg.captureTimeoutId = window.setTimeout(() => {
+          const current = this.views.get(id);
+          if (!current || current !== reg || current.captureEpoch !== epoch) return;
+          current.captureTimeoutId = null;
+          if (!current.backdropReady) {
+            current.captureTimedOut = true;
+            this.schedule();
+          }
+        }, CAPTURE_FAIL_SAFE_MS);
         void bridge.command({ type: 'capture', id }).then((res: unknown) => {
           const current = this.views.get(id);
           if (!current || current !== reg || current.captureEpoch !== epoch) return;
+          if (current.captureTimeoutId !== null) {
+            window.clearTimeout(current.captureTimeoutId);
+            current.captureTimeoutId = null;
+          }
           current.capturePending = false;
           const result = res as { ok?: boolean; dataUrl?: string } | undefined;
           if (result?.ok && result.dataUrl && current.hasBackdrop) {
@@ -484,18 +543,32 @@ class NativeLayoutCoordinator {
             return;
           }
           current.hasBackdrop = false;
+          current.captureFailed = true;
           if (current.backdropApplied) {
             current.backdropApplied = false;
             current.setCaptureBackdrop(null);
           }
+          this.schedule();
         }).catch(() => {
           const current = this.views.get(id);
           if (!current || current !== reg || current.captureEpoch !== epoch) return;
+          if (current.captureTimeoutId !== null) {
+            window.clearTimeout(current.captureTimeoutId);
+            current.captureTimeoutId = null;
+          }
           current.capturePending = false;
           current.hasBackdrop = false;
+          current.captureFailed = true;
+          if (current.backdropApplied) {
+            current.backdropApplied = false;
+            current.setCaptureBackdrop(null);
+          }
+          this.schedule();
         });
       }
-      if (!reg.backdropReady) visibleViews.push({ id, bounds: { x, y, width, height } });
+      if (!reg.backdropReady && !reg.captureFailed && !reg.captureTimedOut) {
+        visibleViews.push({ id, bounds: { x, y, width, height } });
+      }
     }
 
     const command = {

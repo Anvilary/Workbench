@@ -10,6 +10,7 @@ import { SessionPane } from './SessionPane.js';
 interface Props {
   tabs: readonly WorkspaceTab[];
   layout: WorkspacePaneLayout;
+  activeWorkspace?: boolean;
   paneHosts: { readonly current: Map<string, HTMLElement> };
   hostVersion: number;
   profiles: readonly AgencyCliProfile[];
@@ -34,6 +35,7 @@ interface Props {
 export function PersistentSessionPanes({
   tabs,
   layout,
+  activeWorkspace = true,
   paneHosts,
   hostVersion,
   profiles,
@@ -105,7 +107,7 @@ export function PersistentSessionPanes({
           holders.current.set(tab.id, holder);
         }
         const pane = getPaneNodes(layout.tree).find((item) => item.tabIds.includes(tab.id));
-        const paneVisible = !!pane && (!layout.maximizedPaneId || layout.maximizedPaneId === pane.id);
+        const paneVisible = activeWorkspace && !!pane && (!layout.maximizedPaneId || layout.maximizedPaneId === pane.id);
         const active = paneVisible && pane?.selectedTabId === tab.id;
         const profile = tab.session.kind === 'agent'
           ? profiles.find((item) => item.id === tab.session.profileId)

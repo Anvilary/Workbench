@@ -6,7 +6,7 @@ import type {
 } from '@agent-workbench/shared';
 import {
   assignCreatedTab, swapPanes, countLeaves, createDefaultLayout, findPaneNode, getPaneNodes, moveTabBetweenPanes,
-  reconcileLayout, splitPane, closePane, updatePaneNode, updateSplitRatio, MAX_LEAVES,
+  normalizeWebTabTitle, reconcileLayout, splitPane, closePane, updatePaneNode, updateSplitRatio, webTabProviderFor, MAX_LEAVES,
 } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import type { AppSettingsApi } from '../useAppSettings.js';
@@ -31,6 +31,7 @@ import { WorkspaceSessionDialogs } from '../features/workspaces/WorkspaceSession
 
 interface Props {
   workspace: AgencyWorkspace;
+  browserProfileId?: string;
   profiles: readonly AgencyCliProfile[];
   sessions: readonly AgencyRuntimeSession[];
   webTabs: readonly WebTab[];
@@ -54,12 +55,14 @@ interface Props {
   savedLayout?: WorkspacePaneLayout;
   onSaveLayout?: (workspaceId: WorkspaceId, layout: WorkspacePaneLayout) => Promise<unknown>;
   appSettings?: AppSettingsApi;
+  activeWorkspace?: boolean;
 }
 
 const EMPTY_EDITOR_TABS: readonly EditorTab[] = [];
 
 export function AgencyWorkspaceView({
   workspace,
+  browserProfileId,
   profiles,
   sessions,
   webTabs,
@@ -80,6 +83,7 @@ export function AgencyWorkspaceView({
   savedLayout,
   onSaveLayout,
   appSettings,
+  activeWorkspace = true,
 }: Props): JSX.Element {
   const browserSettings = useBrowserSettings(appSettings);
   const { favicons, removeFavicon } = useBrowserFavicons();
@@ -203,9 +207,11 @@ export function AgencyWorkspaceView({
 
   const currentTabKey = openTabIds.join(',');
   const [prevTabKey, setPrevTabKey] = useState(currentTabKey);
+  let effectiveLayout = layout;
   if (currentTabKey !== prevTabKey) {
     setPrevTabKey(currentTabKey);
-    const reconciled = reconcileLayout(layout, workspace.id, openTabIds, defaultSelected);
+    const reconciled = reconcileLayout(effectiveLayout, workspace.id, openTabIds, defaultSelected);
+    effectiveLayout = reconciled;
     layoutRef.current = reconciled;
     setLayout(reconciled);
   }
@@ -214,15 +220,15 @@ export function AgencyWorkspaceView({
   if (serverSelectedId !== prevServerSelected) {
     setPrevServerSelected(serverSelectedId);
     if (serverSelectedId && !selecting.current && !flight.current) {
-      const panes = getPaneNodes(layout.tree);
+      const panes = getPaneNodes(effectiveLayout.tree);
       const ownerPane = panes.find((p) => p.tabIds.includes(serverSelectedId));
       if (ownerPane) {
-        const nextTree = updatePaneNode(layout.tree, ownerPane.id, (p) => ({
+        const nextTree = updatePaneNode(effectiveLayout.tree, ownerPane.id, (p) => ({
           ...p,
           selectedTabId: serverSelectedId,
         }));
         const nextLayout = {
-          ...layout,
+          ...effectiveLayout,
           tree: nextTree,
           focusedPaneId: ownerPane.id,
         };
@@ -284,12 +290,13 @@ export function AgencyWorkspaceView({
 
   const handleSplit = useCallback(
     (targetPaneId: string, direction: SplitDirection, tabIdToMove?: string) => {
+      const current = layoutRef.current;
       const newPaneId = `pane-${crypto.randomUUID().slice(0, 8)}`;
-      const nextTree = splitPane(layout.tree, targetPaneId, direction, newPaneId, tabIdToMove, true);
+      const nextTree = splitPane(current.tree, targetPaneId, direction, newPaneId, tabIdToMove, true);
       if (nextTree) {
         save(
           {
-            ...layout,
+            ...current,
             tree: nextTree,
             focusedPaneId: newPaneId,
             maximizedPaneId: null,
@@ -299,29 +306,37 @@ export function AgencyWorkspaceView({
         );
       }
     },
-    [layout, save],
+    [save],
   );
 
-  const handleClosePane = useCallback(
-    (paneId: string) => {
-      const res = closePane(layout.tree, paneId);
-      if (res) {
-        save(
-          {
-            ...layout,
-            tree: res.tree,
-            focusedPaneId:
-              layout.focusedPaneId === paneId ? res.remainingPaneId : layout.focusedPaneId,
-            maximizedPaneId:
-              layout.maximizedPaneId === paneId ? null : layout.maximizedPaneId,
-            updatedAt: new Date().toISOString(),
-          },
-          true,
-        );
+  async function handleClosePane(paneId: string, closeAllTabs = false) {
+    const targetPane = findPaneNode(layoutRef.current.tree, paneId);
+    if (!targetPane || countLeaves(layoutRef.current.tree) < 2) return;
+    const closedIds = new Set<string>();
+    if (closeAllTabs) {
+      for (const id of targetPane.tabIds) {
+        const tab = tabs.find(candidate => candidate.id === id);
+        if (!tab || !findPaneNode(layoutRef.current.tree, paneId)?.tabIds.includes(id)) continue;
+        if (!await close(tab)) return;
+        closedIds.add(id);
       }
-    },
-    [layout, save],
-  );
+    }
+    if (!mounted.current) return;
+    const current = layoutRef.current;
+    const tree = updatePaneNode(current.tree, paneId, pane => {
+      const tabIds = pane.tabIds.filter(id => !closedIds.has(id));
+      return { ...pane, tabIds, selectedTabId: tabIds.includes(pane.selectedTabId ?? '') ? pane.selectedTabId : null };
+    });
+    const result = closePane(tree, paneId);
+    if (!result) return;
+    save({
+      ...current,
+      tree: result.tree,
+      focusedPaneId: current.focusedPaneId === paneId ? result.remainingPaneId : current.focusedPaneId,
+      maximizedPaneId: current.maximizedPaneId === paneId ? null : current.maximizedPaneId,
+      updatedAt: new Date(Math.max(Date.now(), Date.parse(current.updatedAt) + 1)).toISOString(),
+    }, true);
+  }
 
   const handleToggleMaximize = useCallback(
     (paneId: string) => {
@@ -421,8 +436,9 @@ export function AgencyWorkspaceView({
     : '';
 
   useEffect(() => {
+    if (!activeWorkspace) return;
     nativeLayoutCoordinator.setFocusedTabId(activeTabId ?? null);
-  }, [activeTabId]);
+  }, [activeTabId, activeWorkspace]);
 
   useEffect(() => {
     return () => {
@@ -432,7 +448,7 @@ export function AgencyWorkspaceView({
 
   usePaneInspection({
     workspaceId: workspace.id,
-    tab: tabs.find((tab) => tab.id === activeTabId),
+    tab: activeWorkspace ? tabs.find((tab) => tab.id === activeTabId) : undefined,
     serverSelectedId, online, displayed, activity, activityVersion, request,
     onDisplayed: onTabDisplayed,
     onAcknowledge: onAcknowledgeTab,
@@ -449,7 +465,7 @@ export function AgencyWorkspaceView({
     },
   }, selecting);
 
-  useBrowserZoomShortcuts({ layoutRef, tabs });
+  useBrowserZoomShortcuts({ layoutRef, tabs, enabled: activeWorkspace });
 
   const completeCreation = useCallback(
     (response: Awaited<ReturnType<Props['request']>>, targetPaneId: string) => {
@@ -515,10 +531,16 @@ export function AgencyWorkspaceView({
       maximizedPaneId: null,
       updatedAt: new Date().toISOString(),
     };
-    save(nextLayout, true);
+    const sanitized = reconcileLayout(nextLayout, workspace.id, openTabIdsRef.current, defaultSelectedRef.current);
+    layoutRef.current = sanitized;
+    setLayout(sanitized);
+    if (saveTimer.current !== null) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
     if (onSaveLayout) {
       try {
-        await onSaveLayout(workspace.id, nextLayout);
+        await onSaveLayout(workspace.id, sanitized);
       } catch (reason) {
         rollbackPane(newPaneId);
         setError(t('agency.splits.saveFailed', { error: String(reason) }));
@@ -662,31 +684,23 @@ export function AgencyWorkspaceView({
   }
 
   async function close(tab: WorkspaceTab) {
-    if (closingInFlight.current.has(tab.id)) return;
+    if (closingInFlight.current.has(tab.id)) return false;
     closingInFlight.current.add(tab.id);
     setClosing(null);
     setClosingTabIds((prev) => new Set(prev).add(tab.id));
-    if (tab.kind === 'editor') {
-      editorDraftStore.clearDraft(tab.id);
-      setUnsavedTabIds((prev) => {
-        if (!prev.has(tab.id)) return prev;
-        const next = new Set(prev);
-        next.delete(tab.id);
-        return next;
-      });
-    } else if (tab.kind === 'web') {
-      removeFavicon(tab.id);
-    }
     try {
       await action(tab, 'close');
+      if (tab.kind === 'editor') editorDraftStore.clearDraft(tab.id);
+      if (tab.kind === 'web') removeFavicon(tab.id);
+      return true;
     } catch (reason) {
-      closingInFlight.current.delete(tab.id);
       setClosingTabIds((prev) => {
         const next = new Set(prev);
         next.delete(tab.id);
         return next;
       });
       setError(reason instanceof Error ? reason.message : String(reason));
+      return false;
     } finally {
       closingInFlight.current.delete(tab.id);
     }
@@ -781,6 +795,7 @@ export function AgencyWorkspaceView({
       <div className="maw-split-workspace-content">
         <SplitPaneTree
           node={visibleTree}
+          browserProfileId={browserProfileId}
           layout={layout}
           tabs={tabs}
           profiles={profiles}
@@ -801,7 +816,6 @@ export function AgencyWorkspaceView({
             } else if (tab.kind === 'editor' && (unsavedTabIds.has(tab.id) || editorDraftStore.isDirty(tab.id))) {
               setClosing(tab);
             } else {
-              if (tab.kind === 'editor') editorDraftStore.clearDraft(tab.id);
               void close(tab);
             }
           }}
@@ -863,6 +877,7 @@ export function AgencyWorkspaceView({
         <PersistentSessionPanes
           tabs={tabs}
           layout={layout}
+          activeWorkspace={activeWorkspace}
           paneHosts={paneHosts}
           hostVersion={hostVersion}
           profiles={profiles}
@@ -880,7 +895,7 @@ export function AgencyWorkspaceView({
       </div>
 
       </PaneMovement>
-      <BrowserContextMenu
+      {activeWorkspace && <BrowserContextMenu
         tabs={webTabs}
         onCloseTab={(tab) => {
           const match = tabs.find((item) => item.id === tab.id);
@@ -895,11 +910,14 @@ export function AgencyWorkspaceView({
         onDuplicate={(tab) => {
           pendingSplit.current = null;
           creationTarget.current = layoutRef.current.focusedPaneId;
+          const provider = webTabProviderFor(tab);
+          const title = normalizeWebTabTitle(tab.title) || 'Browser';
           void request({
             type: 'agency.webTab.create',
             workspaceId: workspace.id,
             url: tab.url,
-            title: tab.title,
+            provider,
+            title,
             select: true,
             targetPaneId: layoutRef.current.focusedPaneId,
             launchId: crypto.randomUUID(),
@@ -907,7 +925,7 @@ export function AgencyWorkspaceView({
             setError(reason instanceof Error ? reason.message : String(reason));
           });
         }}
-      />
+      />}
 
       <WorkspaceSessionDialogs
         closing={closing}

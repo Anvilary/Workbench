@@ -183,13 +183,14 @@ test('native webpage pointer focus synchronizes inspection without stealing MAW 
 
   // Actual MAW dialogs/menus keep focus through layout measurements and overlay restoration.
   await page.locator('#pane-container-right').getByRole('button', { name: 'Add tab', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New CLI', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'New CLI', exact: true });
+  await page.getByRole('menuitem', { name: 'Browser', exact: true }).click();
+  const dialog = page.getByRole('dialog');
   await dialog.waitFor();
-  await dialog.locator('select').focus();
+  const address = dialog.getByLabel('URL or Search Query', { exact: true });
+  await address.focus();
   await page.waitForTimeout(150);
   assert.equal(await shellFocused(), true);
-  assert.equal(await dialog.locator('select').evaluate(el => el === document.activeElement), true);
+  assert.equal(await address.evaluate(el => el === document.activeElement), true);
   await page.keyboard.press('Escape');
   await dialog.waitFor({ state: 'detached' });
   await page.getByRole('button', { name: 'Notifications', exact: true }).click();

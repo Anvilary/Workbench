@@ -118,3 +118,50 @@ test('legacy ownership metadata remains inert and survives logical closure', asy
   assert.equal(closed.cleanupRequired, true);
   assert.equal(closed.runtimeState, 'closed');
 });
+
+test('P2 A-09: BrowserTabStore.save does not mutate inMemoryTabs when disk write fails', async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'maw-a09-browser-store-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'tabs.json');
+  const store = new BrowserTabStore(file);
+  await store.load();
+
+  const now = new Date().toISOString();
+  const initialTab = {
+    id: '00000000-0000-4000-8000-000000000101',
+    workspaceId,
+    kind: 'web' as const,
+    title: 'Original',
+    url: 'https://chatgpt.com/',
+    provider: 'chatgpt' as const,
+    order: 0,
+    selected: true,
+    closedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    runtimeState: 'client-managed' as const,
+    targetRef: null,
+    cleanupRequired: false,
+  };
+  await store.save([initialTab]);
+  assert.equal(store.getTab(initialTab.id)?.title, 'Original');
+
+  // Force write failure by making parent directory read-only or pointing a fresh store at a directory
+  const blockedDir = path.join(dir, 'blocked');
+  const { mkdir } = await import('node:fs/promises');
+  await mkdir(blockedDir);
+  const blockedStore = new BrowserTabStore(blockedDir);
+  await blockedStore.load().catch(() => {});
+  // Seed committed state via a valid file first, then replace target path with a directory to force write failure
+  const failingPath = path.join(dir, 'failing.json');
+  const store2 = new BrowserTabStore(failingPath);
+  await store2.load();
+  await store2.save([initialTab]);
+  assert.equal(store2.getTab(initialTab.id)?.title, 'Original');
+
+  // Remove file and create a directory at failingPath.bak so copyFile/write fails
+  await rm(failingPath + '.bak', { force: true });
+  await mkdir(failingPath + '.bak');
+  await assert.rejects(() => store2.save([{ ...initialTab, title: 'Uncommitted' }]));
+  assert.equal(store2.getTab(initialTab.id)?.title, 'Original', 'inMemoryTabs must not reflect failed write');
+});

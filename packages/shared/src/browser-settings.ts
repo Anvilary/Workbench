@@ -42,35 +42,35 @@ export const DEFAULT_SEARCH_ENGINES: readonly SearchEngine[] = [
     id: 'duckduckgo',
     name: 'DuckDuckGo',
     homeUrl: 'https://duckduckgo.com/',
-    searchUrl: 'https://duckduckgo.com/?q=',
+    searchUrl: 'https://duckduckgo.com/?q=%s',
     isBuiltin: true,
   },
   {
     id: 'google',
     name: 'Google',
     homeUrl: 'https://www.google.com/',
-    searchUrl: 'https://www.google.com/search?q=',
+    searchUrl: 'https://www.google.com/search?q=%s',
     isBuiltin: true,
   },
   {
     id: 'brave',
     name: 'Brave',
     homeUrl: 'https://search.brave.com/',
-    searchUrl: 'https://search.brave.com/search?q=',
+    searchUrl: 'https://search.brave.com/search?q=%s',
     isBuiltin: true,
   },
   {
     id: 'bing',
     name: 'Bing',
     homeUrl: 'https://www.bing.com/',
-    searchUrl: 'https://www.bing.com/search?q=',
+    searchUrl: 'https://www.bing.com/search?q=%s',
     isBuiltin: true,
   },
   {
     id: 'ecosia',
     name: 'Ecosia',
     homeUrl: 'https://www.ecosia.org/',
-    searchUrl: 'https://www.ecosia.org/search?q=',
+    searchUrl: 'https://www.ecosia.org/search?q=%s',
     isBuiltin: true,
   },
 ] as const;
@@ -112,12 +112,15 @@ export function isPublicWebHost(host: string): boolean {
 
 /**
  * Constructs a full search URL by safely encoding the query into
- * a template containing `%s` or `{q}`, or appending it to a query prefix.
+ * a template containing `%s`, `{q}`, or `{query}`, or appending it to a query prefix.
  */
 export function buildSearchUrl(templateOrPrefix: string, query: string): string {
   const encoded = encodeURIComponent(query);
   if (templateOrPrefix.includes('%s')) {
     return templateOrPrefix.replace(/%s/g, encoded);
+  }
+  if (templateOrPrefix.includes('{query}')) {
+    return templateOrPrefix.replace(/\{query\}/g, encoded);
   }
   if (templateOrPrefix.includes('{q}')) {
     return templateOrPrefix.replace(/\{q\}/g, encoded);
@@ -251,19 +254,30 @@ export function validateSearchEngine(
   if (/[\u0000-\u001f\u007f]/.test(trimmedSearch)) {
     return { valid: false, error: 'Search URL contains control characters' };
   }
-  const hasQueryToken = trimmedSearch.includes('%s') || trimmedSearch.includes('{q}');
+  const existingEditingEngine = editingId
+    ? existingEngines?.find((e) => e.id === editingId)
+    : undefined;
+  const isUnchangedLegacyBuiltinPrefix =
+    Boolean(existingEditingEngine?.isBuiltin) &&
+    existingEditingEngine?.searchUrl.trim() === trimmedSearch &&
+    trimmedSearch.endsWith('=');
+  const normalizedSearchUrl = isUnchangedLegacyBuiltinPrefix ? `${trimmedSearch}%s` : trimmedSearch;
+  const hasQueryToken =
+    normalizedSearchUrl.includes('%s') ||
+    normalizedSearchUrl.includes('{q}') ||
+    normalizedSearchUrl.includes('{query}');
   if (!hasQueryToken) {
     return {
       valid: false,
-      error: 'Search URL template must contain query token %s or {q}',
+      error: 'Search URL template must contain query token %s, {q}, or {query}',
     };
   }
-  if (!/^https:\/\//i.test(trimmedSearch)) {
+  if (!/^https:\/\//i.test(normalizedSearchUrl)) {
     return { valid: false, error: 'Search URL must use HTTPS scheme (https://)' };
   }
 
   // Test replacing query token with safe query string
-  const testUrlStr = buildSearchUrl(trimmedSearch, 'workbench-test-query');
+  const testUrlStr = buildSearchUrl(normalizedSearchUrl, 'workbench-test-query');
   let parsedSearch: URL;
   try {
     parsedSearch = new URL(testUrlStr);
@@ -287,7 +301,7 @@ export function validateSearchEngine(
   if (
     existingEngines &&
     existingEngines.some(
-      (e) => e.id !== editingId && e.searchUrl.trim().toLowerCase() === trimmedSearch.toLowerCase(),
+      (e) => e.id !== editingId && e.searchUrl.trim().toLowerCase() === normalizedSearchUrl.toLowerCase(),
     )
   ) {
     return { valid: false, error: 'A search engine with this search URL template already exists' };
@@ -304,7 +318,7 @@ export function validateSearchEngine(
       id,
       name: trimmedName,
       homeUrl: normalizedHome,
-      searchUrl: trimmedSearch,
+      searchUrl: normalizedSearchUrl,
       isBuiltin,
     },
   };
@@ -512,8 +526,12 @@ export function parseBrowserSettings(value: unknown): BrowserSettings | null {
   const rawEngines = record['searchEngines'];
   let searchEngines: SearchEngine[];
   if (Array.isArray(rawEngines)) {
-    const parsed = asArrayFiltered(rawEngines, parseSearchEngine);
-    searchEngines = parsed !== null && parsed.length > 0 ? parsed : [...DEFAULT_SEARCH_ENGINES];
+    if (rawEngines.length === 0) {
+      searchEngines = [];
+    } else {
+      const parsed = asArrayFiltered(rawEngines, parseSearchEngine);
+      searchEngines = parsed !== null && parsed.length > 0 ? parsed : [...DEFAULT_SEARCH_ENGINES];
+    }
   } else {
     searchEngines = [...DEFAULT_SEARCH_ENGINES];
   }

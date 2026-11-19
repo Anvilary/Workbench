@@ -672,3 +672,67 @@ test('22. Workspace validation on mutations remains unweakened for Done and Arch
     (err: any) => err.code === 'conflict'
   );
 });
+
+test('concurrent delete requests take the coordinator lock once and publish one deletion', async (t) => {
+  const ctx = await setupTest(t);
+  const workspace = await ctx.createWorkspace('concurrent-delete');
+  const context = ctx.domainContext({
+    runWorkspaceExclusive: (id, operation) => ctx.coordinator.mutations.runExclusive(id, operation),
+  });
+  const request = { type: 'agency.workspace.delete', workspaceId: workspace.id };
+  const replies = await Promise.all([
+    handleAgencyDomainRequest({ ...request, requestId: 'first' }, context),
+    handleAgencyDomainRequest({ ...request, requestId: 'second' }, context),
+  ]);
+  assert.deepEqual(replies.map(reply => reply?.type), ['agency.workspace.deleted', 'agency.workspace.deleted']);
+  assert.equal(ctx.messages.filter(message => message.type === 'agency.workspace.changed' &&
+    message.change === 'deleted' && message.workspaceId === workspace.id).length, 1);
+  assert.equal(await realpath(workspace.cwd), workspace.cwd);
+});
+
+test('P1 B-15: partial failure in shutdownWorkspace still broadcasts snapshots for already-closed tabs', async (t) => {
+  const ctx = await setupTest(t);
+  const ws = await ctx.createWorkspace('partial-shutdown-ws');
+
+  // Create one native tab and two browser tabs
+  await ctx.coordinator.createNative({
+    type: 'agency.session.create',
+    requestId: 'n1',
+    workspaceId: ws.id,
+    kind: 'terminal',
+    cols: 80,
+    rows: 24,
+  });
+  await ctx.browser.createTab({ workspaceId: ws.id, url: 'https://chatgpt.com/', title: 'Web 1' });
+  await ctx.browser.createTab({ workspaceId: ws.id, url: 'https://chatgpt.com/c/2', title: 'Web 2' });
+
+  ctx.coordinator.snapshot();
+  ctx.messages.length = 0;
+
+  // Fail closing the second browser tab after the native tab and first browser tab already closed
+  let closeCalls = 0;
+  const origCloseTab = ctx.browser.closeTab.bind(ctx.browser);
+  ctx.browser.closeTab = async (workspaceId, tabId, options) => {
+    closeCalls++;
+    if (closeCalls === 2) {
+      throw new Error('Injected browser tab close failure');
+    }
+    return origCloseTab(workspaceId, tabId, options);
+  };
+
+  await assert.rejects(
+    () => ctx.coordinator.shutdownWorkspace(ws.id),
+    /Injected browser tab close failure/,
+  );
+
+  // Even though shutdownWorkspace threw midway, snapshots MUST have been broadcast
+  // so clients reconcile the native tab and first browser tab that were closed.
+  assert.ok(
+    ctx.messages.some((m) => m.type === 'agency.sessions.snapshot'),
+    'Native sessions snapshot must be broadcast on partial shutdownWorkspace failure',
+  );
+  assert.ok(
+    ctx.messages.some((m) => m.type === 'agency.webTabs.snapshot'),
+    'Browser tabs snapshot must be broadcast on partial shutdownWorkspace failure',
+  );
+});

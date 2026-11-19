@@ -205,9 +205,9 @@ test('sidebar ux & branding acceptance suite: drag-and-drop, controls, lifecycle
     if (req.url === '/bundle.js') {
       res.writeHead(200, { 'Content-Type': 'application/javascript' });
       res.end(bundleJs);
-    } else if (req.url === '/brand/maw-logo-128.png') {
+    } else if (req.url === '/brand/workbench-logo-128.png') {
       res.writeHead(200, { 'Content-Type': 'image/png' });
-      res.end(readFileSync(path.join(webRoot, 'public/brand/maw-logo-128.png')));
+      res.end(readFileSync(path.join(webRoot, 'public/brand/workbench-logo-128.png')));
     } else {
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(`<!DOCTYPE html>
@@ -392,10 +392,10 @@ test('sidebar ux & branding acceptance suite: drag-and-drop, controls, lifecycle
   const navLogo = page.locator('.agency-nav-logo');
   await navLogo.waitFor({ state: 'visible' });
   const logoSrc = await navLogo.getAttribute('src');
-  assert.ok(logoSrc?.includes('maw-logo-128.png'), 'Sidebar logo must reference maw-logo-128.png');
+  assert.ok(logoSrc?.includes('workbench-logo-128.png'), 'Sidebar logo must reference workbench-logo-128.png');
   const brand = page.locator('.agency-nav-brand');
-  await brand.getByText('MaW', { exact: true }).waitFor();
+  await brand.getByText('Workbench', { exact: true }).waitFor();
   const logoBox = await navLogo.boundingBox(), brandBox = await brand.boundingBox(), headBox = await page.locator('.agency-nav-head').boundingBox();
   assert.ok(logoBox?.width >= 56, 'Sidebar logo is visibly larger');
-  assert.ok(brandBox.x - headBox.x <= 20, 'Logo and MaW title are left-aligned near the left edge');
+  assert.ok(brandBox.x - headBox.x <= 20, 'Logo and Workbench title are left-aligned near the left edge');
 });

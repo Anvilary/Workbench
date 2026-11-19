@@ -2,12 +2,15 @@ import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 import { _electron as electron } from 'playwright';
+import { runtimeFor } from './desktop-runtime.mjs';
 
 const require = createRequire(import.meta.url);
-const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const { version: electronVersion } = await runtimeFor(repoRoot);
 const outDir = path.join(repoRoot, 'docs/maw/split-workspaces');
 await mkdir(outDir, { recursive: true });
 
@@ -275,7 +278,7 @@ const markdown = `# Memory Footprint & Resource Utilization Report
 
 ## Environment
 - OS: Linux x86_64
-- Electron: 45.2.0 (Chromium sandbox enabled)
+- Electron: ${electronVersion} (Chromium sandbox enabled)
 - Architecture: Binary Tree Split Layout (Max 4 Leaves)
 
 ## Measurements

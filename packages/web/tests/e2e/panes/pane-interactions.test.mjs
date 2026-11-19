@@ -8,7 +8,7 @@ const paneAction=(page,n)=>pane(page,n).locator('.maw-pane-menu-toggle');
 const create=async(page,n,kind)=>{
  await menu(page,n).click();
  await page.getByRole('menuitem',{name:kind==='terminal'?'New Terminal':kind==='web'?'Browser':'Open File...',exact:true}).click();
- if(kind==='web')await page.getByRole('dialog').getByRole('button',{name:'Browser',exact:true}).click();
+ if(kind==='web'){await page.getByRole('dialog').getByRole('menuitem',{name:'ChatGPT',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'Open',exact:true}).click();}
  if(kind==='file'){
    await page.getByRole('dialog').locator('input').fill('src/index.ts');
    await page.getByRole('dialog').getByRole('button',{name:'Open',exact:true}).click();
@@ -56,9 +56,9 @@ test('delayed creation retains destination after focus changes, absent snapshots
  await page.evaluate(()=>window.fixture.snapshot());await frames(page);assert.deepEqual((await layout(page)).tree,before.tree);
  assert.equal(await pane(page,2).getByRole('tab').count(),2);
  await page.evaluate(()=>window.fixture.lag(false));await create(page,2,'terminal');await page.waitForFunction(()=>window.fixture.pending.length===1);
- // Closing the target pane does not terminate any of its sessions.
+ // Collapsing to a single pane merges tabs and does not terminate any of its sessions.
  await paneAction(page,2).click();
- await page.getByRole('menuitem',{name:'Close pane',exact:true}).click();
+ await page.getByRole('menuitem',{name:'Single pane',exact:true}).click();
  await page.evaluate(()=>window.fixture.resolve());await page.waitForFunction(()=>window.fixture.state.layout.tree.tabIds.length===4);
  const final=await layout(page);assert.equal(new Set(final.tree.tabIds).size,4);assert.equal(final.focusedPaneId,'pane-1');
  await page.evaluate(()=>{window.fixture.delay(false);window.fixture.fail()});
@@ -132,8 +132,8 @@ test('launch errors surface error banner and web validation prevents unwanted la
  await page.locator('.agency-error-bar button').click();await frames(page);
  assert.equal(await page.locator('.agency-error-bar').count(),0);
  await menu(page,1).click();await page.getByRole('menuitem',{name:'Browser',exact:true}).click();
- await page.getByRole('dialog').getByLabel('Website URL',{exact:true}).fill('https://example.com/');
- await page.getByRole('dialog').getByRole('button',{name:'Browser',exact:true}).click();
+ await page.getByRole('dialog').getByLabel('URL or Search Query',{exact:true}).fill('javascript:alert(1)');
+ await page.getByRole('dialog').getByRole('button',{name:'Go',exact:true}).click();
  await page.getByRole('dialog').getByRole('alert').waitFor();
  assert.equal(await page.evaluate(()=>window.fixture.requests.filter(m=>m.type==='agency.webTab.create').length),0);
  await page.keyboard.press('Escape');
@@ -214,10 +214,9 @@ test('Pane action menu: Split vertically and horizontally create terminal immedi
  assert.equal(await page.getByRole('menu').count(), 0);
  assert.deepEqual(await layout(page), initialLayout);
 
- // 3. Failed creation rolls back cleanly without leaving an orphaned pane
+ // 3. Failed creation in an empty split pane surfaces error banner cleanly
  await page.evaluate(() => { window.fixture.delay(false); window.fixture.fail(); });
- await paneAction(page, 1).click();
- await page.getByRole('menuitem', { name: 'Split vertically', exact: true }).click();
+ await create(page, 1, 'terminal');
  await page.getByRole('alert').filter({ hasText: 'Fixture launch failed' }).waitFor();
  assert.equal(await page.locator('.maw-split-pane').count(), 1);
  assert.equal((await layout(page)).tree.type, 'pane');

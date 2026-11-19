@@ -68,7 +68,7 @@ export function PaneTabIcon({ tab, favicon }: { tab: WorkspaceTab; favicon?: str
       </span>
     );
   }
-  if (tab.kind === 'editor') return <span>✎</span>;
-  if (tab.session?.kind === 'agent') return <span>◇</span>;
-  return <span>&gt;_</span>;
+  if (tab.kind === 'editor') return <span aria-hidden="true">✎</span>;
+  if (tab.session?.kind === 'agent') return <span aria-hidden="true">◇</span>;
+  return <span aria-hidden="true">&gt;_</span>;
 }
