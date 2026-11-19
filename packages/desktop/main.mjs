@@ -2,10 +2,9 @@ import { app, BrowserWindow, WebContentsView, Menu, ipcMain, session, shell, dia
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import { DEFAULT_BROWSER_PROFILE_ID, isValidBrowserProfileId, partitionForBrowserProfile, otherUrl, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, targetWebProvider, isSameSite, authenticationUrl, decideWindowOpen, getBrowserZoomAction, selectBestFavicon } from './policy.mjs';
 import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
-import { calculateResourceBudget, selectEvictionCandidate, isProtectedProvider, readSystemMemory } from './resource-budget.mjs';
+import { calculateResourceBudget, selectEvictionCandidate, isProtectedProvider, readSystemMemory, isTypingInput, canEvictView } from './resource-budget.mjs';
 import { ResourceCollector } from './resource-monitor.mjs';
 import { browserDownloadHandler } from './browser-downloads.mjs';
 import { isAllowedWebAuthnOrigin, isValidRpId } from './webauthn-policy.mjs';
@@ -32,9 +31,6 @@ app.commandLine.appendSwitch('enable-webgl');
 app.commandLine.appendSwitch('disable-accelerated-video-decode');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 if (!process.env.DRI_PRIME) process.env.DRI_PRIME = '0';
-if (!process.env.VK_DRIVER_FILES && !process.env.VK_ICD_FILENAMES && existsSync('/usr/share/vulkan/icd.d/radeon_icd.json')) {
-  process.env.VK_DRIVER_FILES = '/usr/share/vulkan/icd.d/radeon_icd.json';
-}
 let local = serviceUrl(process.env.MAW_DESKTOP_URL || '');
 delete process.env.MAW_DESKTOP_URL;
 if (!app.requestSingleInstanceLock({ serviceUrl: local.href })) app.exit(0);
@@ -175,6 +171,7 @@ async function start() {
       if (!win.isDestroyed() && !view.webContents.isDestroyed()) {
         try { win.contentView.removeChildView(view); } catch {}
         try { view.setVisible(false); } catch {}
+        try { view.webContents.setBackgroundThrottling(true); } catch {}
       }
     }
     attachedViews.clear();
@@ -187,6 +184,7 @@ async function start() {
         if (!win.isDestroyed() && !view.webContents.isDestroyed()) {
           try { win.contentView.removeChildView(view); } catch {}
           try { view.setVisible(false); } catch {}
+          try { view.webContents.setBackgroundThrottling(true); } catch {}
         }
         attachedViews.delete(id);
       }
@@ -316,7 +314,7 @@ async function start() {
     contents.on('will-attach-webview', event => event.preventDefault());
     const popupWindow = () => ({ action: 'allow', overrideBrowserWindowOptions: {
       parent: win, autoHideMenuBar: true, width: 640, height: 760,
-      webPreferences: { ...secure, session: contents.session, preload: isWebAuthnEnabled && provider === 'chatgpt' ? webauthnPreload : '', backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required', webgl: true },
+      webPreferences: { ...secure, session: contents.session, preload: isWebAuthnEnabled && provider === 'chatgpt' ? webauthnPreload : '', backgroundThrottling: true, autoplayPolicy: 'no-user-gesture-required', webgl: true },
     } });
     contents.setWindowOpenHandler(({ url, disposition, features }) => {
       if (provider === 'chatgpt' && isDownloadOrFileDeliveryUrl(url)) {
@@ -369,7 +367,6 @@ async function start() {
     });
     contents.on('before-input-event', (event, input) => {
       const id = getTabId();
-      if (id && input.type === 'keyDown') interactionProtected.add(id);
       if (input.type === 'keyDown' && input.control && input.key.toLowerCase() === 'l') {
         event.preventDefault(); send({ type: 'address-shortcut', id }); return;
       }
@@ -379,6 +376,7 @@ async function start() {
         applyBrowserZoom(id, contents, zoomAction);
         return;
       }
+      if (id && isTypingInput(input)) interactionProtected.add(id);
       desktopShortcut(event, input);
     });
     contents.on('context-menu', (event, params) => {
@@ -411,22 +409,19 @@ async function start() {
     return isDurableProviderPage(provider, value, { otherUrl, perplexityUrl });
   }
 
-  function canEvict(id) {
-    if (attachedViews.has(id)) return false;
-    if (layoutFocusedId === id) return false;
-    if ((activeDownloads.get(id) ?? 0) > 0) return false;
-    for (const ownerId of popupOwners.values()) {
-      if (ownerId === id) return false;
-    }
-    const view = views.get(id);
-    if (!view || view.webContents.isDestroyed()) return false;
-    if (view.webContents.isLoading()) return false;
-
-    // A budget is soft when a page may hold unsaved input. Never trade drafts for RAM.
-    if (interactionProtected.has(id) || isProtectedProvider(providers.get(id) ?? 'chatgpt')) return false;
-    if (!durablePage(providers.get(id), view.webContents.getURL())) return false;
-
-    return true;
+  function canEvict(id, memoryTier) {
+    return canEvictView({
+      id,
+      attachedViews,
+      layoutFocusedId,
+      activeDownloads,
+      popupOwners,
+      views,
+      providers,
+      interactionProtected,
+      durablePage,
+      memoryTier,
+    });
   }
 
   function getResourceBudgetInfo() {
@@ -497,13 +492,15 @@ async function start() {
   }
 
   function trimCapacity(excludeId, reserve = 0) {
-    const { budget } = getResourceBudgetInfo();
+    if (views.size === 0) return;
+    if (reserve === 0 && views.size <= attachedViews.size) return;
+    const { budget, memoryTier } = getResourceBudgetInfo();
     while (views.size > Math.max(0, budget - reserve)) {
       const candidateId = selectEvictionCandidate({
         residentIds: views.keys(),
         lastAccessedAt,
-        canEvict,
-        isProtected: (id) => isProtectedProvider(providers.get(id) ?? 'chatgpt'),
+        canEvict: (id) => canEvict(id, memoryTier),
+        isProtected: (id) => isProtectedProvider(providers.get(id) ?? 'chatgpt') || interactionProtected.has(id),
         excludeId,
       });
 
@@ -588,7 +585,7 @@ async function start() {
 
     trimCapacity(id, 1);
     const viewPreload = isWebAuthnEnabled && provider === 'chatgpt' ? webauthnPreload : '';
-    const view = new WebContentsView({ webPreferences: { ...secure, session: targetSession, preload: viewPreload, backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required', webgl: true } });
+    const view = new WebContentsView({ webPreferences: { ...secure, session: targetSession, preload: viewPreload, backgroundThrottling: true, autoplayPolicy: 'no-user-gesture-required', webgl: true } });
     view.setVisible(false);
     view.setBackgroundColor('#212121');
     views.set(id, view);
@@ -611,7 +608,7 @@ async function start() {
     // Observe native pointer activation without cancelling page input. Bare focus events
     // also occur during attachment and programmatic focus, so they are not user intent.
     view.webContents.on('before-mouse-event', (_event, mouse) => {
-      if (mouse.type === 'mouseDown') { interactionProtected.add(id); reportFocus(); }
+      if (mouse.type === 'mouseDown') reportFocus();
     });
     const committed = (_event, url, isMainFrame = true) => {
       if (!isMainFrame || views.get(id) !== view) return;
@@ -1064,6 +1061,9 @@ async function start() {
         if (!targetIds.has(attachedId)) {
           win.contentView.removeChildView(attachedView);
           attachedView.setVisible(false);
+          if (!attachedView.webContents.isDestroyed()) {
+            try { attachedView.webContents.setBackgroundThrottling(true); } catch {}
+          }
           attachedViews.delete(attachedId);
         }
       }
@@ -1083,6 +1083,7 @@ async function start() {
 
         view.setBounds(bounds);
         view.setVisible(true);
+        try { view.webContents.setBackgroundThrottling(false); } catch {}
       }
 
       // Geometry updates and overlay restoration must preserve focus in MAW controls.
@@ -1216,9 +1217,12 @@ async function start() {
   win.webContents.on('before-input-event', desktopShortcut);
 
   let backendFailureCount = 0;
+  let trimTick = 0;
   const checkInterval = setInterval(async () => {
     if (shuttingDown) return;
-    trimCapacity();
+    if (views.size > attachedViews.size && ++trimTick % 5 === 0) {
+      trimCapacity();
+    }
     try {
       const probe = await fetch(local, { signal: AbortSignal.timeout(1200), redirect: 'error' });
       if (probe.ok || probe.status === 401) {
