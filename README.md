@@ -1,4 +1,6 @@
-# Anvilary Workbench
+<img width="1920" height="640" alt="workbench-readme-banner-1920x640" src="https://github.com/user-attachments/assets/7b2e915c-1409-4c06-8496-50280797abdf" />
+
+# The Workbench
 
 **Anvilary Workbench** (short name: **Workbench**, formerly My Amazing Workspace / MaW and Agent Workbench; planned repository: `Anvilary/Workbench`) provides a local browser and Ubuntu desktop interface for coding-agent CLIs. Run
 `pnpm desktop` from the development worktree (or `anvil-bench desktop` / `maw desktop` once installed) for one native Workbench window with CLI,
