@@ -177,8 +177,10 @@ test('real systemd: a release built from this repository activates, is verified 
   const repoRoot = path.resolve(SCRIPT_DIR, '../..');
   const env = { ...process.env, MAW_STATE_DIR: state, MAW_UNIT: unit, MAW_RUNTIME_DIR: path.join(process.env['XDG_RUNTIME_DIR']!, runtimeName),
     MAW_NODE_BIN: process.execPath, MAW_READY_TIMEOUT: '20', MAW_CGROUP_FILE: path.join(root, 'none'), MAW_ENV_FILE: path.join(root, 'no-environment'),
-    MAW_PTYD_UNIT: ptydUnit, XDG_CONFIG_HOME: path.join(sandbox, 'config') };
+    MAW_PTYD_UNIT: ptydUnit, XDG_CONFIG_HOME: path.join(sandbox, 'config'),
+    MAW_LIB_DIR: path.join(root, 'lib'), MAW_BIN_DIR: path.join(root, 'bin') };
   try {
+    await exec('/bin/sh', [path.join(SCRIPT_DIR, 'install.sh'), '--commands-only'], { env });
     const built = await exec('/bin/sh', [path.join(SCRIPT_DIR, 'maw-update.sh'), '--initial', '--source', repoRoot, '--ref', 'HEAD', '--allow-unapproved-ref'],
       { env, maxBuffer: 64 * 1024 * 1024, timeout: 600_000 });
     assert.match(built.stdout, /Initial release (\S+) installed/);
