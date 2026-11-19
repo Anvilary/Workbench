@@ -665,7 +665,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
         </div>}
         {!loaded ? (
           <div className="agency-welcome">
-            <img src="/brand/workbench-logo-256.png" className="agency-welcome-logo" alt="Workbench" width="84" height="84" />
+            <img src="/brand/workbench-logo-256.png" className="agency-welcome-logo" alt={t('agency.ui.agency')} width="84" height="84" />
             <h1>{t('agency.ui.agency')}</h1>
             <p>{t('agency.ui.loadingServerWorkspaceData')}</p>
           </div>
@@ -684,7 +684,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
               />
             ) : !selected ? (
               <div className="agency-welcome">
-                <img src="/brand/workbench-logo-256.png" className="agency-welcome-logo" alt="Workbench" width="96" height="96" />
+                <img src="/brand/workbench-logo-256.png" className="agency-welcome-logo" alt={t('agency.ui.agency')} width="96" height="96" />
                 <h1>{t('agency.ui.onePlaceForEveryDevelopmentLane')}</h1>
                 <p>{t('agency.ui.createAProjectAndAWorkspaceAttachAn')}</p>
                 <button type="button" className="agency-primary-button" onClick={() => openCreator()} disabled={!online}>

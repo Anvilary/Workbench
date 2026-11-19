@@ -128,6 +128,7 @@ test('TASK B: 42,000-line scrollback, search, Ctrl+Shift+A, Ctrl+A/C semantics, 
       .agency-agent-body{flex:1;position:relative;min-height:0}
       .agency-xterm-host,.terminal-surface{position:absolute;inset:0}
       .terminal-surface-hidden{visibility:hidden}
+      .maw-pane-feedback{position:absolute;top:10px;right:14px;pointer-events:none}
     </style></head><body><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>`);
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -325,7 +326,7 @@ test('TASK B: 42,000-line scrollback, search, Ctrl+Shift+A, Ctrl+A/C semantics, 
   assert.equal(inAltBuffer.altActive, true, 'Alternate buffer is active');
   assert.equal(inAltBuffer.normalLength, beforeAlt, 'Entering the alternate screen preserves the existing normal buffer');
   assert.equal(inAltBuffer.altBaseY, 0, 'Alternate buffer has 0 scrollback');
-  assert.equal(inAltBuffer.normalLength, 42000 + inAltBuffer.rows, 'Normal buffer retains the full configured history during TUI session');
+  assert.equal(inAltBuffer.normalLength, 42000 + bufferStats.rows, 'Normal buffer retains the full configured history during TUI session');
 
   // Exit alternate screen (\x1b[?1049l)
   await page.evaluate(async () => {
