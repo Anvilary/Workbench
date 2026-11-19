@@ -251,12 +251,17 @@ run_step corepack pnpm typecheck || handle_candidate_failure typecheck 'typechec
 printf '%s\n' 'Building production bundles...'
 run_step corepack pnpm build || handle_candidate_failure build 'build failed'
 # Verify server bundle artifacts exist
-if [ ! -f "$candidate_dir/packages/server/dist/index.mjs" ] || [ ! -f "$candidate_dir/packages/server/dist/maw-ptyd.mjs" ]; then
-  handle_candidate_failure validate 'missing server bundle artifacts (dist/index.mjs or dist/maw-ptyd.mjs)'
+if [ ! -f "$candidate_dir/packages/server/dist/index.mjs" ] ||
+   [ ! -f "$candidate_dir/packages/server/dist/maw-ptyd.mjs" ] ||
+   [ ! -f "$candidate_dir/packages/server/dist/terminal-state.mjs" ]; then
+  handle_candidate_failure validate 'missing server bundle artifacts (dist/index.mjs, dist/maw-ptyd.mjs, or dist/terminal-state.mjs)'
 fi
-# Verify supervisor is valid JavaScript
+# Verify supervisor and terminal-state helper are valid JavaScript
 if ! "$node_bin" -c "$candidate_dir/packages/server/dist/maw-ptyd.mjs" 2>/dev/null; then
   handle_candidate_failure validate 'supervisor dist/maw-ptyd.mjs is not valid JavaScript'
+fi
+if ! "$node_bin" -c "$candidate_dir/packages/server/dist/terminal-state.mjs" 2>/dev/null; then
+  handle_candidate_failure validate 'supervisor dist/terminal-state.mjs is not valid JavaScript'
 fi
 # Verify node-pty native addon is present (required at runtime by both server and supervisor)
 if [ ! -d "$candidate_dir/packages/server/node_modules/node-pty" ]; then

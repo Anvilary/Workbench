@@ -49,6 +49,7 @@ create_valid_release() {
   printf 'export {};\n' > "$_rd/packages/server/node_modules/tsx/dist/loader.mjs"
   printf '#!/usr/bin/env node\nconsole.log("server");\n' > "$_rd/packages/server/dist/index.mjs"
   printf '#!/usr/bin/env node\nconsole.log("ptyd");\n' > "$_rd/packages/server/dist/maw-ptyd.mjs"
+  printf 'export class TerminalState {}\n' > "$_rd/packages/server/dist/terminal-state.mjs"
   chmod 755 "$_rd/packages/server/dist/maw-ptyd.mjs"
   printf '{"releaseId":"%s","commit":"abc1234","ref":"origin/main","channel":"approved","builtAt":"20261104","source":"/tmp","schema":2,"supervisor":true}\n' \
     "$2" > "$_rd/.maw-release-meta.json"
@@ -398,6 +399,95 @@ if echo "$reg_source" | grep -q "MAW_AUTO_SPAWN_PTYD" && echo "$unit_source" | g
   ok
 else
   fail "maw.service must configure MAW_AUTO_SPAWN_PTYD=0 and terminal-registry must check it"
+fi
+
+# ---- Test 21: Next-generation release strictly requires dist/terminal-state.mjs ----
+begin "21. next-generation release strictly requires dist/terminal-state.mjs"
+td=$(make_test_dir)
+releases_dir="$td/releases"; mkdir -p "$releases_dir"
+state_dir="$td"; export state_dir releases_dir node_bin
+. "$script_dir/maw-lib.sh"
+nextgen_rid="20261104160500-nextgen2"
+create_valid_release "$releases_dir" "$nextgen_rid"
+rm -f "$releases_dir/$nextgen_rid/packages/server/dist/terminal-state.mjs"
+if maw_valid_release "$releases_dir/$nextgen_rid"; then
+  fail "next-gen release missing terminal-state.mjs must be rejected"
+else
+  ok
+fi
+
+# ---- Test 22: restart helper detects terminal-state.mjs changes and rolls back maw-ptyd on failure ----
+begin "22. restart helper restarts maw-ptyd on terminal-state.mjs change and rolls it back on maw.service failure"
+td=$(make_test_dir)
+releases_dir="$td/releases"; mkdir -p "$releases_dir" "$td/bin" "$td/runtime"
+state_dir="$td"; export state_dir releases_dir node_bin
+. "$script_dir/maw-lib.sh"
+rid_old="20261104170000-aaaa111"
+rid_new="20261104170500-bbbb222"
+create_valid_release "$releases_dir" "$rid_old"
+create_valid_release "$releases_dir" "$rid_new"
+# Keep maw-ptyd.mjs identical; change ONLY terminal-state.mjs
+printf 'export class TerminalState { static v = 2; }\n' > "$releases_dir/$rid_new/packages/server/dist/terminal-state.mjs"
+maw_set_pointer current "$releases_dir/$rid_old"
+maw_set_pointer healthy "$releases_dir/$rid_old"
+maw_set_pointer staged "$releases_dir/$rid_new"
+
+# Mock systemctl recording which release current points to on every ptyd/service restart
+cat > "$td/bin/systemctl" <<EOF
+#!/bin/sh
+cmd=""; for a in "\$@"; do case "\$a" in --*) ;; *) [ -z "\$cmd" ] && cmd="\$a" ;; esac; done
+case "\$cmd" in
+  show)
+    case "\$*" in
+      *ActiveState*) printf 'active\n'; exit 0 ;;
+      *ControlGroup*) printf '\n'; exit 0 ;;
+      *Result*) printf 'exit-code\n'; exit 0 ;;
+    esac
+    exit 0 ;;
+  restart|start|stop)
+    cur=\$(readlink -f "$td/current" 2>/dev/null || true)
+    printf '%s %s %s\n' "\$cmd" "\$*" "\$(basename "\$cur")" >> "$td/systemctl.log"
+    case "\$*" in
+      *maw-ptyd-test.service*)
+        printf '%s\n' "\$(basename "\$cur")" > "$td/ptyd-running"
+        exit 0 ;;
+      *)
+        printf '%s\n' "\$(basename "\$cur")" > "$td/backend-running"
+        exit 0 ;;
+    esac ;;
+esac
+exit 0
+EOF
+chmod 755 "$td/bin/systemctl"
+
+# Mock control.mjs: target release fails readiness probe, healthy release succeeds
+cat > "$td/mock-control.mjs" <<EOF
+import fs from 'node:fs';
+const cmd = process.argv[2];
+if (cmd === 'check-data' || cmd === 'ptyd-empty') process.exit(0);
+if (cmd === 'backend-mode') { console.log('in-process'); process.exit(0); }
+if (cmd === 'status') {
+  const running = fs.existsSync('$td/backend-running') ? fs.readFileSync('$td/backend-running', 'utf8').trim() : '';
+  const expected = process.env.MAW_EXPECT_RELEASE_ID || '';
+  if (running === '$rid_old' && (!expected || expected === '$rid_old')) process.exit(0);
+  process.exit(1);
+}
+process.exit(0);
+EOF
+
+set +e
+PATH="$td/bin:$PATH" HOME="$td" MAW_STATE_DIR="$td" MAW_RELEASES_DIR="$releases_dir" \
+  MAW_RUNTIME_DIR="$td/runtime" MAW_UNIT="maw-test.service" MAW_PTYD_UNIT="maw-ptyd-test.service" \
+  MAW_CONTROL_SCRIPT="$td/mock-control.mjs" MAW_READY_TIMEOUT=1 MAW_NODE_BIN="$node_bin" \
+  /bin/sh "$script_dir/maw-restart-helper.sh" --unit maw-test.service --force >/dev/null 2>&1
+rc=$?
+set -e
+ptyd_after=$(cat "$td/ptyd-running" 2>/dev/null || true)
+ptyd_restarts=$(grep -c 'restart .*maw-ptyd-test.service' "$td/systemctl.log" 2>/dev/null || true)
+if [ "$rc" -eq 2 ] && [ "$ptyd_restarts" -eq 2 ] && [ "$ptyd_after" = "$rid_old" ]; then
+  ok
+else
+  fail "expected rc=2, 2 ptyd restarts (promote + rollback), ptyd_after=$rid_old; got rc=$rc ptyd_restarts=$ptyd_restarts ptyd_after=$ptyd_after"
 fi
 
 # ---- Summary ----

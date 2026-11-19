@@ -70,10 +70,16 @@ probe() {
 # start_and_verify DIR -> 0 when the service started from DIR reports DIR's release ID.
 fail_reason=""
 backend_stopped=false
+ptyd_promoted=false
+ptyd_bundle_changed() {
+  ! cmp -s "$1/packages/server/dist/maw-ptyd.mjs" "$2/packages/server/dist/maw-ptyd.mjs" ||
+    ! cmp -s "$1/packages/server/dist/terminal-state.mjs" "$2/packages/server/dist/terminal-state.mjs"
+}
 start_and_verify() {
   _id=$(maw_release_id "$1")
   sctl reset-failed "$unit" "${MAW_PTYD_UNIT:-maw-ptyd.service}" >/dev/null 2>&1 || true
   if [ "$restart_ptyd" = true ]; then
+    ptyd_promoted=true
     if ! sctl restart "${MAW_PTYD_UNIT:-maw-ptyd.service}"; then
       fail_reason="PTY supervisor restart failed"
       return 1
@@ -175,7 +181,7 @@ fi
 restart_ptyd=false
 quiesce_backend=false
 if [ "$managed" = true ] && maw_valid_release "$current_raw" &&
-  ! cmp -s "$current_raw/packages/server/dist/maw-ptyd.mjs" "$target/packages/server/dist/maw-ptyd.mjs" &&
+  ptyd_bundle_changed "$current_raw" "$target" &&
   [ "$(ptyd_unit_state)" = active ]; then
   if ! "$node_bin" "$control_script" ptyd-empty >/dev/null 2>&1; then
     maw_log activation-blocked target "$target_name" reason 'PTY supervisor is not authenticated or has live sessions'
@@ -288,6 +294,9 @@ phase=rollback
 if [ -n "$healthy" ] && [ "$healthy" != "$target" ]; then
   healthy_name=$(basename "$healthy")
   if ! "$node_bin" "$control_script" check-data "$healthy"; then
+    if [ "$ptyd_promoted" = true ]; then
+      sctl stop "${MAW_PTYD_UNIT:-maw-ptyd.service}" >/dev/null 2>&1 || true
+    fi
     maw_log rollback-failure release "$healthy_name" failed "$target_name" reason 'target release cannot preserve existing browser data'
     printf '%s\n' "CRITICAL: automatic rollback to $healthy_name was blocked to protect browser data." \
       'The browser tab store was preserved. Inspect maw status and maw logs before choosing a compatible release.' >&2
@@ -295,16 +304,31 @@ if [ -n "$healthy" ] && [ "$healthy" != "$target" ]; then
   fi
   printf '%s\n' "Rolling back to last verified healthy release $healthy_name..." >&2
   printf '%s\n' 'Executable rollback does not guarantee historical-data compatibility; older releases cannot display split session history.' >&2
+  if [ "$ptyd_promoted" = true ]; then
+    if [ -f "$healthy/packages/server/dist/maw-ptyd.mjs" ] && [ -f "$healthy/packages/server/dist/terminal-state.mjs" ]; then
+      restart_ptyd=true
+    else
+      restart_ptyd=false
+      sctl stop "${MAW_PTYD_UNIT:-maw-ptyd.service}" >/dev/null 2>&1 || true
+    fi
+  fi
   if maw_set_pointer current "$healthy" && start_and_verify "$healthy"; then
     maw_log rollback-success release "$healthy_name" failed "$target_name"
     printf '%s\n' "UPDATE FAILED, SERVICE RECOVERED: $healthy_name is active and verified healthy." \
       "The failed release $target_name was not kept staged." >&2
     exit 2
   fi
+  if [ "$ptyd_promoted" = true ]; then
+    sctl stop "${MAW_PTYD_UNIT:-maw-ptyd.service}" >/dev/null 2>&1 || true
+  fi
   maw_log rollback-failure release "$healthy_name" failed "$target_name" reason "$fail_reason"
   printf '%s\n' "CRITICAL: rollback to $healthy_name also failed ($fail_reason). MAW is DOWN." \
     "Inspect: maw logs; systemctl --user status $unit" >&2
   exit 3
+fi
+
+if [ "$ptyd_promoted" = true ]; then
+  sctl stop "${MAW_PTYD_UNIT:-maw-ptyd.service}" >/dev/null 2>&1 || true
 fi
 
 if [ "$target" = "$healthy" ]; then
