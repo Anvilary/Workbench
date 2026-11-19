@@ -2996,16 +2996,9 @@
 .maw-settings-about-logo {
   width: 44px;
   height: 44px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, var(--ember) 0%, #b45309 100%);
-  color: #fff;
-  font-weight: 700;
-  font-size: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  letter-spacing: -0.03em;
-  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.25);
+  flex: none;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.35));
 }
 
 .maw-settings-about-name {

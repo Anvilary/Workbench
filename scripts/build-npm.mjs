@@ -31,8 +31,8 @@ import { build } from 'esbuild';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = path.join(repoRoot, 'dist-npm');
-const REPO_URL = 'https://github.com/cvelasquez/agent-workbench';
-const RAW_BASE = 'https://raw.githubusercontent.com/cvelasquez/agent-workbench/main/';
+const REPO_URL = 'https://github.com/Anvilary/Workbench';
+const RAW_BASE = 'https://raw.githubusercontent.com/Anvilary/Workbench/main/';
 
 const readJson = (...segments) => JSON.parse(readFileSync(path.join(repoRoot, ...segments), 'utf8'));
 const rootPkg = readJson('package.json');

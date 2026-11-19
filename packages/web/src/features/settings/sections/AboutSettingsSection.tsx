@@ -17,7 +17,13 @@ export function AboutSettingsSection({
         className={`maw-settings-card ${highlightedCardId === 'setting-card-about' ? 'maw-settings-card-highlighted' : ''}`}
       >
         <div className="maw-settings-about-hero">
-          <div className="maw-settings-about-logo" aria-hidden="true">AW</div>
+          <img
+            src="/brand/workbench-logo-128.png"
+            className="maw-settings-about-logo"
+            alt=""
+            width="44"
+            height="44"
+          />
           <div>
             <h3 className="maw-settings-about-name">{t('settings.about.app')}</h3>
             <p className="maw-settings-about-tagline">{t('settings.about.tagline')}</p>
@@ -42,7 +48,7 @@ export function AboutSettingsSection({
         <div className="maw-settings-about-links">
           <a
             className="link-button"
-            href="https://github.com/cvelasquez/agent-workbench"
+            href="https://github.com/Anvilary/Workbench"
             target="_blank"
             rel="noreferrer noopener"
           >
