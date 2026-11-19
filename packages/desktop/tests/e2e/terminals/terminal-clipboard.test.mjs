@@ -2,7 +2,7 @@
 // Run: node --test packages/desktop/terminal-clipboard.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
@@ -47,12 +47,17 @@ test('electron: real OS clipboard write, IPC bridge roundtrip, and independent x
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 
+  let desktop;
   t.after(async () => {
-    await new Promise((resolve) => server.close(resolve));
-    await rm(dataDir, { recursive: true, force: true });
+    try {
+      await desktop?.close();
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+      await rm(dataDir, { recursive: true, force: true, maxRetries: 3 });
+    }
   });
 
-  const desktop = await electron.launch({
+  desktop = await electron.launch({
     chromiumSandbox: true,
     executablePath: electronExecutable,
     args: [here, '--ozone-platform=x11'],
@@ -62,10 +67,6 @@ test('electron: real OS clipboard write, IPC bridge roundtrip, and independent x
       MAW_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
       MAW_DESKTOP_DATA_DIR: dataDir,
     },
-  });
-
-  t.after(async () => {
-    await desktop.close().catch(() => {});
   });
 
   const page = await desktop.firstWindow();
@@ -93,13 +94,13 @@ test('electron: real OS clipboard write, IPC bridge roundtrip, and independent x
 
   // 3. Independent read using external OS tool (xclip) if available
   try {
-    const xclipOut = execSync('xclip -o -selection clipboard', {
-      env: process.env,
+    const xclipOut = execFileSync('xclip', ['-o', '-selection', 'clipboard'], {
+      encoding: 'utf8',
       timeout: 3000,
-    }).toString('utf8');
+    });
     assert.equal(xclipOut, testString, 'xclip independently verifies clipboard content on X11');
-  } catch {
-    // xclip might not be available or fail in non-X11 environment; skip external check
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
   }
 
   // 4. Overwrite with empty string

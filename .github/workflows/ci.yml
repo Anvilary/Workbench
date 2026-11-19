@@ -197,15 +197,29 @@ jobs:
           codex="$RUNNER_TEMP/workbench-codex/node_modules/.bin/codex"
           "$codex" --version
           echo "MAW_CODEX_EXECUTABLE=$codex" >> "$GITHUB_ENV"
-      - name: Sandboxed Electron integration, security, lifecycle and staging
+      - name: Sandboxed Electron integration and security
         working-directory: packages/desktop
+        env:
+          GSK_RENDERER: cairo
+          LIBGL_ALWAYS_SOFTWARE: '1'
         run: |
-          export GSK_RENDERER=cairo LIBGL_ALWAYS_SOFTWARE=1
-          xvfb-run -a pnpm test:integration
-          xvfb-run -a pnpm test:security
-          xvfb-run -a dbus-run-session env MAW_NAUTILUS_TEST_ISOLATED=1 pnpm test:e2e
-          xvfb-run -a pnpm test:runtime
-          xvfb-run -a pnpm test:staging
+          timeout -k 10s 2m xvfb-run -a pnpm test:integration
+          timeout -k 10s 2m xvfb-run -a pnpm test:security
+      - name: Sandboxed Electron E2E
+        working-directory: packages/desktop
+        env:
+          GSK_RENDERER: cairo
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          MAW_NAUTILUS_TEST_ISOLATED: '1'
+        run: timeout -k 10s 6m xvfb-run -a dbus-run-session pnpm test:e2e
+      - name: Sandboxed Electron runtime and staging
+        working-directory: packages/desktop
+        env:
+          GSK_RENDERER: cairo
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: |
+          timeout -k 10s 2m xvfb-run -a pnpm test:runtime
+          timeout -k 10s 4m xvfb-run -a pnpm test:staging
 
   windows-validation:
     name: Windows validation (Node 22)
