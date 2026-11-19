@@ -3,7 +3,17 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { BrowserDestinationPicker } from '../../../src/agency/split/BrowserDestinationPicker.js';
-import { DEFAULT_BROWSER_FAVORITES, getSearchEngine, resolveAddressBarInput } from '@agent-workbench/shared';
+import { resolveBrowserTabTarget } from '../../../src/features/workspaces/workspace-tab-helpers.js';
+import { nativeChatGptUrl, nativeWorkspaceUrl } from '../../../src/agency/NativeChatGptView.js';
+import {
+  DEFAULT_BROWSER_FAVORITES,
+  getSearchEngine,
+  normalizeWebTabTitle,
+  parseWebTabClientMessage,
+  resolveAddressBarInput,
+  validateWebTabTitle,
+  webTabProviderFor,
+} from '@agent-workbench/shared';
 
 globalThis.React = React;
 
@@ -163,5 +173,46 @@ test('8. Picker header renders close button and title when cancel callback provi
 
   assert.ok(html.includes('maw-browser-dest-close'), 'Close button rendered in header');
   assert.ok(html.includes('maw-browser-dest-header-title'), 'Header title rendered');
+});
+
+test('9. C-05: inline Other URL > 120 chars normalizes title to pass webTab wire validation', () => {
+  const longUrl = 'https://docs.python.org/3/library/' + 'a'.repeat(140) + '.html';
+  const normalizedTitle = normalizeWebTabTitle(longUrl);
+  assert.equal(validateWebTabTitle(normalizedTitle), true);
+  assert.ok(normalizedTitle.length <= 120);
+
+  const resolved = resolveBrowserTabTarget({ url: longUrl, title: longUrl, provider: 'other' });
+  assert.equal(resolved.ok, true);
+  assert.equal(validateWebTabTitle(resolved.title), true);
+
+  const parsed = parseWebTabClientMessage({
+    type: 'agency.webTab.create',
+    requestId: 'req-long-url',
+    workspaceId: '11111111-1111-4111-8111-111111111111',
+    url: resolved.url,
+    provider: resolved.provider,
+    title: resolved.title,
+  });
+  assert.ok(parsed, 'Long URL webTab create payload must parse validly');
+  assert.equal(parsed.provider, 'other');
+});
+
+test('10. C-06 & A-10: duplicating other tab preserves provider and nativeChatGptUrl accepts *.chatgpt.com', () => {
+  const otherTab = { url: 'https://developer.mozilla.org/en-US/', provider: 'other' };
+  const provider = webTabProviderFor(otherTab);
+  assert.equal(provider, 'other');
+  const parsed = parseWebTabClientMessage({
+    type: 'agency.webTab.create',
+    requestId: 'req-dup-other',
+    workspaceId: '11111111-1111-4111-8111-111111111111',
+    url: otherTab.url,
+    provider,
+    title: 'MDN',
+  });
+  assert.ok(parsed);
+  assert.equal(parsed.provider, 'other');
+
+  assert.equal(nativeChatGptUrl('https://sub.chatgpt.com/c/123'), true);
+  assert.equal(nativeWorkspaceUrl('https://sub.chatgpt.com/c/123', 'chatgpt'), true);
 });
 

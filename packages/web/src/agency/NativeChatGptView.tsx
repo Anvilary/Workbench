@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import type { WebTab, SearchEngine } from '@agent-workbench/shared';
-import { DEFAULT_BROWSER_PROFILE_ID, validateOtherWebUrl, getSearchEngine, resolveAddressBarInput } from '@agent-workbench/shared';
+import {
+  DEFAULT_BROWSER_PROFILE_ID,
+  validateChatGptUrl,
+  validateGithubUrl,
+  validateOtherWebUrl,
+  validatePerplexityUrl,
+  getSearchEngine,
+  resolveAddressBarInput,
+} from '@agent-workbench/shared';
 import { t } from '../i18n/index.js';
 import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
 
@@ -16,21 +24,13 @@ declare global {
 }
 
 export function nativeChatGptUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' && ['chatgpt.com', 'chat.openai.com'].includes(url.hostname) && !url.username && !url.password && !url.port;
-  } catch {
-    return false;
-  }
+  if (typeof value !== 'string' || /[\u0000-\u0020\u007f]/.test(value)) return false;
+  return validateChatGptUrl(value).valid;
 }
 
 export function nativePerplexityUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' && (url.hostname === 'perplexity.ai' || url.hostname.endsWith('.perplexity.ai')) && !url.username && !url.password && !url.port;
-  } catch {
-    return false;
-  }
+  if (typeof value !== 'string' || /[\u0000-\u0020\u007f]/.test(value)) return false;
+  return validatePerplexityUrl(value).valid;
 }
 
 export function nativeWorkspaceUrl(value: string, provider?: WebTab['provider']): boolean {
@@ -38,22 +38,14 @@ export function nativeWorkspaceUrl(value: string, provider?: WebTab['provider'])
   if (provider === 'other') return validateOtherWebUrl(value).valid;
   if (nativeChatGptUrl(value)) return provider === undefined || provider === 'chatgpt';
   if (nativePerplexityUrl(value)) return provider === undefined || provider === 'perplexity';
-  try {
-    const url = new URL(value);
-    return (provider === undefined || provider === 'github') && url.protocol === 'https:' && (url.hostname === 'github.com' || url.hostname.endsWith('.github.com')) && !url.username && !url.password && !url.port;
-  } catch {
-    return false;
-  }
+  return (provider === undefined || provider === 'github') && validateGithubUrl(value).valid;
 }
 
 export function nativeWebProvider(value: string, storedProvider?: WebTab['provider']): 'chatgpt' | 'github' | 'perplexity' | 'other' {
   if (storedProvider) return storedProvider;
   if (nativeChatGptUrl(value)) return 'chatgpt';
   if (nativePerplexityUrl(value)) return 'perplexity';
-  try {
-    const url = new URL(value);
-    if (url.protocol === 'https:' && (url.hostname === 'github.com' || url.hostname.endsWith('.github.com'))) return 'github';
-  } catch {}
+  if (validateGithubUrl(value).valid) return 'github';
   return 'other';
 }
 
@@ -165,14 +157,14 @@ export function NativeChatGptView({
             const resolved = resolveAddressBarInput(value, effectiveSearchEngine, 'other');
             if (resolved.url) {
               setAddress(resolved.url);
-              void window.mawChatGpt?.command({ type: 'update', id, url: resolved.url, provider: 'other' }).catch((reason) => setError(String(reason)));
+              void window.mawChatGpt?.command({ type: 'update', id, url: resolved.url, provider: 'other', profileId }).catch((reason) => setError(String(reason)));
             } else {
               addressInput.current?.setCustomValidity(resolved.error || t('agency.web.invalidUrl'));
               addressInput.current?.reportValidity();
             }
           } else {
             if (nativeWorkspaceUrl(value, provider)) {
-              void window.mawChatGpt?.command({ type: 'update', id, url: value, provider }).catch((reason) => setError(String(reason)));
+              void window.mawChatGpt?.command({ type: 'update', id, url: value, provider, profileId }).catch((reason) => setError(String(reason)));
             } else {
               addressInput.current?.setCustomValidity(t('agency.web.invalidUrl'));
               addressInput.current?.reportValidity();
@@ -195,7 +187,7 @@ export function NativeChatGptView({
             type="button"
             onClick={() => {
               setError('');
-              void window.mawChatGpt?.command({ type: 'open', id, url: url.current, provider: tab.provider ?? nativeWebProvider(url.current) });
+              void window.mawChatGpt?.command({ type: 'open', id, url: url.current, provider: tab.provider ?? nativeWebProvider(url.current), profileId });
             }}
           >
             {t('common.reloadPage')}

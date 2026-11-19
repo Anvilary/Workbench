@@ -300,8 +300,10 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
     setDrafts((prev) => acknowledgeWorkspaceDraft(prev, workspaceId as WorkspaceId, original));
   }
 
+  const activeProjects = data.projects.filter((project) => project.status !== 'archived');
+
   function openCreator(project?: ProjectId) {
-    if (data.projects.length === 0) { setCreatingProject(true); return; }
+    if (activeProjects.length === 0) { setCreatingProject(true); return; }
     setCreatorProject(project);
     setCreatingWorkspace(true);
   }
@@ -473,7 +475,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
           <>
             <AgencySidebar
               onCollapse={() => setSidebarOpen(false)}
-              projects={data.projects}
+              projects={activeProjects}
               workspaces={data.workspaces}
               sessions={data.sessions}
               webTabs={data.webTabs}
@@ -695,7 +697,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
             <h1>{t('agency.ui.onePlaceForEveryDevelopmentLane')}</h1>
             <p>{t('agency.ui.createAProjectAndAWorkspaceAttachAn')}</p>
             <button type="button" className="agency-primary-button" onClick={() => openCreator()} disabled={!online}>
-              {data.projects.length === 0 ? t('agency.ui.createFirstProject') : t('agency.ui.newWorkspace')}
+              {activeProjects.length === 0 ? t('agency.ui.createFirstProject') : t('agency.ui.newWorkspace')}
             </button>
           </div>
         )}
@@ -708,7 +710,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
         }} />}
       {creatingWorkspace && <AgencyWorkspaceCreator
         connection={connection}
-        projects={data.projects}
+        projects={activeProjects}
         profiles={data.profiles}
         initialProject={creatorProject}
         onClose={() => setCreatingWorkspace(false)}

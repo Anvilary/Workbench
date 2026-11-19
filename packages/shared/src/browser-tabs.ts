@@ -337,10 +337,16 @@ export function webTabProviderFor(tab: Pick<WebTab, 'url' | 'provider'>): WebTab
   return 'chatgpt';
 }
 
+export const WEB_TAB_TITLE_MAX_LENGTH = 120;
+
+export function normalizeWebTabTitle(title: string): string {
+  return title.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, WEB_TAB_TITLE_MAX_LENGTH).trim();
+}
+
 export function validateWebTabTitle(title: unknown): boolean {
   if (typeof title !== 'string') return false;
   const clean = title.trim();
-  return clean.length >= 1 && clean.length <= 120 && !/[\u0000-\u001f\u007f]/.test(clean);
+  return clean.length >= 1 && clean.length <= WEB_TAB_TITLE_MAX_LENGTH && !/[\u0000-\u001f\u007f]/.test(clean);
 }
 
 export function validateFaviconUrl(value: unknown, options?: { allowLoopback?: boolean }): string | null {

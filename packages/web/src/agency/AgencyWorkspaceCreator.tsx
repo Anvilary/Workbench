@@ -28,7 +28,12 @@ interface Props {
 export function AgencyWorkspaceCreator({
   projects, initialProject, connection, onCreate, onClose,
 }: Props): JSX.Element {
-  const [projectId, setProjectId] = useState<ProjectId | ''>(initialProject ?? projects[0]?.id ?? '');
+  const activeProjects = projects.filter((project) => project.status !== 'archived');
+  const defaultProjectId =
+    (initialProject && activeProjects.some((project) => project.id === initialProject) ? initialProject : undefined) ??
+    activeProjects[0]?.id ??
+    '';
+  const [projectId, setProjectId] = useState<ProjectId | ''>(defaultProjectId);
   const [name, setName] = useState('');
   const [picking, setPicking] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -106,7 +111,7 @@ export function AgencyWorkspaceCreator({
             <span>{t('agency.ui.project')}</span>
             <select value={projectId} disabled={creating}
               onChange={(event) => setProjectId(event.target.value as ProjectId)}>
-              {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              {activeProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
             </select>
           </label>
           {error && <p role="alert" className="agency-error">{error}</p>}

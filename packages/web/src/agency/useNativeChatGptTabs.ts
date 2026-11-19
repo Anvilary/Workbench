@@ -30,6 +30,8 @@ export function useNativeChatGptTabs(
   const inFlightRetainKey = useRef<string | null>(null);
   const seqCounter = useRef(0);
   const retryTimeout = useRef<number | null>(null);
+  const retryAttempts = useRef(0);
+  const lastInputRef = useRef<{ tabs: readonly WebTab[]; projects: readonly AgencyProject[]; workspaces: readonly AgencyWorkspace[]; synchronized: boolean } | null>(null);
   const [retryEpoch, setRetryEpoch] = useState(0);
 
   useEffect(() => {
@@ -60,7 +62,10 @@ export function useNativeChatGptTabs(
   useEffect(() => window.mawChatGpt?.subscribe(state => {
     if (state.type === 'tab-shortcut' || state.type === 'close-shortcut') {
       if (document.querySelector('[role="dialog"], [role="menu"], .maw-tab-name-input')) return;
-      const buttons = [...document.querySelectorAll<HTMLButtonElement>('.maw-tabs-strip [role="tab"]:not(:disabled)')];
+      const focusedButtons = [...document.querySelectorAll<HTMLButtonElement>('.maw-pane-header.is-focused .maw-pane-tabs [role="tab"]:not(:disabled)')];
+      const buttons = focusedButtons.length > 0
+        ? focusedButtons
+        : [...document.querySelectorAll<HTMLButtonElement>('.maw-pane-tabs [role="tab"]:not(:disabled)')];
       const index = buttons.findIndex(button => button.getAttribute('aria-selected') === 'true');
       if (index < 0) return;
       if (state.type === 'close-shortcut') buttons[index]?.parentElement?.querySelector<HTMLButtonElement>('button[data-close]')?.click();
@@ -83,12 +88,25 @@ export function useNativeChatGptTabs(
   }), []);
 
   useEffect(() => {
+    const prevInput = lastInputRef.current;
+    if (
+      !prevInput ||
+      prevInput.tabs !== tabs ||
+      prevInput.projects !== projects ||
+      prevInput.workspaces !== workspaces ||
+      prevInput.synchronized !== synchronized
+    ) {
+      retryAttempts.current = 0;
+      lastInputRef.current = { tabs, projects, workspaces, synchronized };
+    }
+
     const bridge = window.mawChatGpt;
     if (!bridge || !synchronized) {
       confirmedTabs.current.clear();
       inFlightUpdates.current.clear();
       confirmedRetainedKey.current = null;
       inFlightRetainKey.current = null;
+      retryAttempts.current = 0;
       if (retryTimeout.current !== null) {
         window.clearTimeout(retryTimeout.current);
         retryTimeout.current = null;
@@ -96,12 +114,16 @@ export function useNativeChatGptTabs(
       return;
     }
 
+    const MAX_RETRY_ATTEMPTS = 5;
     const scheduleRetry = () => {
       if (retryTimeout.current !== null) return;
+      if (retryAttempts.current >= MAX_RETRY_ATTEMPTS) return;
+      const delayMs = 300 * Math.pow(2, retryAttempts.current);
+      retryAttempts.current += 1;
       retryTimeout.current = window.setTimeout(() => {
         retryTimeout.current = null;
         setRetryEpoch(e => e + 1);
-      }, 300);
+      }, delayMs);
     };
 
     const openIds = new Set<string>();
@@ -118,6 +140,7 @@ export function useNativeChatGptTabs(
         checkpointInFlight.current.set(tab.id, checkpoint.seq);
         void request({ type: 'agency.webTab.navigate', workspaceId: tab.workspaceId, tabId: tab.id, url: checkpoint.url })
           .then(() => {
+            retryAttempts.current = 0;
             const latest = pendingCheckpoints.current.get(tab.id);
             if (latest?.seq === checkpoint.seq) latest.acknowledged = true;
           }).catch(() => { if (mounted.current) scheduleRetry(); })
@@ -149,6 +172,7 @@ export function useNativeChatGptTabs(
 
       void bridge.command({ type: 'update', id: tab.id, url: desiredUrl, provider, profileId })
         .then(() => {
+          retryAttempts.current = 0;
           if (inFlightUpdates.current.get(tab.id)?.seq === seq) {
             inFlightUpdates.current.delete(tab.id);
             confirmedTabs.current.set(tab.id, { url: desiredUrl, provider, profileId });
@@ -181,6 +205,7 @@ export function useNativeChatGptTabs(
       inFlightRetainKey.current = retainedKey;
       void bridge.command({ type: 'retain', ids: [...openIds] })
         .then(() => {
+          retryAttempts.current = 0;
           if (inFlightRetainKey.current === retainedKey) {
             confirmedRetainedKey.current = retainedKey;
             inFlightRetainKey.current = null;

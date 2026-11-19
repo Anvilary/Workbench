@@ -6,7 +6,7 @@ import type {
 } from '@agent-workbench/shared';
 import {
   assignCreatedTab, swapPanes, countLeaves, createDefaultLayout, findPaneNode, getPaneNodes, moveTabBetweenPanes,
-  reconcileLayout, splitPane, closePane, updatePaneNode, updateSplitRatio, MAX_LEAVES,
+  normalizeWebTabTitle, reconcileLayout, splitPane, closePane, updatePaneNode, updateSplitRatio, webTabProviderFor, MAX_LEAVES,
 } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import type { AppSettingsApi } from '../useAppSettings.js';
@@ -898,11 +898,14 @@ export function AgencyWorkspaceView({
         onDuplicate={(tab) => {
           pendingSplit.current = null;
           creationTarget.current = layoutRef.current.focusedPaneId;
+          const provider = webTabProviderFor(tab);
+          const title = normalizeWebTabTitle(tab.title) || 'Browser';
           void request({
             type: 'agency.webTab.create',
             workspaceId: workspace.id,
             url: tab.url,
-            title: tab.title,
+            provider,
+            title,
             select: true,
             targetPaneId: layoutRef.current.focusedPaneId,
             launchId: crypto.randomUUID(),

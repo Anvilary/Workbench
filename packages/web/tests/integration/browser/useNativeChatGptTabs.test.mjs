@@ -332,4 +332,74 @@ test('useNativeChatGptTabs preserves committed navigation until durable checkpoi
   assert(commands.every((c) => c.url !== 'https://chatgpt.com/'), 'reconnect does not resurrect the obsolete checkpoint URL');
 });
 
+test('C-07: tab-shortcut and close-shortcut target focused .maw-pane-tabs strip', { timeout: 60000 }, async (t) => {
+  const executablePath = browserExecutable();
+  if (!executablePath) {
+    t.skip('Chromium is not installed');
+    return;
+  }
+
+  const bundle = await build({
+    stdin: { contents: fixture, loader: 'tsx', resolveDir: webRoot },
+    bundle: true,
+    write: false,
+    format: 'esm',
+    logLevel: 'silent',
+  });
+
+  const server = createServer((req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+    if (url.pathname === '/bundle.js') {
+      res.setHeader('Content-Type', 'text/javascript');
+      res.end(bundle.outputFiles[0].text);
+      return;
+    }
+    res.setHeader('Content-Type', 'text/html');
+    res.end(`<!doctype html><html><body>
+      <div class="maw-pane-header is-focused">
+        <div class="maw-pane-tabs" role="tablist">
+          <div class="maw-session-tab">
+            <button type="button" role="tab" id="t1" aria-selected="true">Tab 1</button>
+            <button type="button" data-close="true" id="close-t1">x</button>
+          </div>
+          <div class="maw-session-tab">
+            <button type="button" role="tab" id="t2" aria-selected="false">Tab 2</button>
+            <button type="button" data-close="true" id="close-t2">x</button>
+          </div>
+        </div>
+      </div>
+      <div id="root"></div>
+      <script type="module" src="/bundle.js"></script>
+    </body></html>`);
+  });
+
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const browser = await chromium.launch({ headless: true, executablePath });
+  t.after(async () => {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  });
+
+  const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+  await page.goto('http://127.0.0.1:' + server.address().port);
+  await page.waitForFunction(() => typeof window.onBridgeState === 'function');
+
+  await page.evaluate(() => {
+    window.events = [];
+    document.getElementById('t1').addEventListener('click', () => window.events.push('select-t1'));
+    document.getElementById('t2').addEventListener('click', () => {
+      window.events.push('select-t2');
+      document.getElementById('t1').setAttribute('aria-selected', 'false');
+      document.getElementById('t2').setAttribute('aria-selected', 'true');
+    });
+    document.getElementById('close-t2').addEventListener('click', () => window.events.push('close-t2'));
+
+    window.onBridgeState({ type: 'tab-shortcut', direction: 1 });
+    window.onBridgeState({ type: 'close-shortcut' });
+  });
+
+  const events = await page.evaluate(() => window.events);
+  assert.deepEqual(events, ['select-t2', 'close-t2']);
+});
+
 // The checkpoint retry timer must never send an older URL after a newer commit.

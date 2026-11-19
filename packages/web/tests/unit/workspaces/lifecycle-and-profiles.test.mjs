@@ -11,6 +11,7 @@ import {
 import { calculateAnchoredDialogPosition } from '../../../src/shared/lib/overlay-position.ts';
 import { DeleteWorkspaceDialog } from '../../../src/features/workspaces/DeleteWorkspaceDialog.tsx';
 import { DeleteProjectDialog } from '../../../src/features/workspaces/DeleteProjectDialog.tsx';
+import { AgencyWorkspaceCreator } from '../../../src/agency/AgencyWorkspaceCreator.tsx';
 import { editorDraftStore } from '../../../src/agency/editorDraftStore.ts';
 
 test('Track D: activeByProject preserves persisted workspace ordering instead of re-sorting by updatedAt', () => {
@@ -153,4 +154,30 @@ test('Track C: DeleteWorkspaceDialog and DeleteProjectDialog summarize active se
   assert.ok(projHtml.includes('Source directories on disk will not be deleted.'));
   assert.ok(projHtml.includes('1 open editor tab (1 unsaved)'));
   editorDraftStore.clearDraft('ed-dirty');
+});
+
+test('C-04: archived projects are excluded from activeByProject and AgencyWorkspaceCreator', () => {
+  const projects = [
+    { id: 'p-active', name: 'Active Project', status: 'active', createdAt: '', updatedAt: '' },
+    { id: 'p-archived', name: 'Archived Project', status: 'archived', createdAt: '', updatedAt: '' },
+  ];
+  const workspaces = [
+    { id: 'ws-a', projectId: 'p-active', name: 'WS A', status: 'active', cwd: '/a', createdAt: '', updatedAt: '' },
+    { id: 'ws-b', projectId: 'p-archived', name: 'WS B', status: 'active', cwd: '/b', createdAt: '', updatedAt: '' },
+  ];
+
+  const grouped = activeByProject(projects, workspaces);
+  assert.deepEqual(grouped.map((g) => g.project.id), ['p-active']);
+
+  const creatorHtml = renderToStaticMarkup(
+    React.createElement(AgencyWorkspaceCreator, {
+      projects,
+      initialProject: 'p-archived',
+      connection: {},
+      onCreate: async () => {},
+      onClose: () => {},
+    }),
+  );
+  assert.ok(creatorHtml.includes('Active Project'));
+  assert.ok(!creatorHtml.includes('Archived Project'));
 });

@@ -209,10 +209,12 @@ export function pruneProjectData(snapshot: AgencySnapshot, projectId: ProjectId)
 export function activeByProject(
   projects: readonly AgencyProject[], workspaces: readonly AgencyWorkspace[],
 ): { project: AgencyProject; items: AgencyWorkspace[] }[] {
-  return projects.map((project) => ({
-    project,
-    items: workspaces.filter((ws) => ws.projectId === project.id && ws.status === 'active'),
-  }));
+  return projects
+    .filter((project) => project.status !== 'archived')
+    .map((project) => ({
+      project,
+      items: workspaces.filter((ws) => ws.projectId === project.id && ws.status === 'active'),
+    }));
 }
 
 /** Keep drafts keyed to stable workspace IDs instead of component mount identity. */

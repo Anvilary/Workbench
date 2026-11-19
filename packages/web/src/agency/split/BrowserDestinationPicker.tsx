@@ -12,6 +12,7 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import type { BrowserFavorite, SearchEngine, WebTabProvider } from '@agent-workbench/shared';
 import {
+  normalizeWebTabTitle,
   validateFaviconUrl,
   resolveAddressBarInput,
   validateBrowserFavoriteUrl,
@@ -136,7 +137,8 @@ export function BrowserDestinationPicker({
       setError(resolved.error);
       return;
     }
-    const title = resolved.isSearch ? `${raw} - ${searchEngine.name}` : raw;
+    const rawTitle = resolved.isSearch ? `${raw} - ${searchEngine.name}` : raw;
+    const title = normalizeWebTabTitle(rawTitle) || normalizeWebTabTitle(searchEngine.name) || 'Browser';
     if (onConfirm) {
       onConfirm({ url: resolved.url, title, provider: 'other' });
     } else if (onSelectOther) {
