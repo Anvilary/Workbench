@@ -196,8 +196,9 @@ async function main() {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const data = await mkdtemp(path.join(tmpdir(), 'maw-evidence-'));
   const evidenceDir = path.join(here, 'evidence');
-  const artifactDir = '/home/user/.gemini/antigravity-cli/brain/20ee035b-b388-4783-9e9c-b1adfc2f7bac';
+  const artifactDir = process.env.MAW_EVIDENCE_ARTIFACT_DIR ? path.resolve(process.env.MAW_EVIDENCE_ARTIFACT_DIR) : null;
   await mkdir(evidenceDir, { recursive: true });
+  if (artifactDir) await mkdir(artifactDir, { recursive: true });
 
   const desktop = await electron.launch({
     chromiumSandbox: true,
@@ -253,10 +254,14 @@ async function main() {
     });
 
     const screenshotPath = path.join(evidenceDir, 'chatgpt-sidebar-menu-visible.png');
-    const artifactScreenshotPath = path.join(artifactDir, 'chatgpt-sidebar-menu-visible.png');
     await writeFile(screenshotPath, Buffer.from(screenshotBuffer, 'base64'));
-    await writeFile(artifactScreenshotPath, Buffer.from(screenshotBuffer, 'base64'));
-    console.log(`[Evidence] Screenshot saved to ${screenshotPath} and ${artifactScreenshotPath}`);
+    if (artifactDir) {
+      const artifactScreenshotPath = path.join(artifactDir, 'chatgpt-sidebar-menu-visible.png');
+      await writeFile(artifactScreenshotPath, Buffer.from(screenshotBuffer, 'base64'));
+      console.log(`[Evidence] Screenshot saved to ${screenshotPath} and ${artifactScreenshotPath}`);
+    } else {
+      console.log(`[Evidence] Screenshot saved to ${screenshotPath}`);
+    }
 
     // 2. Normal click test inside native view and MAW buttons
     await page.locator('#tab-terminal').click(); // switch to terminal

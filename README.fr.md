@@ -1,4 +1,4 @@
-# Agent Workbench
+# Anvilary Workbench
 
 [![npm](https://img.shields.io/npm/v/agent-workbench)](https://www.npmjs.com/package/agent-workbench)
 [![CI](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml)
@@ -21,7 +21,7 @@ npx agent-workbench
 
 ## Comment ça marche
 
-Agent Workbench ne communique avec aucun service d'IA. Il lance la CLI que vous
+Anvilary Workbench ne communique avec aucun service d'IA. Il lance la CLI que vous
 avez déjà — `claude`, `codex`, `opencode`, `agy` ou `pi` — dans un vrai terminal,
 et ajoute autour ce qu'un terminal seul ne vous donne pas : des onglets, vos
 conversations passées, la conversation sous forme de cartes faciles à lire, une
@@ -114,7 +114,7 @@ sous la forme d'un chemin de fichier que le modèle ouvre lui-même.
 | Antigravity CLI | `agy` | [guide](https://antigravity.google/docs/cli/getting-started) |
 | Pi | `pi` | [pi.dev](https://pi.dev) |
 
-Agent Workbench n'inclut et ne télécharge aucune CLI : il trouve celles qui
+Anvilary Workbench n'inclut et ne télécharge aucune CLI : il trouve celles qui
 sont dans votre `PATH`. S'il n'y en a aucune, il vous le dit et n'ouvre pas de
 session.
 
@@ -299,7 +299,7 @@ a besoin de `node` dans le `PATH`.
 
 ### Accès à distance par SSH
 
-Laissez Agent Workbench tourner sur un ordinateur et utilisez-le depuis un
+Laissez Anvilary Workbench tourner sur un ordinateur et utilisez-le depuis un
 autre de votre réseau, dans son navigateur, sans aucune CLI installée dessus.
 **L'application n'est jamais ouverte au réseau** : elle n'écoute toujours que
 sur `127.0.0.1`, et l'autre ordinateur l'atteint par un tunnel SSH. C'est aussi
@@ -331,7 +331,7 @@ d'administrateur : l'application ne le fait donc pas à votre place.
   ```
 
 **2. Dans l'application : ⇄ dans l'en-tête → Activer l'accès à distance, puis
-redémarrez Agent Workbench.** Le tunnel a besoin d'un port qui ne change pas :
+redémarrez Anvilary Workbench.** Le tunnel a besoin d'un port qui ne change pas :
 l'application en utilise donc un fixe (24837 par défaut ; vous pouvez le
 changer), et le port est choisi au démarrage. Le redémarrage ferme les CLI
 ouvertes ; vos onglets reviennent en veille. La *désactivation*, elle, prend
@@ -452,13 +452,13 @@ décrits dans [`PRIVACY.md`](PRIVACY.md).
 
 ## Vos données et la sécurité
 
-- **Agent Workbench n'envoie rien nulle part.** Pas de télémétrie, pas
+- **Anvilary Workbench n'envoie rien nulle part.** Pas de télémétrie, pas
   d'analytique, aucun appel réseau de sa part. L'application Android ne parle
   qu'à votre ordinateur.
 - **Chaque CLI continue de faire, de son côté, ce qu'elle ferait si vous
   l'ouvriez à la main :** elle parle à son fournisseur d'IA, et elle peut
   vérifier s'il existe des mises à jour ou envoyer ses propres données
-  d'utilisation. Agent Workbench n'y ajoute rien et n'en désactive rien non
+  d'utilisation. Anvilary Workbench n'y ajoute rien et n'en désactive rien non
   plus : il ne modifie la configuration d'aucune CLI. Ce qu'envoie chaque CLI
   est décrit dans sa propre documentation.
 - **L'application ne touche jamais à vos identifiants.** Il n'y a pas d'écran
@@ -668,7 +668,7 @@ bouts.
 est désactivé. Associez-le de nouveau depuis la boîte de dialogue ⇄.
 
 **La boîte de dialogue ⇄ indique que le port est occupé.** Un autre programme
-— souvent un second Agent Workbench — l'utilise. Fermez-le et redémarrez, ou
+— souvent un second Anvilary Workbench — l'utilise. Fermez-le et redémarrez, ou
 choisissez un autre port.
 
 **Le panneau Modifications dit que le dossier n'est pas un dépôt git**, alors
@@ -694,7 +694,7 @@ pnpm start     # sert l'interface compilée
 ```
 
 **Démarrage en un clic sous Windows :** `pnpm package` compile l'interface et
-laisse un **`Agent Workbench.cmd`** à la racine. Double-cliquez dessus : il
+laisse un **`Anvilary Workbench.cmd`** à la racine. Double-cliquez dessus : il
 installe ce qui manque, compile si nécessaire et ouvre le navigateur. C'est un
 fichier texte d'une vingtaine de lignes, que vous pouvez lire avant de
 l'exécuter.
@@ -733,7 +733,7 @@ README viennent de `pnpm demo:shots`, sur des données inventées.
 
 ## Soutenir le projet
 
-Si Agent Workbench vous est utile, pensez à le soutenir :
+Si Anvilary Workbench vous est utile, pensez à le soutenir :
 [Buy Me a Coffee](https://buymeacoffee.com/cvelasquez). L'application le
 propose une fois par version, dans un bandeau que vous pouvez fermer, et plus
 jamais avant la suivante.
@@ -744,7 +744,7 @@ jamais avant la suivante.
 
 MIT. Voir [`LICENSE`](LICENSE).
 
-Agent Workbench est un projet indépendant. Il fonctionne avec les CLI de
+Anvilary Workbench est un projet indépendant. Il fonctionne avec les CLI de
 Claude Code, Codex, OpenCode, Antigravity et Pi, mais il n'est affilié ni à
 Anthropic, ni à OpenAI, ni aux auteurs d'OpenCode, ni à Google, ni à Earendil,
 et n'est approuvé par aucun d'entre eux.

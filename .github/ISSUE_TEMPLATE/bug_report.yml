@@ -5,12 +5,12 @@ body:
   - type: textarea
     attributes:
       label: What happened
-      description: What you did, what you saw, and what you expected. Screenshots help — check they don't show anything private.
+      description: What you did, what you saw, and what you expected. Screenshots help - check they don't show anything private.
     validations:
       required: true
   - type: input
     attributes:
-      label: Agent Workbench version
+      label: Anvilary Workbench version
       description: It's in the header of the app, or `npm ls -g agent-workbench`.
     validations:
       required: true
@@ -18,7 +18,7 @@ body:
     attributes:
       label: CLI involved
       multiple: true
-      options: [Claude Code, Codex, OpenCode, Antigravity CLI, None / not sure]
+      options: [Claude Code, Codex, OpenCode, Antigravity CLI, Pi, None / not sure]
   - type: input
     attributes:
       label: CLI version

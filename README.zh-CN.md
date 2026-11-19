@@ -1,4 +1,4 @@
-# Agent Workbench
+# Anvilary Workbench
 
 [![npm](https://img.shields.io/npm/v/agent-workbench)](https://www.npmjs.com/package/agent-workbench)
 [![CI](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml)
@@ -17,7 +17,7 @@ npx agent-workbench
 
 ## 工作原理
 
-Agent Workbench 不和任何 AI 服务通信。它在一个真正的终端里启动你已有的 CLI（`claude`、`codex`、`opencode`、`agy` 或 `pi`），并在周围补上单靠终端给不了的东西：标签页、你的历史对话、以易读卡片呈现的对话、上下文用量条、改动过的文件，以及文件树。
+Anvilary Workbench 不和任何 AI 服务通信。它在一个真正的终端里启动你已有的 CLI（`claude`、`codex`、`opencode`、`agy` 或 `pi`），并在周围补上单靠终端给不了的东西：标签页、你的历史对话、以易读卡片呈现的对话、上下文用量条、改动过的文件，以及文件树。
 
 终端依然是终端：你输入的一切都会直接传给 CLI。
 
@@ -91,7 +91,7 @@ Agent Workbench 不和任何 AI 服务通信。它在一个真正的终端里启
 | Antigravity CLI | `agy` | [指南](https://antigravity.google/docs/cli/getting-started) |
 | Pi | `pi` | [pi.dev](https://pi.dev) |
 
-Agent Workbench 不包含也不会下载任何 CLI：它会在你的 `PATH` 中查找。一个都找不到时，它会告诉你，并且不会打开会话。
+Anvilary Workbench 不包含也不会下载任何 CLI：它会在你的 `PATH` 中查找。一个都找不到时，它会告诉你，并且不会打开会话。
 
 **平台**。在 Windows 11（PowerShell）上开发，并且每天都在使用。在 macOS 和 Linux 上，每次改动都会自动安装并启动一遍，但日常使用较少：欢迎反馈问题。在 Linux 上，安装时要编译终端模块，所以需要 `python3`、`make` 和 C++ 编译器（Debian 和 Ubuntu 上是 `build-essential`）。
 
@@ -197,7 +197,7 @@ Antigravity CLI 只通过它的 *status line* 告诉外界自己是在工作还�
 
 ### 通过 SSH 远程访问
 
-让 Agent Workbench 在一台电脑上运行，再从同一网络中的另一台电脑用浏览器使用它，那台电脑上不需要安装任何 CLI。**应用从不向网络开放**：它仍然只在 `127.0.0.1` 上监听，另一台电脑通过 SSH 隧道访问它。也正是隧道让这一切行得通：通过隧道，另一台电脑的浏览器会把应用看作 `localhost`，而浏览器要求如此才允许使用剪贴板和通知。**默认关闭**。
+让 Anvilary Workbench 在一台电脑上运行，再从同一网络中的另一台电脑用浏览器使用它，那台电脑上不需要安装任何 CLI。**应用从不向网络开放**：它仍然只在 `127.0.0.1` 上监听，另一台电脑通过 SSH 隧道访问它。也正是隧道让这一切行得通：通过隧道，另一台电脑的浏览器会把应用看作 `localhost`，而浏览器要求如此才允许使用剪贴板和通知。**默认关闭**。
 
 **1. 在运行应用的电脑上（只需一次）：开启它的 SSH 服务器**。这是一项需要管理员权限的系统改动，所以应用不会替你做。
 
@@ -217,7 +217,7 @@ Antigravity CLI 只通过它的 *status line* 告诉外界自己是在工作还�
   sudo systemctl enable --now ssh
   ```
 
-**2. 在应用中：点击顶栏的 ⇄ → 开启远程访问，然后重启 Agent Workbench**。隧道需要一个不会变的端口，所以应用改用固定端口（默认 24837，可以修改），而端口是在启动时选定的。重启会关闭已打开的 CLI；标签页会以休眠状态恢复。而*关闭*会立即生效。
+**2. 在应用中：点击顶栏的 ⇄ → 开启远程访问，然后重启 Anvilary Workbench**。隧道需要一个不会变的端口，所以应用改用固定端口（默认 24837，可以修改），而端口是在启动时选定的。重启会关闭已打开的 CLI；标签页会以休眠状态恢复。而*关闭*会立即生效。
 
 **3. 在另一台电脑上，每次使用时：打开隧道**。对话框里有现成的命令可以复制：
 
@@ -268,8 +268,8 @@ restrict,port-forwarding,permitopen="127.0.0.1:24837",command="exit" ssh-ed25519
 
 ## 你的数据与安全
 
-- **Agent Workbench 不向任何地方发送任何东西**。没有遥测，没有统计分析，应用自己也不发起任何网络请求。Android 应用只和你的电脑通信。
-- **每个 CLI 仍会自行做你手动打开它时它会做的事**：和它的 AI 服务商通信，还可能检查更新或发送它自己的使用数据。Agent Workbench 不会在这之上增加任何东西，也不会把它关掉：它不修改任何 CLI 的设置。每个 CLI 会发送什么，见它自己的文档。
+- **Anvilary Workbench 不向任何地方发送任何东西**。没有遥测，没有统计分析，应用自己也不发起任何网络请求。Android 应用只和你的电脑通信。
+- **每个 CLI 仍会自行做你手动打开它时它会做的事**：和它的 AI 服务商通信，还可能检查更新或发送它自己的使用数据。Anvilary Workbench 不会在这之上增加任何东西，也不会把它关掉：它不修改任何 CLI 的设置。每个 CLI 会发送什么，见它自己的文档。
 - **从不碰你的凭据**。没有登录界面：如果某个 CLI 要求你登录，你就在它自己的终端里登录，应用甚至不会察觉。
 - **读取 CLI 的历史记录，但不在它们的文件夹中写入任何内容**。下表列出了它读取什么、从不打开什么。
 - **只在自己的文件夹中写入**，另外在你的项目中只写三样东西：经你确认的共享记忆；你自己在“文件”标签页中编辑并保存的文件；以及你打开的独立分支，每个都在项目旁边自己的文件夹里，移除或合并时只在分支中改动过的笔记会回到主文件夹。
@@ -345,7 +345,7 @@ restrict,port-forwarding,permitopen="127.0.0.1:24837",command="exit" ssh-ed25519
 
 **在另一台电脑上，页面提示缺少 session token**（401）。那个浏览器没有配对、已被撤销，或者远程访问已关闭。请在 ⇄ 对话框中重新配对。
 
-**⇄ 对话框提示端口已被占用**。另一个程序（通常是第二个 Agent Workbench）正在使用它。关闭那个程序后重启，或者换一个端口。
+**⇄ 对话框提示端口已被占用**。另一个程序（通常是第二个 Anvilary Workbench）正在使用它。关闭那个程序后重启，或者换一个端口。
 
 **“更改”面板提示此文件夹不在 git 仓库中**，但它其实是。请确认 `git` 在 `PATH` 中。如果提示的是其他消息，那就是 git 自己的报错，原文照搬。
 
@@ -366,7 +366,7 @@ pnpm build     # 构建一次界面
 pnpm start     # 提供构建好的界面
 ```
 
-**在 Windows 上一键启动**：`pnpm package` 会构建界面，并在根目录生成一个 **`Agent Workbench.cmd`**。双击它：它会安装缺少的东西，需要时进行构建，然后打开浏览器。它是一个二十行的文本文件，运行前可以先读一读。
+**在 Windows 上一键启动**：`pnpm package` 会构建界面，并在根目录生成一个 **`Anvilary Workbench.cmd`**。双击它：它会安装缺少的东西，需要时进行构建，然后打开浏览器。它是一个二十行的文本文件，运行前可以先读一读。
 
 ---
 
@@ -391,7 +391,7 @@ android/     the Android app, in Kotlin: the SSH tunnel, the interface, the noti
 
 ## 支持本项目
 
-如果 Agent Workbench 对你有用，请考虑支持它：[Buy Me a Coffee](https://buymeacoffee.com/cvelasquez)。应用每个版本只提示一次，显示在一条可以关闭的提示条里，直到下一个版本才会再出现。
+如果 Anvilary Workbench 对你有用，请考虑支持它：[Buy Me a Coffee](https://buymeacoffee.com/cvelasquez)。应用每个版本只提示一次，显示在一条可以关闭的提示条里，直到下一个版本才会再出现。
 
 ---
 
@@ -399,4 +399,4 @@ android/     the Android app, in Kotlin: the SSH tunnel, the interface, the noti
 
 MIT。详见 [`LICENSE`](LICENSE)。
 
-Agent Workbench 是一个独立项目。它可与 Claude Code、Codex、OpenCode、Antigravity 和 Pi CLI 配合使用，但与 Anthropic、OpenAI、OpenCode 的作者、Google 或 Earendil 均无关联，也未获得它们的认可。
+Anvilary Workbench 是一个独立项目。它可与 Claude Code、Codex、OpenCode、Antigravity 和 Pi CLI 配合使用，但与 Anthropic、OpenAI、OpenCode 的作者、Google 或 Earendil 均无关联，也未获得它们的认可。

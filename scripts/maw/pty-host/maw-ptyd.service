@@ -1,8 +1,8 @@
 # Template rendered by maw-render-ptyd-unit.sh (@NODE_BIN@, @STATE_DIR@, @PATH@, @PTYD_RUNTIME_NAME@).
 # The supervisor always runs from the `current` release; maw-restart-helper.sh updates `current`.
 [Unit]
-Description=MAW Persistent PTY Supervisor (maw-ptyd)
-Documentation=https://github.com/user/My-Amazing-Workspace
+Description=Anvilary Workbench Persistent PTY Supervisor (maw-ptyd)
+Documentation=https://github.com/Anvilary/Workbench
 DefaultDependencies=no
 After=basic.target
 ConditionPathExists=@STATE_DIR@/current/packages/server/dist/maw-ptyd.mjs

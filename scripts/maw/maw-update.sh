@@ -148,11 +148,11 @@ if [ -z "$base_commit" ] && [ -n "$current_raw" ]; then
 fi
 
 if [ "$initial" = true ] && maw_valid_release "$current_raw"; then
-  printf '%s\n' 'MAW already has an initial release; use maw update.'
+  printf '%s\n' "MAW already has an initial release; use $cli_name update."
   exit 0
 fi
 if [ -n "$staged_dir" ] && [ "$(maw_release_commit "$staged_dir")" = "$target_commit" ]; then
-  printf '%s\n' "Release $(basename "$staged_dir") for $target_commit is already staged. Activate it with: maw restart"
+  printf '%s\n' "Release $(basename "$staged_dir") for $target_commit is already staged. Activate it with: $cli_name restart"
   exit 0
 fi
 if [ "$initial" != true ] && [ "$base_commit" = "$target_commit" ] && [ -z "$staged_dir" ]; then
@@ -296,7 +296,7 @@ if [ "$initial" = true ]; then
   # first `maw start`/`maw restart` verifies it.
   maw_set_pointer current "$candidate_dir"
   maw_log initial-release release "$release_id" commit "$target_commit"
-  printf '%s\n' "Initial release $release_id installed. Start it with: maw start"
+  printf '%s\n' "Initial release $release_id installed. Start it with: $cli_name start"
   exit 0
 fi
 
@@ -321,11 +321,11 @@ esac
 
 if [ "$should_restart" = false ]; then
   printf '%s\n' 'Update staged. The service keeps booting the current release, even after a crash or reboot.' \
-    'Activate the staged release with: maw restart'
+    "Activate the staged release with: $cli_name restart"
   exit 0
 fi
 
 # Release the update lock before handing over: activation takes it again (flock locks belong to the open
 # file description, so an inherited descriptor would make the helper wait on itself).
 exec 9>&-
-exec /bin/sh "$maw_bin" restart
+exec env MAW_CLI_NAME="$cli_name" /bin/sh "$maw_bin" restart

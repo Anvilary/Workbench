@@ -20,6 +20,7 @@ maw_init_paths
 
 control_script="${MAW_CONTROL_SCRIPT:-$self_dir/control.mjs}"
 timeout_seconds="${MAW_READY_TIMEOUT:-20}"
+cli_name="${MAW_CLI_NAME:-maw}"
 mode=restart
 force=false
 
@@ -41,7 +42,7 @@ if ! maw_lock_restart; then
   exit 1
 fi
 if ! maw_lock_update 30; then
-  printf '%s\n' 'An update is still being staged; retry maw restart when it finishes.' >&2
+  printf '%s\n' "An update is still being staged; retry $cli_name restart when it finishes." >&2
   exit 1
 fi
 
@@ -49,7 +50,7 @@ phase=start
 on_signal() {
   trap '' HUP INT TERM
   maw_log activation-interrupted signal "$1" phase "$phase" current "$(basename "$(maw_pointer_raw current)")"
-  printf '%s\n' "Restart helper interrupted ($1) during $phase. 'current' may be unverified; run 'maw restart' to verify or roll back." >&2
+  printf '%s\n' "Restart helper interrupted ($1) during $phase. 'current' may be unverified; run '$cli_name restart' to verify or roll back." >&2
   exit 130
 }
 trap 'on_signal HUP' HUP
@@ -138,7 +139,7 @@ previous=$(maw_pointer previous)
 if [ "$mode" = start ] && [ "$(unit_state)" = active ]; then
   if ! maw_valid_release "$current_raw" || ! probe "$(maw_release_id "$current_raw")"; then
     maw_log start-unhealthy release "$(basename "$current_raw")"
-    printf '%s\n' 'MAW is active but authenticated readiness failed. Inspect maw status and maw logs; use maw restart to activate a repaired release.' >&2
+    printf '%s\n' "MAW is active but authenticated readiness failed. Inspect $cli_name status and $cli_name logs; use $cli_name restart to activate a repaired release." >&2
     exit 1
   fi
   if [ "$current_raw" != "$healthy" ]; then
@@ -159,7 +160,7 @@ fi
 
 if [ -n "$staged" ]; then target="$staged"; else target="$current_raw"; fi
 if [ -z "$target" ]; then
-  printf '%s\n' "CRITICAL: no release to start ($state_dir/current is missing). Run the installer or maw update." >&2
+  printf '%s\n' "CRITICAL: no release to start ($state_dir/current is missing). Run the installer or $cli_name update." >&2
   maw_log activation-critical reason 'no current release'
   exit 3
 fi
@@ -186,7 +187,7 @@ if [ "$managed" = true ] && maw_valid_release "$current_raw" &&
   if ! "$node_bin" "$control_script" ptyd-empty >/dev/null 2>&1; then
     maw_log activation-blocked target "$target_name" reason 'PTY supervisor is not authenticated or has live sessions'
     printf '%s\n' 'Activation deferred: the PTY supervisor could not be authenticated or still has live sessions.' \
-      'Close all MAW terminal sessions, then run maw restart again. No release pointer or service was changed.' >&2
+      "Close all MAW terminal sessions, then run $cli_name restart again. No release pointer or service was changed." >&2
     exit 1
   fi
   restart_ptyd=true
@@ -207,10 +208,10 @@ printf '%s\n' "Activating $target_name on $unit..."
 # Activation guard: protect active coding agents from being killed by backend restart
 guard_script="${MAW_ACTIVATE_GUARD:-$self_dir/maw-activate-guard.sh}"
 if [ "$force" != true ] && [ -x "$guard_script" ]; then
-  if ! "$guard_script" --unit "$unit"; then
+  if ! MAW_CLI_NAME="$cli_name" "$guard_script" --unit "$unit"; then
     maw_log activation-blocked target "$target_name" reason 'active coding agents in unit cgroup'
     printf '%s\n' 'Activation refused: active coding agents detected in service cgroup.' \
-      'Wait for tasks to finish, or pass --force (e.g. maw restart --force) to override.' >&2
+      "Wait for tasks to finish, or pass --force (e.g. $cli_name restart --force) to override." >&2
     exit 1
   fi
 fi
@@ -235,7 +236,7 @@ if [ "$quiesce_backend" = true ]; then
     if [ "$_restored" = true ]; then
       printf '%s\n' 'The previous backend is healthy.' >&2
     else
-      printf '%s\n' 'Warning: previous backend readiness was not restored; inspect maw status.' >&2
+      printf '%s\n' "Warning: previous backend readiness was not restored; inspect $cli_name status." >&2
     fi
     exit 1
   fi
@@ -250,7 +251,7 @@ if [ "$managed" = true ] && [ "$target" != "$current_raw" ]; then
       if restore_backend; then
         printf '%s\n' 'The previous backend is healthy; the supervisor was not restarted.' >&2
       else
-        printf '%s\n' 'Warning: previous backend readiness was not restored; inspect maw status.' >&2
+        printf '%s\n' "Warning: previous backend readiness was not restored; inspect $cli_name status." >&2
       fi
     fi
     exit 1
@@ -299,7 +300,7 @@ if [ -n "$healthy" ] && [ "$healthy" != "$target" ]; then
     fi
     maw_log rollback-failure release "$healthy_name" failed "$target_name" reason 'target release cannot preserve existing browser data'
     printf '%s\n' "CRITICAL: automatic rollback to $healthy_name was blocked to protect browser data." \
-      'The browser tab store was preserved. Inspect maw status and maw logs before choosing a compatible release.' >&2
+      "The browser tab store was preserved. Inspect $cli_name status and $cli_name logs before choosing a compatible release." >&2
     exit 3
   fi
   printf '%s\n' "Rolling back to last verified healthy release $healthy_name..." >&2
@@ -323,7 +324,7 @@ if [ -n "$healthy" ] && [ "$healthy" != "$target" ]; then
   fi
   maw_log rollback-failure release "$healthy_name" failed "$target_name" reason "$fail_reason"
   printf '%s\n' "CRITICAL: rollback to $healthy_name also failed ($fail_reason). MAW is DOWN." \
-    "Inspect: maw logs; systemctl --user status $unit" >&2
+    "Inspect: $cli_name logs; systemctl --user status $unit" >&2
   exit 3
 fi
 
@@ -338,6 +339,6 @@ else
   maw_log activation-critical reason 'no verified healthy release to roll back to' release "$target_name"
   printf '%s\n' "CRITICAL: no verified healthy release is available for rollback. MAW is DOWN." >&2
 fi
-printf '%s\n' "Inspect: maw logs; systemctl --user status $unit" >&2
-[ -n "$previous" ] && printf '%s\n' "An older verified release exists ($(basename "$previous")): maw rollback" >&2
+printf '%s\n' "Inspect: $cli_name logs; systemctl --user status $unit" >&2
+[ -n "$previous" ] && printf '%s\n' "An older verified release exists ($(basename "$previous")): $cli_name rollback" >&2
 exit 3

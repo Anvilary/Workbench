@@ -53,7 +53,7 @@ Do not transfer the GitHub repository until all existing installations have upgr
    - In GitHub Repository Settings -> General -> Danger Zone -> Transfer repository to `Anvilary` and rename to `Workbench` (`https://github.com/Anvilary/Workbench`).
    - GitHub automatically redirects git HTTP/SSH operations from `user/My-Amazing-Workspace` to `Anvilary/Workbench` as long as no new repository is created at the old path.
 3. **Update Local and Metadata Remotes**:
-   - Update `package.json`, `scripts/build-npm.mjs`, and `scripts/maw/maw-env.sh` (`MAW_REPO_URL` default) to `https://github.com/Anvilary/Workbench.git`.
+   - Confirm `package.json`, `scripts/build-npm.mjs`, `SECURITY.md`, `PRIVACY.md`, `.github/ISSUE_TEMPLATE/*`, and `scripts/maw/pty-host/maw-ptyd.service` point to `https://github.com/Anvilary/Workbench`.
    - Run `git remote set-url origin git@github.com:Anvilary/Workbench.git` in local checkouts.
 4. **Post-Transfer Smoke Test**:
    - Trigger `CI` via `workflow_dispatch` and confirm `CI Gate` passes.

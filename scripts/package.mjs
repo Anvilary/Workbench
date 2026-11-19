@@ -50,7 +50,7 @@ if not exist "packages\\web\\dist\\index.html" (
   if errorlevel 1 goto error
 )
 
-echo Starting Agent Workbench. Close this window or press Ctrl+C to quit.
+echo Starting Anvilary Workbench. Close this window or press Ctrl+C to quit.
 call pnpm start
 if errorlevel 1 goto error
 goto fin

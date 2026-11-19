@@ -20,6 +20,14 @@
     "ui"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Anvilary/Workbench.git"
+  },
+  "homepage": "https://github.com/Anvilary/Workbench#readme",
+  "bugs": {
+    "url": "https://github.com/Anvilary/Workbench/issues"
+  },
   "funding": {
     "type": "buymeacoffee",
     "url": "https://buymeacoffee.com/cvelasquez"

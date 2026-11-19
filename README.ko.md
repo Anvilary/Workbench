@@ -1,4 +1,4 @@
-# Agent Workbench
+# Anvilary Workbench
 
 [![npm](https://img.shields.io/npm/v/agent-workbench)](https://www.npmjs.com/package/agent-workbench)
 [![CI](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml)
@@ -17,7 +17,7 @@ npx agent-workbench
 
 ## 작동 방식
 
-Agent Workbench는 어떤 AI 서비스와도 통신하지 않습니다. 이미 설치된 CLI(`claude`, `codex`, `opencode`, `agy`, `pi`)를 실제 터미널 안에서 실행하고, 터미널만으로는 얻을 수 없는 것들을 그 주위에 더합니다. 탭, 지난 대화, 읽기 쉬운 카드로 정리된 대화, 컨텍스트 미터, 변경된 파일, 파일 트리가 그것입니다.
+Anvilary Workbench는 어떤 AI 서비스와도 통신하지 않습니다. 이미 설치된 CLI(`claude`, `codex`, `opencode`, `agy`, `pi`)를 실제 터미널 안에서 실행하고, 터미널만으로는 얻을 수 없는 것들을 그 주위에 더합니다. 탭, 지난 대화, 읽기 쉬운 카드로 정리된 대화, 컨텍스트 미터, 변경된 파일, 파일 트리가 그것입니다.
 
 터미널은 여전히 터미널입니다. 입력하는 모든 내용은 곧바로 CLI로 전달됩니다.
 
@@ -91,7 +91,7 @@ Agent Workbench는 어떤 AI 서비스와도 통신하지 않습니다. 이미 �
 | Antigravity CLI | `agy` | [가이드](https://antigravity.google/docs/cli/getting-started) |
 | Pi | `pi` | [pi.dev](https://pi.dev) |
 
-Agent Workbench는 어떤 CLI도 포함하거나 다운로드하지 않으며, `PATH`에 있는 CLI를 찾아서 씁니다. 하나도 없으면 그렇다고 알려 주고 세션을 열지 않습니다.
+Anvilary Workbench는 어떤 CLI도 포함하거나 다운로드하지 않으며, `PATH`에 있는 CLI를 찾아서 씁니다. 하나도 없으면 그렇다고 알려 주고 세션을 열지 않습니다.
 
 **플랫폼.** Windows 11과 PowerShell 환경에서 개발하고 매일 사용합니다. macOS와 Linux에서도 변경할 때마다 자동으로 설치하고 실행해 보지만, 일상적으로 쓰는 일은 더 적습니다. 제보를 환영합니다. Linux에서는 설치할 때 터미널 모듈을 컴파일하므로 `python3`, `make`, C++ 컴파일러(Debian과 Ubuntu에서는 `build-essential`)가 필요합니다.
 
@@ -197,7 +197,7 @@ Antigravity CLI는 작업 중인지 내 응답을 기다리는지, 토큰을 얼
 
 ### SSH를 통한 원격 접속
 
-한 컴퓨터에서 Agent Workbench를 실행해 두고, 같은 네트워크에 있는 다른 컴퓨터의 브라우저에서 사용할 수 있습니다. 그 컴퓨터에는 CLI가 없어도 됩니다. **앱이 네트워크에 열리는 일은 없습니다.** 앱은 여전히 `127.0.0.1`에서만 연결을 받고, 다른 컴퓨터는 SSH 터널을 통해 접속합니다. 이 방식이 제대로 작동하는 것도 터널 덕분입니다. 터널을 거치면 다른 컴퓨터의 브라우저가 앱을 `localhost`로 인식하는데, 브라우저는 클립보드와 알림을 이런 주소에서만 허용합니다. **기본적으로 꺼져 있습니다.**
+한 컴퓨터에서 Anvilary Workbench를 실행해 두고, 같은 네트워크에 있는 다른 컴퓨터의 브라우저에서 사용할 수 있습니다. 그 컴퓨터에는 CLI가 없어도 됩니다. **앱이 네트워크에 열리는 일은 없습니다.** 앱은 여전히 `127.0.0.1`에서만 연결을 받고, 다른 컴퓨터는 SSH 터널을 통해 접속합니다. 이 방식이 제대로 작동하는 것도 터널 덕분입니다. 터널을 거치면 다른 컴퓨터의 브라우저가 앱을 `localhost`로 인식하는데, 브라우저는 클립보드와 알림을 이런 주소에서만 허용합니다. **기본적으로 꺼져 있습니다.**
 
 **1. 앱을 실행하는 컴퓨터에서, 한 번만: SSH 서버를 켭니다.** 관리자 권한이 필요한 시스템 변경이라 앱이 대신 하지 않습니다.
 
@@ -217,7 +217,7 @@ Antigravity CLI는 작업 중인지 내 응답을 기다리는지, 토큰을 얼
   sudo systemctl enable --now ssh
   ```
 
-**2. 앱에서: 헤더의 ⇄ → 원격 접속 켜기를 누른 뒤 Agent Workbench를 다시 시작합니다.** 터널에는 바뀌지 않는 포트가 필요하므로 앱은 고정 포트(기본값 24837, 변경 가능)를 쓰며, 포트는 시작할 때 정해집니다. 다시 시작하면 열려 있던 CLI가 닫히고, 탭은 절전 중 상태로 돌아옵니다. *끄는* 것은 바로 적용됩니다.
+**2. 앱에서: 헤더의 ⇄ → 원격 접속 켜기를 누른 뒤 Anvilary Workbench를 다시 시작합니다.** 터널에는 바뀌지 않는 포트가 필요하므로 앱은 고정 포트(기본값 24837, 변경 가능)를 쓰며, 포트는 시작할 때 정해집니다. 다시 시작하면 열려 있던 CLI가 닫히고, 탭은 절전 중 상태로 돌아옵니다. *끄는* 것은 바로 적용됩니다.
 
 **3. 다른 컴퓨터에서, 사용할 때마다: 터널을 엽니다.** 대화 상자에 바로 복사할 수 있는 명령이 나옵니다.
 
@@ -268,8 +268,8 @@ QR 코드에는 휴대폰의 SSH 개인 키가 들어 있습니다. 컴퓨터는
 
 ## 데이터와 보안
 
-- **Agent Workbench는 어디로도 아무것도 보내지 않습니다.** 텔레메트리도, 분석도, 앱 자체의 네트워크 요청도 없습니다. Android 앱은 내 컴퓨터와만 통신합니다.
-- **각 CLI는 직접 실행했을 때 하던 일을 여전히 스스로 합니다.** AI 제공업체와 통신하고, 업데이트를 확인하거나 자체 사용 데이터를 보낼 수도 있습니다. Agent Workbench는 여기에 아무것도 더하지 않고, 끄지도 않습니다. 어떤 CLI의 설정도 바꾸지 않기 때문입니다. 각 CLI가 무엇을 보내는지는 그 CLI의 문서에 있습니다.
+- **Anvilary Workbench는 어디로도 아무것도 보내지 않습니다.** 텔레메트리도, 분석도, 앱 자체의 네트워크 요청도 없습니다. Android 앱은 내 컴퓨터와만 통신합니다.
+- **각 CLI는 직접 실행했을 때 하던 일을 여전히 스스로 합니다.** AI 제공업체와 통신하고, 업데이트를 확인하거나 자체 사용 데이터를 보낼 수도 있습니다. Anvilary Workbench는 여기에 아무것도 더하지 않고, 끄지도 않습니다. 어떤 CLI의 설정도 바꾸지 않기 때문입니다. 각 CLI가 무엇을 보내는지는 그 CLI의 문서에 있습니다.
 - **자격 증명에는 절대 손대지 않습니다.** 로그인 화면이 없습니다. CLI가 로그인을 요구하면 그 CLI의 터미널에서 직접 로그인하며, 앱은 그 사실조차 알지 못합니다.
 - **CLI의 기록을 읽지만 CLI 폴더에는 아무것도 쓰지 않습니다.** 무엇을 읽고 무엇을 절대 열지 않는지는 아래 표에 있습니다.
 - **앱 자체 폴더에만 씁니다.** 예외는 프로젝트 안의 세 가지뿐입니다. 확인한 경우의 공유 메모리, 파일 탭에서 직접 편집하고 저장한 파일, 그리고 직접 연 별도 브랜치입니다. 별도 브랜치는 각각 프로젝트 옆의 자기 폴더에 있고, 제거하거나 통합할 때 브랜치에서 바뀐 메모는 메인 폴더로 돌아갑니다.
@@ -345,7 +345,7 @@ QR 코드에는 휴대폰의 SSH 개인 키가 들어 있습니다. 컴퓨터는
 
 **다른 컴퓨터에서 페이지에 세션 토큰이 없다고 나옵니다**(401). 그 브라우저가 페어링되지 않았거나, 권한이 취소되었거나, 원격 접속이 꺼져 있습니다. ⇄ 대화 상자에서 다시 페어링하세요.
 
-**⇄ 대화 상자에 포트가 사용 중이라고 나옵니다.** 다른 프로그램(대개 두 번째로 실행한 Agent Workbench)이 그 포트를 쓰고 있습니다. 그 프로그램을 닫고 다시 시작하거나 다른 포트를 고르세요.
+**⇄ 대화 상자에 포트가 사용 중이라고 나옵니다.** 다른 프로그램(대개 두 번째로 실행한 Anvilary Workbench)이 그 포트를 쓰고 있습니다. 그 프로그램을 닫고 다시 시작하거나 다른 포트를 고르세요.
 
 **변경 사항 패널에 폴더가 git 저장소가 아니라고 나오는데**, 실제로는 저장소입니다. `git`이 `PATH`에 있는지 확인하세요. 다른 메시지가 나온다면 git 자체의 오류를 그대로 보여 주는 것입니다.
 
@@ -366,7 +366,7 @@ pnpm build     # 인터페이스를 한 번 빌드
 pnpm start     # 빌드된 인터페이스 제공
 ```
 
-**Windows에서 클릭 한 번으로 시작하기:** `pnpm package`를 실행하면 인터페이스를 빌드하고 루트에 **`Agent Workbench.cmd`** 파일을 남깁니다. 이 파일을 더블클릭하면 빠진 것을 설치하고, 필요하면 빌드한 뒤 브라우저를 엽니다. 실행하기 전에 읽어 볼 수 있는 20줄짜리 텍스트 파일입니다.
+**Windows에서 클릭 한 번으로 시작하기:** `pnpm package`를 실행하면 인터페이스를 빌드하고 루트에 **`Anvilary Workbench.cmd`** 파일을 남깁니다. 이 파일을 더블클릭하면 빠진 것을 설치하고, 필요하면 빌드한 뒤 브라우저를 엽니다. 실행하기 전에 읽어 볼 수 있는 20줄짜리 텍스트 파일입니다.
 
 ---
 
@@ -391,7 +391,7 @@ android/     the Android app, in Kotlin: the SSH tunnel, the interface, the noti
 
 ## 프로젝트 후원
 
-Agent Workbench가 유용하다면 [Buy Me a Coffee](https://buymeacoffee.com/cvelasquez)로 후원을 고려해 주세요. 앱은 버전마다 한 번, 닫을 수 있는 배너로 후원을 제안하며, 다음 버전이 나올 때까지 다시 표시하지 않습니다.
+Anvilary Workbench가 유용하다면 [Buy Me a Coffee](https://buymeacoffee.com/cvelasquez)로 후원을 고려해 주세요. 앱은 버전마다 한 번, 닫을 수 있는 배너로 후원을 제안하며, 다음 버전이 나올 때까지 다시 표시하지 않습니다.
 
 ---
 
@@ -399,4 +399,4 @@ Agent Workbench가 유용하다면 [Buy Me a Coffee](https://buymeacoffee.com/cv
 
 MIT. [`LICENSE`](LICENSE)를 참고하세요.
 
-Agent Workbench는 독립 프로젝트입니다. Claude Code, Codex, OpenCode, Antigravity, Pi CLI와 함께 작동하지만, Anthropic, OpenAI, OpenCode 제작자, Google, Earendil과 제휴 관계가 없으며 이들로부터 보증을 받지도 않았습니다.
+Anvilary Workbench는 독립 프로젝트입니다. Claude Code, Codex, OpenCode, Antigravity, Pi CLI와 함께 작동하지만, Anthropic, OpenAI, OpenCode 제작자, Google, Earendil과 제휴 관계가 없으며 이들로부터 보증을 받지도 않았습니다.

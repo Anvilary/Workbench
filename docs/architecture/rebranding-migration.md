@@ -51,7 +51,7 @@ Transitioning workspace packages from `@agent-workbench/*` (`@agent-workbench/sh
 ### Why Deferred
 
 1. **Broad blast radius across build and runtime scripts**: Over 100 files reference `@agent-workbench/*` or `agent-workbench` across workspace `package.json` manifests, TypeScript project references, `pnpm-lock.yaml`, `scripts/maw/install.sh` (`@agent-workbench/server` check/build expectations), `scripts/maw/maw-update.sh`, `.github/workflows/ci.yml`, `.github/workflows/publish.yml`, and `.github/scripts/smoke.mjs`.
-2. **Pre-existing packaging/allowlist bugs**: As identified during Architecture v1 validation, `.github/scripts/check-tarball.mjs` currently flags `dist/maw-ptyd.mjs` (added by `scripts/build-npm.mjs`) as unexpected against its strict allowlist, and `packages/server/scripts/check-settings.mjs` check 4.1 fails on pre-existing keys. Combining a workspace-wide package rename with unrelated fixes would obscure review and risk breaking `publish.yml`.
+2. **Independent migration scope**: Packaging allowlists (`.github/scripts/check-tarball.mjs` now includes `dist/maw-ptyd.mjs` and `dist/terminal-state.mjs`), settings checks (`packages/server/scripts/check-settings.mjs`), and tiered CI gating (`.github/workflows/ci.yml`) are tracked and validated independently so a future package rename PR remains focused and reviewable.
 3. **npm ecosystem continuity**: Adding `'anvil-bench'` to `bin` inside `dist-npm/package.json` introduces the preferred CLI immediately without unpublishing or stranding `npm install -g agent-workbench` / `npx agent-workbench` users.
 
 ### Future `@anvilary/workbench-*` Migration Checklist
@@ -70,8 +70,7 @@ Before changing systemd unit names, XDG directories, Electron partitions, or tra
    - Update `REPO_URL` in `scripts/build-npm.mjs`, `package.json`, `README.md`, translations (`README.*.md`), and `packages/web/src/features/settings/sections/AboutSettingsSection.tsx` once `Anvilary/Workbench` exists.
    - Verify GitHub Actions secrets, npm trusted publishing / OIDC settings (`.github/workflows/publish.yml`), and branch rulesets in the target organization.
    - Re-point host git remotes or `source_path` on installed machines (`~/.local/share/maw/source_path`) if updater fetches from origin.
-4. **Pre-existing repository issues tracked outside rebranding**:
-   - `.github/workflows/ci.yml`: `fast-checks` currently invokes `pnpm test:unit` before `pnpm build`, causing `packages/server/tests/unit/shared/build-bundle.test.ts` to fail on a clean checkout where `packages/web/dist` has not been built yet; expensive desktop/E2E workflows also lack maintainer approval gating for untrusted PRs.
-   - `.github/scripts/check-tarball.mjs`: strict allowlist rejects `dist/maw-ptyd.mjs` emitted by `scripts/build-npm.mjs`.
-   - `packages/server/scripts/check-settings.mjs`: pre-existing check 4.1 mismatch.
-   - `packages/web` browser E2E suite: pre-existing failures outside the rebranding scope.
+4. **Verification notes (resolved outside rebranding)**:
+   - `.github/workflows/ci.yml`: uses tiered jobs (`verify`, unit shards, and `run_heavy`-gated Tier 2/3 jobs) with `CI Gate` aggregation and builds before runtime/desktop suites.
+   - `.github/scripts/check-tarball.mjs`: explicitly allows `dist/maw-ptyd.mjs` and `dist/terminal-state.mjs` emitted by `scripts/build-npm.mjs`.
+   - `packages/server/scripts/check-settings.mjs`: validated as part of `pnpm check`.
