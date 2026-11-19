@@ -12,7 +12,7 @@ import type {
   SessionActivity,
   WorkspaceId,
 } from '@agent-workbench/shared';
-import { validateWebTabTitle } from '@agent-workbench/shared';
+import { CLI_PROVIDERS, validateWebTabTitle } from '@agent-workbench/shared';
 import type { AgentId, TerminalActivity, TerminalId } from '@agent-workbench/shared';
 import type { OpenTerminalOptions, TerminalRegistry } from '../terminal-registry.js';
 import { isInsideProtected } from '../directory-picker.js';
@@ -152,7 +152,7 @@ function checkId(value: string): void {
 }
 
 function validateLaunch(plan: ValidatedNativeLaunch): void {
-  if (!['codex', 'claude-code', 'antigravity'].includes(plan.provider) ||
+  if (!CLI_PROVIDERS.includes(plan.provider) ||
       typeof plan.file !== 'string' || plan.file.trim().length === 0 ||
       plan.file.includes('\0') || !Array.isArray(plan.args) ||
       !plan.args.every((arg) => typeof arg === 'string' && !arg.includes('\0')) ||
