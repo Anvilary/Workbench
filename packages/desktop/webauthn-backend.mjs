@@ -53,7 +53,6 @@ function execWithTimeout(execFn, cmd, args, { timeoutMs = DEFAULT_FIDO2_PROBE_TI
       () => finish(reject, new Error(`NotAllowedError: ${cmd} timed out after ${timeoutMs}ms`)),
       timeoutMs,
     );
-    if (typeof timer.unref === 'function') timer.unref();
     if (signal) signal.addEventListener('abort', onAbort, { once: true });
 
     const execOptions = { timeout: timeoutMs, killSignal: 'SIGKILL' };
