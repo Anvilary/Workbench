@@ -136,9 +136,9 @@ const authenticationHosts = new Set([
   'login.microsoft.com',
   'auth.openai.com',
   'auth0.openai.com',
+  'auth.perplexity.ai',
 ]);
 const authenticationSuffixes = ['.okta.com', '.auth0.com', '.onelogin.com'];
-const authenticationPath = /^\/(?:o\/oauth2\/|oauth2\/|oauth\/authorize(?:\/|$)|oauth\/v2\/|signin\/oauth|saml2?\/|openid-connect\/|login\/oauth\/)/i;
 const blockedPublicSuffixes = ['localhost', 'local', 'internal', 'lan', 'home', 'home.arpa', 'test', 'invalid', 'example'];
 
 function publicHttps(value, maxLength) {
@@ -155,14 +155,16 @@ function publicHttps(value, maxLength) {
   }
 }
 
-/** Provider sign-in documents, including OAuth URLs that exceed the ordinary address limit. */
+/**
+ * Provider sign-in documents restricted strictly to explicit trusted identity
+ * provider origins (never arbitrary domains by path pattern).
+ */
 export function authenticationUrl(value) {
   const url = publicHttps(value, AUTH_URL_MAX);
   if (!url) return false;
   const host = url.hostname.toLowerCase();
   if (authenticationHosts.has(host)) return true;
-  if (authenticationSuffixes.some(suffix => host.endsWith(suffix) && host.length > suffix.length)) return true;
-  return authenticationPath.test(url.pathname);
+  return authenticationSuffixes.some(suffix => host.endsWith(suffix) && host.length > suffix.length);
 }
 
 export function popupShaped(dispositionOrFeatures, maybeFeatures) {
@@ -224,15 +226,23 @@ export function externalUrl(value) {
     !['localhost', 'local', 'internal', 'test', 'invalid', 'example'].some(suffix => host === suffix || host.endsWith('.' + suffix));
 }
 
-/** General web pages get their own session, never the shell's local origin. */
+/**
+ * General web pages in embedded Electron WebContentsViews get their own
+ * partition and deliberately exclude all loopback, IP literal, and local-network
+ * origins. Although `@agent-workbench/shared`'s `validateOtherWebUrl` permits
+ * loopback URLs for web-mode or external browser links, native desktop views
+ * fail closed on loopback so untrusted general websites cannot navigate,
+ * redirect, or issue subresource requests to local services or Workbench's own
+ * loopback backend.
+ */
 export function otherUrl(value, maxLength = 2048) {
   if (typeof value !== 'string' || value.length > maxLength || /[\u0000-\u0020\u007f]/.test(value)) return false;
   try {
     const url = new URL(value);
-    const host = url.hostname;
+    const host = url.hostname.toLowerCase();
     return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password &&
       !isIP(host.replace(/^\[|\]$/g, '')) && host.includes('.') && !host.endsWith('.') &&
-      !['localhost', 'local', 'internal', 'lan', 'home', 'home.arpa', 'test', 'invalid', 'example'].some(suffix => host === suffix || host.endsWith('.' + suffix));
+      !blockedPublicSuffixes.some(suffix => host === suffix || host.endsWith('.' + suffix));
   } catch { return false; }
 }
 
@@ -242,7 +252,13 @@ export function serviceUrl(value) {
   return url;
 }
 
-export function validateFaviconUrl(value, options = {}) {
+/**
+ * Validates favicon URLs emitted by embedded web pages before forwarding to
+ * the desktop shell. Only safe base64 `data:image/` URIs and public HTTPS URLs
+ * (no HTTP, no loopback, no private IPs, no local TLDs, no credentials, no
+ * custom ports) are permitted to prevent loopback/local-network SSRF.
+ */
+export function validateFaviconUrl(value) {
   if (typeof value !== 'string') return null;
   const clean = value.trim();
   if (!clean || clean.length > 65536 || /[\u0000-\u001f\u007f]/.test(clean)) return null;
@@ -261,28 +277,22 @@ export function validateFaviconUrl(value, options = {}) {
     return null;
   }
 
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+  if (parsed.protocol !== 'https:') return null;
   if (parsed.username || parsed.password) return null;
+  if (parsed.port && parsed.port !== '443') return null;
 
   const hostname = parsed.hostname.toLowerCase();
-  const loopback = hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === '127.0.0.1' || hostname === '::1';
-
-  if (parsed.protocol === 'http:') {
-    if (!options.allowLoopback || !loopback) return null;
-  } else {
-    if (parsed.port && parsed.port !== '443') return null;
-    if (loopback && !options.allowLoopback) return null;
-    if (['local', 'internal', 'lan', 'home', 'invalid', 'example', 'test'].some(s => hostname === s || hostname.endsWith('.' + s))) return null;
-    if (isIP(hostname.replace(/^\[|\]$/g, ''))) return null;
-  }
+  const bareHost = hostname.replace(/^\[|\]$/g, '');
+  if (!bareHost || isIP(bareHost) || !bareHost.includes('.') || bareHost.endsWith('.')) return null;
+  if (blockedPublicSuffixes.some(suffix => bareHost === suffix || bareHost.endsWith('.' + suffix))) return null;
 
   return parsed.toString();
 }
 
-export function selectBestFavicon(candidates, options = {}) {
+export function selectBestFavicon(candidates) {
   if (!Array.isArray(candidates)) return null;
   for (const candidate of candidates) {
-    const valid = validateFaviconUrl(candidate, options);
+    const valid = validateFaviconUrl(candidate);
     if (valid) return valid;
   }
   return null;

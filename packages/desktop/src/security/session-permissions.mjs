@@ -1,5 +1,6 @@
 import {
   authenticationUrl as defaultAuthenticationUrl,
+  externalUrl as defaultExternalUrl,
   otherUrl as defaultOtherUrl,
   perplexityUrl as defaultPerplexityUrl,
 } from '../../policy.mjs';
@@ -23,9 +24,115 @@ function sameOriginMatch(contents, requestingUrl, allowedOrigins) {
   }
 }
 
+function installLocalNetworkFilter(session, { otherUrl, authenticationUrl }) {
+  if (!session?.webRequest || typeof session.webRequest.onBeforeRequest !== 'function') return;
+  session.webRequest.onBeforeRequest((details, callback) => {
+    // Block direct local-network URLs (loopback, private IPs, local TLDs),
+    // including subframes, fetches, and WebSockets, across all browser partitions.
+    const url = typeof details?.url === 'string' ? details.url : '';
+    const network = /^(https?|wss?):/i.test(url);
+    if (!network) {
+      callback({ cancel: false });
+      return;
+    }
+    const checked = url.replace(/^ws:/i, 'http:').replace(/^wss:/i, 'https:');
+    const allowed =
+      otherUrl(checked, 8192) ||
+      (/^https:/i.test(checked) && authenticationUrl(checked));
+    callback({ cancel: !allowed });
+  });
+}
+
+function stripHeaderCaseInsensitive(headers, names) {
+  if (!headers || typeof headers !== 'object') return headers;
+  const targets = new Set(names.map((name) => name.toLowerCase()));
+  const cleaned = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (!targets.has(key.toLowerCase())) {
+      cleaned[key] = value;
+    }
+  }
+  return cleaned;
+}
+
 /**
- * Configures strict permission handlers (and local-network webRequest filtering
- * for general browser partitions) for a single Electron provider session.
+ * Hardens the Workbench desktop shell session so cross-origin subresources
+ * (such as tab favicons) can never target loopback/private hosts and never
+ * leak cookies, Referer, Authorization, or Origin headers.
+ */
+export function configureShellSessionSecurity({
+  session,
+  getLocalOrigin,
+  externalUrl = defaultExternalUrl,
+}) {
+  if (!session?.webRequest) return;
+
+  const isLocalShellOrigin = (rawUrl) => {
+    try {
+      const parsed = new URL(rawUrl);
+      const localOrigin = typeof getLocalOrigin === 'function' ? getLocalOrigin() : '';
+      if (!localOrigin) return false;
+      const localParsed = new URL(localOrigin);
+      if (parsed.protocol === 'ws:' || parsed.protocol === 'wss:') {
+        return parsed.hostname === localParsed.hostname && parsed.port === localParsed.port;
+      }
+      return parsed.origin === localParsed.origin;
+    } catch {
+      return false;
+    }
+  };
+
+  if (typeof session.webRequest.onBeforeRequest === 'function') {
+    session.webRequest.onBeforeRequest((details, callback) => {
+      const url = typeof details?.url === 'string' ? details.url : '';
+      if (!/^(https?|wss?):/i.test(url)) {
+        callback({ cancel: false });
+        return;
+      }
+      if (isLocalShellOrigin(url)) {
+        callback({ cancel: false });
+        return;
+      }
+      // Cross-origin shell fetches (e.g. tab favicons) are restricted to public HTTPS only.
+      callback({ cancel: !externalUrl(url) });
+    });
+  }
+
+  if (typeof session.webRequest.onBeforeSendHeaders === 'function') {
+    session.webRequest.onBeforeSendHeaders((details, callback) => {
+      const url = typeof details?.url === 'string' ? details.url : '';
+      if (!/^(https?|wss?):/i.test(url) || isLocalShellOrigin(url)) {
+        callback({ requestHeaders: details?.requestHeaders });
+        return;
+      }
+      callback({
+        requestHeaders: stripHeaderCaseInsensitive(details?.requestHeaders, [
+          'cookie',
+          'referer',
+          'authorization',
+          'origin',
+        ]),
+      });
+    });
+  }
+
+  if (typeof session.webRequest.onHeadersReceived === 'function') {
+    session.webRequest.onHeadersReceived((details, callback) => {
+      const url = typeof details?.url === 'string' ? details.url : '';
+      if (!/^(https?|wss?):/i.test(url) || isLocalShellOrigin(url)) {
+        callback({ responseHeaders: details?.responseHeaders });
+        return;
+      }
+      callback({
+        responseHeaders: stripHeaderCaseInsensitive(details?.responseHeaders, ['set-cookie']),
+      });
+    });
+  }
+}
+
+/**
+ * Configures strict permission handlers and local-network webRequest filtering
+ * for a single Electron provider session.
  */
 export function configureProviderSessionPermissions({
   provider,
@@ -34,6 +141,8 @@ export function configureProviderSessionPermissions({
   authenticationUrl = defaultAuthenticationUrl,
 }) {
   if (!session) return;
+
+  installLocalNetworkFilter(session, { otherUrl, authenticationUrl });
 
   if (provider === 'other') {
     session.setPermissionRequestHandler((_contents, permission, callback) => {
@@ -45,17 +154,6 @@ export function configureProviderSessionPermissions({
         permission === 'automatic-fullscreen' ||
         permission === 'clipboard-sanitized-write'
       );
-    });
-    session.webRequest.onBeforeRequest((details, callback) => {
-      // Block direct local-network URLs, including subframes and fetches, in general web pages.
-      const network = /^(https?|wss?):/.test(details.url);
-      const checked = details.url.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
-      callback({
-        cancel:
-          network &&
-          !otherUrl(checked, 8192) &&
-          !(details.url.startsWith('https:') && authenticationUrl(details.url)),
-      });
     });
     return;
   }

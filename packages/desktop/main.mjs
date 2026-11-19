@@ -11,8 +11,8 @@ import { browserDownloadHandler } from './browser-downloads.mjs';
 import { isAllowedWebAuthnOrigin, isValidRpId } from './webauthn-policy.mjs';
 import { isFido2ToolsAvailable } from './webauthn-backend.mjs';
 import { requestPinDialog } from './webauthn-dialog.mjs';
-import { isOAuthLoopbackCallback } from './src/security/oauth-loopback.mjs';
-import { configureProviderSessionPermissions, isDurableProviderPage } from './src/security/session-permissions.mjs';
+import { isOAuthLoopbackCallback, createOAuthLoopbackGate } from './src/security/oauth-loopback.mjs';
+import { configureProviderSessionPermissions, configureShellSessionSecurity, isDurableProviderPage } from './src/security/session-permissions.mjs';
 import { cloneBrowserProfileStorage, clearProfileSiteAuth } from './src/security/browser-profile-storage.mjs';
 import { performWebAuthnAssertion, resolveWebAuthnPaneBounds } from './src/security/webauthn-orchestrator.mjs';
 import { discoverBackendReadiness } from './src/ipc/backend-readiness.mjs';
@@ -54,6 +54,11 @@ async function start() {
     backgroundColor: '#0e0e10',
     icon: iconPath,
     webPreferences: { ...secure, partition: 'persist:maw-shell-prototype', preload: path.join(here, 'preload.cjs') } });
+  configureShellSessionSecurity({
+    session: win.webContents.session,
+    getLocalOrigin: () => local.origin,
+    externalUrl,
+  });
   const views = new Map();
   const urls = new Map();
   const providers = new Map();
@@ -216,21 +221,33 @@ async function start() {
     applyWebContentsZoom(id, contents, action, zoomLevels, send);
   }
 
+  const allowOAuthLoopback = createOAuthLoopbackGate({ maxRequests: 3, windowMs: 10_000 });
+
+  function isContentsInAuthFlow(contents, provider) {
+    if (!contents || contents.isDestroyed()) return false;
+    if (authEntryUrls.has(contents)) return true;
+    let currentUrl = '';
+    try { currentUrl = contents.getURL() || ''; } catch {}
+    if (!currentUrl) return false;
+    if (authenticationUrl(currentUrl)) return true;
+    if (provider === 'github' && /^https:\/\/github\.com\/(?:login|sessions)\//i.test(currentUrl)) return true;
+    return false;
+  }
+
+  function tryOpenOAuthLoopback(url, sourceKey = 'global') {
+    if (!isOAuthLoopbackCallback(url, { excludePort: local.port })) return false;
+    if (process.env.MAW_EXTERNAL_POLICY === 'deny') {
+      send({ type: 'error', message: 'External browser opening was cancelled.' });
+      return true;
+    }
+    if (!allowOAuthLoopback(sourceKey)) return true;
+    void shell.openExternal(url).catch(() => {});
+    return true;
+  }
+
   function guard(contents, provider = 'chatgpt', allowPopup = true) {
     const getTabId = () => [...views.entries()].find(([, v]) => v.webContents === contents)?.[0] || popupOwners.get(contents);
-    const isAuthFlow = () => {
-      if (!allowPopup || popupOwners.has(contents)) return true;
-      try {
-        const parentWin = BrowserWindow.fromWebContents(contents);
-        if (parentWin && popups.has(parentWin)) return true;
-      } catch {}
-      if (authEntryUrls.has(contents)) return true;
-      let currentUrl = '';
-      try { currentUrl = contents.getURL() || ''; } catch {}
-      if (currentUrl && (authenticationUrl(currentUrl) || authEntryUrls.has(contents))) return true;
-      if (provider === 'chatgpt' || provider === 'github' || provider === 'perplexity') return true;
-      return false;
-    };
+    const isAuthFlow = () => isContentsInAuthFlow(contents, provider);
     const handleFileDelivery = (event, url) => {
       if (provider === 'chatgpt' && isDownloadOrFileDeliveryUrl(url)) {
         event.preventDefault();
@@ -268,9 +285,8 @@ async function start() {
     const navigation = (event, url, isInPlace, isMainFrame) => {
       if (isMainFrame === false) return;
       if (handleFileDelivery(event, url)) return;
-      if (isOAuthLoopbackCallback(url) && isAuthFlow()) {
+      if (isAuthFlow() && tryOpenOAuthLoopback(url, getTabId() || 'popup')) {
         event.preventDefault();
-        void shell.openExternal(url).catch(() => {});
         return;
       }
       if (isSameSiteOrAllowed(url)) return;
@@ -287,9 +303,8 @@ async function start() {
     const redirect = (event, url, isInPlace, isMainFrame) => {
       if (isMainFrame === false) return;
       if (handleFileDelivery(event, url)) return;
-      if (isOAuthLoopbackCallback(url) && isAuthFlow()) {
+      if (isAuthFlow() && tryOpenOAuthLoopback(url, getTabId() || 'popup')) {
         event.preventDefault();
-        void shell.openExternal(url).catch(() => {});
         return;
       }
       if (navigationAllowed(provider, url) || authenticationUrl(url)) return;
@@ -308,8 +323,7 @@ async function start() {
         contents.downloadURL(url);
         return { action: 'deny' };
       }
-      if (isOAuthLoopbackCallback(url) && isAuthFlow()) {
-        void shell.openExternal(url).catch(() => {});
+      if (isAuthFlow() && tryOpenOAuthLoopback(url, getTabId() || 'popup')) {
         return { action: 'deny' };
       }
       const decision = decideWindowOpen({
@@ -604,11 +618,17 @@ async function start() {
       } catch {}
       send({ type: 'committed', id, url });
     };
-    view.webContents.on('did-navigate', (event, url) => { interactionProtected.delete(id); committed(event, url); });
+    view.webContents.on('did-navigate', (event, url) => {
+      interactionProtected.delete(id);
+      if (!authenticationUrl(url) && durablePage(provider, url)) {
+        authEntryUrls.delete(view.webContents);
+      }
+      committed(event, url);
+    });
     view.webContents.on('did-navigate-in-page', committed);
     view.webContents.on('page-favicon-updated', (_event, favicons) => {
       if (views.get(id) !== view || view.webContents.isDestroyed()) return;
-      const best = selectBestFavicon(favicons, { allowLoopback: provider === 'other' });
+      const best = selectBestFavicon(favicons);
       if (best) {
         tabFavicons.set(id, best);
         send({ type: 'favicon', id, favicon: best });
@@ -810,8 +830,7 @@ async function start() {
       if (command.action === 'copy-selection') contents.copy();
       if (command.action === 'open-page') void openExternal(contents.getURL());
       if (command.action === 'open-link') {
-        if (isOAuthLoopbackCallback(command.url)) {
-          void shell.openExternal(command.url).catch(() => {});
+        if (isContentsInAuthFlow(contents, providers.get(command.id)) && tryOpenOAuthLoopback(command.url, command.id)) {
           return;
         }
         if (authenticationUrl(command.url)) {
@@ -1018,29 +1037,26 @@ async function start() {
   }
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (isOAuthLoopbackCallback(url)) {
-      void shell.openExternal(url).catch(() => {});
+    if (tryOpenOAuthLoopback(url, 'shell')) {
       return { action: 'deny' };
     }
     void openExternal(url).catch(() => {});
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
-    if (isOAuthLoopbackCallback(url)) {
+    if (tryOpenOAuthLoopback(url, 'shell')) {
       event.preventDefault();
-      void shell.openExternal(url).catch(() => {});
       return;
     }
     try { if (new URL(url).origin === local.origin && new URL(url).pathname === '/') return; } catch {}
     event.preventDefault();
   });
   win.webContents.on('will-redirect', (event, url) => {
-    if (isOAuthLoopbackCallback(url)) {
+    if (tryOpenOAuthLoopback(url, 'shell')) {
       event.preventDefault();
-      void shell.openExternal(url).catch(() => {});
       return;
     }
-    if (new URL(url).origin !== local.origin) event.preventDefault();
+    try { if (new URL(url).origin !== local.origin) event.preventDefault(); } catch { event.preventDefault(); }
   });
   win.webContents.on('did-start-loading', () => {
     hideAll();
