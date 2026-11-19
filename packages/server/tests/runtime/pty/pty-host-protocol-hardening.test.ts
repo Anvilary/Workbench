@@ -182,11 +182,12 @@ test('A-11/D-04: tombstone cap, resize NaN/float rejection, duplicate kill timer
   t.after(() => client.detach());
 
   // 1. Tombstone cap: spawn 5 short-lived sessions and verify tombstones stay capped at 3
-  const exited = new Set<string>();
+  // with oldest-exited tombstones evicted first.
+  const exitOrder: string[] = [];
   const waitExits = new Promise<void>((resolve) => {
     client.onExit((ev) => {
-      exited.add(ev.id);
-      if (exited.size === 5) resolve();
+      exitOrder.push(ev.id);
+      if (exitOrder.length === 5) resolve();
     });
   });
   for (let i = 0; i < 5; i++) {
@@ -201,8 +202,11 @@ test('A-11/D-04: tombstone cap, resize NaN/float rejection, duplicate kill timer
   }
   await waitExits;
   assert.equal(supervisor.tombstones.size, 3, 'Tombstones must be capped at maxTombstones');
-  assert.equal(supervisor.tombstones.has('short-0'), false);
-  assert.equal(supervisor.tombstones.has('short-1'), false);
+  assert.equal(supervisor.tombstones.has(exitOrder[0]!), false);
+  assert.equal(supervisor.tombstones.has(exitOrder[1]!), false);
+  assert.equal(supervisor.tombstones.has(exitOrder[2]!), true);
+  assert.equal(supervisor.tombstones.has(exitOrder[3]!), true);
+  assert.equal(supervisor.tombstones.has(exitOrder[4]!), true);
 
   // 2. Spawn a live session for resize validation, snapshot error recovery, and duplicate kill
   await client.spawn({
