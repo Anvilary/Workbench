@@ -48,7 +48,7 @@ Do not transfer the GitHub repository until all existing installations have upgr
 ### Step-by-Step Transfer Procedure (When Authorized)
 1. **Pre-Transfer Check**:
    - Confirm no active CI release jobs are running.
-   - Verify `Anvilary` GitHub organization exists and has `NPM_TOKEN` configured if org-level secrets are used.
+   - Verify that the npm trusted publisher targets `Anvilary/Workbench` and `publish.yml`.
 2. **Transfer / Rename on GitHub**:
    - In GitHub Repository Settings -> General -> Danger Zone -> Transfer repository to `Anvilary` and rename to `Workbench` (`https://github.com/Anvilary/Workbench`).
    - GitHub automatically redirects git HTTP/SSH operations from `user/My-Amazing-Workspace` to `Anvilary/Workbench` as long as no new repository is created at the old path.
@@ -57,4 +57,4 @@ Do not transfer the GitHub repository until all existing installations have upgr
    - Run `git remote set-url origin git@github.com:Anvilary/Workbench.git` in local checkouts.
 4. **Post-Transfer Smoke Test**:
    - Trigger `CI` via `workflow_dispatch` and confirm `CI Gate` passes.
-   - Run `maw update --check` / `anvil-bench update --check` in an isolated staging home directory.
+   - Run `anvil-bench update --no-restart` in an isolated staging home directory.
