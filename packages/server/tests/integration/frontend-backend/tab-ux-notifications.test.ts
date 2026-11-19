@@ -686,3 +686,97 @@ test('Acceptance 6 & 7: Mixed tab ordering persists across restart, rejects inva
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('P1 B-06/B-16 & P2 A-09: workspace purge clears notifications, permits orphaned done, blocks post-purge closeTab resurrection, and synchronizes shell parser init', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'maw-b06-b16-'));
+  try {
+    const store = new AgencyNotificationStore(path.join(root, 'notifications.json'));
+    await store.initialize();
+    const manager = new TabActivityManager({ notificationStore: store, storageDir: root });
+    await manager.initialize();
+
+    const wsDeleted = randomUUID() as WorkspaceId;
+    const wsOther = randomUUID() as WorkspaceId;
+    const tabDeleted = randomUUID();
+    const tabOther = randomUUID();
+    const sessionDeleted = randomUUID() as RuntimeSessionId;
+
+    // Create notifications in both workspaces
+    await manager.handleCliActivity({
+      workspaceId: wsDeleted,
+      tabId: tabDeleted,
+      sessionId: sessionDeleted,
+      provider: 'codex',
+      nextActivity: 'finished',
+      lifecycle: 'running',
+      taskId: 'turn-del-1',
+      completionEvidence: 'native-turn',
+    });
+    const otherNotif = await store.create({
+      workspaceId: wsOther,
+      tabId: tabOther,
+      title: 'Other',
+      body: 'Keep me',
+      state: 'finished',
+      deduplicationKey: 'other-1',
+    });
+    assert.ok(otherNotif);
+    await manager.flush();
+    await store.flush();
+
+    assert.equal(store.list(wsDeleted).length, 1);
+    assert.equal(store.list(wsOther).length, 1);
+
+    // Register shell parser on wsDeleted and verify it does not unsynchronized-pollute states during purge
+    manager.getOrCreateShellParser(wsDeleted, tabDeleted);
+    await manager.purgeWorkspace(wsDeleted);
+    const purgedCount = await store.purgeWorkspace(wsDeleted);
+    assert.equal(purgedCount, 1);
+    assert.equal(store.list(wsDeleted).length, 0);
+    assert.equal(store.list(wsOther).length, 1);
+
+    // B-16: Post-purge closeTab must NOT resurrect a TabActivityRecord in memory or on disk
+    await manager.closeTab(wsDeleted, tabDeleted);
+    await manager.flush();
+    assert.equal(manager.getRecord(wsDeleted, tabDeleted), null);
+    assert.equal((manager as any).states.size, 0);
+    assert.equal((manager as any).tabTurnSequences.size, 0);
+
+    // Reload from disk to verify no resurrected record was persisted
+    const reloaded = new TabActivityManager({ notificationStore: store, storageDir: root });
+    await reloaded.initialize();
+    assert.equal(reloaded.getRecord(wsDeleted, tabDeleted), null);
+    reloaded.dispose();
+
+    // B-06 defense-in-depth: handleAgencyNotificationDone must still allow acknowledging an
+    // already-orphaned notification whose workspace no longer exists
+    const orphan = await store.create({
+      workspaceId: randomUUID() as WorkspaceId,
+      tabId: randomUUID(),
+      title: 'Legacy orphan',
+      body: 'From deleted workspace',
+      state: 'finished',
+      deduplicationKey: 'legacy-orphan-1',
+    });
+    assert.ok(orphan);
+    const messages: any[] = [];
+    const socket = { send: (m: any) => messages.push(m) };
+    await handleAgencyNotificationDone(
+      { type: 'agency.notification.done', requestId: 'req-orphan', notificationId: orphan.id },
+      socket as any,
+      {
+        agencyNotificationStore: store,
+        agencyActivityManager: manager,
+        agencyWorkspaceStore: { getWorkspace: () => null },
+        send: (s, m) => (s as any).send(m),
+      },
+    );
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].type, 'agency.notification.changed');
+    assert.ok(store.get(orphan.id)?.acknowledgedAt);
+
+    manager.dispose();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

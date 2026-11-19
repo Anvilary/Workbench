@@ -312,6 +312,49 @@ export class AgencyNotificationStore extends EventEmitter {
     return this.mutate(() => this.acknowledgeItem(notificationId));
   }
 
+  purgeWorkspace(workspaceId: WorkspaceId): Promise<number> {
+    return this.mutate(() => this.purgeMatching((item) => item.workspaceId === workspaceId));
+  }
+
+  purgeProject(projectId: ProjectId): Promise<number> {
+    return this.mutate(() => this.purgeMatching((item) => item.projectId === projectId));
+  }
+
+  private async purgeMatching(predicate: (item: MawNotificationItem) => boolean): Promise<number> {
+    const removedItems: MawNotificationItem[] = [];
+    const removedDedup: Array<[string, { id: string; createdAt: number }]> = [];
+
+    for (const [id, item] of this.notifications) {
+      if (predicate(item)) {
+        removedItems.push(item);
+        this.notifications.delete(id);
+        if (item.deduplicationKey) {
+          const entry = this.deduplicationIndex.get(item.deduplicationKey);
+          if (entry && entry.id === id) {
+            removedDedup.push([item.deduplicationKey, entry]);
+            this.deduplicationIndex.delete(item.deduplicationKey);
+          }
+        }
+      }
+    }
+
+    if (removedItems.length === 0) return 0;
+
+    try {
+      await this.persist();
+    } catch (error) {
+      for (const item of removedItems) {
+        this.notifications.set(item.id, item);
+      }
+      for (const [key, entry] of removedDedup) {
+        this.deduplicationIndex.set(key, entry);
+      }
+      throw error;
+    }
+
+    return removedItems.length;
+  }
+
   private async acknowledgeItem(notificationId: string): Promise<MawNotificationItem | null> {
     const existing = this.notifications.get(notificationId);
     if (!existing) return null;

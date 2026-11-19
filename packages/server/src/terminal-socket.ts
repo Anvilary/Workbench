@@ -260,13 +260,10 @@ export async function handleAgencyNotificationDone(
     return;
   }
   const workspace = context.agencyWorkspaceStore.getWorkspace(item.workspaceId);
-  if (!workspace) {
-    context.send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Workspace not found' });
-    return;
-  }
 
   try {
-    // Durably acknowledge the notification item
+    // Durably acknowledge the notification item even if its workspace was already deleted,
+    // so orphaned notifications are never permanently undismissable.
     const updated = await context.agencyNotificationStore.acknowledge(message.notificationId);
     if (!updated) {
       context.send(socket, { type: 'agency.error', requestId: message.requestId, code: 'not-found', message: 'Notification not found' });
@@ -275,11 +272,11 @@ export async function handleAgencyNotificationDone(
 
     // Atomic turn-specific acknowledgement before reporting success:
     // When old/legacy notifications lack identity, fail safely by completing only the inbox item,
-    // not guessing the current turn.
+    // not guessing the current turn. Skip tab activity update if the workspace was deleted.
     const notifTaskId = (item.metadata?.taskId as string | undefined) ?? (item.deduplicationKey?.split(':').slice(3).join(':') || undefined);
     const notifTurnSeq = item.metadata?.turnSequence as number | undefined;
 
-    if (item.tabId && (notifTaskId || notifTurnSeq !== undefined)) {
+    if (workspace && item.tabId && (notifTaskId || notifTurnSeq !== undefined)) {
       await context.agencyActivityManager.acknowledgeMatchingTurn(item.workspaceId, item.tabId, {
         taskId: notifTaskId,
         turnSequence: notifTurnSeq,
@@ -461,7 +458,18 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
     agencyEditorTabs,
     {
       closeTab: (workspaceId, tabId) => agencyActivityManager.closeTab(workspaceId, tabId),
-      purgeWorkspace: (workspaceId) => agencyActivityManager.purgeWorkspace(workspaceId),
+      purgeWorkspace: async (workspaceId) => {
+        await agencyActivityManager.purgeWorkspace(workspaceId);
+        const removed = await agencyNotificationStore.purgeWorkspace(workspaceId);
+        if (removed > 0) {
+          broadcast({
+            type: 'agency.notifications.snapshot',
+            requestId: '',
+            notifications: agencyNotificationStore.list(),
+            activityStates: agencyActivityManager.snapshot(),
+          });
+        }
+      },
     },
   );
   const hasOpenActivityTab = (workspaceId: import('@agent-workbench/shared').WorkspaceId, tabId: string): boolean => {
@@ -3831,6 +3839,17 @@ export function attachTerminalSocket(options: TerminalSocketOptions): () => Prom
           const domainResponse = profileId
             ? await browserProfileMutations.runExclusive(profileId, handleOrdered)
             : await handleOrdered();
+          if (message.type === 'agency.project.delete' && domainResponse?.type === 'agency.project.deleted') {
+            const removed = await agencyNotificationStore.purgeProject(message.projectId).catch(() => 0);
+            if (removed > 0) {
+              broadcast({
+                type: 'agency.notifications.snapshot',
+                requestId: '',
+                notifications: agencyNotificationStore.list(),
+                activityStates: agencyActivityManager.snapshot(),
+              });
+            }
+          }
           if (domainResponse !== null) {
             send(socket, domainResponse);
           }
