@@ -1234,6 +1234,7 @@
   "settings.browser.deleteEngine": "删除搜索引擎",
   "settings.browser.deleteFavorite": "Delete favorite",
   "settings.browser.deleteProfile": "Delete profile",
+  "settings.browser.deleteProfileConfirm": "要删除浏览器配置文件 {{name}} 吗？此配置文件的所有 Cookie、会话和保存的浏览数据将被永久删除。",
   "settings.browser.editEngine": "编辑搜索引擎",
   "settings.browser.editFavorite": "编辑收藏",
   "settings.browser.engineName": "引擎名称",

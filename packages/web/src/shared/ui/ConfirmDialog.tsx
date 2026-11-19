@@ -53,7 +53,7 @@ export function ConfirmDialog({
           )}
           <button
             type="button"
-            className={danger ? 'agency-primary-button agency-text-danger' : 'agency-primary-button'}
+            className={danger ? 'agency-danger-button' : 'agency-primary-button'}
             disabled={busy}
             onClick={onConfirm}
           >

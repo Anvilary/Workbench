@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { ChevronIcon } from './SettingsIcons.js';
 
 export interface CollapsibleSubsectionProps {
@@ -34,14 +34,18 @@ export function CollapsibleSubsection({
   children,
 }: CollapsibleSubsectionProps): JSX.Element {
   const [expanded, setExpanded] = useState<boolean>(defaultExpanded || forceExpanded);
+  const [prevForce, setPrevForce] = useState<boolean>(forceExpanded);
+  const [prevSignal, setPrevSignal] = useState<number | undefined>(expandSignal);
   const buttonId = useId();
   const bodyId = useId();
 
-  useEffect(() => {
-    if (forceExpanded) {
+  if (forceExpanded !== prevForce || expandSignal !== prevSignal) {
+    setPrevForce(forceExpanded);
+    setPrevSignal(expandSignal);
+    if (forceExpanded && !expanded) {
       setExpanded(true);
     }
-  }, [forceExpanded, expandSignal]);
+  }
 
   return (
     <div

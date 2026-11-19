@@ -86,11 +86,11 @@ export function DeleteProjectDialog({
           </button>
           <button
             type="button"
-            className="agency-primary-button"
+            className="agency-danger-button"
             disabled={busy}
             onClick={() => void handleDelete()}
           >
-            {busy ? t('agency.ui.deletingWorkspace') : t('agency.ui.deleteProject')}
+            {busy ? t('worktree.deleteBranch.deleting') : t('agency.ui.deleteProject')}
           </button>
         </>
       }

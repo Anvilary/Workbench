@@ -20,6 +20,7 @@ import {
 import { t, type MessageKey } from './i18n/index.js';
 import type { UseBrowserSettingsResult } from './agency/useBrowserSettings.js';
 import { CollapsibleSubsection } from './features/settings/CollapsibleSubsection.js';
+import { ConfirmDialog } from './shared/ui/ConfirmDialog.js';
 
 const sensors = [
   PointerSensor.configure({
@@ -198,11 +199,13 @@ export function BrowserSettingsSection({
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileBusy, setProfileBusy] = useState(false);
 
-  // Rename / Clear Site Auth State
+  // Rename / Clear Site Auth / Delete Confirmation State
   const [renamingProfileId, setRenamingProfileId] = useState<BrowserProfileId | null>(null);
   const [renameProfileInput, setRenameProfileInput] = useState('');
   const [clearingProfileId, setClearingProfileId] = useState<BrowserProfileId | null>(null);
   const [clearSelectedSites, setClearSelectedSites] = useState<BrowserProfileSite[]>([]);
+  const [deletingProfile, setDeletingProfile] = useState<BrowserProfile | null>(null);
+  const [sectionExpandSignal, setSectionExpandSignal] = useState(0);
 
   // Drag & drop active state
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
@@ -321,6 +324,7 @@ export function BrowserSettingsSection({
       await Promise.resolve(onDeleteBrowserProfile?.(profileId));
       if (renamingProfileId === profileId) setRenamingProfileId(null);
       if (clearingProfileId === profileId) setClearingProfileId(null);
+      setDeletingProfile(null);
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -335,8 +339,8 @@ export function BrowserSettingsSection({
         id="setting-card-search-engine"
         title={t('settings.browser.searchEngine')}
         highlighted={highlightedCardId === 'setting-card-search-engine'}
-        forceExpanded={highlightedCardId === 'setting-card-search-engine'}
-        expandSignal={expandSignal}
+        forceExpanded={highlightedCardId === 'setting-card-search-engine' || isAddingEngine || Boolean(editingEngineId)}
+        expandSignal={(expandSignal ?? 0) + sectionExpandSignal}
         headerActions={
           !isAddingEngine && !editingEngineId ? (
             <>
@@ -350,6 +354,7 @@ export function BrowserSettingsSection({
                   setEngineHomeUrlInput('');
                   setEngineSearchUrlInput('');
                   setEngineError(null);
+                  setSectionExpandSignal((prev) => prev + 1);
                 }}
               >
                 + {t('settings.browser.addEngine')}
@@ -529,7 +534,11 @@ export function BrowserSettingsSection({
                     className="icon-button maw-settings-fav-btn maw-settings-fav-delete maw-settings-engine-delete-btn"
                     title={t('settings.browser.deleteEngine')}
                     aria-label={`${t('settings.browser.deleteEngine')}: ${engine.name}`}
-                    onClick={() => browserSettings.removeSearchEngine(engine.id)}
+                    disabled={browserSettings.searchEngines.length <= 1}
+                    onClick={() => {
+                      const res = browserSettings.removeSearchEngine(engine.id);
+                      if (!res.success && res.error) setEngineError(res.error);
+                    }}
                   >
                     ✕
                   </button>
@@ -545,8 +554,8 @@ export function BrowserSettingsSection({
         id="setting-card-browser-profiles"
         title={t('settings.browser.profiles')}
         highlighted={highlightedCardId === 'setting-card-browser-profiles'}
-        forceExpanded={highlightedCardId === 'setting-card-browser-profiles'}
-        expandSignal={expandSignal}
+        forceExpanded={highlightedCardId === 'setting-card-browser-profiles' || isAddingProfile}
+        expandSignal={(expandSignal ?? 0) + sectionExpandSignal}
         headerActions={
           !isAddingProfile ? (
             <button
@@ -559,6 +568,7 @@ export function BrowserSettingsSection({
                 setCloneSourceId(effectiveProfiles[0]?.id ?? DEFAULT_BROWSER_PROFILE_ID);
                 setCloneClearSites([]);
                 setProfileError(null);
+                setSectionExpandSignal((prev) => prev + 1);
               }}
             >
               + {t('settings.browser.addProfile')}
@@ -756,7 +766,10 @@ export function BrowserSettingsSection({
                               title={t('settings.browser.deleteProfile')}
                               aria-label={`${t('settings.browser.deleteProfile')}: ${profile.name}`}
                               disabled={profileBusy}
-                              onClick={() => handleDeleteProfile(profile.id)}
+                              onClick={() => {
+                                setProfileError(null);
+                                setDeletingProfile(profile);
+                              }}
                             >
                               ✕
                             </button>
@@ -819,8 +832,8 @@ export function BrowserSettingsSection({
         id="setting-card-favorites"
         title={t('settings.browser.favorites')}
         highlighted={highlightedCardId === 'setting-card-favorites'}
-        forceExpanded={highlightedCardId === 'setting-card-favorites'}
-        expandSignal={expandSignal}
+        forceExpanded={highlightedCardId === 'setting-card-favorites' || isAddingFavorite || Boolean(editingFavoriteId)}
+        expandSignal={(expandSignal ?? 0) + sectionExpandSignal}
         headerActions={
           !isAddingFavorite && !editingFavoriteId ? (
             <button
@@ -832,6 +845,7 @@ export function BrowserSettingsSection({
                 setFavTitleInput('');
                 setFavUrlInput('');
                 setFavError(null);
+                setSectionExpandSignal((prev) => prev + 1);
               }}
             >
               + {t('settings.browser.addFavorite')}
@@ -1007,12 +1021,31 @@ export function BrowserSettingsSection({
           <button
             type="button"
             className="maw-settings-link-btn"
-            onClick={() => browserSettings.resetToDefaults()}
+            onClick={() => browserSettings.resetFavoritesToDefaults()}
           >
             {t('settings.browser.resetDefaults')}
           </button>
         </div>
       </CollapsibleSubsection>
+
+      {deletingProfile && (
+        <ConfirmDialog
+          title={t('settings.browser.deleteProfile')}
+          message={t('settings.browser.deleteProfileConfirm', { name: deletingProfile.name })}
+          error={profileError}
+          confirmLabel={t('settings.browser.deleteProfile')}
+          cancelLabel={t('common.cancel')}
+          danger
+          busy={profileBusy}
+          onConfirm={() => void handleDeleteProfile(deletingProfile.id)}
+          onClose={() => {
+            if (!profileBusy) {
+              setDeletingProfile(null);
+              setProfileError(null);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

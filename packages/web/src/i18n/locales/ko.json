@@ -1234,6 +1234,7 @@
   "settings.browser.deleteEngine": "검색 엔진 삭제",
   "settings.browser.deleteFavorite": "Delete favorite",
   "settings.browser.deleteProfile": "Delete profile",
+  "settings.browser.deleteProfileConfirm": "브라우저 프로필 {{name}}을(를) 삭제하시겠습니까? 이 프로필의 모든 쿠키, 세션 및 저장된 데이터가 영구적으로 삭제됩니다.",
   "settings.browser.editEngine": "검색 엔진 수정",
   "settings.browser.editFavorite": "즐겨찾기 편집",
   "settings.browser.engineName": "엔진 이름",

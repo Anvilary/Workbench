@@ -112,12 +112,15 @@ export function isPublicWebHost(host: string): boolean {
 
 /**
  * Constructs a full search URL by safely encoding the query into
- * a template containing `%s` or `{q}`, or appending it to a query prefix.
+ * a template containing `%s`, `{q}`, or `{query}`, or appending it to a query prefix.
  */
 export function buildSearchUrl(templateOrPrefix: string, query: string): string {
   const encoded = encodeURIComponent(query);
   if (templateOrPrefix.includes('%s')) {
     return templateOrPrefix.replace(/%s/g, encoded);
+  }
+  if (templateOrPrefix.includes('{query}')) {
+    return templateOrPrefix.replace(/\{query\}/g, encoded);
   }
   if (templateOrPrefix.includes('{q}')) {
     return templateOrPrefix.replace(/\{q\}/g, encoded);
@@ -259,11 +262,14 @@ export function validateSearchEngine(
     existingEditingEngine?.searchUrl.trim() === trimmedSearch &&
     trimmedSearch.endsWith('=');
   const normalizedSearchUrl = isUnchangedLegacyBuiltinPrefix ? `${trimmedSearch}%s` : trimmedSearch;
-  const hasQueryToken = normalizedSearchUrl.includes('%s') || normalizedSearchUrl.includes('{q}');
+  const hasQueryToken =
+    normalizedSearchUrl.includes('%s') ||
+    normalizedSearchUrl.includes('{q}') ||
+    normalizedSearchUrl.includes('{query}');
   if (!hasQueryToken) {
     return {
       valid: false,
-      error: 'Search URL template must contain query token %s or {q}',
+      error: 'Search URL template must contain query token %s, {q}, or {query}',
     };
   }
   if (!/^https:\/\//i.test(normalizedSearchUrl)) {

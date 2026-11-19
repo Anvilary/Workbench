@@ -74,7 +74,7 @@ export function DeleteWorkspaceDialog({
           </button>
           <button
             type="button"
-            className="agency-primary-button agency-text-danger"
+            className="agency-danger-button"
             disabled={busy}
             onClick={() => void handleDelete()}
           >

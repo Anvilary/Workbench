@@ -26,6 +26,15 @@ import type { AppSettingsApi } from '../useAppSettings.js';
 
 export const BROWSER_SETTINGS_STORAGE_KEY = 'agency-ui.browser-settings.v1';
 
+type BrowserSettingsListener = (next: BrowserSettings) => void;
+const browserSettingsListeners = new Set<BrowserSettingsListener>();
+
+function broadcastBrowserSettings(next: BrowserSettings): void {
+  for (const listener of browserSettingsListeners) {
+    listener(next);
+  }
+}
+
 function loadCachedBrowserSettings(): BrowserSettings {
   if (typeof window === 'undefined' || !window.localStorage) {
     return {
@@ -79,11 +88,22 @@ export interface UseBrowserSettingsResult {
   editSearchEngine: (id: string, updates: { name: string; homeUrl: string; searchUrl: string }) => { success: boolean; error?: string };
   removeSearchEngine: (id: string) => { success: boolean; error?: string };
   restoreBuiltinSearchEngines: () => void;
+  resetFavoritesToDefaults: () => void;
   resetToDefaults: () => void;
 }
 
 export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSettingsResult {
   const [settings, setSettings] = useState<BrowserSettings>(loadCachedBrowserSettings);
+
+  useEffect(() => {
+    const listener: BrowserSettingsListener = (next) => {
+      setSettings(next);
+    };
+    browserSettingsListeners.add(listener);
+    return () => {
+      browserSettingsListeners.delete(listener);
+    };
+  }, []);
 
   // Synchronize when server status arrives or updates
   useEffect(() => {
@@ -98,6 +118,7 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
     (next: BrowserSettings) => {
       setSettings(next);
       saveCachedBrowserSettings(next);
+      broadcastBrowserSettings(next);
       if (appSettings) {
         appSettings.setBrowserSettings(next);
       }
@@ -312,6 +333,9 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
       if (!existing) {
         return { success: false, error: 'Search engine not found' };
       }
+      if (currentList.length <= 1) {
+        return { success: false, error: 'At least one search engine must remain configured' };
+      }
       const filtered = currentList.filter((e) => e.id !== id);
       let nextDefault = settings.defaultSearchEngine;
       if (settings.defaultSearchEngine === id || !filtered.some((e) => e.id === nextDefault)) {
@@ -343,6 +367,14 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
     persist(next);
   }, [settings, persist]);
 
+  const resetFavoritesToDefaults = useCallback(() => {
+    const next: BrowserSettings = {
+      ...settings,
+      favorites: [...DEFAULT_BROWSER_FAVORITES],
+    };
+    persist(next);
+  }, [settings, persist]);
+
   const resetToDefaults = useCallback(() => {
     const next: BrowserSettings = {
       defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
@@ -369,6 +401,7 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
     editSearchEngine,
     removeSearchEngine,
     restoreBuiltinSearchEngines,
+    resetFavoritesToDefaults,
     resetToDefaults,
   };
 }

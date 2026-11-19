@@ -1262,6 +1262,7 @@
   "settings.browser.deleteEngine": "Suchmaschine löschen",
   "settings.browser.deleteFavorite": "Delete favorite",
   "settings.browser.deleteProfile": "Delete profile",
+  "settings.browser.deleteProfileConfirm": "Browser-Profil {{name}} löschen? Alle Cookies, Sitzungen und gespeicherten Browserdaten dieses Profils werden dauerhaft entfernt.",
   "settings.browser.editEngine": "Suchmaschine bearbeiten",
   "settings.browser.editFavorite": "Favorit bearbeiten",
   "settings.browser.engineName": "Name der Suchmaschine",

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   PROFILE_ALLOWED_ENV_KEYS,
   PROFILE_ENV_RULES,
@@ -14,6 +14,8 @@ import { parseProfileArgv } from './agency/model.js';
 import { suggestedExecutable } from './agency/profile-suggestions.js';
 import { CollapsibleSubsection } from './features/settings/CollapsibleSubsection.js';
 import { ProviderIcon } from './features/settings/SettingsIcons.js';
+import { useEscapeKey } from './shared/hooks/useEscapeKey.js';
+import { useFocusTrap } from './shared/hooks/useFocusTrap.js';
 
 export interface AgentProfilesManagerProps {
   agents?: readonly AgentInfo[];
@@ -69,6 +71,26 @@ export function AgentProfilesManager({
   const [removingProfile, setRemovingProfile] = useState<AgencyCliProfile | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const addModalRef = useRef<HTMLDivElement | null>(null);
+  const editModalRef = useRef<HTMLDivElement | null>(null);
+  const removeModalRef = useRef<HTMLDivElement | null>(null);
+
+  useFocusTrap(addModalRef, showAddModal, { restoreFocus: true });
+  useFocusTrap(editModalRef, Boolean(editingProfile), { restoreFocus: true });
+  useFocusTrap(removeModalRef, Boolean(removingProfile), { restoreFocus: true });
+
+  useEscapeKey((event) => {
+    if (saving) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (removingProfile) {
+      setRemovingProfile(null);
+    } else if (editingProfile) {
+      setEditingProfile(null);
+    } else if (showAddModal) {
+      setShowAddModal(false);
+    }
+  }, showAddModal || Boolean(editingProfile) || Boolean(removingProfile));
 
   // New profile form state
   const [newProvider, setNewProvider] = useState<CliProvider>('codex');
@@ -508,6 +530,7 @@ export function AgentProfilesManager({
       {showAddModal && (
         <div className="agency-modal-backdrop" onClick={() => !saving && setShowAddModal(false)}>
           <div
+            ref={addModalRef}
             className="agency-dialog maw-profile-form-dialog"
             role="dialog"
             aria-modal="true"
@@ -691,6 +714,7 @@ export function AgentProfilesManager({
       {editingProfile && (
         <div className="agency-modal-backdrop" onClick={() => !saving && setEditingProfile(null)}>
           <div
+            ref={editModalRef}
             className="agency-dialog maw-profile-form-dialog"
             role="dialog"
             aria-modal="true"
@@ -835,6 +859,7 @@ export function AgentProfilesManager({
       {removingProfile && (
         <div className="agency-modal-backdrop" onClick={() => !saving && setRemovingProfile(null)}>
           <div
+            ref={removeModalRef}
             className="agency-dialog maw-profile-remove-dialog"
             role="dialog"
             aria-modal="true"

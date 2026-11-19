@@ -29,7 +29,7 @@ import type { AgentConnection } from './connection.js';
 import { AgentsUsageView } from './AgentsUsageView.js';
 import { useBrowserSettings } from './agency/useBrowserSettings.js';
 import { BrowserSettingsSection } from './BrowserSettingsSection.js';
-import { trapTabFocus } from './shared/hooks/useFocusTrap.js';
+import { DEFAULT_FOCUSABLE_SELECTOR, isTopmostDialog, trapTabFocus } from './shared/hooks/useFocusTrap.js';
 import {
   ALL_TABS,
   AboutSettingsSection,
@@ -164,6 +164,11 @@ export function SettingsDialog({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented) return;
+      // Yield to any nested modal dialog or open menu rendered above SettingsDialog.
+      if (!isTopmostDialog(dialogRef.current)) return;
+      if (document.querySelector('[role="menu"]:not([hidden])')) return;
+
       if (event.key === 'Escape') {
         if (searchQuery.trim().length > 0) {
           event.preventDefault();
@@ -178,16 +183,12 @@ export function SettingsDialog({
       }
 
       if (event.key === 'Tab') {
-        trapTabFocus(
-          event,
-          dialogRef.current,
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-        );
+        trapTabFocus(event, dialogRef.current, DEFAULT_FOCUSABLE_SELECTOR);
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown, true);
-    return () => window.removeEventListener('keydown', handleKeyDown, true);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose, searchQuery]);
 
   const togglePanel = (panel: HideablePanel, visible: boolean): void => {
@@ -246,6 +247,7 @@ export function SettingsDialog({
         shellChoices,
         searchEngines: browserSettings.searchEngines,
         favorites: browserSettings.favorites,
+        browserProfiles,
         agents: safeAgents,
         shouldOfferPanels,
         panels,
@@ -259,6 +261,7 @@ export function SettingsDialog({
       shellChoices,
       browserSettings.searchEngines,
       browserSettings.favorites,
+      browserProfiles,
       safeAgents,
       shouldOfferPanels,
       panels,

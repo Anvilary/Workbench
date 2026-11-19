@@ -270,6 +270,10 @@ const mockConnection = {
 function Harness() {
   const [open, setOpen] = useState(true);
   const [closedNotice, setClosedNotice] = useState(false);
+  const [browserProfiles, setBrowserProfiles] = useState([
+    { id: 'main', name: 'Main', createdAt: '', updatedAt: '', isDefault: true },
+    { id: 'prof-work', name: 'Work Profile', createdAt: '', updatedAt: '' },
+  ]);
 
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#141417', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -293,6 +297,10 @@ function Harness() {
           onOpenRemote={() => {}}
           connection={mockConnection}
           initialTab="general"
+          browserProfiles={browserProfiles}
+          onDeleteBrowserProfile={(profileId) => {
+            setBrowserProfiles((prev) => prev.filter((p) => p.id !== profileId));
+          }}
         />
       )}
     </div>
@@ -474,11 +482,46 @@ test('SettingsDialog acceptance suite: 2-pane navigation, tabs, accessibility, a
     const browseBtn = page.locator('.maw-browse-btn');
     assert.equal(await browseBtn.count(), 1, 'Expected native browse button');
 
-    // Cancel modal
+    // C-08: Escape closes only the nested Add Profile modal and keeps SettingsDialog open
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(50);
+    assert.equal(await page.locator('.maw-profile-form-dialog').count(), 0, 'Nested modal closed on Escape');
+    assert.equal(await page.locator('.maw-settings-window').count(), 1, 'SettingsDialog must remain open when nested modal closes via Escape');
+
+    // Re-open and test Cancel button too
+    await addProfileBtn.click();
+    assert.equal(await page.locator('.maw-profile-form-dialog').count(), 1, 'Add profile dialog reopened');
     await page.locator('.maw-modal-footer button:has-text("Cancel")').click();
     assert.equal(await page.locator('.maw-profile-form-dialog').count(), 0, 'Dialog closed on Cancel');
 
     await page.screenshot({ path: path.join(artifactDir, 'screenshots', 'settings-after-agents.png') });
+
+    // 6c. C-10 & C-13: Browser tab profile deletion requires confirmation & + Add expands collapsed subsection
+    await page.locator('#settings-tab-browser').click();
+    await page.waitForTimeout(100);
+    const engineToggle = page.locator('#setting-card-search-engine .maw-subsection-toggle');
+    await engineToggle.click();
+    assert.equal(await engineToggle.getAttribute('aria-expanded'), 'false', 'Search engine subsection collapsed');
+    await page.locator('#setting-card-search-engine .maw-settings-engine-action-btn').click();
+    assert.equal(await engineToggle.getAttribute('aria-expanded'), 'true', 'Clicking + Add Search Engine expands collapsed subsection');
+    await page.locator('#setting-card-search-engine .maw-settings-form-actions button[type="button"]').click();
+
+    const deleteWorkProfileBtn = page.locator('[data-profile-id="prof-work"] .maw-settings-profile-delete-btn');
+    await deleteWorkProfileBtn.click();
+    await page.waitForTimeout(50);
+    assert.equal(await page.locator('[data-profile-id="prof-work"]').count(), 1, 'Profile must NOT be deleted before confirmation');
+    assert.equal(await page.locator('.agency-dialog[role="dialog"]').count(), 1, 'Confirmation modal must open for profile deletion');
+    // Escape closes ONLY confirmation modal, leaving SettingsDialog open and profile intact
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(50);
+    assert.equal(await page.locator('.agency-dialog[role="dialog"]').count(), 0, 'Escape dismisses delete profile confirmation');
+    assert.equal(await page.locator('.maw-settings-window').count(), 1, 'SettingsDialog stays open after cancelling confirmation');
+    assert.equal(await page.locator('[data-profile-id="prof-work"]').count(), 1, 'Profile remains intact after Escape');
+    // Confirm deletion actually removes the profile
+    await deleteWorkProfileBtn.click();
+    await page.locator('.agency-dialog .agency-danger-button').click();
+    await page.waitForTimeout(50);
+    assert.equal(await page.locator('[data-profile-id="prof-work"]').count(), 0, 'Profile is deleted after explicit confirmation');
 
     // 7. Navigate to Usage Tab
     const usageTab = page.locator('#settings-tab-usage');

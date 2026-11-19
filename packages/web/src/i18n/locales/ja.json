@@ -1234,6 +1234,7 @@
   "settings.browser.deleteEngine": "検索エンジンを削除",
   "settings.browser.deleteFavorite": "Delete favorite",
   "settings.browser.deleteProfile": "Delete profile",
+  "settings.browser.deleteProfileConfirm": "ブラウザプロファイル {{name}} を削除しますか？このプロファイルのCookie、セッション、保存データはすべて完全に削除されます。",
   "settings.browser.editEngine": "検索エンジンを編集",
   "settings.browser.editFavorite": "お気に入りを編集",
   "settings.browser.engineName": "エンジン名",

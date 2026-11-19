@@ -1262,6 +1262,7 @@
   "settings.browser.deleteEngine": "Delete Search Engine",
   "settings.browser.deleteFavorite": "Delete favorite",
   "settings.browser.deleteProfile": "Delete profile",
+  "settings.browser.deleteProfileConfirm": "Delete browser profile {{name}}? All cookies, site sessions, and stored browser data for this profile will be permanently removed.",
   "settings.browser.editEngine": "Edit Search Engine",
   "settings.browser.editFavorite": "Edit Favorite",
   "settings.browser.engineName": "Engine Name",

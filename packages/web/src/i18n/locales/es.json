@@ -1262,6 +1262,7 @@
   "settings.browser.deleteEngine": "Eliminar motor de búsqueda",
   "settings.browser.deleteFavorite": "Delete favorite",
   "settings.browser.deleteProfile": "Delete profile",
+  "settings.browser.deleteProfileConfirm": "¿Eliminar el perfil de navegador {{name}}? Se eliminarán permanentemente todas las cookies, sesiones y datos guardados de este perfil.",
   "settings.browser.editEngine": "Editar motor de búsqueda",
   "settings.browser.editFavorite": "Editar favorito",
   "settings.browser.engineName": "Nombre del motor",

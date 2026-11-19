@@ -1,7 +1,7 @@
 import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useEscapeKey } from '../hooks/useEscapeKey.js';
-import { useFocusTrap } from '../hooks/useFocusTrap.js';
+import { isTopmostDialog, useFocusTrap } from '../hooks/useFocusTrap.js';
 import { calculateAnchoredDialogPosition } from '../lib/overlay-position.js';
 
 export interface AnchorRect {
@@ -78,8 +78,13 @@ export function ModalDialog({
   }, [anchorRect]);
 
   useFocusTrap(dialogRef, trapFocus, { restoreFocus });
-  useEscapeKey(() => {
-    if (!closeDisabled) onClose();
+  useEscapeKey((event) => {
+    if (!isTopmostDialog(dialogRef.current)) return;
+    if (!closeDisabled) {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    }
   }, dismissOnEscape);
 
   const anchoredStyle: CSSProperties | undefined = anchorRect && anchoredPos
@@ -91,7 +96,11 @@ export function ModalDialog({
 
   const dialog = (
     <div
-      className={anchorRect ? 'agency-modal-backdrop agency-modal-backdrop-anchored' : 'agency-modal-backdrop'}
+      className={
+        anchorRect
+          ? 'agency-modal-backdrop agency-modal-backdrop-portal agency-modal-backdrop-anchored'
+          : 'agency-modal-backdrop agency-modal-backdrop-portal'
+      }
       onMouseDown={(event) => {
         if (dismissOnBackdrop && !closeDisabled && event.target === event.currentTarget) {
           onClose();

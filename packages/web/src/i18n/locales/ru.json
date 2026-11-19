@@ -1318,6 +1318,7 @@
   "settings.browser.deleteEngine": "Удалить поисковую систему",
   "settings.browser.deleteFavorite": "Delete favorite",
   "settings.browser.deleteProfile": "Delete profile",
+  "settings.browser.deleteProfileConfirm": "Удалить профиль браузера {{name}}? Все файлы cookie, сеансы и сохранённые данные этого профиля будут безвозвратно удалены.",
   "settings.browser.editEngine": "Изменить поисковую систему",
   "settings.browser.editFavorite": "Редактировать закладку",
   "settings.browser.engineName": "Название поисковой системы",
