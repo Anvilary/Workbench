@@ -21,7 +21,7 @@ case "$cli_name" in
   *) cli_name="anvil-bench" ;;
 esac
 
-usage() { printf '%s\n' "Usage: $cli_name {desktop|start|stop|restart|rollback|status|logs [--follow]|url|open [browser]|update [--no-restart|--restart] [--ref <ref> --allow-unapproved-ref]|help}"; }
+usage() { printf '%s\n' "Usage: $cli_name {desktop|start [--force]|stop|restart [--force]|rollback|status|logs [--follow]|url|open [browser]|update [--no-restart|--restart] [--ref <ref> --allow-unapproved-ref]|help}"; }
 
 # True when this command runs inside the MAW service (its PTYs inherit the unit's cgroup), or descends
 # from the service's main process (e.g. a PTY moved into another scope). Exact cgroup path component.
@@ -78,6 +78,7 @@ run_activation() {   # extra helper args...
         --setenv=MAW_RESTART_LOCK="$restart_lock" \
         --setenv=MAW_NODE_BIN="$node_bin" \
         --setenv=MAW_CONTROL_SCRIPT="$control_script" \
+        --setenv=MAW_CLI_NAME="$cli_name" \
         ${_extra_setenv:+"$_extra_setenv"} \
         ${_extra_bus_setenv:+"$_extra_bus_setenv"} \
         /bin/sh "$restart_helper" --unit "$unit" "$@"; then
@@ -88,7 +89,7 @@ run_activation() {   # extra helper args...
     printf '%s\n' 'Error: Failed to schedule safe restart (another restart may already be scheduled).' >&2
     exit 1
   fi
-  exec /bin/sh "$restart_helper" --unit "$unit" "$@"
+  exec env MAW_CLI_NAME="$cli_name" /bin/sh "$restart_helper" --unit "$unit" "$@"
 }
 
 command_name=${1:-help}
@@ -102,11 +103,17 @@ case "$command_name" in
     exec env ELECTRON_RUN_AS_NODE=1 "$desktop_runtime" "$script_dir/desktop-launch.mjs"
     ;;
   start)
-    [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+    shift
+    _start_force=""
+    case "$#" in
+      0) ;;
+      1) [ "$1" = "--force" ] || { usage >&2; exit 2; }; _start_force="--force" ;;
+      *) usage >&2; exit 2 ;;
+    esac
     if [ "$(maw_sctl show "$unit" --property=ActiveState --value 2>/dev/null || true)" = active ]; then
-      exec /bin/sh "$restart_helper" --unit "$unit" --start
+      exec env MAW_CLI_NAME="$cli_name" /bin/sh "$restart_helper" --unit "$unit" --start ${_start_force:+"$_start_force"}
     fi
-    run_activation --start
+    run_activation --start ${_start_force:+"$_start_force"}
     ;;
   stop)
     [ "$#" -eq 1 ] || { usage >&2; exit 2; }
