@@ -22,6 +22,7 @@ export interface ModalDialogProps {
   trapFocus?: boolean;
   restoreFocus?: boolean;
   anchorRect?: AnchorRect | null;
+  centerOn?: Element | null;
   className?: string;
   children: ReactNode;
   actions?: ReactNode;
@@ -38,6 +39,7 @@ export function ModalDialog({
   trapFocus = true,
   restoreFocus = true,
   anchorRect = null,
+  centerOn = null,
   className = '',
   children,
   actions,
@@ -57,14 +59,17 @@ export function ModalDialog({
   });
 
   useLayoutEffect(() => {
-    if (!anchorRect || typeof window === 'undefined') {
+    if ((!anchorRect && !centerOn) || typeof window === 'undefined') {
       setAnchoredPos(null);
       return;
     }
     const updatePosition = () => {
+      const triggerRect = centerOn?.getBoundingClientRect() ?? anchorRect;
+      if (!triggerRect) return;
       const rect = dialogRef.current?.getBoundingClientRect();
       const pos = calculateAnchoredDialogPosition({
-        triggerRect: anchorRect,
+        triggerRect,
+        alignment: centerOn ? 'center' : 'adjacent',
         dialogWidth: rect && rect.width > 0 ? rect.width : 380,
         dialogHeight: rect && rect.height > 0 ? rect.height : 260,
         viewportWidth: window.innerWidth,
@@ -74,8 +79,13 @@ export function ModalDialog({
     };
     updatePosition();
     window.addEventListener('resize', updatePosition);
-    return () => window.removeEventListener('resize', updatePosition);
-  }, [anchorRect]);
+    const observer = centerOn && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updatePosition) : null;
+    if (observer && centerOn) observer.observe(centerOn);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      observer?.disconnect();
+    };
+  }, [anchorRect, centerOn]);
 
   useFocusTrap(dialogRef, trapFocus, { restoreFocus });
   useEscapeKey((event) => {
@@ -87,7 +97,7 @@ export function ModalDialog({
     }
   }, dismissOnEscape);
 
-  const anchoredStyle: CSSProperties | undefined = anchorRect && anchoredPos
+  const anchoredStyle: CSSProperties | undefined = (anchorRect || centerOn) && anchoredPos
     ? { position: 'fixed', left: `${anchoredPos.left}px`, top: `${anchoredPos.top}px`, margin: 0 }
     : undefined;
   const dialogClasses = ['agency-dialog', anchorRect ? 'agency-anchored-dialog' : '', className]

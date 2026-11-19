@@ -165,14 +165,14 @@ function PaneLeaf(props: Props & {
   const paneTabs = node.tabIds
     .map((id) => tabs.find((tab) => tab.id === id))
     .filter((tab): tab is WorkspaceTab => tab !== undefined);
-  const [confirmingClosePane, setConfirmingClosePane] = useState(false);
+  const [confirmingClosePane, setConfirmingClosePane] = useState<{ centerOn: Element | null } | null>(null);
 
   const handleRequestClosePane = useCallback(() => {
     if (!canClose) return;
     if (paneTabs.length === 0) {
       void onClosePane(node.id, false);
     } else {
-      setConfirmingClosePane(true);
+      setConfirmingClosePane({ centerOn: containerRef.current?.querySelector('.maw-pane-body') ?? null });
     }
   }, [canClose, node.id, onClosePane, paneTabs.length]);
 
@@ -301,14 +301,15 @@ function PaneLeaf(props: Props & {
             title={`${t('agency.splits.closePane')}?`}
             titleId={`pane-close-title-${node.id}`}
             className="maw-pane-close-dialog"
+            centerOn={confirmingClosePane.centerOn}
             closeLabel={t('common.close')}
-            onClose={() => setConfirmingClosePane(false)}
+            onClose={() => setConfirmingClosePane(null)}
             actions={
               <>
                 <button
                   type="button"
                   className="agency-secondary-button"
-                  onClick={() => setConfirmingClosePane(false)}
+                  onClick={() => setConfirmingClosePane(null)}
                 >
                   {t('common.cancel')}
                 </button>
@@ -316,7 +317,7 @@ function PaneLeaf(props: Props & {
                   type="button"
                   className="agency-danger-button"
                   onClick={() => {
-                    setConfirmingClosePane(false);
+                    setConfirmingClosePane(null);
                     void onClosePane(node.id, true);
                   }}
                 >

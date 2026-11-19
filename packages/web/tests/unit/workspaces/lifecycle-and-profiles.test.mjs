@@ -105,6 +105,24 @@ test('Track C: calculateAnchoredDialogPosition places confirmation dialog outsid
   assert.ok(clamped.top + 240 <= 800 - 12);
 });
 
+test('pane confirmation centers over its pane and stays within the viewport', () => {
+  const dimensions = {
+    alignment: 'center',
+    dialogWidth: 360,
+    dialogHeight: 220,
+    viewportWidth: 1280,
+    viewportHeight: 800,
+  };
+  assert.deepEqual(calculateAnchoredDialogPosition({
+    ...dimensions,
+    triggerRect: { left: 800, top: 280, right: 1200, bottom: 680 },
+  }), { left: 820, top: 370 });
+  assert.deepEqual(calculateAnchoredDialogPosition({
+    ...dimensions,
+    triggerRect: { left: 1200, top: 750, right: 1280, bottom: 800 },
+  }), { left: 908, top: 568 });
+});
+
 test('Track C: DeleteWorkspaceDialog and DeleteProjectDialog summarize active sessions, editor drafts, and cascade workspaces', () => {
   editorDraftStore.setDraft('ed-dirty', {
     mode: 'edit',
