@@ -11,6 +11,7 @@ import {
   toCookieSetDetails,
   cloneBrowserProfileStorage,
   clearProfileSiteAuth,
+  deleteBrowserProfileStorage,
 } from '../../../src/security/browser-profile-storage.mjs';
 import {
   performWebAuthnAssertion,
@@ -88,6 +89,27 @@ test('Browser Profile Policy: validCommand validates open, update, clone-profile
       type: 'clear-profile-site-auth',
       profileId: 'work-1',
       site: 'invalid-site',
+    }),
+    false,
+  );
+  assert.equal(
+    validCommand({
+      type: 'delete-profile',
+      profileId: 'work-1',
+    }),
+    true,
+  );
+  assert.equal(
+    validCommand({
+      type: 'delete-profile',
+      profileId: DEFAULT_BROWSER_PROFILE_ID,
+    }),
+    false,
+  );
+  assert.equal(
+    validCommand({
+      type: 'delete-profile',
+      profileId: '../escape',
     }),
     false,
   );
@@ -179,7 +201,7 @@ test('Browser Profile Storage: cloneBrowserProfileStorage copies cookies, honors
   assert.equal(clearRes.ok, true);
   assert.equal(getPartition('persist:maw-profile-work-chatgpt').cookiesList.length, 0);
 
-  // Check __Host- cookie conversion omits domain attribute
+  // Check __Host- cookie conversion omits domain attribute and rejects non-root path
   const hostCookie = toCookieSetDetails({
     name: '__Host-session',
     value: 'abc',
@@ -191,6 +213,114 @@ test('Browser Profile Storage: cloneBrowserProfileStorage copies cookies, honors
   });
   assert.equal(hostCookie.domain, undefined);
   assert.equal(hostCookie.url, 'https://chatgpt.com/');
+  assert.equal(toCookieSetDetails({
+    name: '__Host-badpath',
+    value: 'abc',
+    domain: 'chatgpt.com',
+    path: '/sub',
+    secure: true,
+  }), null);
+  // Expired persistent cookies are skipped
+  assert.equal(toCookieSetDetails({
+    name: 'old',
+    value: '1',
+    domain: 'chatgpt.com',
+    path: '/',
+    session: false,
+    expirationDate: 1000,
+  }), null);
+});
+
+test('Browser Profile Storage: clone skips individual bad cookies, clearSiteAuth clears cache, deleteProfileStorage wipes all partitions', async () => {
+  const partitions = new Map();
+  function getPartition(name) {
+    if (!partitions.has(name)) {
+      partitions.set(name, {
+        cookiesList: [],
+        clearedStorage: 0,
+        clearedCache: 0,
+        clearedAuthCache: 0,
+        flushed: 0,
+        flushStorageData() {
+          this.flushed += 1;
+        },
+        async clearStorageData() {
+          this.clearedStorage += 1;
+          this.cookiesList = [];
+        },
+        async clearCache() {
+          this.clearedCache += 1;
+        },
+        async clearAuthCache() {
+          this.clearedAuthCache += 1;
+        },
+        cookies: {
+          async flushStore() {},
+          async get() {
+            return [...partitions.get(name).cookiesList];
+          },
+          async set(details) {
+            if (details.name === 'reject_on_set') {
+              throw new Error('Chromium rejected cookie');
+            }
+            partitions.get(name).cookiesList.push(details);
+          },
+          async remove() {},
+        },
+      });
+    }
+    return partitions.get(name);
+  }
+
+  getPartition('persist:maw-chatgpt').cookiesList.push(
+    { name: 'good_cookie', value: 'ok', domain: '.chatgpt.com', path: '/', secure: true },
+    { name: '', value: 'empty-name', domain: '.chatgpt.com', path: '/' },
+    { name: 'expired_cookie', value: 'old', domain: '.chatgpt.com', path: '/', session: false, expirationDate: 10 },
+    { name: 'reject_on_set', value: 'bad', domain: '.chatgpt.com', path: '/', secure: true },
+  );
+
+  const sessionApi = { fromPartition: (name) => getPartition(name) };
+
+  const cloneRes = await cloneBrowserProfileStorage({
+    sessionApi,
+    sourceProfileId: 'main',
+    targetProfileId: 'work-partial',
+  });
+  assert.equal(cloneRes.ok, true);
+  assert.equal(cloneRes.cookiesCopied, 1);
+  assert.equal(cloneRes.cookiesSkipped, 3);
+  assert.equal(getPartition('persist:maw-profile-work-partial-chatgpt').cookiesList.length, 1);
+  assert.equal(getPartition('persist:maw-profile-work-partial-chatgpt').cookiesList[0].name, 'good_cookie');
+
+  // clearProfileSiteAuth clears storage, HTTP cache, and auth cache
+  const clearRes = await clearProfileSiteAuth({
+    sessionApi,
+    profileId: 'work-partial',
+    site: 'chatgpt',
+  });
+  assert.equal(clearRes.ok, true);
+  const clearedPart = getPartition('persist:maw-profile-work-partial-chatgpt');
+  assert.equal(clearedPart.clearedStorage, 1);
+  assert.equal(clearedPart.clearedCache, 1);
+  assert.equal(clearedPart.clearedAuthCache, 1);
+
+  // deleteBrowserProfileStorage wipes all 4 site partitions and rejects 'main'
+  await assert.rejects(
+    () => deleteBrowserProfileStorage({ sessionApi, profileId: 'main' }),
+    /Invalid custom browser profile ID/,
+  );
+  const delRes = await deleteBrowserProfileStorage({
+    sessionApi,
+    profileId: 'work-partial',
+  });
+  assert.equal(delRes.ok, true);
+  assert.equal(delRes.clearedPartitions.length, 4);
+  for (const partName of delRes.clearedPartitions) {
+    const part = getPartition(partName);
+    assert.ok(part.clearedStorage >= 1, `${partName} storage cleared`);
+    assert.ok(part.clearedCache >= 1, `${partName} cache cleared`);
+    assert.ok(part.clearedAuthCache >= 1, `${partName} auth cache cleared`);
+  }
 });
 
 test('WebAuthn Orchestrator: popup bounds resolution, PIN retries, multi-device iteration, and resident credentials', async () => {

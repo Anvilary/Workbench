@@ -13,7 +13,7 @@ import { isFido2ToolsAvailable } from './webauthn-backend.mjs';
 import { requestPinDialog } from './webauthn-dialog.mjs';
 import { isOAuthLoopbackCallback, createOAuthLoopbackGate } from './src/security/oauth-loopback.mjs';
 import { configureProviderSessionPermissions, configureShellSessionSecurity, isDurableProviderPage } from './src/security/session-permissions.mjs';
-import { cloneBrowserProfileStorage, clearProfileSiteAuth } from './src/security/browser-profile-storage.mjs';
+import { cloneBrowserProfileStorage, clearProfileSiteAuth, deleteBrowserProfileStorage } from './src/security/browser-profile-storage.mjs';
 import { performWebAuthnAssertion, resolveWebAuthnPaneBounds } from './src/security/webauthn-orchestrator.mjs';
 import { discoverBackendReadiness } from './src/ipc/backend-readiness.mjs';
 import { applyWebContentsZoom } from './src/browser/zoom-controller.mjs';
@@ -512,12 +512,21 @@ async function start() {
     }
   }
 
+  function resolveTabProfileIdOrFail(id, requestedProfileId) {
+    if (requestedProfileId !== undefined && !isValidBrowserProfileId(requestedProfileId)) {
+      throw new Error('Invalid browser profile ID');
+    }
+    const knownProfileId = profileIds.get(id) ?? suspendedTabs.get(id)?.profileId;
+    if (requestedProfileId === undefined && knownProfileId && knownProfileId !== DEFAULT_BROWSER_PROFILE_ID) {
+      throw new Error('Browser profileId is required for custom-profile tabs');
+    }
+    return requestedProfileId ?? knownProfileId ?? DEFAULT_BROWSER_PROFILE_ID;
+  }
+
   function open(id, url, provider = 'chatgpt', explicit = true, requestedProfileId = undefined) {
     const providerName = provider === 'other' ? 'Browser' : provider === 'github' ? 'GitHub' : provider === 'perplexity' ? 'Perplexity' : 'ChatGPT';
-    const effectiveProfileId = isValidBrowserProfileId(requestedProfileId)
-      ? requestedProfileId
-      : (profileIds.get(id) ?? DEFAULT_BROWSER_PROFILE_ID);
-    if (cloningProfiles.has(effectiveProfileId)) throw new Error('Browser profile clone is in progress');
+    const effectiveProfileId = resolveTabProfileIdOrFail(id, requestedProfileId);
+    if (cloningProfiles.has(effectiveProfileId)) throw new Error('Browser profile operation is in progress');
     const targetSession = ensurePartitionSession(effectiveProfileId, provider);
     if (views.has(id)) {
       lastAccessedAt.set(id, Date.now());
@@ -680,6 +689,21 @@ async function start() {
     zoomLevels.delete(id);
     activeDownloads.delete(id);
     tabFavicons.delete(id);
+    linkOpenHistory.delete(id);
+    if (layoutFocusedId === id) layoutFocusedId = null;
+    if (reportedFocusedId === id) reportedFocusedId = null;
+    for (const [popupContents, ownerId] of [...popupOwners.entries()]) {
+      if (ownerId !== id) continue;
+      popupOwners.delete(popupContents);
+      for (const popup of [...popups]) {
+        try {
+          if (!popup.isDestroyed() && popup.webContents === popupContents) {
+            popups.delete(popup);
+            popup.destroy();
+          }
+        } catch {}
+      }
+    }
     const view = views.get(id);
     if (view) {
       hide(id);
@@ -763,17 +787,18 @@ async function start() {
       open(command.id, command.url, command.provider ?? 'chatgpt', true, command.profileId);
     }
     if (command.type === 'update') {
+      const effectiveProfileId = resolveTabProfileIdOrFail(command.id, command.profileId);
       if (views.has(command.id)) {
-        open(command.id, command.url, command.provider ?? providers.get(command.id) ?? 'chatgpt', false, command.profileId);
+        open(command.id, command.url, command.provider ?? providers.get(command.id) ?? 'chatgpt', false, effectiveProfileId);
       } else if (suspendedTabs.has(command.id)) {
         const item = suspendedTabs.get(command.id);
         if (item) {
           if (command.provider && command.provider !== item.provider) throw new Error('This tab cannot change browser provider.');
-          if (command.profileId && command.profileId !== item.profileId) {
+          if (effectiveProfileId !== item.profileId) {
             item.history = null;
             item.zoomLevel = 0;
-            item.profileId = command.profileId;
-            profileIds.set(command.id, command.profileId);
+            item.profileId = effectiveProfileId;
+            profileIds.set(command.id, effectiveProfileId);
           } else if (item.url !== command.url && item.history?.entries?.length) {
             const entries = [...item.history.entries.slice(0, item.history.index + 1), { url: command.url, title: '' }];
             item.history = { entries, index: entries.length - 1 };
@@ -782,6 +807,8 @@ async function start() {
           item.requestedUrl = command.url;
           if (command.provider) item.provider = command.provider;
         }
+      } else if (command.profileId) {
+        profileIds.set(command.id, effectiveProfileId);
       }
     }
     if (command.type === 'clone-profile') {
@@ -790,30 +817,115 @@ async function start() {
           [...profileIds.values()].includes(targetProfileId)) {
         throw new Error('Browser profile clone destination is in use');
       }
+      cloningProfiles.add(sourceProfileId);
       cloningProfiles.add(targetProfileId);
       try {
         return await cloneBrowserProfileStorage({ sessionApi: session, sourceProfileId, targetProfileId, clearSites });
       } finally {
+        cloningProfiles.delete(sourceProfileId);
         cloningProfiles.delete(targetProfileId);
       }
     }
     if (command.type === 'clear-profile-site-auth') {
-      if (cloningProfiles.has(command.profileId)) throw new Error('Browser profile clone is in progress');
+      if (cloningProfiles.has(command.profileId)) throw new Error('Browser profile operation is in progress');
+      const targetProvider = command.site === 'browser' ? 'other' : command.site;
       const targetSession = session.fromPartition(partitionForBrowserProfile(
-        command.profileId, command.site === 'browser' ? 'other' : command.site,
+        command.profileId, targetProvider,
       ));
-      for (const popup of popups) {
-        if (!popup.isDestroyed() && popup.webContents.session === targetSession) popup.destroy();
+      cloningProfiles.add(command.profileId);
+      try {
+        for (const popup of [...popups]) {
+          try {
+            if (!popup.isDestroyed() && popup.webContents.session === targetSession) {
+              popupOwners.delete(popup.webContents);
+              popups.delete(popup);
+              popup.destroy();
+            }
+          } catch {}
+        }
+        // Quiesce live views on the target partition before clearing storage/cache
+        // so active page scripts cannot race and re-persist auth state.
+        const viewsToReload = [];
+        for (const [id, view] of views.entries()) {
+          if (!view.webContents.isDestroyed() && view.webContents.session === targetSession) {
+            const reloadUrl = requestedUrls.get(id) || urls.get(id);
+            viewsToReload.push({ id, view, reloadUrl });
+            failures.delete(id);
+            tabFavicons.delete(id);
+            try { view.webContents.stop(); } catch {}
+            await view.webContents.loadURL('about:blank').catch(() => {});
+          }
+        }
+        for (const [id, item] of [...suspendedTabs.entries()]) {
+          if (item.profileId === command.profileId && item.provider === targetProvider) {
+            suspendedTabs.delete(id);
+            tabFavicons.delete(id);
+          }
+        }
+        const result = await clearProfileSiteAuth({
+          sessionApi: session,
+          profileId: command.profileId,
+          site: command.site,
+        });
+        for (const { id, view, reloadUrl } of viewsToReload) {
+          if (views.get(id) === view && !view.webContents.isDestroyed()) {
+            if (reloadUrl) {
+              void view.webContents.loadURL(reloadUrl).catch(() => {});
+            } else {
+              view.webContents.reload();
+            }
+          }
+        }
+        return result;
+      } finally {
+        cloningProfiles.delete(command.profileId);
       }
-      const result = await clearProfileSiteAuth({
-        sessionApi: session,
-        profileId: command.profileId,
-        site: command.site,
-      });
-      for (const { webContents } of views.values()) {
-        if (!webContents.isDestroyed() && webContents.session === targetSession) webContents.reload();
+    }
+    if (command.type === 'delete-profile') {
+      if (cloningProfiles.has(command.profileId)) throw new Error('Browser profile operation is in progress');
+      cloningProfiles.add(command.profileId);
+      try {
+        const tabsToClose = new Set();
+        for (const [id, pid] of profileIds.entries()) {
+          if (pid === command.profileId) tabsToClose.add(id);
+        }
+        for (const [id, item] of suspendedTabs.entries()) {
+          if (item.profileId === command.profileId) tabsToClose.add(id);
+        }
+        for (const id of tabsToClose) {
+          closeView(id);
+        }
+        const partitionNames = ['chatgpt', 'github', 'perplexity', 'other'].map(
+          (provider) => partitionForBrowserProfile(command.profileId, provider),
+        );
+        const partitionSessions = new Set(
+          partitionNames.map((name) => configuredPartitions.get(name) || session.fromPartition(name)),
+        );
+        for (const popup of [...popups]) {
+          try {
+            if (!popup.isDestroyed() && partitionSessions.has(popup.webContents.session)) {
+              popupOwners.delete(popup.webContents);
+              popups.delete(popup);
+              popup.destroy();
+            }
+          } catch {}
+        }
+        const result = await deleteBrowserProfileStorage({
+          sessionApi: session,
+          profileId: command.profileId,
+        });
+        for (const name of partitionNames) {
+          const sess = configuredPartitions.get(name);
+          if (sess) sessionProviders.delete(sess);
+          configuredPartitions.delete(name);
+        }
+        for (const sess of partitionSessions) {
+          sessionProviders.delete(sess);
+        }
+        return result;
+      } finally {
+        cloningProfiles.delete(command.profileId);
       }
-      return result;
     }
     if (command.type === 'browser-action') {
       const view = views.get(command.id);
@@ -893,22 +1005,34 @@ async function start() {
     }
     if (command.type === 'close') closeView(command.id);
     if (command.type === 'retain') {
-      for (const id of views.keys()) if (!command.ids.includes(id)) closeView(id);
+      for (const id of [...views.keys()]) if (!command.ids.includes(id)) closeView(id);
       for (const id of [...suspendedTabs.keys()]) if (!command.ids.includes(id)) closeView(id);
+      for (const id of [...profileIds.keys()]) if (!command.ids.includes(id)) profileIds.delete(id);
     }
 
     // FEATURE 4: In-memory visual capture fallback for overlapping overlays
-    if (command.type === 'capture' && views.has(command.id)) {
+    if (command.type === 'capture') {
       const view = views.get(command.id);
-      if (view && !view.webContents.isDestroyed()) {
-        try {
-          const image = await view.webContents.capturePage();
-          return { ok: true, dataUrl: image.toDataURL() };
-        } catch {
+      if (!view || view.webContents.isDestroyed()) {
+        return { ok: false };
+      }
+      let timeoutId;
+      try {
+        const image = await Promise.race([
+          view.webContents.capturePage(),
+          new Promise((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error('capture-timeout')), 1500);
+          }),
+        ]);
+        if (!image || (typeof image.isEmpty === 'function' && image.isEmpty())) {
           return { ok: false };
         }
+        return { ok: true, dataUrl: image.toDataURL() };
+      } catch {
+        return { ok: false };
+      } finally {
+        clearTimeout(timeoutId);
       }
-      return { ok: false };
     }
 
     // FEATURE 3: Centralized Multi-WebContentsView layout coordinator (atomic reconciliation)
@@ -969,21 +1093,6 @@ async function start() {
         }
       }
     }
-  });
-
-  ipcMain.handle('maw:browse-executable', async (event, options) => {
-    if (!trustedSender(event, win.webContents, local.origin)) throw new Error('Invalid desktop request');
-    const result = await dialog.showOpenDialog(win, {
-      title: (typeof options?.title === 'string' && options.title) ? options.title : 'Select CLI Executable',
-      properties: ['openFile'],
-      filters: process.platform === 'win32'
-        ? [{ name: 'Executables', extensions: ['exe', 'cmd', 'bat', 'ps1', '*'] }]
-        : undefined,
-    });
-    if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
-      return null;
-    }
-    return result.filePaths[0];
   });
 
   let activeWebAuthnAbort = null;
@@ -1081,10 +1190,27 @@ async function start() {
   });
   win.webContents.on('did-start-loading', () => {
     hideAll();
+    layoutFocusedId = null;
+    reportedFocusedId = null;
     if (performanceSubscribed) resourceCollector.unsubscribe();
     performanceSubscribed = false;
   });
-  win.webContents.on('render-process-gone', hideAll);
+  win.webContents.on('render-process-gone', () => {
+    hideAll();
+    layoutFocusedId = null;
+    reportedFocusedId = null;
+    if (performanceSubscribed) {
+      resourceCollector.unsubscribe();
+      performanceSubscribed = false;
+    }
+    for (const popup of [...popups]) {
+      try {
+        if (!popup.isDestroyed()) popup.destroy();
+      } catch {}
+    }
+    popups.clear();
+    popupOwners.clear();
+  });
   for (const event of ['minimize', 'restore', 'enter-full-screen', 'leave-full-screen']) win.on(event, invalidate);
   win.on('resize', () => send({ type: 'layout-needed' }));
   win.webContents.on('before-input-event', desktopShortcut);

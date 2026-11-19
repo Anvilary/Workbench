@@ -59,17 +59,32 @@ async function flushSessionSafely(sess) {
  * @returns {object|null}
  */
 export function toCookieSetDetails(cookie) {
-  if (!cookie || typeof cookie.name !== 'string' || typeof cookie.value !== 'string') {
+  if (!cookie || typeof cookie.name !== 'string' || !cookie.name || typeof cookie.value !== 'string') {
     return null;
   }
   const rawDomain = typeof cookie.domain === 'string' ? cookie.domain : '';
   const cleanDomain = rawDomain.replace(/^\.+/, '');
   if (!cleanDomain) return null;
 
-  const isSecure = Boolean(cookie.secure) || cookie.name.startsWith('__Host-') || cookie.name.startsWith('__Secure-');
+  if (!cookie.session && typeof cookie.expirationDate === 'number' && Number.isFinite(cookie.expirationDate)) {
+    if (cookie.expirationDate <= Math.floor(Date.now() / 1000)) {
+      return null;
+    }
+  }
+
+  const isHostPrefix = cookie.name.startsWith('__Host-');
+  const isSecure = Boolean(cookie.secure) || isHostPrefix || cookie.name.startsWith('__Secure-');
   const scheme = isSecure ? 'https' : 'http';
   const cookiePath = typeof cookie.path === 'string' && cookie.path.startsWith('/') ? cookie.path : '/';
+  if (isHostPrefix && cookiePath !== '/') {
+    return null;
+  }
   const url = `${scheme}://${cleanDomain}${cookiePath}`;
+  try {
+    new URL(url);
+  } catch {
+    return null;
+  }
 
   const details = {
     url,
@@ -81,7 +96,7 @@ export function toCookieSetDetails(cookie) {
   };
 
   // Preserve host-only semantics and __Host- prefix invariants by omitting domain when hostOnly.
-  const isHostOnly = cookie.hostOnly === true || cookie.name.startsWith('__Host-') || !rawDomain.startsWith('.');
+  const isHostOnly = cookie.hostOnly === true || isHostPrefix || !rawDomain.startsWith('.');
   if (!isHostOnly && rawDomain) {
     details.domain = rawDomain;
   }
@@ -135,6 +150,7 @@ export async function cloneBrowserProfileStorage({
   const clonedSites = [];
   const clearedSites = [];
   const plans = [];
+  let cookiesSkipped = 0;
   for (const site of PROFILE_SITES) {
     const provider = SITE_TO_PROVIDER[site];
     const targetPartition = partitionForProfile(targetProfileId, provider);
@@ -158,8 +174,15 @@ export async function cloneBrowserProfileStorage({
       ? await sourceSession.cookies.get({})
       : [];
 
-    const details = cookies.map(toCookieSetDetails);
-    if (details.some(cookie => !cookie)) throw new Error('Browser profile contains an unsupported cookie');
+    const details = [];
+    for (const rawCookie of cookies) {
+      const converted = toCookieSetDetails(rawCookie);
+      if (converted) {
+        details.push(converted);
+      } else {
+        cookiesSkipped += 1;
+      }
+    }
     plans.push({ site, targetSession, details });
   }
 
@@ -167,8 +190,12 @@ export async function cloneBrowserProfileStorage({
   try {
     for (const { site, targetSession, details } of plans) {
       for (const cookie of details) {
-        await targetSession.cookies.set(cookie);
-        written.push({ targetSession, cookie });
+        try {
+          await targetSession.cookies.set(cookie);
+          written.push({ targetSession, cookie });
+        } catch {
+          cookiesSkipped += 1;
+        }
       }
       await targetSession.cookies.flushStore();
       clonedSites.push(site);
@@ -188,13 +215,36 @@ export async function cloneBrowserProfileStorage({
     clonedSites,
     clearedSites,
     cookiesCopied: written.length,
-    cookiesSkipped: 0,
+    cookiesSkipped,
   };
 }
 
+async function clearSessionAllData(targetSession) {
+  if (!targetSession) return;
+  if (typeof targetSession.clearStorageData === 'function') {
+    await targetSession.clearStorageData();
+  }
+  if (typeof targetSession.clearCache === 'function') {
+    try {
+      await targetSession.clearCache();
+    } catch {}
+  }
+  if (typeof targetSession.clearCodeCaches === 'function') {
+    try {
+      await targetSession.clearCodeCaches({});
+    } catch {}
+  }
+  if (typeof targetSession.clearAuthCache === 'function') {
+    try {
+      await targetSession.clearAuthCache();
+    } catch {}
+  }
+  await flushSessionSafely(targetSession);
+}
+
 /**
- * Clears all site authentication cookies and storage data for a single
- * `(profileId, site)` partition and flushes the store.
+ * Clears all site authentication cookies, HTTP cache, and storage data for a
+ * single `(profileId, site)` partition and flushes the store.
  */
 export async function clearProfileSiteAuth({
   sessionApi,
@@ -214,20 +264,44 @@ export async function clearProfileSiteAuth({
   const partition = partitionForProfile(profileId, provider);
   const targetSession = sessionApi.fromPartition(partition);
 
-  if (typeof targetSession.clearStorageData === 'function') {
-    await targetSession.clearStorageData();
-  }
-  if (typeof targetSession.clearAuthCache === 'function') {
-    try {
-      await targetSession.clearAuthCache();
-    } catch {}
-  }
-  await flushSessionSafely(targetSession);
+  await clearSessionAllData(targetSession);
 
   return {
     ok: true,
     profileId,
     site,
     partition,
+  };
+}
+
+/**
+ * Wipes all cookies, storage, caches, and auth state across every site
+ * partition belonging to a deleted custom browser profile.
+ */
+export async function deleteBrowserProfileStorage({
+  sessionApi,
+  profileId,
+  partitionForProfile = partitionForBrowserProfile,
+}) {
+  if (!sessionApi || typeof sessionApi.fromPartition !== 'function') {
+    throw new Error('Electron session API is required');
+  }
+  if (!isValidBrowserProfileId(profileId) || profileId === DEFAULT_BROWSER_PROFILE_ID) {
+    throw new Error('Invalid custom browser profile ID');
+  }
+
+  const clearedPartitions = [];
+  for (const site of PROFILE_SITES) {
+    const provider = SITE_TO_PROVIDER[site];
+    const partition = partitionForProfile(profileId, provider);
+    const targetSession = sessionApi.fromPartition(partition);
+    await clearSessionAllData(targetSession);
+    clearedPartitions.push(partition);
+  }
+
+  return {
+    ok: true,
+    profileId,
+    clearedPartitions,
   };
 }

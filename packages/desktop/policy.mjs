@@ -360,6 +360,10 @@ export function validCommand(value) {
     if (!exact(value, ['type', 'profileId', 'site'])) return false;
     return isValidBrowserProfileId(value.profileId) && typeof value.site === 'string' && BROWSER_PROFILE_SITES.has(value.site);
   }
+  if (value.type === 'delete-profile') {
+    if (!exact(value, ['type', 'profileId'])) return false;
+    return isValidBrowserProfileId(value.profileId) && value.profileId !== DEFAULT_BROWSER_PROFILE_ID;
+  }
   if (value.type === 'browser-action') {
     const actions = ['back', 'forward', 'reload', 'copy-url', 'copy-selection', 'open-page', 'zoom-in', 'zoom-out', 'zoom-reset'];
     if (exact(value, ['type', 'id', 'action'])) return UUID.test(value.id) && actions.includes(value.action);
