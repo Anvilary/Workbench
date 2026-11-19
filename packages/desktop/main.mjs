@@ -16,6 +16,7 @@ import { cloneBrowserProfileStorage, clearProfileSiteAuth, deleteBrowserProfileS
 import { performWebAuthnAssertion, resolveWebAuthnPaneBounds } from './src/security/webauthn-orchestrator.mjs';
 import { discoverBackendReadiness } from './src/ipc/backend-readiness.mjs';
 import { applyWebContentsZoom } from './src/browser/zoom-controller.mjs';
+import { applyGraphicsPolicy, resolveGraphicsPolicy, shouldDisableHardwareVideoDecode } from './src/gpu/graphics-policy.mjs';
 
 export { isOAuthLoopbackCallback };
 
@@ -28,9 +29,17 @@ if (app.commandLine.hasSwitch('no-sandbox')) throw new Error('MAW desktop requir
 app.enableSandbox();
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-webgl');
-app.commandLine.appendSwitch('disable-accelerated-video-decode');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 if (!process.env.DRI_PRIME) process.env.DRI_PRIME = '0';
+// Must run before app.whenReady(): disableHardwareAcceleration() is only valid before ready.
+// Vendor isolation is applied by the launcher; see src/gpu/graphics-policy.mjs.
+const graphicsPolicy = applyGraphicsPolicy(resolveGraphicsPolicy(), { app });
+const softwareVideoDecode = shouldDisableHardwareVideoDecode({ policy: graphicsPolicy, env: process.env });
+if (softwareVideoDecode) app.commandLine.appendSwitch('disable-accelerated-video-decode');
+console.error(`[maw-desktop] graphics mode=${graphicsPolicy.mode} (${graphicsPolicy.reason}); video decode=${softwareVideoDecode ? 'software' : 'hardware'}`);
+app.on('child-process-gone', (_event, details) => {
+  if (details.type === 'GPU') console.error(`[maw-desktop] GPU process gone: reason=${details.reason} exitCode=${details.exitCode}`);
+});
 let local = serviceUrl(process.env.MAW_DESKTOP_URL || '');
 delete process.env.MAW_DESKTOP_URL;
 if (!app.requestSingleInstanceLock({ serviceUrl: local.href })) app.exit(0);

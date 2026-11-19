@@ -90,6 +90,42 @@ test('production launch uses the serving release and existing service URL withou
   assert.equal(probes, 3, 'launcher waits for verified readiness');
 });
 
+test('production launch gives Electron the graphics environment from the serving release, never overriding the user', async t => {
+  const { spawn } = await import('node:child_process');
+  const { launchProduction } = await import(pathToFileURL(path.join(REPO_ROOT, 'scripts/maw/desktop-launch.mjs')).href);
+  const dir = await mkdtemp(path.join(tmpdir(), 'maw-graphics-launch-')); t.after(() => rm(dir, { recursive: true, force: true }));
+  const release = path.join(dir, 'verified-release'); await mkdir(release);
+  await writeFile(path.join(release, '.maw-release-meta.json'), JSON.stringify({ releaseId: 'verified-release' }));
+  const service = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { cwd: release, stdio: 'ignore' });
+  t.after(() => service.kill());
+  const runtime = path.join(dir, 'runtime'); await mkdir(runtime);
+  const capture = path.join(dir, 'capture.json');
+  await writeFile(path.join(runtime, 'electron'), '#!/usr/bin/env node\nrequire("fs").writeFileSync(' + JSON.stringify(capture) + ',JSON.stringify({egl:process.env.__EGL_VENDOR_LIBRARY_FILENAMES,glx:process.env.__GLX_VENDOR_LIBRARY_NAME}))\n');
+  await chmod(path.join(runtime, 'electron'), 0o755);
+  const serving = async () => ({ pid: service.pid, state: { releaseId: 'verified-release' }, url: new URL('http://127.0.0.1:34567/') });
+  const launch = async (graphicsEnv) => {
+    const child = await launchProduction({ ready: serving, runtime: async () => ({ directory: runtime }), graphicsEnv, dataHome: dir });
+    await new Promise(resolve => child.on('exit', resolve));
+    return JSON.parse(await readFile(capture, 'utf8'));
+  };
+  const saved = { egl: process.env.__EGL_VENDOR_LIBRARY_FILENAMES, glx: process.env.__GLX_VENDOR_LIBRARY_NAME };
+  t.after(() => { for (const [k, v] of [['__EGL_VENDOR_LIBRARY_FILENAMES', saved.egl], ['__GLX_VENDOR_LIBRARY_NAME', saved.glx]]) v === undefined ? delete process.env[k] : (process.env[k] = v); });
+  delete process.env.__EGL_VENDOR_LIBRARY_FILENAMES; delete process.env.__GLX_VENDOR_LIBRARY_NAME;
+
+  assert.deepEqual(await launch(async () => ({ __EGL_VENDOR_LIBRARY_FILENAMES: '/policy/mesa.json', __GLX_VENDOR_LIBRARY_NAME: 'mesa' })), { egl: '/policy/mesa.json', glx: 'mesa' });
+  assert.deepEqual(await launch(async () => ({})), {}, 'an empty policy adds nothing');
+
+  process.env.__EGL_VENDOR_LIBRARY_FILENAMES = '/user/choice.json';
+  const overridden = await launch(async () => ({ __EGL_VENDOR_LIBRARY_FILENAMES: '/policy/mesa.json' }));
+  assert.equal(overridden.egl, '/user/choice.json', 'the invoking environment wins over the policy');
+  delete process.env.__EGL_VENDOR_LIBRARY_FILENAMES;
+
+  // Default resolver: a release that predates the policy module launches with an unchanged environment.
+  const legacy = await launchProduction({ ready: serving, runtime: async () => ({ directory: runtime }), dataHome: dir });
+  await new Promise(resolve => legacy.on('exit', resolve));
+  assert.deepEqual(JSON.parse(await readFile(capture, 'utf8')), {});
+});
+
 test('commands installation preserves existing user state and is repeatable', async t => {
   const dir=await mkdtemp(path.join(tmpdir(),'maw-desktop-install-'));t.after(()=>rm(dir,{recursive:true,force:true}));
   const state=path.join(dir,'state');await mkdir(state);

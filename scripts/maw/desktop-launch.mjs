@@ -3,10 +3,19 @@ import { realpath, readFile, mkdir, lstat, chmod } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readyService, startCurrentService } from './service-readiness.mjs';
 import { assertRuntime } from './desktop-runtime.mjs';
-export async function launchProduction({ ready = readyService, startService = startCurrentService, runtime = assertRuntime, background = false, dataHome = process.env.XDG_DATA_HOME || path.join(homedir(), '.local/share') } = {}) {
+// The Electron GPU process is forked from a zygote that exists before any JavaScript runs, so GL/EGL
+// vendor selection can only take effect from the environment Electron is spawned with.
+// Older (rollback) releases lack the policy module; they simply launch with the unchanged environment.
+async function releaseGraphicsEnv(release) {
+  try {
+    const policy = await import(pathToFileURL(path.join(release, 'packages/desktop/src/gpu/graphics-policy.mjs')).href);
+    return policy.graphicsLaunchEnv(policy.resolveGraphicsPolicy());
+  } catch { return {}; }
+}
+export async function launchProduction({ ready = readyService, startService = startCurrentService, runtime = assertRuntime, graphicsEnv = releaseGraphicsEnv, background = false, dataHome = process.env.XDG_DATA_HOME || path.join(homedir(), '.local/share') } = {}) {
   let serving;
   try { serving = await ready(); }
   catch {
@@ -28,7 +37,7 @@ export async function launchProduction({ ready = readyService, startService = st
   const info = await lstat(profile);
   if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid()) throw new Error('Unsafe desktop profile');
   await chmod(profile, 0o700);
-  const env = { ...process.env, MAW_DESKTOP_URL: url.href, MAW_DESKTOP_DATA_DIR: profile, MAW_DESKTOP_PRODUCTION: '1' };
+  const env = { ...await graphicsEnv(release), ...process.env, MAW_DESKTOP_URL: url.href, MAW_DESKTOP_DATA_DIR: profile, MAW_DESKTOP_PRODUCTION: '1' };
   delete env.ELECTRON_RUN_AS_NODE; delete env.NODE_OPTIONS;
   const child = spawn(path.join(directory, 'electron'), [path.join(release, 'packages/desktop')], { env, stdio: 'ignore', detached: background });
   child.on('error', () => { console.error('Could not launch MAW desktop.'); process.exitCode = 1; });
