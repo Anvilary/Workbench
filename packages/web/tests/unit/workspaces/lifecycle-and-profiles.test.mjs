@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
+  DEFAULT_BROWSER_PROFILE_ID,
+  resolveEffectiveBrowserProfileId,
+} from '@agent-workbench/shared';
+import {
   EMPTY_AGENCY_SNAPSHOT,
   activeByProject,
   pruneProjectData,
@@ -180,4 +184,41 @@ test('C-04: archived projects are excluded from activeByProject and AgencyWorksp
   );
   assert.ok(creatorHtml.includes('Active Project'));
   assert.ok(!creatorHtml.includes('Archived Project'));
+});
+
+test('C-19: resolveEffectiveBrowserProfileId falls back when assigned profileId is stale or deleted', () => {
+  const knownProfiles = [
+    { id: 'main' },
+    { id: 'prof-valid' },
+  ];
+
+  // Stale workspace profile falls back to valid project profile
+  assert.equal(
+    resolveEffectiveBrowserProfileId(
+      { browserProfileId: 'prof-deleted' },
+      { browserProfileId: 'prof-valid' },
+      knownProfiles,
+    ),
+    'prof-valid',
+  );
+
+  // Stale workspace and project profiles fall back to main
+  assert.equal(
+    resolveEffectiveBrowserProfileId(
+      { browserProfileId: 'prof-deleted' },
+      { browserProfileId: 'prof-also-deleted' },
+      knownProfiles,
+    ),
+    DEFAULT_BROWSER_PROFILE_ID,
+  );
+
+  // Known custom profile is preserved
+  assert.equal(
+    resolveEffectiveBrowserProfileId(
+      { browserProfileId: 'prof-valid' },
+      { browserProfileId: null },
+      knownProfiles,
+    ),
+    'prof-valid',
+  );
 });

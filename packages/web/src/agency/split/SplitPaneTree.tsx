@@ -15,7 +15,7 @@ import { SplitDivider } from './SplitDivider.js';
 import { EmptyPaneChooser } from './EmptyPaneChooser.js';
 import { BrowserDestinationPicker } from './BrowserDestinationPicker.js';
 import { useTabDragPreview } from './tab-drag-store.js';
-import { useEscapeKey } from '../../shared/hooks/useEscapeKey.js';
+import { ModalDialog } from '../../shared/ui/ModalDialog.js';
 import { DEFAULT_BROWSER_FAVORITES, getSearchEngine, type WebTabProvider } from '@agent-workbench/shared';
 
 function PaneBody({
@@ -167,10 +167,6 @@ function PaneLeaf(props: Props & {
     .filter((tab): tab is WorkspaceTab => tab !== undefined);
   const [confirmingClosePane, setConfirmingClosePane] = useState(false);
 
-  useEscapeKey(() => {
-    setConfirmingClosePane(false);
-  }, confirmingClosePane);
-
   const handleRequestClosePane = useCallback(() => {
     if (!canClose) return;
     if (paneTabs.length === 0) {
@@ -301,62 +297,14 @@ function PaneLeaf(props: Props & {
         )}
 
         {confirmingClosePane && (
-          <div
-            className="maw-pane-close-overlay"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={`pane-close-title-${node.id}`}
-            onMouseDown={(e) => {
-              if (e.target === e.currentTarget) {
-                setConfirmingClosePane(false);
-              }
-            }}
-          >
-            <div className="agency-dialog maw-pane-close-dialog" onMouseDown={(e) => e.stopPropagation()}>
-              <div className="agency-dialog-head">
-                <h2 id={`pane-close-title-${node.id}`}>{t('agency.splits.closePane')}?</h2>
-                <button
-                  type="button"
-                  className="agency-icon-button"
-                  onClick={() => setConfirmingClosePane(false)}
-                  aria-label={t('common.close')}
-                >
-                  ×
-                </button>
-              </div>
-              <p className="agency-muted">
-                {t('agency.splits.closePaneWarning')}
-              </p>
-              <div className="agency-resource-summary maw-pane-close-summary">
-                <ul>
-                  <li>
-                    {t('agency.splits.closePaneOpenTabs', { count: paneTabs.length })}
-                  </li>
-                  {activeAgentsCount > 0 && (
-                    <li>{t('agency.ui.deleteResourcesActiveClis', { count: activeAgentsCount })}</li>
-                  )}
-                  {activeTerminalsCount > 0 && (
-                    <li>{t('agency.ui.deleteResourcesActiveTerminals', { count: activeTerminalsCount })}</li>
-                  )}
-                  {browserTabsCount > 0 && (
-                    <li>{t('agency.ui.deleteResourcesBrowserTabs', { count: browserTabsCount })}</li>
-                  )}
-                  {editorTabsInPane.length > 0 && (
-                    <li>
-                      {t('agency.ui.deleteResourcesEditorTabs', { count: editorTabsInPane.length })}
-                      {dirtyEditorsCount > 0 ? ` (${t('agency.ui.deleteResourcesUnsavedCount', { count: dirtyEditorsCount })})` : ''}
-                    </li>
-                  )}
-                </ul>
-              </div>
-              {(activeAgentsCount > 0 || activeTerminalsCount > 0 || dirtyEditorsCount > 0) && (
-                <p className="agency-error" role="alert">
-                  {dirtyEditorsCount > 0
-                    ? t('agency.tabs.unsavedChangesWarning')
-                    : t('agency.ui.deleteInterruptionWarning')}
-                </p>
-              )}
-              <div className="agency-dialog-actions">
+          <ModalDialog
+            title={`${t('agency.splits.closePane')}?`}
+            titleId={`pane-close-title-${node.id}`}
+            className="maw-pane-close-dialog"
+            closeLabel={t('common.close')}
+            onClose={() => setConfirmingClosePane(false)}
+            actions={
+              <>
                 <button
                   type="button"
                   className="agency-secondary-button"
@@ -366,7 +314,7 @@ function PaneLeaf(props: Props & {
                 </button>
                 <button
                   type="button"
-                  className="agency-primary-button"
+                  className="agency-danger-button"
                   onClick={() => {
                     setConfirmingClosePane(false);
                     void onClosePane(node.id, true);
@@ -374,9 +322,42 @@ function PaneLeaf(props: Props & {
                 >
                   {t('agency.splits.closePane')}
                 </button>
-              </div>
+              </>
+            }
+          >
+            <p className="agency-muted">
+              {t('agency.splits.closePaneWarning')}
+            </p>
+            <div className="agency-resource-summary maw-pane-close-summary">
+              <ul>
+                <li>
+                  {t('agency.splits.closePaneOpenTabs', { count: paneTabs.length })}
+                </li>
+                {activeAgentsCount > 0 && (
+                  <li>{t('agency.ui.deleteResourcesActiveClis', { count: activeAgentsCount })}</li>
+                )}
+                {activeTerminalsCount > 0 && (
+                  <li>{t('agency.ui.deleteResourcesActiveTerminals', { count: activeTerminalsCount })}</li>
+                )}
+                {browserTabsCount > 0 && (
+                  <li>{t('agency.ui.deleteResourcesBrowserTabs', { count: browserTabsCount })}</li>
+                )}
+                {editorTabsInPane.length > 0 && (
+                  <li>
+                    {t('agency.ui.deleteResourcesEditorTabs', { count: editorTabsInPane.length })}
+                    {dirtyEditorsCount > 0 ? ` (${t('agency.ui.deleteResourcesUnsavedCount', { count: dirtyEditorsCount })})` : ''}
+                  </li>
+                )}
+              </ul>
             </div>
-          </div>
+            {(activeAgentsCount > 0 || activeTerminalsCount > 0 || dirtyEditorsCount > 0) && (
+              <p className="agency-error" role="alert">
+                {dirtyEditorsCount > 0
+                  ? t('agency.tabs.unsavedChangesWarning')
+                  : t('agency.ui.deleteInterruptionWarning')}
+              </p>
+            )}
+          </ModalDialog>
         )}
 
         {props.browserPickerOpen && (

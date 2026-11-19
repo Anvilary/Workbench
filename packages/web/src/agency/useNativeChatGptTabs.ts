@@ -4,6 +4,7 @@ import {
   resolveEffectiveBrowserProfileId,
   type AgencyProject,
   type AgencyWorkspace,
+  type BrowserProfile,
   type WebTab,
 } from '@agent-workbench/shared';
 import type { useAgencyStore } from './useAgencyStore.js';
@@ -16,9 +17,10 @@ export function useNativeChatGptTabs(
   request: ReturnType<typeof useAgencyStore>['request'],
   projects: readonly AgencyProject[] = [],
   workspaces: readonly AgencyWorkspace[] = [],
+  browserProfiles: readonly BrowserProfile[] = [],
 ): void {
-  const current = useRef({ tabs, request, synchronized, projects, workspaces });
-  current.current = { tabs, request, synchronized, projects, workspaces };
+  const current = useRef({ tabs, request, synchronized, projects, workspaces, browserProfiles });
+  current.current = { tabs, request, synchronized, projects, workspaces, browserProfiles };
 
   // Separate confirmed state from in-flight requests and desired state
   const confirmedTabs = useRef<Map<string, { url: string; provider: string; profileId: string }>>(new Map());
@@ -79,7 +81,7 @@ export function useNativeChatGptTabs(
     const provider = nativeWebProvider(state.url, tab.provider);
     const ws = current.current.workspaces.find(w => w.id === tab.workspaceId);
     const proj = current.current.projects.find(p => p.id === ws?.projectId);
-    const profileId = resolveEffectiveBrowserProfileId(ws, proj);
+    const profileId = resolveEffectiveBrowserProfileId(ws, proj, current.current.browserProfiles);
     pendingCheckpoints.current.set(tab.id, { url: state.url, provider, seq: ++seqCounter.current, acknowledged: tab.url === state.url });
     confirmedTabs.current.set(tab.id, { url: state.url, provider, profileId });
     inFlightUpdates.current.delete(tab.id);
@@ -154,7 +156,7 @@ export function useNativeChatGptTabs(
       const provider = pending?.provider ?? nativeWebProvider(desiredUrl, tab.provider);
       const ws = workspaces.find((w) => w.id === tab.workspaceId);
       const proj = projects.find((p) => p.id === ws?.projectId);
-      const profileId = resolveEffectiveBrowserProfileId(ws, proj);
+      const profileId = resolveEffectiveBrowserProfileId(ws, proj, browserProfiles);
       const confirmed = confirmedTabs.current.get(tab.id);
       const inFlight = inFlightUpdates.current.get(tab.id);
 
@@ -218,5 +220,5 @@ export function useNativeChatGptTabs(
           }
         });
     }
-  }, [tabs, projects, workspaces, synchronized, retryEpoch]);
+  }, [tabs, projects, workspaces, browserProfiles, synchronized, retryEpoch]);
 }

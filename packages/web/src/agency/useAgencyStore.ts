@@ -32,6 +32,8 @@ export interface VerifiedNotice {
 
 export function useAgencyStore(transport: AgencyTransport, connection: AgentConnection) {
   const [data, setData] = useState<AgencySnapshot>(EMPTY_AGENCY_SNAPSHOT);
+  const dataRef = useRef<AgencySnapshot>(data);
+  dataRef.current = data;
   const [online, setOnline] = useState(connection.getStatus() === 'open');
   const [loaded, setLoaded] = useState(false);
   const [synchronized, setSynchronized] = useState(false);
@@ -206,27 +208,40 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
       ) {
         setData((old) => ({ ...old, projects: replaceById(old.projects, message.project) }));
       } else if (message.type === 'agency.project.deleted') {
-        setData((old) => {
-          const targetWsIds = new Set(old.workspaces.filter((w) => w.projectId === message.projectId).map((w) => w.id));
-          old.editorTabs.forEach((tab) => {
-            if (targetWsIds.has(tab.workspaceId)) editorDraftStore.clearDraft(tab.id);
-          });
-          return pruneProjectData(old, message.projectId);
-        });
+        const targetWsIds = new Set(
+          dataRef.current.workspaces.filter((w) => w.projectId === message.projectId).map((w) => w.id),
+        );
+        for (const tab of dataRef.current.editorTabs) {
+          if (targetWsIds.has(tab.workspaceId)) editorDraftStore.clearDraft(tab.id);
+        }
+        for (const [id, tab] of unconfirmedWebTabs.current) {
+          if (targetWsIds.has(tab.workspaceId)) unconfirmedWebTabs.current.delete(id);
+        }
+        for (const [id, session] of unconfirmedSessions.current) {
+          if (targetWsIds.has(session.workspaceId)) unconfirmedSessions.current.delete(id);
+        }
+        setData((old) => pruneProjectData(old, message.projectId));
       } else if (message.type === 'agency.project.changed') {
-        setData((old) => {
-          if (message.change === 'deleted') {
-            const targetWsIds = new Set(old.workspaces.filter((w) => w.projectId === message.projectId).map((w) => w.id));
-            old.editorTabs.forEach((tab) => {
-              if (targetWsIds.has(tab.workspaceId)) editorDraftStore.clearDraft(tab.id);
-            });
-            return pruneProjectData(old, message.projectId);
+        if (message.change === 'deleted') {
+          const targetWsIds = new Set(
+            dataRef.current.workspaces.filter((w) => w.projectId === message.projectId).map((w) => w.id),
+          );
+          for (const tab of dataRef.current.editorTabs) {
+            if (targetWsIds.has(tab.workspaceId)) editorDraftStore.clearDraft(tab.id);
           }
-          return {
+          for (const [id, tab] of unconfirmedWebTabs.current) {
+            if (targetWsIds.has(tab.workspaceId)) unconfirmedWebTabs.current.delete(id);
+          }
+          for (const [id, session] of unconfirmedSessions.current) {
+            if (targetWsIds.has(session.workspaceId)) unconfirmedSessions.current.delete(id);
+          }
+          setData((old) => pruneProjectData(old, message.projectId));
+        } else {
+          setData((old) => ({
             ...old,
             projects: message.projects ?? (message.project ? replaceById(old.projects, message.project) : old.projects),
-          };
-        });
+          }));
+        }
       } else if (
         message.type === 'agency.workspace.created' || message.type === 'agency.workspace.updated' ||
         message.type === 'agency.workspace.done' || message.type === 'agency.workspace.restored' ||
@@ -234,25 +249,34 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
       ) {
         setData((old) => ({ ...old, workspaces: replaceById(old.workspaces, message.workspace) }));
       } else if (message.type === 'agency.workspace.deleted') {
-        setData((old) => {
-          old.editorTabs.forEach((tab) => {
-            if (tab.workspaceId === message.workspaceId) editorDraftStore.clearDraft(tab.id);
-          });
-          return pruneWorkspaceData(old, message.workspaceId);
-        });
+        for (const tab of dataRef.current.editorTabs) {
+          if (tab.workspaceId === message.workspaceId) editorDraftStore.clearDraft(tab.id);
+        }
+        for (const [id, tab] of unconfirmedWebTabs.current) {
+          if (tab.workspaceId === message.workspaceId) unconfirmedWebTabs.current.delete(id);
+        }
+        for (const [id, session] of unconfirmedSessions.current) {
+          if (session.workspaceId === message.workspaceId) unconfirmedSessions.current.delete(id);
+        }
+        setData((old) => pruneWorkspaceData(old, message.workspaceId));
       } else if (message.type === 'agency.workspace.changed') {
-        setData((old) => {
-          if (message.change === 'deleted') {
-            old.editorTabs.forEach((tab) => {
-              if (tab.workspaceId === message.workspaceId) editorDraftStore.clearDraft(tab.id);
-            });
-            return pruneWorkspaceData(old, message.workspaceId);
+        if (message.change === 'deleted') {
+          for (const tab of dataRef.current.editorTabs) {
+            if (tab.workspaceId === message.workspaceId) editorDraftStore.clearDraft(tab.id);
           }
-          return {
+          for (const [id, tab] of unconfirmedWebTabs.current) {
+            if (tab.workspaceId === message.workspaceId) unconfirmedWebTabs.current.delete(id);
+          }
+          for (const [id, session] of unconfirmedSessions.current) {
+            if (session.workspaceId === message.workspaceId) unconfirmedSessions.current.delete(id);
+          }
+          setData((old) => pruneWorkspaceData(old, message.workspaceId));
+        } else {
+          setData((old) => ({
             ...old,
             workspaces: message.workspaces ?? (message.workspace ? replaceById(old.workspaces, message.workspace) : old.workspaces),
-          };
-        });
+          }));
+        }
       } else if (message.type === 'agency.profile.configured' || message.type === 'agency.profile.created' || message.type === 'agency.profile.changed') {
         if (message.type === 'agency.profile.changed' && message.change === 'deleted') {
           setData((old) => ({ ...old, profiles: old.profiles.filter((p) => p.id !== message.profileId) }));
@@ -334,6 +358,7 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
   const deleteProject = (projectId: AgencyProject['id'], cascade = false) =>
     request({ type: 'agency.project.delete', projectId, ...(cascade ? { cascade: true } : {}) });
   const orderProjects = (projectIds: readonly AgencyProject['id'][]) => {
+    const previousOrder = dataRef.current.projects.map((p) => p.id);
     setData((old) => {
       const orderMap = new Map(projectIds.map((id, index) => [id, index]));
       const sorted = [...old.projects].sort((a, b) => {
@@ -344,7 +369,19 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
       });
       return { ...old, projects: sorted };
     });
-    return request({ type: 'agency.projects.order', projectIds });
+    return request({ type: 'agency.projects.order', projectIds }).catch((err) => {
+      const prevMap = new Map(previousOrder.map((id, index) => [id, index]));
+      setData((old) => ({
+        ...old,
+        projects: [...old.projects].sort((a, b) => {
+          const aIdx = prevMap.has(a.id) ? prevMap.get(a.id)! : Number.MAX_SAFE_INTEGER;
+          const bIdx = prevMap.has(b.id) ? prevMap.get(b.id)! : Number.MAX_SAFE_INTEGER;
+          if (aIdx !== bIdx) return aIdx - bIdx;
+          return old.projects.indexOf(a) - old.projects.indexOf(b);
+        }),
+      }));
+      throw err;
+    });
   };
   const createWorkspace = (projectId: AgencyWorkspace['projectId'], name: string, pickerId: string) =>
     request({ type: 'agency.workspace.create', projectId, name, pickerId });
@@ -375,8 +412,11 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
   const deleteBrowserProfile = (profileId: BrowserProfileId) =>
     request({ type: 'agency.browserProfile.delete', profileId });
   const orderWorkspaces = (projectId: AgencyWorkspace['projectId'], workspaceIds: readonly AgencyWorkspace['id'][]) => {
-    setData((old) => {
-      const orderMap = new Map(workspaceIds.map((id, index) => [id, index]));
+    const previousOrder = dataRef.current.workspaces
+      .filter((w) => w.projectId === projectId)
+      .map((w) => w.id);
+    const reorderForProject = (old: AgencySnapshot, targetOrder: readonly AgencyWorkspace['id'][]): AgencySnapshot => {
+      const orderMap = new Map(targetOrder.map((id, index) => [id, index]));
       const projectWorkspaces = old.workspaces.filter((w) => w.projectId === projectId);
       const sortedProjectWorkspaces = [...projectWorkspaces].sort((a, b) => {
         const aIdx = orderMap.has(a.id) ? orderMap.get(a.id)! : Number.MAX_SAFE_INTEGER;
@@ -392,8 +432,12 @@ export function useAgencyStore(transport: AgencyTransport, connection: AgentConn
         return w;
       });
       return { ...old, workspaces: nextWorkspaces };
+    };
+    setData((old) => reorderForProject(old, workspaceIds));
+    return request({ type: 'agency.workspaces.order', projectId, workspaceIds }).catch((err) => {
+      setData((old) => reorderForProject(old, previousOrder));
+      throw err;
     });
-    return request({ type: 'agency.workspaces.order', projectId, workspaceIds });
   };
   const saveLayout = useCallback((workspaceId: WorkspaceId, layout: WorkspacePaneLayout) =>
     request({ type: 'agency.layout.save', workspaceId, layout }), [request]);

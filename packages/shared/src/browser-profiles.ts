@@ -21,11 +21,17 @@ export function isValidBrowserProfileId(value: unknown): value is BrowserProfile
 export function resolveEffectiveBrowserProfileId(
   workspace?: { browserProfileId?: string | null } | null,
   project?: { browserProfileId?: string | null } | null,
+  knownProfiles?: readonly Pick<BrowserProfile, 'id'>[],
 ): BrowserProfileId {
+  const isKnown = (id: string): boolean => {
+    if (id === DEFAULT_BROWSER_PROFILE_ID) return true;
+    if (!knownProfiles || knownProfiles.length === 0) return true;
+    return knownProfiles.some((profile) => profile.id === id);
+  };
   const wsProfile = workspace?.browserProfileId;
-  if (isValidBrowserProfileId(wsProfile)) return wsProfile;
+  if (isValidBrowserProfileId(wsProfile) && isKnown(wsProfile)) return wsProfile;
   const projProfile = project?.browserProfileId;
-  if (isValidBrowserProfileId(projProfile)) return projProfile;
+  if (isValidBrowserProfileId(projProfile) && isKnown(projProfile)) return projProfile;
   return DEFAULT_BROWSER_PROFILE_ID;
 }
 

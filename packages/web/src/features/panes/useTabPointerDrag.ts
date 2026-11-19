@@ -268,15 +268,15 @@ export function useTabPointerDrag({
           img.className = 'maw-tab-favicon';
           img.src = sourceFav;
           iconSpan.appendChild(img);
+        } else if (sourceTab.kind === 'web') {
+          iconSpan.textContent = '◎';
         } else {
           iconSpan.textContent =
-            sourceTab.kind === 'web'
-              ? '🌐'
-              : sourceTab.kind === 'editor'
-                ? '✎'
-                : sourceTab.session?.kind === 'agent'
-                  ? '◇'
-                  : '>_';
+            sourceTab.kind === 'editor'
+              ? '✎'
+              : sourceTab.session?.kind === 'agent'
+                ? '◇'
+                : '>_';
         }
         const titleSpan = document.createElement('span');
         titleSpan.className = 'agency-truncate';

@@ -808,7 +808,12 @@ export function AgencySidebar({
                     <select
                       className="agency-dropdown-profile-select"
                       aria-label={t('settings.browser.profiles')}
-                      value={project.browserProfileId ?? DEFAULT_BROWSER_PROFILE_ID}
+                      value={
+                        project.browserProfileId &&
+                        (browserProfiles.length === 0 || browserProfiles.some((bp) => bp.id === project.browserProfileId))
+                          ? project.browserProfileId
+                          : DEFAULT_BROWSER_PROFILE_ID
+                      }
                       onChange={(e) => {
                         const val = e.target.value;
                         onUpdateProjectProfile(project, val === DEFAULT_BROWSER_PROFILE_ID ? null : val);
@@ -893,7 +898,12 @@ export function AgencySidebar({
                     <select
                       className="agency-dropdown-profile-select"
                       aria-label={t('settings.browser.profiles')}
-                      value={workspace.browserProfileId ?? ''}
+                      value={
+                        workspace.browserProfileId &&
+                        (browserProfiles.length === 0 || browserProfiles.some((bp) => bp.id === workspace.browserProfileId))
+                          ? workspace.browserProfileId
+                          : ''
+                      }
                       onChange={(e) => {
                         const val = e.target.value;
                         onUpdateWorkspaceProfile(workspace, val || null);

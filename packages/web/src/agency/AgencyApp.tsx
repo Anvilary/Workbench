@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId, AgentInfo, ServerMessage } from '@agent-workbench/shared';
-import { resolveEffectiveBrowserProfileId } from '@agent-workbench/shared';
+import { DEFAULT_BROWSER_PROFILE_ID, resolveEffectiveBrowserProfileId } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
 import { AgencySidebar, AgencyDoneView, SidebarToggleIcon } from './AgencySidebar.js';
 import { AgencyWorkspaceCreator, AgencyProjectCreator } from './AgencyWorkspaceCreator.js';
@@ -92,7 +92,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
   const agencyTransport = useMemo(() => createAgencyTransport(connection), [connection]);
   const store = useAgencyStore(agencyTransport, connection);
   const { data, loaded, online, synchronized, notice } = store;
-  useNativeChatGptTabs(data.webTabs, online && synchronized, store.request, data.projects, data.workspaces);
+  useNativeChatGptTabs(data.webTabs, online && synchronized, store.request, data.projects, data.workspaces, data.browserProfiles);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [performanceOpen, setPerformanceOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -704,7 +704,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
                   <AgencyWorkspaceView
                     workspace={ws}
                     activeWorkspace={isSelectedWorkspace}
-                    browserProfileId={resolveEffectiveBrowserProfileId(ws, data.projects.find(project => project.id === ws.projectId))}
+                    browserProfileId={resolveEffectiveBrowserProfileId(ws, data.projects.find(project => project.id === ws.projectId), data.browserProfiles)}
                     appSettings={appSettings}
                     connection={connection}
                     request={store.request}
@@ -797,6 +797,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
                 });
               } catch (error) {
                 await store.deleteBrowserProfile(answer.profile.id);
+                await bridge.command({ type: 'delete-profile', profileId: answer.profile.id }).catch(() => {});
                 throw error;
               }
             }
@@ -806,6 +807,11 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
           }}
           onDeleteBrowserProfile={async (profileId) => {
             await store.deleteBrowserProfile(profileId);
+            if (window.mawChatGpt && profileId !== DEFAULT_BROWSER_PROFILE_ID) {
+              await window.mawChatGpt.command({ type: 'delete-profile', profileId }).catch((err) => {
+                console.warn('[maw-browser-profile] delete-profile cleanup failed:', err);
+              });
+            }
           }}
           onClearBrowserProfileSiteAuth={window.mawChatGpt && (async (profileId, sites) => {
             for (const site of sites) {

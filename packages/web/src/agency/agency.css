@@ -639,7 +639,7 @@
 .maw-session-tab { display:flex; flex:0 0 auto; min-width:100px; max-width:220px; align-items:center; border-right:1px solid var(--border-faint); position:relative; }
 .maw-session-tab.active { background: var(--bg-3); box-shadow: inset 0 -2px var(--ember); }
 .maw-session-tab { transition: transform 140ms ease; }
-.maw-session-tab.dragging { opacity: 0.45; cursor: grabbing; background: var(--hover); }
+.maw-session-tab.dragging { opacity: 0; pointer-events: none; cursor: grabbing; }
 .maw-session-tab.dragging * { cursor: grabbing !important; }
 .maw-session-tab.maw-drop-target-before::before,
 .maw-session-tab.maw-drop-target-after::after {
