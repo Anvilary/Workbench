@@ -621,9 +621,12 @@ export function TerminalView({
       activar una pestana.
     */
     const reclaimSize = (): void => {
-      if (restoringReplay.current || document.visibilityState !== 'visible' || !hasBox()) return;
+      if (!activeRef.current || restoringReplay.current || document.visibilityState !== 'visible' || !hasBox()) return;
       try {
-        fitAddon.fit();
+        const proposed = fitAddon.proposeDimensions();
+        if (proposed && (proposed.cols !== terminal.cols || proposed.rows !== terminal.rows)) {
+          fitAddon.fit();
+        }
       } catch {
         return;
       }

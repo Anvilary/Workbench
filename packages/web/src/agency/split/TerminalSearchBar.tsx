@@ -28,6 +28,16 @@ export function TerminalSearchBar({
   const [query, setQuery] = useState(initialQuery);
   const [resultInfo, setResultInfo] = useState<{ index: number; count: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchTimerRef = useRef<number | null>(null);
+
+  const clearPendingSearch = () => {
+    if (searchTimerRef.current !== null) {
+      window.clearTimeout(searchTimerRef.current);
+      searchTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => () => clearPendingSearch(), []);
 
   // Focus and select input on mount
   useEffect(() => {
@@ -62,6 +72,7 @@ export function TerminalSearchBar({
   }, [searchAddon, initialQuery, terminal]);
 
   const findNext = () => {
+    clearPendingSearch();
     if (!query || !searchAddon) return;
     const found = searchAddon.findNext(query, { incremental: false });
     if (found && terminal) {
@@ -70,6 +81,7 @@ export function TerminalSearchBar({
   };
 
   const findPrevious = () => {
+    clearPendingSearch();
     if (!query || !searchAddon) return;
     const found = searchAddon.findPrevious(query, { incremental: false });
     if (found && terminal) {
@@ -80,16 +92,20 @@ export function TerminalSearchBar({
   const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newQuery = e.target.value;
     setQuery(newQuery);
+    clearPendingSearch();
     if (!searchAddon) return;
     if (!newQuery) {
       searchAddon.clearDecorations?.();
       setResultInfo(null);
       return;
     }
-    const found = searchAddon.findNext(newQuery, { incremental: true });
-    if (found && terminal) {
-      centerCurrentMatch(terminal);
-    }
+    searchTimerRef.current = window.setTimeout(() => {
+      searchTimerRef.current = null;
+      const found = searchAddon.findNext(newQuery, { incremental: true });
+      if (found && terminal) {
+        centerCurrentMatch(terminal);
+      }
+    }, 120);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -98,6 +114,13 @@ export function TerminalSearchBar({
       if (e.shiftKey) {
         findPrevious();
       } else {
+        if (searchTimerRef.current !== null && query && searchAddon) {
+          clearPendingSearch();
+          const found = searchAddon.findNext(query, { incremental: false });
+          if (found && terminal) {
+            centerCurrentMatch(terminal);
+          }
+        }
         // Accept match, close search bar, keep scroll position, return focus to terminal
         onClose();
         terminal?.focus();
@@ -105,6 +128,7 @@ export function TerminalSearchBar({
     } else if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
+      clearPendingSearch();
       onClose();
       terminal?.focus();
     } else if (e.key === 'ArrowUp') {
@@ -117,6 +141,7 @@ export function TerminalSearchBar({
   };
 
   const handleClose = () => {
+    clearPendingSearch();
     searchAddon?.clearDecorations?.();
     onClose();
     terminal?.focus();

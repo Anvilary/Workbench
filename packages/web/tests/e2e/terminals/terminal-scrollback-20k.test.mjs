@@ -319,12 +319,13 @@ test('TASK B: 42,000-line scrollback, search, Ctrl+Shift+A, Ctrl+A/C semantics, 
   const inAltBuffer = await page.evaluate(() => ({
     altActive: window.terminals[0].buffer.active.type === 'alternate',
     normalLength: window.terminals[0].buffer.normal.length,
+    rows: window.terminals[0].rows,
     altBaseY: window.terminals[0].buffer.active.baseY,
   }));
   assert.equal(inAltBuffer.altActive, true, 'Alternate buffer is active');
   assert.equal(inAltBuffer.normalLength, beforeAlt, 'Entering the alternate screen preserves the existing normal buffer');
   assert.equal(inAltBuffer.altBaseY, 0, 'Alternate buffer has 0 scrollback');
-  assert.ok(inAltBuffer.normalLength === 42000 + bufferStats.rows, 'Normal buffer retains the full configured history during TUI session');
+  assert.equal(inAltBuffer.normalLength, 42000 + inAltBuffer.rows, 'Normal buffer retains the full configured history during TUI session');
 
   // Exit alternate screen (\x1b[?1049l)
   await page.evaluate(async () => {

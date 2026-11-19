@@ -63,3 +63,35 @@ test('25,000 ordered lines preserve 20,000-line scrollback; delta recovery keeps
     assert.equal(term.buffer.active.viewportY, 500);
   } finally { lane.dispose(); term.dispose(); }
 });
+
+test('D-03: truncated reset replay after deep scrollback preserves existing scrollback history', async () => {
+  const term = new Terminal({ cols: 80, rows: 24, scrollback: 20000, allowProposedApi: true });
+  const lane = new TerminalOutput(term);
+  try {
+    let offset = 0;
+    for (let start = 0; start < 5000; start += 1000) {
+      const data = Array.from({ length: 1000 }, (_, i) => `HIST-${start + i}\r\n`).join('');
+      offset += Buffer.byteLength(data);
+      lane.output(data, offset);
+    }
+    await until(() => text(term).includes('HIST-4999'));
+    assert.ok(term.buffer.normal.baseY >= 4900, 'scrollback populated before reconnect');
+
+    lane.replay({
+      type: 'terminal.replay',
+      terminalId: 'a',
+      reset: true,
+      truncated: true,
+      data: 'RECONNECTED-AFTER-GAP\r\n',
+      endOffset: offset + 500_000,
+      cols: 80,
+      rows: 24,
+    });
+    await until(() => text(term).includes('RECONNECTED-AFTER-GAP'));
+    const full = text(term);
+    assert.ok(full.includes('HIST-0'), 'Earliest scrollback line preserved across >256 KiB reconnect');
+    assert.ok(full.includes('HIST-4999'), 'Pre-disconnect output preserved');
+    assert.ok(full.includes('RECONNECTED-AFTER-GAP'), 'Post-reconnect replay rendered');
+    assert.ok(term.buffer.normal.baseY >= 4900, 'Scrollback depth retained');
+  } finally { lane.dispose(); term.dispose(); }
+});

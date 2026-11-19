@@ -301,6 +301,30 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
   }
 
   const activeProjects = data.projects.filter((project) => project.status !== 'archived');
+  const activeWorkspaces = data.workspaces.filter(
+    (ws) => ws.status === 'active' && activeProjects.some((project) => project.id === ws.projectId),
+  );
+  const [mountedWorkspaceIds, setMountedWorkspaceIds] = useState<WorkspaceId[]>([]);
+
+  useEffect(() => {
+    const activeSet = new Set(activeWorkspaces.map((ws) => ws.id));
+    setMountedWorkspaceIds((prev) => {
+      const stillActive = prev.filter((id) => activeSet.has(id));
+      let next = stillActive;
+      if (selectedId && activeSet.has(selectedId)) {
+        next = [selectedId, ...stillActive.filter((id) => id !== selectedId)].slice(0, 8);
+      }
+      if (next.length === prev.length && next.every((id, idx) => id === prev[idx])) return prev;
+      return next;
+    });
+  }, [selectedId, data.workspaces, data.projects]);
+
+  const mountedWorkspaces = mountedWorkspaceIds
+    .map((id) => activeWorkspaces.find((ws) => ws.id === id))
+    .filter((ws): ws is AgencyWorkspace => Boolean(ws));
+  if (selected && activeWorkspaces.some((ws) => ws.id === selected.id) && !mountedWorkspaces.some((ws) => ws.id === selected.id)) {
+    mountedWorkspaces.unshift(selected);
+  }
 
   function openCreator(project?: ProjectId) {
     if (activeProjects.length === 0) { setCreatingProject(true); return; }
@@ -645,61 +669,76 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
             <h1>{t('agency.ui.agency')}</h1>
             <p>{t('agency.ui.loadingServerWorkspaceData')}</p>
           </div>
-        ) : showingDone ? (
-          <AgencyDoneView
-            workspaces={data.workspaces}
-            projects={data.projects}
-            sessions={data.sessions}
-            webTabs={data.webTabs}
-            editorTabs={data.editorTabs}
-            onRestore={(ws) => { void restore(ws); }}
-            onArchiveWorkspace={(ws) => { void archiveWorkspace(ws); }}
-            onDeleteWorkspace={deleteWorkspace}
-          />
-        ) : selected ? (
-          <AgencyWorkspaceView
-            key={selected.id}
-            workspace={selected}
-            browserProfileId={resolveEffectiveBrowserProfileId(selected, data.projects.find(project => project.id === selected.projectId))}
-            appSettings={appSettings}
-            connection={connection}
-            request={store.request}
-            sendImmediate={agencyTransport.sendImmediate}
-            online={online && synchronized}
-            profiles={data.profiles}
-            sessions={data.sessions}
-            webTabs={data.webTabs}
-            editorTabs={data.editorTabs}
-            onTabDisplayed={handleTabDisplayed}
-            draft={drafts[selected.id] ?? ''}
-            onDraft={(value) => updateDraft(selected.id, value)}
-            onDelivered={(value) => clearDelivered(selected.id, value)}
-            onDone={() => { void markDone(selected); }}
-            launchError={launchErrors[selected.id]}
-            placementWarning={data.layoutWarnings?.[selected.id] ?? null}
-            onClearPlacementWarning={() => store.clearLayoutWarning(selected.id)}
-            getTabActivity={notificationStore.getTabActivity}
-            getTabActivityVersion={(workspaceId, tabId) => notificationStore.activityStates.get(workspaceId + '::' + tabId)?.updatedAt ?? ''}
-            onAcknowledgeTab={notificationStore.acknowledgeTab}
-            savedLayout={data.layouts?.[selected.id]}
-            onSaveLayout={store.saveLayout}
-            onClearLaunchError={() => {
-              setLaunchErrors((prev) => {
-                const next = { ...prev };
-                delete next[selected.id];
-                return next;
-              });
-            }}
-          />
         ) : (
-          <div className="agency-welcome">
-            <img src="/brand/workbench-logo-256.png" className="agency-welcome-logo" alt="Workbench" width="96" height="96" />
-            <h1>{t('agency.ui.onePlaceForEveryDevelopmentLane')}</h1>
-            <p>{t('agency.ui.createAProjectAndAWorkspaceAttachAn')}</p>
-            <button type="button" className="agency-primary-button" onClick={() => openCreator()} disabled={!online}>
-              {activeProjects.length === 0 ? t('agency.ui.createFirstProject') : t('agency.ui.newWorkspace')}
-            </button>
-          </div>
+          <>
+            {showingDone ? (
+              <AgencyDoneView
+                workspaces={data.workspaces}
+                projects={data.projects}
+                sessions={data.sessions}
+                webTabs={data.webTabs}
+                editorTabs={data.editorTabs}
+                onRestore={(ws) => { void restore(ws); }}
+                onArchiveWorkspace={(ws) => { void archiveWorkspace(ws); }}
+                onDeleteWorkspace={deleteWorkspace}
+              />
+            ) : !selected ? (
+              <div className="agency-welcome">
+                <img src="/brand/workbench-logo-256.png" className="agency-welcome-logo" alt="Workbench" width="96" height="96" />
+                <h1>{t('agency.ui.onePlaceForEveryDevelopmentLane')}</h1>
+                <p>{t('agency.ui.createAProjectAndAWorkspaceAttachAn')}</p>
+                <button type="button" className="agency-primary-button" onClick={() => openCreator()} disabled={!online}>
+                  {activeProjects.length === 0 ? t('agency.ui.createFirstProject') : t('agency.ui.newWorkspace')}
+                </button>
+              </div>
+            ) : null}
+            {mountedWorkspaces.map((ws) => {
+              const isSelectedWorkspace = !showingDone && selected?.id === ws.id;
+              return (
+                <div
+                  key={ws.id}
+                  className="agency-workspace-slot"
+                  hidden={!isSelectedWorkspace}
+                  style={{ display: isSelectedWorkspace ? 'contents' : 'none' }}
+                >
+                  <AgencyWorkspaceView
+                    workspace={ws}
+                    activeWorkspace={isSelectedWorkspace}
+                    browserProfileId={resolveEffectiveBrowserProfileId(ws, data.projects.find(project => project.id === ws.projectId))}
+                    appSettings={appSettings}
+                    connection={connection}
+                    request={store.request}
+                    sendImmediate={agencyTransport.sendImmediate}
+                    online={online && synchronized}
+                    profiles={data.profiles}
+                    sessions={data.sessions}
+                    webTabs={data.webTabs}
+                    editorTabs={data.editorTabs}
+                    onTabDisplayed={handleTabDisplayed}
+                    draft={drafts[ws.id] ?? ''}
+                    onDraft={(value) => updateDraft(ws.id, value)}
+                    onDelivered={(value) => clearDelivered(ws.id, value)}
+                    onDone={() => { void markDone(ws); }}
+                    launchError={launchErrors[ws.id]}
+                    placementWarning={data.layoutWarnings?.[ws.id] ?? null}
+                    onClearPlacementWarning={() => store.clearLayoutWarning(ws.id)}
+                    getTabActivity={notificationStore.getTabActivity}
+                    getTabActivityVersion={(workspaceId, tabId) => notificationStore.activityStates.get(workspaceId + '::' + tabId)?.updatedAt ?? ''}
+                    onAcknowledgeTab={notificationStore.acknowledgeTab}
+                    savedLayout={data.layouts?.[ws.id]}
+                    onSaveLayout={store.saveLayout}
+                    onClearLaunchError={() => {
+                      setLaunchErrors((prev) => {
+                        const next = { ...prev };
+                        delete next[ws.id];
+                        return next;
+                      });
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </>
         )}
       </div>
       {creatingProject && <AgencyProjectCreator

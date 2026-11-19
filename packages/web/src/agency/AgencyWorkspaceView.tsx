@@ -55,6 +55,7 @@ interface Props {
   savedLayout?: WorkspacePaneLayout;
   onSaveLayout?: (workspaceId: WorkspaceId, layout: WorkspacePaneLayout) => Promise<unknown>;
   appSettings?: AppSettingsApi;
+  activeWorkspace?: boolean;
 }
 
 const EMPTY_EDITOR_TABS: readonly EditorTab[] = [];
@@ -82,6 +83,7 @@ export function AgencyWorkspaceView({
   savedLayout,
   onSaveLayout,
   appSettings,
+  activeWorkspace = true,
 }: Props): JSX.Element {
   const browserSettings = useBrowserSettings(appSettings);
   const { favicons, removeFavicon } = useBrowserFavicons();
@@ -205,9 +207,11 @@ export function AgencyWorkspaceView({
 
   const currentTabKey = openTabIds.join(',');
   const [prevTabKey, setPrevTabKey] = useState(currentTabKey);
+  let effectiveLayout = layout;
   if (currentTabKey !== prevTabKey) {
     setPrevTabKey(currentTabKey);
-    const reconciled = reconcileLayout(layout, workspace.id, openTabIds, defaultSelected);
+    const reconciled = reconcileLayout(effectiveLayout, workspace.id, openTabIds, defaultSelected);
+    effectiveLayout = reconciled;
     layoutRef.current = reconciled;
     setLayout(reconciled);
   }
@@ -216,15 +220,15 @@ export function AgencyWorkspaceView({
   if (serverSelectedId !== prevServerSelected) {
     setPrevServerSelected(serverSelectedId);
     if (serverSelectedId && !selecting.current && !flight.current) {
-      const panes = getPaneNodes(layout.tree);
+      const panes = getPaneNodes(effectiveLayout.tree);
       const ownerPane = panes.find((p) => p.tabIds.includes(serverSelectedId));
       if (ownerPane) {
-        const nextTree = updatePaneNode(layout.tree, ownerPane.id, (p) => ({
+        const nextTree = updatePaneNode(effectiveLayout.tree, ownerPane.id, (p) => ({
           ...p,
           selectedTabId: serverSelectedId,
         }));
         const nextLayout = {
-          ...layout,
+          ...effectiveLayout,
           tree: nextTree,
           focusedPaneId: ownerPane.id,
         };
@@ -432,8 +436,9 @@ export function AgencyWorkspaceView({
     : '';
 
   useEffect(() => {
+    if (!activeWorkspace) return;
     nativeLayoutCoordinator.setFocusedTabId(activeTabId ?? null);
-  }, [activeTabId]);
+  }, [activeTabId, activeWorkspace]);
 
   useEffect(() => {
     return () => {
@@ -443,7 +448,7 @@ export function AgencyWorkspaceView({
 
   usePaneInspection({
     workspaceId: workspace.id,
-    tab: tabs.find((tab) => tab.id === activeTabId),
+    tab: activeWorkspace ? tabs.find((tab) => tab.id === activeTabId) : undefined,
     serverSelectedId, online, displayed, activity, activityVersion, request,
     onDisplayed: onTabDisplayed,
     onAcknowledge: onAcknowledgeTab,
@@ -460,7 +465,7 @@ export function AgencyWorkspaceView({
     },
   }, selecting);
 
-  useBrowserZoomShortcuts({ layoutRef, tabs });
+  useBrowserZoomShortcuts({ layoutRef, tabs, enabled: activeWorkspace });
 
   const completeCreation = useCallback(
     (response: Awaited<ReturnType<Props['request']>>, targetPaneId: string) => {
@@ -526,10 +531,16 @@ export function AgencyWorkspaceView({
       maximizedPaneId: null,
       updatedAt: new Date().toISOString(),
     };
-    save(nextLayout, true);
+    const sanitized = reconcileLayout(nextLayout, workspace.id, openTabIdsRef.current, defaultSelectedRef.current);
+    layoutRef.current = sanitized;
+    setLayout(sanitized);
+    if (saveTimer.current !== null) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
     if (onSaveLayout) {
       try {
-        await onSaveLayout(workspace.id, nextLayout);
+        await onSaveLayout(workspace.id, sanitized);
       } catch (reason) {
         rollbackPane(newPaneId);
         setError(t('agency.splits.saveFailed', { error: String(reason) }));
@@ -866,6 +877,7 @@ export function AgencyWorkspaceView({
         <PersistentSessionPanes
           tabs={tabs}
           layout={layout}
+          activeWorkspace={activeWorkspace}
           paneHosts={paneHosts}
           hostVersion={hostVersion}
           profiles={profiles}
@@ -883,7 +895,7 @@ export function AgencyWorkspaceView({
       </div>
 
       </PaneMovement>
-      <BrowserContextMenu
+      {activeWorkspace && <BrowserContextMenu
         tabs={webTabs}
         onCloseTab={(tab) => {
           const match = tabs.find((item) => item.id === tab.id);
@@ -913,7 +925,7 @@ export function AgencyWorkspaceView({
             setError(reason instanceof Error ? reason.message : String(reason));
           });
         }}
-      />
+      />}
 
       <WorkspaceSessionDialogs
         closing={closing}
