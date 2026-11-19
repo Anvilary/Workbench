@@ -21,7 +21,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { calculateResourceBudget, MemoryPressureTier, readSystemMemory } from './resource-budget.mjs';
+
+const desktopPkgPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'package.json');
+let FALLBACK_ELECTRON_VERSION = 'unknown';
+try {
+  const pkg = JSON.parse(fs.readFileSync(desktopPkgPath, 'utf8'));
+  if (typeof pkg?.devDependencies?.electron === 'string') {
+    FALLBACK_ELECTRON_VERSION = pkg.devDependencies.electron;
+  }
+} catch {}
+const ELECTRON_VERSION = process.versions.electron || FALLBACK_ELECTRON_VERSION;
 
 const CLK_TCK = 100; // Standard Linux jiffies per second
 const MAX_HISTORY_POINTS = 30; // 30 points @ 2s = 60 seconds
@@ -1023,7 +1034,7 @@ export class ResourceCollector {
           desktopHealth: {
             status: electronMainPid ? 'healthy' : 'unreachable',
             pid: electronMainPid,
-            type: 'Electron 45.2.0 Main Process',
+            type: `Electron ${ELECTRON_VERSION} Main Process`,
           },
         },
         infrastructure: infraGroup,

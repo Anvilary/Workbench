@@ -24,7 +24,7 @@
  * puede empaquetar, y a las demas no se gana nada duplicandolas.
  */
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
@@ -46,7 +46,7 @@ const dependencies = Object.fromEntries(
 );
 
 console.log('1/4  Building the interface...');
-execFileSync('pnpm', ['build'], { cwd: repoRoot, stdio: 'inherit', shell: true });
+execFileSync('pnpm', ['build'], { cwd: repoRoot, stdio: 'inherit', shell: process.platform === 'win32' });
 
 console.log('2/4  Bundling the server...');
 rmSync(outDir, { recursive: true, force: true });
@@ -67,6 +67,7 @@ await build({
   banner: { js: '#!/usr/bin/env node' },
   legalComments: 'none',
 });
+chmodSync(path.join(outDir, 'dist', 'server.js'), 0o755);
 
 console.log('3/4  Copying the interface and the package files...');
 cpSync(path.join(repoRoot, 'packages', 'web', 'dist'), path.join(outDir, 'dist', 'web'), {
@@ -74,7 +75,9 @@ cpSync(path.join(repoRoot, 'packages', 'web', 'dist'), path.join(outDir, 'dist',
 });
 const supervisorSrc = path.join(repoRoot, 'packages', 'server', 'src', 'pty-host', 'maw-ptyd.mjs');
 if (existsSync(supervisorSrc)) {
-  cpSync(supervisorSrc, path.join(outDir, 'dist', 'maw-ptyd.mjs'));
+  const supervisorOut = path.join(outDir, 'dist', 'maw-ptyd.mjs');
+  cpSync(supervisorSrc, supervisorOut);
+  chmodSync(supervisorOut, 0o755);
   cpSync(
     path.join(repoRoot, 'packages', 'server', 'src', 'pty-host', 'terminal-state.mjs'),
     path.join(outDir, 'dist', 'terminal-state.mjs'),
