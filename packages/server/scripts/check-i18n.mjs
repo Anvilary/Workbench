@@ -14,7 +14,7 @@
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   LOCALES,
@@ -319,7 +319,7 @@ const { SERVER_TEXTS } = await import('../../shared/src/server-text.ts');
     return [];
   };
   for (const file of codeFiles.filter((name) => name.endsWith('.tsx'))) {
-    if (UNTRANSLATED_FILES.has(relative(WEB_SRC, file))) continue;
+    if (UNTRANSLATED_FILES.has(relative(WEB_SRC, file).split(sep).join('/'))) continue;
     const text = readFileSync(file, 'utf8');
     const source = typescript.createSourceFile(file, text, typescript.ScriptTarget.Latest, true, typescript.ScriptKind.TSX);
     const where = (node) => `${relative(WEB_SRC, file)}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}`;
