@@ -882,7 +882,9 @@ test('26. U-12: release collection keeps one spare and the running supervisor re
   assert.ok(left.includes(p.healthy!) && left.includes(p.previous!));
   assert.ok(left.includes('not-a-release'), 'never removes non-release entries');
   assert.ok(left.includes(f.initialId), 'running supervisor release retained after it is no longer pointed to');
-  assert.ok(!left.includes(ids[0]), 'oldest unreferenced release removed');
+  const [oldest] = ids;
+  assert.ok(oldest);
+  assert.ok(!left.includes(oldest), 'oldest unreferenced release removed');
   assert.equal(left.filter(n => n !== 'not-a-release').length, 4, left.join(','));
 }));
 
