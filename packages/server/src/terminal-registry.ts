@@ -94,10 +94,23 @@ export class RemotePtySession implements IPtySession {
     this.client.resize(this.id, cols, rows);
   }
 
+  async terminate(signal = 'SIGTERM'): Promise<boolean> {
+    try {
+      await this.client.kill(this.id, signal);
+      this.disposed = true;
+      return true;
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('[SESSION_NOT_FOUND]')) {
+        this.disposed = true;
+        return true;
+      }
+      return false;
+    }
+  }
+
   dispose(): void {
     if (this.disposed) return;
-    this.disposed = true;
-    void this.client.kill(this.id, 'SIGTERM').catch(() => {});
+    void this.terminate('SIGTERM');
   }
 }
 
@@ -199,6 +212,8 @@ interface TerminalEntry {
   launching: boolean;
   /** The supervisor transport is down; only an authenticated snapshot can settle this PTY. */
   supervisorUnconfirmed?: boolean;
+  /** Termination was requested while remote/unconfirmed; keep tracking until kill/exit is confirmed. */
+  pendingKill?: boolean;
   /** Internal Agency ownership, never restored as an upstream native tab. */
   agencyManaged: boolean;
   /** Explicit validated profile launch, retained only in memory. */
@@ -420,7 +435,11 @@ export class TerminalRegistry extends EventEmitter {
             endOffset: event.finalOffset,
           });
           this.emit('exit', event.id, event.exitCode, event.signal);
-          this.emit('changed');
+          if (target?.pendingKill && this.terminals.get(event.id) === target) {
+            this.removeEntry(event.id, target);
+          } else {
+            this.emit('changed');
+          }
         });
 
         const attachedClient = this.client;
@@ -494,17 +513,23 @@ export class TerminalRegistry extends EventEmitter {
                   entry.launchHook.exit();
                   this.emit('exit', tombstone.id, tombstone.exitCode, tombstone.signal);
                 }
+                if (entry.pendingKill && this.terminals.get(tombstone.id) === entry) {
+                  this.removeEntry(tombstone.id, entry);
+                }
               }
             }
-            for (const [id, entry] of this.terminals) {
+            for (const [id, entry] of [...this.terminals]) {
               if (!entry.supervisorUnconfirmed || liveIds.has(id)) continue;
               // A new supervisor may have no tombstone for a process it never owned.
               entry.supervisorUnconfirmed = false;
-              entry.descriptor = { ...entry.descriptor, launchedAt: null };
+              entry.descriptor = { ...entry.descriptor, alive: false, launchedAt: null };
               entry.stopWatchingActivity?.();
               entry.stopWatchingActivity = null;
               entry.launchHook.exit();
               this.emit('exit', id, null, null);
+              if (entry.pendingKill && this.terminals.get(id) === entry) {
+                this.removeEntry(id, entry);
+              }
             }
             this.emit('changed');
             return;
@@ -538,7 +563,8 @@ export class TerminalRegistry extends EventEmitter {
       if (pending.overflow) throw new Error('PTY adoption exceeded bounded recovery backlog');
       let entry = this.terminals.get(session.id);
       if (entry !== undefined) {
-        entry.session = new RemotePtySession(this.client!, session.id, session.pid, session.cwd);
+        const remoteSession = new RemotePtySession(this.client!, session.id, session.pid, session.cwd);
+        entry.session = remoteSession;
         const wasUnconfirmed = entry.supervisorUnconfirmed;
         entry.supervisorUnconfirmed = false;
         entry.descriptor = {
@@ -548,6 +574,15 @@ export class TerminalRegistry extends EventEmitter {
         };
         entry.buffer.seed(replay.data, replay.startOffset, replay.endOffset, replay.truncated, replay.screen);
         if (wasUnconfirmed) this.setActivity(session.id, 'unknown');
+        if (entry.pendingKill) {
+          void remoteSession.terminate('SIGTERM').then((ok) => {
+            if (!ok && this.terminals.get(session.id) === entry) {
+              entry.supervisorUnconfirmed = true;
+              this.emit('changed');
+              if (this.client) void this.recoverSupervisor(this.client);
+            }
+          });
+        }
         return;
       }
 
@@ -1468,24 +1503,116 @@ export class TerminalRegistry extends EventEmitter {
     this.order.splice(index, 0, terminalId);
   }
 
-  /** Cierra la pestana y termina el proceso. */
-  close(terminalId: TerminalId): boolean {
-    const entry = this.terminals.get(terminalId);
-    if (entry === undefined) return false;
-
+  private removeEntry(terminalId: TerminalId, entry: TerminalEntry): void {
     entry.listeners.clear();
     entry.launchHook.cancel();
     entry.stopWatchingActivity?.();
-    // Una pestana dormida no tiene nada que terminar: se saca y listo.
-    entry.session?.dispose();
+    entry.stopWatchingActivity = null;
     this.tombstones.delete(terminalId);
-    this.client?.reapTombstone(terminalId);
+    try { this.client?.reapTombstone(terminalId); } catch {}
     this.activity.delete(terminalId);
     entry.buffer.dispose();
     this.terminals.delete(terminalId);
     this.order = this.order.filter((id) => id !== terminalId);
     this.persist();
     this.emit('changed');
+  }
+
+  /**
+   * Request termination of a terminal with explicit confirmation for remote PTYs.
+   * Never deletes a remote/unconfirmed entry until kill or exit is confirmed so
+   * retries and supervisor reconnect can settle it cleanly.
+   */
+  async terminate(terminalId: TerminalId): Promise<'exited' | 'stopping' | 'unconfirmed'> {
+    const entry = this.terminals.get(terminalId);
+    if (entry === undefined) return 'exited';
+
+    if (entry.session === null) {
+      if (entry.supervisorUnconfirmed) {
+        entry.pendingKill = true;
+        if (this.client) {
+          void this.recoverSupervisor(this.client);
+        }
+        return 'unconfirmed';
+      }
+      this.removeEntry(terminalId, entry);
+      return 'exited';
+    }
+
+    if (entry.session instanceof RemotePtySession) {
+      const remoteSession = entry.session;
+      entry.pendingKill = true;
+      const confirmed = await remoteSession.terminate('SIGTERM');
+      if (!confirmed) {
+        const current = this.terminals.get(terminalId);
+        if (current === entry) {
+          current.supervisorUnconfirmed = true;
+          this.emit('changed');
+          if (this.client) {
+            void this.recoverSupervisor(this.client);
+          }
+        }
+        return 'unconfirmed';
+      }
+      const current = this.terminals.get(terminalId);
+      if (current === undefined) return 'exited';
+      if (!current.descriptor.alive && !current.supervisorUnconfirmed) {
+        this.removeEntry(terminalId, current);
+        return 'exited';
+      }
+      return 'stopping';
+    }
+
+    // Local node-pty session
+    entry.session.dispose();
+    this.removeEntry(terminalId, entry);
+    return 'stopping';
+  }
+
+  /** Cierra la pestana y termina el proceso. */
+  close(terminalId: TerminalId): boolean {
+    const entry = this.terminals.get(terminalId);
+    if (entry === undefined) return false;
+
+    // Never drop an unconfirmed remote PTY while a supervisor client exists:
+    // mark pendingKill so recovery or retry settles it once the supervisor responds.
+    if (entry.supervisorUnconfirmed && this.client !== null) {
+      entry.pendingKill = true;
+      entry.listeners.clear();
+      entry.launchHook.cancel();
+      void this.recoverSupervisor(this.client);
+      this.emit('changed');
+      return true;
+    }
+
+    // For a live supervisor-managed PTY, keep tracking until kill/exit is confirmed.
+    if (entry.session instanceof RemotePtySession) {
+      const remoteSession = entry.session;
+      entry.pendingKill = true;
+      entry.listeners.clear();
+      entry.launchHook.cancel();
+      entry.stopWatchingActivity?.();
+      entry.stopWatchingActivity = null;
+      void remoteSession.terminate('SIGTERM').then((ok) => {
+        const current = this.terminals.get(terminalId);
+        if (current !== entry) return;
+        if (!ok) {
+          current.supervisorUnconfirmed = true;
+          this.emit('changed');
+          if (this.client) void this.recoverSupervisor(this.client);
+          return;
+        }
+        if (!current.descriptor.alive && !current.supervisorUnconfirmed) {
+          this.removeEntry(terminalId, current);
+        }
+      });
+      this.emit('changed');
+      return true;
+    }
+
+    // Una pestana dormida o local no depende de RPC remoto para confirmar salida.
+    entry.session?.dispose();
+    this.removeEntry(terminalId, entry);
     return true;
   }
 

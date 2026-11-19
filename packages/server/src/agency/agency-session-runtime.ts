@@ -644,11 +644,37 @@ export class AgencySessionRuntime extends EventEmitter {
     checkId(sessionId);
     const session = this.sessions.get(sessionId);
     if (session === undefined) throw new AgencyRuntimeError('not-found', 'Session does not exist');
-    if (!ACTIVE.has(session.lifecycle) || session.lifecycle === 'stopping') return session;
-    const stopping = { ...session, stoppedByUser: true, lifecycle: 'stopping' as const, updatedAt: NOW() };
-    this.sessions.set(sessionId, stopping);
-    try { await this.publish(stopping); } catch (error) { this.sessions.set(sessionId, session); throw error; }
+    if (!ACTIVE.has(session.lifecycle)) return session;
+
+    let stopping = session;
+    if (session.lifecycle !== 'stopping') {
+      stopping = { ...session, stoppedByUser: true, lifecycle: 'stopping' as const, updatedAt: NOW() };
+      this.sessions.set(sessionId, stopping);
+      try { await this.publish(stopping); } catch (error) { this.sessions.set(sessionId, session); throw error; }
+    }
+
     if (stopping.terminalId === null) return stopping; // pending open resolves and stops itself
+
+    if (typeof this.registry.terminate === 'function') {
+      const outcome = await this.registry.terminate(stopping.terminalId);
+      if (outcome === 'exited') {
+        const exitCode = this.registry.get(stopping.terminalId)?.exitCode ?? null;
+        return this.finish(sessionId, exitCode, 'exited');
+      }
+      if (outcome === 'unconfirmed') {
+        throw new AgencyRuntimeError(
+          'session-unavailable',
+          'PTY termination could not be confirmed; retry or wait for supervisor recovery',
+        );
+      }
+      return this.sessions.get(sessionId) ?? stopping;
+    }
+
+    const terminal = this.registry.get(stopping.terminalId);
+    if (!terminal || (!terminal.alive && !this.registry.isSupervisorSessionUnconfirmed?.(stopping.terminalId))) {
+      this.registry.close(stopping.terminalId);
+      return this.finish(sessionId, terminal?.exitCode ?? null, 'exited');
+    }
     if (!this.registry.close(stopping.terminalId)) {
       return this.finish(sessionId, null, 'exited');
     }
