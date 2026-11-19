@@ -140,12 +140,20 @@ window.ready = async () => {
     const waitText = (i, marker) => until(async () => (await read(i)).text.includes(marker), marker);
 
     // Scrollback and scrollbar usability in normal screen, including focus elsewhere.
-    await command(0, "printf '\\033[2J\\033[H'; seq 1 25000; printf 'HISTORY_READY\\n'\r");
+    const activeScrollbackLimit = 42000;
+    const printedLines = 25000;
+    await command(0, `printf '\\033[2J\\033[H'; seq 1 ${printedLines}; printf 'HISTORY_READY\\n'\r`);
     await waitText(0, 'HISTORY_READY');
     await delay(150);
     let normal = await read(0);
     assert.equal(normal.type, 'normal');
-    assert.equal(normal.length, 5000 + normal.rows);
+    const minExpectedNormalLength = Math.min(activeScrollbackLimit + normal.rows, printedLines + 2);
+    assert.ok(
+      normal.length >= minExpectedNormalLength && normal.length <= activeScrollbackLimit + normal.rows,
+      `Expected retained normal buffer length in [${minExpectedNormalLength}, ${activeScrollbackLimit + normal.rows}], got ${normal.length}`,
+    );
+    assert.ok(normal.text.startsWith('1\n') || normal.text.includes('\n1\n'), 'First printed line must remain in 42k scrollback');
+    assert.ok(normal.text.includes(`\n${printedLines}\n`), 'Last printed line must remain in scrollback');
     assert.ok(normal.viewport.scrollHeight > normal.viewport.height);
     assert.ok(normal.viewport.width >= 8 && !normal.viewport.clipped);
     await page.evaluate(() => window.term(0).blur());
@@ -178,7 +186,7 @@ window.ready = async () => {
     await until(async()=>await page.evaluate(n=>window.messages.filter(m=>m.type==='terminal.replay').length>n,normalReplayCount),'normal-screen reconnect');
     const normalReconnected = await read(0);
     result.scenarios.normalReconnect = {length:normalReconnected.length, rows:normalReconnected.rows, viewport:normalReconnected.viewport};
-    if (!baseline) assert.equal(normalReconnected.length,5000+normalReconnected.rows);
+    if (!baseline) assert.equal(normalReconnected.length, normal.length);
 
     await page.screenshot({ path: path.join(evidence, baseline ? 'before-scrollbar.png' : 'after-scrollbar.png') });
 
