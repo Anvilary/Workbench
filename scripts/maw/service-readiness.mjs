@@ -38,6 +38,13 @@ function systemdEnv() {
   return env;
 }
 
+export function systemdMainPid(unit) {
+  return Number(execFileSync('systemctl', ['--user', 'show', unit, '--property=MainPID', '--value'], {
+    encoding: 'utf8',
+    env: systemdEnv(),
+  }).trim());
+}
+
 /** A launcher can start the current release; staging and promotion stay explicit. */
 export async function startCurrentService() {
   await promisify(execFile)('systemctl', ['--user', 'start', '--no-block', process.env.MAW_UNIT || 'maw.service'],
@@ -60,7 +67,7 @@ export async function readyService() {
   if (!info.isFile() || info.isSymbolicLink() || info.uid !== process.getuid() || (info.mode & 0o077)) throw new Error('Readiness permissions are unsafe');
   const state = JSON.parse(await readFile(file, 'utf8'));
   const unit = process.env.MAW_UNIT || 'maw.service';
-  const pid = Number(execFileSync('systemctl', ['--user', 'show', unit, '--property=MainPID', '--value'], { encoding: 'utf8', env: systemdEnv() }).trim());
+  const pid = systemdMainPid(unit);
   if (!Number.isInteger(pid) || pid <= 0 || state.pid !== pid) throw new Error('Service starting, stopped, or stale readiness');
   // Release identity: the activation helper names the release it expects. A server that publishes its
   // release ID must match it exactly; an older server without the field is checked through the working

@@ -6,8 +6,8 @@
  * dir, runtime directory and loopback port. Never touches maw.service, the real state dir or any live
  * process. The unit file, its runtime directory and the temp state are removed afterwards.
  *
- * Releases are minimal but real: the unit boots them exactly like production (node --import <release tsx
- * loader> <release>/packages/server/src/index.ts), and the healthy one serves an authenticated loopback
+ * Releases are minimal but real: the unit boots their bundled dist/index.mjs entry point
+ * and the healthy one serves an authenticated loopback
  * URL and publishes readiness with the repository's real publishReadiness/readReleaseIdentity.
  */
 import assert from 'node:assert/strict';
@@ -19,6 +19,7 @@ import path from 'node:path';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomBytes } from 'node:crypto';
+import { build } from 'esbuild';
 import { SCRIPTS_MAW_DIR, SERVER_SRC } from '../../helpers/paths.js';
 
 const exec = promisify(execFile);
@@ -62,7 +63,13 @@ async function makeRelease(releases: string, id: string, source: string): Promis
   await symlink(TSX!, path.join(dir, 'packages/server/node_modules/tsx'));
   await writeFile(path.join(dir, 'packages/server/src/maw-host.ts'), 'export {};\n');
   await writeFile(path.join(dir, 'packages/server/src/index.ts'), source);
-  await writeFile(path.join(dir, 'packages/server/dist/index.mjs'), 'export {};\n');
+  await build({
+    entryPoints: [path.join(dir, 'packages/server/src/index.ts')],
+    outfile: path.join(dir, 'packages/server/dist/index.mjs'),
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+  });
   await writeFile(path.join(dir, 'packages/server/dist/maw-ptyd.mjs'), '#!/usr/bin/env node\n');
   await writeFile(path.join(dir, '.maw-release-meta.json'), JSON.stringify({ releaseId: id, commit: id.split('-')[1] }) + '\n');
   return dir;

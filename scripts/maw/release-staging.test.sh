@@ -465,6 +465,7 @@ cat > "$td/mock-control.mjs" <<EOF
 import fs from 'node:fs';
 const cmd = process.argv[2];
 if (cmd === 'check-data' || cmd === 'ptyd-empty') process.exit(0);
+if (cmd === 'ptyd-release') { console.log('$releases_dir/$rid_old'); process.exit(0); }
 if (cmd === 'backend-mode') { console.log('in-process'); process.exit(0); }
 if (cmd === 'status') {
   const running = fs.existsSync('$td/backend-running') ? fs.readFileSync('$td/backend-running', 'utf8').trim() : '';

@@ -1,20 +1,25 @@
 import { spawn } from 'node:child_process';
-import { execFileSync } from 'node:child_process';
-import { readFileSync, lstatSync } from 'node:fs';
-import { existsSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readlinkSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { readyService } from './service-readiness.mjs';
+import { readyService, systemdMainPid } from './service-readiness.mjs';
+
+function unitPid(unit) {
+  const pid = systemdMainPid(unit);
+  if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error(`${unit} has no active MainPID`);
+  return pid;
+}
+
+function supervisorUnit() {
+  return process.env.MAW_PTYD_UNIT || 'maw-ptyd.service';
+}
 
 function supervisorConfig() {
   let socketPath = process.env.MAW_PTYD_SOCKET;
   let authPath = process.env.MAW_PTYD_AUTH_FILE;
   if (!socketPath || !authPath) {
-    const unit = process.env.MAW_PTYD_UNIT || 'maw-ptyd.service';
-    const pid = Number(execFileSync('systemctl', ['--user', 'show', unit, '--property=MainPID', '--value'], { encoding: 'utf8' }).trim());
-    if (!Number.isInteger(pid) || pid <= 0) throw new Error('PTY supervisor has no active MainPID');
-    const environ = readFileSync(`/proc/${pid}/environ`).toString().split('\0');
+    const environ = unitEnvironment(supervisorUnit());
     for (const value of environ) {
       if (value.startsWith('MAW_PTYD_SOCKET=')) socketPath ||= value.slice('MAW_PTYD_SOCKET='.length);
       if (value.startsWith('MAW_PTYD_AUTH_FILE=')) authPath ||= value.slice('MAW_PTYD_AUTH_FILE='.length);
@@ -28,9 +33,7 @@ function supervisorConfig() {
 }
 
 function unitEnvironment(unit) {
-  const pid = Number(execFileSync('systemctl', ['--user', 'show', unit, '--property=MainPID', '--value'], { encoding: 'utf8' }).trim());
-  if (!Number.isInteger(pid) || pid <= 0) throw new Error(`${unit} has no active MainPID`);
-  return readFileSync(`/proc/${pid}/environ`).toString().split('\0');
+  return readFileSync(`/proc/${unitPid(unit)}/environ`, 'utf8').split('\0');
 }
 
 function isPersistentBackend() {
@@ -143,6 +146,16 @@ try {
     console.log('PTY supervisor has no live sessions.');
     process.exit(0);
   }
+  if (process.argv[2] === 'ptyd-release') {
+    // systemd starts maw-ptyd with its release as WorkingDirectory. Its cwd
+    // remains there when the current symlink later changes.
+    const unit = supervisorUnit();
+    const pid = unitPid(unit);
+    const release = readlinkSync(`/proc/${pid}/cwd`);
+    if (unitPid(unit) !== pid) throw new Error('PTY supervisor changed while identifying its release');
+    console.log(release);
+    process.exit(0);
+  }
   if (process.argv[2] === 'check-data') {
     if (!process.argv[3]) throw new Error('Target release directory is required');
     checkDataCompatibility(process.argv[3]);
@@ -167,7 +180,7 @@ try {
     child.on('exit', code => { process.exitCode = code === 0 ? 0 : 1; });
   } else throw new Error('Unknown control command');
 } catch (err) {
-  if (process.argv[2] === 'check-data' || process.argv[2] === 'ptyd-empty' || process.argv[2] === 'backend-mode') console.error(err instanceof Error ? err.message : String(err));
+  if (['check-data', 'ptyd-empty', 'ptyd-release', 'backend-mode'].includes(process.argv[2])) console.error(err instanceof Error ? err.message : String(err));
   else console.error('MAW is not ready. Use maw status and maw logs to inspect startup.');
   process.exitCode = 1;
 }
