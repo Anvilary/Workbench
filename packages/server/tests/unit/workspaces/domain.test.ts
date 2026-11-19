@@ -384,13 +384,11 @@ test('workspace and project archive: distinct state, broadcasts, unarchive/resto
   assert.ok(types.includes('agency.project.changed:unarchived'));
 });
 
-test('project and workspace ordering: persistent, serialized and cross-project isolated', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'agency-order-test-'));
-  const targetDir1 = await mkdtemp(path.join(tmpdir(), 'agency-w1-'));
-  const targetDir2 = await mkdtemp(path.join(tmpdir(), 'agency-w2-'));
-  const targetDir3 = await mkdtemp(path.join(tmpdir(), 'agency-w3-'));
-  const store = new AgencyWorkspaceStore(path.join(dir, 'agency-state.json'));
-  await store.load();
+test('project and workspace ordering: persistent, serialized and cross-project isolated', async (t) => {
+  const { dir, store } = await fixture(t);
+  const targetDir1 = await realpath(await mkdtemp(path.join(dir, 'workspace-1-')));
+  const targetDir2 = await realpath(await mkdtemp(path.join(dir, 'workspace-2-')));
+  const targetDir3 = await realpath(await mkdtemp(path.join(dir, 'workspace-3-')));
 
   const p1 = await store.createProject('Project 1');
   const p2 = await store.createProject('Project 2');
@@ -406,7 +404,7 @@ test('project and workspace ordering: persistent, serialized and cross-project i
   assert.deepEqual(store.listProjects().map((p) => p.id), [p3.id, p1.id, p2.id]);
 
   // Verify persistence across reload
-  const reloadedStore = new AgencyWorkspaceStore(path.join(dir, 'agency-state.json'));
+  const reloadedStore = new AgencyWorkspaceStore(path.join(dir, 'state.json'));
   await reloadedStore.load();
   assert.deepEqual(reloadedStore.listProjects().map((p) => p.id), [p3.id, p1.id, p2.id]);
 
@@ -416,7 +414,7 @@ test('project and workspace ordering: persistent, serialized and cross-project i
   assert.deepEqual(store.listWorkspaces(p1.id).map((w) => w.id), [w3.id, w1.id, w2.id]);
 
   // Verify persistence across reload
-  const reloadedStore2 = new AgencyWorkspaceStore(path.join(dir, 'agency-state.json'));
+  const reloadedStore2 = new AgencyWorkspaceStore(path.join(dir, 'state.json'));
   await reloadedStore2.load();
   assert.deepEqual(reloadedStore2.listWorkspaces(p1.id).map((w) => w.id), [w3.id, w1.id, w2.id]);
 
