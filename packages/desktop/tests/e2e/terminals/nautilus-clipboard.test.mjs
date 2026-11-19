@@ -133,7 +133,8 @@ test('authoritative workspace copy-file rejects unauthorized paths and pastes in
         for (const candidate of wids) {
           try {
             const info = execSync(`xwininfo -id ${candidate}`, { env: process.env }).toString('utf8');
-            if (info.includes('Map State: IsViewable')) {
+            const title = execFileSync('xdotool', ['getwindowname', candidate], { encoding: 'utf8' });
+            if (info.includes('Map State: IsViewable') && title.includes(path.basename(destDir))) {
               wid = candidate;
               break;
             }
@@ -146,7 +147,7 @@ test('authoritative workspace copy-file rejects unauthorized paths and pastes in
         // xdotool returns non-zero when no window matches yet
       }
     }
-    assert.ok(wid, 'Expected visible Nautilus window to be found');
+    assert.ok(wid, 'Expected visible Nautilus window for the destination folder');
 
     const copyRes = await page.evaluate(
       ({ ws, rel }) => window.mawChatGpt.command({ type: 'copy-file', cwd: ws, relative: rel }),
@@ -160,6 +161,14 @@ test('authoritative workspace copy-file rejects unauthorized paths and pastes in
     assert.equal(offered, `copy\n${pathToFileURL(path.join(workspaceDir, sampleFileName)).href}`);
 
     execFileSync('xdotool', ['windowfocus', '--sync', wid], { timeout: 3000 });
+    const geometry = execFileSync('xdotool', ['getwindowgeometry', '--shell', wid], { encoding: 'utf8' });
+    const width = Number(geometry.match(/^WIDTH=(\d+)$/m)?.[1]);
+    const height = Number(geometry.match(/^HEIGHT=(\d+)$/m)?.[1]);
+    assert.ok(width > 0 && height > 0, 'Nautilus window has measurable bounds');
+    const x = String(Math.floor(width * 0.75));
+    const y = String(Math.floor(height * 0.65));
+    // Give the directory view focus instead of relying on GTK's initial widget focus.
+    execFileSync('xdotool', ['mousemove', '--window', wid, x, y, 'click', '1'], { timeout: 3000 });
     assert.equal(execFileSync('xdotool', ['getwindowfocus'], { encoding: 'utf8' }).trim(), wid);
     // XTEST delivers the accelerator to the focused Nautilus window.
     execFileSync('xdotool', ['key', '--clearmodifiers', 'ctrl+v'], { timeout: 3000 });
