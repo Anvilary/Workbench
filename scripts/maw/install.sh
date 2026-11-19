@@ -5,7 +5,7 @@
 # isolated staging as `maw update` (maw-update.sh --initial) and points `current` at it.
 #
 # Two systemd units are installed:
-#   maw.service      - main backend (TypeScript, tsx)
+#   maw.service      - main backend (bundled ESM dist/index.mjs)
 #   maw-ptyd.service - persistent PTY supervisor (independent cgroup, independent RuntimeDirectory)
 #
 # The supervisor's RuntimeDirectory (maw-ptyd by default) is separate from maw.service's RuntimeDirectory
@@ -106,7 +106,17 @@ if [ "$mode" = --service ]; then
   fi
   if [ ! -L "$state_dir/current" ] && [ ! -e "$state_dir/current" ]; then
     printf '%s\n' 'Building the initial isolated release (same pipeline as maw update)...'
-    MAW_STATE_DIR="$state_dir" MAW_NODE_BIN="$node_bin" MAW_BIN_DIR="$bin_dir" \
+    _initial_headless="${MAW_HEADLESS:-}"
+    if [ -z "$_initial_headless" ]; then
+      if [ -z "${desktop_target_version:-}" ] || [ ! -x "/opt/maw-electron/$desktop_target_version/electron" ]; then
+        _initial_headless=1
+        printf 'headless\n' > "$state_dir/headless"
+      fi
+    elif [ "$_initial_headless" = 1 ]; then
+      printf 'headless\n' > "$state_dir/headless"
+    fi
+    MAW_STATE_DIR="$state_dir" MAW_LIB_DIR="$lib_dir" MAW_NODE_BIN="$node_bin" MAW_BIN_DIR="$bin_dir" \
+      MAW_HEADLESS="$_initial_headless" \
       /bin/sh "$lib_dir/maw-update.sh" --initial --source "$repo_dir"
   fi
   # Render and install maw.service (backend)
@@ -130,6 +140,7 @@ if [ "$mode" = --service ]; then
 fi
 
 if [ "$mode" = --desktop ]; then
+  rm -f "$state_dir/headless"
   "$node_bin" "$script_dir/build-desktop-deb.mjs"
   desktop_version="$desktop_target_version"
   desktop_arch=$(dpkg --print-architecture)
@@ -164,6 +175,7 @@ if [ "$mode" = --desktop ] || [ "$mode" = --desktop-assets ] || [ "$mode" = --in
 fi
 
 if [ "$mode" = --integrate-desktop ]; then
+  rm -f "$state_dir/headless"
   # Enable login/cold-boot startup without restarting either live service.
   maw_sctl enable "$unit_name" "$ptyd_unit_name"
   printf '%s\n' 'Workbench user services enabled for login. Existing services were not restarted.'

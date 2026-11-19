@@ -249,6 +249,12 @@ run_step corepack pnpm install --frozen-lockfile || handle_candidate_failure dep
 printf '%s\n' 'Running TypeScript typecheck...'
 run_step corepack pnpm typecheck || handle_candidate_failure typecheck 'typecheck failed'
 printf '%s\n' 'Building production bundles...'
+if [ -z "${MAW_HEADLESS:-}" ] && [ -f "$state_dir/headless" ]; then
+  export MAW_HEADLESS=1
+fi
+if [ -z "${MAW_LIB_DIR:-}" ] && [ -f "$self_dir/activation-helper-api" ]; then
+  export MAW_LIB_DIR="$self_dir"
+fi
 run_step corepack pnpm build || handle_candidate_failure build 'build failed'
 # Verify server bundle artifacts exist
 if [ ! -f "$candidate_dir/packages/server/dist/index.mjs" ] ||

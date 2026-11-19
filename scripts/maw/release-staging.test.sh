@@ -490,6 +490,34 @@ else
   fail "expected rc=2, 2 ptyd restarts (promote + rollback), ptyd_after=$rid_old; got rc=$rc ptyd_restarts=$ptyd_restarts ptyd_after=$ptyd_after"
 fi
 
+# ---- Test 23: maw.service boots bundled dist/index.mjs with MAW_PERSISTENT_PTY=1 ----
+begin "23. maw.service boots dist/index.mjs --prod and sets MAW_PERSISTENT_PTY=1"
+rendered_maw_unit=$(sh "$script_dir/maw-render-unit.sh")
+if printf '%s\n' "$rendered_maw_unit" | grep -Eq '^ExecStart=.*/packages/server/dist/index\.mjs --prod$' &&
+   ! printf '%s\n' "$rendered_maw_unit" | grep -Fq 'tsx/dist/loader.mjs' &&
+   printf '%s\n' "$rendered_maw_unit" | grep -Fq 'Environment=MAW_PERSISTENT_PTY=1'; then
+  ok
+else
+  fail "maw.service must boot dist/index.mjs --prod without tsx and set MAW_PERSISTENT_PTY=1"
+fi
+
+# ---- Test 24: check-desktop-build.mjs supports headless mode while enforcing desktop gate by default ----
+begin "24. check-desktop-build.mjs honors MAW_HEADLESS=1 and still blocks default missing desktop runtime"
+td=$(make_test_dir)
+mkdir -p "$td/packages/desktop" "$td/lib"
+printf '{}\n' > "$td/.maw-candidate"
+printf '{"devDependencies":{"electron":"0.0.0"}}\n' > "$td/packages/desktop/package.json"
+printf '2\n' > "$td/lib/activation-helper-api"
+if (cd "$td" && MAW_LIB_DIR="$td/lib" MAW_HEADLESS=1 "$node_bin" "$script_dir/check-desktop-build.mjs" >/dev/null 2>&1); then
+  if (cd "$td" && MAW_LIB_DIR="$td/lib" MAW_HEADLESS="" "$node_bin" "$script_dir/check-desktop-build.mjs" >/dev/null 2>&1); then
+    fail "check-desktop-build.mjs should still fail when MAW_HEADLESS is unset and desktop runtime is missing"
+  else
+    ok
+  fi
+else
+  fail "check-desktop-build.mjs should succeed when MAW_HEADLESS=1 and activation helper is bootstrapped"
+fi
+
 # ---- Summary ----
 printf '\n%s tests passed, %s failed.\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
