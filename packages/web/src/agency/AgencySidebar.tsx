@@ -124,6 +124,7 @@ export function AgencySidebar({
   const suppressClickUntil = useRef<number>(0);
   const navRef = useRef<HTMLElement | null>(null);
   const sideSectionRef = useRef<HTMLDivElement | null>(null);
+  const dragGhostRef = useRef<HTMLDivElement | null>(null);
 
   const [inlineRenamingProjectId, setInlineRenamingProjectId] = useState<ProjectId | null>(null);
   const [inlineRenameProjectValue, setInlineRenameProjectValue] = useState<string>('');
@@ -237,14 +238,15 @@ export function AgencySidebar({
     if (!scope) return;
     const bounds = scope.getBoundingClientRect();
     const rows = Array.from(scope.querySelectorAll<HTMLElement>(
-      params.kind === 'project' ? '[data-sidebar-project-id] > .agency-project-row' : '[data-sidebar-workspace-id]',
+      params.kind === 'project' ? '[data-sidebar-project-id]' : '[data-sidebar-workspace-id]',
     ), row => {
       const rect = row.getBoundingClientRect();
       return { top: rect.top, height: rect.height };
     });
     const scrollStart = scroller.scrollTop;
-    const rowRect = e.currentTarget.getBoundingClientRect();
-    const projectSection = params.kind === 'project' ? e.currentTarget.closest('.agency-project') : null;
+    const captureTarget = e.currentTarget;
+    const rowRect = captureTarget.getBoundingClientRect();
+    const projectSection = params.kind === 'project' ? captureTarget.closest('.agency-project') : null;
     const displacement = projectSection
       ? projectSection.getBoundingClientRect().height + (parseFloat(getComputedStyle(projectSection).marginBottom) || 0)
       : rowRect.height;
@@ -253,10 +255,16 @@ export function AgencySidebar({
     const startY = e.clientY;
     const offsetY = startY - rowRect.top;
     let started = false;
+    let hasCapture = false;
+    let shieldEl: HTMLDivElement | null = null;
     let autoScrollRaf: number | null = null;
+    let ghostRaf: number | null = null;
+    let pendingGhostTop = rowRect.top;
     let autoScrollDelta = 0;
     let lastX = startX;
     let lastY = startY;
+    let lastCommittedInsertIndex: number | null | undefined = undefined;
+    let lastCommittedValid: boolean | undefined = undefined;
 
     const stopAutoScroll = () => {
       if (autoScrollRaf !== null) {
@@ -266,13 +274,44 @@ export function AgencySidebar({
       autoScrollDelta = 0;
     };
 
+    const stopGhostRaf = () => {
+      if (ghostRaf !== null) {
+        window.cancelAnimationFrame(ghostRaf);
+        ghostRaf = null;
+      }
+    };
+
+    const scheduleGhostPosition = (ghostTop: number) => {
+      pendingGhostTop = ghostTop;
+      if (ghostRaf !== null) return;
+      ghostRaf = window.requestAnimationFrame(() => {
+        ghostRaf = null;
+        if (dragGhostRef.current) {
+          dragGhostRef.current.style.top = `${pendingGhostTop}px`;
+        }
+      });
+    };
+
+    const applyDragState = (next: SidebarActiveDrag, force = false) => {
+      scheduleGhostPosition(next.ghostTop);
+      if (
+        force ||
+        next.insertIndex !== lastCommittedInsertIndex ||
+        next.valid !== lastCommittedValid
+      ) {
+        lastCommittedInsertIndex = next.insertIndex;
+        lastCommittedValid = next.valid;
+        setActiveDrag(next);
+      }
+    };
+
     const tickAutoScroll = () => {
       autoScrollRaf = null;
       if (autoScrollDelta === 0) return;
       const previous = scroller.scrollTop;
       scroller.scrollTop += autoScrollDelta;
       if (previous === scroller.scrollTop) return;
-      setActiveDrag(computeState(lastX, lastY));
+      applyDragState(computeState(lastX, lastY));
       autoScrollRaf = window.requestAnimationFrame(tickAutoScroll);
     };
 
@@ -303,8 +342,29 @@ export function AgencySidebar({
       };
     };
 
+    const onLostPointerCapture = (capEvent: PointerEvent) => {
+      if (capEvent.pointerId === pointerId && hasCapture) {
+        hasCapture = false;
+        onCancel();
+      }
+    };
+
     const cleanup = () => {
       stopAutoScroll();
+      stopGhostRaf();
+      captureTarget.removeEventListener('lostpointercapture', onLostPointerCapture);
+      if (hasCapture) {
+        hasCapture = false;
+        try {
+          if (captureTarget.hasPointerCapture?.(pointerId)) {
+            captureTarget.releasePointerCapture(pointerId);
+          }
+        } catch {
+          // Ignore if target was detached before release.
+        }
+      }
+      shieldEl?.remove();
+      shieldEl = null;
       document.body.classList.remove('agency-sidebar-dragging');
       window.removeEventListener('pointermove', onPointerMove, true);
       window.removeEventListener('pointerup', onPointerUp, true);
@@ -317,11 +377,29 @@ export function AgencySidebar({
 
     const onPointerMove = (moveEvent: PointerEvent) => {
       if (moveEvent.pointerId !== pointerId) return;
+      let justStarted = false;
       if (!started) {
         if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 5) return;
         started = true;
+        justStarted = true;
         suppressClickUntil.current = Date.now() + 300;
         document.body.classList.add('agency-sidebar-dragging');
+        if (!document.querySelector('.agency-sidebar-drag-shield')) {
+          const shield = document.createElement('div');
+          shield.className = 'agency-sidebar-drag-shield';
+          shield.setAttribute('aria-hidden', 'true');
+          document.body.appendChild(shield);
+          shieldEl = shield;
+        }
+        try {
+          if (typeof captureTarget.setPointerCapture === 'function') {
+            captureTarget.setPointerCapture(pointerId);
+            hasCapture = true;
+            captureTarget.addEventListener('lostpointercapture', onLostPointerCapture);
+          }
+        } catch {
+          // Synthetic pointer events in tests may not support pointer capture.
+        }
       }
 
       lastX = moveEvent.clientX;
@@ -337,7 +415,7 @@ export function AgencySidebar({
         autoScrollDelta = 0;
       }
 
-      setActiveDrag(computeState(lastX, lastY));
+      applyDragState(computeState(lastX, lastY), justStarted);
     };
 
     const onCancel = () => {
@@ -670,6 +748,7 @@ export function AgencySidebar({
 
       {activeDrag && typeof document !== 'undefined' && document.body && createPortal(
         <div
+          ref={dragGhostRef}
           className={`agency-sidebar-drag-ghost ${activeDrag.valid ? '' : 'is-invalid'}`.trim()}
           aria-hidden="true"
           style={{

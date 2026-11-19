@@ -111,11 +111,29 @@ export function splitPane(
   const targetPane = findPaneNode(tree, targetPaneId);
   if (!targetPane) return null;
 
+  const allPanes = getPaneNodes(tree);
+  const sourcePanes = tabIdToMove ? allPanes.filter((p) => p.tabIds.includes(tabIdToMove)) : [];
+
+  let workingTree = tree;
   let remainingTabs = [...targetPane.tabIds];
   let newPaneTabs: string[] = [];
 
-  if (tabIdToMove && remainingTabs.includes(tabIdToMove)) {
-    remainingTabs = remainingTabs.filter((id) => id !== tabIdToMove);
+  if (tabIdToMove && sourcePanes.length > 0) {
+    for (const sourcePane of sourcePanes) {
+      if (sourcePane.id === targetPaneId) {
+        remainingTabs = remainingTabs.filter((id) => id !== tabIdToMove);
+      } else {
+        workingTree = updatePaneNode(workingTree, sourcePane.id, (p) => {
+          const nextTabs = p.tabIds.filter((id) => id !== tabIdToMove);
+          const nextSelected = p.selectedTabId === tabIdToMove ? (nextTabs[0] ?? null) : p.selectedTabId;
+          return {
+            ...p,
+            tabIds: nextTabs,
+            selectedTabId: nextSelected,
+          };
+        });
+      }
+    }
     newPaneTabs = [tabIdToMove];
   } else if (!emptyNewPane && remainingTabs.length > 1) {
     const half = Math.ceil(remainingTabs.length / 2);
@@ -157,7 +175,7 @@ export function splitPane(
     };
   }
 
-  return replace(tree);
+  return replace(workingTree);
 }
 
 export function closePane(

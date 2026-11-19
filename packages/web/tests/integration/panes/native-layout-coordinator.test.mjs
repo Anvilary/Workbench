@@ -364,3 +364,96 @@ test('layout coordinator optimizes ready events and deduplicates style computati
   assert.equal(visibleLayouts.length, 2, 'Restored visibility publishes active views');
   assert.equal(visibleLayouts[1].views.length, 1);
 });
+
+test('capture failure and sidebar drag fail safe by hiding native views', { timeout: 60000 }, async (t) => {
+  const executablePath = browserExecutable();
+  if (!executablePath) {
+    t.skip('Chromium is not installed; set PLAYWRIGHT_CHROMIUM_EXECUTABLE');
+    return;
+  }
+  const bundle = await build({
+    stdin: { contents: fixture, loader: 'ts', resolveDir: WEB_ROOT },
+    bundle: true,
+    write: false,
+    format: 'esm',
+    logLevel: 'silent',
+  });
+  const server = createServer((req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+    if (url.pathname === '/bundle.js') {
+      res.setHeader('Content-Type', 'text/javascript');
+      res.end(bundle.outputFiles[0].text);
+      return;
+    }
+    res.setHeader('Content-Type', 'text/html');
+    res.end(`<!doctype html><html><body style="margin:0">
+      <div id="view" style="position:absolute;left:0;top:0;width:400px;height:300px"></div>
+      <div id="overlay" role="dialog" hidden style="position:absolute;left:20px;top:20px;width:160px;height:120px"></div>
+      <script type="module" src="/bundle.js"></script>
+    </body></html>`);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const browser = await chromium.launch({ headless: true, executablePath });
+  t.after(async () => {
+    await browser.close();
+    await new Promise((resolve) => server.close(resolve));
+  });
+  const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+  await page.goto('http://127.0.0.1:' + server.address().port);
+  await page.waitForFunction(() => typeof window.overlay === 'function');
+
+  const frames = (count) => page.evaluate(async (n) => {
+    for (let i = 0; i < n; i += 1) await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  }, count);
+
+  await frames(3);
+
+  // 1. Capture returning { ok: false } must hide the native view so the dialog is not occluded
+  await page.evaluate(() => {
+    window.layoutHistory = [];
+    window.commands = [];
+    window.overlay(true);
+  });
+  await page.waitForFunction(() => window.pending.length === 1);
+  await page.evaluate(() => {
+    const resolve = window.pending.shift();
+    resolve({ ok: false });
+  });
+  await frames(4);
+  const afterFailLayout = await page.evaluate(() => window.layoutHistory.at(-1));
+  assert.deepEqual(afterFailLayout.views, [], 'Failed capture must hide native view instead of occluding dialog');
+
+  // Re-measuring while overlay remains open must not infinitely retry failed capture
+  const capturesBefore = await page.evaluate(() => window.commands.filter((c) => c === 'capture').length);
+  await page.evaluate(() => window.nativeLayoutCoordinator.measure());
+  await frames(3);
+  const capturesAfter = await page.evaluate(() => window.commands.filter((c) => c === 'capture').length);
+  assert.equal(capturesAfter, capturesBefore, 'Failed capture must not loop retries while overlay stays open');
+
+  // Closing overlay restores the native view
+  await page.evaluate(() => window.overlay(false));
+  await frames(4);
+  const restoredLayout = await page.evaluate(() => window.layoutHistory.at(-1));
+  assert.equal(restoredLayout.views.length, 1, 'Closing overlay must restore native view');
+
+  // 2. Sidebar drag class triggers native view suppression and restores on cleanup
+  await page.evaluate(() => {
+    window.layoutHistory = [];
+    document.body.classList.add('agency-sidebar-dragging');
+  });
+  await page.waitForFunction(() => window.pending.length === 1);
+  await page.evaluate(() => {
+    const resolve = window.pending.shift();
+    resolve({ ok: false });
+  });
+  await frames(4);
+  const duringSidebarDrag = await page.evaluate(() => window.layoutHistory.at(-1));
+  assert.deepEqual(duringSidebarDrag.views, [], 'Sidebar dragging must suppress native views');
+
+  await page.evaluate(() => {
+    document.body.classList.remove('agency-sidebar-dragging');
+  });
+  await frames(4);
+  const afterSidebarDrag = await page.evaluate(() => window.layoutHistory.at(-1));
+  assert.equal(afterSidebarDrag.views.length, 1, 'Ending sidebar drag must restore native views');
+});

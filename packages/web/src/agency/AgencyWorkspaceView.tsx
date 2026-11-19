@@ -286,12 +286,13 @@ export function AgencyWorkspaceView({
 
   const handleSplit = useCallback(
     (targetPaneId: string, direction: SplitDirection, tabIdToMove?: string) => {
+      const current = layoutRef.current;
       const newPaneId = `pane-${crypto.randomUUID().slice(0, 8)}`;
-      const nextTree = splitPane(layout.tree, targetPaneId, direction, newPaneId, tabIdToMove, true);
+      const nextTree = splitPane(current.tree, targetPaneId, direction, newPaneId, tabIdToMove, true);
       if (nextTree) {
         save(
           {
-            ...layout,
+            ...current,
             tree: nextTree,
             focusedPaneId: newPaneId,
             maximizedPaneId: null,
@@ -301,7 +302,7 @@ export function AgencyWorkspaceView({
         );
       }
     },
-    [layout, save],
+    [save],
   );
 
   async function handleClosePane(paneId: string, closeAllTabs = false) {

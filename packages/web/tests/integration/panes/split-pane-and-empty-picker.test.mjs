@@ -263,3 +263,28 @@ test('10. Split resize clamps ratios properly', () => {
   const normal = updateSplitRatio(tree, 's1', 0.65);
   assert.equal(normal.ratio, 0.65);
 });
+
+test('11. Cross-pane drag-to-split moves tab out of source pane into new pane', () => {
+  const tree = {
+    type: 'split',
+    id: 's1',
+    direction: 'row',
+    ratio: 0.5,
+    first: { type: 'pane', id: 'p1', tabIds: ['t1', 't2'], selectedTabId: 't1' },
+    second: { type: 'pane', id: 'p2', tabIds: ['t3'], selectedTabId: 't3' },
+  };
+
+  const next = splitPane(tree, 'p2', 'column', 'p3', 't1', true);
+  assert.ok(next);
+  assert.equal(countLeaves(next), 3);
+
+  const p1 = findPaneNode(next, 'p1');
+  const p2 = findPaneNode(next, 'p2');
+  const p3 = findPaneNode(next, 'p3');
+  assert.deepEqual(p1.tabIds, ['t2'], 'source pane must no longer contain moved tab');
+  assert.equal(p1.selectedTabId, 't2', 'source pane selection falls back to remaining tab');
+  assert.deepEqual(p2.tabIds, ['t3'], 'target split pane preserves its tabs');
+  assert.deepEqual(p3.tabIds, ['t1'], 'new split pane receives dragged tab');
+  assert.equal(p3.selectedTabId, 't1');
+  assert.equal(layoutOwnershipError(makeLayout(next), ws, ['t1', 't2', 't3']), null);
+});
