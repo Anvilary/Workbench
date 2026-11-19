@@ -191,6 +191,12 @@ jobs:
           if-no-files-found: error
       - name: Install the fixture runtime on the disposable runner
         run: sudo apt-get install -y ./dist-desktop/*.deb
+      - name: Install the pinned Codex CLI for the unauthenticated TUI soak
+        run: |
+          npm install --prefix "$RUNNER_TEMP/workbench-codex" --no-save --ignore-scripts @openai/codex@0.169.0
+          codex="$RUNNER_TEMP/workbench-codex/node_modules/.bin/codex"
+          "$codex" --version
+          echo "MAW_CODEX_EXECUTABLE=$codex" >> "$GITHUB_ENV"
       - name: Sandboxed Electron integration, security, lifecycle and staging
         working-directory: packages/desktop
         run: |
