@@ -9,6 +9,7 @@ export const DEFAULT_SOCKET_NAME = 'ptyd.sock';
 export const DEFAULT_AUTH_FILE_NAME = 'ptyd.auth';
 export const MAX_PAYLOAD_SIZE = 1024 * 1024; // 1 MiB max por mensaje NDJSON
 export const MAX_SESSIONS = 42;
+export const MAX_TOMBSTONES = 64;
 export const TOMBSTONE_TTL_MS = 10 * 60 * 1000; // 10 minutos
 export const CLIENT_WRITE_BUFFER_MAX_BYTES = 16 * 1024 * 1024; // 16 MiB max backpressure
 
@@ -167,6 +168,14 @@ export interface PtySpawnedResponse {
   readonly pid: number;
 }
 
+export interface PtyReplayChunkResponse {
+  readonly op: 'replay_chunk';
+  readonly reqId: string;
+  readonly id: string;
+  readonly dataB64?: string;
+  readonly screenDataB64?: string;
+}
+
 export interface PtyReplayDataResponse {
   readonly screen?: { data: string; cols: number; rows: number };
   readonly op: 'replay_data';
@@ -178,6 +187,7 @@ export interface PtyReplayDataResponse {
   readonly sinceOffset?: number;
   readonly dataB64: string;
   readonly truncated: boolean;
+  readonly chunked?: boolean;
 }
 
 export interface PtyKilledResponse {
@@ -228,6 +238,7 @@ export interface PtyExitEvent {
 export type PtyServerMessage =
   | PtySnapshotResponse
   | PtySpawnedResponse
+  | PtyReplayChunkResponse
   | PtyReplayDataResponse
   | PtyKilledResponse
   | PtyAckResponse

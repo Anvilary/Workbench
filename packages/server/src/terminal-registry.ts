@@ -1518,9 +1518,28 @@ export class TerminalRegistry extends EventEmitter {
   }
 
   async renderingReplay(terminalId: TerminalId, listener: OutputListener, sinceOffset?: number, signal?: AbortSignal): Promise<(AttachResult & { cols?: number; rows?: number }) | null> {
-    const attached = this.attach(terminalId, listener, sinceOffset);
     const entry = this.terminals.get(terminalId);
-    if (!attached || !entry || !attached.reset) return attached;
+    if (entry === undefined) return null;
+
+    const start = entry.buffer.startOffset;
+    const end = entry.buffer.endOffset;
+    if (sinceOffset === undefined || sinceOffset < start || sinceOffset > end) {
+      entry.listeners.add(listener);
+      const checkpoint = await entry.buffer.checkpoint(signal);
+      return {
+        replay: checkpoint.data,
+        truncated: entry.buffer.isTruncated(),
+        reset: true,
+        startOffset: entry.buffer.startOffset,
+        endOffset: checkpoint.endOffset,
+        sinceOffset,
+        cols: checkpoint.cols,
+        rows: checkpoint.rows,
+      };
+    }
+
+    const attached = this.attach(terminalId, listener, sinceOffset);
+    if (!attached || !attached.reset) return attached;
     const checkpoint = await entry.buffer.checkpoint(signal);
     return { ...attached, replay: checkpoint.data, endOffset: checkpoint.endOffset,
       cols: checkpoint.cols, rows: checkpoint.rows };

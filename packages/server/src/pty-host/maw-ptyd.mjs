@@ -27,11 +27,15 @@ import { TerminalState } from './terminal-state.mjs';
 const PROTOCOL_VERSION = 1;
 const DEFAULT_LIMIT_BYTES = 256 * 1024; // 256 KiB ring buffer por terminal
 const DEFAULT_MAX_SESSIONS = 42;
+const DEFAULT_MAX_TOMBSTONES = 64;
 const DEFAULT_TOMBSTONE_TTL_MS = 10 * 60 * 1000; // 10 minutos
 const DEFAULT_HANDSHAKE_TIMEOUT_MS = 3000;
 const MAX_PAYLOAD_SIZE = 1024 * 1024; // 1 MiB max line length
+const MAX_REPLAY_FRAME_BYTES = 512 * 1024; // 512 KiB max single replay_data frame before chunking
+const REPLAY_CHUNK_RAW_BYTES = 256 * 1024; // 256 KiB raw bytes (~342 KiB base64) per replay_chunk
 const MAX_CLIENT_WRITE_BUFFER = 16 * 1024 * 1024; // 16 MiB max backpressure antes de expulsar
 const GRACEFUL_KILL_TIMEOUT_MS = 3000;
+const MAX_TERMINAL_DIMENSION = 10000;
 
 // -------------------------------------------------------------
 // Buffer circular acotado de salida con offsets monotonicos
@@ -55,12 +59,13 @@ function suffixWithinBytes(value, budget) {
   return value.slice(start);
 }
 
-class SupervisorOutputBuffer {
+export class SupervisorOutputBuffer {
   constructor(limitBytes = DEFAULT_LIMIT_BYTES) {
     this.limitBytes = limitBytes;
     this.state = new TerminalState();
     this.chunks = [];
     this.chunkSizes = [];
+    this.head = 0;
     this.sizeBytes = 0;
     this.totalBytesPushed = 0;
     this.truncated = false;
@@ -92,33 +97,45 @@ class SupervisorOutputBuffer {
     this.sizeBytes += chunkByteLen;
     this.totalBytesPushed += chunkByteLen;
 
-    while (this.sizeBytes > this.limitBytes && this.chunks.length > 0) {
-      const oldest = this.chunks[0];
-      const size = this.chunkSizes[0];
+    while (this.sizeBytes > this.limitBytes && this.head < this.chunks.length) {
+      const oldest = this.chunks[this.head];
+      const size = this.chunkSizes[this.head];
       const remainingWithoutOldest = this.sizeBytes - size;
       if (remainingWithoutOldest >= this.limitBytes) {
-        this.chunks.shift();
-        this.chunkSizes.shift();
+        this.chunks[this.head] = undefined;
+        this.head++;
         this.sizeBytes -= size;
       } else {
         const suffix = suffixWithinBytes(oldest, this.limitBytes - remainingWithoutOldest);
         if (suffix.length === 0) {
-          this.chunks.shift();
-          this.chunkSizes.shift();
+          this.chunks[this.head] = undefined;
+          this.head++;
           this.sizeBytes -= size;
         } else {
           const suffixSize = Buffer.byteLength(suffix, 'utf8');
-          this.chunks[0] = suffix;
-          this.chunkSizes[0] = suffixSize;
+          this.chunks[this.head] = suffix;
+          this.chunkSizes[this.head] = suffixSize;
           this.sizeBytes -= (size - suffixSize);
         }
       }
       this.truncated = true;
     }
+
+    if (this.head > 0) {
+      if (this.head === this.chunks.length) {
+        this.chunks.length = 0;
+        this.chunkSizes.length = 0;
+        this.head = 0;
+      } else if (this.head >= 64 && this.head * 2 >= this.chunks.length) {
+        this.chunks = this.chunks.slice(this.head);
+        this.chunkSizes = this.chunkSizes.slice(this.head);
+        this.head = 0;
+      }
+    }
   }
 
   read() {
-    const raw = this.chunks.join('');
+    const raw = this.head === 0 ? this.chunks.join('') : this.chunks.slice(this.head).join('');
     if (this.truncated && this.inAlternateScreen && !raw.includes('\x1b[?1049h') && !raw.includes('\x1b[?47h')) {
       return '\x1b[?1049h' + raw;
     }
@@ -156,7 +173,7 @@ class SupervisorOutputBuffer {
     let skipped = 0;
     const resultParts = [];
 
-    for (let i = 0; i < this.chunks.length; i++) {
+    for (let i = this.head; i < this.chunks.length; i++) {
       const chunk = this.chunks[i];
       const chunkBytes = this.chunkSizes[i];
       const chunkEnd = skipped + chunkBytes;
@@ -196,6 +213,7 @@ class SupervisorOutputBuffer {
     this.state = new TerminalState();
     this.chunks = [];
     this.chunkSizes = [];
+    this.head = 0;
     this.sizeBytes = 0;
     this.totalBytesPushed = 0;
     this.truncated = false;
@@ -226,6 +244,7 @@ export class PtySupervisor {
       `${this.socketPath}.auth`;
 
     this.maxSessions = options.maxSessions || DEFAULT_MAX_SESSIONS;
+    this.maxTombstones = options.maxTombstones || DEFAULT_MAX_TOMBSTONES;
     this.tombstoneTtlMs = options.tombstoneTtlMs || DEFAULT_TOMBSTONE_TTL_MS;
     this.handshakeTimeoutMs = options.handshakeTimeoutMs || DEFAULT_HANDSHAKE_TIMEOUT_MS;
     this.killChildrenOnExit = Boolean(options.killChildrenOnExit);
@@ -494,7 +513,7 @@ export class PtySupervisor {
     });
   }
 
-  _send(socket, msg) {
+  _sendRaw(socket, payload) {
     if (socket.destroyed) return;
 
     if (socket.writableLength > MAX_CLIENT_WRITE_BUFFER) {
@@ -502,7 +521,11 @@ export class PtySupervisor {
       return;
     }
 
-    socket.write(JSON.stringify(msg) + '\n');
+    socket.write(payload);
+  }
+
+  _send(socket, msg) {
+    this._sendRaw(socket, JSON.stringify(msg) + '\n');
   }
 
   _broadcast(msg) {
@@ -537,7 +560,11 @@ export class PtySupervisor {
         this._handleResize(socket, msg);
         break;
       case 'replay':
-        this._handleReplay(socket, msg);
+        this._handleReplay(socket, msg).catch((err) => {
+          if (!this.closing && !socket.destroyed) {
+            this._sendError(socket, msg.reqId, 'INTERNAL_ERROR', `Replay failed: ${err?.message ?? String(err)}`);
+          }
+        });
         break;
       case 'kill':
         this._handleKill(socket, msg);
@@ -600,6 +627,17 @@ export class PtySupervisor {
 
     if (!cmd || typeof cmd !== 'string') {
       return this._sendError(socket, reqId, 'INVALID_PARAMS', 'Missing or invalid executable cmd');
+    }
+
+    if (
+      !Number.isSafeInteger(cols) ||
+      !Number.isSafeInteger(rows) ||
+      cols <= 0 ||
+      rows <= 0 ||
+      cols > MAX_TERMINAL_DIMENSION ||
+      rows > MAX_TERMINAL_DIMENSION
+    ) {
+      return this._sendError(socket, reqId, 'INVALID_PARAMS', 'Invalid cols or rows dimension');
     }
 
     // Si habia un tombstone previo con este id, limpiarlo
@@ -672,7 +710,20 @@ export class PtySupervisor {
         finalOffset: buffer.endOffset,
       };
 
-      // Registrar tombstone con retencion de 10 minutos
+      // Registrar tombstone con retencion acotada (TTL + limite maximo de entradas)
+      this._sweepTombstones();
+      const previousTombstone = this.tombstones.get(id);
+      if (previousTombstone) {
+        previousTombstone.buffer.state.dispose();
+        this.tombstones.delete(id);
+      }
+      while (this.tombstones.size >= this.maxTombstones) {
+        const oldestKey = this.tombstones.keys().next().value;
+        if (oldestKey === undefined) break;
+        const oldest = this.tombstones.get(oldestKey);
+        oldest?.buffer.state.dispose();
+        this.tombstones.delete(oldestKey);
+      }
       this.tombstones.set(id, {
         id,
         sessionId,
@@ -733,7 +784,14 @@ export class PtySupervisor {
       return this._sendError(socket, reqId, 'SESSION_NOT_FOUND', `Session ${id} not found or already exited`);
     }
 
-    if (typeof cols !== 'number' || typeof rows !== 'number' || cols <= 0 || rows <= 0) {
+    if (
+      !Number.isSafeInteger(cols) ||
+      !Number.isSafeInteger(rows) ||
+      cols <= 0 ||
+      rows <= 0 ||
+      cols > MAX_TERMINAL_DIMENSION ||
+      rows > MAX_TERMINAL_DIMENSION
+    ) {
       return this._sendError(socket, reqId, 'INVALID_PARAMS', 'Invalid cols or rows dimension');
     }
 
@@ -765,9 +823,65 @@ export class PtySupervisor {
     // separate generated VT bytes and must never enter the raw delta ring.
     let screen;
     if (slice.reset) {
-      try { screen = await buffer.state.snapshot(); }
-      catch { return; } // Host shutdown disposed this session.
+      try {
+        screen = await buffer.state.snapshot();
+      } catch {
+        if (this.closing || socket.destroyed) return;
+        if (!this.sessions.has(id) && !this.tombstones.has(id)) {
+          this._sendError(socket, reqId, 'SESSION_NOT_FOUND', `Session or tombstone ${id} was disposed during replay`);
+          return;
+        }
+        // Snapshot unavailable; fall back to raw ring replay instead of hanging reqId.
+        screen = undefined;
+      }
     }
+
+    if (this.closing || socket.destroyed) return;
+
+    const dataBuf = Buffer.from(slice.data, 'utf8');
+    const singleMsg = {
+      op: 'replay_data',
+      reqId,
+      id,
+      reset: slice.reset,
+      startOffset: slice.startOffset,
+      endOffset: slice.endOffset,
+      sinceOffset: slice.sinceOffset,
+      dataB64: dataBuf.toString('base64'),
+      truncated: slice.truncated,
+      ...(screen ? { screen } : {}),
+    };
+    const serialized = JSON.stringify(singleMsg);
+    if (Buffer.byteLength(serialized, 'utf8') <= MAX_REPLAY_FRAME_BYTES) {
+      this._sendRaw(socket, serialized + '\n');
+      return;
+    }
+
+    // Payload exceeds safe single-frame limit: stream bounded replay_chunk frames
+    // followed by the terminating replay_data frame so no NDJSON line exceeds MAX_PAYLOAD_SIZE.
+    for (let offset = 0; offset < dataBuf.length; offset += REPLAY_CHUNK_RAW_BYTES) {
+      const part = dataBuf.subarray(offset, offset + REPLAY_CHUNK_RAW_BYTES);
+      this._send(socket, {
+        op: 'replay_chunk',
+        reqId,
+        id,
+        dataB64: part.toString('base64'),
+      });
+    }
+
+    if (screen && screen.data.length > 0) {
+      const screenBuf = Buffer.from(screen.data, 'utf8');
+      for (let offset = 0; offset < screenBuf.length; offset += REPLAY_CHUNK_RAW_BYTES) {
+        const part = screenBuf.subarray(offset, offset + REPLAY_CHUNK_RAW_BYTES);
+        this._send(socket, {
+          op: 'replay_chunk',
+          reqId,
+          id,
+          screenDataB64: part.toString('base64'),
+        });
+      }
+    }
+
     this._send(socket, {
       op: 'replay_data',
       reqId,
@@ -776,9 +890,10 @@ export class PtySupervisor {
       startOffset: slice.startOffset,
       endOffset: slice.endOffset,
       sinceOffset: slice.sinceOffset,
-      dataB64: Buffer.from(slice.data, 'utf8').toString('base64'),
+      dataB64: '',
       truncated: slice.truncated,
-      ...(screen ? { screen } : {}),
+      chunked: true,
+      ...(screen ? { screen: { data: '', cols: screen.cols, rows: screen.rows } } : {}),
     });
   }
 
@@ -803,13 +918,17 @@ export class PtySupervisor {
       process.kill(pid, signal);
     } catch {}
 
-    // Escalamiento elegante a SIGKILL si no termina tras 3s
+    // Escalamiento elegante a SIGKILL si no termina tras 3s (sin filtrar timers en kills repetidos)
     if (process.platform !== 'win32') {
+      if (session.killTimer) {
+        clearTimeout(session.killTimer);
+        session.killTimer = null;
+      }
       session.killTimer = setTimeout(() => {
-        try {
-          process.kill(-pid, 'SIGKILL');
-          process.kill(pid, 'SIGKILL');
-        } catch {}
+        session.killTimer = null;
+        if (this.sessions.get(id) !== session) return;
+        try { process.kill(-pid, 'SIGKILL'); } catch {}
+        try { process.kill(pid, 'SIGKILL'); } catch {}
       }, GRACEFUL_KILL_TIMEOUT_MS);
       session.killTimer.unref();
     }
@@ -872,7 +991,13 @@ export class PtySupervisor {
   close({ killAll = false } = {}) {
     if (this.closing) return;
     this.closing = true;
-    for (const session of this.sessions.values()) session.buffer.state.dispose();
+    for (const session of this.sessions.values()) {
+      if (session.killTimer) {
+        clearTimeout(session.killTimer);
+        session.killTimer = null;
+      }
+      session.buffer.state.dispose();
+    }
     for (const tombstone of this.tombstones.values()) tombstone.buffer.state.dispose();
 
     if (this.sweeperTimer) {

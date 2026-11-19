@@ -11,6 +11,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import {
   PTY_PROTOCOL_VERSION,
   MAX_PAYLOAD_SIZE,
@@ -82,6 +83,7 @@ export class PtyHostClient {
   private lineBuffer = '';
   private decoder = new StringDecoder('utf8');
   private pendingRequests = new Map<string, { resolve: (val: any) => void; reject: (err: Error) => void; timer: NodeJS.Timeout }>();
+  private replayChunks = new Map<string, { dataParts: Buffer[]; screenParts: Buffer[] }>();
   private dataListeners = new Set<PtyDataCallback>();
   private exitListeners = new Set<PtyExitCallback>();
   private disconnectListeners = new Set<PtyDisconnectCallback>();
@@ -190,7 +192,7 @@ export class PtyHostClient {
   private async _spawnDaemon(scriptPath?: string): Promise<void> {
     const targetScript = scriptPath ||
       process.env.MAW_PTYD_SCRIPT ||
-      path.join(path.dirname(new URL(import.meta.url).pathname), 'maw-ptyd.mjs');
+      path.join(path.dirname(fileURLToPath(import.meta.url)), 'maw-ptyd.mjs');
 
     const child = spawn(process.execPath, [
       targetScript,
@@ -244,7 +246,12 @@ export class PtyHostClient {
           resolve(res as PtySnapshotResponse);
         }, reject, 3000);
 
-        this._rawSend(helloReq);
+        try {
+          this._rawSend(helloReq);
+        } catch (err) {
+          this._clearPending(reqId);
+          reject(err as Error);
+        }
       });
 
       sock.on('data', (chunk) => this._onData(chunk));
@@ -253,11 +260,7 @@ export class PtyHostClient {
         clearTimeout(connectTimer);
         if (this.socket !== sock) return;
         this.socket = null;
-        for (const [, req] of this.pendingRequests) {
-          clearTimeout(req.timer);
-          req.reject(new Error('Connection closed by supervisor'));
-        }
-        this.pendingRequests.clear();
+        this._rejectAllPending(new Error('Connection closed by supervisor'));
 
         for (const listener of this.disconnectListeners) {
           try { listener(); } catch {}
@@ -273,16 +276,40 @@ export class PtyHostClient {
     });
   }
 
+  private _clearPending(reqId: string): void {
+    const pending = this.pendingRequests.get(reqId);
+    if (pending) {
+      clearTimeout(pending.timer);
+      this.pendingRequests.delete(reqId);
+    }
+    this.replayChunks.delete(reqId);
+  }
+
+  private _rejectAllPending(error: Error): void {
+    for (const [, req] of this.pendingRequests) {
+      clearTimeout(req.timer);
+      req.reject(error);
+    }
+    this.pendingRequests.clear();
+    this.replayChunks.clear();
+  }
+
+  private _handleOversizeFrame(): void {
+    this.lineBuffer = '';
+    this._rejectAllPending(new Error('Received message exceeding maximum protocol line size'));
+    this.socket?.destroy();
+  }
+
   private _onData(chunk: Buffer): void {
     this.lineBuffer += this.decoder.write(chunk);
 
-    if (this.lineBuffer.length > MAX_PAYLOAD_SIZE && !this.lineBuffer.includes('\n')) {
-      this.socket?.destroy();
-      throw new Error('Received message exceeding maximum protocol line size');
-    }
-
     let newlineIndex: number;
     while ((newlineIndex = this.lineBuffer.indexOf('\n')) !== -1) {
+      if (newlineIndex > MAX_PAYLOAD_SIZE) {
+        this._handleOversizeFrame();
+        return;
+      }
+
       const line = this.lineBuffer.slice(0, newlineIndex).trim();
       this.lineBuffer = this.lineBuffer.slice(newlineIndex + 1);
 
@@ -297,16 +324,53 @@ export class PtyHostClient {
 
       this._handleServerMessage(msg);
     }
+
+    if (this.lineBuffer.length > MAX_PAYLOAD_SIZE) {
+      this._handleOversizeFrame();
+      return;
+    }
   }
 
   private _handleServerMessage(msg: PtyServerMessage): void {
     if ('reqId' in msg && msg.reqId && this.pendingRequests.has(msg.reqId)) {
+      if (msg.op === 'replay_chunk') {
+        let acc = this.replayChunks.get(msg.reqId);
+        if (!acc) {
+          acc = { dataParts: [], screenParts: [] };
+          this.replayChunks.set(msg.reqId, acc);
+        }
+        if (typeof msg.dataB64 === 'string' && msg.dataB64.length > 0) {
+          acc.dataParts.push(Buffer.from(msg.dataB64, 'base64'));
+        }
+        if (typeof msg.screenDataB64 === 'string' && msg.screenDataB64.length > 0) {
+          acc.screenParts.push(Buffer.from(msg.screenDataB64, 'base64'));
+        }
+        return;
+      }
+
       const pending = this.pendingRequests.get(msg.reqId)!;
       this.pendingRequests.delete(msg.reqId);
       clearTimeout(pending.timer);
+      const chunks = this.replayChunks.get(msg.reqId);
+      this.replayChunks.delete(msg.reqId);
 
       if (msg.op === 'error') {
         pending.reject(new Error(`[${msg.code}] ${msg.message}`));
+      } else if (msg.op === 'replay_data' && chunks) {
+        const dataParts = msg.dataB64
+          ? [...chunks.dataParts, Buffer.from(msg.dataB64, 'base64')]
+          : chunks.dataParts;
+        const assembledDataB64 = dataParts.length > 0 ? Buffer.concat(dataParts).toString('base64') : '';
+        let assembledScreen = msg.screen;
+        if (msg.screen && chunks.screenParts.length > 0) {
+          const screenData = Buffer.concat(chunks.screenParts).toString('utf8') + msg.screen.data;
+          assembledScreen = { ...msg.screen, data: screenData };
+        }
+        pending.resolve({
+          ...msg,
+          dataB64: assembledDataB64,
+          ...(assembledScreen ? { screen: assembledScreen } : {}),
+        });
       } else {
         pending.resolve(msg);
       }
@@ -334,6 +398,7 @@ export class PtyHostClient {
     const timer = setTimeout(() => {
       if (this.pendingRequests.has(reqId)) {
         this.pendingRequests.delete(reqId);
+        this.replayChunks.delete(reqId);
         reject(new Error(`Request ${reqId} timed out after ${timeoutMs}ms`));
       }
     }, timeoutMs);
@@ -357,7 +422,7 @@ export class PtyHostClient {
       try {
         this._rawSend(withReqId);
       } catch (err) {
-        this.pendingRequests.delete(reqId);
+        this._clearPending(reqId);
         reject(err as Error);
       }
     });
