@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import express from 'express';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
@@ -40,8 +40,8 @@ import { SplitAgencySessionStore } from '../agency/agency-session-store.js';
 import { WorkspaceMutex } from '../agency/workspace-lock.js';
 import { AgentsUsageCollector } from './collector.js';
 
-const CHROMIUM_BIN = '/home/user/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome';
-const ARTIFACT_DIR = process.env.MAW_ARTIFACT_DIR || '/home/user/.local/share/agy-5-profile/home/.gemini/antigravity-cli/brain/f0773a47-1405-4e18-b2a1-20552c87aeee';
+const CHROMIUM_BIN = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined;
+const ARTIFACT_DIR = process.env.MAW_ARTIFACT_DIR || path.join(tmpdir(), 'maw-agents-usage-artifacts');
 const TOKEN = 'maw-runtime-validation-token-2026';
 
 async function run() {
@@ -147,8 +147,9 @@ async function run() {
 
   // Launch Playwright
   console.log('Launching headless Chromium...');
+  await mkdir(ARTIFACT_DIR, { recursive: true });
   const browser = await chromium.launch({
-    executablePath: CHROMIUM_BIN,
+    ...(CHROMIUM_BIN ? { executablePath: CHROMIUM_BIN } : {}),
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });

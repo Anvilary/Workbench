@@ -85,7 +85,7 @@ if [ -n "\${PNPM_SLEEP:-}" ] && [ "\${SLEEP_STEP:-build}" = "$step" ]; then slee
 case "$step" in
   install) [ -f FAIL_INSTALL ] && exit 1; mkdir -p packages/server/node_modules/tsx/dist packages/server/node_modules/node-pty && echo '' > packages/server/node_modules/tsx/dist/loader.mjs ;;
   typecheck) [ -f FAIL_TYPECHECK ] && { echo "simulated typecheck failure" >&2; exit 1; } ;;
-  build) [ -f FAIL_BUILD ] && { echo "simulated build failure" >&2; exit 1; }; mkdir -p packages/web/dist packages/server/dist && echo "<html>built</html>" > packages/web/dist/index.html && echo "export {};" > packages/server/dist/index.mjs && echo "#!/usr/bin/env node" > packages/server/dist/maw-ptyd.mjs ;;
+  build) [ -f FAIL_BUILD ] && { echo "simulated build failure" >&2; exit 1; }; mkdir -p packages/web/dist packages/server/dist && echo "<html>built</html>" > packages/web/dist/index.html && echo "export {};" > packages/server/dist/index.mjs && echo "#!/usr/bin/env node" > packages/server/dist/maw-ptyd.mjs && echo "export {};" > packages/server/dist/terminal-state.mjs ;;
   test) [ -f FAIL_TEST ] && exit 1 ;;
 esac
 exit 0
@@ -176,6 +176,7 @@ async function makeRelease(dir: string, id: string, commit: string): Promise<voi
   await writeFile(path.join(dir, 'packages/server/node_modules/tsx/dist/loader.mjs'), '');
   await writeFile(path.join(dir, 'packages/server/dist/index.mjs'), 'export {};\n');
   await writeFile(path.join(dir, 'packages/server/dist/maw-ptyd.mjs'), '#!/usr/bin/env node\n');
+  await writeFile(path.join(dir, 'packages/server/dist/terminal-state.mjs'), 'export {};\n');
   await writeFile(path.join(dir, '.maw-release-meta.json'), JSON.stringify({ releaseId: id, commit }) + '\n');
 }
 
@@ -750,6 +751,19 @@ test('23. unexpected parent exit does not abort or corrupt staging', () => withF
   await pushUpstream(f, 'v2');
   await exec('/bin/sh', ['-c', `"${MAW_UPDATE_BIN}" --no-restart >/dev/null 2>&1 & exit 0`], { env: f.env });
   for (let i = 0; i < 200 && !(await pointers(f)).staged; i++) await new Promise(r => setTimeout(r, 50));
+  // Wait for the detached updater to finish writing its log and release update.lock before fixture cleanup.
+  const lockPath = path.join(f.stateDir, 'update.lock');
+  for (let i = 0; i < 200; i++) {
+    const hasStagedLog = (await logEvents(f)).some(e => e.event === 'stage-success');
+    let unlocked = true;
+    try {
+      await exec('flock', ['-n', lockPath, 'true'], { env: f.env });
+    } catch {
+      unlocked = false;
+    }
+    if (hasStagedLog && unlocked) break;
+    await new Promise(r => setTimeout(r, 50));
+  }
   assert.ok((await pointers(f)).staged);
   assert.deepEqual(await registeredWorktrees(f), [f.sourceDir]);
 }));
@@ -877,7 +891,8 @@ test('31. U-3/U-13a: install --service builds an isolated first release and rend
   assert.equal((await lstat(path.join(state, 'healthy')).catch(() => null)), null, 'not healthy before first verified start');
   const unit = await readFile(path.join(f.root, 'units/maw-fixture.service'), 'utf8');
   assert.ok(!unit.includes('@'), 'all placeholders rendered');
-  assert.ok(unit.includes(`ExecStart=${process.execPath} --import ${state}/current/packages/server/node_modules/tsx/dist/loader.mjs`));
+  assert.ok(unit.includes(`ExecStart=${process.execPath} ${state}/current/packages/server/dist/index.mjs --prod`));
+  assert.ok(unit.includes('Environment=MAW_PERSISTENT_PTY=1'));
   assert.ok(unit.includes(`WorkingDirectory=${state}/current`));
   assert.match(unit, /ExecStartPre=\/usr\/bin\/test -f .*\.maw-release-meta\.json/);
 }));
@@ -898,7 +913,8 @@ test('31b. installed library renders and runs after the installer source is remo
   const rendered = await exec(path.join(env.MAW_LIB_DIR, 'maw-render-unit.sh'), [], { env, cwd: f.root });
   assert.ok(!rendered.stdout.includes('@'), 'installed template is fully rendered');
   assert.ok(rendered.stdout.includes(`WorkingDirectory=${f.stateDir}/current`));
-  assert.ok(rendered.stdout.includes(`ExecStart=${process.execPath} --import `));
+  assert.ok(rendered.stdout.includes(`ExecStart=${process.execPath} ${f.stateDir}/current/packages/server/dist/index.mjs --prod`));
+  assert.ok(rendered.stdout.includes('Environment=MAW_PERSISTENT_PTY=1'));
   assert.ok(rendered.stdout.includes('RuntimeDirectory=maw-installed-fixture'));
   const installedMaw = path.join(env.MAW_BIN_DIR, 'maw');
   assert.match((await exec(installedMaw, ['help'], { env, cwd: f.root })).stdout, /Usage: maw/);
