@@ -11,6 +11,8 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+permissions: {}
+
 env:
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
 
@@ -28,12 +30,13 @@ jobs:
   npm:
     needs: ci
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
           registry-url: https://registry.npmjs.org
@@ -44,11 +47,11 @@ jobs:
           TAG="${GITHUB_REF_NAME#v}"
           PKG=$(node -p "require('./package.json').version")
           test "$TAG" = "$PKG" || { echo "tag $TAG != package.json $PKG"; exit 1; }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: tarball
-      # Trusted publishing needs npm >= 11.5.1; Node 22 ships 10.x.
-      - run: npm install -g npm@latest
+      # Trusted publishing needs npm >= 11.5.1; Node 22 ships 10.x. Pin an explicit version.
+      - run: npm install -g npm@11.5.1
       - name: Publish
         if: github.ref_type == 'tag'
         run: npm publish ./agent-workbench-*.tgz --provenance --access public
@@ -59,7 +62,15 @@ jobs:
         if: github.ref_type == 'tag'
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          awk -v v="$VERSION" '$0 ~ "^## "v"( |$)" {on=1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md
+          awk -v h="## ${VERSION}" '
+            $0 == h || index($0, h " ") == 1 { on=1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "Error: CHANGELOG.md has no release notes section for ${VERSION}" >&2
+            exit 1
+          fi
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
             || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
         env:

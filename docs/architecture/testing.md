@@ -28,10 +28,15 @@ Every test tree uses dedicated root helpers (`tests/helpers/paths.ts` for `@agen
 - `pnpm typecheck`: Type-checks `shared`, `server` (including `tests/**/*.ts`), and `web` (including `tests/**/*.ts`).
 - `pnpm test:unit`: Fast pure-Node unit tests across desktop, server, and web (no browser or Electron binary required).
 - `pnpm test:integration`: Store, protocol, and integration tests across desktop, server, and web.
-- `pnpm test:runtime`: Server PTY supervisor, lifecycle, concurrency, and recovery tests.
-- `pnpm test:security`: Server authentication, filesystem isolation, and IPC boundary tests.
+- `pnpm test:production`: Ubuntu desktop `.deb` package and launcher integration checks.
+- `pnpm test:runtime`: Server PTY supervisor, lifecycle, concurrency, and recovery tests plus desktop resource-pool runtime tests.
+- `pnpm test:security`: Server authentication, filesystem isolation, and IPC boundary tests plus desktop browser security tests.
+- `pnpm test:e2e`: Headless Chromium web E2E suite and sandboxed Electron desktop E2E suite.
+- `pnpm test:staging:shell`: Shell release-staging and activation-guard regression suites.
+- `pnpm test:staging`: Shell staging suites plus sandboxed Electron staging-release tests.
 - `pnpm test`: Runs default package suites (`desktop`, `server`, `web`).
 - `pnpm check`: Runs 32 server invariant check scripts (`packages/server/scripts/check-*.mjs`).
+- `pnpm check:e2e`, `pnpm check:systemd`, `pnpm check:package`, `pnpm check:native-context`: Run the remaining browser-backed, real-systemd, npm-package, and operator-context check scripts under `packages/server/scripts/`.
 
 ### Environment Notes
 
