@@ -206,9 +206,9 @@ test('staging release creates and restores a general Browser tab through the rea
     // The desktop bridge must move the shell to the new one-boot token URL itself.
     await eventually(async () => page.url() === readyAgain.url, 'automatic shell origin/token refresh');
     await page.waitForFunction(() => window.mawChatGpt && document.readyState === 'complete');
+    await eventually(async () => await page.locator('.agency-workspace-nav-button').filter({ hasText: 'Staging Browser Workspace' }).count() === 1, 'workspace reconnection');
     assert.equal(await page.evaluate(() => localStorage.getItem('maw-staging-local')), 'preserve-local');
     assert.equal(await page.evaluate(() => sessionStorage.getItem('maw-staging-session')), 'preserve-session');
-    await eventually(async () => await page.locator('.agency-workspace-nav-button').filter({ hasText: 'Staging Browser Workspace' }).count() === 1, 'workspace reconnection');
     await page.locator('.agency-workspace-nav-button').filter({ hasText: 'Staging Browser Workspace' }).click();
     await eventually(async () => await page.locator(`#tab-${created.id}`).count() === 1, 'persisted Browser tab after backend restart');
     const recoveredBrowser = await browserState();
@@ -229,7 +229,7 @@ test('staging release creates and restores a general Browser tab through the rea
     const settings = await openBrowserSettings();
     await settings.getByRole('button', { name: 'Delete Search Engine: DuckDuckGo', exact: true }).click();
     assert.equal(await settings.getByRole('radio', { name: /Google/ }).isChecked(), true);
-    await settings.getByRole('button', { name: 'Restore built-in engines', exact: true }).click();
+    await settings.getByRole('button', { name: 'Restore built-in definitions', exact: true }).click();
     const ddgRadio = settings.getByRole('radio', { name: /DuckDuckGo/ });
     await ddgRadio.waitFor({ state: 'visible' });
     await ddgRadio.click();
@@ -241,7 +241,9 @@ test('staging release creates and restores a general Browser tab through the rea
     await profilesCard.getByRole('button', { name: 'Browser Profiles', exact: true }).click();
     assert.equal(await profilesCard.getByRole('button', { name: 'Browser Profiles', exact: true }).getAttribute('aria-expanded'), 'false');
     await settings.getByRole('searchbox', { name: 'Search settings...' }).fill('Browser Profiles');
-    await settings.getByRole('option', { name: /Browser Profiles/ }).click();
+    await settings.getByRole('option').filter({
+      has: page.locator('.maw-settings-search-item-title').filter({ hasText: /^Browser Profiles$/ }),
+    }).click();
     await profilesCard.locator('.maw-subsection-toggle[aria-expanded="true"]').waitFor();
 
     const addProfile = async (name, mode) => {
@@ -292,9 +294,19 @@ test('staging release creates and restores a general Browser tab through the rea
       return (await session.fromPartition(`persist:maw-profile-${id}-browser`).cookies.get({ name: 'staging-fixture' }))
         .map(cookie => cookie.value);
     }, projectProfile), []);
-    await profileSettings.getByRole('button', { name: 'Delete profile: Project identity', exact: false }).click();
+    const deleteProfileButton = profileSettings.getByRole('button', { name: 'Delete profile: Project identity', exact: true });
+    const profileConfirmation = page.getByRole('dialog', { name: 'Delete profile' });
+    await deleteProfileButton.click();
+    await profileConfirmation.waitFor();
+    await page.keyboard.press('Escape');
+    await profileConfirmation.waitFor({ state: 'detached' });
+    assert.equal(await cloneRow.count(), 1);
+    await deleteProfileButton.click();
+    await profileConfirmation.getByRole('button', { name: 'Delete profile', exact: true }).click();
+    await profileConfirmation.waitFor({ state: 'detached' });
     await profileSettings.locator('[data-profile-id]').filter({ hasText: 'Project identity' }).waitFor({ state: 'detached' });
     await page.keyboard.press('Escape');
+    await profileSettings.waitFor({ state: 'detached' });
     await eventually(async () => await activeSessionPath() === sessions[0].path, 'Main fallback after deleting an assigned profile');
     assert.equal(await desktop.evaluate(async ({ session }) => (await session.fromPartition('persist:maw-browser').cookies.get({ name: 'staging-fixture' }))[0]?.value), 'isolated-cookie');
 
@@ -307,9 +319,9 @@ test('staging release creates and restores a general Browser tab through the rea
     const paneClose = extraPane.locator('[data-pane-close]');
     assert.equal(await paneClose.evaluate(button => button.previousElementSibling?.classList.contains('maw-pane-grip')), true);
     await paneClose.click();
-    const paneConfirmation = extraPane.getByRole('dialog');
+    const paneConfirmation = page.getByRole('dialog', { name: 'Close pane?', exact: true });
     const targetBounds = await extraPane.locator('.maw-pane-body').boundingBox();
-    const paneConfirmationBounds = await paneConfirmation.locator('.maw-pane-close-dialog').boundingBox();
+    const paneConfirmationBounds = await paneConfirmation.boundingBox();
     assert.ok(targetBounds && paneConfirmationBounds);
     assert.ok(Math.abs(targetBounds.x + targetBounds.width / 2 - paneConfirmationBounds.x - paneConfirmationBounds.width / 2) < 2);
     assert.ok(Math.abs(targetBounds.y + targetBounds.height / 2 - paneConfirmationBounds.y - paneConfirmationBounds.height / 2) < 2);
