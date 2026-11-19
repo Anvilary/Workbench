@@ -346,9 +346,12 @@ test('staging release creates and restores a general Browser tab through the rea
     await originalWorkspace.locator('.agency-workspace-nav-button').click();
 
     await page.getByRole('button', { name: 'New project', exact: true }).click();
-    await page.getByRole('dialog').getByRole('textbox').fill('Second Project');
-    await page.getByRole('dialog').getByRole('button', { name: 'Create project', exact: true }).click();
+    const secondProjectDialog = page.getByRole('dialog');
+    await secondProjectDialog.getByRole('textbox').fill('Second Project');
+    await secondProjectDialog.getByRole('button', { name: 'Create project', exact: true }).click();
     const secondProject = page.locator('.agency-project-row', { hasText: 'Second Project' });
+    await secondProject.waitFor();
+    await secondProjectDialog.waitFor({ state: 'detached' });
     const sidebarGhost = page.locator('.agency-sidebar-drag-ghost');
     const dragSidebarRow = async (source, target, cancel = false) => {
       const from = await source.boundingBox();
@@ -372,7 +375,7 @@ test('staging release creates and restores a general Browser tab through the rea
     const dataFile = path.join(env.XDG_CONFIG_HOME, 'agent-workbench', 'agency-state.json');
     const savedAgency = async () => JSON.parse(await readFile(dataFile, 'utf8'));
     const scroller = page.locator('.agency-side-section');
-    await scroller.evaluate(element => { element.style.maxHeight = '145px'; });
+    await scroller.evaluate(element => { element.style.maxHeight = '145px'; element.scrollTop = 0; });
     const scrollerBounds = await scroller.boundingBox();
     const dragSourceBounds = await originalProject.locator('.agency-project-row').boundingBox();
     assert.ok(scrollerBounds && dragSourceBounds);
