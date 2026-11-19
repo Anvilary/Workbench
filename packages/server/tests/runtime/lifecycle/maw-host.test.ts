@@ -134,12 +134,12 @@ test('control url outputs authenticated loopback URL and open launches specified
     ]);
 
     const helpOut = await run(maw, ['help'], { cwd: '/', env: environment });
-    assert.match(helpOut.stdout, /Usage: maw \{desktop\|start\|stop\|restart\|rollback\|status\|logs \[--follow\]\|url\|open \[browser\]\|update \[--no-restart\|--restart\] \[--ref <ref> --allow-unapproved-ref\]\|help\}/);
+    assert.match(helpOut.stdout, /Usage: maw \{desktop\|start \[--force\]\|stop\|restart \[--force\]\|rollback\|status\|logs \[--follow\]\|url\|open \[browser\]\|update \[--no-restart\|--restart\] \[--ref <ref> --allow-unapproved-ref\]\|help\}/);
 
     const anvilUrlOut = await run(anvilBench, ['url'], { cwd: '/', env: environment });
     assert.equal(anvilUrlOut.stdout.trim(), expectedUrl);
     const anvilHelpOut = await run(anvilBench, ['help'], { cwd: '/', env: environment });
-    assert.match(anvilHelpOut.stdout, /Usage: anvil-bench \{desktop\|start\|stop\|restart\|rollback\|status\|logs \[--follow\]\|url\|open \[browser\]\|update \[--no-restart\|--restart\] \[--ref <ref> --allow-unapproved-ref\]\|help\}/);
+    assert.match(anvilHelpOut.stdout, /Usage: anvil-bench \{desktop\|start \[--force\]\|stop\|restart \[--force\]\|rollback\|status\|logs \[--follow\]\|url\|open \[browser\]\|update \[--no-restart\|--restart\] \[--ref <ref> --allow-unapproved-ref\]\|help\}/);
 
     await assert.rejects(run(maw, ['url', 'extra'], { cwd: '/', env: environment }));
     await assert.rejects(run(anvilBench, ['url', 'extra'], { cwd: '/', env: environment }));
