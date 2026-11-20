@@ -142,6 +142,17 @@ async function start() {
       otherUrl,
       authenticationUrl,
     });
+    if (typeof targetSession.setSpellCheckerEnabled === 'function') {
+      try { targetSession.setSpellCheckerEnabled(true); } catch {}
+    }
+    if (typeof targetSession.setSpellCheckerLanguages === 'function') {
+      try {
+        const available = targetSession.availableSpellCheckerLanguages || [];
+        const preferred = ['en-US', 'pt-PT', 'pt-BR', 'pt'];
+        const toEnable = preferred.filter(lang => available.length === 0 || available.includes(lang));
+        if (toEnable.length > 0) targetSession.setSpellCheckerLanguages(toEnable);
+      } catch {}
+    }
     targetSession.on('will-download', browserDownloadHandler({
       provider, views, providers, popupOwners, popups, activeDownloads,
       allowedOrigin: (value) => {
@@ -376,6 +387,11 @@ async function start() {
     });
     contents.on('before-input-event', (event, input) => {
       const id = getTabId();
+      if (input.type === 'keyDown' && (input.control || input.meta) && input.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        send({ type: 'open-find-in-page', id });
+        return;
+      }
       if (input.type === 'keyDown' && input.control && input.key.toLowerCase() === 'l') {
         event.preventDefault(); send({ type: 'address-shortcut', id }); return;
       }
@@ -388,15 +404,37 @@ async function start() {
       if (id && isTypingInput(input)) interactionProtected.add(id);
       desktopShortcut(event, input);
     });
+    contents.on('found-in-page', (_event, result) => {
+      const id = getTabId();
+      if (!id) return;
+      send({
+        type: 'found-in-page',
+        id,
+        requestId: result.requestId,
+        activeMatchOrdinal: result.activeMatchOrdinal,
+        matches: result.matches,
+        selectionArea: result.selectionArea,
+        finalUpdate: result.finalUpdate,
+      });
+    });
     contents.on('context-menu', (event, params) => {
       if (typeof event.preventDefault === 'function') event.preventDefault();
       const id = [...views.entries()].find(([, view]) => view.webContents === contents)?.[0];
       if (!id) return;
+      const misspelledWord = (params.isEditable && typeof params.misspelledWord === 'string') ? params.misspelledWord : '';
+      const dictionarySuggestions = (misspelledWord && Array.isArray(params.dictionarySuggestions))
+        ? params.dictionarySuggestions.filter(s => typeof s === 'string' && s.length > 0 && s.length <= 256)
+        : [];
       send({
         type: 'browser-context',
         id,
         selection: typeof params.selectionText === 'string' && params.selectionText.length > 0,
+        selectionText: typeof params.selectionText === 'string' ? params.selectionText : '',
         linkURL: typeof params.linkURL === 'string' ? params.linkURL : '',
+        pageURL: typeof params.pageURL === 'string' && params.pageURL ? params.pageURL : (contents.getURL() || ''),
+        isEditable: params.isEditable === true,
+        misspelledWord,
+        dictionarySuggestions,
         canGoBack: contents.canGoBack(),
         canGoForward: contents.canGoForward(),
         x: Number.isFinite(params.x) ? params.x : 0,
@@ -597,7 +635,7 @@ async function start() {
 
     trimCapacity(id, 1);
     const viewPreload = isWebAuthnEnabled && provider === 'chatgpt' ? webauthnPreload : '';
-    const view = new WebContentsView({ webPreferences: { ...secure, session: targetSession, preload: viewPreload, backgroundThrottling: true, autoplayPolicy: 'no-user-gesture-required', webgl: true } });
+    const view = new WebContentsView({ webPreferences: { ...secure, session: targetSession, spellcheck: true, preload: viewPreload, backgroundThrottling: true, autoplayPolicy: 'no-user-gesture-required', webgl: true } });
     view.setVisible(false);
     view.setBackgroundColor('#212121');
     views.set(id, view);
@@ -948,7 +986,13 @@ async function start() {
         contents.reload();
       }
       if (command.action === 'copy-url') clipboard.writeText(contents.getURL());
+      if (command.action === 'copy-link' && typeof command.url === 'string') clipboard.writeText(command.url);
       if (command.action === 'copy-selection') contents.copy();
+      if (command.action === 'replace-misspelling' && typeof command.word === 'string') {
+        if (typeof contents.replaceMisspelling === 'function') {
+          contents.replaceMisspelling(command.word);
+        }
+      }
       if (command.action === 'open-page') void openExternal(contents.getURL());
       if (command.action === 'open-link') {
         if (isContentsInAuthFlow(contents, providers.get(command.id)) && tryOpenOAuthLoopback(command.url, command.id)) {
@@ -972,6 +1016,25 @@ async function start() {
       if (command.action === 'zoom-in' || command.action === 'zoom-out' || command.action === 'zoom-reset') {
         applyBrowserZoom(command.id, contents, command.action);
       }
+    }
+    if (command.type === 'find-in-page') {
+      const view = views.get(command.id);
+      const contents = view?.webContents;
+      if (!contents || contents.isDestroyed()) return { ok: false };
+      const options = {};
+      if ('forward' in command) options.forward = command.forward;
+      if ('findNext' in command) options.findNext = command.findNext;
+      if ('matchCase' in command) options.matchCase = command.matchCase;
+      const requestId = contents.findInPage(command.text, options);
+      return { ok: true, requestId };
+    }
+    if (command.type === 'stop-find-in-page') {
+      const view = views.get(command.id);
+      const contents = view?.webContents;
+      if (!contents || contents.isDestroyed()) return { ok: false };
+      const action = command.action || 'clearSelection';
+      contents.stopFindInPage(action);
+      return { ok: true };
     }
     if (command.type === 'copy-file') {
       const resolved = await resolveClipboardTarget(command.cwd, command.relative, { requireAuthoritative: true });

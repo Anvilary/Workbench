@@ -138,9 +138,14 @@ interface MenuState {
   x: number;
   y: number;
   linkURL: string;
+  pageURL: string;
   canGoBack: boolean;
   canGoForward: boolean;
   selection: boolean;
+  selectionText: string;
+  isEditable: boolean;
+  misspelledWord: string;
+  dictionarySuggestions: string[];
 }
 
 /**
@@ -148,20 +153,20 @@ interface MenuState {
  * process, which owns the WebContents. The page itself gets no preload.
  */
 export function BrowserContextMenu({
-  tabs,
-  onCloseTab,
-  onMoveNext,
-  onDuplicate,
+  tabs: _tabs,
+  onCloseTab: _onCloseTab,
+  onMoveNext: _onMoveNext,
+  onDuplicate: _onDuplicate,
 }: {
-  tabs: readonly WebTab[];
+  tabs?: readonly WebTab[];
   request?: ReturnType<typeof useAgencyStore>['request'];
-  onCloseTab: (tab: WebTab) => void;
-  onMoveNext: (tabId: string) => void;
-  onDuplicate: (tab: WebTab) => void;
-}): JSX.Element | null {
+  onCloseTab?: (tab: WebTab) => void;
+  onMoveNext?: (tabId: string) => void;
+  onDuplicate?: (tab: WebTab) => void;
+} = {}): JSX.Element | null {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [measuredSize, setMeasuredSize] = useState<{ width: number; height: number }>({ width: 190, height: 240 });
+  const [measuredSize, setMeasuredSize] = useState<{ width: number; height: number }>({ width: 190, height: 220 });
 
   useEffect(() => window.mawChatGpt?.subscribe((state) => {
     if (state.type !== 'browser-context' || !state.id) return;
@@ -170,9 +175,14 @@ export function BrowserContextMenu({
       x: state.x ?? 0,
       y: state.y ?? 0,
       linkURL: state.linkURL ?? '',
+      pageURL: state.pageURL ?? '',
       canGoBack: state.canGoBack === true,
       canGoForward: state.canGoForward === true,
       selection: state.selection === true,
+      selectionText: state.selectionText ?? '',
+      isEditable: state.isEditable === true,
+      misspelledWord: state.misspelledWord ?? '',
+      dictionarySuggestions: Array.isArray(state.dictionarySuggestions) ? state.dictionarySuggestions : [],
     });
   }), []);
 
@@ -188,7 +198,21 @@ export function BrowserContextMenu({
     if (!menu) return;
     const close = () => setMenu(null);
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') close();
+      if (event.key === 'Escape') {
+        close();
+        return;
+      }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        if (!menuRef.current) return;
+        const buttons = Array.from(menuRef.current.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+        if (buttons.length === 0) return;
+        const activeIdx = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        const nextIdx = event.key === 'ArrowDown'
+          ? (activeIdx + 1) % buttons.length
+          : (activeIdx - 1 + buttons.length) % buttons.length;
+        buttons[nextIdx]?.focus();
+      }
     };
     window.addEventListener('pointerdown', close);
     window.addEventListener('keydown', onKey);
@@ -203,24 +227,56 @@ export function BrowserContextMenu({
   }, [menu]);
 
   if (!menu) return null;
-  const tab = tabs.find((item) => item.id === menu.id);
   const send = (action: string, url?: string) => {
     const command = url ? { type: 'browser-action', id: menu.id, action, url } : { type: 'browser-action', id: menu.id, action };
     void window.mawChatGpt?.command(command);
     setMenu(null);
   };
+
   const isValidLink = isSupportedBrowserLink(menu.linkURL);
   const link = isValidLink ? menu.linkURL.trim() : '';
-  const items: { label: string; disabled?: boolean; run: () => void }[] = [
+  const trimmedSelection = (menu.selectionText || '').trim();
+  const selectionIsUrl = isSupportedBrowserLink(trimmedSelection);
+  const targetOpenUrl = isValidLink ? link : (selectionIsUrl ? trimmedSelection : '');
+  const canOpenUrl = Boolean(targetOpenUrl);
+
+  const handleCopy = () => {
+    if (menu.selection) {
+      send('copy-selection');
+    } else if (isValidLink && link) {
+      send('copy-link', link);
+    } else {
+      send('copy-url');
+    }
+  };
+
+  const handleOpenUrl = () => {
+    if (!targetOpenUrl) return;
+    send('open-link', targetOpenUrl);
+  };
+
+  const handleSearch = () => {
+    window.dispatchEvent(new CustomEvent('workbench:open-find-in-page', { detail: { id: menu.id } }));
+    setMenu(null);
+  };
+
+  const handleReplaceMisspelling = (word: string) => {
+    void window.mawChatGpt?.command({
+      type: 'browser-action',
+      id: menu.id,
+      action: 'replace-misspelling',
+      word,
+    });
+    setMenu(null);
+  };
+
+  const standardItems: { label: string; disabled?: boolean; run: () => void }[] = [
+    { label: t('agency.browser.copy'), run: handleCopy },
+    { label: t('agency.browser.openUrl'), disabled: !canOpenUrl, run: handleOpenUrl },
+    { label: t('agency.browser.reload'), run: () => send('reload') },
     { label: t('agency.browser.back'), disabled: !menu.canGoBack, run: () => send('back') },
     { label: t('agency.browser.forward'), disabled: !menu.canGoForward, run: () => send('forward') },
-    { label: t('agency.browser.reload'), run: () => send('reload') },
-    { label: t('agency.browser.copyPageUrl'), run: () => send('copy-url') },
-    { label: t('agency.browser.copySelection'), disabled: !menu.selection, run: () => send('copy-selection') },
-    { label: t('agency.browser.openLink'), disabled: !link, run: () => send('open-link', link) },
-    { label: t('agency.browser.moveNext'), disabled: !tab, run: () => { if (tab) onMoveNext(tab.id); setMenu(null); } },
-    { label: t('agency.browser.duplicate'), disabled: !tab, run: () => { if (tab) onDuplicate(tab); setMenu(null); } },
-    { label: t('agency.browser.close'), disabled: !tab, run: () => { if (tab) onCloseTab(tab); setMenu(null); } },
+    { label: t('agency.browser.search'), run: handleSearch },
   ];
 
   const { bounds, originX, originY } = getBrowserContentBounds(menu.id);
@@ -235,6 +291,8 @@ export function BrowserContextMenu({
     menuHeight: measuredSize.height,
   });
 
+  const hasMisspelling = Boolean(menu.misspelledWord);
+
   return (
     <div
       ref={menuRef}
@@ -243,7 +301,29 @@ export function BrowserContextMenu({
       style={{ left: `${finalX}px`, top: `${finalY}px` }}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      {items.map((item) => (
+      {hasMisspelling && (
+        <div className="maw-context-menu-spelling" role="group" aria-label="Spelling suggestions">
+          {menu.dictionarySuggestions.length > 0 ? (
+            menu.dictionarySuggestions.map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                role="menuitem"
+                className="maw-context-menu-suggestion"
+                onClick={() => handleReplaceMisspelling(suggestion)}
+              >
+                {suggestion}
+              </button>
+            ))
+          ) : (
+            <button type="button" role="menuitem" disabled className="maw-context-menu-disabled-item">
+              {t('agency.browser.noSpellingSuggestions')}
+            </button>
+          )}
+          <div className="maw-context-menu-divider" role="separator" />
+        </div>
+      )}
+      {standardItems.map((item) => (
         <button key={item.label} type="button" role="menuitem" disabled={item.disabled} onClick={item.run}>
           {item.label}
         </button>

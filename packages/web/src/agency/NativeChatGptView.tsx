@@ -10,6 +10,7 @@ import {
   resolveAddressBarInput,
 } from '@agent-workbench/shared';
 import { t } from '../i18n/index.js';
+import { BrowserFindBar } from './BrowserFindBar.js';
 import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
 
 export interface DesktopBridge {
@@ -84,6 +85,7 @@ export function NativeChatGptView({
   const [downloadFeedback, setDownloadFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [address, setAddress] = useState(tab.url);
   const [history, setHistory] = useState({ canGoBack: false, canGoForward: false });
+  const [findOpen, setFindOpen] = useState(false);
   const addressInput = useRef<HTMLInputElement>(null);
   const provider = tab.provider ?? nativeWebProvider(tab.url);
 
@@ -98,6 +100,9 @@ export function NativeChatGptView({
     });
     const unsubscribe = bridge.subscribe((state) => {
       if (state.id !== id) return;
+      if (state.type === 'open-find-in-page') {
+        setFindOpen(true);
+      }
       if (state.type === 'address-shortcut') {
         expandCallback.current?.();
         setTimeout(() => {
@@ -144,6 +149,29 @@ export function NativeChatGptView({
     };
   }, [id, profileId, supported]);
 
+  useEffect(() => {
+    const onOpenFind = (e: Event) => {
+      const custom = e as CustomEvent<{ id?: string }>;
+      if (custom.detail?.id === id) {
+        setFindOpen(true);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        if (nativeLayoutCoordinator.isViewing(id) || host.current?.contains(document.activeElement)) {
+          e.preventDefault();
+          setFindOpen(true);
+        }
+      }
+    };
+    window.addEventListener('workbench:open-find-in-page', onOpenFind);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('workbench:open-find-in-page', onOpenFind);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [id]);
+
   return (
     <div className="maw-browser-pane">
       {window.mawChatGpt && supported && toolbarOpen && <div className="maw-browser-toolbar">
@@ -174,6 +202,9 @@ export function NativeChatGptView({
           <input ref={addressInput} aria-label={t('agency.browser.address')} value={address} onChange={(event) => { event.currentTarget.setCustomValidity(''); setAddress(event.target.value); }} onKeyDown={(event) => { if (event.ctrlKey && event.key.toLowerCase() === 'l') { event.preventDefault(); event.currentTarget.select(); } }} />
         </form>
       </div>}
+      {findOpen && (
+        <BrowserFindBar id={id} onClose={() => setFindOpen(false)} />
+      )}
       <div ref={host} className="maw-browser-viewer" data-native-id={id}>
       {!window.mawChatGpt || !supported ? (
         <div className="agency-shell-placeholder">
