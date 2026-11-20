@@ -13,7 +13,7 @@ const id = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
 const fixture = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { NativeChatGptView } from './src/agency/NativeChatGptView.tsx';
+import { NativeBrowserView } from './src/features/browser/NativeBrowserView.tsx';
 
 function App() {
   const [sidebarMenu, setSidebarMenu] = useState(false);
@@ -104,7 +104,7 @@ function App() {
         {/* Viewport for NativeChatGPT / Terminal */}
         <main style={{ flex: 1, display: 'flex', position: 'relative' }}>
           {activeTab === 'chatgpt' ? (
-            <NativeChatGptView tab={{ id: '${id}', url: 'https://chatgpt.com/' }} onDisplayed={() => {}} />
+            <NativeBrowserView tab={{ id: '${id}', url: 'https://chatgpt.com/' }} onDisplayed={() => {}} />
           ) : (
             <div style={{ padding: '24px', fontFamily: 'monospace', color: '#a1a1aa' }}>Terminal session (exited)...</div>
           )}

@@ -15,7 +15,7 @@ const artifactDir = process.env.MAW_EVIDENCE_ARTIFACT_DIR ? path.resolve(process
 const fixture = `
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import { PerformancePanel } from './src/agency/PerformancePanel.tsx';
+import { PerformancePanel } from './src/features/performance/PerformancePanel.tsx';
 
 function App() {
   const [shellMenu, setShellMenu] = useState(false);
