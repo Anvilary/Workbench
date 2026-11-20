@@ -47,66 +47,82 @@ export const AGENT_PROVIDERS = [
   { id: 'pi', label: 'Pi' },
 ];
 
+const UNAVAILABLE_SMAPS = Object.freeze({
+  isAvailable: false, pssBytes: 0, rssBytes: 0, privateBytes: 0, sharedBytes: 0, swapPssBytes: 0,
+});
+
+const kbField = (raw, name) => {
+  const match = raw.match(new RegExp(`^${name}:\\s+(\\d+)\\s+kB`, 'm'));
+  return match ? parseInt(match[1], 10) * 1024 : 0;
+};
+
+function smapsFromRollup(raw) {
+  return {
+    isAvailable: true,
+    pssBytes: kbField(raw, 'Pss'),
+    rssBytes: kbField(raw, 'Rss'),
+    privateBytes: kbField(raw, 'Private_Clean') + kbField(raw, 'Private_Dirty'),
+    sharedBytes: kbField(raw, 'Shared_Clean') + kbField(raw, 'Shared_Dirty'),
+    swapPssBytes: kbField(raw, 'SwapPss'),
+  };
+}
+
+// Best approximation when smaps_rollup is missing.
+function smapsFromStatus(raw) {
+  const vmRss = kbField(raw, 'VmRSS');
+  return { isAvailable: true, pssBytes: vmRss, rssBytes: vmRss, privateBytes: vmRss, sharedBytes: 0, swapPssBytes: 0 };
+}
+
 /**
- * Safely parse /proc/[pid]/smaps_rollup on Linux
- * Distinguishes PSS, RSS, Private (Clean+Dirty), and Shared (Clean+Dirty) memory.
- * Returns values in bytes.
- *
- * @param {number} pid
- * @param {string} [procRoot='/proc']
- * @returns {{ isAvailable: boolean, pssBytes: number, rssBytes: number, privateBytes: number, sharedBytes: number, swapPssBytes: number }}
+ * Reads /proc/[pid]/smaps_rollup synchronously. Walking a process's mappings costs the kernel about 1.6 ms per
+ * process, so call this only for a handful of pids; the sampler uses readProcessSmapsAsync via prefetchSmaps.
  */
 export function readProcessSmaps(pid, procRoot = '/proc') {
   try {
-    const raw = fs.readFileSync(path.join(procRoot, String(pid), 'smaps_rollup'), 'utf8');
-    const get = (name) => {
-      const match = raw.match(new RegExp(`^${name}:\\s+(\\d+)\\s+kB`, 'm'));
-      return match ? parseInt(match[1], 10) * 1024 : 0;
-    };
-    const pss = get('Pss');
-    const rss = get('Rss');
-    const privClean = get('Private_Clean');
-    const privDirty = get('Private_Dirty');
-    const sharedClean = get('Shared_Clean');
-    const sharedDirty = get('Shared_Dirty');
-    const swapPss = get('SwapPss');
-
-    return {
-      isAvailable: true,
-      pssBytes: pss,
-      rssBytes: rss,
-      privateBytes: privClean + privDirty,
-      sharedBytes: sharedClean + sharedDirty,
-      swapPssBytes: swapPss,
-    };
+    return smapsFromRollup(fs.readFileSync(path.join(procRoot, String(pid), 'smaps_rollup'), 'utf8'));
   } catch {
-    // Fallback to /proc/[pid]/status VmRSS if smaps_rollup is missing
     try {
-      const statusRaw = fs.readFileSync(path.join(procRoot, String(pid), 'status'), 'utf8');
-      const getStatus = (name) => {
-        const match = statusRaw.match(new RegExp(`^${name}:\\s+(\\d+)\\s+kB`, 'm'));
-        return match ? parseInt(match[1], 10) * 1024 : 0;
-      };
-      const vmRss = getStatus('VmRSS');
-      return {
-        isAvailable: true,
-        pssBytes: vmRss, // Best approximation when smaps_rollup is missing
-        rssBytes: vmRss,
-        privateBytes: vmRss,
-        sharedBytes: 0,
-        swapPssBytes: 0,
-      };
+      return smapsFromStatus(fs.readFileSync(path.join(procRoot, String(pid), 'status'), 'utf8'));
     } catch {
-      return {
-        isAvailable: false,
-        pssBytes: 0,
-        rssBytes: 0,
-        privateBytes: 0,
-        sharedBytes: 0,
-        swapPssBytes: 0,
-      };
+      return { ...UNAVAILABLE_SMAPS };
     }
   }
+}
+
+/** Same result as readProcessSmaps, but the kernel work runs in libuv's thread pool instead of the event loop. */
+export async function readProcessSmapsAsync(pid, procRoot = '/proc') {
+  try {
+    return smapsFromRollup(await fs.promises.readFile(path.join(procRoot, String(pid), 'smaps_rollup'), 'utf8'));
+  } catch {
+    try {
+      return smapsFromStatus(await fs.promises.readFile(path.join(procRoot, String(pid), 'status'), 'utf8'));
+    } catch {
+      return { ...UNAVAILABLE_SMAPS };
+    }
+  }
+}
+
+/**
+ * Reads smaps for many pids off the main thread with bounded concurrency. Returns Map<pid, smaps>. The caller
+ * treats it as a pure cache: a missing pid falls back to the synchronous read, so an inexact pid set is harmless.
+ */
+// Below this many processes the synchronous reads cost only a few milliseconds, and a thread-pool round trip adds
+// more latency than it saves (it was measured to starve a 50 ms sampling timer under CPU contention).
+export const ASYNC_SMAPS_MIN_PIDS = 16;
+
+export async function prefetchSmaps(pids, procRoot = '/proc', concurrency = 8) {
+  const unique = [...new Set(pids)].filter((pid) => Number.isInteger(pid) && pid > 0);
+  const result = new Map();
+  if (unique.length < ASYNC_SMAPS_MIN_PIDS) return result;
+  let next = 0;
+  const worker = async () => {
+    while (next < unique.length) {
+      const pid = unique[next++];
+      result.set(pid, await readProcessSmapsAsync(pid, procRoot));
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, unique.length) }, worker));
+  return result;
 }
 
 /**
@@ -575,10 +591,17 @@ export class ResourceCollector {
       const claimedPids = new Set();
       const currentActivePids = new Set();
 
+      // smaps_rollup is the expensive part of a sample (about 1.6 ms of kernel time per process, synchronous in the
+      // Electron main process). Read it for every process we may measure off the main thread first; measureProcess
+      // below uses the cache and falls back to the synchronous read for any pid that was not prefetched.
+      const prefetchRoots = [electronMainPid, electronWindowPid, electronGpuPid, ...electronUtilityPids, ...electronRendererPids, supervisorPid, backendPid]
+        .filter((pid) => Number.isInteger(pid) && pid > 0);
+      const smapsCache = await prefetchSmaps(collectSubtreePids(prefetchRoots, processTree), this.procRoot);
+
       // Helper to measure process metrics
       const measureProcess = (pid, name, role, sharedWith = []) => {
         currentActivePids.add(pid);
-        const smaps = readProcessSmaps(pid, this.procRoot);
+        const smaps = smapsCache.get(pid) ?? readProcessSmaps(pid, this.procRoot);
         const stat = readProcessStat(pid, this.procRoot);
 
         let cpuPercent = 0;
