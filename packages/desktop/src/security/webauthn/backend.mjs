@@ -286,7 +286,10 @@ export function listResidentCredentials({
       }
     });
 
-    if (!pin) {
+    if (pin) {
+      pinWritten = true;
+      safeWriteStdin(proc.stdin, pin + '\n', true);
+    } else {
       safeWriteStdin(proc.stdin, '', true);
     }
 
@@ -446,6 +449,11 @@ export function executeAssertion({
         reject(new Error('NotAllowedError: Failed to write assertion parameters to fido2-assert'));
       }
       return;
+    }
+
+    if (pin) {
+      pinWritten = true;
+      safeWriteStdin(proc.stdin, pin + '\n', true);
     }
 
     proc.on('error', err => {

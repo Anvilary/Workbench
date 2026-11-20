@@ -37,9 +37,12 @@ export function createNavigationGuard({
       return;
     }
     hideAll();
-    const answer = await dialog.showMessageBox(win, { type: 'question', message: reason || 'Open this destination in your browser?', detail: new URL(url).origin, buttons: ['Cancel', 'Open browser'], defaultId: 0, cancelId: 0 });
-    if (answer.response === 1) await shell.openExternal(url);
-    send({ type: 'layout-needed' });
+    try {
+      const answer = await dialog.showMessageBox(win, { type: 'question', message: reason || 'Open this destination in your browser?', detail: new URL(url).origin, buttons: ['Cancel', 'Open browser'], defaultId: 0, cancelId: 0 });
+      if (answer.response === 1) await shell.openExternal(url);
+    } finally {
+      if (!win.isDestroyed()) send({ type: 'layout-needed' });
+    }
   }
 
   function applyBrowserZoom(id, contents, action) {
@@ -87,7 +90,22 @@ export function createNavigationGuard({
       let currentUrl = '';
       try { currentUrl = contents.getURL() || ''; } catch { currentUrl = ''; }
       if (authenticationUrl(url)) {
-        if (!authEntryUrls.has(contents) && currentUrl && currentUrl !== 'about:blank' && !authenticationUrl(currentUrl)) authEntryUrls.set(contents, currentUrl);
+        if (!authEntryUrls.has(contents)) {
+          if (currentUrl && currentUrl !== 'about:blank' && !authenticationUrl(currentUrl)) {
+            authEntryUrls.set(contents, currentUrl);
+          } else {
+            const openerId = getTabId();
+            const opener = openerId ? views.get(openerId)?.webContents : null;
+            if (opener && !opener.isDestroyed()) {
+              try {
+                const openerUrl = opener.getURL() || urls.get(openerId) || '';
+                if (openerUrl && openerUrl !== 'about:blank' && !authenticationUrl(openerUrl)) {
+                  authEntryUrls.set(contents, openerUrl);
+                }
+              } catch {}
+            }
+          }
+        }
         return true;
       }
       // Leave the identity provider only for the site that started sign-in, or the popup opener.
@@ -176,6 +194,10 @@ export function createNavigationGuard({
       const popupContents = popup.webContents;
       const tabId = getTabId();
       if (tabId) popupOwners.set(popupContents, tabId);
+      const openerUrl = contents.getURL() || (tabId ? urls.get(tabId) : '');
+      if (openerUrl && openerUrl !== 'about:blank' && !authenticationUrl(openerUrl)) {
+        authEntryUrls.set(popupContents, openerUrl);
+      }
       popup.setMenu(null);
       guard(popupContents, provider, false);
       let authLoadFailed = false;

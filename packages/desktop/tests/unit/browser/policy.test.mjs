@@ -280,8 +280,10 @@ test('authentication URLs stay distinguishable from ordinary pages and private h
 test('window.open keeps authentication popups out of workspace tabs', () => {
   const auth = 'https://accounts.google.com/gsi/select?client_id=fixture';
   assert.equal(decideWindowOpen({ url: auth, allowPopup: true, permitted: true, tabbable: true, external: true }), 'popup');
+  assert.equal(decideWindowOpen({ url: auth, disposition: 'default', allowPopup: true, permitted: true, tabbable: true, external: true }), 'popup');
   assert.equal(decideWindowOpen({ url: auth, disposition: 'new-window', allowPopup: true, permitted: true, tabbable: true, external: true }), 'popup');
   assert.equal(decideWindowOpen({ url: auth, disposition: 'foreground-tab', allowPopup: true, permitted: true, tabbable: true, external: true }), 'external');
+  assert.equal(decideWindowOpen({ url: auth, disposition: 'foreground-tab', features: 'width=500,height=600', allowPopup: true, permitted: true, tabbable: true, external: true }), 'popup');
   assert.equal(decideWindowOpen({ url: auth, disposition: 'background-tab', allowPopup: true, permitted: true, tabbable: true, external: true }), 'external');
   assert.equal(decideWindowOpen({ url: auth, allowPopup: true, popupOpen: true, permitted: true, tabbable: true, external: true }), 'external');
   assert.equal(decideWindowOpen({ url: auth, allowPopup: false, permitted: true, tabbable: true, external: true }), 'external');

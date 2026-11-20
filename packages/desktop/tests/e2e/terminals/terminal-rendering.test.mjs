@@ -256,8 +256,11 @@ process.stdin.on('data',d=>{if(d.includes(113)){out('\\x1b[?1049l');process.exit
     await until(async () => {
       const startup = await read(0);
       result.scenarios.codexStartup = startup.text.slice(-2500);
-      return /Welcome to Codex|Sign in|OpenAI|Codex/.test(startup.text);
-    }, 'disposable Codex startup');
+      if (startup.text.includes('Continue anyway?')) {
+        await command(0, 'y\r');
+      }
+      return /Welcome to Codex|Sign in|OpenAI|Codex/i.test(startup.text);
+    }, 'disposable Codex startup', 30000);
     const started = Date.now(); let cycles = 0;
     while (Date.now() - started < codexSeconds * 1000) {
       await desktop.evaluate(({BrowserWindow},i)=>BrowserWindow.getAllWindows()[0].setContentSize(i%2?1180:1080,i%2?800:720),cycles);

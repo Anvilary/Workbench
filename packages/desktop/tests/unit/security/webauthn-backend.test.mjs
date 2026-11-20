@@ -102,17 +102,13 @@ test('executeAssertion sends credential parameters and captures stdout successfu
   assert.ok(proc.stdin.written.join('').includes('auth.openai.com'));
 });
 
-test('executeAssertion pipes PIN only after stderr prompt is detected', async () => {
+test('executeAssertion pipes PIN and captures assertion stdout without depending on stderr prompt', async () => {
   const proc = new MockProcess();
   const mockSpawn = (cmd, args) => {
     assert.ok(args.includes('-v'));
     setImmediate(() => {
-      // Simulate stderr prompt
-      proc.stderr.emit('data', Buffer.from('Enter PIN for /dev/hidraw3: '));
-      setImmediate(() => {
-        proc.stdout.emit('data', Buffer.from('pin-succeeded-assertion\n'));
-        proc.emit('close', 0);
-      });
+      proc.stdout.emit('data', Buffer.from('pin-succeeded-assertion\n'));
+      proc.emit('close', 0);
     });
     return proc;
   };

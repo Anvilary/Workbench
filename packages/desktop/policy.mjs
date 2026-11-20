@@ -190,8 +190,8 @@ export function decideWindowOpen({
   const blank = url === 'about:blank' || url === '';
   const auth = authenticationUrl(url);
   const shaped = popupShaped(features);
-  const isNewWindow = disposition === 'new-window';
-  const isPopupCandidate = isNewWindow && (auth || shaped);
+  const isNewWindow = disposition === 'new-window' || disposition === 'default';
+  const isPopupCandidate = (isNewWindow && auth) || shaped;
   const validDestination = blank || auth || permitted || tabbable || external;
 
   if (allowPopup && !popupOpen && isPopupCandidate && validDestination) return 'popup';
