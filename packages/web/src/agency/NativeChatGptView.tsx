@@ -13,9 +13,37 @@ import { t } from '../i18n/index.js';
 import { BrowserFindBar } from './BrowserFindBar.js';
 import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
 
+export interface DesktopBridgeEvent {
+  type: string;
+  id?: string;
+  sourceTabId?: string;
+  url?: string;
+  token?: string;
+  port?: string;
+  message?: string;
+  direction?: number;
+  filename?: string;
+  percent?: number | null;
+  linkURL?: string;
+  pageURL?: string;
+  canGoBack?: boolean;
+  canGoForward?: boolean;
+  selection?: boolean;
+  selectionText?: string;
+  isEditable?: boolean;
+  misspelledWord?: string;
+  dictionarySuggestions?: string[];
+  matches?: number;
+  activeMatchOrdinal?: number;
+  x?: number;
+  y?: number;
+  zoomFactor?: number;
+  percentage?: number;
+}
+
 export interface DesktopBridge {
   command: (command: unknown) => Promise<unknown>;
-  subscribe: (callback: (state: { type: string; id?: string; sourceTabId?: string; url?: string; token?: string; port?: string; message?: string; direction?: number; filename?: string; percent?: number | null; linkURL?: string; canGoBack?: boolean; canGoForward?: boolean; selection?: boolean; x?: number; y?: number; zoomFactor?: number; percentage?: number }) => void) => () => void;
+  subscribe: (callback: (state: DesktopBridgeEvent) => void) => () => void;
 }
 
 declare global {
