@@ -1645,7 +1645,7 @@ const historyOf = (file, extra = {}) => {
   claudeAdapter.dispose();
   codexAdapter.dispose();
 
-  const indexSource = await readFile(path.join(serverDir, 'src', 'index.ts'), 'utf8');
+  const indexSource = await readFile(path.join(serverDir, 'src', 'bootstrap', 'startup-summary.ts'), 'utf8');
   check('8 el arranque le pide la nota a cada adaptador, con si su CLI esta', /historyNote:\s*agents\.get\(info\.id\)\?\.adapter\.startupHistoryNote\?\.\(info\.available\)/.test(indexSource));
 
   // La demo: sin variables de OpenCode del shell, con sus carpetas en el home falso, y sin capturar si ve un historial.

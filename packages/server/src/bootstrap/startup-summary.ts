@@ -35,8 +35,6 @@ import {
   type ServerText,
   type StatusLineState,
 } from '@agent-workbench/shared';
-import type { AgentRegistry } from '../agents/registry.js';
-import type { ShellLocation } from '../features/terminals/shell-locator.js';
 
 export interface StartupAgent {
   id: AgentId;
@@ -198,12 +196,21 @@ export function supportStartupLineColored(): string {
  * Las lineas de las CLIs cuentan las **disponibles** (`startup-summary.ts`): con
  * una sola instalada son las de siempre, aunque haya mas registradas.
  */
+/** The part of the agent registry the startup banner reads. */
+export interface StartupAgentSource {
+  list(): readonly AgentInfo[];
+  get(id: AgentInfo['id']): {
+    readonly location?: { readonly resolvedPath: string } | null;
+    readonly adapter: { startupHistoryNote?(available: boolean): string | null };
+  } | null | undefined;
+}
+
 export function describeStartup(
   production: boolean,
   url: string,
   cwd: string,
-  agents: AgentRegistry,
-  shell: ShellLocation | null,
+  agents: StartupAgentSource,
+  shell: { readonly file: string } | null,
   remoteLine: string | null,
 ): void {
   const agentList: readonly AgentInfo[] = agents.list();
