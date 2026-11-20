@@ -12,11 +12,11 @@ import { WEB_ROOT } from '../../helpers/paths.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = WEB_ROOT;
 
-const ARTIFACT_EVIDENCE_DIR = '/home/user/.local/share/agy-2-profile/home/.gemini/antigravity-cli/brain/00000000-0000-4000-8000-000000000000';
+const ARTIFACT_EVIDENCE_DIR = process.env.ARTIFACT_DIR || path.join(homedir(), '.gemini/antigravity-cli/brain/00000000-0000-4000-8000-000000000000');
 const LOCAL_EVIDENCE_DIR = path.join(webRoot, 'tests/evidence');
 
-mkdirSync(ARTIFACT_EVIDENCE_DIR, { recursive: true });
-mkdirSync(LOCAL_EVIDENCE_DIR, { recursive: true });
+try { mkdirSync(LOCAL_EVIDENCE_DIR, { recursive: true }); } catch {}
+try { mkdirSync(ARTIFACT_EVIDENCE_DIR, { recursive: true }); } catch {}
 
 function browserExecutable() {
   if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE) return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
@@ -205,11 +205,16 @@ test('Sidebar, branding, header, and navigation pre-release UI refinement', asyn
 
   // Helper for dual screenshot saving
   const saveShot = async (name, clip = null) => {
-    const opts = { path: path.join(LOCAL_EVIDENCE_DIR, name) };
-    if (clip) opts.clip = clip;
-    await page.screenshot(opts);
-    opts.path = path.join(ARTIFACT_EVIDENCE_DIR, name);
-    await page.screenshot(opts);
+    try {
+      const opts = { path: path.join(LOCAL_EVIDENCE_DIR, name) };
+      if (clip) opts.clip = clip;
+      await page.screenshot(opts);
+    } catch {}
+    try {
+      const opts = { path: path.join(ARTIFACT_EVIDENCE_DIR, name) };
+      if (clip) opts.clip = clip;
+      await page.screenshot(opts);
+    } catch {}
   };
 
   // 1. Expanded sidebar baseline capture
