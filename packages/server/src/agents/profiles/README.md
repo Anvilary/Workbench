@@ -6,11 +6,11 @@ installing, reauthenticating or wrapping a provider CLI.
 ## Owned modules and API
 
 - `AgencyProfileStore(absoluteAppDataFile)` in
-  `../../agency/agency-profile-store.ts`: `listDefinitions()`,
+  `../../features/profiles/profile-store.ts`: `listDefinitions()`,
   `getDefinition(profileId)`, `configure(profileId, changes)`.
 - `listAgencyProfiles(store, nativeRegistry)` and
   `inspectAgencyProfile(definition, nativeRegistry)` in
-  `../../agency/agency-profile-capabilities.ts`: snapshots for the existing
+  `../../features/profiles/profile-capabilities.ts`: snapshots for the existing
   `agency.profiles.list`, `agency.profile.configure`, and
   `agency.profile.capabilities.get` messages. Wire validation and dispatch
   belong to the integration owner, not this lane.
