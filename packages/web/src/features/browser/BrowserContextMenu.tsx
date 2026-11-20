@@ -302,7 +302,7 @@ export function BrowserContextMenu({
       onPointerDown={(event) => event.stopPropagation()}
     >
       {hasMisspelling && (
-        <div className="maw-context-menu-spelling" role="group" aria-label="Spelling suggestions">
+        <div className="maw-context-menu-spelling" role="group" aria-label={t('agency.browser.spellingSuggestions')}>
           {menu.dictionarySuggestions.length > 0 ? (
             menu.dictionarySuggestions.map((suggestion) => (
               <button
