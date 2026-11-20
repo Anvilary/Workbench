@@ -45,6 +45,7 @@ async function setupGitFixture() {
   await mkdir(releasesDir, { recursive: true });
   await mkdir(runtimeDir, { recursive: true, mode: 0o700 });
   await mkdir(binDir, { recursive: true });
+  await mkdir(path.join(root, '.config'), { recursive: true });
   await mkdir(path.join(root, 'broken'), { recursive: true });
 
   await exec('git', ['init', '--bare', bareDir]);
@@ -169,6 +170,7 @@ console.log('Healthy; release ' + id);
     ...process.env,
     PATH: `${binDir}:${process.env.PATH}`,
     HOME: root,
+    XDG_CONFIG_HOME: path.join(root, '.config'),
     MAW_STATE_DIR: stateDir,
     MAW_RUNTIME_DIR: runtimeDir,
     MAW_SOURCE_DIR: sourceDir,
