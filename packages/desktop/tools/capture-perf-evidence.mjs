@@ -214,7 +214,7 @@ async function main() {
     logLevel: 'silent',
   });
 
-  const agencyCss = await readFile(path.join(root, 'packages/web/src/agency/agency.css'), 'utf8');
+  const agencyCss = await readFile(path.join(root, 'packages/web/src/app/workbench.css'), 'utf8');
 
   // Set up mock views and backend readiness for real Linux resource collector
   const mockViews = new Map();
