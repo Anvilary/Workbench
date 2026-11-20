@@ -1,4 +1,4 @@
-<img width="1920" height="640" alt="workbench-readme-banner-1920x640" src="https://github.com/user-attachments/assets/7b2e915c-1409-4c06-8496-50280797abdf" />
+<img width="1920" height="640" alt="workbench-readme-banner-1920x640" src="https://github.com/user-attachments/assets/190830f4-2644-45a5-9707-c3c7007047d2" />
 
 # The Workbench
 
