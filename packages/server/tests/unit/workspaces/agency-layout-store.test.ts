@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { AgencyLayoutStore } from '../../../src/agency/agency-layout-store.js';
-import { writeAtomically } from '../../../src/atomic-write.js';
+import { AgencyLayoutStore } from '../../../src/features/workspaces/layout-store.js';
+import { writeAtomically } from '../../../src/shared/persistence/atomic-write.js';
 import { createDefaultLayout, splitPane, type WorkspaceId } from '@agent-workbench/shared';
 
 test('AgencyLayoutStore: saves, loads, survives restart, recovers from backup', async () => {

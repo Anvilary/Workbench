@@ -4,10 +4,10 @@ import { mkdtemp, mkdir, readFile, readdir, realpath, rename, rm, symlink, write
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { DirectoryPickers } from '../../../src/directory-picker.js';
-import { checkVaultTarget } from '../../../src/vault/move.js';
-import { handleAgencyDomainRequest, parseAgencyDomainRequest, type AgencyDomainContext } from '../../../src/agency/domain-handler.js';
-import { AgencyWorkspaceStore, parseAgencySnapshot } from '../../../src/agency/store.js';
+import { DirectoryPickers } from '../../../src/features/files/directory-picker.js';
+import { checkVaultTarget } from '../../../src/features/vault/move.js';
+import { handleAgencyDomainRequest, parseAgencyDomainRequest, type AgencyDomainContext } from '../../../src/features/workspaces/workspace-request-handler.js';
+import { AgencyWorkspaceStore, parseAgencySnapshot } from '../../../src/features/workspaces/workspace-store.js';
 
 async function fixture(t: import('node:test').TestContext) {
   const dir = await mkdtemp(path.join(tmpdir(), 'agency-test-'));

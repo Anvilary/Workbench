@@ -31,7 +31,7 @@
 
 import { stat } from 'node:fs/promises';
 
-import { parseJsonlLine, readTailLines } from '../../jsonl-reader.js';
+import { parseJsonlLine, readTailLines } from '../../shared/jsonl-reader.js';
 import type { QueueEditContext, QueueEditDriver, QueueEditOutcome, RewindIo } from '../adapter.js';
 import { waitForStableScreen, type ScreenWaitTiming } from '../screen-wait.js';
 import { readTimestamp } from './jsonl-events.js';

@@ -33,7 +33,7 @@
  */
 
 import type { ConversationEvent, ConversationState } from '@agent-workbench/shared';
-import { DISK_FILES, parseJsonlLine, type JsonlFileAccess } from '../jsonl-reader.js';
+import { DISK_FILES, parseJsonlLine, type JsonlFileAccess } from '../shared/jsonl-reader.js';
 import type { EventPage } from './adapter.js';
 
 /** Bloque de lectura. Las lineas largas (hasta 290 KB) igual se arman a mano. */

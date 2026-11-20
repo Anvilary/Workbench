@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { copyFile, mkdir, readFile, rename } from 'node:fs/promises';
 import path from 'node:path';
-import { writeAtomically } from '../../atomic-write.js';
+import { writeAtomically } from './atomic-write.js';
 
 export interface LoadWithBackupOptions<T> {
   filePath: string;

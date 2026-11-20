@@ -5,9 +5,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import type { RuntimeSessionId, WorkspaceId } from '@agent-workbench/shared';
-import { AgencyNotificationStore, type CreateNotificationInput } from '../../../src/agency/agency-notification-store.js';
-import { TabActivityManager } from '../../../src/agency/tab-activity-manager.js';
-import { ShellSequences } from '../../../src/agency/shell-integration.js';
+import { AgencyNotificationStore, type CreateNotificationInput } from '../../../src/features/notifications/notification-store.js';
+import { TabActivityManager } from '../../../src/features/notifications/tab-activity-manager.js';
+import { ShellSequences } from '../../../src/features/terminals/shell-integration.js';
 
 class InterruptedNotifications extends AgencyNotificationStore {
   failure: 'before' | 'after' | null = 'before';

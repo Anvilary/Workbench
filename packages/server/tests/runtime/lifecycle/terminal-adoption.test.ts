@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TerminalRegistry } from '../../../src/terminal-registry.js';
+import { TerminalRegistry } from '../../../src/features/terminals/terminal-registry.js';
 import { PtyHostClient } from '../../../src/pty-host/pty-host-client.js';
-import { OutputBuffer } from '../../../src/output-buffer.js';
+import { OutputBuffer } from '../../../src/features/terminals/output-buffer.js';
 
 for (const existing of [false, true]) test(`adoption stages output across snapshot cutoff (${existing ? 'existing' : 'new'} entry)`, async () => {
   const original = PtyHostClient.connectOrSpawn;

@@ -36,7 +36,7 @@ const { ConversationFollower } = await import('../src/agents/claude-code/convers
 const { ClaudeCodeSessionFollower } = await import('../src/agents/claude-code/session-follower.ts');
 const { ModelVariantRegistry } = await import('../src/agents/claude-code/model-variants.ts');
 const { sessionFilePath } = await import('../src/agents/claude-code/paths.ts');
-const { ConversationHub } = await import('../src/conversation-hub.ts');
+const { ConversationHub } = await import('../src/features/conversations/conversation-hub.ts');
 const { setLocale } = await import('../../web/src/i18n/index.ts');
 const status = await import('../../web/src/thread-status.ts');
 
@@ -791,7 +791,7 @@ const nextEvent = (hub, name, ms = 5_000) =>
 // `dequeue` al terminar.
 
 const { PromptQueueTracker } = await import('../src/agents/claude-code/prompt-queue.ts');
-const { IDLE_CLEARS_QUEUE_MS } = await import('../src/conversation-hub.ts');
+const { IDLE_CLEARS_QUEUE_MS } = await import('../src/features/conversations/conversation-hub.ts');
 
 const queueOp = (operation, content, seconds, extra = {}) => ({
   type: 'queue-operation',
@@ -1050,7 +1050,7 @@ const humanQueued = (uuid, prompt, seconds) => ({
 
 // Las teclas de forzar el envio: las medidas.
 {
-  const { buildForceSendKeys } = await import('../src/pty-input.ts');
+  const { buildForceSendKeys } = await import('../src/features/composer/pty-input.ts');
   check('10.60 Claude Code: Ctrl+X Ctrl+S en un solo write', buildForceSendKeys('ctrl-x-ctrl-s') === '\x18\x13');
   check('10.61 Antigravity: Alt+M, Esc pegado a la letra', buildForceSendKeys('alt-m') === '\x1bm');
 }
@@ -1315,7 +1315,7 @@ const clearPairs = (data) => (data.length > 0 && data.replaceAll(CLEAR_LINE, '')
 
 // La cola de la app da los textos enteros, y el protocolo.
 {
-  const { AppPromptQueue } = await import('../src/app-prompt-queue.ts');
+  const { AppPromptQueue } = await import('../src/features/composer/app-prompt-queue.ts');
   const queue = new AppPromptQueue();
   const long = 'x'.repeat(shared.MAX_QUEUED_PROMPT_CHARS + 50);
   queue.note('t1', { text: '  uno  ', images: 0, at: 1 });

@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { discoverProfiles, type MonitoredProfileConfig } from '../../../src/agents-usage/discovery.js';
-import { collectCodexUsage } from '../../../src/agents-usage/codex-collector.js';
-import { collectClaudeUsage } from '../../../src/agents-usage/claude-collector.js';
-import { collectAntigravityUsage } from '../../../src/agents-usage/antigravity-collector.js';
-import { AgentsUsageCollector } from '../../../src/agents-usage/collector.js';
+import { discoverProfiles, type MonitoredProfileConfig } from '../../../src/agents/usage/discovery.js';
+import { collectCodexUsage } from '../../../src/agents/usage/codex-collector.js';
+import { collectClaudeUsage } from '../../../src/agents/usage/claude-collector.js';
+import { collectAntigravityUsage } from '../../../src/agents/usage/antigravity-collector.js';
+import { AgentsUsageCollector } from '../../../src/agents/usage/collector.js';
 
 describe('Agents Usage Backend', () => {
   describe('Profile Discovery & Provider Mapping', () => {

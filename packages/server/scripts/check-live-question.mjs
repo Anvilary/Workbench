@@ -40,11 +40,11 @@ const screens = await import('./fixtures/question-screens.mjs');
 const { readQuestionScreen, createClaudeCodeScreenQuestions, QUESTION_WAITING_FOR } = await import(
   '../src/agents/claude-code/question-screen.ts'
 );
-const { LiveQuestionWatch, LIVE_QUESTION_ID_PREFIX } = await import('../src/live-question.ts');
+const { LiveQuestionWatch, LIVE_QUESTION_ID_PREFIX } = await import('../src/features/conversations/live-question.ts');
 const { buildAnswerKeys, answerKeysRefusal, ANSWER_FREE_TEXT_MULTI_TEXT, ANSWER_INVALID_TEXT } = await import(
-  '../src/pty-input.ts'
+  '../src/features/composer/pty-input.ts'
 );
-const { ConversationHub } = await import('../src/conversation-hub.ts');
+const { ConversationHub } = await import('../src/features/conversations/conversation-hub.ts');
 const { AgentRegistry } = await import('../src/agents/registry.ts');
 const { createClaudeCodeAdapter } = await import('../src/agents/claude-code/index.ts');
 

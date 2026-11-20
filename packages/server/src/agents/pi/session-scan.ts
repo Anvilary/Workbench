@@ -15,7 +15,7 @@
  */
 
 import type { HistoryItem, ScannedSession } from '../adapter.js';
-import { parseJsonlLine, readHeadLines, readTailLines } from '../../jsonl-reader.js';
+import { parseJsonlLine, readHeadLines, readTailLines } from '../../shared/jsonl-reader.js';
 import { toTitle, UNTITLED_SESSION_TITLE } from '../session-title.js';
 import { TRANSPORT_LIMITS } from '../transport-limits.js';
 import { readEntry, readHeader, type PiSessionHeader } from './session-entries.js';

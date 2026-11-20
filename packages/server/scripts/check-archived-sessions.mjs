@@ -25,8 +25,8 @@ await mkdir(dir, { recursive: true });
 process.env['APPDATA'] = dir;
 process.env['XDG_CONFIG_HOME'] = dir;
 
-const { ArchivedSessions } = await import('../src/archived-sessions.ts');
-const { archivedSessionsPath } = await import('../src/paths.ts');
+const { ArchivedSessions } = await import('../src/features/history/archived-sessions.ts');
+const { archivedSessionsPath } = await import('../src/shared/app-paths.ts');
 
 let failures = 0;
 const check = (label, ok, extra = '') => {

@@ -31,7 +31,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { PlanContent, PlanOrigin, SessionPlan } from '@agent-workbench/shared';
-import { resolveInside } from '../../path-guard.js';
+import { resolveInside } from '../../features/files/path-guard.js';
 import { plansRoot, scratchRoot } from './paths.js';
 
 /**

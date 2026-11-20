@@ -21,7 +21,7 @@
 
 import type { AnswerSelection } from '@agent-workbench/shared';
 import type { QuestionAnswerOutcome, QuestionChannel } from '../adapter.js';
-import { sanitizeForPaste } from '../../pty-input.js';
+import { sanitizeForPaste } from '../../features/composer/pty-input.js';
 import type { ReadOnlyDatabase } from '../sqlite.js';
 import type { OpenCodeServeClient } from './serve-client.js';
 import { OPENCODE_SQL, type PartCallRow } from './sql.js';

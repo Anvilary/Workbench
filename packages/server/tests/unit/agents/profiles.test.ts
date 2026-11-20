@@ -11,11 +11,11 @@ import { createClaudeCodeAdapter } from '../../../src/agents/claude-code/index.j
 import { createAntigravityAdapter } from '../../../src/agents/antigravity/index.js';
 import { createOpenCodeAdapter } from '../../../src/agents/opencode/index.js';
 import { createPiAdapter } from '../../../src/agents/pi/index.js';
-import { NativeIdentities } from '../../../src/agency/native-identity.js';
+import { NativeIdentities } from '../../../src/features/sessions/native-identity.js';
 import { defaultDefinitions, isolatedEnvironment } from '../../../src/agents/profiles/definition.js';
 import { resolveConfiguredExecutable } from '../../../src/agents/profiles/executable.js';
-import { AgencyProfileStore } from '../../../src/agency/agency-profile-store.js';
-import { buildAgencyProfileLaunch, inspectAgencyProfile } from '../../../src/agency/agency-profile-capabilities.js';
+import { AgencyProfileStore } from '../../../src/features/profiles/profile-store.js';
+import { buildAgencyProfileLaunch, inspectAgencyProfile } from '../../../src/features/profiles/profile-capabilities.js';
 
 const asId = (value: string): CliProfileId => value as CliProfileId;
 const UUID1 = '00000000-0000-4000-8000-000000000001';
@@ -405,7 +405,7 @@ test('C-1: two profiles with an identical launch plan (same account) are refused
     rows.find((row: { id: string }) => row.id === 'codex-1').args = [];
     await writeFile(f.file, JSON.stringify(raw));
     const registry = nativeRegistry();
-    const { listAgencyProfiles } = await import('../../../src/agency/agency-profile-capabilities.js');
+    const { listAgencyProfiles } = await import('../../../src/features/profiles/profile-capabilities.js');
     const listed = await listAgencyProfiles(f.store, registry);
     for (const id of ['codex-0', 'codex-1']) {
       const profile = listed.find((p) => p.id === id)!;

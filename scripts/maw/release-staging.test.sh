@@ -393,7 +393,7 @@ fi
 
 # ---- Test 20: AutoSpawn suppression in systemd production environments ----
 begin "20. maw.service sets MAW_AUTO_SPAWN_PTYD=0 and terminal-registry respects it"
-reg_source=$(cat "$repo_dir/packages/server/src/terminal-registry.ts")
+reg_source=$(cat "$repo_dir/packages/server/src/features/terminals/terminal-registry.ts")
 unit_source=$(cat "$repo_dir/scripts/maw/maw.service")
 if echo "$reg_source" | grep -q "MAW_AUTO_SPAWN_PTYD" && echo "$unit_source" | grep -q "MAW_AUTO_SPAWN_PTYD=0"; then
   ok

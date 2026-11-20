@@ -19,10 +19,10 @@
 import { MAX_SUBMIT_IMAGE_BYTES, type ConversationImageSource } from '@agent-workbench/shared';
 import { open, readFile, stat, type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
-import { detectImageFormat } from '../../image-signature.js';
-import { parseJsonlLine } from '../../jsonl-reader.js';
-import { pasteRoot } from '../../paste-paths.js';
-import { resolveInside } from '../../path-guard.js';
+import { detectImageFormat } from '../../features/composer/image-signature.js';
+import { parseJsonlLine } from '../../shared/jsonl-reader.js';
+import { pasteRoot } from '../../features/composer/paste-paths.js';
+import { resolveInside } from '../../features/files/path-guard.js';
 import type { LoadedImage } from '../adapter.js';
 import { queuedPastedImages, recordOf, sameFilePath } from './jsonl-events.js';
 

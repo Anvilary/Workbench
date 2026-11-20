@@ -294,7 +294,7 @@ const {
   buildSubmissionWrites,
   fileReference,
   MAX_SUBMIT_CHARS,
-} = await import('../src/pty-input.ts');
+} = await import('../src/features/composer/pty-input.ts');
 const { CLAUDE_CODE_INPUT, CLAUDE_CODE_CAPABILITIES } = await import('../src/agents/claude-code/index.ts');
 
 const PS = '\x1b[200~';
@@ -401,7 +401,7 @@ const img2 = process.platform === 'win32' ? 'C:\\Temp\\pegadas x\\p-2.png' : '/t
 // dibuje su pantalla se pierde. Medido con Codex 0.155: a 0,5–1,5 s del
 // lanzamiento, 7 de 9 no llegaron; desde 2 s, 12 de 12.
 {
-  const { submitStartDelayMs } = await import('../src/pty-input.ts');
+  const { submitStartDelayMs } = await import('../src/features/composer/pty-input.ts');
   check('B9 a 1 s del lanzamiento con 3 s declarados: espera 2 s', submitStartDelayMs(10_000, 11_000, 3000) === 2000);
   check('B9 cumplido el plazo: no espera', submitStartDelayMs(10_000, 13_000, 3000) === 0 && submitStartDelayMs(10_000, 60_000, 3000) === 0);
   check('B9 sin plazo declarado: no espera', submitStartDelayMs(10_000, 10_001, 0) === 0);
@@ -471,7 +471,7 @@ const img2 = process.platform === 'win32' ? 'C:\\Temp\\pegadas x\\p-2.png' : '/t
 // M5. Fila de escrituras por terminal (paso 2)
 // ---------------------------------------------------------------------------
 
-const { TerminalWriteQueue } = await import('../src/terminal-write-queue.ts');
+const { TerminalWriteQueue } = await import('../src/features/terminals/terminal-write-queue.ts');
 
 /** Una espera que anota cuanto se pidio y cede el turno sin tardar de verdad. */
 const makeWait = (waits) => async (ms) => {
@@ -1322,7 +1322,7 @@ async function waitFor(condition, timeoutMs = 5000) {
     untitled?.summary.title === 'Sesion sin titulo' && untitled.summary.titleSource === 'none', show(untitled?.summary));
 
   // Lo que usa scanRollout para no leer la cabeza de lo que no se lista.
-  const { readHeadLines } = await import('../src/jsonl-reader.ts');
+  const { readHeadLines } = await import('../src/shared/jsonl-reader.ts');
   const headFile = path.join(scanDir, 'cabeza.jsonl');
   await writeFile(headFile, 'uno\n\ndos\ntres\n');
   const asked = [];
@@ -1844,8 +1844,8 @@ async function waitFor(condition, timeoutMs = 5000) {
 // ---------------------------------------------------------------------------
 
 {
-  const { SessionIndex, migrateIndexCache } = await import('../src/session-index.ts');
-  const { sessionIndexCachePath } = await import('../src/paths.ts');
+  const { SessionIndex, migrateIndexCache } = await import('../src/features/history/session-index.ts');
+  const { sessionIndexCachePath } = await import('../src/shared/app-paths.ts');
   const { readFile } = await import('node:fs/promises');
   const readCache = async () => {
     try { return JSON.parse(await readFile(sessionIndexCachePath(), 'utf8')); } catch { return null; }
@@ -1973,7 +1973,7 @@ async function waitFor(condition, timeoutMs = 5000) {
 
 // D2. El libro de actividad.
 {
-  const { ActivityBook } = await import('../src/terminal-activity.ts');
+  const { ActivityBook } = await import('../src/features/terminals/terminal-activity.ts');
   const book = new ActivityBook();
   book.set('t1', 'busy');
   book.set('t2', 'idle');
@@ -1988,7 +1988,7 @@ async function waitFor(condition, timeoutMs = 5000) {
   check('D2 clear', book.snapshot().length === 0);
 }
 
-const workspace = await import('../src/workspace-store.ts');
+const workspace = await import('../src/features/terminals/open-tabs-store.ts');
 const T = (agent, sessionId, cwd = '/p') => ({ agent, cwd, sessionId, label: '' });
 const orderedIds = (state) => workspace.orderedTabs(state).map((e) => (e.kind === 'known' ? e.tab.sessionId : `ajena:${e.raw.sessionId}`)).join(',');
 
@@ -2019,8 +2019,8 @@ const orderedIds = (state) => workspace.orderedTabs(state).map((e) => (e.kind ==
 
 // D4. workspace.json: una pestana de otra CLI nunca la lee mal una build anterior (M1).
 {
-  const { WorkspaceStore } = workspace;
-  const { workspaceStatePath } = await import('../src/paths.ts');
+  const { OpenTabsStore } = workspace;
+  const { workspaceStatePath } = await import('../src/shared/app-paths.ts');
   const { readFile } = await import('node:fs/promises');
   const statePath = workspaceStatePath();
   check('D4 workspace.json cae en la carpeta temporal', statePath.startsWith(root), statePath);
@@ -2049,7 +2049,7 @@ const orderedIds = (state) => workspace.orderedTabs(state).map((e) => (e.kind ==
     }
   }
 
-  const store = new WorkspaceStore();
+  const store = new OpenTabsStore();
   // Una CLI que esta build no conoce: desde el hito 26 OpenCode, y desde el 27 Antigravity, ya no sirven de ejemplo.
   const ajena = { agent: 'gemini-cli', cwd: 'D:\\b', sessionId: 'sb', label: '', futuro: { x: 1 } };
   await writeFile(statePath, JSON.stringify({ version: 1, tabs: [{ agent: 'claude-code', cwd: 'D:\\a', sessionId: 'sa' }, ajena] }));
@@ -2098,7 +2098,7 @@ const orderedIds = (state) => workspace.orderedTabs(state).map((e) => (e.kind ==
 
 // D5. archived-sessions sigue con el id solo: uuid v7, v4 y v5 no chocan (C23).
 {
-  const { ArchivedSessions } = await import('../src/archived-sessions.ts');
+  const { ArchivedSessions } = await import('../src/features/history/archived-sessions.ts');
   const v7 = cid(71);
   const v4 = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
   const v5 = 'aaaaaaaa-bbbb-5ccc-8ddd-eeeeeeeeeeee';
@@ -2114,7 +2114,7 @@ const orderedIds = (state) => workspace.orderedTabs(state).map((e) => (e.kind ==
 // D6 y D7. El hub: una pestana que gana su sesion despues de lanzar.
 {
   const { EventEmitter } = await import('node:events');
-  const { ConversationHub } = await import('../src/conversation-hub.ts');
+  const { ConversationHub } = await import('../src/features/conversations/conversation-hub.ts');
 
   const followers = [];
   const makeFollower = (sessionId) => {
@@ -2217,7 +2217,7 @@ const orderedIds = (state) => workspace.orderedTabs(state).map((e) => (e.kind ==
 // avisos al watcher en Windows (medido con Codex en la verificacion de cierre).
 {
   const { EventEmitter } = await import('node:events');
-  const { ConversationHub } = await import('../src/conversation-hub.ts');
+  const { ConversationHub } = await import('../src/features/conversations/conversation-hub.ts');
   const followers = [];
   const makeFollower = (sessionId) => {
     const follower = {
@@ -2289,7 +2289,7 @@ const orderedIds = (state) => workspace.orderedTabs(state).map((e) => (e.kind ==
 // relectura periodica trae algo nuevo, una vez por ventana.
 {
   const { EventEmitter } = await import('node:events');
-  const { ConversationHub } = await import('../src/conversation-hub.ts');
+  const { ConversationHub } = await import('../src/features/conversations/conversation-hub.ts');
   const event = (n) => ({ eventId: `e${n}`, role: 'user', ts: '', parts: [] });
   let serial = 0;
   const makeAdapter = (id, followPollMs, sourcePath) => ({
@@ -2362,7 +2362,7 @@ const orderedIds = (state) => workspace.orderedTabs(state).map((e) => (e.kind ==
 
 // D9. El gancho posterior al lanzamiento: a quien le toca cada momento.
 {
-  const { LaunchHookSlot } = await import('../src/launch-hook-slot.ts');
+  const { LaunchHookSlot } = await import('../src/features/terminals/launch-hook-slot.ts');
   const makeHook = (members = {}) => {
     const calls = [];
     const hook = { cancel: () => calls.push('cancel') };
@@ -2447,7 +2447,7 @@ const orderedIds = (state) => workspace.orderedTabs(state).map((e) => (e.kind ==
 // ---------------------------------------------------------------------------
 
 {
-  const { watchSessions } = await import('../src/session-watcher.ts');
+  const { watchSessions } = await import('../src/features/history/session-watcher.ts');
   const chokidar = (await import('chokidar')).default;
   const cliHome = path.join(root, 'e4-cli');
   const lateRoot = path.join(cliHome, 'sessions');
@@ -2670,7 +2670,7 @@ const throwsOn = (run) => {
 
 // A6. El arranque y el cartel cuentan CLIs disponibles.
 {
-  const { startupAgentLines, AVAILABLE_AGENTS_LABEL, supportStartupLine, supportStartupLineColored } = await import('../src/startup-summary.ts');
+  const { startupAgentLines, AVAILABLE_AGENTS_LABEL, supportStartupLine, supportStartupLineColored } = await import('../src/bootstrap/startup-summary.ts');
   const claude = (over = {}) => ({ id: 'claude-code', label: 'Claude Code', version: '2.1.270', resolvedPath: '/bin/claude', missingMessage: null, ...over });
   const codex = (over = {}) => ({ id: 'codex', label: 'Codex', version: 'codex-cli 0.154.0', resolvedPath: '/bin/codex', missingMessage: null, ...over });
   const raw = (text) => ({ key: 'raw', params: { text } });
@@ -2732,7 +2732,7 @@ const throwsOn = (run) => {
 // M7. La demo no ve ninguna CLI de verdad.
 {
   const demo = await import('../../../scripts/demo/isolation.mjs');
-  const { startupAgentLines } = await import('../src/startup-summary.ts');
+  const { startupAgentLines } = await import('../src/bootstrap/startup-summary.ts');
   const delimiter = win ? ';' : ':';
   const pathext = '.EXE;.CMD';
   const options = { platform: process.platform, pathext };
@@ -2983,7 +2983,7 @@ const tab = (agent, cwd, kind = 'agent') => ({ kind, agent, cwd });
   check('W7 un reset con la llamada abierta la trae', reset({ openToolCall: true })?.openToolCall === true);
 
   const { EventEmitter } = await import('node:events');
-  const { ConversationHub } = await import('../src/conversation-hub.ts');
+  const { ConversationHub } = await import('../src/features/conversations/conversation-hub.ts');
   const openCalls = [];
   // Llamadas ya escritas en el "archivo" que ninguna lectura vio todavia.
   const unread = [];

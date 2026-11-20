@@ -7,7 +7,7 @@
  * de sacar.
  */
 
-import { nativeRecoveryCapacity } from './agency/recovery-capacity.js';
+import { nativeRecoveryCapacity } from './features/sessions/recovery-capacity.js';
 import { acquireStoreOwnership, publishReadiness, readReleaseIdentity } from './maw-host.js';
 import { existsSync } from 'node:fs';
 import { createServer, type Server as HttpServer } from 'node:http';
@@ -16,14 +16,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { TOKEN_QUERY_PARAM, type AgentInfo, type TerminalId } from '@agent-workbench/shared';
-import { ArchivedSessions } from './archived-sessions.js';
+import { ArchivedSessions } from './features/history/archived-sessions.js';
 import { createAgentRegistry, type AgentRegistry } from './agents/registry.js';
-import { migrateLegacyConfigDir } from './config-dir-migration.js';
-import { ConversationHub } from './conversation-hub.js';
-import { openBrowser } from './open-browser.js';
-import { ensurePtyHelperExecutable } from './pty-helper.js';
-import { RemoteAccessService } from './remote-access-service.js';
-import { RemoteDevicesStore } from './remote-devices-store.js';
+import { migrateLegacyConfigDir } from './bootstrap/config-dir-migration.js';
+import { ConversationHub } from './features/conversations/conversation-hub.js';
+import { openBrowser } from './bootstrap/open-browser.js';
+import { ensurePtyHelperExecutable } from './bootstrap/pty-helper.js';
+import { RemoteAccessService } from './features/remote-access/remote-access-service.js';
+import { RemoteDevicesStore } from './features/remote-access/remote-devices-store.js';
 import {
   LOOPBACK_HOST,
   applyFrameProtectionHeaders,
@@ -33,51 +33,53 @@ import {
   buildTokenCookie,
   createSessionToken,
   readPairingCode,
-} from './security.js';
-import { createNoAuthMiddleware } from './no-auth-middleware.js';
-import { appConfigDir } from './paths.js';
-import { RepoHub } from './repo-hub.js';
-import { MemoryHub } from './memory-hub.js';
-import { PasteStore } from './paste-store.js';
-import { SessionIndex } from './session-index.js';
-import { SettingsStore } from './settings-store.js';
+} from './security/request-guards.js';
+import { createNoAuthMiddleware } from './security/no-auth-middleware.js';
+import { appConfigDir } from './shared/app-paths.js';
+import { RepoHub } from './features/git/repo-hub.js';
+import { MemoryHub } from './features/memory/memory-hub.js';
+import { PasteStore } from './features/composer/paste-store.js';
+import { SessionIndex } from './features/history/session-index.js';
+import { SettingsStore } from './features/settings/settings-store.js';
 import {
   remoteAccessStartupLine,
   startupAgentLines,
   supportStartupLine,
   supportStartupLineColored,
-} from './startup-summary.js';
-import { NotesStore } from './notes-store.js';
-import { DraftStore, workspaceDraftOwners } from './draft-store.js';
-import { locateShells, pickShell, type ShellLocation } from './shell-locator.js';
-import { AppSettingsService } from './app-settings-service.js';
-import { ClassicWorkbenchLifecycle } from './classic-workbench-lifecycle.js';
-import { TerminalRegistry } from './terminal-registry.js';
-import { attachTerminalSocket } from './terminal-socket.js';
-import { VaultCatalog } from './vault/catalog.js';
-import { defaultVaultDir } from './vault/paths.js';
-import { VaultService } from './vault/service.js';
-import { WorkspaceStore } from './workspace-store.js';
-import { WorktreeLinks } from './worktrees/links.js';
-import { WorktreeService } from './worktrees/service.js';
-import { WorktreeStore } from './worktrees/store.js';
-import { AgencyWorkspaceStore } from './agency/store.js';
-import { BrowserProfileStore } from './agency/browser-profiles/store.js';
-import { NativeIdentities } from './agency/native-identity.js';
-import { AgencyProfileStore } from './agency/agency-profile-store.js';
-import { SplitAgencySessionStore } from './agency/agency-session-store.js';
+} from './bootstrap/startup-summary.js';
+import { NotesStore } from './features/notes/notes-store.js';
+import { DraftStore, workspaceDraftOwners } from './features/composer/draft-store.js';
+import { locateShells, pickShell, type ShellLocation } from './features/terminals/shell-locator.js';
+import { AppSettingsService } from './features/settings/app-settings-service.js';
+import { ClassicWorkbenchLifecycle } from './features/history/classic-workbench-lifecycle.js';
+import { TerminalRegistry } from './features/terminals/terminal-registry.js';
+import { attachTerminalSocket } from './transport/websocket/socket-server.js';
+import { VaultCatalog } from './features/vault/catalog.js';
+import { defaultVaultDir } from './features/vault/paths.js';
+import { VaultService } from './features/vault/service.js';
+import { OpenTabsStore } from './features/terminals/open-tabs-store.js';
+import { WorktreeLinks } from './features/worktrees/links.js';
+import { WorktreeService } from './features/worktrees/service.js';
+import { WorktreeStore } from './features/worktrees/store.js';
+import { AgencyWorkspaceStore } from './features/workspaces/workspace-store.js';
+import { BrowserProfileStore } from './features/browser/browser-profile-store.js';
+import { NativeIdentities } from './features/sessions/native-identity.js';
+import { AgencyProfileStore } from './features/profiles/profile-store.js';
+import { SplitAgencySessionStore } from './features/sessions/session-store.js';
 import {
   AgencySessionRuntime,
   type AgencyProfileLaunchProvider,
   type AgencyWorkspaceSource,
-} from './agency/agency-session-runtime.js';
-import { buildAgencyProfileLaunch } from './agency/agency-profile-capabilities.js';
-import { WorkspaceMutex } from './agency/workspace-lock.js';
-import { BrowserTabAdapter, BrowserTabStore } from './agency/browser-tabs/index.js';
-import { EditorTabAdapter, EditorTabStore } from './agency/editor-tabs/index.js';
-import { AgencyNotificationStore } from './agency/agency-notification-store.js';
-import { AgencyLayoutStore } from './agency/agency-layout-store.js';
-import { TabActivityManager } from './agency/tab-activity-manager.js';
+} from './features/sessions/session-runtime.js';
+import { buildAgencyProfileLaunch } from './features/profiles/profile-capabilities.js';
+import { WorkspaceMutex } from './features/workspaces/workspace-lock.js';
+import { BrowserTabAdapter } from './features/browser/browser-tab-adapter.js';
+import { BrowserTabStore } from './features/browser/browser-tab-store.js';
+import { EditorTabAdapter } from './features/editor/editor-tab-adapter.js';
+import { EditorTabStore } from './features/editor/editor-tab-store.js';
+import { AgencyNotificationStore } from './features/notifications/notification-store.js';
+import { AgencyLayoutStore } from './features/workspaces/layout-store.js';
+import { TabActivityManager } from './features/notifications/tab-activity-manager.js';
 
 const serverDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -362,7 +364,7 @@ async function main(): Promise<void> {
   // sin permiso de ejecucion, y sin esto ninguna pestana abre (`pty-helper.ts`).
   ensurePtyHelperExecutable();
 
-  const store = new WorkspaceStore();
+  const store = new OpenTabsStore();
   // Que sesiones escondio el usuario de la barra lateral. Se carga antes del
   // indice: si no, el primer envio las mostraria todas y desapareceria solas.
   const archived = new ArchivedSessions();

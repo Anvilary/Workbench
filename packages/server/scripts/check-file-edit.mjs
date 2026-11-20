@@ -43,11 +43,11 @@ process.env.GIT_CONFIG_NOSYSTEM = '1';
 process.env.GIT_CEILING_DIRECTORIES = root;
 
 const shared = await import('@agent-workbench/shared');
-const { cliFolders, NO_CLI_FOLDERS } = await import('../src/cli-folders.ts');
-const { existingPaths, listDirectory, readPreview, searchFiles, MAX_PREVIEW_BYTES } = await import('../src/file-browser.ts');
-const { FileWriteError, saveProjectFile, withLineEndings } = await import('../src/file-write.ts');
-const { writeAtomically } = await import('../src/atomic-write.ts');
-const { InvalidPathError } = await import('../src/path-guard.ts');
+const { cliFolders, NO_CLI_FOLDERS } = await import('../src/features/files/cli-folders.ts');
+const { existingPaths, listDirectory, readPreview, searchFiles, MAX_PREVIEW_BYTES } = await import('../src/features/files/file-browser.ts');
+const { FileWriteError, saveProjectFile, withLineEndings } = await import('../src/features/files/file-write.ts');
+const { writeAtomically } = await import('../src/shared/persistence/atomic-write.ts');
+const { InvalidPathError } = await import('../src/features/files/path-guard.ts');
 
 let failures = 0;
 const check = (label, ok, extra = '') => {
@@ -330,7 +330,7 @@ let cliLink = false;
 // --- 6. El cableado, leido como texto -------------------------------------------------
 {
   const { readFileSync } = await import('node:fs');
-  const socket = readFileSync(new URL('../src/terminal-socket.ts', import.meta.url), 'utf8');
+  const socket = readFileSync(new URL('../src/transport/websocket/socket-server.ts', import.meta.url), 'utf8');
   check('6.1 el servidor anuncia que guarda, y guarda por saveProjectFile',
     socket.includes('fileWrite: true,') && /case 'files\.write':[\s\S]{0,900}saveProjectFile\(cwd, message\.path, message\.text, message\.baseHash, await folders\)/.test(socket));
   check('6.2 leer, listar, buscar y abrir pasan por las carpetas de las CLIs',

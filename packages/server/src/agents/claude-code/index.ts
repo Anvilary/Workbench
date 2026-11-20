@@ -23,7 +23,7 @@ import {
   type StatusLineSetupInfo,
   type StatusLineState,
 } from '@agent-workbench/shared';
-import { agentStatusDir, integrationsDir } from '../../paths.js';
+import { agentStatusDir, integrationsDir } from '../../shared/app-paths.js';
 import type {
   AgentAdapter,
   AgentInput,

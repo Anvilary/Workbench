@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { WorkspaceId } from '@agent-workbench/shared';
-import { AgencyNotificationStore } from '../../../src/agency/agency-notification-store.js';
-import { TabActivityManager } from '../../../src/agency/tab-activity-manager.js';
+import { AgencyNotificationStore } from '../../../src/features/notifications/notification-store.js';
+import { TabActivityManager } from '../../../src/features/notifications/tab-activity-manager.js';
 
 for (const kind of ['notifications', 'activity'] as const) test(`${kind}: recovered primary cannot poison backup on the next write`, async t => {
   const root = await mkdtemp(path.join(tmpdir(), 'maw-round2-recovery-'));

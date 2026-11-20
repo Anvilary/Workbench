@@ -18,7 +18,7 @@ import {
   authorizeRequest,
   authorizeRequestNoAuth,
   isLocalNoAuthEnabled,
-} from '../../../src/security.js';
+} from '../../../src/security/request-guards.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -223,9 +223,9 @@ test('both modes: malformed cookie does not throw before authentication', () => 
 // ---------------------------------------------------------------------------
 
 test('remote access service rejects configure({ enabled: true }) when no-auth is active', async () => {
-  const { RemoteAccessService } = await import('../../../src/remote-access-service.js');
-  const { SettingsStore } = await import('../../../src/settings-store.js');
-  const { RemoteDevicesStore } = await import('../../../src/remote-devices-store.js');
+  const { RemoteAccessService } = await import('../../../src/features/remote-access/remote-access-service.js');
+  const { SettingsStore } = await import('../../../src/features/settings/settings-store.js');
+  const { RemoteDevicesStore } = await import('../../../src/features/remote-access/remote-devices-store.js');
   const { mkdtemp, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const path = await import('node:path');
@@ -334,26 +334,26 @@ test('WebSocket upgrade: connects without token in no-auth mode, rejects foreign
   const { createServer } = await import('node:http');
   const { WebSocket } = await import('ws');
   const express = (await import('express')).default;
-  const { attachTerminalSocket } = await import('../../../src/terminal-socket.js');
-  const { TerminalRegistry } = await import('../../../src/terminal-registry.js');
+  const { attachTerminalSocket } = await import('../../../src/transport/websocket/socket-server.js');
+  const { TerminalRegistry } = await import('../../../src/features/terminals/terminal-registry.js');
   const { createAgentRegistry } = await import('../../../src/agents/registry.js');
-  const { WorkspaceStore } = await import('../../../src/workspace-store.js');
-  const { SessionIndex } = await import('../../../src/session-index.js');
-  const { ArchivedSessions } = await import('../../../src/archived-sessions.js');
-  const { VaultCatalog } = await import('../../../src/vault/catalog.js');
-  const { WorktreeLinks } = await import('../../../src/worktrees/links.js');
-  const { WorktreeStore } = await import('../../../src/worktrees/store.js');
-  const { VaultService } = await import('../../../src/vault/service.js');
-  const { WorktreeService } = await import('../../../src/worktrees/service.js');
-  const { AppSettingsService } = await import('../../../src/app-settings-service.js');
-  const { SettingsStore } = await import('../../../src/settings-store.js');
-  const { NotesStore } = await import('../../../src/notes-store.js');
-  const { DraftStore } = await import('../../../src/draft-store.js');
-  const { ConversationHub } = await import('../../../src/conversation-hub.js');
-  const { RepoHub } = await import('../../../src/repo-hub.js');
-  const { MemoryHub } = await import('../../../src/memory-hub.js');
-  const { RemoteAccessService } = await import('../../../src/remote-access-service.js');
-  const { RemoteDevicesStore } = await import('../../../src/remote-devices-store.js');
+  const { OpenTabsStore } = await import('../../../src/features/terminals/open-tabs-store.js');
+  const { SessionIndex } = await import('../../../src/features/history/session-index.js');
+  const { ArchivedSessions } = await import('../../../src/features/history/archived-sessions.js');
+  const { VaultCatalog } = await import('../../../src/features/vault/catalog.js');
+  const { WorktreeLinks } = await import('../../../src/features/worktrees/links.js');
+  const { WorktreeStore } = await import('../../../src/features/worktrees/store.js');
+  const { VaultService } = await import('../../../src/features/vault/service.js');
+  const { WorktreeService } = await import('../../../src/features/worktrees/service.js');
+  const { AppSettingsService } = await import('../../../src/features/settings/app-settings-service.js');
+  const { SettingsStore } = await import('../../../src/features/settings/settings-store.js');
+  const { NotesStore } = await import('../../../src/features/notes/notes-store.js');
+  const { DraftStore } = await import('../../../src/features/composer/draft-store.js');
+  const { ConversationHub } = await import('../../../src/features/conversations/conversation-hub.js');
+  const { RepoHub } = await import('../../../src/features/git/repo-hub.js');
+  const { MemoryHub } = await import('../../../src/features/memory/memory-hub.js');
+  const { RemoteAccessService } = await import('../../../src/features/remote-access/remote-access-service.js');
+  const { RemoteDevicesStore } = await import('../../../src/features/remote-access/remote-devices-store.js');
   const { mkdtemp, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const path = await import('node:path');
@@ -369,7 +369,7 @@ test('WebSocket upgrade: connects without token in no-auth mode, rejects foreign
   const settings = new SettingsStore(path.join(tempDir, 'settings.json'));
   await settings.load();
   const agents = createAgentRegistry([]);
-  const store = new WorkspaceStore();
+  const store = new OpenTabsStore();
   await store.load();
   const archived = new ArchivedSessions();
   await archived.load();
@@ -411,11 +411,11 @@ test('WebSocket upgrade: connects without token in no-auth mode, rejects foreign
   });
   await remote.load();
 
-  const { AgencyWorkspaceStore } = await import('../../../src/agency/store.js');
-  const { AgencyProfileStore } = await import('../../../src/agency/agency-profile-store.js');
-  const { AgencySessionRuntime } = await import('../../../src/agency/agency-session-runtime.js');
-  const { SplitAgencySessionStore } = await import('../../../src/agency/agency-session-store.js');
-  const { WorkspaceMutex } = await import('../../../src/agency/workspace-lock.js');
+  const { AgencyWorkspaceStore } = await import('../../../src/features/workspaces/workspace-store.js');
+  const { AgencyProfileStore } = await import('../../../src/features/profiles/profile-store.js');
+  const { AgencySessionRuntime } = await import('../../../src/features/sessions/session-runtime.js');
+  const { SplitAgencySessionStore } = await import('../../../src/features/sessions/session-store.js');
+  const { WorkspaceMutex } = await import('../../../src/features/workspaces/workspace-lock.js');
 
   const agencyWorkspaceStore = new AgencyWorkspaceStore(path.join(tempDir, 'agency-state.json'));
   await agencyWorkspaceStore.load();
@@ -500,7 +500,7 @@ test('WebSocket upgrade: connects without token in no-auth mode, rejects foreign
 test('startup rejects in token-free mode if remote access is enabled in settings', async () => {
   const prevEnv = process.env['MAW_UNSAFE_LOCAL_NO_AUTH'];
   process.env['MAW_UNSAFE_LOCAL_NO_AUTH'] = '1';
-  const { SettingsStore } = await import('../../../src/settings-store.js');
+  const { SettingsStore } = await import('../../../src/features/settings/settings-store.js');
   const { mkdtemp, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const path = await import('node:path');

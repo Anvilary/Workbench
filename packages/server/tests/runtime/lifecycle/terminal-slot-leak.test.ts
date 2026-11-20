@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
 import type { AgencyWorkspace, ProjectId, WorkspaceId } from '@agent-workbench/shared';
-import { TerminalRegistry } from '../../../src/terminal-registry.js';
-import { AgencySessionRuntime, type AgencyWorkspaceSource } from '../../../src/agency/agency-session-runtime.js';
+import { TerminalRegistry } from '../../../src/features/terminals/terminal-registry.js';
+import { AgencySessionRuntime, type AgencyWorkspaceSource } from '../../../src/features/sessions/session-runtime.js';
 import { PtyHostClient } from '../../../src/pty-host/pty-host-client.js';
 
 function createMockStore() {

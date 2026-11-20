@@ -30,8 +30,8 @@
 
 import { stat } from 'node:fs/promises';
 
-import { debugLog } from '../../debug.js';
-import { parseJsonlLine, readTailLines } from '../../jsonl-reader.js';
+import { debugLog } from '../../shared/debug.js';
+import { parseJsonlLine, readTailLines } from '../../shared/jsonl-reader.js';
 import type { QueuedSubmission, QueuedSubmitSource } from '../adapter.js';
 import { isIdleStatus, type CliSessionStatus } from './cli-status.js';
 import { cleanUserText, readTimestamp } from './jsonl-events.js';

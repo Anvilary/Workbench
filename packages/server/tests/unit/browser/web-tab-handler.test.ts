@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import type { WebTabServerMessage, WorkspaceId } from '@agent-workbench/shared';
-import { BrowserTabAdapter } from '../../../src/agency/browser-tabs/browser-tab-adapter.js';
-import { BrowserTabStore } from '../../../src/agency/browser-tabs/browser-tab-store.js';
-import { handleWebTabMessage } from '../../../src/agency/browser-tabs/web-tab-handler.js';
+import { BrowserTabAdapter } from '../../../src/features/browser/browser-tab-adapter.js';
+import { BrowserTabStore } from '../../../src/features/browser/browser-tab-store.js';
+import { handleWebTabMessage } from '../../../src/features/browser/web-tab-handler.js';
 
 async function createFixture(t: import('node:test').TestContext) {
   const dir = await mkdtemp(path.join(tmpdir(), 'maw-handler-test-'));

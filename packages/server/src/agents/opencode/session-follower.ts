@@ -39,7 +39,7 @@ import {
   type PermissionMode,
   type QueuedPrompt,
 } from '@agent-workbench/shared';
-import { debugLog } from '../../debug.js';
+import { debugLog } from '../../shared/debug.js';
 import type { EventPage, LoadedImage, PartsUpdate, PollResult, SessionFollower, TurnUpdate } from '../adapter.js';
 import type { ReadOnlyDatabase } from '../sqlite.js';
 import { TRANSPORT_LIMITS, type EventLimits } from '../transport-limits.js';

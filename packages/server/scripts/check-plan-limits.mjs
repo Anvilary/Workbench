@@ -47,7 +47,7 @@ const shared = await import('@agent-workbench/shared');
 const { setLocale } = await import('../../web/src/i18n/index.ts');
 const planLimitsModule = await import('../src/agents/plan-limits.ts');
 const { PlanLimitsBook, PlanLimitsRecordDir, planWindowsOfRecord, removeStalePlanRecords, PLAN_LIMITS_RECORD_MAX_BYTES } = planLimitsModule;
-const { PlanLimitsBoard } = await import('../src/plan-limits-board.ts');
+const { PlanLimitsBoard } = await import('../src/features/conversations/plan-limits-board.ts');
 const { readRateLimits } = await import('../src/agents/codex/rollout-lines.ts');
 const { CodexRolloutSink } = await import('../src/agents/codex/rollout-sink.ts');
 const { JsonlFollower } = await import('../src/agents/jsonl-follower.ts');
@@ -62,7 +62,7 @@ const {
 const settingsModule = await import('../src/agents/claude-code/statusline-settings.ts');
 const { claudeStatusLineStateOf, readClaudeStatusLineState, CLAUDE_SETTINGS_MAX_BYTES } = settingsModule;
 const { createClaudeCodeAdapter, claudePlanRecordsDir } = await import('../src/agents/claude-code/index.ts');
-const { integrationsDir } = await import('../src/paths.ts');
+const { integrationsDir } = await import('../src/shared/app-paths.ts');
 const planMeter = await import('../../web/src/plan-meter.ts');
 const format = await import('../../web/src/i18n/format.ts');
 const { compactCommandFor, AGENT_UI } = await import('../../web/src/agent-ui.ts');

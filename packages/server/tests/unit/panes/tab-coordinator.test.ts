@@ -7,17 +7,18 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import type { AgencyServerMessage, CliProfileId, TerminalId } from '@agent-workbench/shared';
 import { parseClientMessage, parseServerMessage } from '@agent-workbench/shared';
-import { AgencySessionRuntime } from '../../../src/agency/agency-session-runtime.js';
-import { AgencySessionStore } from '../../../src/agency/agency-session-store.js';
-import { AgencyWorkspaceStore } from '../../../src/agency/store.js';
-import { WorkspaceMutex } from '../../../src/agency/workspace-lock.js';
-import { BrowserTabAdapter, BrowserTabStore } from '../../../src/agency/browser-tabs/index.js';
-import { AgencyLayoutStore } from '../../../src/agency/agency-layout-store.js';
+import { AgencySessionRuntime } from '../../../src/features/sessions/session-runtime.js';
+import { AgencySessionStore } from '../../../src/features/sessions/session-store.js';
+import { AgencyWorkspaceStore } from '../../../src/features/workspaces/workspace-store.js';
+import { WorkspaceMutex } from '../../../src/features/workspaces/workspace-lock.js';
+import { BrowserTabAdapter } from '../../../src/features/browser/browser-tab-adapter.js';
+import { BrowserTabStore } from '../../../src/features/browser/browser-tab-store.js';
+import { AgencyLayoutStore } from '../../../src/features/workspaces/layout-store.js';
 import { createDefaultLayout, splitPane, findPaneNode, closePane, swapPanes, isWorkspacePaneLayout, getPaneNodes } from '@agent-workbench/shared';
-import { AgencyTabCoordinator } from '../../../src/agency/tab-coordinator.js';
-import { AgencyNotificationStore } from '../../../src/agency/agency-notification-store.js';
-import { TabActivityManager } from '../../../src/agency/tab-activity-manager.js';
-import { writeAtomically } from '../../../src/atomic-write.js';
+import { AgencyTabCoordinator } from '../../../src/features/workspaces/tab-coordinator.js';
+import { AgencyNotificationStore } from '../../../src/features/notifications/notification-store.js';
+import { TabActivityManager } from '../../../src/features/notifications/tab-activity-manager.js';
+import { writeAtomically } from '../../../src/shared/persistence/atomic-write.js';
 
 async function fixture(
   t: test.TestContext,

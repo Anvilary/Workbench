@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { OutputBuffer } from '../../../src/output-buffer.js';
+import { OutputBuffer } from '../../../src/features/terminals/output-buffer.js';
 
 test('OutputBuffer: empty buffer initialization and offsets', () => {
   const buf = new OutputBuffer(1024);

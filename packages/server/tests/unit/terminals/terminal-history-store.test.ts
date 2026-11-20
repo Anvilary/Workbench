@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TerminalHistoryStore } from '../../../src/terminal-history-store.js';
+import { TerminalHistoryStore } from '../../../src/features/terminals/terminal-history-store.js';
 
 async function createTempBaseDir(): Promise<string> {
   const dir = path.join(tmpdir(), `maw-history-test-${randomUUID()}`);

@@ -50,9 +50,9 @@ import {
   remoteAccessState,
   remoteRefusal,
   serializeRemoteDevices,
-} from '../src/remote-access.ts';
-import { RemoteAccessService } from '../src/remote-access-service.ts';
-import { RemoteDevicesStore } from '../src/remote-devices-store.ts';
+} from '../src/features/remote-access/remote-access.ts';
+import { RemoteAccessService } from '../src/features/remote-access/remote-access-service.ts';
+import { RemoteDevicesStore } from '../src/features/remote-access/remote-devices-store.ts';
 import {
   DEVICE_COOKIE,
   TOKEN_COOKIE,
@@ -61,8 +61,8 @@ import {
   buildDeviceCookie,
   matchCredential,
   readPairingCode,
-} from '../src/security.ts';
-import { SettingsStore, parseAppSettings } from '../src/settings-store.ts';
+} from '../src/security/request-guards.ts';
+import { SettingsStore, parseAppSettings } from '../src/features/settings/settings-store.ts';
 import {
   PHONE_KEY_COMMENT,
   PHONE_PAYLOAD_PREFIX,
@@ -73,9 +73,9 @@ import {
   phoneAuthorizedKeysEntry,
   phonePairingPayload,
   sshEd25519PublicKey,
-} from '../src/phone-pairing.ts';
+} from '../src/features/remote-access/phone-pairing.ts';
 import { qrMatrix, qrModuleDark } from '../../web/src/qr-code.ts';
-import { remoteAccessStartupLine } from '../src/startup-summary.ts';
+import { remoteAccessStartupLine } from '../src/bootstrap/startup-summary.ts';
 import { setLocale } from '../../web/src/i18n/index.ts';
 import {
   canPair,

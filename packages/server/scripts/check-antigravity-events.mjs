@@ -999,7 +999,7 @@ const { AntigravityCatalog, parseSummaryTime, parseWorkspaceUris, parseHistoryTe
 const historyModule = await import('../src/agents/antigravity/history.ts');
 const { createAntigravityHistory, ignoreInBrain, transcriptConversationId, segmentsUnder, ANTIGRAVITY_FOLLOW_POLL_MS, catalogFiles } = historyModule;
 const { FileStampSignal } = await import('../src/agents/antigravity/catalog-signal.ts');
-const { catalogTempDir } = await import('../src/paths.ts');
+const { catalogTempDir } = await import('../src/shared/app-paths.ts');
 
 {
   check('5 fechas: con espacio se lee como T y 0001-01-01 es sin fecha',
@@ -1162,7 +1162,7 @@ function insertSummaries(db, rows) {
       scanned?.summary.sessionId === id && scanned?.summary.updatedAt === byId.get(id)?.mtimeMs && same(scanned?.extra, {}),
       show(scanned));
   }
-  const { buildProjects } = await import('../src/session-index.ts');
+  const { buildProjects } = await import('../src/features/history/session-index.ts');
   const indexed = [...scans.entries()].map(([id, scanned]) => ({
     agent: 'antigravity', ref: id, group: byId.get(id).group, cwd: scanned.cwd,
     summary: { ...scanned.summary, agent: 'antigravity', cwd: scanned.cwd ?? '', archived: false },
@@ -1323,7 +1323,7 @@ function insertSummaries(db, rows) {
     !rel.some((p) => /scratch|\.user_uploaded|messages|chunks|tempmediaStorage|notas\.txt/.test(p)), show(rel.filter((p) => /scratch|user_uploaded|messages|chunks|temp|notas/.test(p))));
 
   // El watcher generico pasa `ignored` solo a la raiz que lo declara.
-  const { watchSessions } = await import('../src/session-watcher.ts');
+  const { watchSessions } = await import('../src/features/history/session-watcher.ts');
   const optionsSeen = [];
   const fakeWatcher = () => ({ on: () => undefined, close: async () => undefined });
   const plainRoot = { path: brainDir, depth: 0, accepts: () => true, awaitWriteFinish: false };
@@ -1389,7 +1389,7 @@ const {
   READY_SIGNAL_SAFE,
   ADD_DIR,
 } = adapterModule;
-const appPaths = await import('../src/paths.ts');
+const appPaths = await import('../src/shared/app-paths.ts');
 
 /** Espera el `close` de un proceso, con plazo. */
 function runProcess(file, args, input, options = {}) {
@@ -1903,7 +1903,7 @@ const statusRecord = (id, over = {}) => ({
 
 {
   const { AgentRegistry } = await import('../src/agents/registry.ts');
-  const { LaunchHookSlot } = await import('../src/launch-hook-slot.ts');
+  const { LaunchHookSlot } = await import('../src/features/terminals/launch-hook-slot.ts');
   const adapter = createAntigravityAdapter({ platform: 'win32', statusIntervalMs: 25 });
   const token = '12345678-1234-4234-8234-123456789abc';
   const location = { resolvedPath: 'C:\\agy\\agy.exe', file: 'C:\\agy\\agy.exe', prefixArgs: [], version: '1.2.2' };
@@ -1997,7 +1997,7 @@ const statusRecord = (id, over = {}) => ({
     adapter.input.imageReference === adapter.capabilities.imagesByPath);
 
   // 20-10-2026 (§12.14): la confianza de una carpeta nueva se come lo pegado y su Enter la acepta. Pantallas medidas con la 1.4.3.
-  const { screenShowsDialog } = await import('../src/pty-input.ts');
+  const { screenShowsDialog } = await import('../src/features/composer/pty-input.ts');
   const trustWide = [
     'Accessing workspace:', '', 'D:\\aw-hito49\\rev\\proj.worktrees\\agy-a', '', 'Do you trust the contents of this project?', '',
     'Antigravity CLI requires permission to read, edit, and execute files here.', '', '> Yes, I trust this folder', '  No, exit', '',
@@ -2224,7 +2224,7 @@ function createCodexLikeAdapter() {
 // Paso 7: servidor generico (9 con ciclo, D16, arranque)
 // ---------------------------------------------------------------------------
 
-const ptyInput = await import('../src/pty-input.ts');
+const ptyInput = await import('../src/features/composer/pty-input.ts');
 const { buildModeKeys, planModeChange, MODE_PENDING_CONFIRMATION_TEXT } = ptyInput;
 const SHIFT_TAB = '\x1b[Z';
 const agyCycle = ANTIGRAVITY_BASE_CAPABILITIES.permissionCycle;
@@ -2279,7 +2279,7 @@ const claudeCycle = { modes: shared.PERMISSION_MODE_CYCLE, launchMode: 'auto', k
 // El hub dice que espera la CLI: es lo que el socket le pasa a `planModeChange`.
 {
   const { EventEmitter } = await import('node:events');
-  const { ConversationHub } = await import('../src/conversation-hub.ts');
+  const { ConversationHub } = await import('../src/features/conversations/conversation-hub.ts');
   const sessionId = U(970);
   const statusListeners = new Map();
   // Lo que la CLI "publica" cuando se la relee en el acto (StatusSource.refresh).
@@ -2361,7 +2361,7 @@ const claudeCycle = { modes: shared.PERMISSION_MODE_CYCLE, launchMode: 'auto', k
 // cierre: el combo volvia a "Aceptar ediciones" con la CLI en manual.
 {
   const { EventEmitter } = await import('node:events');
-  const { ConversationHub } = await import('../src/conversation-hub.ts');
+  const { ConversationHub } = await import('../src/features/conversations/conversation-hub.ts');
   const follower = {
     label: 'transcript', start: async () => undefined,
     poll: async () => ({ reset: false, added: [], turns: [], plans: [], parts: [] }),
@@ -2409,7 +2409,7 @@ const claudeCycle = { modes: shared.PERMISSION_MODE_CYCLE, launchMode: 'auto', k
 
 // La linea del arranque: solo debajo de una CLI instalada con status line.
 {
-  const { startupAgentLines, STATUS_LINE_LABEL, statusLineStartupText } = await import('../src/startup-summary.ts');
+  const { startupAgentLines, STATUS_LINE_LABEL, statusLineStartupText } = await import('../src/bootstrap/startup-summary.ts');
   const claude = { id: 'claude-code', label: 'Claude Code', version: '2.1.263', resolvedPath: 'C:\\bin\\claude.exe', missingMessage: null };
   const agy = { id: 'antigravity', label: 'Antigravity CLI', version: '1.2.2', resolvedPath: 'C:\\bin\\agy.exe', missingMessage: null, statusLine: 'missing' };
   const statusLines = (lines) => lines.filter((line) => line.includes(STATUS_LINE_LABEL));

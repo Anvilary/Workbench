@@ -10,10 +10,10 @@ import {
   partitionForBrowserProfile,
   resolveEffectiveBrowserProfileId,
 } from '@agent-workbench/shared';
-import { BrowserProfileStore } from '../../../src/agency/browser-profiles/store.js';
-import { handleAgencyDomainRequest, type AgencyDomainContext } from '../../../src/agency/domain-handler.js';
-import { AgencyWorkspaceStore } from '../../../src/agency/store.js';
-import { DirectoryPickers } from '../../../src/directory-picker.js';
+import { BrowserProfileStore } from '../../../src/features/browser/browser-profile-store.js';
+import { handleAgencyDomainRequest, type AgencyDomainContext } from '../../../src/features/workspaces/workspace-request-handler.js';
+import { AgencyWorkspaceStore } from '../../../src/features/workspaces/workspace-store.js';
+import { DirectoryPickers } from '../../../src/features/files/directory-picker.js';
 
 test('browser profile partition mapping preserves legacy Main partitions cleanly', () => {
   assert.equal(partitionForBrowserProfile('main', 'chatgpt'), 'persist:maw-chatgpt');

@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rm, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TerminalHistoryStore } from '../../../src/terminal-history-store.js';
+import { TerminalHistoryStore } from '../../../src/features/terminals/terminal-history-store.js';
 
 test('Disk retention enforces quotas, bounded queues and recoverable indexes', async (t) => {
   const baseDir = path.join(tmpdir(), `maw-retention-test-${randomUUID()}`);

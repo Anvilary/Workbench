@@ -348,7 +348,7 @@ const status = (overrides = {}) => ({
   const { AgentRegistry } = await import('../src/agents/registry.ts');
   const { createClaudeCodeAdapter } = await import('../src/agents/claude-code/index.ts');
   const { sessionFilePath } = await import('../src/agents/claude-code/paths.ts');
-  const { SessionIndex } = await import('../src/session-index.ts');
+  const { SessionIndex } = await import('../src/features/history/session-index.ts');
 
   const projectCwd = path.join(root, 'proyectos', 'demo-indice');
   await mkdir(projectCwd, { recursive: true });
@@ -887,11 +887,11 @@ async function checkNoPaging(label, adapter, target) {
 // 3 a 6. La copia en disco
 // ---------------------------------------------------------------------------
 
-const vaultPaths = await import('../src/vault/paths.ts');
-const { assetName, imageKey, serializeSession } = await import('../src/vault/serialize.ts');
-const { PagedHistoryError, UnsupportedHistoryError, readWholeSession } = await import('../src/vault/read-session.ts');
-const vaultWrite = await import('../src/vault/write.ts');
-const { VaultCatalog } = await import('../src/vault/catalog.ts');
+const vaultPaths = await import('../src/features/vault/paths.ts');
+const { assetName, imageKey, serializeSession } = await import('../src/features/vault/serialize.ts');
+const { PagedHistoryError, UnsupportedHistoryError, readWholeSession } = await import('../src/features/vault/read-session.ts');
+const vaultWrite = await import('../src/features/vault/write.ts');
+const { VaultCatalog } = await import('../src/features/vault/catalog.ts');
 const { TRANSPORT_LIMITS, limitEvent } = await import('../src/agents/transport-limits.ts');
 
 const PNG_SIGNATURE = Buffer.from('89504e470d0a1a0a', 'hex');
@@ -949,7 +949,7 @@ function firstDifference(a, b) {
 
 // --- 3a. Rutas y nombres ---
 {
-  const { appConfigDir } = await import('../src/paths.ts');
+  const { appConfigDir } = await import('../src/shared/app-paths.ts');
   const { assetFile, defaultVaultDir, memoryDir, projectExportDir, projectFolderName, sanitizeFileName, sessionExportFile, sessionFile } = vaultPaths;
   const dir = path.join(root, 'copia-rutas');
 
@@ -1345,11 +1345,11 @@ const vaultDir = path.join(root, 'copia');
 // ---------------------------------------------------------------------------
 
 const { VaultWriter, VaultBusyError, VAULT_WRITER_REVISION, CALM_MS, PASS_DEBOUNCE_MS, ORIGIN_NOT_FOUND, MEASURE_FIRST_TEXT, enableRefusal } =
-  await import('../src/vault/writer.ts');
-const settingsModule = await import('../src/settings-store.ts');
-const memoryCopy = await import('../src/vault/memory-copy.ts');
+  await import('../src/features/vault/writer.ts');
+const settingsModule = await import('../src/features/settings/settings-store.ts');
+const memoryCopy = await import('../src/features/vault/memory-copy.ts');
 const { AgentRegistry: WriterRegistry } = await import('../src/agents/registry.ts');
-const { SessionIndex: WriterSessionIndex } = await import('../src/session-index.ts');
+const { SessionIndex: WriterSessionIndex } = await import('../src/features/history/session-index.ts');
 const { createClaudeCodeAdapter: createWriterClaude } = await import('../src/agents/claude-code/index.ts');
 const { createCodexAdapter: createWriterCodex } = await import('../src/agents/codex/index.ts');
 const { sessionFilePath: writerSessionFile } = await import('../src/agents/claude-code/paths.ts');
@@ -1973,7 +1973,7 @@ const agentsWith = (agent, history) => ({
 // 11. El indice mezcla la copia
 // ---------------------------------------------------------------------------
 
-const { vaultOnlySessions, nativeListState, buildProjects, SessionIndex: VaultIndex } = await import('../src/session-index.ts');
+const { vaultOnlySessions, nativeListState, buildProjects, SessionIndex: VaultIndex } = await import('../src/features/history/session-index.ts');
 const { EventEmitter } = await import('node:events');
 
 /** Una sesion de la copia escrita de verdad, con un evento de prueba. */
@@ -2226,8 +2226,8 @@ const rejectsWith = async (promise) => {
 // 12. Markdown, abrir una fila "copia" y exportar
 // ---------------------------------------------------------------------------
 
-const markdown = await import('../src/vault/markdown.ts');
-const { VaultService, VaultError, STATUS_INTERVAL_MS } = await import('../src/vault/service.ts');
+const markdown = await import('../src/features/vault/markdown.ts');
+const { VaultService, VaultError, STATUS_INTERVAL_MS } = await import('../src/features/vault/service.ts');
 
 /** Los bloques de codigo de un Markdown, leidos como los lee un visor (CommonMark). */
 function fenceBlocks(text) {
@@ -2458,8 +2458,8 @@ const linksIn = (text) => [...text.matchAll(/\]\(<([^>]+)>\)/g)].map((match) => 
 // 13. Mudar la copia y el servicio
 // ---------------------------------------------------------------------------
 
-const moveModule = await import('../src/vault/move.ts');
-const { DirectoryPickers } = await import('../src/directory-picker.ts');
+const moveModule = await import('../src/features/vault/move.ts');
+const { DirectoryPickers } = await import('../src/features/files/directory-picker.ts');
 
 // --- 13a. moveVault ---
 {
@@ -2780,9 +2780,9 @@ writerCodex.dispose();
 // ---------------------------------------------------------------------------
 
 const vaultFixtures = await import('./fixtures/vault-fixtures.mjs');
-const geminiImport = await import('../src/vault/importers/gemini-cli.ts');
-const rescueImport = await import('../src/vault/importers/antigravity-ide.ts');
-const importCommand = await import('../src/vault/importers/command.ts');
+const geminiImport = await import('../src/features/vault/importers/gemini-cli.ts');
+const rescueImport = await import('../src/features/vault/importers/antigravity-ide.ts');
+const importCommand = await import('../src/features/vault/importers/command.ts');
 const { UNTITLED_SESSION_TITLE } = await import('../src/agents/session-title.ts');
 const importSqlite = (await import('../src/agents/sqlite.ts')).loadSqlite();
 
@@ -3232,8 +3232,8 @@ async function runImport(argv, extra = {}) {
     ...(await sourcesIn(path.join(packagesRoot, 'web', 'src'))),
     path.join(serverRoot, 'scripts', 'vault-import.mjs'),
   ];
-  const importerFile = path.join(serverRoot, 'src', 'vault', 'importers', 'antigravity-ide.ts');
-  const geminiFile = path.join(serverRoot, 'src', 'vault', 'importers', 'gemini-cli.ts');
+  const importerFile = path.join(serverRoot, 'src', 'features', 'vault', 'importers', 'antigravity-ide.ts');
+  const geminiFile = path.join(serverRoot, 'src', 'features', 'vault', 'importers', 'gemini-cli.ts');
 
   // C8: `.gemini` + separador + `antigravity` no seguido de `-` ni de letra, y `'antigravity', 'brain'` como argumentos seguidos.
   const IDE_FOLDER = /\.gemini(?:[\\/]|\\\\)+antigravity(?![-A-Za-z])/;
@@ -3248,20 +3248,20 @@ async function runImport(argv, extra = {}) {
     else inComments.push(relativeToPackages(file));
   }
   check('15 la carpeta del IDE (C8) solo la nombra el codigo de importers/antigravity-ide.ts',
-    same(naming, ['server/src/vault/importers/antigravity-ide.ts']), show({ naming, inComments }));
+    same(naming, ['server/src/features/vault/importers/antigravity-ide.ts']), show({ naming, inComments }));
   check('15 las expresiones de C8 si ven la carpeta en un comentario: por eso se buscan sin comentarios',
     inComments.some((file) => file.startsWith('server/src/agents/antigravity/')), show(inComments));
   check('15 las expresiones de C8 casan con las dos formas de nombrarla',
     IDE_FOLDER.test('~/.gemini/antigravity/brain') && IDE_FOLDER.test("'.gemini\\\\antigravity'") && !IDE_FOLDER.test('~/.gemini/antigravity-cli/brain') &&
     IDE_BRAIN_ARGS.test("path.join(home, 'antigravity', 'brain')") && !IDE_BRAIN_ARGS.test("path.join(cliRoot(), 'brain')"));
 
-  const vaultSources = await sourcesIn(path.join(serverRoot, 'src', 'vault'));
+  const vaultSources = await sourcesIn(path.join(serverRoot, 'src', 'features', 'vault'));
   const NETWORK = /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*)['"](?:node:)?(?:http|https|http2|net|tls|dgram)['"]|\bfetch\s*\(/;
   const online = [];
   for (const file of vaultSources) {
     if (NETWORK.test(withoutComments(file, await readFile(file, 'utf8')))) online.push(relativeToPackages(file));
   }
-  check('15 server/src/vault/** (importadores incluidos) no abre la red', vaultSources.includes(importerFile) && online.length === 0 && NETWORK.test("import http from 'node:http'"), show(online));
+  check('15 server/src/features/vault/** (importadores incluidos) no abre la red', vaultSources.includes(importerFile) && online.length === 0 && NETWORK.test("import http from 'node:http'"), show(online));
 
   /** Los archivos a los que se llega por imports relativos desde `entry`. Sobre el texto crudo: un comentario de mas solo agrega aristas. */
   const RELATIVE_IMPORT = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)['"](\.{1,2}\/[^'"]+)['"]/g;
@@ -3290,7 +3290,7 @@ async function runImport(argv, extra = {}) {
   const fromScript = await reachableFrom(path.join(serverRoot, 'scripts', 'vault-import.mjs'));
   const importersReached = [...fromServer].filter((file) => file.includes(`${path.sep}importers${path.sep}`)).map(relativeToPackages);
   check('15 src/index.ts no llega a importers/ (no entra al paquete de npm)',
-    fromServer.size > 50 && fromServer.has(path.join(serverRoot, 'src', 'vault', 'service.ts')) && importersReached.length === 0, show({ size: fromServer.size, importersReached }));
+    fromServer.size > 50 && fromServer.has(path.join(serverRoot, 'src', 'features', 'vault', 'service.ts')) && importersReached.length === 0, show({ size: fromServer.size, importersReached }));
   check('15 y el recorrido si los ve desde el script', fromScript.has(importerFile) && fromScript.has(geminiFile));
 
   const importerCode = withoutComments(importerFile, await readFile(importerFile, 'utf8'));

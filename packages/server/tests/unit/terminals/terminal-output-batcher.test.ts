@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TerminalOutputBatcher } from '../../../src/terminal-output-batcher.js';
+import { TerminalOutputBatcher } from '../../../src/transport/websocket/terminal-output-batcher.js';
 import type { TerminalId } from '@agent-workbench/shared';
 
 const tId = (id: string) => id as TerminalId;

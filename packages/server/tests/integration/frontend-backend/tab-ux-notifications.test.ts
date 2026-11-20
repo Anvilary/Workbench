@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import type { RuntimeSessionId, WorkspaceId } from '@agent-workbench/shared';
-import { AgencyNotificationStore } from '../../../src/agency/agency-notification-store.js';
-import { TabActivityManager } from '../../../src/agency/tab-activity-manager.js';
-import { ShellSequences } from '../../../src/agency/shell-integration.js';
-import { handleAgencyNotificationDone } from '../../../src/terminal-socket.js';
+import { AgencyNotificationStore } from '../../../src/features/notifications/notification-store.js';
+import { TabActivityManager } from '../../../src/features/notifications/tab-activity-manager.js';
+import { ShellSequences } from '../../../src/features/terminals/shell-integration.js';
+import { handleAgencyNotificationDone } from '../../../src/transport/websocket/socket-server.js';
 
 test('Acceptance 1: Ten ordinary shell commands produce zero inbox notifications and zero completion badges', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'maw-test-shell-10-'));
@@ -586,11 +586,11 @@ test('Acceptance 5: Done notifications remain completed after restart and reload
 test('Acceptance 6 & 7: Mixed tab ordering persists across restart, rejects invalid orders, and handles concurrency', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'maw-test-tab-order-'));
   try {
-    const workspaceStore = new (await import('../../../src/agency/store.js')).AgencyWorkspaceStore(path.join(root, 'workspaces.json'));
+    const workspaceStore = new (await import('../../../src/features/workspaces/workspace-store.js')).AgencyWorkspaceStore(path.join(root, 'workspaces.json'));
     await workspaceStore.load();
     const project = await workspaceStore.createProject('OrderTest');
     const workspace = await workspaceStore.createWorkspace(project.id, 'WS', root);
-    const lock = new (await import('../../../src/agency/workspace-lock.js')).WorkspaceMutex();
+    const lock = new (await import('../../../src/features/workspaces/workspace-lock.js')).WorkspaceMutex();
     const terminals = new Map();
     const registry = Object.assign(new (await import('node:events')).EventEmitter(), {
       async open() {
@@ -605,10 +605,11 @@ test('Acceptance 6 & 7: Mixed tab ordering persists across restart, rejects inva
       close: () => {},
       activityOf: () => 'unknown',
     });
-    const { AgencySessionRuntime } = await import('../../../src/agency/agency-session-runtime.js');
-    const { AgencySessionStore } = await import('../../../src/agency/agency-session-store.js');
-    const { BrowserTabAdapter, BrowserTabStore } = await import('../../../src/agency/browser-tabs/index.js');
-    const { AgencyTabCoordinator } = await import('../../../src/agency/tab-coordinator.js');
+    const { AgencySessionRuntime } = await import('../../../src/features/sessions/session-runtime.js');
+    const { AgencySessionStore } = await import('../../../src/features/sessions/session-store.js');
+    const { BrowserTabAdapter } = await import('../../../src/features/browser/browser-tab-adapter.js');
+    const { BrowserTabStore } = await import('../../../src/features/browser/browser-tab-store.js');
+    const { AgencyTabCoordinator } = await import('../../../src/features/workspaces/tab-coordinator.js');
 
     const native = new AgencySessionRuntime({
       registry: registry as any,

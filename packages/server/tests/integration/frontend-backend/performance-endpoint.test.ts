@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import express, { type Request, type Response } from 'express';
 import { createServer } from 'node:http';
-import { createNoAuthMiddleware } from '../../../src/no-auth-middleware.js';
+import { createNoAuthMiddleware } from '../../../src/security/no-auth-middleware.js';
 
 test('performance administrative endpoint enforces loopback, session authentication, and process sanitization', async () => {
   const app = express();

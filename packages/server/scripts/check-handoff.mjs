@@ -61,7 +61,7 @@ process.env['XDG_CACHE_HOME'] = path.join(root, 'xdg-cache');
 process.env['XDG_STATE_HOME'] = path.join(root, 'xdg-state');
 process.env['CODEX_HOME'] = path.join(root, 'codex');
 
-const transcript = await import('../src/handoff/transcript.ts');
+const transcript = await import('../src/features/history/handoff-transcript.ts');
 const {
   HANDOFF_EMPTY_TEXT,
   HANDOFF_MAX_BYTES,
@@ -333,7 +333,7 @@ const turns = splitTurns(events);
     transcriptReferenceFor('C:\\Carpeta con espacios\\c.md', 'at-quoted') === '@"C:\\Carpeta con espacios\\c.md"');
   check('H4 quoted-path: "ruta" entre comillas, sin @',
     transcriptReferenceFor('C:\\Carpeta con espacios\\c.md', 'quoted-path') === '"C:\\Carpeta con espacios\\c.md"');
-  const { fileReference } = await import('../src/pty-input.ts');
+  const { fileReference } = await import('../src/features/composer/pty-input.ts');
   check('H4 (B2) at-quoted es fileReference', transcriptReferenceFor('/tmp/a b/c.md', 'at-quoted') === fileReference('/tmp/a b/c.md', 'at-quoted'));
 }
 
@@ -370,13 +370,13 @@ const turns = splitTurns(events);
 // ---------------------------------------------------------------------------
 
 const shared = await import('@agent-workbench/shared');
-const handoff = await import('../src/handoff/handoff.ts');
+const handoff = await import('../src/features/history/handoff.ts');
 const { continueSession, chooseDelivery, readSourceEvents, continuationLabel, HANDOFF_DELIVERY_TIMEOUT_MS } = handoff;
-const { deliverWhenReady, prefillReasonFor } = await import('../src/deliver-when-ready.ts');
-const { PasteStore, PasteTextError, MAX_TEXT_BYTES } = await import('../src/paste-store.ts');
-const { TerminalOpenError, resolveLaunchPlan } = await import('../src/terminal-open-error.ts');
-const { TerminalWriteQueue } = await import('../src/terminal-write-queue.ts');
-const { buildSubmissionWrites } = await import('../src/pty-input.ts');
+const { deliverWhenReady, prefillReasonFor } = await import('../src/features/composer/deliver-when-ready.ts');
+const { PasteStore, PasteTextError, MAX_TEXT_BYTES } = await import('../src/features/composer/paste-store.ts');
+const { TerminalOpenError, resolveLaunchPlan } = await import('../src/features/terminals/terminal-open-error.ts');
+const { TerminalWriteQueue } = await import('../src/features/terminals/terminal-write-queue.ts');
+const { buildSubmissionWrites } = await import('../src/features/composer/pty-input.ts');
 const { CLAUDE_CODE_CAPABILITIES, CLAUDE_CODE_INPUT } = await import('../src/agents/claude-code/index.ts');
 const { CODEX_CAPABILITIES, CODEX_INPUT } = await import('../src/agents/codex/index.ts');
 const { OPENCODE_CAPABILITIES } = await import('../src/agents/opencode/index.ts');
@@ -654,7 +654,7 @@ const pathInMessage = (message) => /"([^"]+\.md)"/.exec(message)?.[1] ?? null;
   const { AgentRegistry } = await import('../src/agents/registry.ts');
   const { createClaudeCodeAdapter } = await import('../src/agents/claude-code/index.ts');
   const { sessionFilePath } = await import('../src/agents/claude-code/paths.ts');
-  const { SessionIndex } = await import('../src/session-index.ts');
+  const { SessionIndex } = await import('../src/features/history/session-index.ts');
 
   const sessionId = '2b3c4d5e-0000-4000-8000-000000000029';
   const file = sessionFilePath(HANDOFF_CWD, sessionId);

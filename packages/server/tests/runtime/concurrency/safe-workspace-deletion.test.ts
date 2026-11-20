@@ -6,14 +6,15 @@ import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import type { AgencyServerMessage, TerminalId, WorkspaceId } from '@agent-workbench/shared';
-import { AgencySessionRuntime } from '../../../src/agency/agency-session-runtime.js';
-import { AgencySessionStore } from '../../../src/agency/agency-session-store.js';
-import { AgencyWorkspaceStore } from '../../../src/agency/store.js';
-import { WorkspaceMutex } from '../../../src/agency/workspace-lock.js';
-import { BrowserTabAdapter, BrowserTabStore } from '../../../src/agency/browser-tabs/index.js';
-import { AgencyTabCoordinator } from '../../../src/agency/tab-coordinator.js';
-import { handleAgencyDomainRequest, type AgencyDomainContext } from '../../../src/agency/domain-handler.js';
-import { DirectoryPickers } from '../../../src/directory-picker.js';
+import { AgencySessionRuntime } from '../../../src/features/sessions/session-runtime.js';
+import { AgencySessionStore } from '../../../src/features/sessions/session-store.js';
+import { AgencyWorkspaceStore } from '../../../src/features/workspaces/workspace-store.js';
+import { WorkspaceMutex } from '../../../src/features/workspaces/workspace-lock.js';
+import { BrowserTabAdapter } from '../../../src/features/browser/browser-tab-adapter.js';
+import { BrowserTabStore } from '../../../src/features/browser/browser-tab-store.js';
+import { AgencyTabCoordinator } from '../../../src/features/workspaces/tab-coordinator.js';
+import { handleAgencyDomainRequest, type AgencyDomainContext } from '../../../src/features/workspaces/workspace-request-handler.js';
+import { DirectoryPickers } from '../../../src/features/files/directory-picker.js';
 
 interface TestContext {
   root: string;

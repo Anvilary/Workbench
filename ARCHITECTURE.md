@@ -76,7 +76,7 @@ remote-execution vector.
   that is a link to somewhere outside the project isn't opened.
 
 **Remote access doesn't loosen any of this** (`remote-access.ts`,
-`remote-access-service.ts`, `security.ts`). Another computer on the network uses
+`remote-access-service.ts`, `security/request-guards.ts`). Another computer on the network uses
 the app through an SSH tunnel the user opens, so the connection still arrives on
 `127.0.0.1` with a loopback `Host` and `Origin`, and those checks are untouched —
 a valid credential presented under the machine's network name is still a 403.

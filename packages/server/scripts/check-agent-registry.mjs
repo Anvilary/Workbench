@@ -879,8 +879,8 @@ const adapter = createClaudeCodeAdapter();
 // ---------------------------------------------------------------------------
 
 {
-  const { WorkspaceStore, persistableTabs } = await import('../src/workspace-store.ts');
-  const { workspaceStatePath } = await import('../src/paths.ts');
+  const { OpenTabsStore, persistableTabs } = await import('../src/features/terminals/open-tabs-store.ts');
+  const { workspaceStatePath } = await import('../src/shared/app-paths.ts');
   const { readFile } = await import('node:fs/promises');
   const statePath = workspaceStatePath();
   check('workspace.json cae dentro de la carpeta temporal', statePath.startsWith(root), statePath);
@@ -916,7 +916,7 @@ const adapter = createClaudeCodeAdapter();
     try { return { value: await run(), warnings }; } finally { console.warn = originalWarn; }
   };
 
-  const store = new WorkspaceStore();
+  const store = new OpenTabsStore();
 
   await writeFile(statePath, JSON.stringify({ version: 1, tabs: [{ cwd: 'D:\\p', sessionId: 's1', label: 'uno' }] }));
   const legacy = await store.load();
@@ -1319,7 +1319,7 @@ const adapter = createClaudeCodeAdapter();
 // ---------------------------------------------------------------------------
 
 {
-  const { DirectoryPickers, DirectoryPickerError, isInsideProtected } = await import('../src/directory-picker.ts');
+  const { DirectoryPickers, DirectoryPickerError, isInsideProtected } = await import('../src/features/files/directory-picker.ts');
   const dir = path.join(root, 'protegida');
   check('la carpeta protegida misma', isInsideProtected(dir, [dir]));
   check('algo adentro de la carpeta protegida', isInsideProtected(path.join(dir, 'sub'), [dir]));
@@ -1366,7 +1366,7 @@ const adapter = createClaudeCodeAdapter();
   // reanalisis, tambien la carpeta de los archivos a pedido, y el selector la
   // escondia. Se ofrece si `lstat` dice carpeta y no enlace; un enlace o una
   // junction de verdad, no.
-  const { isListedDirectory } = await import('../src/directory-picker.ts');
+  const { isListedDirectory } = await import('../src/features/files/directory-picker.ts');
   const entry = (name, isDir, isLink) => ({ name, isDirectory: () => isDir, isSymbolicLink: () => isLink });
   const stats = (isDir, isLink) => async () => ({ isDirectory: () => isDir, isSymbolicLink: () => isLink });
   check('una carpeta comun se ofrece, un archivo no',
@@ -1596,7 +1596,7 @@ const adapter = createClaudeCodeAdapter();
 // El hub de conversaciones sobre el adaptador (paso 6)
 // ---------------------------------------------------------------------------
 
-const { ConversationHub } = await import('../src/conversation-hub.ts');
+const { ConversationHub } = await import('../src/features/conversations/conversation-hub.ts');
 
 /**
  * Un registro de terminales de mentira: el hub le pide descriptores y escucha
@@ -1748,7 +1748,7 @@ const recordHub = (hub) => {
 // 7. Proyectos: agrupar sesiones por cwd
 // ---------------------------------------------------------------------------
 
-const { buildProjects, migrateIndexCache, SessionIndex } = await import('../src/session-index.ts');
+const { buildProjects, migrateIndexCache, SessionIndex } = await import('../src/features/history/session-index.ts');
 
 {
   const indexed = ({ id, group, cwd = null, at = 1, agent = 'claude-code' }) => ({
@@ -1866,7 +1866,7 @@ const { buildProjects, migrateIndexCache, SessionIndex } = await import('../src/
 // ---------------------------------------------------------------------------
 
 {
-  const { sessionIndexCachePath } = await import('../src/paths.ts');
+  const { sessionIndexCachePath } = await import('../src/shared/app-paths.ts');
   const { readFile, unlink } = await import('node:fs/promises');
 
   /**

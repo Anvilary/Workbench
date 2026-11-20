@@ -261,7 +261,7 @@ const keys = (strip) => strip.docs.map((doc) => doc.key).join(',');
   // El cableado, leido como texto.
   const hook = readFileSync(new URL('../../web/src/useFileLinks.ts', import.meta.url), 'utf8');
   const view = readFileSync(new URL('../../web/src/ConversationView.tsx', import.meta.url), 'utf8');
-  const socket = readFileSync(new URL('../src/terminal-socket.ts', import.meta.url), 'utf8');
+  const socket = readFileSync(new URL('../src/transport/websocket/socket-server.ts', import.meta.url), 'utf8');
   check('6.21 solo es enlace lo que el servidor confirmo, y solo se pregunta con el servidor que contesta',
     hook.includes("if (kind === 'file') return { open: () => onOpen(path), folder: false };") &&
       /if \(!enabled \|\| terminalId === null \|\| cwd\.length === 0\) return;/.test(hook));
@@ -272,7 +272,7 @@ const keys = (strip) => strip.docs.map((doc) => doc.key).join(',');
 
   // Una carpeta se abre en el explorador del sistema: el de la PC, nunca desde un equipo remoto.
   const app = readFileSync(new URL('../../web/src/App.tsx', import.meta.url), 'utf8');
-  const remote = readFileSync(new URL('../src/remote-access.ts', import.meta.url), 'utf8');
+  const remote = readFileSync(new URL('../src/features/remote-access/remote-access.ts', import.meta.url), 'utf8');
   check('6.29 una carpeta abre el explorador solo sin acceso remoto, y el servidor le niega files.reveal a un remoto',
     app.includes('onOpenFolder: remoteClient ? null : revealPath') &&
       hook.includes("if (kind === 'directory' && onOpenFolder !== null) return { open: () => onOpenFolder(path), folder: true };") &&

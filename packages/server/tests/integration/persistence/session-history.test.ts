@@ -13,8 +13,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { AgencyRuntimeSession } from '@agent-workbench/shared';
 import { parseAgencyClientMessage, parseAgencyServerMessage } from '@agent-workbench/shared';
-import { AgencySessionStore, SplitAgencySessionStore, isLiveSession } from '../../../src/agency/agency-session-store.js';
-import { AgencySessionRuntime } from '../../../src/agency/agency-session-runtime.js';
+import { AgencySessionStore, SplitAgencySessionStore, isLiveSession } from '../../../src/features/sessions/session-store.js';
+import { AgencySessionRuntime } from '../../../src/features/sessions/session-runtime.js';
 
 const WS_A = randomUUID();
 const WS_B = randomUUID();
@@ -105,8 +105,8 @@ for (const advanceClock of [false, true]) {
       import assert from 'node:assert/strict';
       import { mock } from 'node:test';
       import { EventEmitter } from 'node:events';
-      import { AgencySessionRuntime } from ${JSON.stringify(new URL('../../../src/agency/agency-session-runtime.ts', import.meta.url).href)};
-      import { AgencySessionStore, SplitAgencySessionStore } from ${JSON.stringify(new URL('../../../src/agency/agency-session-store.ts', import.meta.url).href)};
+      import { AgencySessionRuntime } from ${JSON.stringify(new URL('../../../src/features/sessions/session-runtime.ts', import.meta.url).href)};
+      import { AgencySessionStore, SplitAgencySessionStore } from ${JSON.stringify(new URL('../../../src/features/sessions/session-store.ts', import.meta.url).href)};
       mock.timers.enable({ apis: ['Date'], now: ${Date.parse(at)} });
       const registry = Object.assign(new EventEmitter(), {
         open: async () => { throw new Error('unexpected launch'); }, get: () => null, has: () => false,

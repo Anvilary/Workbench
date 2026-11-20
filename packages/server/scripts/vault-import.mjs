@@ -10,7 +10,7 @@
  */
 
 import os from 'node:os';
-import { runVaultImport } from '../src/vault/importers/command.ts';
+import { runVaultImport } from '../src/features/vault/importers/command.ts';
 
 process.exitCode = await runVaultImport(process.argv.slice(2), {
   out: (line) => console.log(line),

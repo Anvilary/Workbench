@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { NativeIdentities } from '../../../src/agency/native-identity.js';
+import { NativeIdentities } from '../../../src/features/sessions/native-identity.js';
 import { defaultDefinitions } from '../../../src/agents/profiles/definition.js';
 import { createCodexHistory } from '../../../src/agents/codex/history.js';
 

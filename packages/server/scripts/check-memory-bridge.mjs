@@ -36,9 +36,9 @@ import {
   installMemory,
   planMemoryInstall,
   readMemoryNote,
-} from '../src/memory-bridge.ts';
-import { MemoryHub, UnknownTerminalError, isRelevantPath } from '../src/memory-hub.ts';
-import { InvalidPathError } from '../src/path-guard.ts';
+} from '../src/features/memory/memory-bridge.ts';
+import { MemoryHub, UnknownTerminalError, isRelevantPath } from '../src/features/memory/memory-hub.ts';
+import { InvalidPathError } from '../src/features/files/path-guard.ts';
 import { projectSlugFor } from '../src/agents/claude-code/paths.ts';
 import { setLocale } from '../../web/src/i18n/index.ts';
 import { serverTextMessage as es } from '../../web/src/i18n/server-text.ts';

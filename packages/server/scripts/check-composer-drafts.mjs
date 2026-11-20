@@ -35,7 +35,7 @@ import {
   parseComposerDraft,
   parseServerMessage,
 } from '@agent-workbench/shared';
-import { DraftStore, DraftTabs, MAX_STORED_DRAFTS, draftEntriesOf, draftOwnerOf, submitClearsDraft, workspaceDraftOwners } from '../src/draft-store.ts';
+import { DraftStore, DraftTabs, MAX_STORED_DRAFTS, draftEntriesOf, draftOwnerOf, submitClearsDraft, workspaceDraftOwners } from '../src/features/composer/draft-store.ts';
 import { ComposerDrafts, draftOf, draftTooLong, localDraftOf, mergePrefillDraft, viewToRestore } from '../../web/src/composer-drafts.ts';
 
 let failures = 0;
@@ -100,7 +100,7 @@ const B = { agent: 'codex', sessionId: '0199aaaa-0000-7000-8000-000000000002' };
   check('keepDraft sólo vale como true: cualquier otra cosa es un envío del cuadro',
     submitClearsDraft(parseClientMessage(json({ type: 'agent.submit', terminalId: 't1', text: 'x', images: [], keepDraft: 'si' }))) === true);
   // El cableado, leído como texto: el socket pregunta antes de borrar, y los combos lo piden.
-  const socketSource = await readFile(new URL('../src/terminal-socket.ts', import.meta.url), 'utf8');
+  const socketSource = await readFile(new URL('../src/transport/websocket/socket-server.ts', import.meta.url), 'utf8');
   const appSource = await readFile(new URL('../../web/src/App.tsx', import.meta.url), 'utf8');
   check('el socket no borra ni avisa el borrador sin preguntarlo',
     /const clearsDraft = submitClearsDraft\(message\);/.test(socketSource) &&

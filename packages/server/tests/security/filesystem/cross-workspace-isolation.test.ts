@@ -11,12 +11,13 @@ import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import type { AgencyServerMessage, TerminalId, WorkspaceId } from '@agent-workbench/shared';
-import { AgencySessionRuntime } from '../../../src/agency/agency-session-runtime.js';
-import { SplitAgencySessionStore } from '../../../src/agency/agency-session-store.js';
-import { AgencyWorkspaceStore } from '../../../src/agency/store.js';
-import { WorkspaceMutex } from '../../../src/agency/workspace-lock.js';
-import { BrowserTabAdapter, BrowserTabStore } from '../../../src/agency/browser-tabs/index.js';
-import { AgencyTabCoordinator } from '../../../src/agency/tab-coordinator.js';
+import { AgencySessionRuntime } from '../../../src/features/sessions/session-runtime.js';
+import { SplitAgencySessionStore } from '../../../src/features/sessions/session-store.js';
+import { AgencyWorkspaceStore } from '../../../src/features/workspaces/workspace-store.js';
+import { WorkspaceMutex } from '../../../src/features/workspaces/workspace-lock.js';
+import { BrowserTabAdapter } from '../../../src/features/browser/browser-tab-adapter.js';
+import { BrowserTabStore } from '../../../src/features/browser/browser-tab-store.js';
+import { AgencyTabCoordinator } from '../../../src/features/workspaces/tab-coordinator.js';
 
 test('concurrent operations in one workspace never touch another workspace, its browser targets or sibling PTYs', async t => {
   const root = await mkdtemp(path.join(tmpdir(), 'maw-isolation-'));

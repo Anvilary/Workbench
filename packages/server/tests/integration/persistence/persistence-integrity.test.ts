@@ -3,9 +3,9 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { AgencyLayoutStore } from '../../../src/agency/agency-layout-store.js';
-import { AgencyNotificationStore } from '../../../src/agency/agency-notification-store.js';
-import { TabActivityManager } from '../../../src/agency/tab-activity-manager.js';
+import { AgencyLayoutStore } from '../../../src/features/workspaces/layout-store.js';
+import { AgencyNotificationStore } from '../../../src/features/notifications/notification-store.js';
+import { TabActivityManager } from '../../../src/features/notifications/tab-activity-manager.js';
 
 test('versioned Agency metadata refuses future schemas without overwriting a valid backup', async t => {
   const dir = await mkdtemp(path.join(tmpdir(), 'maw-schema-preservation-'));

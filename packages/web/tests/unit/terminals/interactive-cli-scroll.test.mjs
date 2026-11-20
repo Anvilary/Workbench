@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { Terminal } = require('@xterm/xterm');
-import { OutputBuffer } from '../../../../server/src/output-buffer.ts';
+import { OutputBuffer } from '../../../../server/src/features/terminals/output-buffer.ts';
 import { createCodexAdapter } from '../../../../server/src/agents/codex/index.ts';
 import { wholePixels, momentumStep, releaseVelocity, isDrag } from '../../../src/touch-scroll.ts';
 

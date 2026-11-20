@@ -1,6 +1,6 @@
 /** Build a reviewed, non-secret host binding. Does not execute wrappers or read auth/history. */
 import { readFile, writeFile } from 'node:fs/promises';
-import { artifactDigest, NativeIdentities } from '../src/agency/native-identity.ts';
+import { artifactDigest, NativeIdentities } from '../src/features/sessions/native-identity.ts';
 const [specFile, output] = process.argv.slice(2);
 if (!specFile || !output) throw new Error('Usage: tsx scripts/build-native-attestation.mjs reviewed-spec.json NEW-manifest.json');
 const spec = JSON.parse(await readFile(specFile, 'utf8'));

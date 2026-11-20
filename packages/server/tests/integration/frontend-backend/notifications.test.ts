@@ -6,19 +6,19 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import type { WorkspaceId } from '@agent-workbench/shared';
-import { AgencyNotificationStore } from '../../../src/agency/agency-notification-store.js';
+import { AgencyNotificationStore } from '../../../src/features/notifications/notification-store.js';
 import {
   generateBashIntegrationScript,
   generateZshIntegrationScript,
   installShellIntegrationSafely,
   ShellIntegrationParser,
   ShellSequences,
-} from '../../../src/agency/shell-integration.js';
+} from '../../../src/features/terminals/shell-integration.js';
 import {
   ChatGPTActivityProvider,
   generateStrongBridgeToken,
-} from '../../../src/agency/browser-activity-provider.js';
-import { TabActivityManager } from '../../../src/agency/tab-activity-manager.js';
+} from '../../../src/features/notifications/browser-activity-provider.js';
+import { TabActivityManager } from '../../../src/features/notifications/tab-activity-manager.js';
 
 test('Native CLI activity: consecutive turns, replay deduplication, tab isolation, and unverified provider safety', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'maw-test-notif-audit-'));

@@ -1219,8 +1219,8 @@ const client = new OpenCodeServeClient(mainEndpoint, undefined, { reconnectDelay
 
 // Los rechazos del cuadro y de la tarjeta (D12, B4), puros: el socket solo ejecuta lo que sale de aca.
 {
-  const pty = await import('../src/pty-input.ts');
-  const { ActivityBook } = await import('../src/terminal-activity.ts');
+  const pty = await import('../src/features/composer/pty-input.ts');
+  const { ActivityBook } = await import('../src/features/terminals/terminal-activity.ts');
   const ui = await import('../../web/src/agent-ui.ts');
   const { OPENCODE_CAPABILITIES } = await import('../src/agents/opencode/index.ts');
   const { CLAUDE_CODE_CAPABILITIES } = await import('../src/agents/claude-code/index.ts');
@@ -1479,7 +1479,7 @@ const client = new OpenCodeServeClient(mainEndpoint, undefined, { reconnectDelay
 
   // Lo puro del registro, el protocolo y la vista.
   {
-    const { ActivityBook, wakeActionFor } = await import('../src/terminal-activity.ts');
+    const { ActivityBook, wakeActionFor } = await import('../src/features/terminals/terminal-activity.ts');
     const { parseServerMessage, TERMINAL_OFFLINE_REASONS } = await import('@agent-workbench/shared');
     const ui = await import('../../web/src/agent-ui.ts');
 
@@ -1561,8 +1561,8 @@ const client = new OpenCodeServeClient(mainEndpoint, undefined, { reconnectDelay
     const srcDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src');
     const webDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web/src');
     const { readFile } = await import('node:fs/promises');
-    const registrySource = await readFile(path.join(srcDir, 'terminal-registry.ts'), 'utf8');
-    const socketSource = await readFile(path.join(srcDir, 'terminal-socket.ts'), 'utf8');
+    const registrySource = await readFile(path.join(srcDir, 'features/terminals/terminal-registry.ts'), 'utf8');
+    const socketSource = await readFile(path.join(srcDir, 'transport/websocket/socket-server.ts'), 'utf8');
     const indexSource = await readFile(path.join(srcDir, 'agents/opencode/index.ts'), 'utf8');
     const viewSource = await readFile(path.join(webDir, 'ConversationView.tsx'), 'utf8');
     const appSource = await readFile(path.join(webDir, 'App.tsx'), 'utf8');

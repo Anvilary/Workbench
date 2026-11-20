@@ -36,7 +36,7 @@ import {
   type ContextUsage,
   type PermissionMode,
 } from '@agent-workbench/shared';
-import { agentStatusDir } from '../../paths.js';
+import { agentStatusDir } from '../../shared/app-paths.js';
 import type { AgentStatus, StatusSource } from '../adapter.js';
 import { ANTIGRAVITY_EFFORT_OPTIONS, CONVERSATION_ID_PATTERN } from './constants.js';
 import { fromCycleMode } from './mode-names.js';

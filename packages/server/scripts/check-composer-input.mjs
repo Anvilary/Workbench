@@ -42,15 +42,15 @@ import {
   buildSubmission,
   fileReference,
   sanitizeForPaste,
-} from '../src/pty-input.ts';
-import { MAX_FILE_BYTES, PasteFileError, PasteImageError, PasteStore } from '../src/paste-store.ts';
+} from '../src/features/composer/pty-input.ts';
+import { MAX_FILE_BYTES, PasteFileError, PasteImageError, PasteStore } from '../src/features/composer/paste-store.ts';
 import {
   attachmentLine,
   attachmentReference,
   safeFileName,
   textWithAttachments,
-} from '../src/attachments.ts';
-import { buildSubmissionWrites } from '../src/pty-input.ts';
+} from '../src/features/composer/attachments.ts';
+import { buildSubmissionWrites } from '../src/features/composer/pty-input.ts';
 import { toTitle } from '../src/agents/session-title.ts';
 import { parseClientMessage } from '@agent-workbench/shared';
 import {
@@ -89,7 +89,7 @@ import {
   prefsCookieLine,
   readPrefsCookie,
 } from '../../web/src/prefs-cookie.ts';
-import { DEVICE_COOKIE, TOKEN_COOKIE } from '../src/security.ts';
+import { DEVICE_COOKIE, TOKEN_COOKIE } from '../src/security/request-guards.ts';
 import { isConsolePasteKey, isWindowsClient } from '../../web/src/console-paste.ts';
 
 // Los textos de la interfaz salen de `t()` (§6.23): este chequeo los compara

@@ -46,7 +46,7 @@
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import type { RewindDriver, RewindFailure, RewindIo, RewindOutcome, RewindRequest } from '../adapter.js';
-import { parseJsonlLine } from '../../jsonl-reader.js';
+import { parseJsonlLine } from '../../shared/jsonl-reader.js';
 import { cleanUserText } from './jsonl-events.js';
 import { sessionFilePath } from './paths.js';
 

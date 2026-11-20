@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import {
   ClassicWorkbenchLifecycle,
   type ClassicWorkbenchServices,
-} from '../../../src/classic-workbench-lifecycle.js';
+} from '../../../src/features/history/classic-workbench-lifecycle.js';
 
 function createMockServices() {
   let indexStarted = 0;

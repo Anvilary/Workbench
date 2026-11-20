@@ -1,7 +1,7 @@
 // Run with the server's tsx loader. The same workload measures enqueue and checkpoint completion.
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
-import { OutputBuffer as CurrentOutputBuffer } from '../../packages/server/src/output-buffer.ts';
+import { OutputBuffer as CurrentOutputBuffer } from '../../packages/server/src/features/terminals/output-buffer.ts';
 
 const { OutputBuffer } = process.env.MAW_OUTPUT_BUFFER_MODULE
   ? await import(process.env.MAW_OUTPUT_BUFFER_MODULE)

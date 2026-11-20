@@ -8,7 +8,7 @@ import {
   BrowserTabStore,
   parseBrowserTabSnapshot,
   normalizeWorkspaceSelections,
-} from '../../../src/agency/browser-tabs/browser-tab-store.js';
+} from '../../../src/features/browser/browser-tab-store.js';
 
 async function createFixture(t: import('node:test').TestContext) {
   const dir = await mkdtemp(path.join(tmpdir(), 'maw-web-tabs-test-'));

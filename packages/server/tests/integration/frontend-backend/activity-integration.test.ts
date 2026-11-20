@@ -8,13 +8,13 @@ import type { AgencyRuntimeSession, AgencyWorkspace, RuntimeSessionId, TerminalI
 import type { AgentAdapter } from '../../../src/agents/adapter.js';
 import { AgentRegistry } from '../../../src/agents/registry.js';
 import { CodexTurnWatcher, type CodexNativeTurn } from '../../../src/agents/codex/turn-watcher.js';
-import { TerminalRegistry } from '../../../src/terminal-registry.js';
-import { WorkspaceStore, type WorkspaceState } from '../../../src/workspace-store.js';
-import { AgencySessionRuntime } from '../../../src/agency/agency-session-runtime.js';
-import { AgencySessionStore } from '../../../src/agency/agency-session-store.js';
-import { AgencyNotificationStore } from '../../../src/agency/agency-notification-store.js';
-import { ShellIntegrationParser, ShellSequences } from '../../../src/agency/shell-integration.js';
-import { TabActivityManager } from '../../../src/agency/tab-activity-manager.js';
+import { TerminalRegistry } from '../../../src/features/terminals/terminal-registry.js';
+import { OpenTabsStore, type WorkspaceState } from '../../../src/features/terminals/open-tabs-store.js';
+import { AgencySessionRuntime } from '../../../src/features/sessions/session-runtime.js';
+import { AgencySessionStore } from '../../../src/features/sessions/session-store.js';
+import { AgencyNotificationStore } from '../../../src/features/notifications/notification-store.js';
+import { ShellIntegrationParser, ShellSequences } from '../../../src/features/terminals/shell-integration.js';
+import { TabActivityManager } from '../../../src/features/notifications/tab-activity-manager.js';
 
 const tick = () => new Promise<void>(resolve => setTimeout(resolve, 15));
 async function until(check: () => boolean): Promise<void> {
@@ -26,7 +26,7 @@ class MemorySessions extends AgencySessionStore {
   override async load() { return this.rows; }
   override async save(rows: readonly AgencyRuntimeSession[]) { this.rows = [...rows]; }
 }
-class MemoryTerminals extends WorkspaceStore { override save(_state: WorkspaceState) {} }
+class MemoryTerminals extends OpenTabsStore { override save(_state: WorkspaceState) {} }
 
 test('OSC parser requires a command and preserves failures; chunks and large output cannot invent success', () => {
   const parser = new ShellIntegrationParser();

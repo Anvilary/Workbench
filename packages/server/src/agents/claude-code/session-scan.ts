@@ -14,7 +14,7 @@
 
 import { stat } from 'node:fs/promises';
 import type { SessionSummary, SessionTitleSource } from '@agent-workbench/shared';
-import { parseJsonlLine, readHeadLines, readTailLines } from '../../jsonl-reader.js';
+import { parseJsonlLine, readHeadLines, readTailLines } from '../../shared/jsonl-reader.js';
 import { toTitle, UNTITLED_SESSION_TITLE } from '../session-title.js';
 
 /** Cuantas lineas de la cabeza mirar buscando cwd y titulo. El cwd mas tardio medido esta en la 8. */
