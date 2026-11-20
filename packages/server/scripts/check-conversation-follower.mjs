@@ -1013,7 +1013,7 @@ check('7.14 tras un `Read` fallido se busca el siguiente',
   (await loadConversationImage(retryFile, 'qp5', 0, 'pasted', pastedDir))?.data === FROM_READ);
 
 // La web acepta la forma nueva: un cliente que la leyera como `content` la pediria mal.
-const { parseConversationEvent } = await import('../../shared/src/conversation.ts');
+const { parseConversationEvent } = await import('../../shared/src/sessions/conversation.ts');
 const parsedPasted = parseConversationEvent(JSON.parse(JSON.stringify(byId('qp2'))));
 check('7.15 el parser del protocolo conserva `pasted`',
   parsedPasted?.parts[0]?.kind === 'image' && parsedPasted.parts[0].source === 'pasted',

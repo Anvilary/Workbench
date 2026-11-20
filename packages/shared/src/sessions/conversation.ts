@@ -1,0 +1,850 @@
+/**
+ * Modelo de la vista de conversacion.
+ *
+ * Lo que viaja al navegador NO es la linea del JSONL: es una version recortada
+ * y estrechada de ella. Tres motivos, todos medidos sobre la instalacion real:
+ *
+ *  1. Una sola linea puede pesar 290 KB (un adjunto, un resultado de
+ *     herramienta enorme). Mandarla entera al navegador no aporta nada y
+ *     cuelga la pestana. Cada parte se recorta y se marca `truncated`.
+ *  2. Los bloques `thinking` **vienen vacios**: medidos 248 en 230 sesiones, 0
+ *     con texto. El JSONL guarda la firma, no el razonamiento. Por eso
+ *     `ConversationThinkingPart` no tiene contenido: no hay ninguno que
+ *     mostrar, y una tarjeta que promete razonamiento y muestra vacio es peor
+ *     que no tenerla. Los que traen texto desde la CLI 2.1.278 no son
+ *     razonamiento sino una nota para el usuario, y llegan como `text` (§4.9).
+ *  3. El esquema cambia entre versiones de la CLI. Lo que no se reconoce se
+ *     ignora en silencio; nunca se lanza.
+ */
+
+import {
+  asArrayOf,
+  asBoolean,
+  asFiniteNumber,
+  asLiteral,
+  asNonEmptyString,
+  asRecord,
+  asString,
+} from '../validation/narrowing.js';
+
+/** Quien habla. Los tipos de linea que no son mensajes ni llegan hasta aca. */
+export type ConversationRole = 'user' | 'assistant';
+
+export const CONVERSATION_ROLES: readonly ConversationRole[] = ['user', 'assistant'];
+
+export interface ConversationTextPart {
+  kind: 'text';
+  text: string;
+  /** true si el texto original era mas largo que el tope de transporte. */
+  truncated: boolean;
+}
+
+export interface ConversationToolCallPart {
+  kind: 'tool-call';
+  /** Casa con el `tool-result` que llega despues, en otro evento. */
+  toolUseId: string;
+  name: string;
+  /** Entrada de la herramienta, ya serializada a texto. */
+  input: string;
+  truncated: boolean;
+}
+
+export interface ConversationToolResultPart {
+  kind: 'tool-result';
+  toolUseId: string;
+  text: string;
+  isError: boolean;
+  truncated: boolean;
+  /**
+   * Cuantas imagenes traia el resultado. Las imagenes NO se transportan: son
+   * base64 de cientos de KB y el panel es un resumen navegable, no un visor.
+   */
+  imageCount: number;
+}
+
+/**
+ * Marcador de que hubo razonamiento. Sin contenido: el JSONL no lo guarda. Un
+ * bloque con texto no llega como esta parte, sino como `text` (§4.9).
+ */
+export interface ConversationThinkingPart {
+  kind: 'thinking';
+}
+
+/** Una opcion de una pregunta de eleccion. */
+export interface ConversationQuestionOption {
+  label: string;
+  description: string;
+}
+
+/** Una de las preguntas de una misma llamada. */
+export interface ConversationQuestionItem {
+  question: string;
+  /** Etiqueta corta; es lo que la CLI dibuja como solapa. */
+  header: string;
+  multiSelect: boolean;
+  options: ConversationQuestionOption[];
+}
+
+/**
+ * Una pregunta de eleccion que la CLI le esta haciendo al usuario.
+ *
+ * Es un `tool_use` como cualquier otro, pero **no se dibuja como uno**: es lo
+ * unico del hilo que espera una accion en vez de contar algo que ya paso. Con
+ * la tarjeta generica —nombre colapsado y el JSON crudo adentro— la pregunta
+ * llegaba ilegible y la unica forma de contestar era ir a la solapa CLI.
+ *
+ * **Se estructura en el servidor, no en el navegador.** La entrada de una
+ * herramienta viaja recortada a 2000 caracteres, y una llamada con tres o
+ * cuatro preguntas pasa ese tope: el JSON llegaria cortado y no parsearia. Aca
+ * llega ya en piezas, y el recorte no lo puede romper.
+ *
+ * Si el input no tiene esta forma —otra version de la CLI, un campo que
+ * cambio— no se emite esta parte y la llamada cae a `tool-call`, que sigue
+ * mostrando lo mismo que mostraba antes. Desconocido no rompe (§4.4).
+ */
+export interface ConversationQuestionPart {
+  kind: 'question';
+  /** Casa con el `tool-result` que llega cuando la pregunta se responde. */
+  toolUseId: string;
+  questions: ConversationQuestionItem[];
+}
+
+/** Sin marcas de formato ni espacios de mas: como se comparan la pantalla y el historial. */
+function comparableQuestionText(text: string): string {
+  return text
+    .replace(/[`*_]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * true si dos preguntas son la misma: el texto, el tipo y las etiquetas, sin el
+ * formato ni los saltos de linea, que la pantalla junta y el historial
+ * conserva. Una etiqueta puede ser el principio de la otra: en una terminal
+ * angosta la CLI la parte y el resto queda debajo, como si fuera descripcion.
+ *
+ * Casa la pregunta leida de la pantalla de la CLI (§5.5.4) con la del
+ * historial: el servidor, para no mostrarla dos veces si la linea llego antes
+ * de contestarla y para releer antes de contestar la del historial; la web,
+ * para marcar en la tarjeta del historial lo que se eligio en la leida.
+ */
+export function sameQuestionItem(a: ConversationQuestionItem, b: ConversationQuestionItem): boolean {
+  return (
+    comparableQuestionText(a.question) === comparableQuestionText(b.question) &&
+    a.multiSelect === b.multiSelect &&
+    a.options.length === b.options.length &&
+    a.options.every((option, index) => {
+      const left = comparableQuestionText(option.label);
+      const right = comparableQuestionText(b.options[index]?.label ?? '');
+      return left.length > 0 && right.length > 0 && (left.startsWith(right) || right.startsWith(left));
+    })
+  );
+}
+
+/**
+ * De donde salen los bytes de una imagen del usuario.
+ *
+ * Son **tres formas distintas**, y por eso hay que distinguirlas:
+ *
+ *  - `content`: un bloque `{"type":"image"}` dentro de `message.content`. Es lo
+ *    que deja pegar con `Alt+V` en la solapa CLI.
+ *  - `attachment`: una linea `attachment` **aparte**, con `parentUuid`
+ *    apuntando al mensaje. Es lo que deja el cuadro de escritura, que nombra la
+ *    imagen por ruta (§5.3) y hace que la CLI la adjunte ella.
+ *  - `pasted`: una imagen del cuadro en un mensaje que se mando con el agente
+ *    trabajando. Ahi la CLI no la adjunta (§4.4.1): los bytes estan en la
+ *    carpeta de lo pegado, o en el `Read` con que el agente la abrio.
+ *
+ * Un mismo mensaje puede traer de mas de una, y cada forma tiene su propia
+ * numeracion: sin este campo, la imagen 0 de una taparia a la 0 de la otra.
+ */
+export type ConversationImageSource = 'content' | 'attachment' | 'pasted';
+
+export const CONVERSATION_IMAGE_SOURCES: readonly ConversationImageSource[] = [
+  'content',
+  'attachment',
+  'pasted',
+];
+
+/**
+ * Una imagen de un mensaje del usuario.
+ *
+ * **Sin bytes.** El JSONL las guarda en base64 y pesan cientos de KB; mandarlas
+ * con cada evento haria que abrir una conversacion vieja arrastrara todas las
+ * capturas que se pegaron alguna vez. Viaja la referencia, y el contenido se
+ * pide aparte cuando alguien mira esa miniatura.
+ *
+ * `index` es la posicion dentro de su fuente: junto al `eventId` y al `source`
+ * identifica la imagen sin inventar ningun id nuevo.
+ */
+export interface ConversationImagePart {
+  kind: 'image';
+  index: number;
+  mediaType: string;
+  source: ConversationImageSource;
+}
+
+/**
+ * Algo que paso en la conversacion y que no dijo nadie.
+ *
+ *  - `compacted`: la CLI resumio el contexto para seguir.
+ *  - `interrupted`: el turno se corto antes de terminar.
+ *  - `error`: el proveedor del modelo devolvio un error.
+ */
+export type ConversationNotice = 'compacted' | 'interrupted' | 'error';
+
+export const CONVERSATION_NOTICES: readonly ConversationNotice[] = [
+  'compacted',
+  'interrupted',
+  'error',
+];
+
+/**
+ * Un aviso en el hilo (hito 26).
+ *
+ * Existe por las CLIs que guardan estas cosas como datos y no como texto: sin
+ * esta parte, el dia que el modelo no tiene saldo la pestana no responde y el
+ * hilo no dice por que. Meterlo en una parte `text` haria que el hilo afirmara
+ * que lo escribio alguien.
+ *
+ * Un evento que la lleva no lleva ninguna otra: un cliente anterior descarta el
+ * evento entero sin perder nada mas.
+ */
+export interface ConversationNoticePart {
+  kind: 'notice';
+  notice: ConversationNotice;
+  /**
+   * Detalle corto, ya recortado a 300 caracteres. `compacted`: `'auto'` o `''`.
+   * `interrupted`: `''`. `error`: `<nombre>: <mensaje>` del proveedor, nunca
+   * cabeceras ni cuerpo de la respuesta.
+   */
+  detail: string;
+}
+
+/**
+ * Lo que dice un aviso de la conversacion: en el hilo, al copiarlo, al buscarlo
+ * y en el Markdown de la copia propia.
+ *
+ * Vivia en la web (hito 26) y paso aca en el hito 28: el servidor lo necesita
+ * para exportar, y no puede importar la web. Es una frase y no un componente
+ * porque todos esos sitios tienen que decir lo mismo.
+ */
+export function noticeText(part: Pick<ConversationNoticePart, 'notice' | 'detail'>): string {
+  switch (part.notice) {
+    case 'compacted':
+      return part.detail === 'auto' ? 'Contexto compactado automáticamente' : 'Contexto compactado';
+    case 'interrupted':
+      return 'Interrumpido';
+    case 'error':
+      // Sin detalle no se deja el "dos puntos" colgando: el error igual paso.
+      return part.detail.length > 0
+        ? `La CLI devolvió un error: ${part.detail}`
+        : 'La CLI devolvió un error';
+  }
+}
+
+export type ConversationPart =
+  | ConversationTextPart
+  | ConversationToolCallPart
+  | ConversationToolResultPart
+  | ConversationThinkingPart
+  | ConversationQuestionPart
+  | ConversationImagePart
+  | ConversationNoticePart;
+
+/** `message.usage` de una linea de asistente, con los nombres normalizados. */
+export interface MessageUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationInputTokens: number;
+  cacheReadInputTokens: number;
+}
+
+/**
+ * De donde salio un documento de la conversacion.
+ *
+ * Cada origen tiene una **raiz que pone el servidor**, y la ref se resuelve
+ * adentro: `plansRoot()`, el `cwd` de la pestana, y la carpeta temporal de esa
+ * sesion. El cliente nunca nombra una ruta (CLAUDE.md 2.4).
+ *
+ *  - `cli-plans`: `~/.claude/plans/`, el plan del modo plan.
+ *  - `project`: un `.md` que el agente escribio dentro del proyecto. Es lo que
+ *    hace el `CLAUDE.md` del usuario cuando el plan es largo.
+ *  - `scratch`: uno de la carpeta temporal de la sesion, fuera del repositorio.
+ */
+export type PlanOrigin = 'cli-plans' | 'project' | 'scratch';
+
+export const PLAN_ORIGINS: readonly PlanOrigin[] = ['cli-plans', 'project', 'scratch'];
+
+/**
+ * Un documento markdown que esta conversacion escribio.
+ *
+ * Hasta el hito 31 era solo el plan del modo plan, que la CLI deja en
+ * `~/.claude/plans/<archivo>.md`. Ahora es tambien **todo `.md` que el agente
+ * escribio con `Write`** dentro del proyecto o en la carpeta temporal de la
+ * sesion: eran justamente los que no se podian abrir desde la app.
+ *
+ * Lo que viaja es una **ref opaca**, nunca una ruta: `cli:<archivo>`,
+ * `proj:<relativa>` o `tmp:<relativa>`. La arma el servidor, y el servidor la
+ * vuelve a validar contra la raiz de su origen antes de abrir nada.
+ *
+ * Se listan los de **esta** sesion y no ninguna carpeta entera: un documento de
+ * otro proyecto en el panel de este es ruido, y el panel esta atado a la
+ * pestana como todo lo demas de la columna derecha.
+ */
+export interface SessionPlan {
+  /** Ref opaca con la que se lo pide. Ver `PlanOrigin`. */
+  fileName: string;
+  /** El nombre sin extension. Es lo que se muestra. */
+  title: string;
+  /**
+   * De donde salio. Ausente en un servidor anterior al hito 31: ahi todo era
+   * un plan de la CLI, asi que el parser cae a `cli-plans`.
+   */
+  origin: PlanOrigin;
+  /**
+   * La ruta relativa a su raiz, para mostrarla debajo del titulo. `''` para un
+   * plan de la CLI, donde la carpeta no aporta nada.
+   */
+  path: string;
+  /**
+   * La ruta completa, para ponerla en el mensaje (§6.13). La arma el servidor,
+   * que es quien sabe la raiz de cada origen; el cliente la muestra o la escribe
+   * en el cuadro, y **nunca la devuelve**: un documento se pide por su ref.
+   * `''` si no esta en disco, o con un servidor anterior: sin ella no hay boton.
+   */
+  absolutePath: string;
+  /**
+   * false si el archivo ya no esta en disco.
+   *
+   * Pasa de verdad: una linea `plan_mode` puede nombrar un plan que nunca se
+   * llego a escribir (`planExists: false`), y un plan viejo se puede borrar. Se
+   * dice en vez de esconderlo — la conversacion lo nombro.
+   */
+  exists: boolean;
+  modifiedAt: number;
+  sizeBytes: number;
+}
+
+/** El contenido de un plan, ya recortado. */
+export interface PlanContent {
+  fileName: string;
+  text: string;
+  truncated: boolean;
+}
+
+export interface ConversationEvent {
+  /** `uuid` de la linea. Sintetico si la linea no traia uno. */
+  eventId: string;
+  role: ConversationRole;
+  /** Epoch ms. 0 si la linea no traia timestamp. */
+  at: number;
+  parts: ConversationPart[];
+  /** Solo en asistente, y puede ser un id que ni la CLI reconoce. */
+  model: string | null;
+  usage: MessageUsage | null;
+  /**
+   * Nivel de esfuerzo con el que corrio la respuesta (`xhigh`, `high`, ...).
+   *
+   * Sale del campo `effort` de la propia linea `assistant`, asi que es lo que
+   * de verdad se uso y no lo que se pidio. null si la linea no lo trae.
+   */
+  effort: string | null;
+  /**
+   * Cuanto tardo el turno, en milisegundos.
+   *
+   * No se calcula restando marcas de tiempo: lo escribe la CLI en una linea
+   * `system/turn_duration` que apunta al ultimo mensaje del turno. Medido sobre
+   * 50 casos, siempre apunta a un `assistant` y siempre esta en la linea
+   * siguiente. null mientras el turno no haya cerrado.
+   */
+  durationMs: number | null;
+  /**
+   * true si el mensaje se escribio **mientras el agente ya estaba trabajando**.
+   *
+   * No es un adorno: cambia lo que el hilo afirma. Un mensaje asi no arranco un
+   * turno —lo absorbio uno que ya estaba corriendo— y sin la marca el hilo da a
+   * entender que el agente lo leyo, contesto y siguio, cuando lo que paso fue
+   * que se lo encontro a mitad de camino.
+   *
+   * Solo puede ser true en `user`; ver `queued_command` en `jsonl-events.ts`.
+   */
+  queued: boolean;
+}
+
+/**
+ * Un subagente que la conversacion lanzo y que todavia no termino (§4.15).
+ *
+ * Existe por el que corre en segundo plano: el agente principal cierra su turno
+ * y queda esperandolo, y el hilo parecia terminado. No es una tarjeta —la
+ * llamada que lo lanzo ya se dibuja—: es un estado, y viaja entero cada vez que
+ * cambia (`conversation.subagents`).
+ */
+export interface ConversationSubagent {
+  /** El `tool_use` que lo lanzo. */
+  toolUseId: string;
+  /** La descripcion corta que le puso el agente, recortada. Puede ser vacia. */
+  description: string;
+  /** true si corre en segundo plano: el agente principal puede terminar antes. */
+  background: boolean;
+  /** Epoch ms del lanzamiento. 0 si la linea no traia hora. */
+  startedAt: number;
+}
+
+/** Tope de la descripcion de un subagente. Es una etiqueta, no un texto. */
+export const MAX_SUBAGENT_DESCRIPTION = 120;
+
+/** Cuantos subagentes viajan como mucho. Mas que eso no se lee en una fila. */
+export const MAX_REPORTED_SUBAGENTS = 20;
+
+/**
+ * Un mensaje del usuario que espera en la cola de la CLI (hito 45, §6.35).
+ *
+ * No es parte de la conversacion: la CLI todavia no se lo dio al agente. El
+ * hilo lo dibuja al final, como una burbuja propia atenuada, hasta que la CLI
+ * lo entrega y aparece donde el agente lo leyo. Viaja la cola entera cada vez
+ * que cambia (`conversation.queue`, o dentro del `conversation.append` que la
+ * cambio, para que la burbuja y el mensaje no se crucen).
+ */
+export interface QueuedPrompt {
+  /** Estable mientras espera. */
+  id: string;
+  /** El texto, sin envoltorios y recortado a `MAX_QUEUED_PROMPT_CHARS`. */
+  text: string;
+  truncated: boolean;
+  /** Cuantas imagenes lleva: la burbuja no tiene de donde pedir los bytes. */
+  images: number;
+  /** Epoch ms de cuando se mando, o 0 si no se sabe. */
+  at: number;
+  /**
+   * El evento del hilo que ya es este mensaje, si la CLI lo escribe al
+   * encolarlo (OpenCode): el hilo lo esconde mientras espera. Ausente: todavia
+   * no esta en el hilo.
+   */
+  eventId?: string;
+  /** true si se forzo su envio y la CLI ya se lo paso al agente. */
+  forced?: boolean;
+}
+
+/** Cuantos mensajes en cola viajan como mucho. */
+export const MAX_QUEUED_PROMPTS = 20;
+
+/** Tope del texto de un mensaje en cola: la burbuja lo pliega igual que un mensaje propio. */
+export const MAX_QUEUED_PROMPT_CHARS = 4_000;
+
+/**
+ * Medidor de contexto.
+ *
+ * Tokens, nunca dinero: los precios cambian y una cifra desactualizada es peor
+ * que ninguna. `cost-state` trae `totalCostUSD` y se ignora a proposito.
+ */
+export interface ContextUsage {
+  /**
+   * Lo que ocupo el contexto en la ultima peticion:
+   * `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`.
+   * Los tres suman lo que el modelo tuvo que leer, esten o no cacheados.
+   */
+  lastRequestTokens: number;
+  lastOutputTokens: number;
+  lastModel: string | null;
+  /**
+   * Tamano de la ventana del modelo, o null si no lo reconocemos.
+   * Nunca se inventa un limite: se vio `gpt-5.6-terra` en una sesion
+   * importada, con la propia CLI avisando que no lo conocia.
+   */
+  contextWindow: number | null;
+  /**
+   * true si `contextWindow` es una **cota inferior deducida**, no un dato.
+   *
+   * Pasa cuando los tokens medidos superan la ventana que sugiere el nombre del
+   * modelo: eso prueba que la ventana real es mayor, pero no dice cuanto. Se
+   * marca para que el medidor no presente una deduccion como si fuera un
+   * numero publicado.
+   */
+  contextWindowEstimated: boolean;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheReadTokens: number;
+  /** Cuantas respuestas de asistente entraron en el acumulado. */
+  assistantMessages: number;
+  /**
+   * El esfuerzo con el que corre la CLI **ahora**, si lo publica aparte del
+   * historial. Ausente: no lo publica, y el combo lo busca en los eventos.
+   *
+   * Existe por la CLI que dice modelo y esfuerzo por su status line en el acto
+   * y en el historial recien con el mensaje siguiente (hito 27, R27-5): sin
+   * esto, tras un `/effort` el combo de modelo cambiaba y el de esfuerzo no.
+   */
+  lastEffort?: string;
+  /**
+   * true si la CLI compacto el contexto despues de la ultima peticion medida.
+   * `lastRequestTokens` sigue siendo cierto de esa peticion, pero ya no dice
+   * cuanto ocupa el contexto: el medidor vuelve a "sin medir" hasta la
+   * respuesta siguiente (§6.37). Ausente si no compacto.
+   */
+  compacted?: true;
+}
+
+export const EMPTY_CONTEXT_USAGE: ContextUsage = {
+  lastRequestTokens: 0,
+  lastOutputTokens: 0,
+  lastModel: null,
+  contextWindow: null,
+  contextWindowEstimated: false,
+  totalInputTokens: 0,
+  totalOutputTokens: 0,
+  totalCacheReadTokens: 0,
+  assistantMessages: 0,
+};
+
+/**
+ * Estado del seguimiento de un archivo de sesion.
+ *
+ *  - `waiting`: la ruta esta resuelta pero el archivo todavia no existe. Es lo
+ *    normal entre que se abre una pestana y el usuario manda el primer mensaje.
+ *  - `live`: se esta siguiendo el archivo.
+ *  - `unavailable`: no hay ruta que seguir (por ejemplo, un cwd vacio).
+ *  - `no-transcript`: la conversacion existe pero su CLI no dejo nada legible
+ *    que seguir (una version vieja que guardaba el historial vacio). Se lista y
+ *    se puede reanudar; el hilo dice por que no muestra nada.
+ */
+export type ConversationState = 'waiting' | 'live' | 'unavailable' | 'no-transcript';
+
+export const CONVERSATION_STATES: readonly ConversationState[] = [
+  'waiting',
+  'live',
+  'unavailable',
+  'no-transcript',
+];
+
+// ---------------------------------------------------------------------------
+// Ventana de contexto
+// ---------------------------------------------------------------------------
+
+/**
+ * Tabla corta y explicita de ventanas conocidas.
+ *
+ * El orden importa: el sufijo `[1m]` gana sobre la familia, porque el mismo
+ * modelo existe en las dos variantes. Lo que no matchea devuelve null y el
+ * medidor muestra tokens sin barra.
+ *
+ * OJO, y es la razon de todo lo que sigue en este bloque: **el `model` de las
+ * lineas `assistant` NO trae el sufijo de variante.** Dice `claude-opus-5` lo
+ * mismo si la sesion corre con 200k que con 1M. Medido sobre el historial de
+ * esta instalacion: cero lineas `assistant` con `[1m]`, mientras que las claves
+ * de `modelUsage` de las lineas `cost-state` si lo traen
+ * (`claude-opus-5[1m]`). Pasar el nombre crudo por esta tabla da 200k siempre,
+ * que es exactamente el bug que tenia el medidor.
+ */
+const CONTEXT_WINDOWS: readonly { readonly pattern: RegExp; readonly tokens: number }[] = [
+  { pattern: /\[1m\]/, tokens: 1_000_000 },
+  { pattern: /^claude-(opus|sonnet|haiku|fable)-/, tokens: 200_000 },
+  { pattern: /^claude-\d/, tokens: 200_000 },
+];
+
+/** Ventana del modelo, o null si no lo conocemos. Nunca inventa un limite. */
+export function contextWindowFor(model: string | null): number | null {
+  if (model === null || model.length === 0) return null;
+  for (const entry of CONTEXT_WINDOWS) {
+    if (entry.pattern.test(model)) return entry.tokens;
+  }
+  return null;
+}
+
+/**
+ * Nombre del modelo sin su sufijo de variante.
+ *
+ * `claude-opus-5[1m]` -> `claude-opus-5`. Es la clave con la que se casa lo que
+ * dice una linea `assistant` (sin sufijo) con lo que dice un `cost-state`
+ * (con sufijo).
+ */
+export function modelVariantBase(model: string): string {
+  const bracket = model.indexOf('[');
+  return bracket === -1 ? model : model.slice(0, bracket);
+}
+
+/**
+ * Escalones de ventana conocidos, de menor a mayor.
+ *
+ * Solo se usan para **subir** un limite que la evidencia ya contradijo. No se
+ * inventa un escalon que no exista.
+ */
+const WINDOW_LADDER: readonly number[] = [200_000, 1_000_000];
+
+/**
+ * Sube la ventana si los tokens medidos no entran en ella.
+ *
+ * Es la ultima red y la unica que no depende de conocer ningun nombre de
+ * modelo: si la CLI reporto una peticion de 254k tokens, la ventana **no** es
+ * de 200k, y decir lo contrario es dibujar una barra llena mientras la sesion
+ * sigue andando. Devuelve tambien si el resultado es una deduccion, para que
+ * el medidor lo diga en vez de presentarlo como un dato publicado.
+ */
+export function fitWindowToObserved(
+  window: number | null,
+  observedTokens: number,
+): { window: number | null; estimated: boolean } {
+  if (window === null || observedTokens <= window) {
+    return { window, estimated: false };
+  }
+  const next = WINDOW_LADDER.find((step) => step > observedTokens);
+  return next === undefined
+    ? // Mas grande que el mayor escalon conocido: el limite real se nos escapa,
+      // y decirlo es mejor que dibujar una barra contra un numero inventado.
+      { window: null, estimated: false }
+    : { window: next, estimated: true };
+}
+
+// ---------------------------------------------------------------------------
+// Parsers
+// ---------------------------------------------------------------------------
+
+export function parseMessageUsage(value: unknown): MessageUsage | null {
+  const record = asRecord(value);
+  if (record === null) return null;
+
+  const inputTokens = asFiniteNumber(record['inputTokens']);
+  const outputTokens = asFiniteNumber(record['outputTokens']);
+  const cacheCreationInputTokens = asFiniteNumber(record['cacheCreationInputTokens']);
+  const cacheReadInputTokens = asFiniteNumber(record['cacheReadInputTokens']);
+
+  if (
+    inputTokens === null ||
+    outputTokens === null ||
+    cacheCreationInputTokens === null ||
+    cacheReadInputTokens === null
+  ) {
+    return null;
+  }
+  return { inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens };
+}
+
+function parseQuestionOption(value: unknown): ConversationQuestionOption | null {
+  const record = asRecord(value);
+  if (record === null) return null;
+  const label = asNonEmptyString(record['label']);
+  if (label === null) return null;
+  return { label, description: asString(record['description']) ?? '' };
+}
+
+function parseQuestionItem(value: unknown): ConversationQuestionItem | null {
+  const record = asRecord(value);
+  if (record === null) return null;
+  const question = asNonEmptyString(record['question']);
+  const options = asArrayOf(record['options'], parseQuestionOption);
+  if (question === null || options === null || options.length === 0) return null;
+  return {
+    question,
+    header: asString(record['header']) ?? '',
+    multiSelect: record['multiSelect'] === true,
+    options,
+  };
+}
+
+export function parseConversationPart(value: unknown): ConversationPart | null {
+  const record = asRecord(value);
+  if (record === null) return null;
+
+  switch (record['kind']) {
+    case 'text': {
+      const text = asString(record['text']);
+      const truncated = asBoolean(record['truncated']);
+      return text === null || truncated === null ? null : { kind: 'text', text, truncated };
+    }
+    case 'tool-call': {
+      const toolUseId = asString(record['toolUseId']);
+      const name = asString(record['name']);
+      const input = asString(record['input']);
+      const truncated = asBoolean(record['truncated']);
+      return toolUseId === null || name === null || input === null || truncated === null
+        ? null
+        : { kind: 'tool-call', toolUseId, name, input, truncated };
+    }
+    case 'tool-result': {
+      const toolUseId = asString(record['toolUseId']);
+      const text = asString(record['text']);
+      const isError = asBoolean(record['isError']);
+      const truncated = asBoolean(record['truncated']);
+      const imageCount = asFiniteNumber(record['imageCount']);
+      return toolUseId === null ||
+        text === null ||
+        isError === null ||
+        truncated === null ||
+        imageCount === null
+        ? null
+        : { kind: 'tool-result', toolUseId, text, isError, truncated, imageCount };
+    }
+    case 'thinking':
+      return { kind: 'thinking' };
+    case 'question': {
+      const toolUseId = asNonEmptyString(record['toolUseId']);
+      const questions = asArrayOf(record['questions'], parseQuestionItem);
+      return toolUseId === null || questions === null || questions.length === 0
+        ? null
+        : { kind: 'question', toolUseId, questions };
+    }
+    case 'image': {
+      const index = asFiniteNumber(record['index']);
+      const mediaType = asString(record['mediaType']);
+      if (index === null || mediaType === null) return null;
+      // `source` puede faltar: es posterior al resto del tipo, y una parte sin
+      // el describe una imagen de `message.content`, que es lo que habia antes.
+      const source = asLiteral(record['source'], CONVERSATION_IMAGE_SOURCES) ?? 'content';
+      return { kind: 'image', index, mediaType, source };
+    }
+    case 'notice': {
+      const notice = asLiteral(record['notice'], CONVERSATION_NOTICES);
+      if (notice === null) return null;
+      return { kind: 'notice', notice, detail: asString(record['detail']) ?? '' };
+    }
+    default:
+      return null;
+  }
+}
+
+export function parseConversationEvent(value: unknown): ConversationEvent | null {
+  const record = asRecord(value);
+  if (record === null) return null;
+
+  const eventId = asNonEmptyString(record['eventId']);
+  const role = asLiteral(record['role'], CONVERSATION_ROLES);
+  const at = asFiniteNumber(record['at']);
+  const parts = asArrayOf(record['parts'], parseConversationPart);
+
+  if (eventId === null || role === null || at === null || parts === null) return null;
+
+  return {
+    eventId,
+    role,
+    at,
+    parts,
+    model: asString(record['model']),
+    usage: parseMessageUsage(record['usage']),
+    effort: asString(record['effort']),
+    durationMs: asFiniteNumber(record['durationMs']),
+    queued: record['queued'] === true,
+  };
+}
+
+export function parseConversationSubagent(value: unknown): ConversationSubagent | null {
+  const record = asRecord(value);
+  if (record === null) return null;
+
+  const toolUseId = asNonEmptyString(record['toolUseId']);
+  const description = asString(record['description']);
+  const startedAt = asFiniteNumber(record['startedAt']);
+  if (toolUseId === null || description === null || startedAt === null) return null;
+
+  return {
+    toolUseId,
+    description: description.slice(0, MAX_SUBAGENT_DESCRIPTION),
+    background: record['background'] === true,
+    startedAt,
+  };
+}
+
+/** Un mensaje en cola, o null si no se entiende. Los topes se aplican aca tambien. */
+export function parseQueuedPrompt(value: unknown): QueuedPrompt | null {
+  const record = asRecord(value);
+  if (record === null) return null;
+
+  const id = asNonEmptyString(record['id']);
+  const text = asString(record['text']);
+  const images = asFiniteNumber(record['images']);
+  const at = asFiniteNumber(record['at']);
+  if (id === null || text === null || images === null || at === null) return null;
+
+  const prompt: QueuedPrompt = {
+    id,
+    text: text.slice(0, MAX_QUEUED_PROMPT_CHARS),
+    truncated: record['truncated'] === true || text.length > MAX_QUEUED_PROMPT_CHARS,
+    images: Math.max(0, Math.floor(images)),
+    at,
+  };
+  const eventId = asNonEmptyString(record['eventId']);
+  if (eventId !== null) prompt.eventId = eventId;
+  if (record['forced'] === true) prompt.forced = true;
+  return prompt;
+}
+
+export function parseContextUsage(value: unknown): ContextUsage | null {
+  const record = asRecord(value);
+  if (record === null) return null;
+
+  const lastRequestTokens = asFiniteNumber(record['lastRequestTokens']);
+  const lastOutputTokens = asFiniteNumber(record['lastOutputTokens']);
+  const totalInputTokens = asFiniteNumber(record['totalInputTokens']);
+  const totalOutputTokens = asFiniteNumber(record['totalOutputTokens']);
+  const totalCacheReadTokens = asFiniteNumber(record['totalCacheReadTokens']);
+  const assistantMessages = asFiniteNumber(record['assistantMessages']);
+
+  if (
+    lastRequestTokens === null ||
+    lastOutputTokens === null ||
+    totalInputTokens === null ||
+    totalOutputTokens === null ||
+    totalCacheReadTokens === null ||
+    assistantMessages === null
+  ) {
+    return null;
+  }
+
+  const lastEffort = asString(record['lastEffort']);
+  return {
+    lastRequestTokens,
+    lastOutputTokens,
+    lastModel: asString(record['lastModel']),
+    contextWindow: asFiniteNumber(record['contextWindow']),
+    contextWindowEstimated: record['contextWindowEstimated'] === true,
+    totalInputTokens,
+    totalOutputTokens,
+    totalCacheReadTokens,
+    assistantMessages,
+    // Solo si viene: las CLIs que no lo publican no llevan el campo.
+    ...(lastEffort !== null ? { lastEffort } : {}),
+    ...(record['compacted'] === true ? { compacted: true as const } : {}),
+  };
+}
+
+
+export function parseSessionPlan(value: unknown): SessionPlan | null {
+  const record = asRecord(value);
+  if (record === null) return null;
+
+  const fileName = asNonEmptyString(record['fileName']);
+  const title = asNonEmptyString(record['title']);
+  const modifiedAt = asFiniteNumber(record['modifiedAt']);
+  const sizeBytes = asFiniteNumber(record['sizeBytes']);
+  if (fileName === null || title === null || modifiedAt === null || sizeBytes === null) {
+    return null;
+  }
+
+  // Un origen que no se entiende no tira la fila: cae al de siempre, como
+  // hacen las capacidades con `NO_CAPABILITIES`.
+  const rawOrigin = record['origin'];
+  const origin = PLAN_ORIGINS.find((candidate) => candidate === rawOrigin) ?? 'cli-plans';
+  const path = asString(record['path']) ?? '';
+
+  return {
+    fileName,
+    title,
+    origin,
+    path,
+    absolutePath: asString(record['absolutePath']) ?? '',
+    exists: record['exists'] === true,
+    modifiedAt,
+    sizeBytes,
+  };
+}
+
+export function parsePlanContent(value: unknown): PlanContent | null {
+  const record = asRecord(value);
+  if (record === null) return null;
+
+  const fileName = asNonEmptyString(record['fileName']);
+  const text = asString(record['text']);
+  if (fileName === null || text === null) return null;
+
+  return { fileName, text, truncated: record['truncated'] === true };
+}

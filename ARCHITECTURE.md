@@ -53,7 +53,7 @@ one is discarded even if it's more convenient.
 - The product is called **Agent Workbench**. Neither the name, the logo nor any
   feature carries the name of a CLI or its maker.
 - A CLI's name is *compatibility data* and lives in two places: its adapter id
-  (`AGENT_IDS` in `packages/shared/src/agents.ts`) and that adapter's folder.
+  (`AGENT_IDS` in `packages/shared/src/agents/agents.ts`) and that adapter's folder.
   Everything generic uses neutral identifiers (`agentCli`, `sessionIndex`) and,
   when a text must say which CLI, `adapter.label` — never a literal.
 

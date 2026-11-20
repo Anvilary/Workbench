@@ -258,3 +258,15 @@ Recorded as they are decided (see section 9).
 ## 9. Implementation status
 
 Updated at each checkpoint.
+
+### Pre-existing failures on the base (not caused by the migration)
+
+`pnpm check` runs 32 scripts in one `&&` chain. On the base commit `check-i18n.mjs` already fails with two findings, both from the browser improvements commit: `C1` (six `agency.browser.*` locale keys no longer used by the simplified context menu) and `L1` (a hand-written `aria-label` in `BrowserContextMenu.tsx`). The chain stops there, so `check-docs.mjs` never runs in that mode. The migration gates on "the same two findings and no others", and runs each check script on its own.
+
+### Checkpoint 1: shared contracts (done)
+
+* `protocol.ts` (4,016 lines) is replaced by `protocol/`: `constants.ts`, 15 `<family>-messages.ts` modules (types, constants and the parsers of one family), `agency-messages.ts`, `notification-messages.ts`, `server-text.ts` and `index.ts` (unions, dispatchers, encoders and the explicit public export list). Largest family module: `conversation-messages.ts` (669 lines).
+* The other 30 flat files are grouped into `validation/`, `agents/`, `sessions/`, `workspaces/`, `browser/`, `git/`, `files/`, `settings/`. `index.ts` is the package's only barrel.
+* Parsers return `undefined` for a type they do not own, so a type claimed by no family is still `null`. A test asserts that every message type is owned by exactly one family.
+* Gates: runtime export keys identical (340), exported type and value names identical (752 with kinds), a structural dump of every exported type identical, 800,000 differential fuzz comparisons of old against new parsers with no difference, and 407 golden cases frozen from the old parser now live in `packages/shared/tests/unit`.
+* `shared` has its own unit test tier now (`test:unit`), wired into the root `test:unit`, `test` and CI.

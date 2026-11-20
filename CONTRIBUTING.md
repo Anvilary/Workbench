@@ -45,7 +45,7 @@ reason.
 
    By the same logic, a CLI's name may appear in the code in two places, as
    compatibility data: its adapter id (`AGENT_IDS` in
-   `packages/shared/src/agents.ts`) and that adapter's folder
+   `packages/shared/src/agents/agents.ts`) and that adapter's folder
    (`packages/server/src/agents/claude-code/`, `codex/`, `opencode/`,
    `antigravity/`), where identifiers do name it
    (`createClaudeCodeAdapter`). Outside those folders it's named by the
@@ -69,7 +69,7 @@ before anything else.
 - **Every new UI text goes through `t()`** and into every locale file in
   `packages/web/src/i18n/locales/` ([below](#adding-a-language)).
 - **No `any` in the protocol types.** Whatever comes in over the network is
-  `unknown` until a parser narrows it (`packages/shared/src/validation.ts`).
+  `unknown` until a parser narrows it (`packages/shared/src/validation/narrowing.ts`).
 - Comments explain **why**, not what. If a comment can be inferred by reading
   the line below it, it's redundant. If it documents a pitfall, it's worth its
   weight in gold.

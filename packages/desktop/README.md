@@ -142,7 +142,7 @@ policy and OS credential storage can require login again.
 * `packages/desktop/{policy.test.mjs,smoke.test.mjs}`: policy and real Electron process checks.
 * `packages/server/src/agency/browser-tabs/{browser-tab-adapter.ts,client-managed.test.ts}`: logical metadata adapter and regression coverage.
 * `packages/server/src/index.ts`: logical web-tab startup; removes viewer/controller setup.
-* `packages/shared/src/browser-tabs.ts`: ephemeral runtime discriminator.
+* `packages/shared/src/browser/browser-tabs.ts`: ephemeral runtime discriminator.
 * `packages/web/src/agency/{NativeChatGptView.tsx,useNativeChatGptTabs.ts,AgencyApp.tsx,AgencyWorkspaceView.tsx}`: native surface, checkpoints and existing tab integration.
 * Fallback strings and removal of obsolete streaming strings in each existing `packages/web/src/i18n/locales/*.json` catalog.
 * `scripts/desktop-prototype.mjs`, root `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `.gitignore`: isolated launcher and pinned dependency.

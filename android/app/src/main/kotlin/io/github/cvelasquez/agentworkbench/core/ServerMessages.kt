@@ -3,7 +3,7 @@ package io.github.cvelasquez.agentworkbench.core
 import org.json.JSONObject
 
 /**
- * Lo que el vigía entiende del WebSocket de la app (`shared/src/protocol.ts`):
+ * Lo que el vigía entiende del WebSocket de la app (`shared/src/protocol/`):
  * tres mensajes, y todo lo demás se ignora. Un mensaje que no se entiende no
  * rompe nada: es `Other`.
  */
