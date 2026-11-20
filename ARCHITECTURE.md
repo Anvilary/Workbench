@@ -132,7 +132,16 @@ A pnpm monorepo, TypeScript throughout.
 ```
 packages/
   server/     Node 20+, Express, ws, node-pty, chokidar; node:sqlite on Node 22.13+
-    src/agents/
+    src/index.ts, maw-host.ts   the composition root (paths the launcher and updater rely on)
+    src/transport/websocket/    the transport: upgrade authorization, one connection per socket
+                                (decode, validate, remote refusal, routing, error serialization,
+                                cleanup), the route table and one handler module per message family
+    src/transport/http/         request authorization middleware, loopback listening, UI hosting
+    src/security/               request guards: token, Origin and Host checks, local no-auth mode
+    src/features/               one directory per feature, each with its own state and rules:
+      terminals/ composer/ conversations/ history/ memory/ files/ git/ worktrees/ notes/ vault/
+      settings/ remote-access/ workspaces/ sessions/ profiles/ notifications/ browser/ editor/
+    src/agents/                 the CLI adapters
       adapter.ts           the interface of a CLI adapter
       registry.ts          the list of adapters; which CLI opens each tab
       locate.ts            find a command in the PATH, .cmd shims included
@@ -140,25 +149,22 @@ packages/
       sqlite.ts            someone else's SQLite database, read-only
       transport-limits.ts  how much text travels to the browser
       claude-code/  codex/  opencode/  antigravity/  pi/    one folder per CLI
-    src/
-      terminal-registry.ts    the ptys and their life cycle
-      session-index.ts        the projects sidebar, built from every adapter's history
-      path-guard.ts           resolveInside: the only way a client path becomes a real one
-      cli-folders.ts          the CLIs' own folders, kept out of the Files tab
-      file-write.ts           saving a file edited in the Files viewer, one of two writes in a project
-      memory-hub.ts           shared memory, the other write inside a project
-      worktrees/              separate branches (git worktrees): the only git commands that write
-      queued-submits.ts       messages a CLI hands back to its editor on interrupt
-      app-prompt-queue.ts     the queue the app keeps for a CLI that doesn't write one
-      live-question.ts        a question read from the CLI's screen, before its history has it
-      plan-limits-board.ts    the account's plan limits, from every CLI that publishes them
-      handoff/                continue a conversation with another CLI
-      global-search.ts        search across the text of every conversation
-      vault/                  the app's own copy of the history
-    scripts/                  the checks run by `pnpm check`
+      usage/               the plan usage collectors
+    src/pty-host/               the persistent PTY supervisor, a separate long-lived process
+    src/shared/                 foundations: serial queue, versioned json store, atomic writes
+    scripts/                    the checks run by `pnpm check`
+    tests/                      unit, integration, runtime, security
   web/        Vite, React 18, xterm.js, highlight.js
-    src/i18n/   the interface texts, nine languages
-  shared/     the protocol types, shared by both sides
+    src/app/            the root composition: WorkbenchRoot, WorkbenchApp, the classic shell
+    src/features/       navigation, workspaces, panes, browser, terminals, agents, conversation,
+                        files, git, worktrees, notes, memory, vault, remote-access, editor,
+                        notifications, performance, settings
+    src/connection/     the WebSocket client
+    src/shared/         product-agnostic ui, hooks and lib
+    src/i18n/           the interface texts, nine languages
+  desktop/    the Electron shell: main.mjs composes src/{app,browser,ipc,security,performance,gpu}
+  shared/     the protocol and the pure types, shared by both sides
+    src/protocol/       one <family>-messages.ts per message family, plus the unions and parsers
 android/        the Android app: Kotlin and Gradle, outside the workspace (section 7)
 scripts/
   build-npm.mjs   builds the npm package into dist-npm/

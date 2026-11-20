@@ -1,4 +1,4 @@
-// Local-only browser regression. Run: node --test packages/web/src/agency/browser-tabs.test.mjs
+// Local-only browser regression. Run: node --test packages/web/tests/e2e/browser/browser-tabs.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';

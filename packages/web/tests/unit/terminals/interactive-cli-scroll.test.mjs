@@ -1,5 +1,5 @@
 // Interactive CLI Scrolling & Alternate-Screen Regression Test Suite
-// Run: node --test packages/web/src/agency/split/interactive-cli-scroll.test.mjs
+// Run: node --test packages/web/tests/unit/terminals/interactive-cli-scroll.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';

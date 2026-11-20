@@ -50,7 +50,7 @@ export function AgencyBrand({
   );
 }
 
-export interface AgencySidebarProps {
+export interface WorkbenchSidebarProps {
   projects: readonly AgencyProject[];
   workspaces: readonly AgencyWorkspace[];
   sessions: readonly AgencyRuntimeSession[];
@@ -104,7 +104,7 @@ export function WorkbenchSidebar({
   onSelect, onCreate, onCreateProject, onDone, onArchiveWorkspace, onDeleteWorkspace,
   onRenameProject, onRenameWorkspace, onUpdateProjectProfile, onUpdateWorkspaceProfile,
   onArchiveProject, onDeleteProject, onCollapse, onReorderProjects, onReorderWorkspaces,
-}: AgencySidebarProps): JSX.Element {
+}: WorkbenchSidebarProps): JSX.Element {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [openMenu, setOpenMenu] = useState<{ type: 'project' | 'workspace'; id: string; trigger: 'click' | 'hover' } | null>(null);
   const navRef = useRef<HTMLElement | null>(null);

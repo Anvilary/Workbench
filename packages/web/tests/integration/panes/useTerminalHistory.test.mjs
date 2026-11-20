@@ -1,5 +1,5 @@
 // Test for useTerminalHistory hook and TerminalView scrollback reduction / pagination.
-// Run: node --test packages/web/src/useTerminalHistory.test.mjs
+// Run: node --test packages/web/tests/integration/panes/useTerminalHistory.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';

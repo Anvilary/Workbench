@@ -138,12 +138,12 @@ policy and OS credential storage can require login again.
 
 ## Files changed
 
-* `packages/desktop/{main.mjs,preload.cjs,policy.mjs,package.json}`: native shell and boundary.
-* `packages/desktop/{policy.test.mjs,smoke.test.mjs}`: policy and real Electron process checks.
-* `packages/server/src/agency/browser-tabs/{browser-tab-adapter.ts,client-managed.test.ts}`: logical metadata adapter and regression coverage.
+* `packages/desktop/{main.mjs,preload.cjs,policy.mjs,package.json}` and `packages/desktop/src/`: native shell and boundary. `main.mjs` only composes; the native views are owned by `src/browser/view-controller.mjs`.
+* `packages/desktop/tests/`: policy, security and real Electron process checks.
+* `packages/server/src/features/browser/browser-tab-adapter.ts`: logical metadata adapter.
 * `packages/server/src/index.ts`: logical web-tab startup; removes viewer/controller setup.
 * `packages/shared/src/browser/browser-tabs.ts`: ephemeral runtime discriminator.
-* `packages/web/src/agency/{NativeChatGptView.tsx,useNativeChatGptTabs.ts,AgencyApp.tsx,AgencyWorkspaceView.tsx}`: native surface, checkpoints and existing tab integration.
+* `packages/web/src/features/browser/{NativeBrowserView.tsx,useNativeBrowserTabs.ts}`, `app/WorkbenchApp.tsx` and `features/workspaces/WorkspaceView.tsx`: native surface, checkpoints and existing tab integration.
 * Fallback strings and removal of obsolete streaming strings in each existing `packages/web/src/i18n/locales/*.json` catalog.
 * `scripts/desktop-prototype.mjs`, root `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `.gitignore`: isolated launcher and pinned dependency.
 * `.github/workflows/ci.yml`: native policy and sandboxed Electron checks replace the retired controller test.

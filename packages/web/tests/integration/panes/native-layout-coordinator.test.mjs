@@ -1,4 +1,4 @@
-// Stale ChatGPT capture fallback. Run: node --test packages/web/src/agency/native-layout-coordinator.test.mjs
+// Stale ChatGPT capture fallback. Run: node --test packages/web/tests/integration/panes/native-layout-coordinator.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';

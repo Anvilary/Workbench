@@ -1,6 +1,6 @@
 // Keyboard ownership for terminals, against the real WorkspaceView and real xterm in Chromium.
 // A recording connection stub captures every message the shell renderer would send to the backend.
-// Run: node --test packages/web/src/agency/split/terminal-input-isolation.test.mjs
+// Run: node --test packages/web/tests/e2e/terminals/terminal-input-isolation.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';

@@ -1,4 +1,4 @@
-// Run with Node 22+: node --experimental-strip-types --test packages/web/src/agency/model.test.mjs
+// Run with Node 22+: node --experimental-strip-types --test packages/web/tests/unit/workspaces/model.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {

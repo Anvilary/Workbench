@@ -281,7 +281,7 @@ test('split layout: layout ownership validates mixed native, browser, and editor
   const allOpenTabs = [terminalTabId, chatGptTabId, editorTabId];
   assert.equal(layoutOwnershipError(mixedLayout, ws, allOpenTabs), null);
 
-  // If editorTabId was omitted (the defect in terminal-socket.ts:3780), validation fails
+  // If editorTabId was omitted (the defect in the former terminal-socket.ts), validation fails
   const omittedEditorTabs = [terminalTabId, chatGptTabId];
   assert.equal(
     layoutOwnershipError(mixedLayout, ws, omittedEditorTabs),

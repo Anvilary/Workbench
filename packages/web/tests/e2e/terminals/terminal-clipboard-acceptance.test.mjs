@@ -1,5 +1,5 @@
 // Terminal selection and clipboard acceptance tests in real browser environment.
-// Run: node --test packages/web/src/agency/split/terminal-clipboard-acceptance.test.mjs
+// Run: node --test packages/web/tests/e2e/terminals/terminal-clipboard-acceptance.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';

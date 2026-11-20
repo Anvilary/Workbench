@@ -1,6 +1,6 @@
 # Architecture v2
 
-Status: migration in progress on `refactor/architecture-v2`. This document is the design record for the restructuring. Section 9 lists what is implemented; sections 1 to 8 describe the contract the implementation follows.
+Status: implemented on `refactor/architecture-v2`. This document is the design record for the restructuring. Sections 1 to 3 record the base and its contracts, 4 to 5 the implemented structure and decisions, 8 the deviations and 9 the checkpoint history.
 
 Architecture v1 (see [README](./README.md), [module-boundaries](./module-boundaries.md), [dependency-rules](./dependency-rules.md)) introduced the right vocabulary but stopped halfway. v2 finishes the move: implementations live in their owning feature directory, and the large closure-style controllers are decomposed along real ownership lines.
 
@@ -87,7 +87,7 @@ These paths and names are read by live launchers, updaters, packaging or old ins
 | `packages/server/src/index.ts`, `packages/server/src/maw-host.ts` | `maw_valid_release` in `scripts/maw/maw-lib.sh`, `install.sh`, staging tests |
 | `packages/server/src/pty-host/maw-ptyd.mjs`, `terminal-state.mjs` | bundled as `dist/maw-ptyd.mjs` and `dist/terminal-state.mjs`; release validators require them |
 | `packages/server/scripts/build-bundle.mjs` entry `src/index.ts` | production bundle |
-| `packages/desktop/main.mjs`, `preload.cjs`, `policy.mjs`, `webauthn-*preload.cjs` | Electron entry and preload paths are launched by `scripts/maw/desktop-launch.mjs` with `packages/desktop` as app dir |
+| `packages/desktop/main.mjs`, `preload.cjs`, `policy.mjs` | Electron entry and shell preload; `scripts/maw/desktop-launch.mjs` launches `packages/desktop` as the app dir. The WebAuthn preload and dialog assets are loaded only by `main.mjs` and moved to `src/security/webauthn/` |
 | `packages/desktop/src/gpu/graphics-policy.mjs` | imported by path from the release directory in `scripts/maw/desktop-launch.mjs` |
 | `packages/server/tests/unit/agents/profiles.test.ts` | executed by `scripts/maw/maw-update.sh` |
 | `packages/server/tests/security/filesystem/native-context.test.ts`, `packages/server/scripts/check-native-systemd.mjs` | systemd check scripts |
@@ -127,111 +127,86 @@ settings/           settings, remote access, performance, support
 
 `protocol/index.ts` assembles `ClientMessage`/`ServerMessage` and dispatches to per-domain parsers. A domain parser returns `undefined` for a type it does not own, `null` for an invalid message of its own type, and the typed message otherwise. Unknown types still resolve to `null`. The old `protocol.ts` disappears; `index.ts` still exports every previous name (checked by an export-surface diff).
 
-### 4.2 `packages/server/src`
+### 4.2 `packages/server/src` (as implemented)
 
 ```text
 index.ts, maw-host.ts          frozen entry points (composition root)
 pty-host/                      frozen: persistent PTY supervisor, client and wire types
 transport/
-  http/                        request authorization (security.ts), local no-auth middleware
+  http/                        auth-middleware.ts, listen.ts, ui-hosting.ts
   websocket/
-    socket-server.ts           the only place for upgrade authorization, connection
-                               lifecycle, parsing and validation, remote refusal,
-                               request correlation, error serialization, dispatch, cleanup
-    connection.ts              per-connection state and its single owner
+    socket-server.ts           attachWorkbenchSocket: upgrade authorization and server lifecycle
+    connection.ts              the single transport boundary per socket: decode and validate, remote
+                               refusal, classic lifecycle gate, agency state barrier, routing, error
+                               serialization, per-terminal command order and limits, cleanup
+    dispatch.ts                route table built from the handlers' own *MessageTypes lists; a compile
+                               time proof that every ClientMessage type has a handler
+    services.ts                createWorkbenchServices: injected stores and private defaults
+    socket-hub.ts              clients, remote sockets, send, broadcast, sendError
+    terminal-history-access.ts the owner of history stores and of who may read a terminal
+    terminal-commands.ts       write, interrupt, drop tab, adapter lookups shared by handlers
     terminal-stream.ts         per-connection attach leases, replay, batching, backpressure
-    broadcasts.ts              registry and domain events fanned out to sockets
-    handlers/                  one module per message family, each taking a narrow dependency slice
-shared/                        concurrency, persistence (atomic write, versioned json), validation, errors,
-                               app paths, debug logging
-agents/                        CLI adapters (claude-code, codex, opencode, antigravity, pi), registry,
-                               profiles, usage collectors
-features/
-  terminals/                   registry, history, output buffer, write queue, activity, shell location
-  composer/                    drafts, queued submits, deliver-when-ready, paste store, attachments, agent keystrokes
-  conversations/               conversation hub and live question, plan limits board, rewind
-  history/                     session index, archive, global search, handoff, session watcher
-  sessions/                    live session runtime and store, native identity and ownership
-  workspaces/                  workspace store, layouts, locks, tab coordinator
-  profiles/                    agent profile store and capabilities
-  notifications/               notification store, tab activity manager
-  browser/                     browser tabs, browser profiles
-  editor/                      editor tabs
-  settings/                    settings store, app settings service
-  remote-access/               remote access service, devices, phone pairing
-  files/                       file browser and write, path guard, reveal, directory picker
-  git/                         git repo, repo hub
-  worktrees/                   worktree service and helpers
-  memory/                      memory bridge and hub
-  notes/                       notes store
-  vault/                       vault service and importers
+    error-reporters.ts, broadcasts.ts, session-events.ts, initial-snapshot.ts, handler-context.ts
+    handlers/                  21 handler modules, one per message family
+security/                      request-guards.ts (token, Origin, Host, cookies), no-auth-middleware.ts
+bootstrap/                     startup banner, config dir migration, browser open, pty helper
+shared/                        serial queue, versioned json store, atomic write, validation, errors,
+                               app paths, debug, jsonl reader
+agents/                        CLI adapters, registry, profiles, usage collectors
+features/                      terminals, composer, conversations, history, memory, files, git, worktrees,
+                               notes, vault, settings, remote-access, workspaces, sessions, profiles,
+                               notifications, browser, editor
 ```
+
+Deviations from the first recommendation: `security/` is top level because both transports and the remote access feature use it and its header requires one reviewable file; `agency/` was dissolved by responsibility instead of being kept as a directory; `agents-usage` moved under `agents/usage`; the three request handlers that the feature layer itself calls (`workspace-request-handler`, `web-tab-request-handler`, `editor-tab-request-handler`) live in their features, because features must not import the transport.
 
 Ownership rules for the transport:
 
-* `socket-server.ts` owns authorization of the upgrade, the `remoteRefusal` gate, parse failures, `classicLifecycle` gating, the `await tabReady` barrier for `agency.*`, the try/catch that serializes errors, and cleanup. Handlers never repeat these.
-* `connection.ts` is the single owner of per-socket mutable state. Handlers receive that connection plus only the services they use, typed as narrow `Pick` slices of the service set, not one object with every service.
-* Domain behavior stays in `features/*`. Handlers translate a message into calls on feature modules and send replies; they do not own durable state.
+* `connection.ts` owns authorization-adjacent gating (remote refusal), parse failures, the agency state barrier, error serialization and cleanup. Handlers never repeat these. Upgrade authorization stays in `socket-server.ts`.
+* `HandlerContext<'registry' | 'send'>` is how a handler declares the services and per-socket state it uses. The compiler rejects reaching for anything else.
+* Domain behavior stays in `features/*`; handlers translate messages into calls and replies.
 
-### 4.3 `packages/desktop`
+### 4.3 `packages/desktop` (as implemented)
 
 ```text
-main.mjs, preload.cjs, policy.mjs        frozen entry points; main.mjs is composition only
+main.mjs, preload.cjs, policy.mjs        frozen entry points; main.mjs is a 65 line composition
 src/
-  app/                                   window creation, lifecycle, single instance, backend watchdog
-  browser/                               BrowserViewController (sole owner of native views and their
-                                         maps), navigation guard, eviction, downloads, zoom, favicons
-  ipc/                                   privileged command router, backend readiness, file clipboard
-  security/                              session permissions, profile storage, OAuth loopback,
-                                         WebAuthn policy, backend and orchestrator
-  performance/                           resource budget, resource monitor
-  gpu/                                   frozen: graphics-policy.mjs
+  app/        process-setup, main-window, backend-endpoint, backend-watchdog, shell-shortcuts, lifecycle
+  browser/    view-controller (owner), view-state, view-layout, navigation-guard, browser-sessions,
+              view-eviction, page-commands, profile-operations, provider-policy, downloads, zoom-controller
+  ipc/        command-router, clipboard-commands, file-clipboard, backend-readiness
+  security/   session-permissions, browser-profile-storage, oauth-loopback, webauthn-ipc, webauthn/
+              (policy, backend, dialog, dialog-position, orchestrator, preload and dialog assets)
+  performance/ resource-budget, resource-monitor, performance-channel
+  gpu/        graphics-policy.mjs (frozen)
+tools/        developer capture and measurement tools
 ```
 
-`BrowserViewController` is the one authoritative owner of: views, URLs, providers, profile ids, attached views, suspended tabs, popups and their owners, zoom, favicons, download counters, interaction protection. The IPC router and the window module call it; no other module mutates those collections. Sender validation (`trustedSender`) happens once in the router before any command is dispatched.
+`BrowserViewController` creates the view state and its collaborators and is their only public surface. The router validates the sender once (`trustedSender` and `validCommand`) before any command reaches an owner, and only handlers listed in its table are reachable.
 
-### 4.4 `packages/web/src`
+### 4.4 `packages/web/src` (as implemented)
 
-```text
-main.tsx, styles.css, globals.d.ts       entry points
-app/                                     root composition: MawRoot, WorkbenchApp (was AgencyApp), classic root
-features/
-  navigation/                            sidebar, project and workspace tree, drag and drop
-  workspaces/                            workspace view, creator, Done view, dialogs, stores and hooks
-  panes/                                 split tree, pane header, menus, tab drag, native layout coordinator
-  browser/                               native browser view, find bar, context menu, favicons, settings
-  terminals/                             terminal view, console, terminal helpers, history
-  agents/                                agent UI, profiles, badges, usage, plan meter
-  editor/                                editor pane and drafts, document viewer
-  conversation/                          classic conversation view, composer, markdown
-  notifications/                         bell, inbox, toast, store, sound
-  settings/                              settings dialog and sections
-  (classic feature panels: files, git, worktrees, memory, notes, vault, remote-access)
-shared/                                  ui, hooks, lib (product agnostic)
-i18n/                                    localization
-```
-
-A feature directory contains its implementations. Cross feature imports go through the other feature's module files, never through a re-export-only barrel.
+See `module-boundaries.md`. `connection/` holds the WebSocket client and the `window.mawChatGpt` declaration; `app/classic/` holds the classic shell; `features/navigation/useSidebarDrag.ts` owns the sidebar pointer drag.
 
 ## 5. Decomposition decisions
 
 ### 5.1 `terminal-socket.ts`
-Becomes `transport/websocket/` as described in 4.2. `attachTerminalSocket` is renamed `attachWorkbenchSocket`. The wire protocol, close codes, and ordering of the initial snapshot are unchanged.
+Replaced by `transport/websocket/` (4.2). The 4,426 line file became about 6,100 lines across 35 modules, none above about 900 lines; the largest is `handlers/agent-input-handler.ts`. `attachTerminalSocket` is now `attachWorkbenchSocket`. Wire protocol, close codes and the order of the initial snapshot are unchanged.
 
 ### 5.2 `desktop/main.mjs`
-Becomes the composition entry that creates the window, the view controller, the router and the watchdog. See 4.3.
+1,380 lines became a 65 line composition entry plus 22 modules (4.3).
 
 ### 5.3 `protocol.ts`
-Split by message family as in 4.1.
+4,016 lines became 15 family modules plus constants and an index; the largest family module is 669 lines.
 
 ### 5.4 `terminal-registry.ts`
-Stays one module unless reading shows a part with no shared mutable state with the lifecycle machine. Recovery planning and restoration that only read supervisor snapshots are candidates; the lifecycle state machine itself is not split.
+Only `RemotePtySession` (a stateless proxy for a supervisor session) was extracted. The registry stays one module of about 1,750 lines: lifecycle, recovery and activity share one entries map and one state machine, so splitting would fragment it.
 
 ### 5.5 Frontend composition
-Drag and drop, dialog coordination and workspace actions are extracted into hooks only where the component keeps the same element identity, so terminals and native browser panes are not remounted.
+The sidebar pointer drag moved into `useSidebarDrag` (it runs inside the same component, so identity and mounting are unchanged). `WorkspaceView` and `WorkbenchApp` were left whole: their layout and ref state is shared across most handlers.
 
 ### 5.6 Intentionally left alone
-`maw-ptyd.mjs`, `resource-monitor.mjs`, `conversation-hub.ts`, `memory-bridge.ts`, `worktrees/service.ts` and the agent adapters. They are large but cohesive.
+`maw-ptyd.mjs`, `resource-monitor.mjs`, `conversation-hub.ts`, `memory-bridge.ts`, `worktrees/service.ts` and the agent adapters. Large but cohesive.
 
 ## 6. Invariants checked at every checkpoint
 
@@ -253,7 +228,13 @@ Drag and drop, dialog coordination and workspace actions are extracted into hook
 
 ## 8. Deviations from the initial recommendation
 
-Recorded as they are decided (see section 9).
+* Server `security/` is a top level directory instead of `transport/http/` (both transports and a feature use it).
+* The server `agency/` directory was dissolved by responsibility; `Agency*` class and protocol type names are kept because they name the `agency.*` protocol namespace.
+* The v1 `features/*/index.ts` barrels were removed, not completed. No replacement barrel exists.
+* Web has `connection/` and `app/classic/` in addition to the recommended directories, because the repository ships two UIs and the WebSocket client is below every feature. Extra feature directories: `conversation`, `files`, `git`, `worktrees`, `notes`, `memory`, `vault`, `remote-access`, `performance`, matching the classic panels that exist.
+* Desktop: `webauthn` modules live under `src/security/webauthn/`; developer tools moved to `tools/`.
+* Only the sidebar drag logic was extracted from the frontend composition components (5.5).
+* Test shims `agents/profiles/profiles.test.ts` and `agency/native-context.test.ts` were removed: the installed updater runs the tests under `packages/server/tests`.
 
 ## 9. Implementation status
 
@@ -270,3 +251,23 @@ Updated at each checkpoint.
 * Parsers return `undefined` for a type they do not own, so a type claimed by no family is still `null`. A test asserts that every message type is owned by exactly one family.
 * Gates: runtime export keys identical (340), exported type and value names identical (752 with kinds), a structural dump of every exported type identical, 800,000 differential fuzz comparisons of old against new parsers with no difference, and 407 golden cases frozen from the old parser now live in `packages/shared/tests/unit`.
 * `shared` has its own unit test tier now (`test:unit`), wired into the root `test:unit`, `test` and CI.
+
+### Checkpoint 2: backend (done)
+
+* 2a: flat files and `agency/` relocated into `features/`, `security/`, `transport/`, `bootstrap/`, `shared/`; barrels and shims removed; `WorkspaceStore` renamed `OpenTabsStore`.
+* 2b: `terminal-socket.ts` split into `transport/websocket` (4.2). Source reading `check-*.mjs` scripts now assert the same text patterns on the files that hold the code.
+* Extra: `RemotePtySession` extracted; HTTP middleware, listening and UI hosting moved to `transport/http`; the unreferenced agents usage harness moved to `scripts/`.
+* New tests: message routing completeness and uniqueness, dispatch behavior, server layering rules.
+* Server unit tests: 147 to 161. Integration 103, security 50, runtime 212 (209 pass, 3 skipped) are unchanged from the base. All 32 `check` scripts behave as on the base (only the two known `check-i18n` findings fail).
+
+### Checkpoint 3: desktop (done)
+
+* `main.mjs` decomposed (4.3). Real Electron tiers (runtime 1, security 2, smoke 2, browser 3, panes 11, terminals 3 plus 1 skipped) match the base exactly. Desktop unit tests: 121 to 134 (router, backend endpoint, view layout, layering).
+
+### Checkpoint 4: frontend (done)
+
+* Feature layout, renames and dead barrels removed (see 4.4 and 8). Web unit 114 to 123; integration 42 (41 pass, 1 skipped) and e2e 58 (57 pass, 1 skipped) match the base exactly.
+
+### Checkpoint 5: repository wide consistency (done)
+
+* Live documentation updated (`ARCHITECTURE.md` layout, `docs/architecture/*`, desktop README and validation notes); stale `Run:` headers in web tests corrected; historical reports under `docs/maw`, `docs/research` and `docs/agency` are left as records.

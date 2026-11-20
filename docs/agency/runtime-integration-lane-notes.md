@@ -138,7 +138,7 @@ From a full clone with dependencies:
 
 ```bash
 corepack pnpm install --frozen-lockfile
-corepack pnpm --dir packages/server exec tsx --test src/agency/runtime/agency-session-runtime.test.ts
+corepack pnpm --dir packages/server exec tsx --test tests/runtime/lifecycle/agency-session-runtime.test.ts
 corepack pnpm typecheck
 corepack pnpm check
 corepack pnpm build

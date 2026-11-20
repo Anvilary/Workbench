@@ -1,45 +1,27 @@
 # Module Boundaries
 
-Each package owns a clear set of runtime responsibilities and internal layers (`shared/`, `features/`, and legacy/domain orchestration modules under `src/`).
+What each package owns and where the canonical implementation lives. See [architecture-v2.md](./architecture-v2.md) for the rationale.
 
 ## `@agent-workbench/shared`
 
-- Pure TypeScript types, message codecs, URL validators (`browser-tabs.ts`), layout math, and narrowing helpers (`validation.ts`).
-- Must stay runtime-agnostic: zero Node.js `fs`/`child_process` imports, zero React imports, and zero Electron imports.
+- `protocol/`: `constants.ts` (version history), one `<family>-messages.ts` per message family (types, constants, client and server parsers), `agency-messages.ts` (workspace protocol), `notification-messages.ts`, `server-text.ts`, and `index.ts` (unions, dispatching parsers, encoders, explicit public exports).
+- `validation/`, `agents/`, `sessions/`, `workspaces/`, `browser/`, `git/`, `files/`, `settings/`: runtime independent domain types and pure logic.
+- Runtime agnostic: no Node `fs`/`child_process`, React or Electron imports.
 
 ## `@agent-workbench/server`
 
-- **Shared Foundations (`src/shared/`)**:
-  - `concurrency/serial-queue.ts`: FIFO `SerialQueue` isolating failed operations while keeping queue continuity.
-  - `errors/domain-error.ts`: `DomainError` and `UnsupportedSchemaVersionError`.
-  - `persistence/versioned-json-store.ts`: `loadWithBackupRecovery` and `writeSnapshotWithBackup` with quarantine on corrupt primaries and fail-closed schema checks.
-  - `validation/primitives.ts`: `isRecord`, `isValidUuid`, `isIsoUtcTimestamp`, `isValidTimestamp`, `isNullableTimestamp`, `isPrintableName`, `isCanonicalAbsolutePath`, `isValidRequestId`.
-- **Feature Barrels (`src/features/`)**:
-  - `workspaces/`, `sessions/`, `agents/`, `settings/` establish clean entry modules as domain logic is migrated out of central handlers.
-- **Core Runtime & Persistence (`src/agency/`, `src/pty-host/`, `src/agents/`)**:
-  - Authoritative state stores (`agency-layout-store.ts`, `browser-tab-store.ts`, `editor-tab-store.ts`, `agency-profile-store.ts`, `agency-session-store.ts`).
-  - Persistent PTY supervisor (`src/pty-host/maw-ptyd.mjs`) separated cleanly from Express/WebSocket request routing (`src/index.ts`).
+- `index.ts`, `maw-host.ts`: composition root. `pty-host/`: persistent PTY supervisor, client and wire types.
+- `transport/websocket/`: `socket-server.ts` (upgrade authorization and lifecycle), `connection.ts` (the single boundary per socket), `dispatch.ts` (route table), `services.ts`, `socket-hub.ts`, `terminal-history-access.ts`, `terminal-commands.ts`, `terminal-stream.ts`, `error-reporters.ts`, `broadcasts.ts`, `session-events.ts`, `initial-snapshot.ts`, `handler-context.ts`, and `handlers/` (one module per message family).
+- `transport/http/`: authorization middleware, loopback listening, UI hosting. `security/`: request guards and the local no-auth middleware.
+- `features/<name>/`: terminals, composer, conversations, history, memory, files, git, worktrees, notes, vault, settings, remote-access, workspaces, sessions, profiles, notifications, browser, editor. Each owns its stores and rules, plus request handlers that do not depend on a socket (`workspaces/workspace-request-handler.ts`, `browser/web-tab-request-handler.ts`, `editor/editor-tab-request-handler.ts`).
+- `agents/`: CLI adapters, registry, profiles, usage collectors. `shared/`: serial queue, versioned json store, atomic writes, validation primitives, app paths, debug logging. `bootstrap/`: startup helpers.
 
 ## `@agent-workbench/web`
 
-- **Shared UI & Hooks (`src/shared/`)**:
-  - `ui/`: Generic primitives (`ModalDialog.tsx`, `ConfirmDialog.tsx`, `InlineRenameInput.tsx`, `StatusDot.tsx`, `BannerNotice.tsx`).
-  - `hooks/`: Generic focus and keyboard helpers (`useFocusTrap.ts`, `useEscapeKey.ts`, `useMenuKeyboardNav.ts`).
-  - `lib/`: Pure viewport positioning (`overlay-position.ts`).
-- **Feature Modules (`src/features/`)**:
-  - `settings/`: Sectioned settings panels (`sections/{About,Agents,General,Panels,Terminal}SettingsSection.tsx`), `SettingsIcons.tsx`, `version-info.ts`, `settings-search.ts`.
-  - `workspaces/`: `AgencyDoneView.tsx`, `DeleteWorkspaceDialog.tsx`, `SidebarConfirmDialogs.tsx`, `SidebarDropdownMenu.tsx`, `WorkspaceSessionDialogs.tsx`, `workspace-tab-helpers.ts`.
-  - `browser/`: `useBrowserZoomShortcuts.ts`, `useNativeWebTabLinks.ts`.
-  - `panes/`: `TabStatusIcon.tsx`, `useHorizontalWheelScroll.ts`, `useTabPointerDrag.ts`.
-  - `terminals/`, `agents/`, `editor/`: Feature barrels for ongoing extraction.
-- **Top-Level Compositions (`src/SettingsDialog.tsx`, `src/agency/AgencyWorkspaceView.tsx`, `src/agency/AgencySidebar.tsx`, `src/agency/split/PaneHeader.tsx`)**:
-  - Compose feature modules while preserving public exports and avoiding component remounts.
+- `app/`: `WorkbenchRoot`, `WorkbenchApp`, and `classic/` (the classic Workbench shell behind `?view=workbench`).
+- `features/`: navigation, workspaces, panes, browser, terminals, agents, conversation, files, git, worktrees, notes, memory, vault, remote-access, editor, notifications, performance, settings.
+- `connection/`: the WebSocket client and the desktop bridge declaration (`window.mawChatGpt`). `shared/`: `ui/`, `hooks/`, `lib/`. `i18n/`: locales.
 
 ## `@agent-workbench/desktop`
 
-- Trusted Electron main process (`main.mjs`) and loopback/browser policy validator (`policy.mjs`).
-- Focused native modules under `src/`:
-  - `security/oauth-loopback.mjs`: `isOAuthLoopbackCallback`
-  - `security/session-permissions.mjs`: `configureBrowserSessionPermissions`, `isDurableProviderPage`
-  - `ipc/backend-readiness.mjs`: `discoverBackendReadiness`
-  - `browser/zoom-controller.mjs`: `applyWebContentsZoom`
+- `main.mjs`, `preload.cjs`, `policy.mjs`: entry points. `src/app/`: process setup, window, backend endpoint and watchdog, lifecycle. `src/browser/`: `view-controller.mjs` and its private collaborators, downloads, zoom. `src/ipc/`: `command-router.mjs`, clipboard commands, file clipboard, backend readiness. `src/security/`: session permissions, profile storage, OAuth loopback, WebAuthn (policy, backend, dialog, orchestrator, IPC). `src/performance/`: budget, monitor, channel. `src/gpu/`: graphics policy.

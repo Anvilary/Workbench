@@ -1,5 +1,5 @@
 // Live terminals stay mounted across tab switches and pane moves.
-// Run: node --test packages/web/src/agency/split/terminal-lifecycle.test.mjs
+// Run: node --test packages/web/tests/e2e/terminals/terminal-lifecycle.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';

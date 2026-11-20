@@ -1,5 +1,5 @@
 // Local/CI browser regression for the MAW-first root (Opt-A).
-// Run: node --test packages/web/src/maw-root.test.mjs
+// Run: node --test packages/web/tests/integration/workspaces/maw-root.test.mjs
 // Bundles the real entry (src/main.tsx) with code splitting, serves it without a backend, and checks in real
 // Chromium that the MAW view never downloads the classic Workbench chunk, that `?view=workbench` still loads the
 // classic UI, that switching between them works, and that a failed classic chunk shows a recoverable error.

@@ -1,5 +1,5 @@
 // Terminal 42,000-line scrollback, shortcut consistency, search, and scroll stability test.
-// Run: node --test packages/web/src/agency/split/terminal-scrollback-20k.test.mjs
+// Run: node --test packages/web/tests/e2e/terminals/terminal-scrollback-20k.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
