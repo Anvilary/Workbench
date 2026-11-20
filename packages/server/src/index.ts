@@ -7,79 +7,73 @@
  * de sacar.
  */
 
-import { nativeRecoveryCapacity } from './features/sessions/recovery-capacity.js';
-import { acquireStoreOwnership, publishReadiness, readReleaseIdentity } from './maw-host.js';
+import { TOKEN_QUERY_PARAM, type TerminalId } from '@agent-workbench/shared';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import { existsSync } from 'node:fs';
-import { createServer, type Server as HttpServer } from 'node:http';
+import { createServer } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import express, { type NextFunction, type Request, type Response } from 'express';
-import { TOKEN_QUERY_PARAM, type AgentInfo, type TerminalId } from '@agent-workbench/shared';
-import { ArchivedSessions } from './features/history/archived-sessions.js';
-import { createAgentRegistry, type AgentRegistry } from './agents/registry.js';
+import { createAgentRegistry } from './agents/registry.js';
 import { migrateLegacyConfigDir } from './bootstrap/config-dir-migration.js';
-import { ConversationHub } from './features/conversations/conversation-hub.js';
 import { openBrowser } from './bootstrap/open-browser.js';
 import { ensurePtyHelperExecutable } from './bootstrap/pty-helper.js';
+import { describeStartup, remoteAccessStartupLine } from './bootstrap/startup-summary.js';
+import { BrowserProfileStore } from './features/browser/browser-profile-store.js';
+import { BrowserTabAdapter } from './features/browser/browser-tab-adapter.js';
+import { BrowserTabStore } from './features/browser/browser-tab-store.js';
+import { DraftStore, workspaceDraftOwners } from './features/composer/draft-store.js';
+import { PasteStore } from './features/composer/paste-store.js';
+import { ConversationHub } from './features/conversations/conversation-hub.js';
+import { EditorTabAdapter } from './features/editor/editor-tab-adapter.js';
+import { EditorTabStore } from './features/editor/editor-tab-store.js';
+import { RepoHub } from './features/git/repo-hub.js';
+import { ArchivedSessions } from './features/history/archived-sessions.js';
+import { ClassicWorkbenchLifecycle } from './features/history/classic-workbench-lifecycle.js';
+import { SessionIndex } from './features/history/session-index.js';
+import { MemoryHub } from './features/memory/memory-hub.js';
+import { NotesStore } from './features/notes/notes-store.js';
+import { AgencyNotificationStore } from './features/notifications/notification-store.js';
+import { TabActivityManager } from './features/notifications/tab-activity-manager.js';
+import { buildAgencyProfileLaunch } from './features/profiles/profile-capabilities.js';
+import { AgencyProfileStore } from './features/profiles/profile-store.js';
 import { RemoteAccessService } from './features/remote-access/remote-access-service.js';
 import { RemoteDevicesStore } from './features/remote-access/remote-devices-store.js';
-import {
-  LOOPBACK_HOST,
-  applyFrameProtectionHeaders,
-  authorizeRequest,
-  isLocalNoAuthEnabled,
-  buildDeviceCookie,
-  buildTokenCookie,
-  createSessionToken,
-  readPairingCode,
-} from './security/request-guards.js';
-import { createNoAuthMiddleware } from './security/no-auth-middleware.js';
-import { appConfigDir } from './shared/app-paths.js';
-import { RepoHub } from './features/git/repo-hub.js';
-import { MemoryHub } from './features/memory/memory-hub.js';
-import { PasteStore } from './features/composer/paste-store.js';
-import { SessionIndex } from './features/history/session-index.js';
-import { SettingsStore } from './features/settings/settings-store.js';
-import {
-  remoteAccessStartupLine,
-  startupAgentLines,
-  supportStartupLine,
-  supportStartupLineColored,
-} from './bootstrap/startup-summary.js';
-import { NotesStore } from './features/notes/notes-store.js';
-import { DraftStore, workspaceDraftOwners } from './features/composer/draft-store.js';
-import { locateShells, pickShell, type ShellLocation } from './features/terminals/shell-locator.js';
-import { AppSettingsService } from './features/settings/app-settings-service.js';
-import { ClassicWorkbenchLifecycle } from './features/history/classic-workbench-lifecycle.js';
-import { TerminalRegistry } from './features/terminals/terminal-registry.js';
-import { attachWorkbenchSocket } from './transport/websocket/socket-server.js';
-import { VaultCatalog } from './features/vault/catalog.js';
-import { defaultVaultDir } from './features/vault/paths.js';
-import { VaultService } from './features/vault/service.js';
-import { OpenTabsStore } from './features/terminals/open-tabs-store.js';
-import { WorktreeLinks } from './features/worktrees/links.js';
-import { WorktreeService } from './features/worktrees/service.js';
-import { WorktreeStore } from './features/worktrees/store.js';
-import { AgencyWorkspaceStore } from './features/workspaces/workspace-store.js';
-import { BrowserProfileStore } from './features/browser/browser-profile-store.js';
 import { NativeIdentities } from './features/sessions/native-identity.js';
-import { AgencyProfileStore } from './features/profiles/profile-store.js';
-import { SplitAgencySessionStore } from './features/sessions/session-store.js';
+import { nativeRecoveryCapacity } from './features/sessions/recovery-capacity.js';
 import {
   AgencySessionRuntime,
   type AgencyProfileLaunchProvider,
   type AgencyWorkspaceSource,
 } from './features/sessions/session-runtime.js';
-import { buildAgencyProfileLaunch } from './features/profiles/profile-capabilities.js';
-import { WorkspaceMutex } from './features/workspaces/workspace-lock.js';
-import { BrowserTabAdapter } from './features/browser/browser-tab-adapter.js';
-import { BrowserTabStore } from './features/browser/browser-tab-store.js';
-import { EditorTabAdapter } from './features/editor/editor-tab-adapter.js';
-import { EditorTabStore } from './features/editor/editor-tab-store.js';
-import { AgencyNotificationStore } from './features/notifications/notification-store.js';
+import { SplitAgencySessionStore } from './features/sessions/session-store.js';
+import { AppSettingsService } from './features/settings/app-settings-service.js';
+import { SettingsStore } from './features/settings/settings-store.js';
+import { OpenTabsStore } from './features/terminals/open-tabs-store.js';
+import { locateShells, pickShell, type ShellLocation } from './features/terminals/shell-locator.js';
+import { TerminalRegistry } from './features/terminals/terminal-registry.js';
+import { VaultCatalog } from './features/vault/catalog.js';
+import { defaultVaultDir } from './features/vault/paths.js';
+import { VaultService } from './features/vault/service.js';
 import { AgencyLayoutStore } from './features/workspaces/layout-store.js';
-import { TabActivityManager } from './features/notifications/tab-activity-manager.js';
+import { WorkspaceMutex } from './features/workspaces/workspace-lock.js';
+import { AgencyWorkspaceStore } from './features/workspaces/workspace-store.js';
+import { WorktreeLinks } from './features/worktrees/links.js';
+import { WorktreeService } from './features/worktrees/service.js';
+import { WorktreeStore } from './features/worktrees/store.js';
+import { acquireStoreOwnership, publishReadiness, readReleaseIdentity } from './maw-host.js';
+import { createNoAuthMiddleware } from './security/no-auth-middleware.js';
+import {
+  LOOPBACK_HOST,
+  applyFrameProtectionHeaders,
+  createSessionToken,
+  isLocalNoAuthEnabled,
+} from './security/request-guards.js';
+import { appConfigDir } from './shared/app-paths.js';
+import { createAuthMiddleware } from './transport/http/auth-middleware.js';
+import { isPortUnavailable, listenOnLoopback } from './transport/http/listen.js';
+import { mountBuiltUi, mountDevUi } from './transport/http/ui-hosting.js';
+import { attachWorkbenchSocket } from './transport/websocket/socket-server.js';
 
 const serverDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -126,213 +120,6 @@ function resolveDefaultCwd(): string {
   // sirve: pnpm ejecuta el script dentro de packages/server.
   if (isPackaged) return process.cwd();
   return repoRoot;
-}
-
-/**
- * Guardia unica para todas las rutas HTTP.
- *
- * El token llega por query la primera vez (la URL que abrimos) y despues por
- * cookie, porque los assets del SPA no pueden llevarlo en la URL.
- *
- * Con el acceso remoto encendido (hito 37) entra tambien la cookie de un equipo
- * emparejado, y una peticion **sin** credencial puede traer un codigo para
- * emparejarse: si es el vigente, se cambia por esa cookie y se redirige a la
- * raiz, sin el codigo en la direccion. El codigo es una credencial de un solo
- * uso: sigue sin haber ninguna ruta que atienda a quien no presenta nada.
- */
-/*
-  Las respuestas de texto del servidor no pasan por la web, asi que no hay
-  idioma elegido: van en ingles, el idioma por defecto, y en espanol, el de
-  siempre (hito 34, D13).
-*/
-const ORIGIN_REFUSED_TEXT = 'Origin not allowed.\nOrigen no permitido.';
-const TOKEN_MISSING_TEXT =
-  'The session token is missing. Open the URL the server printed at startup.\n' +
-  'Falta el token de sesión. Abre la URL que imprimió el servidor al arrancar.';
-const NOT_FOUND_TEXT = 'Not found.\nNo encontrado.';
-/** Solo con el acceso remoto andando: a quien llega de otro equipo, como se entra. */
-const PAIRING_HINT_TEXT =
-  '\n\nFrom another computer: pair it first. On the computer that runs Agent Workbench, open ' +
-  '"Remote access" and choose "Pair a device".\n' +
-  'Desde otro equipo: primero emparéjalo. En el equipo donde corre Agent Workbench, abre ' +
-  '"Acceso remoto" y elige "Emparejar un equipo".';
-const PAIRING_REFUSED_TEXT =
-  "That pairing code isn't valid or has expired. Ask for a new one in \"Remote access\".\n" +
-  'Ese código para emparejar no es válido o venció. Pide uno nuevo en "Acceso remoto".';
-
-function createAuthMiddleware(port: number, token: string, remote: RemoteAccessService) {
-  return (request: Request, response: Response, next: NextFunction): void => {
-    const authorization = authorizeRequest(request, port, token, remote.verifier());
-    if (authorization.ok) {
-      const { credential } = authorization;
-      (request as any).mawCredential = credential;
-      if (credential.kind === 'session' && credential.source === 'query') {
-        response.setHeader('Set-Cookie', buildTokenCookie(token));
-      }
-      // La de un equipo se renueva al cargar la pagina, no con cada archivo.
-      if (credential.kind === 'device' && request.method === 'GET' && request.path === '/') {
-        response.setHeader('Set-Cookie', buildDeviceCookie(credential.credential));
-      }
-      next();
-      return;
-    }
-
-    if (authorization.reason !== 'bad-token') {
-      response.status(403).type('text/plain').send(ORIGIN_REFUSED_TEXT);
-      return;
-    }
-
-    // Sin credencial: puede ser un equipo que viene a emparejarse. Solo en la raiz.
-    const code = request.method === 'GET' && request.path === '/' ? readPairingCode(request) : null;
-    if (code !== null && remote.verifier() !== null) {
-      response.setHeader('Cache-Control', 'no-store');
-      void remote
-        .redeemPairing(code, request.headers['user-agent'])
-        .catch(() => null)
-        .then((redeemed) => {
-          if (redeemed === null) {
-            response.status(401).type('text/plain').send(PAIRING_REFUSED_TEXT);
-            return;
-          }
-          response.setHeader('Set-Cookie', buildDeviceCookie(redeemed.credential));
-          response.redirect(303, '/');
-        });
-      return;
-    }
-
-    response
-      .status(401)
-      .type('text/plain')
-      .send(remote.verifier() === null ? TOKEN_MISSING_TEXT : TOKEN_MISSING_TEXT + PAIRING_HINT_TEXT);
-  };
-}
-
-/** El puerto estaba tomado, o no se puede abrir: el servidor cae a uno efimero y lo dice. */
-function isPortUnavailable(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException | null)?.code;
-  return code === 'EADDRINUSE' || code === 'EACCES';
-}
-
-/** Escucha en loopback. Nunca 0.0.0.0. Rechaza con el error de `listen`. */
-function listenOnLoopback(httpServer: HttpServer, port: number): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    const onError = (error: Error): void => {
-      httpServer.off('listening', onListening);
-      reject(error);
-    };
-    const onListening = (): void => {
-      httpServer.off('error', onError);
-      resolve();
-    };
-    httpServer.once('error', onError);
-    httpServer.once('listening', onListening);
-    httpServer.listen(port, LOOPBACK_HOST);
-  });
-}
-
-/** Monta Vite como middleware. El HMR viaja por el mismo servidor HTTP. */
-async function mountDevUi(
-  app: express.Express,
-  httpServer: HttpServer,
-): Promise<() => Promise<void>> {
-  const { createServer: createViteServer } = await import('vite');
-  const vite = await createViteServer({
-    root: webRoot,
-    appType: 'spa',
-    server: { middlewareMode: true, hmr: { server: httpServer } },
-  });
-  app.use(vite.middlewares);
-  return () => vite.close();
-}
-
-/**
- * Sirve la interfaz ya compilada.
- *
- * Vite no se importa siquiera en este camino: en produccion no tiene por que
- * estar instalado.
- *
- * El `sendFile` del final es el fallback de una SPA, y **solo** se aplica a
- * rutas que no piden un archivo. Un fallback que atrapa todo es el error
- * clasico de esta configuracion: un asset que falta devuelve el HTML con
- * estado 200, el navegador intenta interpretar `<!doctype html>` como
- * JavaScript y el error que se ve es un `Unexpected token '<'` que no tiene
- * nada que ver con la causa. Pasa de verdad — con un fragmento cargado a
- * demanda, como el resaltador de sintaxis, basta con recompilar mientras
- * alguien tiene la pagina abierta.
- *
- * Se detecta por la extension del ultimo segmento: si la ruta pide un archivo
- * y `express.static` no lo encontro, no existe, y eso es un 404.
- */
-const LOOKS_LIKE_FILE = /\.[a-zA-Z0-9]{1,8}$/;
-
-function mountBuiltUi(app: express.Express): () => Promise<void> {
-  const indexHtml = path.join(webDist, 'index.html');
-  if (!existsSync(indexHtml)) {
-    throw new Error(
-      `There's no compiled interface in ${webDist}.
-Run "pnpm build" before "pnpm start", or use "pnpm dev".`,
-    );
-  }
-
-  app.use(express.static(webDist, { index: false, maxAge: 0 }));
-  app.get(/.*/, (request: Request, response: Response) => {
-    if (LOOKS_LIKE_FILE.test(request.path)) {
-      response.status(404).type('text/plain').send(NOT_FOUND_TEXT);
-      return;
-    }
-    // Absolute paths include hidden install parents such as ~/.local. `send`
-    // rejects those as dotfiles unless the trusted asset root is explicit.
-    response.sendFile('index.html', { root: webDist });
-  });
-
-  return () => Promise.resolve();
-}
-
-/**
- * Lo que se imprime al arrancar.
- *
- * Las lineas de las CLIs cuentan las **disponibles** (`startup-summary.ts`): con
- * una sola instalada son las de siempre, aunque haya mas registradas.
- */
-function describeStartup(
-  url: string,
-  cwd: string,
-  agents: AgentRegistry,
-  shell: ShellLocation | null,
-  remoteLine: string | null,
-): void {
-  const agentList: readonly AgentInfo[] = agents.list();
-  const line = '-'.repeat(64);
-  console.log(`\n${line}`);
-  console.log('  Anvilary Workbench');
-  console.log(line);
-  console.log(`  URL          ${url}`);
-  console.log(`  Mode         ${isProduction ? 'production (compiled interface)' : 'development'}`);
-  console.log(`  Directory    ${cwd}`);
-  const startupAgents = agentList.map((info) => ({
-    id: info.id,
-    label: info.label,
-    version: info.version,
-    resolvedPath: agents.get(info.id)?.location?.resolvedPath ?? null,
-    missingMessage: info.missingMessage,
-    historyNote: agents.get(info.id)?.adapter.startupHistoryNote?.(info.available) ?? null,
-    // Solo la CLI con status line opcional; se imprime debajo de ella si esta instalada.
-    statusLine: info.statusLine?.state ?? null,
-  }));
-  for (const agentLine of startupAgentLines(startupAgents)) console.log(agentLine);
-  console.log(`  Console      ${shell === null ? 'not found' : shell.file}`);
-  // Solo con el acceso remoto encendido: apagado, el arranque es el de siempre.
-  if (remoteLine !== null) console.log(remoteLine);
-  // Como apoyar el proyecto (§6.28): una linea, en cada arranque, en color si la consola lo dibuja.
-  const colored = process.stdout.isTTY === true && process.env['NO_COLOR'] === undefined;
-  console.log(colored ? supportStartupLineColored() : supportStartupLine());
-  if (agentList.some((info) => info.environmentNotice === 'child-session-marker')) {
-    console.log('');
-    console.log('  Note: this process inherited CLAUDE_CODE_CHILD_SESSION, which turns off');
-    console.log('  saving the history. It is removed from the tabs\' environment so the');
-    console.log('  history and the conversation view work the same.');
-  }
-  console.log(`${line}\n`);
 }
 
 async function main(): Promise<void> {
@@ -623,7 +410,7 @@ async function main(): Promise<void> {
     });
   });
 
-  const closeUi = isProduction ? mountBuiltUi(app) : await mountDevUi(app, httpServer);
+  const closeUi = isProduction ? mountBuiltUi(app, webDist) : await mountDevUi(app, httpServer, webRoot);
 
   const detachSocket = attachWorkbenchSocket({
     agencyWorkspaceStore,
@@ -703,6 +490,7 @@ async function main(): Promise<void> {
   void agencyRuntime.recoverActive(workspace => agencyWorkspaceStore.listProjects().some(project => project.id === workspace.projectId && project.status !== 'archived'), nativeRecoveryCapacity).catch(error => console.error('[maw] recovery stopped:', String(error)));
   const remoteStatus = remote.status();
   describeStartup(
+    isProduction,
     process.env['MAW_RUNTIME_DIR'] ? `http://${LOOPBACK_HOST}:${port}/ (use maw open)` : url,
     defaultCwd,
     agents,

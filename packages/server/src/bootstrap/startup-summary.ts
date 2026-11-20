@@ -27,7 +27,16 @@
  * sabe en que idioma esta nadie, y el ingles es el idioma por defecto.
  */
 
-import { SUPPORT_URL, type AgentId, type RemoteAccessState, type ServerText, type StatusLineState } from '@agent-workbench/shared';
+import type { AgentInfo } from '@agent-workbench/shared';
+import {
+  SUPPORT_URL,
+  type AgentId,
+  type RemoteAccessState,
+  type ServerText,
+  type StatusLineState,
+} from '@agent-workbench/shared';
+import type { AgentRegistry } from '../agents/registry.js';
+import type { ShellLocation } from '../features/terminals/shell-locator.js';
 
 export interface StartupAgent {
   id: AgentId;
@@ -181,4 +190,52 @@ export function supportStartupLineColored(): string {
     `\x1b[33mIf Anvilary Workbench is useful to you, consider supporting it:\x1b[0m ` +
     `\x1b[4;94m${SUPPORT_URL}\x1b[0m`
   );
+}
+
+/**
+ * Lo que se imprime al arrancar.
+ *
+ * Las lineas de las CLIs cuentan las **disponibles** (`startup-summary.ts`): con
+ * una sola instalada son las de siempre, aunque haya mas registradas.
+ */
+export function describeStartup(
+  production: boolean,
+  url: string,
+  cwd: string,
+  agents: AgentRegistry,
+  shell: ShellLocation | null,
+  remoteLine: string | null,
+): void {
+  const agentList: readonly AgentInfo[] = agents.list();
+  const line = '-'.repeat(64);
+  console.log(`\n${line}`);
+  console.log('  Anvilary Workbench');
+  console.log(line);
+  console.log(`  URL          ${url}`);
+  console.log(`  Mode         ${production ? 'production (compiled interface)' : 'development'}`);
+  console.log(`  Directory    ${cwd}`);
+  const startupAgents = agentList.map((info) => ({
+    id: info.id,
+    label: info.label,
+    version: info.version,
+    resolvedPath: agents.get(info.id)?.location?.resolvedPath ?? null,
+    missingMessage: info.missingMessage,
+    historyNote: agents.get(info.id)?.adapter.startupHistoryNote?.(info.available) ?? null,
+    // Solo la CLI con status line opcional; se imprime debajo de ella si esta instalada.
+    statusLine: info.statusLine?.state ?? null,
+  }));
+  for (const agentLine of startupAgentLines(startupAgents)) console.log(agentLine);
+  console.log(`  Console      ${shell === null ? 'not found' : shell.file}`);
+  // Solo con el acceso remoto encendido: apagado, el arranque es el de siempre.
+  if (remoteLine !== null) console.log(remoteLine);
+  // Como apoyar el proyecto (§6.28): una linea, en cada arranque, en color si la consola lo dibuja.
+  const colored = process.stdout.isTTY === true && process.env['NO_COLOR'] === undefined;
+  console.log(colored ? supportStartupLineColored() : supportStartupLine());
+  if (agentList.some((info) => info.environmentNotice === 'child-session-marker')) {
+    console.log('');
+    console.log('  Note: this process inherited CLAUDE_CODE_CHILD_SESSION, which turns off');
+    console.log('  saving the history. It is removed from the tabs\' environment so the');
+    console.log('  history and the conversation view work the same.');
+  }
+  console.log(`${line}\n`);
 }
