@@ -11,42 +11,43 @@
  *  - los oyentes van y vienen; la terminal sigue igual
  */
 
-import { randomUUID } from 'node:crypto';
-import { EventEmitter } from 'node:events';
-import { stat } from 'node:fs/promises';
-import path from 'node:path';
 import {
   insertionIndex,
   serverText,
   type AgentId,
   type SessionId,
+  type TabWorktree,
   type TerminalActivity,
   type TerminalDescriptor,
   type TerminalId,
   type TerminalKind,
   type TerminalOfflineReason,
-  type TabWorktree,
 } from '@agent-workbench/shared';
-import type { AgentAdapter, CliLocation, LaunchHook, LaunchPlan, LaunchSession } from '../../agents/adapter.js';
-import {
-  resolveAgentForOpen,
-  type AgentRegistry,
-  type RegisteredAgent,
-} from '../../agents/registry.js';
+import { randomUUID } from 'node:crypto';
+import { EventEmitter } from 'node:events';
+import { stat } from 'node:fs/promises';
+import path from 'node:path';
+import type {
+  AgentAdapter,
+  CliLocation,
+  LaunchHook,
+  LaunchPlan,
+  LaunchSession,
+} from '../../agents/adapter.js';
+import { resolveAgentForOpen, type AgentRegistry, type RegisteredAgent } from '../../agents/registry.js';
+import { PtyHostClient, isTestExecution } from '../../pty-host/pty-host-client.js';
+import type { PtyHostSessionInfo, PtyHostTombstoneInfo } from '../../pty-host/pty-host-types.js';
+import { integrationsDir } from '../../shared/app-paths.js';
 import { debugLog } from '../../shared/debug.js';
 import { LaunchHookSlot } from './launch-hook-slot.js';
 import { OutputBuffer } from './output-buffer.js';
-import { PtySession, type LaunchSpec } from './pty-session.js';
 import { createPtyScreen, type PtyScreen } from './pty-screen.js';
-import type { ShellLocation } from './shell-locator.js';
+import { PtySession, type LaunchSpec } from './pty-session.js';
+import { RemotePtySession, type IPtySession } from './remote-pty-session.js';
 import { prepareIntegratedShell } from './shell-integration.js';
+import type { ShellLocation } from './shell-locator.js';
 import { prepareTerminalCommandHistory } from './terminal-command-history.js';
-import { integrationsDir } from '../../shared/app-paths.js';
-import { PtyHostClient, isTestExecution } from '../../pty-host/pty-host-client.js';
-import type { PtyHostSessionInfo, PtyHostTombstoneInfo } from '../../pty-host/pty-host-types.js';
 
-import { ActivityBook, wakeActionFor, type ActivityEntry } from './terminal-activity.js';
-import { TerminalOpenError, resolveLaunchPlan } from './terminal-open-error.js';
 import {
   OpenTabsStore,
   mergePersistedTabs,
@@ -56,6 +57,8 @@ import {
   type PlacedTab,
   type WorkspaceState,
 } from './open-tabs-store.js';
+import { ActivityBook, wakeActionFor, type ActivityEntry } from './terminal-activity.js';
+import { TerminalOpenError, resolveLaunchPlan } from './terminal-open-error.js';
 
 /** Tope defensivo: cada pestana es un proceso real. */
 const MAX_TERMINALS = 42;
@@ -65,54 +68,6 @@ const RESTART_EXIT_TIMEOUT_MS = 10_000;
 
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
-
-export interface IPtySession {
-  readonly pid: number;
-  readonly cwd: string;
-  write(data: string): void;
-  resize(cols: number, rows: number): void;
-  dispose(): void;
-}
-
-export class RemotePtySession implements IPtySession {
-  private disposed = false;
-
-  constructor(
-    private readonly client: PtyHostClient,
-    readonly id: string,
-    readonly pid: number,
-    readonly cwd: string,
-  ) {}
-
-  write(data: string): void {
-    if (this.disposed) return;
-    this.client.write(this.id, data);
-  }
-
-  resize(cols: number, rows: number): void {
-    if (this.disposed) return;
-    this.client.resize(this.id, cols, rows);
-  }
-
-  async terminate(signal = 'SIGTERM'): Promise<boolean> {
-    try {
-      await this.client.kill(this.id, signal);
-      this.disposed = true;
-      return true;
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('[SESSION_NOT_FOUND]')) {
-        this.disposed = true;
-        return true;
-      }
-      return false;
-    }
-  }
-
-  dispose(): void {
-    if (this.disposed) return;
-    void this.terminate('SIGTERM');
-  }
-}
 
 export type OutputListener = (terminalId: TerminalId, chunk: string, offset?: number) => void;
 
