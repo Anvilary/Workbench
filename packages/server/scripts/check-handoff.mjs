@@ -908,7 +908,7 @@ const pathInMessage = (message) => /"([^"]+\.md)"/.exec(message)?.[1] ?? null;
 // ---------------------------------------------------------------------------
 
 {
-  const ui = await import('../../web/src/agent-ui.ts');
+  const ui = await import('../../web/src/features/agents/agent-ui.ts');
   const info = (id, label, available, capabilities = shared.NO_CAPABILITIES) => ({
     id, label, command: id, available, version: available ? '1.0' : null, installUrl: 'https://example.com',
     missingMessage: available ? null : 'falta', capabilities, environmentNotice: null, statusLine: null,
@@ -988,7 +988,7 @@ const pathInMessage = (message) => /"([^"]+\.md)"/.exec(message)?.[1] ?? null;
     ui.scrollClosesMenu(list, anchor, menu) === true && ui.scrollClosesMenu(document, anchor, menu) === true);
   check('H10 el scroll dentro del propio menu no lo cierra; un destino sin contains, si',
     ui.scrollClosesMenu(menuItem, anchor, menu) === false && ui.scrollClosesMenu(null, anchor, menu) === true && ui.scrollClosesMenu({}, anchor, null) === true);
-  const menuSource = await readFile(new URL('../../web/src/AgentMenu.tsx', import.meta.url), 'utf8');
+  const menuSource = await readFile(new URL('../../web/src/features/agents/AgentMenu.tsx', import.meta.url), 'utf8');
   check('H10 AgentMenu decide el cierre por scroll con scrollClosesMenu',
     /onScroll[\s\S]{0,200}scrollClosesMenu\(event\.target, anchor, menuRef\.current\)/.test(menuSource));
 }

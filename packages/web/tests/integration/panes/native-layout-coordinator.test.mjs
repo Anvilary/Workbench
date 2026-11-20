@@ -9,7 +9,7 @@ import { chromium } from 'playwright';
 import { WEB_ROOT } from '../../helpers/paths.mjs';
 
 const fixture = `
-import { nativeLayoutCoordinator } from './src/agency/native-layout-coordinator.ts';
+import { nativeLayoutCoordinator } from './src/features/browser/native-layout-coordinator.ts';
 window.nativeLayoutCoordinator = nativeLayoutCoordinator;
 window.commands = [];
 window.pending = [];

@@ -74,7 +74,7 @@ import {
   phonePairingPayload,
   sshEd25519PublicKey,
 } from '../src/features/remote-access/phone-pairing.ts';
-import { qrMatrix, qrModuleDark } from '../../web/src/qr-code.ts';
+import { qrMatrix, qrModuleDark } from '../../web/src/features/remote-access/qr-code.ts';
 import { remoteAccessStartupLine } from '../src/bootstrap/startup-summary.ts';
 import { setLocale } from '../../web/src/i18n/index.ts';
 import {
@@ -92,14 +92,14 @@ import {
   remoteUrl,
   sshSetups,
   sshTunnelCommand,
-} from '../../web/src/remote-access-ui.ts';
+} from '../../web/src/features/remote-access/remote-access-ui.ts';
 import {
   notificationBody,
   notifyButtonTitle,
   parseStoredNotify,
   shouldNotify,
   tabNameFor,
-} from '../../web/src/system-notification.ts';
+} from '../../web/src/features/notifications/system-notification.ts';
 
 // Los textos de la interfaz salen de `t()` (§6.23): se comparan con el español.
 await setLocale('es');

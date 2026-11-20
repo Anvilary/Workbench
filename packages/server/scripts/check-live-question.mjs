@@ -529,7 +529,7 @@ const WAITING = { activity: 'waiting', waitingFor: 'input needed' };
 // --- F. La web: la tarjeta del historial hereda lo de la leida -----------------
 
 {
-  const { liveCarryOvers } = await import('../../web/src/live-question-ui.ts');
+  const { liveCarryOvers } = await import('../../web/src/features/conversation/live-question-ui.ts');
   const base = itemOf('q1-basica');
   const asked = (id, item = base) => ({ eventId: `e-${id}`, role: 'assistant', parts: [{ kind: 'question', toolUseId: id, questions: [item] }] });
   const record = (patch = {}) => ({ terminalId: 't1', item: base, selections: [[1]], failure: null, ...patch });

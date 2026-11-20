@@ -19,7 +19,7 @@ import {
   projectArchiveText,
   sessionsToArchiveBefore,
   startOfLocalDay,
-} from '../../web/src/archive-history.ts';
+} from '../../web/src/features/conversation/archive-history.ts';
 import { setLocale } from '../../web/src/i18n/index.ts';
 
 // Los textos de la interfaz salen de `t()` (§6.23): este chequeo los compara

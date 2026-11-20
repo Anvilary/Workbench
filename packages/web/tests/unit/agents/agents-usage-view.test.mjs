@@ -141,7 +141,7 @@ test('strictly distinguishes metric statuses without inventing numbers', () => {
 });
 
 test('getProfileFamily correctly maps profiles to Codex, AGY, and Claude families', async () => {
-  const { getProfileFamily } = await import('../../../src/AgentsUsageView.js');
+  const { getProfileFamily } = await import('../../../src/features/agents/AgentsUsageView.js');
 
   assert.equal(getProfileFamily({ profileId: 'codex-0', provider: 'OpenAI' }), 'Codex');
   assert.equal(getProfileFamily({ profileId: 'codex-3', provider: 'OpenAI' }), 'Codex');

@@ -7,7 +7,7 @@ const require = createRequire(import.meta.url);
 const { Terminal } = require('@xterm/xterm');
 import { OutputBuffer } from '../../../../server/src/features/terminals/output-buffer.ts';
 import { createCodexAdapter } from '../../../../server/src/agents/codex/index.ts';
-import { wholePixels, momentumStep, releaseVelocity, isDrag } from '../../../src/touch-scroll.ts';
+import { wholePixels, momentumStep, releaseVelocity, isDrag } from '../../../src/features/terminals/touch-scroll.ts';
 
 test('A1: Direct Codex-style native CLI startup uses --no-alt-screen for inline scrollback', async () => {
   const adapter = createCodexAdapter();

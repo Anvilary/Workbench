@@ -1,7 +1,7 @@
 import { t } from '../../../i18n/index.js';
-import { LocaleMenu } from '../../../LocaleMenu.js';
-import type { TerminalThemeState } from '../../../useTerminalTheme.js';
-import { vaultName } from '../../../vault-ui.js';
+import { LocaleMenu } from '../LocaleMenu.js';
+import type { TerminalThemeState } from '../../terminals/useTerminalTheme.js';
+import { vaultName } from '../../vault/vault-ui.js';
 import { CollapsibleSubsection } from '../CollapsibleSubsection.js';
 import { TERMINAL_THEME_NAMES } from '../settings-search.js';
 

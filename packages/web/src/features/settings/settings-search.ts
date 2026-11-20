@@ -1,8 +1,8 @@
 import type { AgentInfo, BrowserFavorite, BrowserProfile, ConsoleShellId, SearchEngine } from '@agent-workbench/shared';
 import { t, type MessageKey } from '../../i18n/index.js';
-import { HIDEABLE_PANELS, type HideablePanel, type PanelVisibility } from '../../panel-visibility.js';
-import type { TerminalThemePreference } from '../../useTerminalTheme.js';
-import { vaultName } from '../../vault-ui.js';
+import { HIDEABLE_PANELS, type HideablePanel, type PanelVisibility } from '../../shared/lib/panel-visibility.js';
+import type { TerminalThemePreference } from '../terminals/useTerminalTheme.js';
+import { vaultName } from '../vault/vault-ui.js';
 import {
   BrowserIcon,
   GearIcon,

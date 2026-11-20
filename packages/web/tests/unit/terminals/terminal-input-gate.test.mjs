@@ -7,7 +7,7 @@ import {
   ownsKeyboard,
   shouldForwardTerminalData,
   shouldForwardWheelInput,
-} from '../../../src/terminal-input-gate.ts';
+} from '../../../src/features/terminals/terminal-input-gate.ts';
 
 const owner = { active: true, textareaFocused: true, documentFocused: true };
 

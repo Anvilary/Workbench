@@ -7,7 +7,7 @@ import {
   createAgencyTransport, parseProfileArgv, allWorkspaceTabs, selectedWorkspaceTab,
   applySessionsSnapshot, applySessionActivity, retainUnconfirmedCreations,
   EMPTY_AGENCY_SNAPSHOT,
-} from '../../../src/agency/model.ts';
+} from '../../../src/features/workspaces/workspace-model.ts';
 
 const emptyCapabilities = {
   canLaunch: true, canResumeNativeSession: false, canInterrupt: true,

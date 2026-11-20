@@ -24,9 +24,9 @@ function browserExecutable() {
 const fixture = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserContextMenu } from './src/agency/BrowserContextMenu.tsx';
-import { BrowserFindBar } from './src/agency/BrowserFindBar.tsx';
-import './src/agency/agency.css';
+import { BrowserContextMenu } from './src/features/browser/BrowserContextMenu.tsx';
+import { BrowserFindBar } from './src/features/browser/BrowserFindBar.tsx';
+import './src/app/workbench.css';
 
 const tabId = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
 
@@ -113,8 +113,8 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
   });
 
   const js = bundle.outputFiles[0]?.text || '';
-  const css = existsSync(WEB_ROOT + '/src/agency/agency.css')
-    ? (await import('node:fs')).readFileSync(WEB_ROOT + '/src/agency/agency.css', 'utf8')
+  const css = existsSync(WEB_ROOT + '/src/app/workbench.css')
+    ? (await import('node:fs')).readFileSync(WEB_ROOT + '/src/app/workbench.css', 'utf8')
     : '';
 
   const server = createServer((req, res) => {

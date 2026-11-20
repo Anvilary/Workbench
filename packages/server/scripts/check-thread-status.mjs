@@ -38,7 +38,7 @@ const { ModelVariantRegistry } = await import('../src/agents/claude-code/model-v
 const { sessionFilePath } = await import('../src/agents/claude-code/paths.ts');
 const { ConversationHub } = await import('../src/features/conversations/conversation-hub.ts');
 const { setLocale } = await import('../../web/src/i18n/index.ts');
-const status = await import('../../web/src/thread-status.ts');
+const status = await import('../../web/src/features/conversation/thread-status.ts');
 
 // Los textos de la interfaz salen de `t()` (§6.23): este chequeo los compara
 // con el español, asi que lo fija antes de la primera comparacion.
@@ -595,7 +595,7 @@ const nextEvent = (hub, name, ms = 5_000) =>
 // otra página, y otra, hasta traer la sesión entera.
 {
   const { shouldLoadEarlier, wheelAsksEarlier, scrollTopAfterPrepend, isPrepend, earlierThresholdPx } =
-    await import('../../web/src/thread-scroll.ts');
+    await import('../../web/src/features/conversation/thread-scroll.ts');
   const at = (scrollTop, previousScrollTop, extra = {}) =>
     shouldLoadEarlier({ scrollTop, previousScrollTop, clientHeight: 600, hasMore: true, loading: false, ...extra });
 
@@ -626,7 +626,7 @@ const nextEvent = (hub, name, ms = 5_000) =>
 // la sesion entera.
 {
   const { ownMessageIds, nearestOwnAbove, offerJumpToOwn, scrollTopForOwn, ownSeekStep, OWN_MESSAGE_MARGIN_PX, OWN_MESSAGE_MAX_PAGES } =
-    await import('../../web/src/thread-scroll.ts');
+    await import('../../web/src/features/conversation/thread-scroll.ts');
   const ev = (eventId, role, ...kinds) => ({ eventId, role, parts: kinds.map((kind) => ({ kind })) });
   const nearest = (tops) => nearestOwnAbove(tops.length, (index) => tops[index]);
 
@@ -682,8 +682,8 @@ const nextEvent = (hub, name, ms = 5_000) =>
 // sitio que ya no existe.
 {
   const { ANCHOR_SLACK_PX, arrivedSince, scrollTopForAnchor, threadAnchorOf } =
-    await import('../../web/src/thread-scroll.ts');
-  const pulse = await import('../../web/src/attention-pulse.ts');
+    await import('../../web/src/features/conversation/thread-scroll.ts');
+  const pulse = await import('../../web/src/shared/lib/attention-pulse.ts');
   const { readFileSync } = await import('node:fs');
   const css = readFileSync(new URL('../../web/src/styles.css', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
@@ -746,7 +746,7 @@ const nextEvent = (hub, name, ms = 5_000) =>
 // de todos los mensajes, que el corrido vuelva a su sitio en el dibujo siguiente
 // (y otra vez afuera, parpadeando), o que el CSS y la cuenta dejen de coincidir.
 {
-  const { turnActionsShift, TURN_ACTIONS_INSET_PX, TURN_ACTIONS_GAP_PX } = await import('../../web/src/thread-scroll.ts');
+  const { turnActionsShift, TURN_ACTIONS_INSET_PX, TURN_ACTIONS_GAP_PX } = await import('../../web/src/features/conversation/thread-scroll.ts');
   const { readFileSync } = await import('node:fs');
   const css = readFileSync(new URL('../../web/src/styles.css', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   const box = (left, top, width, height) => ({ left, top, right: left + width, bottom: top + height });
@@ -778,7 +778,7 @@ const nextEvent = (hub, name, ms = 5_000) =>
     new RegExp(`top:\\s*${TURN_ACTIONS_INSET_PX}px;`).test(actionsRule) &&
       actionsRule.includes(`right: calc(${TURN_ACTIONS_INSET_PX}px + var(--turn-actions-shift, 0px));`),
     actionsRule.replace(/\s+/g, ' ').trim().slice(0, 200));
-  const view = readFileSync(new URL('../../web/src/ConversationView.tsx', import.meta.url), 'utf8');
+  const view = readFileSync(new URL('../../web/src/features/conversation/ConversationView.tsx', import.meta.url), 'utf8');
   check('9.9 la vista deja esa variable solo en el mensaje que quedo debajo, y la saca cuando deja de estarlo',
     view.includes("turn.style.setProperty('--turn-actions-shift'") && view.includes("turn.style.removeProperty('--turn-actions-shift')"));
 }
@@ -1346,7 +1346,7 @@ const clearPairs = (data) => (data.length > 0 && data.replaceAll(CLEAR_LINE, '')
 // (el navegador corriendo la vista por otra imagen de arriba) se tomaba como
 // "el usuario subio a leer". Solo subir suelta el final.
 {
-  const { STICK_TO_BOTTOM_PX, staysAtEnd } = await import('../../web/src/thread-scroll.ts');
+  const { STICK_TO_BOTTOM_PX, staysAtEnd } = await import('../../web/src/features/conversation/thread-scroll.ts');
   const at = (state) => staysAtEnd({ wasAtEnd: true, distanceFromEnd: 300, scrollTop: 1_000, previousScrollTop: 1_000, ...state });
 
   check('12.1 cerca del final se esta al final, se venga de donde se venga',

@@ -10,7 +10,7 @@ import { WEB_ROOT } from '../../helpers/paths.mjs';
 const fixture = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { SplitDivider } from './src/agency/split/SplitDivider.tsx';
+import { SplitDivider } from './src/features/panes/SplitDivider.tsx';
 
 window.lastCommittedRatio = null;
 window.dragState = null;

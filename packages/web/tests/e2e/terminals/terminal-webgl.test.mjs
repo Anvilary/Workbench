@@ -26,7 +26,7 @@ function browserExecutable() {
 const fixture = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { TerminalView } from './src/TerminalView.tsx';
+import { TerminalView } from './src/features/terminals/TerminalView.tsx';
 const listeners = new Set();
 const connection = {
   getStatus: () => 'open', onStatus: () => () => {}, onReopen: () => () => {},

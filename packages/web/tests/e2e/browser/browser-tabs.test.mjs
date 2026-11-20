@@ -11,7 +11,7 @@ import { WEB_ROOT } from '../../helpers/paths.mjs';
 const fixture = `
 import React from 'react';
 import {createRoot} from 'react-dom/client';
-import {AgencyApp} from './src/agency/AgencyApp.tsx';
+import {WorkbenchApp} from './src/app/WorkbenchApp.tsx';
 const ws='11111111-1111-4111-8111-111111111111', p='22222222-2222-4222-8222-222222222222';
 const native='33333333-3333-4333-8333-333333333333', web='44444444-4444-4444-8444-444444444444';
 const now=new Date().toISOString();
@@ -60,7 +60,7 @@ case 'agency.webTab.navigate':tabs=tabs.map(t=>t.id===m.tabId?{...t,url:m.url}:t
 });return true;}};
 window.agencyTest=api;
 localStorage.setItem('agency-ui.selected-workspace.v1',ws);
-createRoot(document.getElementById('root')).render(<AgencyApp connection={connection}/>);
+createRoot(document.getElementById('root')).render(<WorkbenchApp connection={connection}/>);
 `;
 
 function browserExecutable() {

@@ -69,7 +69,7 @@ const { scanUntracked } = await import('../src/features/worktrees/untracked.ts')
 const { reviewPrompt, catchUpPrompt, sendBackPrompt } = review;
 const { buildProjects } = await import('../src/features/history/session-index.ts');
 const { setLocale } = await import('../../web/src/i18n/index.ts');
-const ui = await import('../../web/src/worktree-ui.ts');
+const ui = await import('../../web/src/features/worktrees/worktree-ui.ts');
 await setLocale('es');
 
 const windows = process.platform === 'win32';

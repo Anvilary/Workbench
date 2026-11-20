@@ -11,12 +11,12 @@ import {
   activeByProject,
   pruneProjectData,
   pruneWorkspaceData,
-} from '../../../src/agency/model.ts';
+} from '../../../src/features/workspaces/workspace-model.ts';
 import { calculateAnchoredDialogPosition } from '../../../src/shared/lib/overlay-position.ts';
-import { DeleteWorkspaceDialog } from '../../../src/features/workspaces/DeleteWorkspaceDialog.tsx';
-import { DeleteProjectDialog } from '../../../src/features/workspaces/DeleteProjectDialog.tsx';
-import { AgencyWorkspaceCreator } from '../../../src/agency/AgencyWorkspaceCreator.tsx';
-import { editorDraftStore } from '../../../src/agency/editorDraftStore.ts';
+import { DeleteWorkspaceDialog } from '../../../src/features/navigation/DeleteWorkspaceDialog.tsx';
+import { DeleteProjectDialog } from '../../../src/features/navigation/DeleteProjectDialog.tsx';
+import { WorkspaceCreator } from '../../../src/features/workspaces/WorkspaceCreator.tsx';
+import { editorDraftStore } from '../../../src/features/editor/editorDraftStore.ts';
 
 test('Track D: activeByProject preserves persisted workspace ordering instead of re-sorting by updatedAt', () => {
   const projects = [
@@ -178,7 +178,7 @@ test('Track C: DeleteWorkspaceDialog and DeleteProjectDialog summarize active se
   editorDraftStore.clearDraft('ed-dirty');
 });
 
-test('C-04: archived projects are excluded from activeByProject and AgencyWorkspaceCreator', () => {
+test('C-04: archived projects are excluded from activeByProject and WorkspaceCreator', () => {
   const projects = [
     { id: 'p-active', name: 'Active Project', status: 'active', createdAt: '', updatedAt: '' },
     { id: 'p-archived', name: 'Archived Project', status: 'archived', createdAt: '', updatedAt: '' },
@@ -192,7 +192,7 @@ test('C-04: archived projects are excluded from activeByProject and AgencyWorksp
   assert.deepEqual(grouped.map((g) => g.project.id), ['p-active']);
 
   const creatorHtml = renderToStaticMarkup(
-    React.createElement(AgencyWorkspaceCreator, {
+    React.createElement(WorkspaceCreator, {
       projects,
       initialProject: 'p-archived',
       connection: {},

@@ -17,11 +17,11 @@ const here = DESKTOP_ROOT;
 const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
   ? '/opt/maw-electron/45.2.0/electron'
   : require('electron');
-const browserCss = fs.readFileSync(path.join(here, '../web/src/agency/agency.css'), 'utf8');
+const browserCss = fs.readFileSync(path.join(here, '../web/src/app/workbench.css'), 'utf8');
 const ids = ['8e4fefc1-e565-40cc-b85b-f7d43a16b1df', 'f52e047f-d947-426c-a0fa-c349d035d338'];
 const fixture = `import React, {useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {NativeChatGptView} from './src/agency/NativeChatGptView.tsx';
+import {NativeBrowserView} from './src/features/browser/NativeBrowserView.tsx';
 function App(){
   const [id,setId]=useState(null),[overlay,setOverlay]=useState(false),[sidebarMenu,setSidebarMenu]=useState(false);
   return <>
@@ -35,7 +35,7 @@ function App(){
       {sidebarMenu&&<div className="agency-dropdown-menu" role="menu"><button onClick={()=>setSidebarMenu(false)}>SidebarAction1</button></div>}
     </aside>
     {overlay&&<div role="menu"><button onClick={()=>setOverlay(false)}>Dismiss</button></div>}
-    <main>{id?<NativeChatGptView tab={{id,url:'https://chatgpt.com/'}} toolbarOpen={true} onDisplayed={()=>{}}/>:<input aria-label="CLI fixture"/>}</main>
+    <main>{id?<NativeBrowserView tab={{id,url:'https://chatgpt.com/'}} toolbarOpen={true} onDisplayed={()=>{}}/>:<input aria-label="CLI fixture"/>}</main>
   </>;
 };
 createRoot(document.getElementById('root')).render(<App/>);`;

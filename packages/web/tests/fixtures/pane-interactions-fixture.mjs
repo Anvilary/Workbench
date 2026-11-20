@@ -3,9 +3,9 @@ export const fixture = `
 import React, {useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Terminal} from '@xterm/xterm';
-import {useDropdownDismissal} from './src/agency/useDropdownDismissal.ts';
-import {AgencyWorkspaceView} from './src/agency/AgencyWorkspaceView.tsx';
-import './src/agency/agency.css';
+import {useDropdownDismissal} from './src/shared/hooks/useDropdownDismissal.ts';
+import {WorkspaceView} from './src/features/workspaces/WorkspaceView.tsx';
+import './src/app/workbench.css';
 import '@xterm/xterm/css/xterm.css';
 const ws='11111111-1111-4111-8111-111111111111', other='22222222-2222-4222-8222-222222222222';
 const now='2026-10-31T10:00:00.000Z';
@@ -80,7 +80,7 @@ function Harness(){
  };
  const profile={id:'fixture-profile',label:'Fixture CLI',configurationStatus:'available',capabilities:{canLaunch:true},configured:true,available:true,command:'sh'};
  return <><button id="start" onClick={()=>setMounted(true)}>Start isolated fixture</button>
- {mounted&&!away&&<AgencyWorkspaceView workspace={{id:ws,projectId:other,name:'Pane interactions · synthetic data',status:'active',cwd:'/fixture',createdAt:now,updatedAt:now}}
+ {mounted&&!away&&<WorkspaceView workspace={{id:ws,projectId:other,name:'Pane interactions · synthetic data',status:'active',cwd:'/fixture',createdAt:now,updatedAt:now}}
  profiles={[profile]} sessions={state.sessions} webTabs={state.webTabs} editorTabs={state.editorTabs || []} connection={connection} request={request} sendImmediate={connection.sendImmediate} online={true} onDone={()=>{}}
  savedLayout={state.layout} onSaveLayout={async(id,value)=>{state.layout=value;persist()}}
  placementWarning={state.placementWarning} onClearPlacementWarning={()=>{state.placementWarning=null;persist();render();}}

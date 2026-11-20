@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { insertionIndex, tabShift } from '../../../src/agency/split/tab-geometry.mjs';
+import { insertionIndex, tabShift } from '../../../src/features/panes/tab-geometry.mjs';
 
 test('insertion index uses the midpoint and lands after the last tab', () => {
   const rects = [

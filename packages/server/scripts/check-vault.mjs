@@ -379,8 +379,8 @@ const status = (overrides = {}) => ({
 
 // --- 1h. La web: insignia, etiqueta, reanudar y archivar historial ---
 {
-  const ui = await import('../../web/src/agent-ui.ts');
-  const history = await import('../../web/src/archive-history.ts');
+  const ui = await import('../../web/src/features/agents/agent-ui.ts');
+  const history = await import('../../web/src/features/conversation/archive-history.ts');
   const agentInfo = (id, label, available) => ({
     id, label, command: id, available, version: available ? `${label} 1.0` : null, installUrl: 'https://example.com',
     missingMessage: available ? null : { key: 'raw', params: { text: 'falta' } }, capabilities: shared.NO_CAPABILITIES, environmentNotice: null,
@@ -435,7 +435,7 @@ const status = (overrides = {}) => ({
 
 // --- 1i. La web de la copia: lo que dice la barra y el dialogo ---
 {
-  const vui = await import('../../web/src/vault-ui.ts');
+  const vui = await import('../../web/src/features/vault/vault-ui.ts');
   const fmt = await import('../../web/src/i18n/format.ts');
   const { parseVaultStatus, parseVaultMeasurement, NO_CAPABILITIES } = shared;
   const status = (overrides = {}) => ({
@@ -546,9 +546,9 @@ const status = (overrides = {}) => ({
     para decidir. Se mira el fuente, con expresiones exactas.
   */
   const webSrc = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web/src');
-  const sidebarSource = await readFile(path.join(webSrc, 'Sidebar.tsx'), 'utf8');
-  const appSource = await readFile(path.join(webSrc, 'App.tsx'), 'utf8');
-  const workspaceSource = await readFile(path.join(webSrc, 'useWorkspace.ts'), 'utf8');
+  const sidebarSource = await readFile(path.join(webSrc, 'app/classic/Sidebar.tsx'), 'utf8');
+  const appSource = await readFile(path.join(webSrc, 'app/classic/ClassicApp.tsx'), 'utf8');
+  const workspaceSource = await readFile(path.join(webSrc, 'app/classic/useClassicWorkspace.ts'), 'utf8');
   check('1 textos: la barra dibuja la linea solo si vaultLineText no es null, sin la linea "Copia propia apagada" (C9)',
     /const vaultLine = vaultLineText\(vault\);/.test(sidebarSource) && /\{vaultLine !== null && \(/.test(sidebarSource) &&
     !/(copia propia|respaldo) apagad/i.test(sidebarSource) && !/(copia propia|respaldo) apagad/i.test(appSource));
@@ -2316,7 +2316,7 @@ const linksIn = (text) => [...text.matchAll(/\]\(<([^>]+)>\)/g)].map((match) => 
   check('12 la ficha: titulo, CLI, sesion y copiada', text.startsWith('# Probemos el Markdown\n') && text.includes(`- CLI: Claude Code · sesión \`${UUID}\``) && text.includes('- Copiada el '));
   check('12 formatDuration', formatDuration(110_027) === '1 min 50 s' && formatDuration(45_000) === '45 s' && formatDuration(7_500_000) === '2 h 5 min');
 
-  const webNotice = await import('../../web/src/conversation-notice.ts');
+  const webNotice = await import('../../web/src/features/conversation/conversation-notice.ts');
   const parts = [{ notice: 'compacted', detail: 'auto' }, { notice: 'interrupted', detail: '' }, { notice: 'error', detail: 'APIError: sin saldo' }];
   check('12 noticeText vive en shared y la web dice lo mismo',
     parts.every((part) => shared.noticeText(part) === webNotice.noticeText(part)) && shared.noticeText(parts[0]) === 'Contexto compactado automáticamente');
@@ -2739,7 +2739,7 @@ const serviceAgents = (protectedDirs = []) => ({ adapter: () => ({ history: {} }
 
 // --- 13g. Importar antes de encender no habilita "Activar" sin medir (R28-2) ---
 {
-  const vui = await import('../../web/src/vault-ui.ts');
+  const vui = await import('../../web/src/features/vault/vault-ui.ts');
   const dir = path.join(root, 'copia-importada-antes');
   const importedId = '13g00001-0000-4000-8000-000000001341';
   // Lo mismo que deja `pnpm vault:import … --write`: writeSessionFile con fuente importada, que escribe vault.json.

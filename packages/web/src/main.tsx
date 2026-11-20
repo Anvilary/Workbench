@@ -29,8 +29,8 @@ async function start(): Promise<void> {
   for (const [key, value] of storage?.session ?? []) sessionStorage.setItem(key, value);
   window.mawRestoredBrowserTabs = storage?.browserTabs ?? [];
   // Draft stores initialize during module evaluation, after storage restoration.
-  const { ClassicRoot, MawRoot, isClassicView } = await import('./MawRoot.js');
+  const { ClassicRoot, WorkbenchRoot, isClassicView } = await import('./app/WorkbenchRoot.js');
   await initLocale();
-  root.render(isClassicView(window.location.search) ? <ClassicRoot /> : <MawRoot />);
+  root.render(isClassicView(window.location.search) ? <ClassicRoot /> : <WorkbenchRoot />);
 }
 void start();

@@ -448,7 +448,7 @@ const img2 = process.platform === 'win32' ? 'C:\\Temp\\pegadas x\\p-2.png' : '/t
 
 // B7. Web: la entrada de codex y la ventana del medidor en vacio.
 {
-  const ui = await import('../../web/src/agent-ui.ts');
+  const ui = await import('../../web/src/features/agents/agent-ui.ts');
   check('B7 insignias: CC y CX', ui.AGENT_UI['claude-code'].shortLabel === 'CC' && ui.AGENT_UI.codex.shortLabel === 'CX');
   check('B7 codex carga AGENTS.md y tiene sus atajos',
     ui.AGENT_UI.codex.instructionsFile === 'AGENTS.md' && ui.AGENT_UI.codex.shortcuts.length === 11 &&
@@ -988,7 +988,7 @@ async function waitFor(condition, timeoutMs = 5000) {
 // token_count del pedido que resume, `compacted`, un token_count con la ultima
 // peticion en cero, y el de la peticion siguiente.
 {
-  const ui = await import('../../web/src/agent-ui.ts');
+  const ui = await import('../../web/src/features/agents/agent-ui.ts');
   const compacted = (ms) => rec(ms, 'compacted', { message: 'Another language model started to solve this problem', replacement_history: [] });
   const early = await sinkRead(sessionMeta({ id: cid(51) }) + taskStarted(BASE, 95000) + compacted(BASE + 1));
   check('C5b compactar sin ninguna peticion medida: el aviso, y el medidor sin la marca',
@@ -2519,7 +2519,7 @@ const orderedIds = (state) => workspace.orderedTabs(state).map((e) => (e.kind ==
 const { createCodexAdapter, CODEX_INSTALL_URL } = await import('../src/agents/codex/index.ts');
 const { AgentRegistry, createAgentRegistry } = await import('../src/agents/registry.ts');
 const { createClaudeCodeAdapter } = await import('../src/agents/claude-code/index.ts');
-const { summarizeAgents } = await import('../../web/src/agent-summary.ts');
+const { summarizeAgents } = await import('../../web/src/features/agents/agent-summary.ts');
 
 const throwsOn = (run) => {
   try {
@@ -2852,7 +2852,7 @@ const throwsOn = (run) => {
 // vive en modulos sin JSX, y eso es lo que se prueba.
 // ---------------------------------------------------------------------------
 
-const webUi = await import('../../web/src/agent-ui.ts');
+const webUi = await import('../../web/src/features/agents/agent-ui.ts');
 const { CODEX_CAPABILITIES } = await import('../src/agents/codex/index.ts');
 const agentInfo = (id, label, available, extra = {}) => ({
   id, label, command: id, available, version: available ? `${label} 1.0` : null, installUrl: 'https://example.com',
@@ -2865,7 +2865,7 @@ const tab = (agent, cwd, kind = 'agent') => ({ kind, agent, cwd });
 
 // W1. Las tandas de herramientas conocen los nombres de Codex, sin tocar los de Claude Code.
 {
-  const { TOOL_CATEGORIES, toolCategory, toolRunSummary } = await import('../../web/src/tool-categories.ts');
+  const { TOOL_CATEGORIES, toolCategory, toolRunSummary } = await import('../../web/src/features/conversation/tool-categories.ts');
   const before = {
     shell: ['Bash', 'PowerShell', 'BashOutput', 'KillShell'], read: ['Read', 'NotebookRead'], find: ['Glob', 'Grep', 'LS'],
     edit: ['Edit', 'Write', 'NotebookEdit', 'MultiEdit'], web: ['WebSearch', 'WebFetch', 'ToolSearch'], agent: ['Task', 'Agent'],
@@ -3094,7 +3094,7 @@ const tab = (agent, cwd, kind = 'agent') => ({ kind, agent, cwd });
 
 // W8. La cabecera con dos CLIs no repite el nombre que ya trae la version.
 {
-  const { summarizeAgents } = await import('../../web/src/agent-summary.ts');
+  const { summarizeAgents } = await import('../../web/src/features/agents/agent-summary.ts');
   const two = summarizeAgents([
     agentInfo('claude-code', 'Claude Code', true, { version: '2.1.270 (Claude Code)' }),
     agentInfo('codex', 'Codex', true, { version: 'codex-cli 0.154.0' }),

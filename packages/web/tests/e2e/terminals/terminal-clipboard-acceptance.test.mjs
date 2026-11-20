@@ -20,7 +20,7 @@ const fixture = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Terminal } from '@xterm/xterm';
-import { AgencyWorkspaceView } from './src/agency/AgencyWorkspaceView.tsx';
+import { WorkspaceView } from './src/features/workspaces/WorkspaceView.tsx';
 
 const opened = [];
 const origOpen = Terminal.prototype.open;
@@ -88,7 +88,7 @@ function Harness() {
     }
     return {};
   };
-  return React.createElement(AgencyWorkspaceView, {
+  return React.createElement(WorkspaceView, {
     workspace, profiles: [], sessions, webTabs: [], connection, request,
     sendImmediate: connection.sendImmediate, online: true, onDone() {}, onSaveLayout: async () => {},
   });

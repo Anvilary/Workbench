@@ -299,9 +299,9 @@ const { SERVER_TEXTS } = await import('../../shared/src/protocol/server-text.ts'
   /** Lo que se muestra igual en todos los idiomas. */
   const UNTRANSLATED = new Set(['CLI', 'Anvilary Workbench', 'Git', 'aA', 'MAW', 'Agents Usage', 'Agents Usage…']);
   const UNTRANSLATED_FILES = new Set([
-    'AgentsUsageView.tsx',
-    'TerminalView.tsx',
-    'agency/PerformancePanel.tsx',
+    'features/agents/AgentsUsageView.tsx',
+    'features/terminals/TerminalView.tsx',
+    'features/performance/PerformancePanel.tsx',
   ]);
   const DISPLAY_ATTRIBUTES = new Set(['title', 'aria-label', 'placeholder', 'alt', 'label']);
   const loose = [];

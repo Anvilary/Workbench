@@ -1,6 +1,6 @@
 import type { ConsoleShellId } from '@agent-workbench/shared';
 import { t } from '../../../i18n/index.js';
-import type { AppSettingsApi } from '../../../useAppSettings.js';
+import type { AppSettingsApi } from '../useAppSettings.js';
 import { CollapsibleSubsection } from '../CollapsibleSubsection.js';
 
 export interface TerminalSettingsSectionProps {

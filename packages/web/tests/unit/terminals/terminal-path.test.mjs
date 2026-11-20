@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { terminalPathCandidate } from '../../../src/agency/split/terminal-path.mjs';
+import { terminalPathCandidate } from '../../../src/features/terminals/terminal-path.mjs';
 
 const cwd = '/work/demo';
 

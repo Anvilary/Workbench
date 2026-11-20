@@ -46,8 +46,8 @@ const { reclaimQueuedSubmits } = await import('../src/features/composer/queued-s
 const { createPtyScreen } = await import('../src/features/terminals/pty-screen.ts');
 const { ConversationHub } = await import('../src/features/conversations/conversation-hub.ts');
 const { createClaudeCodeAdapter } = await import('../src/agents/claude-code/index.ts');
-const { continueList } = await import('../../web/src/list-continuation.ts');
-const rewindUi = await import('../../web/src/rewind-ui.ts');
+const { continueList } = await import('../../web/src/features/conversation/list-continuation.ts');
+const rewindUi = await import('../../web/src/features/conversation/rewind-ui.ts');
 
 let failures = 0;
 const check = (label, ok, extra = '') => {

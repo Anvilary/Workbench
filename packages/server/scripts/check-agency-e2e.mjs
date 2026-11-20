@@ -765,7 +765,7 @@ check(
 
 // 21. Verify offline mutations are not replayed
 // Test AgentConnection sendImmediate behavior directly
-const { AgentConnection } = await import('../../web/src/connection.ts');
+const { AgentConnection } = await import('../../web/src/connection/connection.ts');
 const mockListener = {
   onStatus: () => {},
   onMessage: () => {},

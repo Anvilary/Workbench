@@ -61,7 +61,7 @@ import {
   nextThreadFontSize,
   parseThreadFontSize,
   threadFontTitle,
-} from '../../web/src/thread-font.ts';
+} from '../../web/src/shared/lib/thread-font.ts';
 import {
   assembleMessage,
   insertPasteReference,
@@ -75,22 +75,22 @@ import {
   referencedPasteNumbers,
   removePasteReferences,
   splitPastedBlocks,
-} from '../../web/src/composer-paste.ts';
+} from '../../web/src/features/conversation/composer-paste.ts';
 import { setLocale } from '../../web/src/i18n/index.ts';
 import {
   SUPPORT_NOTICE_STORAGE_KEY,
   SUPPORT_URL,
   parseStoredSupportNotice,
   shouldShowSupportNotice,
-} from '../../web/src/support.ts';
+} from '../../web/src/features/settings/support.ts';
 import {
   PREFS_COOKIE,
   encodePrefsCookie,
   prefsCookieLine,
   readPrefsCookie,
-} from '../../web/src/prefs-cookie.ts';
+} from '../../web/src/shared/lib/prefs-cookie.ts';
 import { DEVICE_COOKIE, TOKEN_COOKIE } from '../src/security/request-guards.ts';
-import { isConsolePasteKey, isWindowsClient } from '../../web/src/console-paste.ts';
+import { isConsolePasteKey, isWindowsClient } from '../../web/src/features/terminals/console-paste.ts';
 
 // Los textos de la interfaz salen de `t()` (§6.23): este chequeo los compara
 // con el español de siempre, así que lo fija antes de la primera comparación.

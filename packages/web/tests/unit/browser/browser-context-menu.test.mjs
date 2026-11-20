@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { calculateMenuPosition, isSupportedBrowserLink } from '../../../src/agency/BrowserContextMenu.js';
+import { calculateMenuPosition, isSupportedBrowserLink } from '../../../src/features/browser/BrowserContextMenu.js';
 
 test('isSupportedBrowserLink: validates public web hyperlinks and rejects invalid/unsupported links', () => {
   // Supported web URLs:

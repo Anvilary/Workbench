@@ -432,7 +432,7 @@ const newCatalog = (extra = {}) => new catalogModule.PiModelCatalog({ storeFile:
 
 {
   // La compactacion (§6.37): el aviso, y el medidor sin medir hasta la respuesta siguiente.
-  const ui = await import('../../web/src/agent-ui.ts');
+  const ui = await import('../../web/src/features/agents/agent-ui.ts');
   const id = '44444444-4444-4444-8444-444444444444';
   const file = sessionFile(id);
   await writeFile(file, line(header(id)) + line(node('compaction', 'k0', null, T0, { summary: 'x' })));
@@ -1215,7 +1215,7 @@ const newCatalog = (extra = {}) => new catalogModule.PiModelCatalog({ storeFile:
 // P11. La web, sin JSX
 // ---------------------------------------------------------------------------
 {
-  const ui = await import('../../web/src/agent-ui.ts');
+  const ui = await import('../../web/src/features/agents/agent-ui.ts');
   const capabilities = { ...piIndex.PI_BASE_CAPABILITIES, models: catalogModule.modelOptions(catalogModule.storeModels(STORE)) };
   check('P11 la insignia, el archivo de instrucciones y que no guarda lo elegido',
     ui.AGENT_UI.pi.shortLabel === 'PI' && ui.agentShortLabel('pi') === 'PI' && ui.instructionsFileFor('pi') === 'AGENTS.md' && ui.savesModelChoiceFor('pi') === false);

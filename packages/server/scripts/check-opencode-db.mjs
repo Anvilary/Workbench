@@ -204,7 +204,7 @@ const unknownPart = { kind: 'parte-del-futuro', x: 1 };
 
 // 1d. La frase del aviso en la web, que se dibuja, se copia y se busca igual.
 {
-  const { noticeText } = await import('../../web/src/conversation-notice.ts');
+  const { noticeText } = await import('../../web/src/features/conversation/conversation-notice.ts');
   check('1 web: compactado a mano y automatico',
     noticeText({ notice: 'compacted', detail: '' }) === 'Contexto compactado' &&
     noticeText({ notice: 'compacted', detail: 'auto' }) === 'Contexto compactado automáticamente');
@@ -223,7 +223,7 @@ const unknownPart = { kind: 'parte-del-futuro', x: 1 };
   check('1 usage-with-catalog sobrevive al viaje por la red',
     parseAgentCapabilities({ contextWindowSource: 'usage-with-catalog' }).contextWindowSource === 'usage-with-catalog');
 
-  const webUi = await import('../../web/src/agent-ui.ts');
+  const webUi = await import('../../web/src/features/agents/agent-ui.ts');
   check('1 medidor en vacio: el catalogo no anuncia limite antes de medir, salvo la configuracion',
     webUi.meterIdleWindow('usage-with-catalog', { contextWindow: 200000 }, null) === null &&
     webUi.meterIdleWindow('usage-with-catalog', { contextWindow: 200000 }, 1000) === 1000);
@@ -1717,7 +1717,7 @@ const historyOf = (file, extra = {}) => {
 // ---------------------------------------------------------------------------
 
 {
-  const { toolCategory } = await import('../../web/src/tool-categories.ts');
+  const { toolCategory } = await import('../../web/src/features/conversation/tool-categories.ts');
   const expected = {
     bash: 'shell', read: 'read', grep: 'find', glob: 'find', list: 'find', edit: 'edit', write: 'edit', apply_patch: 'edit',
     webfetch: 'web', websearch: 'web', codesearch: 'web', task: 'agent', todowrite: 'todo', todoread: 'todo',
@@ -1726,7 +1726,7 @@ const historyOf = (file, extra = {}) => {
   check('W tandas: los nombres de OpenCode tienen su categoria (M5)', same(wrong, []), show(wrong));
   check('W tandas: un MCP con prefijo de servidor se agrupa por nombre', same(toolCategory('jira_search'), { key: 'name:jira_search', known: false }));
 
-  const ui = await import('../../web/src/agent-ui.ts');
+  const ui = await import('../../web/src/features/agents/agent-ui.ts');
   const entry = ui.AGENT_UI.opencode;
   check('W AGENT_UI: OC, AGENTS.md, Esc Esc primero y la nota de Ctrl + T',
     entry?.shortLabel === 'OC' && entry.instructionsFile === 'AGENTS.md' && entry.shortcuts[0]?.keys === 'Esc Esc' &&

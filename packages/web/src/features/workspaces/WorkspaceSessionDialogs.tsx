@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { AgencyCliProfile, SplitDirection } from '@agent-workbench/shared';
-import type { WorkspaceTab } from '../../agency/model.js';
+import type { WorkspaceTab } from './workspace-model.js';
 import { t } from '../../i18n/index.js';
 import { trapTabFocus } from '../../shared/hooks/useFocusTrap.js';
 import { getWorkspaceTabDisplayName } from './workspace-tab-helpers.js';

@@ -63,9 +63,9 @@ const settingsModule = await import('../src/agents/claude-code/statusline-settin
 const { claudeStatusLineStateOf, readClaudeStatusLineState, CLAUDE_SETTINGS_MAX_BYTES } = settingsModule;
 const { createClaudeCodeAdapter, claudePlanRecordsDir } = await import('../src/agents/claude-code/index.ts');
 const { integrationsDir } = await import('../src/shared/app-paths.ts');
-const planMeter = await import('../../web/src/plan-meter.ts');
+const planMeter = await import('../../web/src/features/conversation/plan-meter.ts');
 const format = await import('../../web/src/i18n/format.ts');
-const { compactCommandFor, AGENT_UI } = await import('../../web/src/agent-ui.ts');
+const { compactCommandFor, AGENT_UI } = await import('../../web/src/features/agents/agent-ui.ts');
 
 // Los textos de la interfaz salen de `t()` (§6.23): se comparan con el espanol.
 await setLocale('es');
@@ -545,12 +545,12 @@ const limits = (fiveHour, sevenDay) => ({
 
   // "Compactar": el comando de cada CLI y el umbral.
   check('6.11 las cinco CLIs compactan con /compact', Object.keys(AGENT_UI).every((agent) => compactCommandFor(agent) === '/compact') && compactCommandFor(null) === null);
-  const meterSource = await readFile(path.join(WEB_SRC, 'ContextMeter.tsx'), 'utf8');
+  const meterSource = await readFile(path.join(WEB_SRC, 'features/conversation/ContextMeter.tsx'), 'utf8');
   check('6.12 "Compactar" sale desde el 70 % de la ventana (pedido del 20-10-2026), y solo con la accion de la CLI',
     /export const COMPACT_RATIO = 0\.7;/.test(meterSource) && /compactAction !== null && ratio !== null && ratio >= COMPACT_RATIO/.test(meterSource));
 
   // Despues de compactar, sin medir hasta la respuesta siguiente (20-10-2026): sin numero no hay barra ni "Compactar".
-  const ui = await import('../../web/src/agent-ui.ts');
+  const ui = await import('../../web/src/features/agents/agent-ui.ts');
   const measuredUsage = { ...shared.EMPTY_CONTEXT_USAGE, lastRequestTokens: 760000, contextWindow: 1000000, assistantMessages: 40 };
   const compactedUsage = { ...measuredUsage, compacted: true };
   const sources = ['usage-with-variants', 'usage-with-catalog', 'token-count', 'status-line'];
@@ -568,7 +568,7 @@ const limits = (fiveHour, sevenDay) => ({
     shared.parseContextUsage(JSON.parse(JSON.stringify(compactedUsage)))?.compacted === true &&
     shared.parseContextUsage(JSON.parse(JSON.stringify(measuredUsage)))?.compacted === undefined &&
     shared.parseContextUsage({ ...measuredUsage, compacted: 'si' })?.compacted === undefined);
-  const appSource = await readFile(path.join(WEB_SRC, 'App.tsx'), 'utf8');
+  const appSource = await readFile(path.join(WEB_SRC, 'app/classic/ClassicApp.tsx'), 'utf8');
   check('6.12 apagado sin CLI abierta, y con el agente trabajando o esperando; manda por sendCommand (sin tocar el borrador)',
     /!activeTerminal\.alive\s*\? t\('meter\.compactNoCli'\)/.test(appSource) &&
     /activeActivity === 'busy' \|\| activeActivity === 'waiting'/.test(appSource) &&
@@ -583,7 +583,7 @@ const limits = (fiveHour, sevenDay) => ({
     /@container thread-toolbar \(max-width: (\d+)px\) \{\s*\.plan-meter \.plan-label,\s*\.plan-meter \.plan-bar \{\s*display: none;/.test(css));
   // En el telefono los medidores bajan a su linea: contra la fila entera, el del
   // plan quedaba en su forma corta con la linea casi vacia (19-10-2026).
-  const conversationSource = await readFile(path.join(WEB_SRC, 'ConversationView.tsx'), 'utf8');
+  const conversationSource = await readFile(path.join(WEB_SRC, 'features/conversation/ConversationView.tsx'), 'utf8');
   check('6.14 los dos medidores van juntos en un envoltorio que en el escritorio no es una caja',
     /<div className="thread-meters">\s*<PlanMeter[\s\S]*?<ContextMeter[\s\S]*?\/>\s*<\/div>/.test(conversationSource) &&
     /\.thread-meters \{\s*display: contents;\s*\}/.test(css));

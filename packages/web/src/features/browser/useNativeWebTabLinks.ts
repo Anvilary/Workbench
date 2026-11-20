@@ -8,11 +8,11 @@ import {
   type WorkspaceId,
   type WorkspacePaneLayout,
 } from '@agent-workbench/shared';
-import type { WorkspaceTab } from '../../agency/model.js';
-import type { useAgencyStore } from '../../agency/useAgencyStore.js';
+import type { WorkspaceTab } from '../workspaces/workspace-model.js';
+import type { useWorkbenchStore } from '../workspaces/useWorkbenchStore.js';
 import { t } from '../../i18n/index.js';
 
-type AgencyRequestFn = ReturnType<typeof useAgencyStore>['request'];
+type AgencyRequestFn = ReturnType<typeof useWorkbenchStore>['request'];
 type AgencyResponse = Awaited<ReturnType<AgencyRequestFn>>;
 
 export interface UseNativeWebTabLinksOptions {

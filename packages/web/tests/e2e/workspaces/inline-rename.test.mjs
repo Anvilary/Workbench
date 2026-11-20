@@ -29,7 +29,7 @@ function browserExecutable() {
 const fixtureCode = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { AgencyApp } from './src/agency/AgencyApp.tsx';
+import { WorkbenchApp } from './src/app/WorkbenchApp.tsx';
 
 const p1 = '11111111-1111-4111-8111-111111111111';
 const ws1 = '33333333-3333-4333-8333-333333333333';
@@ -147,7 +147,7 @@ class MockConnection {
 
 const conn = new MockConnection();
 const root = createRoot(document.getElementById('root'));
-root.render(React.createElement(AgencyApp, { connection: conn, initialSection: 'agency' }));
+root.render(React.createElement(WorkbenchApp, { connection: conn, initialSection: 'agency' }));
 `;
 
 const html = `<!DOCTYPE html>

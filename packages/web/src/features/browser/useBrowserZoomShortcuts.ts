@@ -1,6 +1,6 @@
 import { useEffect, type MutableRefObject } from 'react';
 import { findPaneNode, type WorkspacePaneLayout } from '@agent-workbench/shared';
-import type { WorkspaceTab } from '../../agency/model.js';
+import type { WorkspaceTab } from '../workspaces/workspace-model.js';
 
 export interface UseBrowserZoomShortcutsOptions {
   layoutRef: MutableRefObject<WorkspacePaneLayout>;

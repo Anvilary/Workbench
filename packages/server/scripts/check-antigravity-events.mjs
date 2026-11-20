@@ -942,7 +942,7 @@ const { JsonlFollower: PlainJsonlFollower } = await import('../src/agents/jsonl-
 // `/compact`: el comando como USER_INPUT y un CHECKPOINT de SYSTEM. La status
 // line sigue publicando los tokens de antes (15 671 antes y despues).
 {
-  const ui = await import('../../web/src/agent-ui.ts');
+  const ui = await import('../../web/src/features/agents/agent-ui.ts');
   const checkpoint = (index) => step(index, 'SYSTEM', 'CHECKPOINT', { content: '# Resuming from a compaction\n\nYou are continuing work on the task described above.' });
   const before = [
     step(0, 'USER_EXPLICIT', 'USER_INPUT', { content: userContent('Responde solo con la palabra OK.') }),
@@ -2431,7 +2431,7 @@ const claudeCycle = { modes: shared.PERMISSION_MODE_CYCLE, launchMode: 'auto', k
 // ---------------------------------------------------------------------------
 
 {
-  const ui = await import('../../web/src/agent-ui.ts');
+  const ui = await import('../../web/src/features/agents/agent-ui.ts');
   const { ANTIGRAVITY_MODEL_OPTIONS } = await import('../src/agents/antigravity/constants.ts');
   const { MODEL_OPTIONS } = shared;
 

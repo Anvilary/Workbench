@@ -1221,7 +1221,7 @@ const client = new OpenCodeServeClient(mainEndpoint, undefined, { reconnectDelay
 {
   const pty = await import('../src/features/composer/pty-input.ts');
   const { ActivityBook } = await import('../src/features/terminals/terminal-activity.ts');
-  const ui = await import('../../web/src/agent-ui.ts');
+  const ui = await import('../../web/src/features/agents/agent-ui.ts');
   const { OPENCODE_CAPABILITIES } = await import('../src/agents/opencode/index.ts');
   const { CLAUDE_CODE_CAPABILITIES } = await import('../src/agents/claude-code/index.ts');
 
@@ -1481,7 +1481,7 @@ const client = new OpenCodeServeClient(mainEndpoint, undefined, { reconnectDelay
   {
     const { ActivityBook, wakeActionFor } = await import('../src/features/terminals/terminal-activity.ts');
     const { parseServerMessage, TERMINAL_OFFLINE_REASONS } = await import('@agent-workbench/shared');
-    const ui = await import('../../web/src/agent-ui.ts');
+    const ui = await import('../../web/src/features/agents/agent-ui.ts');
 
     const book = new ActivityBook();
     book.set('t1', 'offline', 'server-closed');
@@ -1564,9 +1564,9 @@ const client = new OpenCodeServeClient(mainEndpoint, undefined, { reconnectDelay
     const registrySource = await readFile(path.join(srcDir, 'features/terminals/terminal-registry.ts'), 'utf8');
     const socketSource = (await Promise.all(['broadcasts.ts', 'initial-snapshot.ts'].map((name) => readFile(path.join(srcDir, 'transport/websocket', name), 'utf8')))).join('\n');
     const indexSource = await readFile(path.join(srcDir, 'agents/opencode/index.ts'), 'utf8');
-    const viewSource = await readFile(path.join(webDir, 'ConversationView.tsx'), 'utf8');
-    const appSource = await readFile(path.join(webDir, 'App.tsx'), 'utf8');
-    const workspaceSource = await readFile(path.join(webDir, 'useWorkspace.ts'), 'utf8');
+    const viewSource = await readFile(path.join(webDir, 'features/conversation/ConversationView.tsx'), 'utf8');
+    const appSource = await readFile(path.join(webDir, 'app/classic/ClassicApp.tsx'), 'utf8');
+    const workspaceSource = await readFile(path.join(webDir, 'app/classic/useClassicWorkspace.ts'), 'utf8');
     check('O13 fuente: el adaptador marca server-closed solo si la app no pidio la salida',
       /status\.detach\(endpoint, exit\.requested \? null : 'server-closed'\);/.test(indexSource));
     check('O13 fuente: el registro sigue el motivo y despertar decide con wakeActionFor, terminando la CLI vieja antes de relanzar',

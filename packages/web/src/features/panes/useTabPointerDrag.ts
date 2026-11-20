@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { MAX_LEAVES, type AgencyCliProfile, type SplitDirection, type WorkspaceId } from '@agent-workbench/shared';
-import type { WorkspaceTab } from '../../agency/model.js';
-import type { useAgencyStore } from '../../agency/useAgencyStore.js';
-import { insertionIndex } from '../../agency/split/tab-geometry.mjs';
-import { setTabDragPreview, useTabDragPreview, type TabDragSplitTarget } from '../../agency/split/tab-drag-store.js';
+import type { WorkspaceTab } from '../workspaces/workspace-model.js';
+import type { useWorkbenchStore } from '../workspaces/useWorkbenchStore.js';
+import { insertionIndex } from './tab-geometry.mjs';
+import { setTabDragPreview, useTabDragPreview, type TabDragSplitTarget } from './tab-drag-store.js';
 import { getWorkspaceTabDisplayName } from '../workspaces/workspace-tab-helpers.js';
 
 interface CachedHeaderGeometry {
@@ -52,7 +52,7 @@ export interface UseTabPointerDragOptions {
   favicons?: Record<string, string>;
   onMoveTabToPane: (tabId: string, targetPaneId: string, targetIndex?: number) => void;
   onSplitPane?: (targetPaneId: string, direction: SplitDirection, tabIdToMove: string) => void;
-  request: ReturnType<typeof useAgencyStore>['request'];
+  request: ReturnType<typeof useWorkbenchStore>['request'];
   reportError: (error: string) => void;
 }
 

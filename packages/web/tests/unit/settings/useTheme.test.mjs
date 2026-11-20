@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { themeTitle, THEME_ICON } from '../../../src/useTheme.js';
+import { themeTitle, THEME_ICON } from '../../../src/shared/hooks/useTheme.js';
 
 test('useTheme constants and title mapping', () => {
   assert.equal(THEME_ICON.dark, '☾');

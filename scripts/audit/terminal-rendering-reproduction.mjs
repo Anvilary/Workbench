@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { transform } from 'esbuild';
 import { OutputBuffer } from '../../packages/server/src/features/terminals/output-buffer.ts';
-import { TerminalOutput } from '../../packages/web/src/terminal-output.ts';
+import { TerminalOutput } from '../../packages/web/src/features/terminals/terminal-output.ts';
 const require = createRequire(new URL('../../packages/server/package.json', import.meta.url));
 const { Terminal } = require('@xterm/headless');
 const baseline = '85dd91c745980a9870eb591dc0936b40ce7da86c';
