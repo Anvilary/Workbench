@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import { BrowserDestinationPicker } from '../../../src/agency/split/BrowserDestinationPicker.js';
+import { BrowserDestinationPicker } from '../../../src/features/browser/BrowserDestinationPicker.js';
 import { resolveBrowserTabTarget } from '../../../src/features/workspaces/workspace-tab-helpers.js';
-import { nativeChatGptUrl, nativeWorkspaceUrl } from '../../../src/agency/NativeChatGptView.js';
+import { nativeChatGptUrl, nativeWorkspaceUrl } from '../../../src/features/browser/NativeBrowserView.js';
 import {
   DEFAULT_BROWSER_FAVORITES,
   getSearchEngine,

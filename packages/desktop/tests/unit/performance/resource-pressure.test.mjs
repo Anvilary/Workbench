@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { assessPressure, calculateResourceBudget, canEvictView, createPressureGovernor, readSystemPressure } from '../../../resource-budget.mjs';
+import { assessPressure, calculateResourceBudget, canEvictView, createPressureGovernor, readSystemPressure } from '../../../src/performance/resource-budget.mjs';
 
 const GB = 1024 ** 3;
 const roomy = { freeBytes: 20 * GB, availableBytes: 20 * GB, totalBytes: 28 * GB, attachedCount: 1 };

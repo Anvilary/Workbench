@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { ASYNC_SMAPS_MIN_PIDS, prefetchSmaps, readProcessSmaps, readProcessSmapsAsync } from '../../../resource-monitor.mjs';
+import { ASYNC_SMAPS_MIN_PIDS, prefetchSmaps, readProcessSmaps, readProcessSmapsAsync } from '../../../src/performance/resource-monitor.mjs';
 
 const ROLLUP = (pss) => `Rss:  ${pss * 2} kB\nPss:  ${pss} kB\nShared_Clean: 10 kB\nShared_Dirty: 5 kB\nPrivate_Clean: 20 kB\nPrivate_Dirty: 30 kB\nSwapPss: 7 kB\n`;
 

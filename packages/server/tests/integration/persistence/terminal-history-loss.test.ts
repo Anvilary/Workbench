@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TerminalHistoryStore } from '../../../src/terminal-history-store.js';
+import { TerminalHistoryStore } from '../../../src/features/terminals/terminal-history-store.js';
 
 test('history loss accounting bounds UTF-8 chunks and newline-free output', async (t) => {
   const baseDir = path.join(tmpdir(), `maw-history-loss-${randomUUID()}`);

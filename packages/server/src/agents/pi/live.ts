@@ -24,7 +24,7 @@
 
 import { open, stat } from 'node:fs/promises';
 import type { AgentStatus, StatusSource } from '../adapter.js';
-import { parseJsonlLine } from '../../jsonl-reader.js';
+import { parseJsonlLine } from '../../shared/jsonl-reader.js';
 import { TRANSPORT_LIMITS } from '../transport-limits.js';
 import { findSessionFile } from './paths.js';
 import { plainMatches, readEntry } from './session-entries.js';

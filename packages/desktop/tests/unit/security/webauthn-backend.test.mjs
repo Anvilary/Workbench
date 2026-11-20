@@ -8,7 +8,7 @@ import {
   listResidentCredentials,
   executeAssertion,
   CANCELLED_MESSAGE,
-} from '../../../webauthn-backend.mjs';
+} from '../../../src/security/webauthn/backend.mjs';
 
 test('discoverFido2Devices parses device list accurately', async () => {
   const mockExec = async () => ({

@@ -1,7 +1,7 @@
 import type { MawActivityState } from '@agent-workbench/shared';
-import { agencySessionText, agencyTabActivityText } from '../../agency/agency-labels.js';
-import { GlobeIcon } from '../../agency/GlobeIcon.js';
-import type { WorkspaceTab } from '../../agency/model.js';
+import { agencySessionText, agencyTabActivityText } from '../workspaces/workspace-labels.js';
+import { GlobeIcon } from '../../shared/ui/GlobeIcon.js';
+import type { WorkspaceTab } from '../workspaces/workspace-model.js';
 import { t } from '../../i18n/index.js';
 
 export function resolvePaneTabStatus(

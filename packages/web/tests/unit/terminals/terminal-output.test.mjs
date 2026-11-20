@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { TerminalOutput } from '../../../src/terminal-output.ts';
+import { TerminalOutput } from '../../../src/features/terminals/terminal-output.ts';
 import path from 'node:path';
 import { SERVER_ROOT } from '../../helpers/paths.mjs';
 const require = createRequire(path.join(SERVER_ROOT, 'package.json'));

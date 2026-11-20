@@ -222,8 +222,8 @@ try {
   // Compile the real shared component into a test page to exercise two dialogs on ONE real connection.
   const compiled = await build({ stdin: { contents: `
     import React, {useState} from 'react'; import {createRoot} from 'react-dom/client';
-    import {FolderPicker} from '${repo}/packages/web/src/FolderPicker.tsx';
-    import {AgentConnection} from '${repo}/packages/web/src/connection.ts';
+    import {FolderPicker} from '${repo}/packages/web/src/shared/ui/FolderPicker.tsx';
+    import {AgentConnection} from '${repo}/packages/web/src/connection/connection.ts';
     const connection = new AgentConnection(); window.fixtureConnection = connection;
     window.fixtureMessages = []; connection.onMessage(m => window.fixtureMessages.push(m)); connection.connect();
     function App() { const [one,S1]=useState(false),[two,S2]=useState(false);

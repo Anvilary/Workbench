@@ -23,8 +23,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { WorkspaceId, RuntimeSessionId } from '@agent-workbench/shared';
-import { AgencyNotificationStore } from '../../../src/agency/agency-notification-store.js';
-import { TabActivityManager } from '../../../src/agency/tab-activity-manager.js';
+import { AgencyNotificationStore } from '../../../src/features/notifications/notification-store.js';
+import { TabActivityManager } from '../../../src/features/notifications/tab-activity-manager.js';
 
 test('Lane C Acceptance 1: Genuine completion across verified providers (Claude, OpenCode, Antigravity, Codex)', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'maw-acceptance-genuine-'));

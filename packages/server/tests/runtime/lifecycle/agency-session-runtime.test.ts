@@ -13,18 +13,18 @@ import type {
   TerminalId,
   WorkspaceId,
 } from '@agent-workbench/shared';
-import { OutputBuffer } from '../../../src/output-buffer.js';
-import { TerminalRegistry } from '../../../src/terminal-registry.js';
+import { OutputBuffer } from '../../../src/features/terminals/output-buffer.js';
+import { TerminalRegistry } from '../../../src/features/terminals/terminal-registry.js';
 import { AgentRegistry } from '../../../src/agents/registry.js';
-import { WorkspaceStore, type WorkspaceState } from '../../../src/workspace-store.js';
+import { OpenTabsStore, type WorkspaceState } from '../../../src/features/terminals/open-tabs-store.js';
 import type { AgentAdapter, SpawnedContext } from '../../../src/agents/adapter.js';
-import { AgencySessionStore, migrateSessionTabs, UnsupportedAgencySessionSchemaError } from '../../../src/agency/agency-session-store.js';
+import { AgencySessionStore, migrateSessionTabs, UnsupportedAgencySessionSchemaError } from '../../../src/features/sessions/session-store.js';
 import {
   AgencyRuntimeError,
   AgencySessionRuntime,
   type AgencyProfileLaunchProvider,
   type AgencyTerminalRegistry,
-} from '../../../src/agency/agency-session-runtime.js';
+} from '../../../src/features/sessions/session-runtime.js';
 
 class FakeTerminals extends EventEmitter {
   private readonly descriptors = new Map<TerminalId, TerminalDescriptor>();
@@ -677,7 +677,7 @@ test('future schema and dual corrupt stores fail closed without destructive reco
   }
 });
 
-class DisposableWorkspaceStore extends WorkspaceStore {
+class DisposableWorkspaceStore extends OpenTabsStore {
   override save(_state: WorkspaceState): void {}
 }
 

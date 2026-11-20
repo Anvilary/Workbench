@@ -14,7 +14,7 @@
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { asRecord, MAX_SUBMIT_IMAGE_BYTES } from '@agent-workbench/shared';
-import { parseJsonlLine } from '../../jsonl-reader.js';
+import { parseJsonlLine } from '../../shared/jsonl-reader.js';
 import type { LoadedImage } from '../adapter.js';
 import { isCompressedRollout, readCompressedRollout } from './compressed-rollout.js';
 

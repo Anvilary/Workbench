@@ -1,5 +1,5 @@
 // Terminal selection and clipboard acceptance tests in real browser environment.
-// Run: node --test packages/web/src/agency/split/terminal-clipboard-acceptance.test.mjs
+// Run: node --test packages/web/tests/e2e/terminals/terminal-clipboard-acceptance.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -20,7 +20,7 @@ const fixture = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Terminal } from '@xterm/xterm';
-import { AgencyWorkspaceView } from './src/agency/AgencyWorkspaceView.tsx';
+import { WorkspaceView } from './src/features/workspaces/WorkspaceView.tsx';
 
 const opened = [];
 const origOpen = Terminal.prototype.open;
@@ -88,7 +88,7 @@ function Harness() {
     }
     return {};
   };
-  return React.createElement(AgencyWorkspaceView, {
+  return React.createElement(WorkspaceView, {
     workspace, profiles: [], sessions, webTabs: [], connection, request,
     sendImmediate: connection.sendImmediate, online: true, onDone() {}, onSaveLayout: async () => {},
   });

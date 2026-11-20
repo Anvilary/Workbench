@@ -1,0 +1,185 @@
+/**
+ * Consolas del sistema, al pie de la columna derecha.
+ *
+ * Por que existen: en la terminal de la izquierda vive el agente, y meterle un
+ * `git status` ahi significa interrumpir lo que este haciendo. Esto son pty
+ * aparte, sin nada del agente adentro, para los comandos sueltos de siempre.
+ *
+ * Van debajo del panel y no como una cuarta solapa a proposito. Las tres
+ * solapas se turnan porque compiten por el **ancho**, que es lo escaso; una
+ * consola compite por el alto, y la gracia es justo poder mirar la lista de
+ * cambios mientras se escribe abajo.
+ *
+ * Desde el hito 17 son **varias**, con solapas propias:
+ *
+ *  - **Todas viven en el mismo directorio**, el de la pestaña activa. No es una
+ *    limitacion: es lo que hace que "Terminal 2" sirva para lo que uno la abre
+ *    —dejar algo corriendo mientras usa la otra— sin tener que acordarse de
+ *    donde quedo parada cada una.
+ *  - **Ninguna se desmonta al cambiar de solapa**, igual que las pestañas del
+ *    agente (CLAUDE.md 6): desmontarla soltaria el enganche y la repintaria
+ *    entera con el replay. Se esconden con CSS y `TerminalView` deja de medir
+ *    cuando su contenedor no tiene caja.
+ *  - **Se numeran por posicion**, no por un nombre guardado. Una consola es
+ *    desechable; ponerle nombre a algo que se abre y se cierra en un minuto es
+ *    trabajo para el usuario a cambio de nada.
+ *
+ * Desde el hito 18 sus solapas y las de las notas son la **misma** familia de
+ * CSS (`.strip-tab*`): eran identicas en intencion y distintas en todo lo
+ * demas, y con dos hojas separadas tocar una y olvidar la otra era lo normal.
+ *
+ * Plegada no muere: queda la barra del pie, que la vuelve a mostrar. Cerrar de
+ * verdad es la × de cada solapa, y eso si termina el proceso.
+ */
+
+import type { TerminalDescriptor, TerminalId } from '@agent-workbench/shared';
+import { TerminalView } from './TerminalView.js';
+import type { AgentConnection } from '../../connection/connection.js';
+import { isWindowsClient } from './console-paste.js';
+import { t } from '../../i18n/index.js';
+import { SectionHideButton } from '../../shared/ui/SectionHideButton.js';
+
+/** Ctrl+V pega en las consolas si el navegador corre en Windows (§5.2). */
+const PASTE_ON_CTRL_V = typeof navigator !== 'undefined' && isWindowsClient(navigator.platform);
+
+interface ConsolePaneProps {
+  connection: AgentConnection;
+  /** Las consolas abiertas en este directorio, en orden de apertura. */
+  shells: TerminalDescriptor[];
+  activeShellId: TerminalId | null;
+  /** Directorio donde se abren. Es el de la pestana activa. */
+  cwd: string;
+  /** Nombre de la consola del sistema, o null si el servidor no encontro ninguna. */
+  shellName: string | null;
+  theme: 'light' | 'dark';
+  onSelect: (terminalId: TerminalId) => void;
+  /** Abre una consola mas en el mismo directorio. */
+  onOpen: () => void;
+  /** Cierra una: termina el proceso. */
+  onCloseShell: (terminalId: TerminalId) => void;
+  /** Pliega el panel. No mata nada. */
+  onCollapse: () => void;
+  /**
+   * Esconde la consola (Hito 41): cierra sus terminales y la saca del pie hasta
+   * que se la muestre desde Ajustes. Ausente en la vista angosta, donde se
+   * esconde desde Ajustes.
+   */
+  onHide?: () => void;
+  /**
+   * Cuantas consolas cierra esconderla: todas, tambien las de otros proyectos.
+   * La pregunta tiene que contar las mismas que se cierran.
+   */
+  hideCount?: number;
+}
+
+export function ConsolePane({
+  connection,
+  shells,
+  activeShellId,
+  cwd,
+  shellName,
+  theme,
+  onSelect,
+  onOpen,
+  onCloseShell,
+  onCollapse,
+  onHide,
+  hideCount = 0,
+}: ConsolePaneProps): JSX.Element {
+  const label = shellName ?? t('console.name');
+  const active = shells.find((shell) => shell.terminalId === activeShellId) ?? shells[0] ?? null;
+
+  return (
+    <section className="console-pane">
+      <header className="console-header">
+        <div className="strip-tabs">
+          {shells.map((shell, index) => (
+            <div
+              key={shell.terminalId}
+              className={`strip-tab${
+                shell.terminalId === active?.terminalId ? ' is-active' : ''
+              }${shell.alive ? '' : ' is-dead'}`}
+            >
+              <button
+                className="strip-tab-label"
+                onClick={() => onSelect(shell.terminalId)}
+                title={
+                  shell.alive
+                    ? t('console.tab.title', {
+                        // La suya: desde el Hito 41 conviven consolas distintas.
+                        shell: shell.label.length > 0 ? shell.label : label,
+                        number: index + 1,
+                        cwd,
+                      })
+                    : t('console.tab.exited', { code: shell.exitCode ?? '?' })
+                }
+              >
+                {t('console.tab.label', { number: index + 1 })}
+              </button>
+              <button
+                className="strip-tab-close"
+                onClick={() => onCloseShell(shell.terminalId)}
+                title={t('console.tab.close')}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+
+          {shellName !== null && (
+            <button
+              className="strip-tab-new"
+              onClick={onOpen}
+              title={t('console.openAnother', { shell: label, cwd })}
+            >
+              +
+            </button>
+          )}
+        </div>
+
+        <span className="strip-spacer" />
+        <button
+          className="icon-button"
+          onClick={onCollapse}
+          title={t('console.collapse')}
+        >
+          ▾
+        </button>
+        {onHide !== undefined && (
+          <SectionHideButton
+            title={t('settings.hide.console')}
+            onHide={onHide}
+            confirmText={hideCount === 0 ? null : t('settings.panels.consoleConfirm', { count: hideCount })}
+          />
+        )}
+      </header>
+
+      <div className="console-body">
+        {shells.length === 0 ? (
+          <div className="console-empty">
+            {shellName === null ? (
+              <p className="panel-note">{t('console.noShell')}</p>
+            ) : (
+              <button className="link-button" onClick={onOpen}>
+                {t('console.openIn', { shell: label, cwd })}
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="terminal-stack">
+            {shells.map((shell) => (
+              <TerminalView
+                key={shell.terminalId}
+                terminalId={shell.terminalId}
+                connection={connection}
+                active={shell.terminalId === active?.terminalId}
+                theme={theme}
+                pasteOnCtrlV={PASTE_ON_CTRL_V}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}

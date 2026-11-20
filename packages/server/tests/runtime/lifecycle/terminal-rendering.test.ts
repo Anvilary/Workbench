@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import headless from '@xterm/headless';
 import { TerminalState } from '../../../src/pty-host/terminal-state.mjs';
-import { OutputBuffer } from '../../../src/output-buffer.js';
+import { OutputBuffer } from '../../../src/features/terminals/output-buffer.js';
 
 const { Terminal } = headless;
 const drain = (term: InstanceType<typeof Terminal>) => new Promise<void>((resolve) => term.write('', resolve));

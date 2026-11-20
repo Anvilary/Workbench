@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateSidebarDropdownPosition } from '../../../src/agency/AgencySidebar.js';
+import { calculateSidebarDropdownPosition } from '../../../src/features/navigation/WorkbenchSidebar.js';
 
 test('calculateSidebarDropdownPosition: places menu below trigger with standard margin', () => {
   const pos = calculateSidebarDropdownPosition({

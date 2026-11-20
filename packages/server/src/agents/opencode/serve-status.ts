@@ -37,7 +37,7 @@
  */
 
 import type { TerminalOfflineReason } from '@agent-workbench/shared';
-import { debugLog } from '../../debug.js';
+import { debugLog } from '../../shared/debug.js';
 import type { ReadOnlyDatabase } from '../sqlite.js';
 import type { AgentStatus, StatusSource } from '../adapter.js';
 import type { GlobalEvent, OpenCodeServeClient, ServeSessionStatus } from './serve-client.js';

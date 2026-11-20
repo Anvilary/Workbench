@@ -4,7 +4,7 @@ All test suites live under package-scoped `tests/` trees grouped by verification
 
 ## Directory Taxonomy
 
-Each testable package (`packages/desktop`, `packages/server`, `packages/web`) organizes suites under `tests/`:
+Each testable package (`packages/shared`, `packages/desktop`, `packages/server`, `packages/web`) organizes suites under `tests/`:
 
 ```text
 packages/<pkg>/tests/
@@ -25,8 +25,8 @@ Every test tree uses dedicated root helpers (`tests/helpers/paths.ts` for `@agen
 
 ### Root Commands
 
-- `pnpm typecheck`: Type-checks `shared`, `server` (including `tests/**/*.ts`), and `web` (including `tests/**/*.ts`).
-- `pnpm test:unit`: Fast pure-Node unit tests across desktop, server, and web (no browser or Electron binary required).
+- `pnpm typecheck`: Type-checks `shared` (source and tests), `server` (including `tests/**/*.ts`), and `web` (including `tests/**/*.ts`).
+- `pnpm test:unit`: Fast pure-Node unit tests across shared, desktop, server, and web (no browser or Electron binary required). This tier includes the architecture tests (`tests/unit/architecture`) that enforce the dependency rules, the shared protocol golden cases and public surface snapshot, and the server message routing tests.
 - `pnpm test:integration`: Store, protocol, and integration tests across desktop, server, and web.
 - `pnpm test:production`: Ubuntu desktop `.deb` package and launcher integration checks.
 - `pnpm test:runtime`: Server PTY supervisor, lifecycle, concurrency, and recovery tests plus desktop resource-pool runtime tests.

@@ -94,7 +94,7 @@ test('i18n completeness: all settings keys exist across all 9 locales', () => {
 const fixtureCode = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { SettingsDialog } from './src/SettingsDialog.tsx';
+import { SettingsDialog } from './src/features/settings/SettingsDialog.tsx';
 
 const mockAgents = [
   { id: 'codex', label: 'Codex CLI', available: true, version: '0.14.0' },
@@ -333,7 +333,7 @@ test('SettingsDialog acceptance suite: 2-pane navigation, tabs, accessibility, a
 
   const bundleJs = buildResult.outputFiles[0].text;
   const stylesCss = readFileSync(path.join(webRoot, 'src/styles.css'), 'utf8');
-  const agencyCss = readFileSync(path.join(webRoot, 'src/agency/agency.css'), 'utf8');
+  const agencyCss = readFileSync(path.join(webRoot, 'src/app/workbench.css'), 'utf8');
 
   const html = `<!DOCTYPE html>
 <html>

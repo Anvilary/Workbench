@@ -29,7 +29,7 @@ function browserExecutable() {
 const fixtureCode = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { AgencyApp } from './src/agency/AgencyApp.tsx';
+import { WorkbenchApp } from './src/app/WorkbenchApp.tsx';
 
 const p1 = '11111111-1111-4111-8111-111111111111';
 const p2 = '22222222-2222-4222-8222-222222222222';
@@ -174,7 +174,7 @@ class MockConnection {
 }
 
 const conn = new MockConnection();
-createRoot(document.getElementById('root')).render(<AgencyApp connection={conn} />);
+createRoot(document.getElementById('root')).render(<WorkbenchApp connection={conn} />);
 `;
 
 test('sidebar ux & branding acceptance suite: drag-and-drop, controls, lifecycle, renaming, tab styles', async (t) => {
@@ -199,7 +199,7 @@ test('sidebar ux & branding acceptance suite: drag-and-drop, controls, lifecycle
   });
 
   const bundleJs = result.outputFiles[0].text;
-  const css = readFileSync(path.join(webRoot, 'src/agency/agency.css'), 'utf8');
+  const css = readFileSync(path.join(webRoot, 'src/app/workbench.css'), 'utf8');
 
   const server = createServer((req, res) => {
     if (req.url === '/bundle.js') {

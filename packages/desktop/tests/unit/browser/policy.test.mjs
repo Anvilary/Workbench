@@ -61,6 +61,16 @@ test('exact HTTPS navigation and initial ChatGPT URL allowlist', () => {
   assert.equal(validCommand({ type: 'browser-action', id, action: 'reload' }), true);
   assert.equal(validCommand({ type: 'browser-action', id, action: 'open-link', url: 'https://example.com/a' }), true);
   assert.equal(validCommand({ type: 'browser-action', id, action: 'open-link', url: 'http://127.0.0.1/' }), false);
+  assert.equal(validCommand({ type: 'browser-action', id, action: 'copy-link', url: 'https://example.com/a' }), true);
+  assert.equal(validCommand({ type: 'browser-action', id, action: 'copy-link', url: 'javascript:alert(1)' }), false);
+  assert.equal(validCommand({ type: 'browser-action', id, action: 'replace-misspelling', word: 'correct' }), true);
+  assert.equal(validCommand({ type: 'browser-action', id, action: 'replace-misspelling', word: 'a'.repeat(300) }), false);
+  assert.equal(validCommand({ type: 'find-in-page', id, text: 'hello' }), true);
+  assert.equal(validCommand({ type: 'find-in-page', id, text: 'hello', forward: true, findNext: false, matchCase: true }), true);
+  assert.equal(validCommand({ type: 'find-in-page', id, text: 'hello', invalidOption: true }), false);
+  assert.equal(validCommand({ type: 'stop-find-in-page', id }), true);
+  assert.equal(validCommand({ type: 'stop-find-in-page', id, action: 'clearSelection' }), true);
+  assert.equal(validCommand({ type: 'stop-find-in-page', id, action: 'invalidAction' }), false);
   assert.equal(validCommand({ type: 'copy-file', cwd: '/work/demo', relative: 'src/app.ts' }), true);
   assert.equal(validCommand({ type: 'copy-file', cwd: '/work/demo', relative: '/etc/passwd' }), false);
   assert.equal(validCommand({ type: 'write-clipboard-text', text: 'terminal text' }), true);

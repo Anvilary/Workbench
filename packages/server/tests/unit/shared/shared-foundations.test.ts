@@ -4,21 +4,10 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import {
-  DomainError,
-  SerialQueue,
-  UnsupportedSchemaVersionError,
-  isCanonicalAbsolutePath,
-  isIsoUtcTimestamp,
-  isNullableTimestamp,
-  isPrintableName,
-  isRecord,
-  isValidRequestId,
-  isValidTimestamp,
-  isValidUuid,
-  loadWithBackupRecovery,
-  writeSnapshotWithBackup,
-} from '../../../src/shared/index.js';
+import { DomainError, UnsupportedSchemaVersionError } from '../../../src/shared/errors/domain-error.js';
+import { SerialQueue } from '../../../src/shared/concurrency/serial-queue.js';
+import { isCanonicalAbsolutePath, isIsoUtcTimestamp, isNullableTimestamp, isPrintableName, isRecord, isValidRequestId, isValidTimestamp, isValidUuid } from '../../../src/shared/validation/primitives.js';
+import { loadWithBackupRecovery, writeSnapshotWithBackup } from '../../../src/shared/persistence/versioned-json-store.js';
 
 test('SerialQueue preserves FIFO execution order and isolates task rejections', async () => {
   const queue = new SerialQueue();

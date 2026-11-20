@@ -37,7 +37,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { debugLog } from '../../debug.js';
+import { debugLog } from '../../shared/debug.js';
 import type { CliLocation } from '../locate.js';
 
 /** El unico host aceptado, en las banderas y en la linea de escucha. */

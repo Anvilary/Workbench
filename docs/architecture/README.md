@@ -1,27 +1,24 @@
-# Anvilary Architecture v1 Overview
+# Architecture Overview
 
-Anvilary Workbench uses a **modular monolith** layout with explicit frontend/backend/desktop separation, feature-first internal organization, and small portable shared foundations inside each package.
+Anvilary Workbench is a **modular monolith** in four packages. [Architecture v2](./architecture-v2.md) is the design record of the current structure: feature first inside each package, one owner per resource, explicit dependency direction.
 
 ## Workspace Packages
 
 | Package | Role | Key Entry Points |
 | --- | --- | --- |
-| `@agent-workbench/shared` | Cross-process protocol schemas, URL policies, validation helpers | `packages/shared/src/index.ts` |
-| `@agent-workbench/server` | Express/WebSocket backend, persistence stores, agent adapters, PTY supervisor | `packages/server/src/index.ts`, `packages/server/src/maw-host.ts`, `packages/server/src/pty-host/maw-ptyd.mjs` |
-| `@agent-workbench/web` | React + TypeScript workbench UI, pane tree, terminal views, settings | `packages/web/src/main.tsx`, `packages/web/src/MawRoot.tsx` |
-| `@agent-workbench/desktop` | Trusted Electron shell, isolated web partitions, FIDO2/WebAuthn bridge, resource budget | `packages/desktop/main.mjs`, `packages/desktop/policy.mjs` |
+| `@agent-workbench/shared` | Wire protocol (types, validators, codecs by message family), URL policies, pure layout and domain logic | `packages/shared/src/index.ts`, `packages/shared/src/protocol/index.ts` |
+| `@agent-workbench/server` | Express/WebSocket backend, feature services and persistence, agent adapters, PTY supervisor | `packages/server/src/index.ts`, `packages/server/src/maw-host.ts`, `packages/server/src/pty-host/maw-ptyd.mjs`, `packages/server/src/transport/websocket/socket-server.ts` |
+| `@agent-workbench/web` | React + TypeScript interface organized by feature | `packages/web/src/main.tsx`, `packages/web/src/app/WorkbenchRoot.tsx` |
+| `@agent-workbench/desktop` | Trusted Electron shell: native browser views, isolated partitions, privileged IPC, WebAuthn bridge, resource budget | `packages/desktop/main.mjs`, `packages/desktop/policy.mjs`, `packages/desktop/src/browser/view-controller.mjs` |
 | Android app (`android/`) | Standalone companion Android project outside the pnpm workspace | `android/` |
 
 ## Preserved Operational Invariants
 
-The top-level package locations (`packages/shared`, `packages/server`, `packages/web`, `packages/desktop`) remain stable because live launcher, updater, packaging, and systemd verification scripts validate those exact paths:
-
-- `scripts/maw/maw-lib.sh` (`maw_valid_release`) checks `packages/server/src/index.ts`, `packages/server/src/maw-host.ts`, `packages/server/dist/index.mjs`, and `packages/server/dist/maw-ptyd.mjs`.
-- `scripts/build-npm.mjs` and `.github/scripts/check-tarball.mjs` stage `dist-npm/` with a strict published file allowlist (`package.json`, `README.md`, `LICENSE`, `dist/server.js`, `dist/web/`).
-- Live services (`maw-ptyd.mjs`, backend HTTP/WS server, and desktop runtime) remain compatible across incremental updates.
+The package locations stay stable because live launcher, updater, packaging and systemd verification scripts validate those exact paths. The complete list is the "Frozen paths" table in [architecture-v2.md](./architecture-v2.md#3-frozen-paths-and-compatibility-contracts).
 
 ## Documentation Map
 
+- [Architecture v2 (design record)](./architecture-v2.md)
 - [Module Boundaries](./module-boundaries.md)
 - [Dependency Rules](./dependency-rules.md)
 - [Testing Architecture](./testing.md)

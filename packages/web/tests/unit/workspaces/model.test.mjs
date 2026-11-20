@@ -1,4 +1,4 @@
-// Run with Node 22+: node --experimental-strip-types --test packages/web/src/agency/model.test.mjs
+// Run with Node 22+: node --experimental-strip-types --test packages/web/tests/unit/workspaces/model.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -7,7 +7,7 @@ import {
   createAgencyTransport, parseProfileArgv, allWorkspaceTabs, selectedWorkspaceTab,
   applySessionsSnapshot, applySessionActivity, retainUnconfirmedCreations,
   EMPTY_AGENCY_SNAPSHOT,
-} from '../../../src/agency/model.ts';
+} from '../../../src/features/workspaces/workspace-model.ts';
 
 const emptyCapabilities = {
   canLaunch: true, canResumeNativeSession: false, canInterrupt: true,

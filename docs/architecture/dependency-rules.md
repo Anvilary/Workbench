@@ -1,32 +1,32 @@
 # Dependency Rules
 
-Anvilary Architecture v1 enforces unidirectional dependencies so changes remain localized and portable utilities can be copied cleanly across Anvilary Tools projects.
+Dependencies point one way. The rules below are enforced by tests, not by convention: `packages/shared/tests/unit`, `packages/server/tests/unit/architecture`, `packages/web/tests/unit/architecture` and `packages/desktop/tests/unit/architecture` fail when a new import breaks them.
 
-## Package-Level Dependencies
+## Packages
 
-1. `@agent-workbench/shared` depends on nothing in the monorepo.
-2. `@agent-workbench/server` may depend on `@agent-workbench/shared` only (never `@agent-workbench/web` or `@agent-workbench/desktop`).
-3. `@agent-workbench/web` may depend on `@agent-workbench/shared` only (never `@agent-workbench/server` runtime code or `@agent-workbench/desktop` runtime code; one legacy terminal scroll test imports server pure helpers explicitly).
-4. `@agent-workbench/desktop` depends on trusted Node/Electron APIs and its local security modules, communicating with `@agent-workbench/web` only through validated IPC channels (`policy.mjs`) and with `@agent-workbench/server` only over verified loopback HTTP readiness (`src/ipc/backend-readiness.mjs`).
+1. `@agent-workbench/shared` imports nothing from the monorepo and no Node, Electron or React module.
+2. `@agent-workbench/server` imports `shared` only. Never `web`, `desktop`, React or Electron.
+3. `@agent-workbench/web` imports `shared` only. One unit test imports server pure helpers on purpose.
+4. `@agent-workbench/desktop` talks to `web` only through the validated IPC channel and to `server` only over loopback HTTP readiness.
 
-## Intra-Package Dependencies
+## Server (`packages/server/src`)
 
-### Frontend (`packages/web`)
+- `features/*` never import `transport/`. The transport composes features; a feature does not know it is served over a socket.
+- `shared/` imports nothing else in the server. `bootstrap/` imports `shared/` only. `security/` imports `features/remote-access` only.
+- `pty-host/` imports no feature. It is a separate process with its own wire contract.
+- `agents/` reaches `features/composer` and `features/files` only (paste path conventions and the path guard). This is the one deliberate directory level coupling between adapters and features.
+- Handlers in `transport/websocket/handlers/` declare the context keys they use (`HandlerContext<'registry' | 'send'>`). Authorization, parsing and error serialization live in `connection.ts` once.
+- No value import cycles between files.
 
-- `src/shared/` must remain strictly product-agnostic and never import from `src/features/` or `src/agency/`.
-- `src/features/<domain>/` may import from `src/shared/`, `@agent-workbench/shared`, and explicit stable feature interfaces.
-- Avoid barrel re-export cycles: components inside `src/features/<domain>/` import siblings or `src/shared/` submodules directly when avoiding circular evaluation.
+## Web (`packages/web/src`)
 
-### Backend (`packages/server`)
+- `shared/`, `connection/` and `i18n/` never import `features/` or `app/`.
+- `features/*` never import `app/`. Cross feature imports name the owning module file; there are no re-export-only barrels.
+- `connection/` imports `shared/` and `i18n/` only.
+- No value import cycles between files.
 
-- `src/shared/` may import Node standard library modules and package-local atomic I/O primitives (`atomic-write.ts`), never Express routes, WebSocket servers, React, Electron, or specific domain stores.
-- Domain stores (`agency-layout-store.ts`, `browser-tab-store.ts`, `editor-tab-store.ts`, etc.) compose `SerialQueue`, `loadWithBackupRecovery`, `writeSnapshotWithBackup`, and `isRecord` from `src/shared/` rather than duplicating atomic backup rotation or queue chaining.
-- Infrastructure boundaries (filesystem writes, OS process spawning, systemd/updater scripts) are wrapped behind dedicated modules and never embedded inside React components.
+## Desktop (`packages/desktop`)
 
-### Desktop (`packages/desktop`)
-
-- Privileged native capabilities (file clipboard resolution, FIDO2/WebAuthn PIN prompting, isolated Chromium partitions, OAuth callback interception, backend readiness verification) execute exclusively inside trusted Electron main-process modules (`main.mjs`, `src/security/`, `src/ipc/`), never inside untrusted web renderers.
-
-## Portability Standard Across Anvilary Projects
-
-Each module under `packages/server/src/shared/` and `packages/web/src/shared/` is intentionally self-contained with minimal external dependencies so it can be copied directly into another Anvilary repository, adapted locally, and maintained without introducing a monolithic shared-UI npm dependency prematurely.
+- Privileged capabilities run in trusted main-process modules (`main.mjs`, `src/`). Only `main.mjs` and the PIN dialog import `electron` directly; every other module receives what it needs as an argument.
+- `src/browser/view-controller.mjs` is the single owner of native view state. Its collaborators (layout, navigation guard, sessions, eviction, page commands, profile operations) are created by it and not used elsewhere.
+- Area direction: `app` may use `ipc`, `gpu`, `security`; `browser` may use `security`, `performance`; the others use only themselves.

@@ -24,7 +24,7 @@
  * Ningun error cita la contrasena ni la cabecera de autorizacion.
  */
 
-import { debugLog } from '../../debug.js';
+import { debugLog } from '../../shared/debug.js';
 import { OPENCODE_SESSION_ID_PATTERN } from './ids.js';
 import type { ServeEndpoint } from './serve-process.js';
 import { parseSseChunk, SSE_INITIAL_STATE } from './sse.js';

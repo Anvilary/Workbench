@@ -11,8 +11,8 @@ import {
   classifyProcessProvider,
   calculateProcessCpuDelta,
   ResourceCollector,
-} from '../../../resource-monitor.mjs';
-import { readSystemMemory, calculateResourceBudget } from '../../../resource-budget.mjs';
+} from '../../../src/performance/resource-monitor.mjs';
+import { readSystemMemory, calculateResourceBudget } from '../../../src/performance/resource-budget.mjs';
 
 test('concurrent first sample, refresh and subscription share a complete snapshot', async () => {
   let release;

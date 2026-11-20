@@ -26,7 +26,7 @@ import {
   type ConversationPart,
   type ConversationToolResultPart,
 } from '@agent-workbench/shared';
-import { pastedImageMediaType } from '../../paste-paths.js';
+import { pastedImageMediaType } from '../../features/composer/paste-paths.js';
 import { cut, type EventLimits } from '../transport-limits.js';
 
 /** Tope del detalle de un aviso de error, como en las demas CLIs. */

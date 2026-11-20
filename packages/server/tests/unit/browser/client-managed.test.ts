@@ -4,8 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { WorkspaceId } from '@agent-workbench/shared';
-import { BrowserTabAdapter } from '../../../src/agency/browser-tabs/browser-tab-adapter.js';
-import { BrowserTabStore } from '../../../src/agency/browser-tabs/browser-tab-store.js';
+import { BrowserTabAdapter } from '../../../src/features/browser/browser-tab-adapter.js';
+import { BrowserTabStore } from '../../../src/features/browser/browser-tab-store.js';
 const workspaceId = '00000000-0000-4000-8000-000000000001' as WorkspaceId;
 
 test('logical tabs persist UUIDs, titles, URLs, mixed positions and selection independently of native pages', async t => {

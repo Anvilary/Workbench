@@ -20,8 +20,8 @@
  * Puro: no carga React, ni un navegador, ni el servidor.
  */
 
-const tabs = await import('../../web/src/doc-tabs.ts');
-const search = await import('../../web/src/doc-search.ts');
+const tabs = await import('../../web/src/features/files/doc-tabs.ts');
+const search = await import('../../web/src/features/files/doc-search.ts');
 
 let failures = 0;
 const check = (label, ok, extra = '') => {
@@ -162,7 +162,7 @@ const keys = (strip) => strip.docs.map((doc) => doc.key).join(',');
 // afuera del proyecto, que cada palabra entre acentos graves sea un pedido, o
 // que una ruta que el servidor no confirmo se vuelva enlace.
 {
-  const paths = await import('../../web/src/project-paths.ts');
+  const paths = await import('../../web/src/features/navigation/project-paths.ts');
   const shared = await import('@agent-workbench/shared');
   const { readFileSync } = await import('node:fs');
   const win = { cwd: 'D:\\Mi Proyecto', platform: 'win32' };
@@ -259,9 +259,11 @@ const keys = (strip) => strip.docs.map((doc) => doc.key).join(',');
   check('6.20 un servidor anterior no dice fileCheck, y la pagina no pregunta', hello({}).fileCheck === false && hello({ fileCheck: true }).fileCheck === true);
 
   // El cableado, leido como texto.
-  const hook = readFileSync(new URL('../../web/src/useFileLinks.ts', import.meta.url), 'utf8');
-  const view = readFileSync(new URL('../../web/src/ConversationView.tsx', import.meta.url), 'utf8');
-  const socket = readFileSync(new URL('../src/terminal-socket.ts', import.meta.url), 'utf8');
+  const hook = readFileSync(new URL('../../web/src/features/files/useFileLinks.ts', import.meta.url), 'utf8');
+  const view = readFileSync(new URL('../../web/src/features/conversation/ConversationView.tsx', import.meta.url), 'utf8');
+  const socket = ['initial-snapshot.ts', 'handlers/file-handler.ts']
+    .map((name) => readFileSync(new URL(`../src/transport/websocket/${name}`, import.meta.url), 'utf8'))
+    .join('\n');
   check('6.21 solo es enlace lo que el servidor confirmo, y solo se pregunta con el servidor que contesta',
     hook.includes("if (kind === 'file') return { open: () => onOpen(path), folder: false };") &&
       /if \(!enabled \|\| terminalId === null \|\| cwd\.length === 0\) return;/.test(hook));
@@ -271,8 +273,8 @@ const keys = (strip) => strip.docs.map((doc) => doc.key).join(',');
     socket.includes('fileCheck: true,') && socket.includes('await existingPaths(cwd, message.paths, await folders)'));
 
   // Una carpeta se abre en el explorador del sistema: el de la PC, nunca desde un equipo remoto.
-  const app = readFileSync(new URL('../../web/src/App.tsx', import.meta.url), 'utf8');
-  const remote = readFileSync(new URL('../src/remote-access.ts', import.meta.url), 'utf8');
+  const app = readFileSync(new URL('../../web/src/app/classic/ClassicApp.tsx', import.meta.url), 'utf8');
+  const remote = readFileSync(new URL('../src/features/remote-access/remote-access.ts', import.meta.url), 'utf8');
   check('6.29 una carpeta abre el explorador solo sin acceso remoto, y el servidor le niega files.reveal a un remoto',
     app.includes('onOpenFolder: remoteClient ? null : revealPath') &&
       hook.includes("if (kind === 'directory' && onOpenFolder !== null) return { open: () => onOpenFolder(path), folder: true };") &&
@@ -284,7 +286,7 @@ const keys = (strip) => strip.docs.map((doc) => doc.key).join(',');
 // --- 7. Editar un archivo (Hito 46, §6.36) ---------------------------------------------
 {
   const { EMPTY_STRIP, openDoc, selectDoc, MAX_OPEN_DOCS } = tabs;
-  const { editChanges, plainLineBreaks, CHANGES_GAP } = await import('../../web/src/edit-changes.ts');
+  const { editChanges, plainLineBreaks, CHANGES_GAP } = await import('../../web/src/features/files/edit-changes.ts');
   const { readFileSync } = await import('node:fs');
 
   let full = EMPTY_STRIP;
@@ -322,8 +324,8 @@ const keys = (strip) => strip.docs.map((doc) => doc.key).join(',');
     elapsed < 2_000 && huge.filter((line) => line.kind === 'removed').length === 4_000 - 1 && huge.filter((line) => line.kind === 'added').length === 4_000 - 1,
     `${elapsed} ms, ${huge.length} lineas`);
 
-  const viewer = readFileSync(new URL('../../web/src/DocumentViewer.tsx', import.meta.url), 'utf8');
-  const documents = readFileSync(new URL('../../web/src/useDocuments.ts', import.meta.url), 'utf8');
+  const viewer = readFileSync(new URL('../../web/src/features/files/DocumentViewer.tsx', import.meta.url), 'utf8');
+  const documents = readFileSync(new URL('../../web/src/features/files/useDocuments.ts', import.meta.url), 'utf8');
   check('7.11 Ctrl+S guarda y Esc no descarta: el cuadro no mira Escape',
     /event\.key\.toLowerCase\(\) === 's'/.test(viewer) && !/Escape/.test(viewer.slice(viewer.indexOf('function FileEditor'))));
   check('7.12 lo que se edita no va a sessionStorage, y F5 con algo sin guardar pregunta',

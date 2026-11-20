@@ -18,10 +18,10 @@
 
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { parsePorcelainV2, parseUnifiedDiff, parseWorktreeListZ, parseWorktrees } from '../src/git-repo.ts';
-import { InvalidPathError, resolveInside } from '../src/path-guard.ts';
-import { NO_CLI_FOLDERS } from '../src/cli-folders.ts';
-import { existingPaths } from '../src/file-browser.ts';
+import { parsePorcelainV2, parseUnifiedDiff, parseWorktreeListZ, parseWorktrees } from '../src/features/git/git-repo.ts';
+import { InvalidPathError, resolveInside } from '../src/features/files/path-guard.ts';
+import { NO_CLI_FOLDERS } from '../src/features/files/cli-folders.ts';
+import { existingPaths } from '../src/features/files/file-browser.ts';
 
 const dir = process.argv[2] ?? path.join(process.cwd(), '.check-git');
 await rm(dir, { recursive: true, force: true });

@@ -23,7 +23,7 @@ for (const [label, root] of [['baseline', baseline], ['candidate', candidate], [
     loader: { '.svg': 'dataurl', '.png': 'dataurl', '.woff2': 'dataurl', '.woff': 'dataurl', '.mp3': 'dataurl', '.wav': 'dataurl' }, logLevel: 'silent' });
   const files = new Map(bundle.outputFiles.map(file => [file.path.replace('/maw-bench', ''), file.contents]));
   const styles = [...new Set(Object.values(bundle.metafile.outputs)
-    .filter(entry => /\/(?:main|MawRoot)\.tsx$/.test(entry.entryPoint ?? '') && entry.cssBundle)
+    .filter(entry => /\/(?:main|WorkbenchRoot)\.tsx$/.test(entry.entryPoint ?? '') && entry.cssBundle)
     .map(entry => `<link rel="stylesheet" href="/${path.basename(entry.cssBundle)}">`))].join('');
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost');

@@ -1,5 +1,5 @@
 // Terminal 42,000-line scrollback, shortcut consistency, search, and scroll stability test.
-// Run: node --test packages/web/src/agency/split/terminal-scrollback-20k.test.mjs
+// Run: node --test packages/web/tests/e2e/terminals/terminal-scrollback-20k.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -17,7 +17,7 @@ const fixture = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Terminal } from '@xterm/xterm';
-import { AgencyWorkspaceView } from './src/agency/AgencyWorkspaceView.tsx';
+import { WorkspaceView } from './src/features/workspaces/WorkspaceView.tsx';
 
 const opened = [];
 const origOpen = Terminal.prototype.open;
@@ -70,7 +70,7 @@ function Harness() {
   window.selectTab = (tabId) => {
     setSessions((prev) => prev.map((row) => ({ ...row, tab: { ...row.tab, selected: row.tab.id === tabId } })));
   };
-  return React.createElement(AgencyWorkspaceView, {
+  return React.createElement(WorkspaceView, {
     workspace, profiles: [], sessions, webTabs: [], connection, request,
     sendImmediate: connection.sendImmediate, online: true, onDone() {}, onSaveLayout: async () => {},
   });

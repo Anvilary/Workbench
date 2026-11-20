@@ -7,7 +7,7 @@ import {
   type AgencyCliProfile,
   type WebTabProvider,
 } from '@agent-workbench/shared';
-import type { WorkspaceTab } from '../../agency/model.js';
+import type { WorkspaceTab } from './workspace-model.js';
 import { t } from '../../i18n/index.js';
 
 export type BrowserTabTargetResult =

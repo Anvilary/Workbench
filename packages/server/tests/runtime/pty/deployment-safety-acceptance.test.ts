@@ -33,35 +33,35 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { WebSocket } from 'ws';
 
-import { TerminalRegistry } from '../../../src/terminal-registry.js';
-import { WorkspaceStore } from '../../../src/workspace-store.js';
+import { TerminalRegistry } from '../../../src/features/terminals/terminal-registry.js';
+import { OpenTabsStore } from '../../../src/features/terminals/open-tabs-store.js';
 import { createAgentRegistry } from '../../../src/agents/registry.js';
 import { PtyHostClient } from '../../../src/pty-host/pty-host-client.js';
 // @ts-expect-error - standalone pure-ESM supervisor script
 import { PtySupervisor } from '../../../src/pty-host/maw-ptyd.mjs';
-import { attachTerminalSocket } from '../../../src/terminal-socket.js';
+import { attachWorkbenchSocket } from '../../../src/transport/websocket/socket-server.js';
 import { publishReadiness } from '../../../src/maw-host.js';
-import { SettingsStore } from '../../../src/settings-store.js';
-import { ArchivedSessions } from '../../../src/archived-sessions.js';
-import { WorktreeStore } from '../../../src/worktrees/store.js';
-import { WorktreeLinks } from '../../../src/worktrees/links.js';
-import { VaultCatalog } from '../../../src/vault/catalog.js';
-import { SessionIndex } from '../../../src/session-index.js';
-import { VaultService } from '../../../src/vault/service.js';
-import { WorktreeService } from '../../../src/worktrees/service.js';
-import { AppSettingsService } from '../../../src/app-settings-service.js';
-import { NotesStore } from '../../../src/notes-store.js';
-import { DraftStore } from '../../../src/draft-store.js';
-import { ConversationHub } from '../../../src/conversation-hub.js';
-import { RepoHub } from '../../../src/repo-hub.js';
-import { MemoryHub } from '../../../src/memory-hub.js';
-import { RemoteAccessService } from '../../../src/remote-access-service.js';
-import { RemoteDevicesStore } from '../../../src/remote-devices-store.js';
-import { AgencyWorkspaceStore } from '../../../src/agency/store.js';
-import { AgencyProfileStore } from '../../../src/agency/agency-profile-store.js';
-import { AgencySessionRuntime } from '../../../src/agency/agency-session-runtime.js';
-import { SplitAgencySessionStore } from '../../../src/agency/agency-session-store.js';
-import { WorkspaceMutex } from '../../../src/agency/workspace-lock.js';
+import { SettingsStore } from '../../../src/features/settings/settings-store.js';
+import { ArchivedSessions } from '../../../src/features/history/archived-sessions.js';
+import { WorktreeStore } from '../../../src/features/worktrees/store.js';
+import { WorktreeLinks } from '../../../src/features/worktrees/links.js';
+import { VaultCatalog } from '../../../src/features/vault/catalog.js';
+import { SessionIndex } from '../../../src/features/history/session-index.js';
+import { VaultService } from '../../../src/features/vault/service.js';
+import { WorktreeService } from '../../../src/features/worktrees/service.js';
+import { AppSettingsService } from '../../../src/features/settings/app-settings-service.js';
+import { NotesStore } from '../../../src/features/notes/notes-store.js';
+import { DraftStore } from '../../../src/features/composer/draft-store.js';
+import { ConversationHub } from '../../../src/features/conversations/conversation-hub.js';
+import { RepoHub } from '../../../src/features/git/repo-hub.js';
+import { MemoryHub } from '../../../src/features/memory/memory-hub.js';
+import { RemoteAccessService } from '../../../src/features/remote-access/remote-access-service.js';
+import { RemoteDevicesStore } from '../../../src/features/remote-access/remote-devices-store.js';
+import { AgencyWorkspaceStore } from '../../../src/features/workspaces/workspace-store.js';
+import { AgencyProfileStore } from '../../../src/features/profiles/profile-store.js';
+import { AgencySessionRuntime } from '../../../src/features/sessions/session-runtime.js';
+import { SplitAgencySessionStore } from '../../../src/features/sessions/session-store.js';
+import { WorkspaceMutex } from '../../../src/features/workspaces/workspace-lock.js';
 import { encodeClientMessage, parseServerMessage, type ServerMessage } from '@agent-workbench/shared';
 import { REPO_ROOT } from '../../helpers/paths.js';
 
@@ -188,7 +188,7 @@ async function createDisposableBackend(options: {
   await settings.load();
 
   const agents = createAgentRegistry([]);
-  const store = new WorkspaceStore();
+  const store = new OpenTabsStore();
   await store.load();
 
   const archived = new ArchivedSessions();
@@ -270,7 +270,7 @@ async function createDisposableBackend(options: {
   const url = `http://127.0.0.1:${port}/?token=${token}`;
   const detachReadiness = await publishReadiness(options.runtimeDir, url, null);
 
-  const detachSocket = attachTerminalSocket({
+  const detachSocket = attachWorkbenchSocket({
     httpServer,
     port,
     token,

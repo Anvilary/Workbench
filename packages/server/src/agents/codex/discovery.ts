@@ -30,8 +30,8 @@ import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { normalizeCwdKey } from '@agent-workbench/shared';
 import type { LaunchHook } from '../adapter.js';
-import { debugLog } from '../../debug.js';
-import { parseJsonlLine, readHeadLines } from '../../jsonl-reader.js';
+import { debugLog } from '../../shared/debug.js';
+import { parseJsonlLine, readHeadLines } from '../../shared/jsonl-reader.js';
 import { rolloutFilesIn } from './find-rollout.js';
 import {
   codexSessionsRoot,

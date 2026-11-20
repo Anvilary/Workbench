@@ -22,14 +22,15 @@ import {
   swapPanes,
   isWorkspacePaneLayout,
 } from '@agent-workbench/shared';
-import { AgencySessionRuntime } from '../../../src/agency/agency-session-runtime.js';
-import { AgencySessionStore } from '../../../src/agency/agency-session-store.js';
-import { AgencyWorkspaceStore } from '../../../src/agency/store.js';
-import { WorkspaceMutex } from '../../../src/agency/workspace-lock.js';
-import { BrowserTabAdapter, BrowserTabStore } from '../../../src/agency/browser-tabs/index.js';
-import { AgencyLayoutStore } from '../../../src/agency/agency-layout-store.js';
-import { AgencyTabCoordinator } from '../../../src/agency/tab-coordinator.js';
-import { writeAtomically } from '../../../src/atomic-write.js';
+import { AgencySessionRuntime } from '../../../src/features/sessions/session-runtime.js';
+import { AgencySessionStore } from '../../../src/features/sessions/session-store.js';
+import { AgencyWorkspaceStore } from '../../../src/features/workspaces/workspace-store.js';
+import { WorkspaceMutex } from '../../../src/features/workspaces/workspace-lock.js';
+import { BrowserTabAdapter } from '../../../src/features/browser/browser-tab-adapter.js';
+import { BrowserTabStore } from '../../../src/features/browser/browser-tab-store.js';
+import { AgencyLayoutStore } from '../../../src/features/workspaces/layout-store.js';
+import { AgencyTabCoordinator } from '../../../src/features/workspaces/tab-coordinator.js';
+import { writeAtomically } from '../../../src/shared/persistence/atomic-write.js';
 
 interface ClientStoreState {
   workspaces: AgencyWorkspace[];

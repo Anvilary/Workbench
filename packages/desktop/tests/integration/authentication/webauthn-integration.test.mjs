@@ -7,13 +7,13 @@ import {
   generateClientData,
   parseFido2AssertOutput,
   classifyWebAuthnError,
-} from '../../../webauthn-policy.mjs';
+} from '../../../src/security/webauthn/policy.mjs';
 import {
   discoverFido2Devices,
   getDeviceCapabilities,
   executeAssertion,
   CANCELLED_MESSAGE,
-} from '../../../webauthn-backend.mjs';
+} from '../../../src/security/webauthn/backend.mjs';
 
 // Test harness simulating the main process WebAuthn request handler
 async function simulateWebAuthnGet({

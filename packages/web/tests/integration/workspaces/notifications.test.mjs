@@ -1,4 +1,4 @@
-// Run with Node 22+: node --test packages/web/src/agency/notifications.test.mjs
+// Run with Node 22+: node --test packages/web/tests/integration/workspaces/notifications.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 

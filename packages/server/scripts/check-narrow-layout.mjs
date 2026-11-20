@@ -36,7 +36,7 @@ import {
   readTabParam,
   resolveNarrowView,
   withoutParams,
-} from '../../web/src/narrow-layout.ts';
+} from '../../web/src/shared/lib/narrow-layout.ts';
 import {
   DRAG_SLOP_PX,
   MOMENTUM_MAX_VELOCITY,
@@ -45,7 +45,7 @@ import {
   momentumStep,
   releaseVelocity,
   wholePixels,
-} from '../../web/src/touch-scroll.ts';
+} from '../../web/src/features/terminals/touch-scroll.ts';
 import { setLocale, t } from '../../web/src/i18n/index.ts';
 
 // Los textos de la interfaz salen de `t()` (§6.23): se comparan con el español.
@@ -277,8 +277,8 @@ const json = (value) => JSON.stringify(value);
 // Lo mismo que en la PC (decisión 5): la hoja de pestañas lleva la etiqueta de
 // rama y el color del proyecto con las mismas reglas que la barra de pestañas.
 {
-  const shell = readFileSync(join(WEB, 'src', 'NarrowShell.tsx'), 'utf8');
-  const tabBar = readFileSync(join(WEB, 'src', 'TabBar.tsx'), 'utf8');
+  const shell = readFileSync(join(WEB, 'src', 'app', 'classic', 'NarrowShell.tsx'), 'utf8');
+  const tabBar = readFileSync(join(WEB, 'src', 'app', 'classic', 'TabBar.tsx'), 'utf8');
   check('la hoja de pestañas y la barra usan la misma regla de la etiqueta de rama',
     /tabBranch\(terminal, terminals, platform\)/.test(shell) && /tabBranch\(terminal, terminals, platform\)/.test(tabBar));
   check('y el mismo color de proyecto',

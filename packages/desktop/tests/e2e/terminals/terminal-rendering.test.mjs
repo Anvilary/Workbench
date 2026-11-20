@@ -58,11 +58,11 @@ test('terminal rendering, recovery, scrollbars and isolated Codex soak in Electr
 import React, {useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Terminal} from '@xterm/xterm';
-import {AgentConnection} from './src/connection.ts';
-import {AgencyWorkspaceView} from './src/agency/AgencyWorkspaceView.tsx';
+import {AgentConnection} from './src/connection/connection.ts';
+import {WorkspaceView} from './src/features/workspaces/WorkspaceView.tsx';
 import './src/styles.css';
 import '@xterm/xterm/css/xterm.css';
-import './src/agency/agency.css';
+import './src/app/workbench.css';
 const opened = []; const open = Terminal.prototype.open;
 Terminal.prototype.open = function(el) { opened.push(this); return open.call(this, el); };
 window.terminals = opened; window.messages = []; window.sent = []; window.sessions = [];
@@ -97,7 +97,7 @@ function App() {
     if (response.type === 'agency.sessions.snapshot') window.setSessions(response.sessions);
     return response;
   };
-  return mounted && <AgencyWorkspaceView workspace={${JSON.stringify(workspace)}} profiles={[]} sessions={sessions} webTabs={[]}
+  return mounted && <WorkspaceView workspace={${JSON.stringify(workspace)}} profiles={[]} sessions={sessions} webTabs={[]}
     connection={connection} request={act} sendImmediate={connection.sendImmediate.bind(connection)} online={true}
     onDone={()=>{}} onSaveLayout={async()=>{}}/>;
 }

@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
 import type { ProjectId, WorkspaceId } from '@agent-workbench/shared';
-import { TerminalRegistry, RemotePtySession } from '../../../src/terminal-registry.js';
-import { AgencySessionRuntime } from '../../../src/agency/agency-session-runtime.js';
+import { TerminalRegistry } from '../../../src/features/terminals/terminal-registry.js';
+import { RemotePtySession } from '../../../src/features/terminals/remote-pty-session.js';
+import { AgencySessionRuntime } from '../../../src/features/sessions/session-runtime.js';
 
 function registryWithEntry(client: any, session: any, id = 'terminal-1') {
   const registry = new TerminalRegistry({} as any, null, { save: () => {} } as any);

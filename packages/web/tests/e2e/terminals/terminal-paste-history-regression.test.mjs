@@ -18,7 +18,7 @@ const fixture = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Terminal } from '@xterm/xterm';
-import { TerminalView } from './src/TerminalView.tsx';
+import { TerminalView } from './src/features/terminals/TerminalView.tsx';
 
 window.terminals = {};
 const origOpen = Terminal.prototype.open;

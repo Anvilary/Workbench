@@ -1,6 +1,6 @@
-// Keyboard ownership for terminals, against the real AgencyWorkspaceView and real xterm in Chromium.
+// Keyboard ownership for terminals, against the real WorkspaceView and real xterm in Chromium.
 // A recording connection stub captures every message the shell renderer would send to the backend.
-// Run: node --test packages/web/src/agency/split/terminal-input-isolation.test.mjs
+// Run: node --test packages/web/tests/e2e/terminals/terminal-input-isolation.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -21,7 +21,7 @@ const TAB_B1 = '55555555-5555-4555-8555-555555555555';
 const fixture = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AgencyWorkspaceView } from './src/agency/AgencyWorkspaceView.tsx';
+import { WorkspaceView } from './src/features/workspaces/WorkspaceView.tsx';
 
 window.sent = [];
 const now = new Date().toISOString();
@@ -59,7 +59,7 @@ function Harness() {
   window.switchWorkspace = (id) => setCurrent(id);
   const sessions = sessionsByWorkspace[current];
   const request = async (m) => { window.sent.push(m); return {}; };
-  return React.createElement(AgencyWorkspaceView, {
+  return React.createElement(WorkspaceView, {
     key: current, workspace: workspaces[current], profiles: [], sessions, webTabs: [], connection, request,
     sendImmediate: connection.sendImmediate, online: true, onDone() {}, onSaveLayout: async () => {},
   });

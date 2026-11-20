@@ -23,7 +23,7 @@ await mkdir(dir, { recursive: true });
 const statePath = path.join(dir, 'notes.json');
 const imagesDir = path.join(dir, 'notes-images');
 
-const { NotesStore, NotesError } = await import('../src/notes-store.ts');
+const { NotesStore, NotesError } = await import('../src/features/notes/notes-store.ts');
 
 let failures = 0;
 const check = (label, ok, extra = '') => {
@@ -150,7 +150,7 @@ check('y el archivo queda sin notas', JSON.parse(await readFile(statePath, 'utf8
 // a mitad y dejar el resto entrando como teclas.
 // ---------------------------------------------------------------------------
 
-const { buildSubmission, fileReference } = await import('../src/pty-input.ts');
+const { buildSubmission, fileReference } = await import('../src/features/composer/pty-input.ts');
 
 const S = 'a1b2c3d4-0000-4000-8000-000000000009';
 const sendStore = new NotesStore(statePath, imagesDir);

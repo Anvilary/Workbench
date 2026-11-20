@@ -47,6 +47,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm --filter @agent-workbench/shared run test:unit
       - run: env -u MAW_UNSAFE_LOCAL_NO_AUTH pnpm check
 
   test-server-unit:

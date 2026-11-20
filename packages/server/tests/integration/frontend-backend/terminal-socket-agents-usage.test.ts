@@ -6,32 +6,32 @@ import express from 'express';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { attachTerminalSocket } from '../../../src/terminal-socket.js';
-import { TerminalRegistry } from '../../../src/terminal-registry.js';
+import { attachWorkbenchSocket } from '../../../src/transport/websocket/socket-server.js';
+import { TerminalRegistry } from '../../../src/features/terminals/terminal-registry.js';
 import { createAgentRegistry } from '../../../src/agents/registry.js';
-import { WorkspaceStore } from '../../../src/workspace-store.js';
-import { SessionIndex } from '../../../src/session-index.js';
-import { ArchivedSessions } from '../../../src/archived-sessions.js';
-import { VaultCatalog } from '../../../src/vault/catalog.js';
-import { WorktreeLinks } from '../../../src/worktrees/links.js';
-import { WorktreeStore } from '../../../src/worktrees/store.js';
-import { VaultService } from '../../../src/vault/service.js';
-import { WorktreeService } from '../../../src/worktrees/service.js';
-import { AppSettingsService } from '../../../src/app-settings-service.js';
-import { SettingsStore } from '../../../src/settings-store.js';
-import { NotesStore } from '../../../src/notes-store.js';
-import { DraftStore } from '../../../src/draft-store.js';
-import { ConversationHub } from '../../../src/conversation-hub.js';
-import { RepoHub } from '../../../src/repo-hub.js';
-import { MemoryHub } from '../../../src/memory-hub.js';
-import { RemoteAccessService } from '../../../src/remote-access-service.js';
-import { RemoteDevicesStore } from '../../../src/remote-devices-store.js';
-import { AgencyWorkspaceStore } from '../../../src/agency/store.js';
-import { AgencyProfileStore } from '../../../src/agency/agency-profile-store.js';
-import { AgencySessionRuntime } from '../../../src/agency/agency-session-runtime.js';
-import { SplitAgencySessionStore } from '../../../src/agency/agency-session-store.js';
-import { WorkspaceMutex } from '../../../src/agency/workspace-lock.js';
-import { AgentsUsageCollector } from '../../../src/agents-usage/collector.js';
+import { OpenTabsStore } from '../../../src/features/terminals/open-tabs-store.js';
+import { SessionIndex } from '../../../src/features/history/session-index.js';
+import { ArchivedSessions } from '../../../src/features/history/archived-sessions.js';
+import { VaultCatalog } from '../../../src/features/vault/catalog.js';
+import { WorktreeLinks } from '../../../src/features/worktrees/links.js';
+import { WorktreeStore } from '../../../src/features/worktrees/store.js';
+import { VaultService } from '../../../src/features/vault/service.js';
+import { WorktreeService } from '../../../src/features/worktrees/service.js';
+import { AppSettingsService } from '../../../src/features/settings/app-settings-service.js';
+import { SettingsStore } from '../../../src/features/settings/settings-store.js';
+import { NotesStore } from '../../../src/features/notes/notes-store.js';
+import { DraftStore } from '../../../src/features/composer/draft-store.js';
+import { ConversationHub } from '../../../src/features/conversations/conversation-hub.js';
+import { RepoHub } from '../../../src/features/git/repo-hub.js';
+import { MemoryHub } from '../../../src/features/memory/memory-hub.js';
+import { RemoteAccessService } from '../../../src/features/remote-access/remote-access-service.js';
+import { RemoteDevicesStore } from '../../../src/features/remote-access/remote-devices-store.js';
+import { AgencyWorkspaceStore } from '../../../src/features/workspaces/workspace-store.js';
+import { AgencyProfileStore } from '../../../src/features/profiles/profile-store.js';
+import { AgencySessionRuntime } from '../../../src/features/sessions/session-runtime.js';
+import { SplitAgencySessionStore } from '../../../src/features/sessions/session-store.js';
+import { WorkspaceMutex } from '../../../src/features/workspaces/workspace-lock.js';
+import { AgentsUsageCollector } from '../../../src/agents/usage/collector.js';
 import type { AgentsUsageSnapshot } from '@agent-workbench/shared';
 
 const PORT_TOKEN = 'test-usage-token-xyz';
@@ -47,7 +47,7 @@ async function createTestHarness(mockCollector: AgentsUsageCollector) {
   const settings = new SettingsStore(path.join(tempDir, 'settings.json'));
   await settings.load();
   const agents = createAgentRegistry([]);
-  const store = new WorkspaceStore();
+  const store = new OpenTabsStore();
   await store.load();
   const archived = new ArchivedSessions();
   await archived.load();
@@ -97,7 +97,7 @@ async function createTestHarness(mockCollector: AgentsUsageCollector) {
   });
   await agencyRuntime.initialize();
 
-  const detach = attachTerminalSocket({
+  const detach = attachWorkbenchSocket({
     httpServer,
     port,
     token: PORT_TOKEN,

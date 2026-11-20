@@ -22,7 +22,7 @@ import {
   type LocalePreference,
 } from './detect.js';
 import { getLocale, setLocale, subscribe, type Locale } from './index.js';
-import { readStored, writeStored } from '../window-prefs.js';
+import { readStored, writeStored } from '../shared/lib/window-prefs.js';
 
 let preference: LocalePreference = DEFAULT_LOCALE_PREFERENCE;
 const preferenceListeners = new Set<() => void>();

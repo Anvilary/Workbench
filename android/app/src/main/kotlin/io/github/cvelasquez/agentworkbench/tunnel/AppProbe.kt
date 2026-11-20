@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * servidor la acepta. No hizo falta tocar el servidor para el vigía.
  */
 object AppProbe {
-    /** La cookie de un equipo emparejado (`DEVICE_COOKIE` en `security.ts`). */
+    /** La cookie de un equipo emparejado (`DEVICE_COOKIE` en `security/request-guards.ts`). */
     const val DEVICE_COOKIE = "agent_workbench_device"
 
     /**

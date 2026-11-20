@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TabActivityManager } from '../../../src/agency/tab-activity-manager.js';
-import { AgencyNotificationStore } from '../../../src/agency/agency-notification-store.js';
+import { TabActivityManager } from '../../../src/features/notifications/tab-activity-manager.js';
+import { AgencyNotificationStore } from '../../../src/features/notifications/notification-store.js';
 import type { WorkspaceId, RuntimeSessionId } from '@agent-workbench/shared';
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

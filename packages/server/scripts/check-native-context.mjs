@@ -1,7 +1,7 @@
 /** Read-only context check. No CLI executes and no auth/history files are opened. */
 import { readFile } from 'node:fs/promises';
 import { validateDefinition } from '../src/agents/profiles/definition.ts';
-import { NativeIdentities } from '../src/agency/native-identity.ts';
+import { NativeIdentities } from '../src/features/sessions/native-identity.ts';
 import { resolveConfiguredExecutable } from '../src/agents/profiles/executable.ts';
 const [profilesFile, identitiesFile] = process.argv.slice(2);
 if (!profilesFile || !identitiesFile) throw new Error('Usage: tsx scripts/check-native-context.mjs profiles.json identities.json');

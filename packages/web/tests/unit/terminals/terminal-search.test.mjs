@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { centerCurrentMatch } from '../../../src/agency/split/TerminalSearchBar.js';
+import { centerCurrentMatch } from '../../../src/features/terminals/TerminalSearchBar.js';
 
 test('centerCurrentMatch centers the matching buffer line in the viewport', () => {
   let scrolledTo = -1;

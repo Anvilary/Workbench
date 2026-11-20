@@ -4,8 +4,8 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { prepareTerminalCommandHistory } from '../../../src/terminal-command-history.js';
-import { terminalCommandHistoryPath } from '../../../src/paths.js';
+import { prepareTerminalCommandHistory } from '../../../src/features/terminals/terminal-command-history.js';
+import { terminalCommandHistoryPath } from '../../../src/shared/app-paths.js';
 import { spawn } from 'node-pty';
 
 async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
@@ -240,11 +240,11 @@ test('real bash PTY writes command to HISTFILE immediately and recovers upon new
 
 test('TerminalRegistry assigns historyId to shell terminal descriptor and entry', async () => {
   await withTempDir(async (dir) => {
-    const { TerminalRegistry } = await import('../../../src/terminal-registry.js');
+    const { TerminalRegistry } = await import('../../../src/features/terminals/terminal-registry.js');
     const { AgentRegistry } = await import('../../../src/agents/registry.js');
-    const { WorkspaceStore } = await import('../../../src/workspace-store.js');
+    const { OpenTabsStore } = await import('../../../src/features/terminals/open-tabs-store.js');
 
-    class MemoryWorkspaceStore extends WorkspaceStore {
+    class MemoryWorkspaceStore extends OpenTabsStore {
       override save(): void {}
       override async load() { return { tabs: [], foreignTabs: [] }; }
     }

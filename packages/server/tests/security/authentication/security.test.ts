@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { IncomingMessage } from 'node:http';
-import { applyFrameProtectionHeaders, authorizeRequest, matchCredential } from '../../../src/security.js';
+import { applyFrameProtectionHeaders, authorizeRequest, matchCredential } from '../../../src/security/request-guards.js';
 
 test('malformed authentication cookies fail closed without throwing before WS authentication', () => {
   for (const value of ['%', '%GG', '%FF', '%E0%A4%A']) {

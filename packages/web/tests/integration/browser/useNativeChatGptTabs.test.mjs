@@ -11,7 +11,7 @@ import { WEB_ROOT } from '../../helpers/paths.mjs';
 const fixture = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { useNativeChatGptTabs } from './src/agency/useNativeChatGptTabs.ts';
+import { useNativeBrowserTabs } from './src/features/browser/useNativeBrowserTabs.ts';
 
 window.ipcCommands = [];
 window.navigateRequests = [];
@@ -47,7 +47,7 @@ function TestHarness() {
     return Promise.resolve({ ok: true });
   };
 
-  useNativeChatGptTabs(tabs, synchronized, mockRequest);
+  useNativeBrowserTabs(tabs, synchronized, mockRequest);
   return React.createElement('div', { id: 'test-root' }, 'ready');
 }
 
@@ -70,7 +70,7 @@ function browserExecutable() {
   return undefined;
 }
 
-test('useNativeChatGptTabs eliminates redundant update and retain IPC', { timeout: 60000 }, async (t) => {
+test('useNativeBrowserTabs eliminates redundant update and retain IPC', { timeout: 60000 }, async (t) => {
   const executablePath = browserExecutable();
   if (!executablePath) {
     t.skip('Chromium is not installed; set PLAYWRIGHT_CHROMIUM_EXECUTABLE');
@@ -230,7 +230,7 @@ test('useNativeChatGptTabs eliminates redundant update and retain IPC', { timeou
   assert.equal(errors.length, 0, 'no page errors during execution');
 });
 
-test('useNativeChatGptTabs preserves committed navigation until durable checkpoint acknowledgement', { timeout: 60000 }, async (t) => {
+test('useNativeBrowserTabs preserves committed navigation until durable checkpoint acknowledgement', { timeout: 60000 }, async (t) => {
   const executablePath = browserExecutable();
   if (!executablePath) {
     t.skip('Chromium is not installed');

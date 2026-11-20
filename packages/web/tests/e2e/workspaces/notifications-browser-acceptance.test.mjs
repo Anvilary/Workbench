@@ -41,10 +41,10 @@ function getChromiumExecutable() {
 const fixtureSource = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { NotificationBell } from './src/agency/NotificationBell.tsx';
-import { NotificationInbox } from './src/agency/NotificationInbox.tsx';
-import { NotificationToastContainer } from './src/agency/NotificationToast.tsx';
-import './src/agency/agency.css';
+import { NotificationBell } from './src/features/notifications/NotificationBell.tsx';
+import { NotificationInbox } from './src/features/notifications/NotificationInbox.tsx';
+import { NotificationToastContainer } from './src/features/notifications/NotificationToast.tsx';
+import './src/app/workbench.css';
 
 const initialNotifs = [
   {

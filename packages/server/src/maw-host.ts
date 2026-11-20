@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:net';
 import { mkdir, readFile, realpath, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { writeAtomically } from './atomic-write.js';
+import { writeAtomically } from './shared/persistence/atomic-write.js';
 
 /** Linux abstract socket: kernel releases ownership on crash/reboot, no stale PID guessing. */
 export async function acquireStoreOwnership(directory: string): Promise<Server | null> {

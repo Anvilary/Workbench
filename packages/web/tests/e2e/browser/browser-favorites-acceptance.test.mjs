@@ -332,10 +332,10 @@ test('validateSearchEngine & buildSearchUrl: security rules, HTTPS scheme, query
 const clientHarnessCode = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { SettingsDialog } from './src/SettingsDialog.tsx';
-import { BrowserDestinationPicker } from './src/agency/split/BrowserDestinationPicker.tsx';
-import { GlobeIcon } from './src/agency/GlobeIcon.tsx';
-import { TabNameInput } from './src/agency/TabNameInput.tsx';
+import { SettingsDialog } from './src/features/settings/SettingsDialog.tsx';
+import { BrowserDestinationPicker } from './src/features/browser/BrowserDestinationPicker.tsx';
+import { GlobeIcon } from './src/shared/ui/GlobeIcon.tsx';
+import { TabNameInput } from './src/features/panes/TabNameInput.tsx';
 import { DEFAULT_BROWSER_FAVORITES, getSearchEngine } from '@agent-workbench/shared';
 
 let currentTheme = 'dark';
@@ -617,7 +617,7 @@ test('Browser Acceptance Suite: Settings, Destination Picker, Favicons, Minimal 
   });
 
   const bundledJs = buildResult.outputFiles[0].text;
-  const cssPath = path.join(webRoot, 'src', 'agency', 'agency.css');
+  const cssPath = path.join(webRoot, 'src', 'app', 'workbench.css');
   const cssContent = existsSync(cssPath) ? readFileSync(cssPath, 'utf8') : '';
 
   const html = `<!doctype html>

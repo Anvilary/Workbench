@@ -1,0 +1,500 @@
+/**
+ * Markdown, lo justo y sin dependencias.
+ *
+ * Por que a mano y no una libreria: el conjunto que hace falta es chico
+ * —codigo, listas, titulos, negrita, enlaces, tablas— y una libreria de
+ * markdown trae su propio parser de HTML, que es exactamente lo que **no**
+ * queremos: `markdown-it` y compania devuelven una cadena de HTML que hay que
+ * meter en `dangerouslySetInnerHTML` y sanear aparte.
+ *
+ * Aca no hay HTML en ningun momento. El texto se convierte directamente en
+ * elementos de React, asi que nada de lo que escriba el modelo puede
+ * interpretarse como marcado. La unica excepcion es el bloque de codigo, cuyo
+ * contenido pasa por highlight.js —que escapa— y si no hay gramatica se
+ * renderiza como texto plano.
+ *
+ * El resaltado de la busqueda va integrado en el renderizado en linea: si se
+ * hiciera antes, partiria el markdown; si se hiciera despues, no habria donde
+ * ponerlo.
+ */
+
+import { useEffect, useRef, useState } from 'react';
+import { t } from '../../i18n/index.js';
+import { nextInlineToken } from './inline-markup.js';
+
+/** Resalta las coincidencias de la busqueda dentro de un tramo de texto. */
+function withNeedle(text: string, needle: string, keyBase: string): (JSX.Element | string)[] {
+  if (needle.length === 0) return [text];
+
+  const lower = text.toLowerCase();
+  const target = needle.toLowerCase();
+  const nodes: (JSX.Element | string)[] = [];
+  let from = 0;
+  let found = lower.indexOf(target);
+  let key = 0;
+
+  while (found !== -1) {
+    if (found > from) nodes.push(text.slice(from, found));
+    nodes.push(<mark key={`${keyBase}-m${key++}`}>{text.slice(found, found + needle.length)}</mark>);
+    from = found + needle.length;
+    found = lower.indexOf(target, from);
+  }
+  if (from < text.length) nodes.push(text.slice(from));
+  return nodes;
+}
+
+/**
+ * Decide si un enlace relativo se puede abrir dentro de la app.
+ *
+ * Devuelve la accion, o null si ese destino no es de quien renderiza. Un
+ * `[x](archivo.md)` nunca se vuelve un `<a>`: navegaria la pagina entera fuera
+ * de la app. Sin resolvedor, o si el resolvedor no lo reconoce, se muestra como
+ * texto, igual que siempre.
+ */
+export type LocalLinkResolver = (href: string) => (() => void) | null;
+
+/** Una mencion entre acentos graves que se puede abrir. */
+export interface CodeLink {
+  open: () => void;
+  /** Una carpeta: se abre en el explorador del sistema, no en Archivos, y la ayuda lo dice. */
+  folder: boolean;
+}
+
+/** La mencion que quien renderiza sabe abrir, o null si no la reconoce. */
+export type CodeLinkResolver = (mention: string) => CodeLink | null;
+
+/** Lo que quien renderiza sabe abrir. Sin ninguno, todo queda como texto. */
+interface InlineLinks {
+  /** Un enlace relativo de Markdown. */
+  local: LocalLinkResolver | undefined;
+  /** Una mencion entre acentos graves. */
+  code: CodeLinkResolver | undefined;
+}
+
+const LOCAL_LINK = /^\[([^\]\n]+)\]\(([^)\s]+)\)$/;
+
+function localTarget(
+  raw: string,
+  resolve: LocalLinkResolver,
+): { label: string; href: string; open: () => void } | null {
+  const match = LOCAL_LINK.exec(raw);
+  if (match === null) return null;
+  const href = match[2] ?? '';
+  const open = resolve(href);
+  return open === null ? null : { label: match[1] ?? '', href, open };
+}
+
+/**
+ * Marcado en linea: `codigo`, **negrita**, *cursiva*, ~~tachado~~ y enlaces —
+ * los de markdown y las URLs sueltas.
+ *
+ * Que es cada token lo decide `inline-markup.ts`, que no tiene JSX y por eso
+ * esta cubierto por `pnpm check`. Aca solo se dibuja.
+ *
+ * `links`: lo que quien renderiza sabe abrir dentro de la app, un enlace
+ * relativo o una mencion entre acentos graves.
+ *
+ * No cubre anidamientos raros —negrita dentro de un enlace dentro de codigo— y
+ * no hace falta: lo que no matchea se muestra tal cual, que en un renderizador
+ * de markdown es el unico modo de fallar aceptable.
+ */
+function renderInline(
+  text: string,
+  needle: string,
+  keyBase: string,
+  links: InlineLinks,
+): (JSX.Element | string)[] {
+  const nodes: (JSX.Element | string)[] = [];
+  let rest = text;
+  let key = 0;
+
+  while (rest.length > 0) {
+    const match = nextInlineToken(rest);
+    if (match === null) {
+      nodes.push(...withNeedle(rest, needle, `${keyBase}-${key++}`));
+      break;
+    }
+
+    if (match.index > 0) {
+      nodes.push(...withNeedle(rest.slice(0, match.index), needle, `${keyBase}-${key++}`));
+    }
+
+    const id = `${keyBase}-i${key++}`;
+    const { token } = match;
+
+    switch (token.kind) {
+      case 'code': {
+        // Un archivo o una carpeta del proyecto que quien renderiza reconocio: se abre con un clic (§6.33).
+        const target = links.code === undefined ? null : links.code(token.text);
+        nodes.push(
+          target === null ? (
+            <code key={id}>{token.text}</code>
+          ) : (
+            /*
+              El mismo `<code>`, y no un boton alrededor: un boton es un bloque
+              en linea, y una ruta larga dejaria de partirse al final del
+              renglon como el resto del codigo. Con rol de enlace y Enter o
+              espacio, para el teclado.
+            */
+            <code
+              key={id}
+              className="md-file-link"
+              role="link"
+              tabIndex={0}
+              title={
+                target.folder
+                  ? t('thread.openFolder', { path: token.text })
+                  : t('thread.openInFiles', { path: token.text })
+              }
+              onClick={target.open}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                target.open();
+              }}
+            >
+              {token.text}
+            </code>
+          ),
+        );
+        break;
+      }
+      /*
+        Lo de adentro de una negrita, una cursiva o un tachado se vuelve a
+        mirar (13-10-2026): `**\`docs/guia.md\`**` es como los agentes listan
+        archivos, y sin esto salia en negrita con los acentos graves a la vista
+        y sin enlace. El texto de adentro es siempre mas corto, asi que termina.
+      */
+      case 'strong':
+        nodes.push(<strong key={id}>{renderInline(token.text, needle, id, links)}</strong>);
+        break;
+      case 'del':
+        nodes.push(<del key={id}>{renderInline(token.text, needle, id, links)}</del>);
+        break;
+      case 'em':
+        nodes.push(<em key={id}>{renderInline(token.text, needle, id, links)}</em>);
+        break;
+      case 'link':
+        nodes.push(
+          <a key={id} href={token.href} target="_blank" rel="noreferrer noopener">
+            {withNeedle(token.label, needle, id)}
+          </a>,
+        );
+        break;
+      default: {
+        const local = links.local === undefined ? null : localTarget(token.text, links.local);
+        if (local !== null) {
+          nodes.push(
+            <button key={id} className="md-local-link" onClick={local.open} title={local.href}>
+              {withNeedle(local.label, needle, id)}
+            </button>,
+          );
+          break;
+        }
+        nodes.push(<span key={id}>{withNeedle(token.text, needle, id)}</span>);
+        break;
+      }
+    }
+
+    rest = rest.slice(match.index + match.length);
+  }
+
+  return nodes;
+}
+
+/**
+ * Bloque de codigo, con resaltado si hay gramatica para ese lenguaje, y un
+ * boton que copia solo ese bloque.
+ *
+ * El boton existe porque copiar el mensaje entero se lleva el texto de
+ * alrededor, y lo que se quiere pegar en una consola son las tres lineas del
+ * bloque. Va con el nombre del lenguaje en un envoltorio y no adentro del
+ * `pre`: el `pre` se desplaza de costado con las lineas largas, y lo que va
+ * adentro se iba con el desplazamiento.
+ */
+function CodeBlock({ code, language }: { code: string; language: string | null }): JSX.Element {
+  const [html, setHtml] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | null>(null);
+
+  // Un bloque que se desmonta a mitad del acuse no deja un timer suelto.
+  useEffect(
+    () => () => {
+      if (timer.current !== null) window.clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  // Con acuse: copiar no cambia nada en pantalla, y sin senal no se sabe si el
+  // clic hizo algo hasta ir a pegar.
+  const copy = (): void => {
+    void navigator.clipboard
+      .writeText(code)
+      .then(() => {
+        setCopied(true);
+        if (timer.current !== null) window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => setCopied(false), 1_200);
+      })
+      .catch(() => setCopied(false));
+  };
+
+  useEffect(() => {
+    let active = true;
+    // Carga diferida: el resaltador pesa mas que el resto de la interfaz y no
+    // baja hasta que aparece el primer bloque de codigo.
+    void import('../../shared/lib/highlight.js')
+      .then(({ highlightCode }) => {
+        if (active) setHtml(highlightCode(code, language));
+      })
+      .catch(() => {
+        if (active) setHtml(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [code, language]);
+
+  return (
+    <div className="md-code-wrap">
+      <pre className="md-code hljs">
+        {/* Lo que entra aca sale siempre de highlight.js, que escapa. Sin
+            gramatica, el texto se renderiza como texto. */}
+        {html === null ? <code>{code}</code> : <code dangerouslySetInnerHTML={{ __html: html }} />}
+      </pre>
+      {/* El lenguaje y copiar no son del documento: "Buscar en este documento" los salta (§6.31). */}
+      <div className="md-code-tools" data-search-skip="">
+        {language !== null && <span className="md-code-lang">{language}</span>}
+        <button
+          className="md-code-copy"
+          onClick={copy}
+          title={copied ? t('common.copied') : t('common.copyCode')}
+          aria-label={t('common.copyCode')}
+        >
+          {copied ? '✓' : '⧉'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface Block {
+  key: string;
+  node: JSX.Element;
+}
+
+const HEADING = /^(#{1,6})\s+(.*)$/;
+const BULLET = /^\s{0,3}[-*+]\s+(.*)$/;
+const NUMBERED = /^\s{0,3}(\d{1,3})[.)]\s+(.*)$/;
+const QUOTE = /^>\s?(.*)$/;
+const FENCE = /^\s*```(\S*)\s*$/;
+const RULE = /^\s*(-{3,}|\*{3,}|_{3,})\s*$/;
+const TABLE_ROW = /^\s*\|.*\|\s*$/;
+const TABLE_SEPARATOR = /^\s*\|[\s:|-]+\|\s*$/;
+
+/** Parte una fila de tabla en celdas, sin los pipes de los extremos. */
+function cells(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\||\|$/g, '')
+    .split('|')
+    .map((cell) => cell.trim());
+}
+
+interface MarkdownProps {
+  text: string;
+  /** Termino de la busqueda, para resaltarlo. Vacio si no hay busqueda. */
+  needle?: string;
+  /** Enlaces relativos que se abren dentro de la app, p. ej. las notas del indice. */
+  localLink?: LocalLinkResolver;
+  /**
+   * Menciones entre acentos graves que se pueden abrir: en el hilo, un archivo
+   * o una carpeta del proyecto que el servidor confirmo (§6.33). Recibe el
+   * texto de la mencion y devuelve la accion, o null si no la reconoce.
+   */
+  codeLink?: CodeLinkResolver;
+}
+
+export function Markdown({ text, needle = '', localLink, codeLink }: MarkdownProps): JSX.Element {
+  const links: InlineLinks = { local: localLink, code: codeLink };
+  const lines = text.split('\n');
+  const blocks: Block[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index] ?? '';
+    const key = `b${index}`;
+
+    // --- bloque de codigo ---
+    const fence = FENCE.exec(line);
+    if (fence !== null) {
+      const language = (fence[1] ?? '').length > 0 ? (fence[1] as string) : null;
+      const body: string[] = [];
+      index += 1;
+      while (index < lines.length && !FENCE.test(lines[index] ?? '')) {
+        body.push(lines[index] ?? '');
+        index += 1;
+      }
+      index += 1; // el cierre
+      blocks.push({
+        key,
+        node: <CodeBlock key={key} code={body.join('\n')} language={language} />,
+      });
+      continue;
+    }
+
+    if (line.trim().length === 0) {
+      index += 1;
+      continue;
+    }
+
+    if (RULE.test(line)) {
+      blocks.push({ key, node: <hr key={key} className="md-rule" /> });
+      index += 1;
+      continue;
+    }
+
+    // --- titulo ---
+    const heading = HEADING.exec(line);
+    if (heading !== null) {
+      const level = Math.min((heading[1] ?? '#').length, 6);
+      blocks.push({
+        key,
+        node: (
+          <p key={key} className={`md-heading md-h${level}`}>
+            {renderInline(heading[2] ?? '', needle, key, links)}
+          </p>
+        ),
+      });
+      index += 1;
+      continue;
+    }
+
+    // --- tabla ---
+    if (TABLE_ROW.test(line) && TABLE_SEPARATOR.test(lines[index + 1] ?? '')) {
+      const header = cells(line);
+      index += 2;
+      const rows: string[][] = [];
+      while (index < lines.length && TABLE_ROW.test(lines[index] ?? '')) {
+        rows.push(cells(lines[index] ?? ''));
+        index += 1;
+      }
+      blocks.push({
+        key,
+        node: (
+          <div key={key} className="md-table-wrap">
+            <table className="md-table">
+              <thead>
+                <tr>
+                  {header.map((cell, i) => (
+                    <th key={i}>{renderInline(cell, needle, `${key}-h${i}`, links)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, r) => (
+                  <tr key={r}>
+                    {row.map((cell, c) => (
+                      <td key={c}>{renderInline(cell, needle, `${key}-${r}-${c}`, links)}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ),
+      });
+      continue;
+    }
+
+    // --- cita ---
+    if (QUOTE.test(line)) {
+      const body: string[] = [];
+      while (index < lines.length && QUOTE.test(lines[index] ?? '')) {
+        body.push(QUOTE.exec(lines[index] ?? '')?.[1] ?? '');
+        index += 1;
+      }
+      blocks.push({
+        key,
+        node: (
+          <blockquote key={key} className="md-quote">
+            {renderInline(body.join('\n'), needle, key, links)}
+          </blockquote>
+        ),
+      });
+      continue;
+    }
+
+    // --- listas ---
+    if (BULLET.test(line) || NUMBERED.test(line)) {
+      const ordered = NUMBERED.test(line);
+      // El numero con el que arranca: un bloque de codigo en el medio parte la
+      // lista en dos, y la segunda tiene que seguir en el 3, no volver al 1.
+      const start = ordered ? Number(NUMBERED.exec(line)?.[1] ?? '1') : 1;
+      const items: string[] = [];
+      while (index < lines.length) {
+        const current = lines[index] ?? '';
+        const bullet = BULLET.exec(current);
+        const numbered = NUMBERED.exec(current);
+        if (ordered && numbered !== null) items.push(numbered[2] ?? '');
+        else if (!ordered && bullet !== null) items.push(bullet[1] ?? '');
+        else if (
+          items.length > 0 &&
+          /^\s{2,}\S/.test(current) &&
+          bullet === null &&
+          numbered === null
+        ) {
+          // Continuacion indentada del item anterior.
+          items[items.length - 1] = `${items[items.length - 1] ?? ''} ${current.trim()}`;
+        } else break;
+        index += 1;
+      }
+
+      const children = items.map((item, i) => (
+        <li key={i}>{renderInline(item, needle, `${key}-l${i}`, links)}</li>
+      ));
+      blocks.push({
+        key,
+        node: ordered ? (
+          <ol key={key} className="md-list" start={start === 1 ? undefined : start}>
+            {children}
+          </ol>
+        ) : (
+          <ul key={key} className="md-list">
+            {children}
+          </ul>
+        ),
+      });
+      continue;
+    }
+
+    // --- parrafo: hasta la linea en blanco o el proximo bloque ---
+    const paragraph: string[] = [];
+    while (index < lines.length) {
+      const current = lines[index] ?? '';
+      if (
+        current.trim().length === 0 ||
+        FENCE.test(current) ||
+        HEADING.test(current) ||
+        BULLET.test(current) ||
+        NUMBERED.test(current) ||
+        QUOTE.test(current) ||
+        RULE.test(current) ||
+        TABLE_ROW.test(current)
+      ) {
+        break;
+      }
+      paragraph.push(current);
+      index += 1;
+    }
+    blocks.push({
+      key,
+      node: (
+        <p key={key} className="md-paragraph">
+          {renderInline(paragraph.join('\n'), needle, key, links)}
+        </p>
+      ),
+    });
+  }
+
+  return <div className="md">{blocks.map((block) => block.node)}</div>;
+}

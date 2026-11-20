@@ -7,15 +7,16 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import type { AgencyServerMessage, TerminalId } from '@agent-workbench/shared';
 import { validateRelativeFilePath } from '@agent-workbench/shared';
-import { EditorTabStore } from '../../../src/agency/editor-tabs/editor-tab-store.js';
-import { EditorTabAdapter, type EditorSelectionCoordinator } from '../../../src/agency/editor-tabs/editor-tab-adapter.js';
-import { AgencyWorkspaceStore } from '../../../src/agency/store.js';
-import { AgencySessionRuntime } from '../../../src/agency/agency-session-runtime.js';
-import { AgencySessionStore } from '../../../src/agency/agency-session-store.js';
-import { BrowserTabAdapter, BrowserTabStore } from '../../../src/agency/browser-tabs/index.js';
-import { AgencyLayoutStore } from '../../../src/agency/agency-layout-store.js';
-import { AgencyTabCoordinator } from '../../../src/agency/tab-coordinator.js';
-import { WorkspaceMutex } from '../../../src/agency/workspace-lock.js';
+import { EditorTabStore } from '../../../src/features/editor/editor-tab-store.js';
+import { EditorTabAdapter, type EditorSelectionCoordinator } from '../../../src/features/editor/editor-tab-adapter.js';
+import { AgencyWorkspaceStore } from '../../../src/features/workspaces/workspace-store.js';
+import { AgencySessionRuntime } from '../../../src/features/sessions/session-runtime.js';
+import { AgencySessionStore } from '../../../src/features/sessions/session-store.js';
+import { BrowserTabAdapter } from '../../../src/features/browser/browser-tab-adapter.js';
+import { BrowserTabStore } from '../../../src/features/browser/browser-tab-store.js';
+import { AgencyLayoutStore } from '../../../src/features/workspaces/layout-store.js';
+import { AgencyTabCoordinator } from '../../../src/features/workspaces/tab-coordinator.js';
+import { WorkspaceMutex } from '../../../src/features/workspaces/workspace-lock.js';
 
 test('validateRelativeFilePath enforces strict relative posix paths', () => {
   // Valid paths
@@ -927,7 +928,7 @@ test('P2 A-05: agency.editorTab.order reorders open editor tabs, broadcasts orde
   const tab2 = await editor.createTab({ workspaceId: ws.id, filePath: 'two.ts' });
   assert.deepEqual(editor.listTabs(ws.id).map((tab) => tab.id), [tab1.id, tab2.id]);
 
-  const { handleEditorTabMessage } = await import('../../../src/agency/editor-tabs/editor-tab-handler.js');
+  const { handleEditorTabMessage } = await import('../../../src/features/editor/editor-tab-request-handler.js');
   const published: any[] = [];
   const res = await handleEditorTabMessage(
     {

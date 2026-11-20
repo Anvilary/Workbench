@@ -1,7 +1,7 @@
 /**
  * Los textos que manda el servidor, en el idioma de la app (§6.23).
  *
- * El servidor manda una clave de `SERVER_TEXTS` (`shared/src/server-text.ts`)
+ * El servidor manda una clave de `SERVER_TEXTS` (`shared/src/protocol/server-text.ts`)
  * con sus valores, y la frase vive en `server.<clave>` de cada idioma. Es el
  * unico sitio donde una clave se arma con `${}`: `check-i18n.mjs` cubre las del
  * servidor aparte, comparando la lista con los archivos.

@@ -53,23 +53,23 @@ process.env.HOME = path.join(root, 'home');
 process.env.USERPROFILE = path.join(root, 'home');
 
 const shared = await import('@agent-workbench/shared');
-const { worktreeFolderFor, mainRootFromShape } = await import('../src/worktrees/names.ts');
-const { readCheckout, branchFromHead, mainCwdFor } = await import('../src/worktrees/checkout.ts');
-const wtGit = await import('../src/worktrees/git.ts');
-const include = await import('../src/worktrees/include.ts');
-const { WorktreeStore, parseWorktreesState } = await import('../src/worktrees/store.ts');
-const { WorktreeLinks } = await import('../src/worktrees/links.ts');
-const { WorktreeService, WorktreeError, WorktreeInUseError, folderInUse, notesConflictPrompt } = await import('../src/worktrees/service.ts');
-const { parseHoldersOutput, holdersScript } = await import('../src/worktrees/holders.ts');
-const overlap = await import('../src/worktrees/overlap.ts');
-const review = await import('../src/worktrees/review.ts');
-const mergeNotes = await import('../src/worktrees/merge-notes.ts');
-const { NoteBases, keepsNoteBase, NOTE_BASE_MAX_BYTES } = await import('../src/worktrees/note-bases.ts');
-const { scanUntracked } = await import('../src/worktrees/untracked.ts');
+const { worktreeFolderFor, mainRootFromShape } = await import('../src/features/worktrees/names.ts');
+const { readCheckout, branchFromHead, mainCwdFor } = await import('../src/features/worktrees/checkout.ts');
+const wtGit = await import('../src/features/worktrees/git.ts');
+const include = await import('../src/features/worktrees/include.ts');
+const { WorktreeStore, parseWorktreesState } = await import('../src/features/worktrees/store.ts');
+const { WorktreeLinks } = await import('../src/features/worktrees/links.ts');
+const { WorktreeService, WorktreeError, WorktreeInUseError, folderInUse, notesConflictPrompt } = await import('../src/features/worktrees/service.ts');
+const { parseHoldersOutput, holdersScript } = await import('../src/features/worktrees/holders.ts');
+const overlap = await import('../src/features/worktrees/overlap.ts');
+const review = await import('../src/features/worktrees/review.ts');
+const mergeNotes = await import('../src/features/worktrees/merge-notes.ts');
+const { NoteBases, keepsNoteBase, NOTE_BASE_MAX_BYTES } = await import('../src/features/worktrees/note-bases.ts');
+const { scanUntracked } = await import('../src/features/worktrees/untracked.ts');
 const { reviewPrompt, catchUpPrompt, sendBackPrompt } = review;
-const { buildProjects } = await import('../src/session-index.ts');
+const { buildProjects } = await import('../src/features/history/session-index.ts');
 const { setLocale } = await import('../../web/src/i18n/index.ts');
-const ui = await import('../../web/src/worktree-ui.ts');
+const ui = await import('../../web/src/features/worktrees/worktree-ui.ts');
 await setLocale('es');
 
 const windows = process.platform === 'win32';
@@ -2144,16 +2144,16 @@ let reviewSession = '';
   const sources = new Map(await Promise.all(files.map(async (file) => [relative(file), await readFile(file, 'utf8')])));
 
   const runsGit = [...sources].filter(([, text]) => /execFile\(\s*'git'/.test(text)).map(([name]) => name).sort();
-  check('G1 sólo tres archivos lanzan git', JSON.stringify(runsGit) === JSON.stringify(['git-repo.ts', 'memory-bridge.ts', 'worktrees/git.ts']), runsGit.join(' '));
+  check('G1 sólo tres archivos lanzan git', JSON.stringify(runsGit) === JSON.stringify(['features/git/git-repo.ts', 'features/memory/memory-bridge.ts', 'features/worktrees/git.ts']), runsGit.join(' '));
 
   const WRITES = /'(commit|push|checkout|switch|reset|rebase|merge|stash|cherry-pick|revert|apply|am|gc|prune|update-ref|update-index|clean|restore|tag|config|rm|mv|add|remove|-D|--force|-f)'/g;
   const leaks = [];
-  for (const name of ['git-repo.ts', 'memory-bridge.ts']) {
+  for (const name of ['features/git/git-repo.ts', 'features/memory/memory-bridge.ts']) {
     for (const match of sources.get(name).matchAll(WRITES)) leaks.push(`${name}: ${match[0]}`);
   }
   check('G2 git-repo.ts y memory-bridge.ts sólo leen', leaks.length === 0, leaks.join(' '));
 
-  const own = sources.get('worktrees/git.ts');
+  const own = sources.get('features/worktrees/git.ts');
   const ownWrites = [...own.matchAll(WRITES)].map((match) => match[1]).sort();
   check('G3 worktrees/git.ts escribe sólo worktree add, worktree remove, branch -d y merge --ff-only',
     JSON.stringify(ownWrites) === JSON.stringify(['add', 'add', 'merge', 'remove']) && /\['branch', '-d', branch\]/.test(own) &&
@@ -2161,8 +2161,8 @@ let reviewSession = '';
     ownWrites.join(' '));
   check('G4 nunca --force, -D, -f, --no-ff ni --squash', !/'--force'|'-D'|'-f'|'--no-ff'|'--squash'/.test(own));
   check('G5 los cuatro corren por el camino que escribe, y nada más', (own.match(/write: true/g) ?? []).length === 4);
-  const callers = [...sources].filter(([name, text]) => name !== 'worktrees/git.ts' && /\b(addWorktree|removeWorktree|deleteBranch|fastForward)\(/.test(text)).map(([name]) => name);
-  check('G6 sólo el servicio los llama', JSON.stringify(callers) === JSON.stringify(['worktrees/service.ts']), callers.join(' '));
+  const callers = [...sources].filter(([name, text]) => name !== 'features/worktrees/git.ts' && /\b(addWorktree|removeWorktree|deleteBranch|fastForward)\(/.test(text)).map(([name]) => name);
+  check('G6 sólo el servicio los llama', JSON.stringify(callers) === JSON.stringify(['features/worktrees/service.ts']), callers.join(' '));
   // El rebase de ponerse al día lo hace el agente en su terminal, nunca la app (decisión 2 del hito 49).
   const rebasing = [...sources].filter(([, text]) => /'rebase'|"rebase"/.test(text)).map(([name]) => name);
   check('G7 ningún archivo del servidor arma un rebase', rebasing.length === 0, rebasing.join(' '));

@@ -27,16 +27,16 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { parseClientMessage, parseServerMessage, encodeServerMessage } from '@agent-workbench/shared';
-import { SettingsStore, parseAppSettings, defaultAppSettings } from '../src/settings-store.ts';
-import { gitBashCandidates, locateShells, pickShell } from '../src/shell-locator.ts';
+import { SettingsStore, parseAppSettings, defaultAppSettings } from '../src/features/settings/settings-store.ts';
+import { gitBashCandidates, locateShells, pickShell } from '../src/features/terminals/shell-locator.ts';
 import { AgentRegistry } from '../src/agents/registry.ts';
-import { AppSettingsChangeError, AppSettingsService } from '../src/app-settings-service.ts';
-import { remoteRefusal } from '../src/remote-access.ts';
-import { vaultOnlySessions } from '../src/session-index.ts';
-import { DEFAULT_HIDDEN_PANELS, HIDEABLE_PANELS, parseHiddenPanels, serializeHiddenPanels, withPanelVisible } from '../../web/src/panel-visibility.ts';
-import { effectivePanelTab, visiblePanelTabs } from '../../web/src/agent-ui.ts';
-import { narrowViews } from '../../web/src/narrow-layout.ts';
-import { shellToOpenOnUnfold } from '../../web/src/console-shells.ts';
+import { AppSettingsChangeError, AppSettingsService } from '../src/features/settings/app-settings-service.ts';
+import { remoteRefusal } from '../src/features/remote-access/remote-access.ts';
+import { vaultOnlySessions } from '../src/features/history/session-index.ts';
+import { DEFAULT_HIDDEN_PANELS, HIDEABLE_PANELS, parseHiddenPanels, serializeHiddenPanels, withPanelVisible } from '../../web/src/shared/lib/panel-visibility.ts';
+import { effectivePanelTab, visiblePanelTabs } from '../../web/src/features/agents/agent-ui.ts';
+import { narrowViews } from '../../web/src/shared/lib/narrow-layout.ts';
+import { shellToOpenOnUnfold } from '../../web/src/features/terminals/console-shells.ts';
 
 let failures = 0;
 const check = (label, ok, extra = '') => {
@@ -244,7 +244,7 @@ const workDir = await mkdtemp(path.join(os.tmpdir(), 'aw-check-settings-'));
   // La pagina abre una terminal en dos sitios, los dos un clic: el `+` y el
   // enlace del hueco (`openConsoleHere`), y desplegar la consola. Ninguno puede
   // ser un efecto, que corre al cambiar de pestana sin que nadie lo pida.
-  const app = await readFile(new URL('../../web/src/App.tsx', import.meta.url), 'utf8');
+  const app = await readFile(new URL('../../web/src/app/classic/ClassicApp.tsx', import.meta.url), 'utf8');
   const openers = [...app.matchAll(/\bopenShell\(/g)].map(({ index }) => {
     const before = app.slice(0, index);
     if (before.lastIndexOf('useEffect(') > before.lastIndexOf('= useCallback(')) return 'useEffect';
@@ -263,8 +263,8 @@ const workDir = await mkdtemp(path.join(os.tmpdir(), 'aw-check-settings-'));
 // mirar varias seguidas. Lo que se rompe sin verse: que uno de los tres caminos
 // deje de esconderla, o que el del historial empiece a hacerlo.
 {
-  const app = await readFile(new URL('../../web/src/App.tsx', import.meta.url), 'utf8');
-  const worktrees = await readFile(new URL('../../web/src/useWorktrees.ts', import.meta.url), 'utf8');
+  const app = await readFile(new URL('../../web/src/app/classic/ClassicApp.tsx', import.meta.url), 'utf8');
+  const worktrees = await readFile(new URL('../../web/src/features/worktrees/useWorktrees.ts', import.meta.url), 'utf8');
   const handler = (prop) => app.match(new RegExp(`${prop}=\\{[\\s\\S]*?\\n      \\}\\}`))?.[0] ?? '';
   check('8.1 el + de un proyecto y su menu la esconden cuando llega la pestana',
     /openTerminal\(\{[\s\S]*?onOpened: hideSidebarAfterOpen \}\);/.test(handler('onOpenProject')));

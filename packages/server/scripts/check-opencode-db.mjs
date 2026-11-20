@@ -93,7 +93,7 @@ const shared = await import('@agent-workbench/shared');
 
 // P3. El gancho que sobrevive a lo que se escribe recibe lo escrito, tal cual.
 {
-  const { LaunchHookSlot } = await import('../src/launch-hook-slot.ts');
+  const { LaunchHookSlot } = await import('../src/features/terminals/launch-hook-slot.ts');
   const seen = [];
   const slot = new LaunchHookSlot();
   slot.set({ cancel: () => seen.push('cancel'), onInput: (data) => seen.push(data) });
@@ -119,7 +119,7 @@ const shared = await import('@agent-workbench/shared');
 
 // 16. Las teclas de la interrupcion.
 {
-  const { buildInterruptKeys, INTERRUPT } = await import('../src/pty-input.ts');
+  const { buildInterruptKeys, INTERRUPT } = await import('../src/features/composer/pty-input.ts');
   check('16 INTERRUPT sigue siendo un Esc suelto', INTERRUPT === '\x1b');
   check('16 buildInterruptKeys(1) -> un Esc', same(buildInterruptKeys(1), ['\x1b']), show(buildInterruptKeys(1)));
   check('16 buildInterruptKeys(2) -> dos Esc, por separado', same(buildInterruptKeys(2), ['\x1b', '\x1b']), show(buildInterruptKeys(2)));
@@ -204,7 +204,7 @@ const unknownPart = { kind: 'parte-del-futuro', x: 1 };
 
 // 1d. La frase del aviso en la web, que se dibuja, se copia y se busca igual.
 {
-  const { noticeText } = await import('../../web/src/conversation-notice.ts');
+  const { noticeText } = await import('../../web/src/features/conversation/conversation-notice.ts');
   check('1 web: compactado a mano y automatico',
     noticeText({ notice: 'compacted', detail: '' }) === 'Contexto compactado' &&
     noticeText({ notice: 'compacted', detail: 'auto' }) === 'Contexto compactado automáticamente');
@@ -223,7 +223,7 @@ const unknownPart = { kind: 'parte-del-futuro', x: 1 };
   check('1 usage-with-catalog sobrevive al viaje por la red',
     parseAgentCapabilities({ contextWindowSource: 'usage-with-catalog' }).contextWindowSource === 'usage-with-catalog');
 
-  const webUi = await import('../../web/src/agent-ui.ts');
+  const webUi = await import('../../web/src/features/agents/agent-ui.ts');
   check('1 medidor en vacio: el catalogo no anuncia limite antes de medir, salvo la configuracion',
     webUi.meterIdleWindow('usage-with-catalog', { contextWindow: 200000 }, null) === null &&
     webUi.meterIdleWindow('usage-with-catalog', { contextWindow: 200000 }, 1000) === 1000);
@@ -696,7 +696,7 @@ const { DbChangeSignal } = await import('../src/agents/opencode/db-signal.ts');
 }
 
 {
-  const { watchSessions } = await import('../src/session-watcher.ts');
+  const { watchSessions } = await import('../src/features/history/session-watcher.ts');
   const notices = [];
   const refreshed = [];
   const hub = { onHistoryChanged: (agent, filePath) => notices.push([agent, filePath]) };
@@ -1195,7 +1195,7 @@ const followerOf = (db, sessionId, extra = {}) => new OpenCodeSessionFollower({ 
 
 // 11. El hub manda un append vacio cuando solo cambio el uso (M2).
 {
-  const { ConversationHub } = await import('../src/conversation-hub.ts');
+  const { ConversationHub } = await import('../src/features/conversations/conversation-hub.ts');
   const { AgentRegistry } = await import('../src/agents/registry.ts');
   const { createOpenCodeAdapter } = await import('../src/agents/opencode/index.ts');
   const catalogFile = path.join(root, 'hub-models.json');
@@ -1339,7 +1339,7 @@ const historyOf = (file, extra = {}) => {
   db.close();
 
   // El indice de verdad, con el adaptador de verdad: los proyectos y la hija.
-  const { SessionIndex } = await import('../src/session-index.ts');
+  const { SessionIndex } = await import('../src/features/history/session-index.ts');
   const { AgentRegistry } = await import('../src/agents/registry.ts');
   const { createOpenCodeAdapter } = await import('../src/agents/opencode/index.ts');
   // La plataforma real: la base esta en la carpeta del chequeo, y con `win32`
@@ -1357,7 +1357,7 @@ const historyOf = (file, extra = {}) => {
   adapter.dispose();
 
   // B8: el archivado propio de la app, por sessionId, con un id de OpenCode.
-  const { ArchivedSessions } = await import('../src/archived-sessions.ts');
+  const { ArchivedSessions } = await import('../src/features/history/archived-sessions.ts');
   const archived = new ArchivedSessions();
   await archived.load();
   archived.set(['ses_3f2a9c1b7e5d4a2b8c6e0f1a2b'], true);
@@ -1373,7 +1373,7 @@ const historyOf = (file, extra = {}) => {
 
 {
   const opencode = await import('../src/agents/opencode/index.ts');
-  const { buildSubmissionWrites } = await import('../src/pty-input.ts');
+  const { buildSubmissionWrites } = await import('../src/features/composer/pty-input.ts');
   const { createOpenCodeAdapter, OPENCODE_CAPABILITIES, OPENCODE_INPUT, OPENCODE_INSTALL_URL } = opencode;
   const customDb = path.join(root, 'proyecto-de-prueba', 'oc.db');
   // Este caso no lanza nada: un `serve` que se intentara arrancar fallaria aca, sin tocar el disco.
@@ -1549,7 +1549,7 @@ const historyOf = (file, extra = {}) => {
     same(await history.changedRefs(retryFixture.file), ['ses_z_vieja']) && same(await history.changedRefs(retryFixture.file), []));
 
   // El indice de verdad sobre esa fuente.
-  const { SessionIndex } = await import('../src/session-index.ts');
+  const { SessionIndex } = await import('../src/features/history/session-index.ts');
   const fakeAdapter = { id: 'opencode', history };
   const index = new SessionIndex({ all: () => [{ adapter: fakeAdapter, location: null }], adapter: () => fakeAdapter });
   await index.scan();
@@ -1583,7 +1583,7 @@ const historyOf = (file, extra = {}) => {
 // ---------------------------------------------------------------------------
 
 {
-  const { startupAgentLines, HISTORY_LABEL } = await import('../src/startup-summary.ts');
+  const { startupAgentLines, HISTORY_LABEL } = await import('../src/bootstrap/startup-summary.ts');
   const { createOpenCodeAdapter } = await import('../src/agents/opencode/index.ts');
   const { createClaudeCodeAdapter } = await import('../src/agents/claude-code/index.ts');
   const { createCodexAdapter } = await import('../src/agents/codex/index.ts');
@@ -1645,7 +1645,7 @@ const historyOf = (file, extra = {}) => {
   claudeAdapter.dispose();
   codexAdapter.dispose();
 
-  const indexSource = await readFile(path.join(serverDir, 'src', 'index.ts'), 'utf8');
+  const indexSource = await readFile(path.join(serverDir, 'src', 'bootstrap', 'startup-summary.ts'), 'utf8');
   check('8 el arranque le pide la nota a cada adaptador, con si su CLI esta', /historyNote:\s*agents\.get\(info\.id\)\?\.adapter\.startupHistoryNote\?\.\(info\.available\)/.test(indexSource));
 
   // La demo: sin variables de OpenCode del shell, con sus carpetas en el home falso, y sin capturar si ve un historial.
@@ -1717,7 +1717,7 @@ const historyOf = (file, extra = {}) => {
 // ---------------------------------------------------------------------------
 
 {
-  const { toolCategory } = await import('../../web/src/tool-categories.ts');
+  const { toolCategory } = await import('../../web/src/features/conversation/tool-categories.ts');
   const expected = {
     bash: 'shell', read: 'read', grep: 'find', glob: 'find', list: 'find', edit: 'edit', write: 'edit', apply_patch: 'edit',
     webfetch: 'web', websearch: 'web', codesearch: 'web', task: 'agent', todowrite: 'todo', todoread: 'todo',
@@ -1726,7 +1726,7 @@ const historyOf = (file, extra = {}) => {
   check('W tandas: los nombres de OpenCode tienen su categoria (M5)', same(wrong, []), show(wrong));
   check('W tandas: un MCP con prefijo de servidor se agrupa por nombre', same(toolCategory('jira_search'), { key: 'name:jira_search', known: false }));
 
-  const ui = await import('../../web/src/agent-ui.ts');
+  const ui = await import('../../web/src/features/agents/agent-ui.ts');
   const entry = ui.AGENT_UI.opencode;
   check('W AGENT_UI: OC, AGENTS.md, Esc Esc primero y la nota de Ctrl + T',
     entry?.shortLabel === 'OC' && entry.instructionsFile === 'AGENTS.md' && entry.shortcuts[0]?.keys === 'Esc Esc' &&

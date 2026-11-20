@@ -28,7 +28,7 @@ import {
   soundButtonTitle,
   volumePercent,
   webChimeVolume,
-} from '../../web/src/notification-sound.ts';
+} from '../../web/src/features/notifications/notification-sound.ts';
 import { setLocale } from '../../web/src/i18n/index.ts';
 
 // Los textos de la interfaz salen de `t()` (§6.23): este chequeo los compara
@@ -153,7 +153,7 @@ check('idle → busy no suena', chimeFor('idle', 'busy') === null);
 // viven en dos archivos, y que "como la activa" siga siendo cierto si un día
 // cambia cómo se pinta la activa.
 {
-  const pulse = await import('../../web/src/attention-pulse.ts');
+  const pulse = await import('../../web/src/shared/lib/attention-pulse.ts');
   const { readFileSync } = await import('node:fs');
   const css = readFileSync(new URL('../../web/src/styles.css', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   const declarations = (block) =>

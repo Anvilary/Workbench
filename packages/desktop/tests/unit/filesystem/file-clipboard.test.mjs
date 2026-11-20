@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { mkdtemp, mkdir, symlink, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileClipboardPayload, fileUri, resolveClipboardTarget } from '../../../file-clipboard.mjs';
+import { fileClipboardPayload, fileUri, resolveClipboardTarget } from '../../../src/ipc/file-clipboard.mjs';
 
 test('file clipboard payloads name the file URI rather than only a bare path', () => {
   const payload = fileClipboardPayload('/work/demo/my file.txt');

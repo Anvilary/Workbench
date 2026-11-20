@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractBufferText, extractLastOutput, isPromptLine } from '../../../src/agency/split/terminal-buffer.ts';
+import { extractBufferText, extractLastOutput, isPromptLine } from '../../../src/features/terminals/terminal-buffer.ts';
 
 test('isPromptLine accurately identifies shell prompts', () => {
   assert.equal(isPromptLine('user@host:~/project$ '), true);

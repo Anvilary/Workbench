@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { calculatePinDialogPosition } from '../../../webauthn-dialog-position.mjs';
+import { calculatePinDialogPosition } from '../../../src/security/webauthn/dialog-position.mjs';
 
 test('calculatePinDialogPosition: centers horizontally over originating pane near top', () => {
   const contentBounds = { x: 100, y: 50, width: 1200, height: 800 };

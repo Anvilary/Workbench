@@ -10,7 +10,7 @@ import {
   unwrapCborByteString,
   parseFido2AssertOutput,
   classifyWebAuthnError,
-} from '../../../webauthn-policy.mjs';
+} from '../../../src/security/webauthn/policy.mjs';
 
 test('isAllowedWebAuthnOrigin accepts known ChatGPT/OpenAI origins and rejects untrusted origins', () => {
   // Allowed defaults

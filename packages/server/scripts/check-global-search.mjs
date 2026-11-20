@@ -96,13 +96,13 @@ const {
   makeSnippet,
   prefilterable,
   runGlobalSearch,
-} = await import('../src/global-search.ts');
-const { VaultCatalog } = await import('../src/vault/catalog.ts');
-const { serializeSession } = await import('../src/vault/serialize.ts');
-const { writeSessionFile } = await import('../src/vault/write.ts');
-const vaultPaths = await import('../src/vault/paths.ts');
-const { VaultService, VaultError } = await import('../src/vault/service.ts');
-const ui = await import('../../web/src/global-search-ui.ts');
+} = await import('../src/features/history/global-search.ts');
+const { VaultCatalog } = await import('../src/features/vault/catalog.ts');
+const { serializeSession } = await import('../src/features/vault/serialize.ts');
+const { writeSessionFile } = await import('../src/features/vault/write.ts');
+const vaultPaths = await import('../src/features/vault/paths.ts');
+const { VaultService, VaultError } = await import('../src/features/vault/service.ts');
+const ui = await import('../../web/src/features/navigation/global-search-ui.ts');
 
 let failures = 0;
 const check = (label, ok, extra = '') => {
@@ -902,9 +902,9 @@ const matchingLines = (count, every = 1) =>
     como las de `check-vault.mjs`.
   */
   const webSrc = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web/src');
-  const sidebarSource = await readFile(path.join(webSrc, 'Sidebar.tsx'), 'utf8');
-  const appSource = await readFile(path.join(webSrc, 'App.tsx'), 'utf8');
-  const workspaceSource = await readFile(path.join(webSrc, 'useWorkspace.ts'), 'utf8');
+  const sidebarSource = await readFile(path.join(webSrc, 'app/classic/Sidebar.tsx'), 'utf8');
+  const appSource = await readFile(path.join(webSrc, 'app/classic/ClassicApp.tsx'), 'utf8');
+  const workspaceSource = await readFile(path.join(webSrc, 'app/classic/useClassicWorkspace.ts'), 'utf8');
   check('W fuente: App decide el buscador con globalSearchVisible y le pasa null a la barra si no se ve',
     /const globalSearchShown = globalSearchVisible\(agents, vault\.status\);/.test(appSource) &&
     /globalSearchShown \? \{ \.\.\.globalSearch, vaultEnabled: vault\.status\?\.enabled === true \} : null/.test(appSource));
@@ -913,8 +913,8 @@ const matchingLines = (count, every = 1) =>
     /const searchMode: SidebarSearchMode = globalSearch === null \? 'titles' : searchModeChoice;/.test(sidebarSource));
   check('W fuente: un clic en un acierto sale por searchHitAction', /const action = searchHitAction\(hit, \{/.test(appSource));
   check('W fuente: un search-failed no va al cartel general', /if \(message\.code === 'search-failed'\) break;/.test(workspaceSource));
-  const hookSource = await readFile(path.join(webSrc, 'useGlobalSearch.ts'), 'utf8');
-  const socketSource = await readFile(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/terminal-socket.ts'), 'utf8');
+  const hookSource = await readFile(path.join(webSrc, 'features/navigation/useGlobalSearch.ts'), 'utf8');
+  const socketSource = await readFile(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/transport/websocket/handlers/history-handler.ts'), 'utf8');
   check('W fuente: el buscador suma los avisos de su busqueda con mergeSearchProgress',
     /case 'search\.progress':\s*if \(current\.current === null \|\| message\.searchId !== current\.current\) break;\s*setResult\(\(previous\) => mergeSearchProgress\(previous, message\.progress\)\);/.test(hookSource));
   check('W fuente: volver a la lista con una busqueda en camino la corta en el servidor',

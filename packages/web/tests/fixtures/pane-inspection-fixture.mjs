@@ -7,10 +7,10 @@ export const fixture = `
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Terminal } from '@xterm/xterm';
-import { AgencyWorkspaceView } from './src/agency/AgencyWorkspaceView.tsx';
-import { useNotificationStore } from './src/agency/useNotificationStore.ts';
-import { NotificationBell } from './src/agency/NotificationBell.tsx';
-import { NotificationInbox } from './src/agency/NotificationInbox.tsx';
+import { WorkspaceView } from './src/features/workspaces/WorkspaceView.tsx';
+import { useNotificationStore } from './src/features/notifications/useNotificationStore.ts';
+import { NotificationBell } from './src/features/notifications/NotificationBell.tsx';
+import { NotificationInbox } from './src/features/notifications/NotificationInbox.tsx';
 
 const ws = '${workspaceId}', other = '66666666-6666-4666-8666-666666666666';
 const ids = ['${tabA}', '${tabB}', '77777777-7777-4777-8777-777777777777'];
@@ -143,7 +143,7 @@ function Harness() {
       notificationsEnabled={true} desktopPermission="unsupported" onToggleNotifications={() => {}}
       onRequestDesktopPermission={() => {}} onClose={() => setInbox(false)} onSelect={() => {}}
       onMarkRead={() => {}} onMarkAllRead={() => {}} onDone={() => {}} />}
-    {mounted && <AgencyWorkspaceView key={workspaceId}
+    {mounted && <WorkspaceView key={workspaceId}
       workspace={{ id: workspaceId, projectId: '22222222-2222-4222-8222-222222222222', name: 'Workspace', status: 'active', cwd: '/fixture', createdAt: now, updatedAt: now }}
       profiles={[]} sessions={mixed ? [mixedSession] : web ? [] : sessions} webTabs={web ? webTabs : []}
       connection={connection} request={request} sendImmediate={connection.sendImmediate} online={connected} onDone={() => {}}

@@ -447,7 +447,7 @@ check(
 // ---------------------------------------------------------------------------
 
 {
-  const { summarizeAgents } = await import('../../web/src/agent-summary.ts');
+  const { summarizeAgents } = await import('../../web/src/features/agents/agent-summary.ts');
   const info = (overrides = {}) => ({
     id: 'claude-code', label: 'Claude Code', command: 'claude', available: true, version: '2.1.263',
     installUrl: 'u', missingMessage: null, capabilities: NO_CAPABILITIES, environmentNotice: null, ...overrides,
@@ -879,8 +879,8 @@ const adapter = createClaudeCodeAdapter();
 // ---------------------------------------------------------------------------
 
 {
-  const { WorkspaceStore, persistableTabs } = await import('../src/workspace-store.ts');
-  const { workspaceStatePath } = await import('../src/paths.ts');
+  const { OpenTabsStore, persistableTabs } = await import('../src/features/terminals/open-tabs-store.ts');
+  const { workspaceStatePath } = await import('../src/shared/app-paths.ts');
   const { readFile } = await import('node:fs/promises');
   const statePath = workspaceStatePath();
   check('workspace.json cae dentro de la carpeta temporal', statePath.startsWith(root), statePath);
@@ -916,7 +916,7 @@ const adapter = createClaudeCodeAdapter();
     try { return { value: await run(), warnings }; } finally { console.warn = originalWarn; }
   };
 
-  const store = new WorkspaceStore();
+  const store = new OpenTabsStore();
 
   await writeFile(statePath, JSON.stringify({ version: 1, tabs: [{ cwd: 'D:\\p', sessionId: 's1', label: 'uno' }] }));
   const legacy = await store.load();
@@ -1043,7 +1043,7 @@ const adapter = createClaudeCodeAdapter();
 
 {
   const { encodeServerMessage, parseServerMessage } = shared;
-  const { summarizeAgents } = await import('../../web/src/agent-summary.ts');
+  const { summarizeAgents } = await import('../../web/src/features/agents/agent-summary.ts');
   const real = createClaudeCodeAdapter();
   const agents = new AgentRegistry([real]);
   const helloFrom = () => parseServerMessage(encodeServerMessage({
@@ -1088,12 +1088,12 @@ const adapter = createClaudeCodeAdapter();
 //
 // La web no tiene tests: una capacidad mal traducida esconde un control sin
 // que falle nada (R10). Todo lo que la pantalla decide a partir de las
-// capacidades pasa por `web/src/agent-ui.ts`, y aca se compara con lo que se
+// capacidades pasa por `web/src/features/agents/agent-ui.ts`, y aca se compara con lo que se
 // veia antes, texto por texto.
 
 {
   const { encodeServerMessage, parseServerMessage } = shared;
-  const ui = await import('../../web/src/agent-ui.ts');
+  const ui = await import('../../web/src/features/agents/agent-ui.ts');
   const real = createClaudeCodeAdapter();
   const agents = new AgentRegistry([real]);
   agents.get('claude-code').location = { resolvedPath: '/bin/claude', file: '/bin/claude', prefixArgs: [], version: '2.1.263' };
@@ -1319,7 +1319,7 @@ const adapter = createClaudeCodeAdapter();
 // ---------------------------------------------------------------------------
 
 {
-  const { DirectoryPickers, DirectoryPickerError, isInsideProtected } = await import('../src/directory-picker.ts');
+  const { DirectoryPickers, DirectoryPickerError, isInsideProtected } = await import('../src/features/files/directory-picker.ts');
   const dir = path.join(root, 'protegida');
   check('la carpeta protegida misma', isInsideProtected(dir, [dir]));
   check('algo adentro de la carpeta protegida', isInsideProtected(path.join(dir, 'sub'), [dir]));
@@ -1366,7 +1366,7 @@ const adapter = createClaudeCodeAdapter();
   // reanalisis, tambien la carpeta de los archivos a pedido, y el selector la
   // escondia. Se ofrece si `lstat` dice carpeta y no enlace; un enlace o una
   // junction de verdad, no.
-  const { isListedDirectory } = await import('../src/directory-picker.ts');
+  const { isListedDirectory } = await import('../src/features/files/directory-picker.ts');
   const entry = (name, isDir, isLink) => ({ name, isDirectory: () => isDir, isSymbolicLink: () => isLink });
   const stats = (isDir, isLink) => async () => ({ isDirectory: () => isDir, isSymbolicLink: () => isLink });
   check('una carpeta comun se ofrece, un archivo no',
@@ -1596,7 +1596,7 @@ const adapter = createClaudeCodeAdapter();
 // El hub de conversaciones sobre el adaptador (paso 6)
 // ---------------------------------------------------------------------------
 
-const { ConversationHub } = await import('../src/conversation-hub.ts');
+const { ConversationHub } = await import('../src/features/conversations/conversation-hub.ts');
 
 /**
  * Un registro de terminales de mentira: el hub le pide descriptores y escucha
@@ -1748,7 +1748,7 @@ const recordHub = (hub) => {
 // 7. Proyectos: agrupar sesiones por cwd
 // ---------------------------------------------------------------------------
 
-const { buildProjects, migrateIndexCache, SessionIndex } = await import('../src/session-index.ts');
+const { buildProjects, migrateIndexCache, SessionIndex } = await import('../src/features/history/session-index.ts');
 
 {
   const indexed = ({ id, group, cwd = null, at = 1, agent = 'claude-code' }) => ({
@@ -1866,7 +1866,7 @@ const { buildProjects, migrateIndexCache, SessionIndex } = await import('../src/
 // ---------------------------------------------------------------------------
 
 {
-  const { sessionIndexCachePath } = await import('../src/paths.ts');
+  const { sessionIndexCachePath } = await import('../src/shared/app-paths.ts');
   const { readFile, unlink } = await import('node:fs/promises');
 
   /**
@@ -2089,7 +2089,7 @@ const { buildProjects, migrateIndexCache, SessionIndex } = await import('../src/
 // ---------------------------------------------------------------------------
 
 {
-  const ui = await import('../../web/src/agent-ui.ts');
+  const ui = await import('../../web/src/features/agents/agent-ui.ts');
   const titles = ui.tabSessionTitles(
     [
       { terminalId: 't1', agent: 'claude-code', sessionId: 's1' },
@@ -2109,7 +2109,7 @@ const { buildProjects, migrateIndexCache, SessionIndex } = await import('../src/
     titles.get('t1') === 'Mejoras de interfaz' && titles.get('t4') === 'Otra CLI, el mismo id', JSON.stringify([...titles]));
   check('tooltip: sin título la consola, la sesión sin título, la que no descubrió su id y la que el índice no conoce',
     titles.size === 2 && !titles.has('t2') && !titles.has('t3') && !titles.has('t5') && !titles.has('t6'));
-  const { tabTooltip } = await import('../../web/src/TabBar.tsx');
+  const { tabTooltip } = await import('../../web/src/app/classic/TabBar.tsx');
   check('tooltip: el cwd con el título, y el estado en la segunda línea',
     tabTooltip('D:\\Agent Explorer', 'Mejoras de interfaz', 'activa') === 'D:\\Agent Explorer — Mejoras de interfaz\nactiva' &&
       tabTooltip('D:\\Agent Explorer', undefined, 'activa') === 'D:\\Agent Explorer\nactiva');
@@ -2120,7 +2120,7 @@ const { buildProjects, migrateIndexCache, SessionIndex } = await import('../src/
 // ---------------------------------------------------------------------------
 
 {
-  const { effortInUse } = await import('../../web/src/agent-ui.ts');
+  const { effortInUse } = await import('../../web/src/features/agents/agent-ui.ts');
   // Ayer se trabajo en maximo; hoy la CLI se volvio a abrir en el instante 5 000.
   const yesterday = [
     { at: 1_000, effort: 'high' },

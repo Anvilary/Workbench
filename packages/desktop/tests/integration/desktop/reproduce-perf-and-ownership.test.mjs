@@ -10,7 +10,7 @@ import {
   buildProcessTree,
   collectSubtreePids,
   classifyProcessProvider,
-} from '../../../resource-monitor.mjs';
+} from '../../../src/performance/resource-monitor.mjs';
 import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 
 const __filename = fileURLToPath(import.meta.url);

@@ -24,7 +24,7 @@ function browserExecutable() {
 const fixture = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { AgencyApp } from './src/agency/AgencyApp.tsx';
+import { WorkbenchApp } from './src/app/WorkbenchApp.tsx';
 
 const ws = '11111111-1111-4111-8111-111111111111';
 const p = '22222222-2222-4222-8222-222222222222';
@@ -180,7 +180,7 @@ window.agencyTest = {
 };
 
 localStorage.setItem('agency-ui.selected-workspace.v1', ws);
-createRoot(document.getElementById('root')).render(<AgencyApp connection={connection} />);
+createRoot(document.getElementById('root')).render(<WorkbenchApp connection={connection} />);
 `;
 
 test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears alert and tab completion', { timeout: 60000 }, async t => {

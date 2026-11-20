@@ -67,7 +67,7 @@ From the worktree root:
 pnpm typecheck
 pnpm build
 pnpm check
-node --test packages/web/src/maw-root.test.mjs packages/web/src/agency/*.test.mjs
+pnpm --filter @agent-workbench/web test:integration
 pnpm --filter @agent-workbench/desktop test
 xvfb-run -a pnpm --filter @agent-workbench/desktop test:electron
 ```
@@ -75,7 +75,7 @@ xvfb-run -a pnpm --filter @agent-workbench/desktop test:electron
 From `packages/server`:
 
 ```sh
-pnpm exec tsx --test src/agency/*.test.ts src/agency/browser-tabs/*.test.ts src/agency/runtime/*.test.ts src/security.test.ts src/local-no-auth.test.ts src/output-backpressure.test.ts
+pnpm test:unit && pnpm test:integration && pnpm test:security
 xvfb-run -a pnpm exec tsx scripts/check-maw-integration.mjs
 ```
 
@@ -124,7 +124,7 @@ memory-pressure eviction policy during generation is intentionally not assumed.
 To collect fresh samples, use the read-only helper with known root PIDs:
 
 ```sh
-python3 packages/desktop/measure-memory.py --group desktop:PID --group baseline:PID --samples 3
+python3 packages/desktop/tools/measure-memory.py --group desktop:PID --group baseline:PID --samples 3
 ```
 
 Run with appropriate read permission if another user's/container processes protect

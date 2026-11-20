@@ -23,7 +23,7 @@ import type {
   ConversationRole,
   MessageUsage,
 } from '@agent-workbench/shared';
-import { pastedImageMediaType } from '../../paste-paths.js';
+import { pastedImageMediaType } from '../../features/composer/paste-paths.js';
 import { TRANSPORT_LIMITS, cut, type EventLimits } from '../transport-limits.js';
 import { scratchRoot } from './paths.js';
 

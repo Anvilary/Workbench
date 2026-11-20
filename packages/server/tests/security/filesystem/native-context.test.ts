@@ -5,16 +5,16 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node-pty';
 import { randomUUID } from 'node:crypto';
-import { NativeIdentities, artifactDigest } from '../../../src/agency/native-identity.js';
-import { ownsNativeSession } from '../../../src/agency/native-ownership.js';
-import { AgencyProfileStore } from '../../../src/agency/agency-profile-store.js';
+import { NativeIdentities, artifactDigest } from '../../../src/features/sessions/native-identity.js';
+import { ownsNativeSession } from '../../../src/features/sessions/native-ownership.js';
+import { AgencyProfileStore } from '../../../src/features/profiles/profile-store.js';
 import { defaultDefinitions } from '../../../src/agents/profiles/definition.js';
 import { AgentRegistry } from '../../../src/agents/registry.js';
 import { createCodexAdapter } from '../../../src/agents/codex/index.js';
 import { createClaudeCodeAdapter } from '../../../src/agents/claude-code/index.js';
 import { createAntigravityAdapter } from '../../../src/agents/antigravity/index.js';
 import { projectSlugFor } from '../../../src/agents/claude-code/paths.js';
-import { buildAgencyProfileLaunch } from '../../../src/agency/agency-profile-capabilities.js';
+import { buildAgencyProfileLaunch } from '../../../src/features/profiles/profile-capabilities.js';
 
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'maw-native-context-'));
@@ -134,7 +134,7 @@ test('AGY and Claude history followers never redirect into another home or use g
 });
 
 test('AGY recovery capacity observes existing same-user processes and fails closed on unavailable inventory', async t => {
-  const { nativeRecoveryCapacity }=await import('../../../src/agency/recovery-capacity.js');
+  const { nativeRecoveryCapacity }=await import('../../../src/features/sessions/recovery-capacity.js');
   const root=await mkdtemp(path.join(tmpdir(),'maw-capacity-'));t.after(()=>rm(root,{recursive:true,force:true}));
   for(let index=0;index<4;index++) {
     const folder=path.join(root,String(index+100));await mkdir(folder);await writeFile(path.join(folder,'comm'),index===0 ? 'agy-0\n' : 'agy\n');

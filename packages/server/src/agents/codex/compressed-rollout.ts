@@ -18,7 +18,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { Decompress } from 'fzstd';
-import { DISK_FILES, type JsonlFileAccess, type JsonlHandle } from '../../jsonl-reader.js';
+import { DISK_FILES, type JsonlFileAccess, type JsonlHandle } from '../../shared/jsonl-reader.js';
 
 export const COMPRESSED_ROLLOUT_SUFFIX = '.zst';
 

@@ -1,5 +1,5 @@
 // Browser regression for the lazily loaded xterm WebGL addon (Opt-C).
-// Run: node --test packages/web/src/terminal-webgl.test.mjs
+// Run: node --test packages/web/tests/e2e/terminals/terminal-webgl.test.mjs
 // Real TerminalView in real Chromium with code splitting: the default renderer never downloads the WebGL
 // chunk and still shows PTY output; ?renderer=webgl downloads it on demand without errors (WebGL or the
 // fallback); a terminal unmounted while the chunk is still loading never receives the late addon.
@@ -26,7 +26,7 @@ function browserExecutable() {
 const fixture = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { TerminalView } from './src/TerminalView.tsx';
+import { TerminalView } from './src/features/terminals/TerminalView.tsx';
 const listeners = new Set();
 const connection = {
   getStatus: () => 'open', onStatus: () => () => {}, onReopen: () => () => {},

@@ -1,5 +1,5 @@
 // Test for useTerminalHistory hook and TerminalView scrollback reduction / pagination.
-// Run: node --test packages/web/src/useTerminalHistory.test.mjs
+// Run: node --test packages/web/tests/integration/panes/useTerminalHistory.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -27,8 +27,8 @@ function browserExecutable() {
 const fixture = `
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { useTerminalHistory, HISTORY_PAGE_SIZE, MAX_CACHED_PAGES } from './src/useTerminalHistory.ts';
-import { TerminalView } from './src/TerminalView.tsx';
+import { useTerminalHistory, HISTORY_PAGE_SIZE, MAX_CACHED_PAGES } from './src/features/terminals/useTerminalHistory.ts';
+import { TerminalView } from './src/features/terminals/TerminalView.tsx';
 import '@xterm/xterm/css/xterm.css';
 
 window.HISTORY_PAGE_SIZE = HISTORY_PAGE_SIZE;

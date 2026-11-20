@@ -11,7 +11,7 @@
  * Importa el modulo de la interfaz: no tiene JSX justamente para esto.
  */
 
-import { nextInlineToken, nextUrl, trimUrl } from '../../web/src/inline-markup.ts';
+import { nextInlineToken, nextUrl, trimUrl } from '../../web/src/features/conversation/inline-markup.ts';
 
 let failures = 0;
 const check = (label, ok, extra = '') => {

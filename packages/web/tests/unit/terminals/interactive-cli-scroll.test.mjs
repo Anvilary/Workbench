@@ -1,13 +1,13 @@
 // Interactive CLI Scrolling & Alternate-Screen Regression Test Suite
-// Run: node --test packages/web/src/agency/split/interactive-cli-scroll.test.mjs
+// Run: node --test packages/web/tests/unit/terminals/interactive-cli-scroll.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { Terminal } = require('@xterm/xterm');
-import { OutputBuffer } from '../../../../server/src/output-buffer.ts';
+import { OutputBuffer } from '../../../../server/src/features/terminals/output-buffer.ts';
 import { createCodexAdapter } from '../../../../server/src/agents/codex/index.ts';
-import { wholePixels, momentumStep, releaseVelocity, isDrag } from '../../../src/touch-scroll.ts';
+import { wholePixels, momentumStep, releaseVelocity, isDrag } from '../../../src/features/terminals/touch-scroll.ts';
 
 test('A1: Direct Codex-style native CLI startup uses --no-alt-screen for inline scrollback', async () => {
   const adapter = createCodexAdapter();

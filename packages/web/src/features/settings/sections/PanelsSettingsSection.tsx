@@ -1,5 +1,5 @@
 import { t } from '../../../i18n/index.js';
-import { HIDEABLE_PANELS, type HideablePanel, type PanelVisibility } from '../../../panel-visibility.js';
+import { HIDEABLE_PANELS, type HideablePanel, type PanelVisibility } from '../../../shared/lib/panel-visibility.js';
 import { CollapsibleSubsection } from '../CollapsibleSubsection.js';
 import { PANEL_NAMES } from '../settings-search.js';
 

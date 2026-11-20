@@ -40,11 +40,11 @@ const screens = await import('./fixtures/question-screens.mjs');
 const { readQuestionScreen, createClaudeCodeScreenQuestions, QUESTION_WAITING_FOR } = await import(
   '../src/agents/claude-code/question-screen.ts'
 );
-const { LiveQuestionWatch, LIVE_QUESTION_ID_PREFIX } = await import('../src/live-question.ts');
+const { LiveQuestionWatch, LIVE_QUESTION_ID_PREFIX } = await import('../src/features/conversations/live-question.ts');
 const { buildAnswerKeys, answerKeysRefusal, ANSWER_FREE_TEXT_MULTI_TEXT, ANSWER_INVALID_TEXT } = await import(
-  '../src/pty-input.ts'
+  '../src/features/composer/pty-input.ts'
 );
-const { ConversationHub } = await import('../src/conversation-hub.ts');
+const { ConversationHub } = await import('../src/features/conversations/conversation-hub.ts');
 const { AgentRegistry } = await import('../src/agents/registry.ts');
 const { createClaudeCodeAdapter } = await import('../src/agents/claude-code/index.ts');
 
@@ -529,7 +529,7 @@ const WAITING = { activity: 'waiting', waitingFor: 'input needed' };
 // --- F. La web: la tarjeta del historial hereda lo de la leida -----------------
 
 {
-  const { liveCarryOvers } = await import('../../web/src/live-question-ui.ts');
+  const { liveCarryOvers } = await import('../../web/src/features/conversation/live-question-ui.ts');
   const base = itemOf('q1-basica');
   const asked = (id, item = base) => ({ eventId: `e-${id}`, role: 'assistant', parts: [{ kind: 'question', toolUseId: id, questions: [item] }] });
   const record = (patch = {}) => ({ terminalId: 't1', item: base, selections: [[1]], failure: null, ...patch });

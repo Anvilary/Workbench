@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FocusTracker } from '../../../src/agency/focus-tracker.js';
+import { FocusTracker } from '../../../src/features/panes/focus-tracker.js';
 
 test('FocusTracker: window focus, visibility, and native view focus modeling', () => {
   const origDoc = globalThis.document;

@@ -367,7 +367,29 @@ export function validCommand(value) {
   if (value.type === 'browser-action') {
     const actions = ['back', 'forward', 'reload', 'copy-url', 'copy-selection', 'open-page', 'zoom-in', 'zoom-out', 'zoom-reset'];
     if (exact(value, ['type', 'id', 'action'])) return UUID.test(value.id) && actions.includes(value.action);
-    return exact(value, ['type', 'id', 'action', 'url']) && value.action === 'open-link' && UUID.test(value.id) && externalUrl(value.url);
+    if (exact(value, ['type', 'id', 'action', 'word'])) {
+      return value.action === 'replace-misspelling' && UUID.test(value.id) && typeof value.word === 'string' && value.word.length <= 256 && !/[\r\n\0]/.test(value.word);
+    }
+    if (exact(value, ['type', 'id', 'action', 'url'])) {
+      return (value.action === 'open-link' || value.action === 'copy-link') && UUID.test(value.id) && externalUrl(value.url);
+    }
+    return false;
+  }
+  if (value.type === 'find-in-page') {
+    if (!record(value) || typeof value.id !== 'string' || !UUID.test(value.id) || typeof value.text !== 'string' || value.text.length > 512) return false;
+    for (const key of Object.keys(value)) {
+      if (!['type', 'id', 'text', 'forward', 'findNext', 'matchCase'].includes(key)) return false;
+    }
+    if ('forward' in value && typeof value.forward !== 'boolean') return false;
+    if ('findNext' in value && typeof value.findNext !== 'boolean') return false;
+    if ('matchCase' in value && typeof value.matchCase !== 'boolean') return false;
+    return true;
+  }
+  if (value.type === 'stop-find-in-page') {
+    if (!record(value) || typeof value.id !== 'string' || !UUID.test(value.id)) return false;
+    const allowedActions = ['clearSelection', 'keepSelection', 'activateSelection'];
+    if (exact(value, ['type', 'id'])) return true;
+    return exact(value, ['type', 'id', 'action']) && allowedActions.includes(value.action);
   }
   if (value.type === 'copy-file') {
     return exact(value, ['type', 'cwd', 'relative']) && typeof value.cwd === 'string' && value.cwd.startsWith('/') && value.cwd.length <= 4096 &&

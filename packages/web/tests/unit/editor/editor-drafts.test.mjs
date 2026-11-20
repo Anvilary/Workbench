@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { editorDraftStore, isDraftDirty, shouldFlagReadPreviewConflict, EditorSession } from '../../../src/agency/editorDraftStore.ts';
+import { editorDraftStore, isDraftDirty, shouldFlagReadPreviewConflict, EditorSession } from '../../../src/features/editor/editorDraftStore.ts';
 
 test('editorDraftStore tracks dirty state accurately based on edit changes, conflicts, and pending diffs', () => {
   editorDraftStore.clearAll();

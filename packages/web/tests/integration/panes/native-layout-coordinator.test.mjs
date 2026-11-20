@@ -1,4 +1,4 @@
-// Stale ChatGPT capture fallback. Run: node --test packages/web/src/agency/native-layout-coordinator.test.mjs
+// Stale ChatGPT capture fallback. Run: node --test packages/web/tests/integration/panes/native-layout-coordinator.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -9,7 +9,7 @@ import { chromium } from 'playwright';
 import { WEB_ROOT } from '../../helpers/paths.mjs';
 
 const fixture = `
-import { nativeLayoutCoordinator } from './src/agency/native-layout-coordinator.ts';
+import { nativeLayoutCoordinator } from './src/features/browser/native-layout-coordinator.ts';
 window.nativeLayoutCoordinator = nativeLayoutCoordinator;
 window.commands = [];
 window.pending = [];
