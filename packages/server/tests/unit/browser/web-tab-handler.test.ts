@@ -6,7 +6,7 @@ import test from 'node:test';
 import type { WebTabServerMessage, WorkspaceId } from '@agent-workbench/shared';
 import { BrowserTabAdapter } from '../../../src/features/browser/browser-tab-adapter.js';
 import { BrowserTabStore } from '../../../src/features/browser/browser-tab-store.js';
-import { handleWebTabMessage } from '../../../src/features/browser/web-tab-handler.js';
+import { handleWebTabMessage } from '../../../src/features/browser/web-tab-request-handler.js';
 
 async function createFixture(t: import('node:test').TestContext) {
   const dir = await mkdtemp(path.join(tmpdir(), 'maw-handler-test-'));

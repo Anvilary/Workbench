@@ -4,10 +4,10 @@ import { AgencyRuntimeError, type AgencySessionRuntime } from '../sessions/sessi
 import type { AgencyWorkspaceStore } from './workspace-store.js';
 import { WorkspaceMutex } from './workspace-lock.js';
 import type { BrowserTabAdapter } from '../browser/browser-tab-adapter.js';
-import { handleWebTabMessage } from '../browser/web-tab-handler.js';
+import { handleWebTabMessage } from '../browser/web-tab-request-handler.js';
 import type { AgencyLayoutStore } from './layout-store.js';
 import type { EditorTabAdapter } from '../editor/editor-tab-adapter.js';
-import { handleEditorTabMessage } from '../editor/editor-tab-handler.js';
+import { handleEditorTabMessage } from '../editor/editor-tab-request-handler.js';
 
 /** One serialized authority for selection across native sessions, browser tabs, and editor tabs.
  * The reservation mutex inside the native runtime remains independent: browser

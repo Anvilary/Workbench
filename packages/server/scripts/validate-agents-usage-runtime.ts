@@ -13,32 +13,32 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { attachTerminalSocket } from '../../transport/websocket/socket-server.js';
-import { TerminalRegistry } from '../../features/terminals/terminal-registry.js';
-import { createAgentRegistry } from '../registry.js';
-import { OpenTabsStore } from '../../features/terminals/open-tabs-store.js';
-import { SessionIndex } from '../../features/history/session-index.js';
-import { ArchivedSessions } from '../../features/history/archived-sessions.js';
-import { VaultCatalog } from '../../features/vault/catalog.js';
-import { WorktreeLinks } from '../../features/worktrees/links.js';
-import { WorktreeStore } from '../../features/worktrees/store.js';
-import { VaultService } from '../../features/vault/service.js';
-import { WorktreeService } from '../../features/worktrees/service.js';
-import { AppSettingsService } from '../../features/settings/app-settings-service.js';
-import { SettingsStore } from '../../features/settings/settings-store.js';
-import { NotesStore } from '../../features/notes/notes-store.js';
-import { DraftStore } from '../../features/composer/draft-store.js';
-import { ConversationHub } from '../../features/conversations/conversation-hub.js';
-import { RepoHub } from '../../features/git/repo-hub.js';
-import { MemoryHub } from '../../features/memory/memory-hub.js';
-import { RemoteAccessService } from '../../features/remote-access/remote-access-service.js';
-import { RemoteDevicesStore } from '../../features/remote-access/remote-devices-store.js';
-import { AgencyWorkspaceStore } from '../../features/workspaces/workspace-store.js';
-import { AgencyProfileStore } from '../../features/profiles/profile-store.js';
-import { AgencySessionRuntime } from '../../features/sessions/session-runtime.js';
-import { SplitAgencySessionStore } from '../../features/sessions/session-store.js';
-import { WorkspaceMutex } from '../../features/workspaces/workspace-lock.js';
-import { AgentsUsageCollector } from './collector.js';
+import { attachWorkbenchSocket } from '../src/transport/websocket/socket-server.js';
+import { TerminalRegistry } from '../src/features/terminals/terminal-registry.js';
+import { createAgentRegistry } from '../src/agents/registry.js';
+import { OpenTabsStore } from '../src/features/terminals/open-tabs-store.js';
+import { SessionIndex } from '../src/features/history/session-index.js';
+import { ArchivedSessions } from '../src/features/history/archived-sessions.js';
+import { VaultCatalog } from '../src/features/vault/catalog.js';
+import { WorktreeLinks } from '../src/features/worktrees/links.js';
+import { WorktreeStore } from '../src/features/worktrees/store.js';
+import { VaultService } from '../src/features/vault/service.js';
+import { WorktreeService } from '../src/features/worktrees/service.js';
+import { AppSettingsService } from '../src/features/settings/app-settings-service.js';
+import { SettingsStore } from '../src/features/settings/settings-store.js';
+import { NotesStore } from '../src/features/notes/notes-store.js';
+import { DraftStore } from '../src/features/composer/draft-store.js';
+import { ConversationHub } from '../src/features/conversations/conversation-hub.js';
+import { RepoHub } from '../src/features/git/repo-hub.js';
+import { MemoryHub } from '../src/features/memory/memory-hub.js';
+import { RemoteAccessService } from '../src/features/remote-access/remote-access-service.js';
+import { RemoteDevicesStore } from '../src/features/remote-access/remote-devices-store.js';
+import { AgencyWorkspaceStore } from '../src/features/workspaces/workspace-store.js';
+import { AgencyProfileStore } from '../src/features/profiles/profile-store.js';
+import { AgencySessionRuntime } from '../src/features/sessions/session-runtime.js';
+import { SplitAgencySessionStore } from '../src/features/sessions/session-store.js';
+import { WorkspaceMutex } from '../src/features/workspaces/workspace-lock.js';
+import { AgentsUsageCollector } from '../src/agents/usage/collector.js';
 
 const CHROMIUM_BIN = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined;
 const ARTIFACT_DIR = process.env.MAW_ARTIFACT_DIR || path.join(tmpdir(), 'maw-agents-usage-artifacts');
@@ -119,7 +119,7 @@ async function run() {
   // Live real collectors across user's actual profile configurations!
   const realCollector = new AgentsUsageCollector({ cacheTtlMs: 2000 });
 
-  const detachSocket = attachTerminalSocket({
+  const detachSocket = attachWorkbenchSocket({
     httpServer,
     port,
     token: TOKEN,

@@ -1562,7 +1562,7 @@ const client = new OpenCodeServeClient(mainEndpoint, undefined, { reconnectDelay
     const webDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web/src');
     const { readFile } = await import('node:fs/promises');
     const registrySource = await readFile(path.join(srcDir, 'features/terminals/terminal-registry.ts'), 'utf8');
-    const socketSource = await readFile(path.join(srcDir, 'transport/websocket/socket-server.ts'), 'utf8');
+    const socketSource = (await Promise.all(['broadcasts.ts', 'initial-snapshot.ts'].map((name) => readFile(path.join(srcDir, 'transport/websocket', name), 'utf8')))).join('\n');
     const indexSource = await readFile(path.join(srcDir, 'agents/opencode/index.ts'), 'utf8');
     const viewSource = await readFile(path.join(webDir, 'ConversationView.tsx'), 'utf8');
     const appSource = await readFile(path.join(webDir, 'App.tsx'), 'utf8');

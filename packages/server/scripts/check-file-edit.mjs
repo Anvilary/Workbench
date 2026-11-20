@@ -330,7 +330,9 @@ let cliLink = false;
 // --- 6. El cableado, leido como texto -------------------------------------------------
 {
   const { readFileSync } = await import('node:fs');
-  const socket = readFileSync(new URL('../src/transport/websocket/socket-server.ts', import.meta.url), 'utf8');
+  const socket = ['initial-snapshot.ts', 'handlers/file-handler.ts']
+    .map((name) => readFileSync(new URL(`../src/transport/websocket/${name}`, import.meta.url), 'utf8'))
+    .join('\n');
   check('6.1 el servidor anuncia que guarda, y guarda por saveProjectFile',
     socket.includes('fileWrite: true,') && /case 'files\.write':[\s\S]{0,900}saveProjectFile\(cwd, message\.path, message\.text, message\.baseHash, await folders\)/.test(socket));
   check('6.2 leer, listar, buscar y abrir pasan por las carpetas de las CLIs',

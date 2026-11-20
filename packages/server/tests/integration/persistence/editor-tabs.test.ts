@@ -928,7 +928,7 @@ test('P2 A-05: agency.editorTab.order reorders open editor tabs, broadcasts orde
   const tab2 = await editor.createTab({ workspaceId: ws.id, filePath: 'two.ts' });
   assert.deepEqual(editor.listTabs(ws.id).map((tab) => tab.id), [tab1.id, tab2.id]);
 
-  const { handleEditorTabMessage } = await import('../../../src/features/editor/editor-tab-handler.js');
+  const { handleEditorTabMessage } = await import('../../../src/features/editor/editor-tab-request-handler.js');
   const published: any[] = [];
   const res = await handleEditorTabMessage(
     {

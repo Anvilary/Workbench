@@ -14,7 +14,7 @@ import { createAgentRegistry } from '../../../src/agents/registry.js';
 import { PtyHostClient } from '../../../src/pty-host/pty-host-client.js';
 // @ts-expect-error - standalone pure-ESM supervisor script
 import { PtySupervisor } from '../../../src/pty-host/maw-ptyd.mjs';
-import { attachTerminalSocket } from '../../../src/transport/websocket/socket-server.js';
+import { attachWorkbenchSocket } from '../../../src/transport/websocket/socket-server.js';
 import { publishReadiness } from '../../../src/maw-host.js';
 import { SettingsStore } from '../../../src/features/settings/settings-store.js';
 import { ArchivedSessions } from '../../../src/features/history/archived-sessions.js';
@@ -191,7 +191,7 @@ async function createDisposableBackend(options: {
   const url = `http://127.0.0.1:${port}/?token=${token}`;
   const detachReadiness = await publishReadiness(options.runtimeDir, url, null);
 
-  const detachSocket = attachTerminalSocket({
+  const detachSocket = attachWorkbenchSocket({
     httpServer,
     port,
     token,

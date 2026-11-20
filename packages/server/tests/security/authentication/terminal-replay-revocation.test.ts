@@ -7,7 +7,7 @@ import path from 'node:path';
 import express from 'express';
 import { WebSocket, WebSocketServer } from 'ws';
 import { randomUUID } from 'node:crypto';
-import { attachTerminalSocket } from '../../../src/transport/websocket/socket-server.js';
+import { attachWorkbenchSocket } from '../../../src/transport/websocket/socket-server.js';
 import { TerminalRegistry } from '../../../src/features/terminals/terminal-registry.js';
 import { createAgentRegistry } from '../../../src/agents/registry.js';
 import { OpenTabsStore } from '../../../src/features/terminals/open-tabs-store.js';
@@ -122,7 +122,7 @@ async function createHarness(): Promise<TestHarness> {
 
   const activeSockets = new Set<WebSocket>();
 
-  const detachSocket = attachTerminalSocket({
+  const detachSocket = attachWorkbenchSocket({
     httpServer,
     port,
     token: 'test-token',

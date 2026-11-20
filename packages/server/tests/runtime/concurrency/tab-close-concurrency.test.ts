@@ -14,7 +14,7 @@ import { BrowserTabAdapter } from '../../../src/features/browser/browser-tab-ada
 import { BrowserTabStore } from '../../../src/features/browser/browser-tab-store.js';
 import { AgencyLayoutStore } from '../../../src/features/workspaces/layout-store.js';
 import { AgencyTabCoordinator } from '../../../src/features/workspaces/tab-coordinator.js';
-import { evaluateLayoutSave } from '../../../src/transport/websocket/socket-server.js';
+import { evaluateLayoutSave } from '../../../src/features/workspaces/layout-validation.js';
 
 interface RegistryRow {
   terminalId: TerminalId;

@@ -8,7 +8,7 @@ import type { RuntimeSessionId, WorkspaceId } from '@agent-workbench/shared';
 import { AgencyNotificationStore } from '../../../src/features/notifications/notification-store.js';
 import { TabActivityManager } from '../../../src/features/notifications/tab-activity-manager.js';
 import { ShellSequences } from '../../../src/features/terminals/shell-integration.js';
-import { handleAgencyNotificationDone } from '../../../src/transport/websocket/socket-server.js';
+import { handleAgencyNotificationDone } from '../../../src/transport/websocket/handlers/notification-handler.js';
 
 test('Acceptance 1: Ten ordinary shell commands produce zero inbox notifications and zero completion badges', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'maw-test-shell-10-'));

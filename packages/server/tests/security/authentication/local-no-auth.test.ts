@@ -334,7 +334,7 @@ test('WebSocket upgrade: connects without token in no-auth mode, rejects foreign
   const { createServer } = await import('node:http');
   const { WebSocket } = await import('ws');
   const express = (await import('express')).default;
-  const { attachTerminalSocket } = await import('../../../src/transport/websocket/socket-server.js');
+  const { attachWorkbenchSocket } = await import('../../../src/transport/websocket/socket-server.js');
   const { TerminalRegistry } = await import('../../../src/features/terminals/terminal-registry.js');
   const { createAgentRegistry } = await import('../../../src/agents/registry.js');
   const { OpenTabsStore } = await import('../../../src/features/terminals/open-tabs-store.js');
@@ -434,7 +434,7 @@ test('WebSocket upgrade: connects without token in no-auth mode, rejects foreign
   });
   await agencyRuntime.initialize();
 
-  const detach = attachTerminalSocket({
+  const detach = attachWorkbenchSocket({
     httpServer,
     port,
     token: TOKEN,

@@ -32,7 +32,7 @@ import { AgencyProfileStore } from '../../../src/features/profiles/profile-store
 import { AgencySessionRuntime } from '../../../src/features/sessions/session-runtime.js';
 import { SplitAgencySessionStore } from '../../../src/features/sessions/session-store.js';
 import { WorkspaceMutex } from '../../../src/features/workspaces/workspace-lock.js';
-import { attachTerminalSocket } from '../../../src/transport/websocket/socket-server.js';
+import { attachWorkbenchSocket } from '../../../src/transport/websocket/socket-server.js';
 import { TerminalHistoryStore } from '../../../src/features/terminals/terminal-history-store.js';
 
 interface MessageWaiter {
@@ -185,7 +185,7 @@ test('Session Authorization: terminal.history.page rejects unauthorized access a
     registry.emit('output', descriptor.terminalId, 'early-output\n');
     return descriptor;
   };
-  const detachSocket = attachTerminalSocket({
+  const detachSocket = attachWorkbenchSocket({
     httpServer,
     port,
     token: 'test-token',

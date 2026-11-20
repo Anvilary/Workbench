@@ -30,7 +30,7 @@ async function harness() {
   const { createServer } = await import('node:http');
   const { WebSocket } = await import('ws');
   const express = (await import('express')).default;
-  const { attachTerminalSocket } = await import('../../../src/transport/websocket/socket-server.js');
+  const { attachWorkbenchSocket } = await import('../../../src/transport/websocket/socket-server.js');
   const { TerminalRegistry } = await import('../../../src/features/terminals/terminal-registry.js');
   const { createAgentRegistry } = await import('../../../src/agents/registry.js');
   const { OpenTabsStore } = await import('../../../src/features/terminals/open-tabs-store.js');
@@ -122,7 +122,7 @@ async function harness() {
   });
   await agencyRuntime.initialize();
 
-  const detach = attachTerminalSocket({
+  const detach = attachWorkbenchSocket({
     httpServer, port, token: PORT_TOKEN, appSettings, registry, index, archived, notes, drafts,
     conversations: new ConversationHub(registry, agents), repos: new RepoHub(registry), memory: new MemoryHub(registry),
     agents, defaultCwd: tempDir, vault, remote, worktrees, noAuth: true,

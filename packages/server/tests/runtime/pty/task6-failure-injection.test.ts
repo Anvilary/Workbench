@@ -12,7 +12,7 @@ import { TerminalRegistry } from '../../../src/features/terminals/terminal-regis
 import { OpenTabsStore } from '../../../src/features/terminals/open-tabs-store.js';
 import { createAgentRegistry } from '../../../src/agents/registry.js';
 import { PtyHostClient } from '../../../src/pty-host/pty-host-client.js';
-import { attachTerminalSocket } from '../../../src/transport/websocket/socket-server.js';
+import { attachWorkbenchSocket } from '../../../src/transport/websocket/socket-server.js';
 import { publishReadiness } from '../../../src/maw-host.js';
 import { SettingsStore } from '../../../src/features/settings/settings-store.js';
 import { ArchivedSessions } from '../../../src/features/history/archived-sessions.js';
@@ -219,7 +219,7 @@ async function createTestBackend(harness: TestHarness, overrides?: { persistentP
   const url = `http://127.0.0.1:${port}/?token=${token}`;
   const detachReadiness = await publishReadiness(harness.runtimeDir, url, null);
 
-  const detachSocket = attachTerminalSocket({
+  const detachSocket = attachWorkbenchSocket({
     httpServer,
     port,
     token,

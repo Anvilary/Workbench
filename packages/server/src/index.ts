@@ -53,7 +53,7 @@ import { locateShells, pickShell, type ShellLocation } from './features/terminal
 import { AppSettingsService } from './features/settings/app-settings-service.js';
 import { ClassicWorkbenchLifecycle } from './features/history/classic-workbench-lifecycle.js';
 import { TerminalRegistry } from './features/terminals/terminal-registry.js';
-import { attachTerminalSocket } from './transport/websocket/socket-server.js';
+import { attachWorkbenchSocket } from './transport/websocket/socket-server.js';
 import { VaultCatalog } from './features/vault/catalog.js';
 import { defaultVaultDir } from './features/vault/paths.js';
 import { VaultService } from './features/vault/service.js';
@@ -625,7 +625,7 @@ async function main(): Promise<void> {
 
   const closeUi = isProduction ? mountBuiltUi(app) : await mountDevUi(app, httpServer);
 
-  const detachSocket = attachTerminalSocket({
+  const detachSocket = attachWorkbenchSocket({
     agencyWorkspaceStore,
     agencyBrowserProfileStore,
     agencyProfileStore,
