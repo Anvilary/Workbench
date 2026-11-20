@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { mkdir } from 'node:fs/promises';
 import { DEFAULT_BROWSER_PROFILE_ID, isValidBrowserProfileId, partitionForBrowserProfile, otherUrl, CHANNEL, serviceUrl, trustedSender, validCommand, nativeBounds, nativeBoundsForRect, embeddedUrl, externalUrl, isDownloadOrFileDeliveryUrl, chatUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, targetWebProvider, isSameSite, authenticationUrl, decideWindowOpen, getBrowserZoomAction, selectBestFavicon } from './policy.mjs';
 import { fileClipboardPayload, resolveClipboardTarget } from './file-clipboard.mjs';
-import { calculateResourceBudget, selectEvictionCandidate, isProtectedProvider, readSystemMemory, isTypingInput, canEvictView } from './resource-budget.mjs';
+import { calculateResourceBudget, selectEvictionCandidate, isProtectedProvider, readSystemMemory, readSystemPressure, createPressureGovernor, isTypingInput, canEvictView } from './resource-budget.mjs';
 import { ResourceCollector } from './resource-monitor.mjs';
 import { browserDownloadHandler } from './browser-downloads.mjs';
 import { isAllowedWebAuthnOrigin, isValidRpId } from './webauthn-policy.mjs';
@@ -433,6 +433,7 @@ async function start() {
     });
   }
 
+  const pressureGovernor = createPressureGovernor();
   function getResourceBudgetInfo() {
     let tabWorkingSetBytes = 0;
     try {
@@ -453,6 +454,8 @@ async function start() {
       availableBytes,
       totalBytes,
       tabWorkingSetBytes,
+      pressure: readSystemPressure(),
+      pressureGovernor,
       attachedCount: attachedViews.size,
       envOverride: process.env.MAW_MAX_RESIDENT_VIEWS,
       tierOverride: process.env.MAW_MEMORY_PRESSURE_TIER,

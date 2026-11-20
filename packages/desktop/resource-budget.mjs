@@ -30,6 +30,78 @@ export function readSystemMemory(procRoot = '/proc') {
 }
 
 /**
+ * Reads sustained memory-stall pressure (PSI avg60) and swap occupancy. Unlike free RAM, PSI measures how much time
+ * tasks actually spend stalled waiting for memory. The 60 second average is deliberate: a compile or test run that
+ * briefly spikes stalls must not evict browser sessions. CPU pressure is intentionally NOT read: evicting hidden
+ * views does not relieve CPU (hidden views are already throttled), so it could only cost the user their sessions.
+ * Every field is null when unavailable (older kernels, containers).
+ */
+export function readSystemPressure(procRoot = '/proc') {
+  const result = { memorySome60: null, memoryFull60: null, swapFreeRatio: null };
+  const psi = (kind) => {
+    try {
+      const line = fs.readFileSync(`${procRoot}/pressure/memory`, 'utf8').split('\n').find((l) => l.startsWith(`${kind} `));
+      const value = Number(line?.match(/avg60=([0-9.]+)/)?.[1]);
+      return Number.isFinite(value) ? value : null;
+    } catch { return null; }
+  };
+  result.memorySome60 = psi('some');
+  result.memoryFull60 = psi('full');
+  try {
+    const info = fs.readFileSync(`${procRoot}/meminfo`, 'utf8');
+    const kb = (name) => Number(info.match(new RegExp(`^${name}:\\s+(\\d+)\\s+kB`, 'm'))?.[1]);
+    const total = kb('SwapTotal'), free = kb('SwapFree');
+    if (Number.isFinite(total) && total > 0 && Number.isFinite(free)) result.swapFreeRatio = free / total;
+  } catch {}
+  return result;
+}
+
+const TIER_ORDER = ['normal', 'moderate', 'high', 'critical'];
+const rank = (tier) => TIER_ORDER.indexOf(tier);
+const atLeast = (current, floor) => (rank(floor) > rank(current) ? floor : current);
+
+/**
+ * Raw tier floor implied by sustained stalls and swap. Capped at HIGH on purpose: only the RAM-based rules may reach
+ * CRITICAL, the one tier that can evict protected AI tabs with unsaved drafts.
+ */
+export function assessPressure(pressure, availableRatio = 1) {
+  let tier = MemoryPressureTier.NORMAL;
+  const reasons = [];
+  const raise = (floor, reason) => {
+    const next = atLeast(tier, floor);
+    if (next !== tier) tier = next;
+    if (rank(floor) >= rank(tier)) reasons.push(reason);
+  };
+  if (pressure) {
+    if (pressure.memorySome60 != null && pressure.memorySome60 >= 5) raise(MemoryPressureTier.MODERATE, 'memory-stall-sustained');
+    if (pressure.memorySome60 != null && pressure.memorySome60 >= 12) raise(MemoryPressureTier.HIGH, 'memory-stall-heavy');
+    if (pressure.memoryFull60 != null && pressure.memoryFull60 >= 2) raise(MemoryPressureTier.HIGH, 'memory-stall-full');
+    if (pressure.swapFreeRatio != null && pressure.swapFreeRatio < 0.10 && availableRatio < 0.30) raise(MemoryPressureTier.HIGH, 'swap-exhausted');
+  }
+  return { tier, reasons };
+}
+
+/**
+ * Hysteresis: a raised floor is held for `holdMs` after the signal last justified it, so a pressure reading that
+ * hovers around a threshold does not make the budget flap and trigger repeated eviction. Escalation is immediate.
+ */
+export function createPressureGovernor({ holdMs = 120_000 } = {}) {
+  let held = MemoryPressureTier.NORMAL;
+  let heldAt = 0;
+  let heldReasons = [];
+  return {
+    assess(pressure, availableRatio, now = Date.now()) {
+      const raw = assessPressure(pressure, availableRatio);
+      if (rank(raw.tier) >= rank(held) || now - heldAt >= holdMs) {
+        held = raw.tier; heldAt = now; heldReasons = raw.reasons;
+        return { tier: held, reasons: [...heldReasons] };
+      }
+      return { tier: held, reasons: [...heldReasons, 'held'] };
+    },
+  };
+}
+
+/**
  * Checks whether a provider represents a generative AI surface with unpersisted
  * user drafts (prompt textareas, active queries) that must be protected against
  * routine automatic eviction.
@@ -111,6 +183,9 @@ export function canEvictView({
  * @param {number} [params.attachedCount=0] - Number of currently attached/visible browser views in layout (0-4)
  * @param {string|number|undefined} [params.envOverride] - Optional MAW_MAX_RESIDENT_VIEWS env override
  * @param {string|undefined} [params.tierOverride] - Optional MAW_MEMORY_PRESSURE_TIER override (for testing)
+ * @param {object} [params.pressure] - Optional readSystemPressure() result: sustained memory stalls and swap occupancy
+ * @param {{assess: Function}} [params.pressureGovernor] - Optional createPressureGovernor() applying hysteresis to `pressure`
+ * @param {number} [params.now] - Timestamp for the governor (tests)
  * @returns {{ tier: string, memoryTier: string, budget: number, freeRatio: number }}
  */
 export function calculateResourceBudget({
@@ -121,6 +196,9 @@ export function calculateResourceBudget({
   attachedCount = 0,
   envOverride,
   tierOverride,
+  pressure,
+  pressureGovernor,
+  now = Date.now(),
 }) {
   const safeAttached = Math.max(0, Number(attachedCount) || 0);
   const freeRatio = totalBytes > 0 ? freeBytes / totalBytes : 0;
@@ -128,12 +206,23 @@ export function calculateResourceBudget({
 
   // 1. Determine physical memory pressure tier based on system RAM and Tab working set
   let memoryTier = MemoryPressureTier.NORMAL;
-  if (availableBytes < 1 * GB || availableRatio < 0.08 || tabWorkingSetBytes >= 4 * GB) {
+  // A large tab working set alone must not reach CRITICAL (the only tier that may evict protected AI tabs) while the
+  // system itself has ample memory: with 16 GiB free on a 28 GiB machine, 4 GiB of tabs is not an emergency.
+  const ampleMemory = availableBytes >= 8 * GB && availableRatio >= 0.30;
+  if (availableBytes < 1 * GB || availableRatio < 0.08 || (tabWorkingSetBytes >= 4 * GB && !ampleMemory)) {
     memoryTier = MemoryPressureTier.CRITICAL;
   } else if (availableBytes < 2 * GB || availableRatio < 0.15 || tabWorkingSetBytes >= 2.5 * GB) {
     memoryTier = MemoryPressureTier.HIGH;
   } else if (availableBytes < 4 * GB || availableRatio < 0.25 || tabWorkingSetBytes >= 1.5 * GB) {
     memoryTier = MemoryPressureTier.MODERATE;
+  }
+
+  // 1b. Sustained memory stalls and swap exhaustion only ever raise the tier, up to HIGH (see assessPressure).
+  const pressureReasons = [];
+  if (pressure) {
+    const assessed = pressureGovernor ? pressureGovernor.assess(pressure, availableRatio, now) : assessPressure(pressure, availableRatio);
+    const raised = atLeast(memoryTier, assessed.tier);
+    if (raised !== memoryTier) { memoryTier = raised; pressureReasons.push(...assessed.reasons); }
   }
 
   // Explicit tier override (e.g. for deterministic testing of pressure tiers)
@@ -177,6 +266,7 @@ export function calculateResourceBudget({
     memoryTier,
     budget,
     freeRatio,
+    pressureReasons,
   };
 }
 
