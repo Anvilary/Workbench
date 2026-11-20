@@ -5,9 +5,9 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isValidWebAuthnPin } from './webauthn-policy.mjs';
+import { isValidWebAuthnPin } from './policy.mjs';
 import crypto from 'node:crypto';
-import { calculatePinDialogPosition } from './webauthn-dialog-position.mjs';
+import { calculatePinDialogPosition } from './dialog-position.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -56,7 +56,7 @@ export function requestPinDialog({
       autoHideMenuBar: true,
       title,
       webPreferences: {
-        preload: path.join(here, 'webauthn-dialog-preload.cjs'),
+        preload: path.join(here, 'dialog-preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
@@ -138,6 +138,6 @@ export function requestPinDialog({
     const query = { requestId };
     if (rpId) query.rpId = rpId;
     if (error) query.error = error;
-    win.loadFile(path.join(here, 'webauthn-dialog.html'), { query });
+    win.loadFile(path.join(here, 'dialog.html'), { query });
   });
 }

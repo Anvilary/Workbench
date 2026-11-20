@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
-import { ResourceCollector } from './resource-monitor.mjs';
+import { ResourceCollector } from '../src/performance/resource-monitor.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const here = path.dirname(__filename);

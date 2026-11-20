@@ -7,7 +7,7 @@ import {
   isProtectedProvider,
   isTypingInput,
   canEvictView,
-} from '../../../resource-budget.mjs';
+} from '../../../src/performance/resource-budget.mjs';
 
 const GB = 1024 * 1024 * 1024;
 

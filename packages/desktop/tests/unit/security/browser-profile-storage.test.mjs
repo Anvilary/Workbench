@@ -16,7 +16,7 @@ import {
 import {
   performWebAuthnAssertion,
   resolveWebAuthnPaneBounds,
-} from '../../../src/security/webauthn-orchestrator.mjs';
+} from '../../../src/security/webauthn/orchestrator.mjs';
 
 test('Browser Profile Policy: partition routing preserves Main partitions and isolates custom profiles', () => {
   assert.equal(isValidBrowserProfileId('main'), true);

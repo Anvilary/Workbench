@@ -12,7 +12,7 @@ import {
   isValidWebAuthnPin,
   validAssertionOptions,
   verifyAssertionData,
-} from '../../webauthn-policy.mjs';
+} from './policy.mjs';
 import {
   CANCELLED_MESSAGE,
   NO_DEVICE_MESSAGE,
@@ -20,7 +20,7 @@ import {
   getDeviceCapabilities,
   listResidentCredentials,
   executeAssertion,
-} from '../../webauthn-backend.mjs';
+} from './backend.mjs';
 
 export const MAX_WEBAUTHN_DEVICES = 8;
 export const MAX_PIN_ATTEMPTS = 3;

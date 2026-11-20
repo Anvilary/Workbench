@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { test } from 'node:test';
-import { browserDownloadHandler } from '../../../browser-downloads.mjs';
+import { browserDownloadHandler } from '../../../src/browser/downloads.mjs';
 
 test('rejected downloads never alter concurrent download registrations', () => {
   const contents = {};

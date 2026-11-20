@@ -4,7 +4,7 @@
 
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { base64UrlToBuffer, bufferToBase64Url } from './webauthn-policy.mjs';
+import { base64UrlToBuffer, bufferToBase64Url } from './policy.mjs';
 
 const execFileAsync = promisify(execFile);
 

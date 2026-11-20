@@ -124,7 +124,7 @@ memory-pressure eviction policy during generation is intentionally not assumed.
 To collect fresh samples, use the read-only helper with known root PIDs:
 
 ```sh
-python3 packages/desktop/measure-memory.py --group desktop:PID --group baseline:PID --samples 3
+python3 packages/desktop/tools/measure-memory.py --group desktop:PID --group baseline:PID --samples 3
 ```
 
 Run with appropriate read permission if another user's/container processes protect
