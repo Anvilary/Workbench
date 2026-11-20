@@ -19,6 +19,36 @@ import { SidebarDropdownMenu } from '../features/workspaces/SidebarDropdownMenu.
 
 export { AgencyDoneView, DeleteWorkspaceDialog, calculateSidebarDropdownPosition };
 
+export function AgencyBrand({
+  expanded,
+  onToggle,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+}): JSX.Element {
+  return (
+    <div className={expanded ? 'agency-nav-brand' : 'agency-topbar-collapsed-brand'}>
+      <button
+        type="button"
+        className="agency-brand-toggle"
+        onClick={onToggle}
+        aria-label={expanded ? t('agency.ui.collapseSidebar') : t('agency.ui.expandSidebar')}
+        aria-expanded={expanded}
+        title={expanded ? t('agency.ui.collapseSidebar') : t('agency.ui.expandSidebar')}
+      >
+        <img
+          src="/brand/workbench-logo-128.png"
+          alt=""
+          className={expanded ? 'agency-nav-logo' : 'agency-topbar-logo'}
+          width="38"
+          height="38"
+        />
+      </button>
+      <strong>{t('agency.ui.agency')}</strong>
+    </div>
+  );
+}
+
 export interface AgencySidebarProps {
   projects: readonly AgencyProject[];
   workspaces: readonly AgencyWorkspace[];
@@ -505,13 +535,7 @@ export function AgencySidebar({
           {liveAnnouncement}
         </div>
         <header className="agency-nav-head">
-          <div className="agency-nav-brand">
-            <img src="/brand/workbench-logo-128.png" alt="" className="agency-nav-logo" width="56" height="56" />
-            <strong>{t('agency.ui.agency')}</strong>
-          </div>
-          <button className="agency-icon-button" type="button" onClick={onCollapse} aria-label={t('agency.ui.collapseSidebar')} aria-expanded={true}>
-            <SidebarToggleIcon />
-          </button>
+          <AgencyBrand expanded={true} onToggle={onCollapse} />
         </header>
         <div ref={sideSectionRef} className="agency-side-section">
           <div className="agency-side-heading">

@@ -120,40 +120,60 @@
   flex: 0 0 var(--maw-topbar-h);
   box-sizing: border-box;
   padding: 0 12px;
-  border-bottom: 1px solid var(--border-faint);
+  border-bottom: 1px solid var(--agency-line);
 }
-.agency-nav-head > .agency-icon-button { position: absolute; right: 12px; }
-.agency-nav-brand {
+.agency-nav-brand,
+.agency-topbar-collapsed-brand {
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
 }
-.agency-nav-logo {
+.agency-brand-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  line-height: 0;
+  flex: none;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+.agency-brand-toggle:hover {
+  background: var(--agency-hover);
+  border-color: var(--border-faint);
+}
+.agency-brand-toggle:focus-visible {
+  outline: 2px solid var(--agency-highlight);
+  outline-offset: 2px;
+}
+.agency-nav-logo,
+.agency-topbar-logo {
   display: block;
   vertical-align: middle;
-  width: 56px;
-  height: 56px;
+  width: 38px;
+  height: 38px;
   flex: none;
   object-fit: contain;
-  filter: drop-shadow(0 0 8px rgba(236, 138, 74, 0.45));
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), filter 0.2s ease;
+  filter: none;
+  transition: none;
 }
-.agency-nav-logo:hover {
-  transform: scale(1.06);
-  filter: drop-shadow(0 0 12px rgba(236, 138, 74, 0.7));
+.agency-nav-logo:hover,
+.agency-topbar-logo:hover {
+  transform: none;
+  filter: none;
 }
-.agency-topbar-collapsed-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.agency-topbar-logo {
-  width: 36px;
-  height: 36px;
-  flex: none;
-  object-fit: contain;
-  filter: drop-shadow(0 0 5px rgba(236, 138, 74, 0.35));
+.agency-topbar-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--agency-line);
+  flex: 0 0 1px;
+  margin: 0 2px;
 }
 .agency-nav-diamond {
   width: 20px;
@@ -163,22 +183,51 @@
   color: var(--agency-highlight);
 }
 .agency-brand-mark { font-size: 20px; color: var(--agency-highlight); }
-.agency-nav-head strong {
+.agency-nav-head strong,
+.agency-topbar-collapsed-brand strong {
   display: block;
   font-family: var(--font-display, 'Lexend', serif);
-  font-size: 17px;
+  font-size: 16px;
   letter-spacing: -.02em;
   font-weight: 600;
   color: var(--ink);
   line-height: 1;
 }
 .agency-brand-caption { font-size: 11px; color: var(--agency-dim); padding-top: 2px; }
-.agency-nav-head .agency-icon-button { margin-left: auto; }
 .agency-icon-button { border: 1px solid transparent; border-radius: 8px; background: transparent; min-width: 30px; min-height: 30px; padding: 4px; color: var(--agency-dim); transition: all 160ms ease; }
 .agency-icon-button:hover, .agency-row-action:hover, .agency-text-button:hover { background: var(--agency-hover); border-color: var(--border-faint); color: var(--ink); }
-.agency-side-section { flex: 1; overflow-y: auto; padding: 12px 9px; }
-.agency-side-heading { padding: 4px 8px 10px; display: flex; align-items: center; justify-content: space-between;
-  color: var(--agency-dim); text-transform: uppercase; font-weight: 650; font-size: 10px; letter-spacing: .1em; }
+.agency-side-section {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 9px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+.agency-side-section:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+}
+.agency-side-section::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+  background: transparent;
+}
+.agency-side-section::-webkit-scrollbar-track {
+  background: transparent;
+  border: none;
+}
+.agency-side-section::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  border: none;
+  transition: background 160ms ease;
+}
+.agency-side-section:hover::-webkit-scrollbar-thumb,
+.agency-side-section::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+.agency-side-section::-webkit-scrollbar-thumb:active {
+  background: rgba(255, 255, 255, 0.42);
+}
 .agency-empty-nav { margin: 12px 9px; }
 .agency-project { margin-bottom: 8px; position: relative; }
 .agency-project-row, .agency-workspace-nav-row { display: flex; align-items: center; min-width: 0; position: relative; }
@@ -343,8 +392,8 @@
 
 /* Main Area */
 .agency-main { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; position: relative; z-index: 1; }
-.agency-topbar { height: var(--maw-topbar-h); padding: 0 19px; border-bottom: 1px solid var(--agency-line); display: flex;
-  gap: 13px; align-items: center; flex: 0 0 var(--maw-topbar-h); background: color-mix(in srgb, var(--agency-bg) 85%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); position: relative; z-index: 100; }
+.agency-topbar { height: var(--maw-topbar-h); padding: 0 14px; border-bottom: 1px solid var(--agency-line); display: flex;
+  gap: 12px; align-items: center; flex: 0 0 var(--maw-topbar-h); background: color-mix(in srgb, var(--agency-bg) 85%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); position: relative; z-index: 100; }
 .agency-topbar-title { font-size: 13px; font-weight: 650; }
 .agency-topbar-count { font-size: 11px; }
 .agency-connection-state { display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--agency-dim); }
@@ -618,8 +667,10 @@
 
 /* Compact navigation and persistent PTY views. Hidden panes remain mounted. */
 .agency-agent-pane[hidden], .agency-shell-pane[hidden] { display: none; }
-.agency-breadcrumbs { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; font-size: 12px; }
+.agency-breadcrumbs { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; font-size: 13px; color: var(--agency-dim); }
 .agency-breadcrumbs > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.agency-breadcrumbs > span:not(.agency-breadcrumb-path):not(.agency-breadcrumb-separator) { color: var(--agency-text); }
+.agency-breadcrumb-separator { color: var(--agency-dim); opacity: 0.6; font-size: 13px; flex-shrink: 0; user-select: none; }
 .agency-breadcrumb-path { flex: 1; }
 .agency-view-tabs { display: flex; gap: 4px; min-width: 0; margin-right: auto; }
 .agency-view-tabs button { background: transparent; color: var(--text-muted, #aaa); border: 0; padding: 6px 10px; cursor: pointer; white-space: nowrap; }
@@ -3950,31 +4001,55 @@
 }
 
 .agency-side-heading {
-  padding: 10px 10px 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 8px 8px 12px;
 }
 
 .agency-side-heading > span {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--ink-2, #c8c6c0);
+  line-height: 1;
 }
 
 .agency-side-heading .agency-add-project-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 28px;
   height: 28px;
-  font-size: 18px;
-  font-weight: 500;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
   border-radius: 6px;
-  color: var(--ink, #ededea);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--agency-dim);
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease;
 }
 
 .agency-side-heading .agency-add-project-btn:hover {
-  background: color-mix(in srgb, var(--ember, #d97442) 18%, transparent);
-  border-color: color-mix(in srgb, var(--ember, #d97442) 45%, transparent);
+  background: var(--agency-hover);
+  border-color: transparent;
   color: var(--ink, #ffffff);
+}
+
+.agency-side-heading .agency-add-project-btn:focus-visible {
+  outline: 2px solid var(--agency-highlight);
+  outline-offset: 2px;
+  border-color: transparent;
+}
+
+.agency-sidebar.agency-sidebar-collapsing {
+  opacity: 0.65;
 }
 
 body.agency-sidebar-dragging,

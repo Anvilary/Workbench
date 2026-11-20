@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId, AgentInfo, ServerMessage } from '@agent-workbench/shared';
 import { DEFAULT_BROWSER_PROFILE_ID, resolveEffectiveBrowserProfileId } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection.js';
-import { AgencySidebar, AgencyDoneView, SidebarToggleIcon } from './AgencySidebar.js';
+import { AgencySidebar, AgencyDoneView, AgencyBrand } from './AgencySidebar.js';
 import { AgencyWorkspaceCreator, AgencyProjectCreator } from './AgencyWorkspaceCreator.js';
 import { AgencyWorkspaceView } from './AgencyWorkspaceView.js';
 import { useAgencyStore } from './useAgencyStore.js';
@@ -332,6 +332,11 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
     setCreatingWorkspace(true);
   }
 
+  const COLLAPSE_THRESHOLD = 150;
+  const MIN_SIDEBAR_WIDTH = 180;
+  const MAX_SIDEBAR_WIDTH = 500;
+  const DEFAULT_SIDEBAR_WIDTH = 240;
+
   function startSidebarResize(event: React.PointerEvent) {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -341,16 +346,27 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
       resizerEl.setPointerCapture(pointerId);
     } catch {}
     setResizingSidebar(true);
-    let latestWidth = sidebarWidth;
+    if (sidebarRef.current) {
+      sidebarRef.current.classList.add('agency-resizing');
+    }
+    let latestClientX = sidebarWidth;
+    const initialWidth = sidebarWidth;
 
     const onPointerMove = (e: PointerEvent) => {
       if (e.pointerId !== pointerId) return;
-      const clamped = Math.max(180, Math.min(500, e.clientX));
-      latestWidth = clamped;
-      // Fast path: bypass React render cycle during active dragging to avoid reconciliation overhead
+      latestClientX = e.clientX;
       if (sidebarRef.current) {
-        sidebarRef.current.style.width = `${clamped}px`;
-        sidebarRef.current.style.flexBasis = `${clamped}px`;
+        if (latestClientX < COLLAPSE_THRESHOLD) {
+          sidebarRef.current.classList.add('agency-sidebar-collapsing');
+          const visualWidth = Math.max(0, latestClientX);
+          sidebarRef.current.style.width = `${visualWidth}px`;
+          sidebarRef.current.style.flexBasis = `${visualWidth}px`;
+        } else {
+          sidebarRef.current.classList.remove('agency-sidebar-collapsing');
+          const clamped = Math.max(COLLAPSE_THRESHOLD, Math.min(MAX_SIDEBAR_WIDTH, latestClientX));
+          sidebarRef.current.style.width = `${clamped}px`;
+          sidebarRef.current.style.flexBasis = `${clamped}px`;
+        }
       }
     };
 
@@ -360,15 +376,40 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
       window.removeEventListener('pointercancel', onPointerEnd);
       window.removeEventListener('blur', onPointerEnd);
       try {
+        resizerEl.removeEventListener('lostpointercapture', onPointerEnd);
         if (resizerEl.hasPointerCapture(pointerId)) {
           resizerEl.releasePointerCapture(pointerId);
         }
       } catch {}
       setResizingSidebar(false);
-      setSidebarWidth(latestWidth);
-      try {
-        localStorage.setItem(SIDEBAR_WIDTH_KEY, latestWidth.toString());
-      } catch {}
+      if (sidebarRef.current) {
+        sidebarRef.current.classList.remove('agency-resizing');
+        sidebarRef.current.classList.remove('agency-sidebar-collapsing');
+      }
+
+      if (latestClientX < COLLAPSE_THRESHOLD) {
+        setSidebarOpen(false);
+        const restoreWidth = initialWidth >= MIN_SIDEBAR_WIDTH ? initialWidth : DEFAULT_SIDEBAR_WIDTH;
+        setSidebarWidth(restoreWidth);
+        if (sidebarRef.current) {
+          sidebarRef.current.style.width = '';
+          sidebarRef.current.style.flexBasis = '';
+        }
+        try {
+          localStorage.setItem('agency-ui.sidebar-open.v1', 'false');
+          localStorage.setItem(SIDEBAR_WIDTH_KEY, restoreWidth.toString());
+        } catch {}
+      } else {
+        const finalWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, latestClientX));
+        setSidebarWidth(finalWidth);
+        if (sidebarRef.current) {
+          sidebarRef.current.style.width = `${finalWidth}px`;
+          sidebarRef.current.style.flexBasis = `${finalWidth}px`;
+        }
+        try {
+          localStorage.setItem(SIDEBAR_WIDTH_KEY, finalWidth.toString());
+        } catch {}
+      }
     };
 
     const onPointerEnd = (e: Event) => {
@@ -380,6 +421,7 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
     window.addEventListener('pointerup', onPointerEnd);
     window.addEventListener('pointercancel', onPointerEnd);
     window.addEventListener('blur', onPointerEnd);
+    resizerEl.addEventListener('lostpointercapture', onPointerEnd);
   }
 
   async function markDone(workspace: AgencyWorkspace) {
@@ -529,13 +571,32 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
               tabIndex={0}
               aria-orientation="vertical"
               aria-label={t('agency.ui.sidebarResizer')}
+              aria-valuenow={sidebarWidth}
+              aria-valuemin={180}
+              aria-valuemax={500}
               onPointerDown={startSidebarResize}
               onKeyDown={(event) => {
                 if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key)) return;
                 event.preventDefault();
-                const width = event.key === 'Home' ? 240 : Math.max(180, Math.min(500, sidebarWidth + (event.key === 'ArrowLeft' ? -10 : 10)));
-                setSidebarWidth(width);
-                try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width)); } catch {}
+                if (event.key === 'Home') {
+                  setSidebarWidth(240);
+                  try { localStorage.setItem(SIDEBAR_WIDTH_KEY, '240'); } catch {}
+                  return;
+                }
+                if (event.key === 'ArrowLeft') {
+                  const next = sidebarWidth - 10;
+                  if (next < 180) {
+                    setSidebarOpen(false);
+                    try { localStorage.setItem('agency-ui.sidebar-open.v1', 'false'); } catch {}
+                  } else {
+                    setSidebarWidth(next);
+                    try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next)); } catch {}
+                  }
+                } else if (event.key === 'ArrowRight') {
+                  const next = Math.min(500, sidebarWidth + 10);
+                  setSidebarWidth(next);
+                  try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next)); } catch {}
+                }
               }}
             />
           </>
@@ -544,31 +605,22 @@ export function AgencyApp({ connection, theme: _themeProp }: { connection: Agent
       <div className="agency-main">
         <div className="agency-topbar">
           {!sidebarOpen && (
-            <div className="agency-topbar-collapsed-brand">
-              <button
-                className="agency-icon-button"
-                onClick={() => setSidebarOpen(true)}
-                type="button"
-                aria-label={sidebarOpen ? t('agency.ui.collapseSidebar') : t('agency.ui.expandSidebar')}
-                aria-expanded={sidebarOpen}
-              >
-                <SidebarToggleIcon />
-              </button>
-              <img src="/brand/workbench-logo-128.png" alt="" className="agency-topbar-logo" width="36" height="36" />
-              <strong>{t('agency.ui.agency')}</strong>
-            </div>
+            <>
+              <AgencyBrand expanded={false} onToggle={() => setSidebarOpen(true)} />
+              <span className="agency-topbar-divider" aria-hidden="true" />
+            </>
           )}
           <nav className="agency-breadcrumbs" aria-label={t('agency.ui.breadcrumbs')}>
             {selected ? (
               <>
                 <span title={selectedProject?.name}>{selectedProject?.name}</span>
-                <span aria-hidden="true">›</span>
+                <span className="agency-breadcrumb-separator" aria-hidden="true">›</span>
                 <span title={selected.name}>{selected.name}</span>
-                <span aria-hidden="true">›</span>
+                <span className="agency-breadcrumb-separator" aria-hidden="true">›</span>
                 <span className="agency-breadcrumb-path" title={selected.cwd}>{selected.cwd}</span>
               </>
             ) : (
-              <span>{showingDone ? t('agency.ui.done') : t('agency.ui.agencyUI')}</span>
+              <span className="agency-breadcrumb-fallback">{showingDone ? t('agency.ui.done') : t('agency.ui.agencyUI')}</span>
             )}
           </nav>
           <span className="agency-flex-spacer" />

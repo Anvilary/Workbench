@@ -300,10 +300,11 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   const brand = page.locator('.agency-nav-head strong');
   assert.equal(await brand.textContent(), 'Workbench');
 
-  // 2. Sidebar toggle button uses SVG panel toggle icon (not hamburger '☰')
-  const sidebarCollapseBtn = page.locator('.agency-nav-head button.agency-icon-button');
-  assert.equal(await sidebarCollapseBtn.locator('svg').count(), 1);
-  assert.ok(!((await sidebarCollapseBtn.textContent()) || '').includes('☰'));
+  // 2. Sidebar toggle is the Workbench logo button (no separate toggle icon button)
+  const sidebarBrandToggle = page.locator('.agency-nav-head .agency-brand-toggle');
+  assert.equal(await sidebarBrandToggle.count(), 1, 'Brand logo toggle exists');
+  assert.equal(await sidebarBrandToggle.getAttribute('aria-expanded'), 'true');
+  assert.equal(await page.locator('.agency-nav-head button.agency-icon-button').count(), 0, 'Old separate toggle icon button is removed');
 
   // 3. Sidebar bottom no longer has done toggle section
   assert.equal(await page.locator('.agency-nav-bottom').count(), 0);
@@ -432,12 +433,13 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   const agentsUsageMenuItem = page.locator('.maw-shell-menu .maw-menu-item').filter({ hasText: 'Agents Usage' });
   assert.equal(await agentsUsageMenuItem.count(), 0);
 
-  // 7. Sidebar collapse and expand
-  await sidebarCollapseBtn.click();
+  // 7. Sidebar collapse and expand via logo toggle
+  await sidebarBrandToggle.click();
   await page.waitForFunction(() => document.querySelector('.agency-sidebar.agency-sidebar-collapsed') !== null);
-  const expandBtn = page.locator('.agency-topbar button.agency-icon-button').first();
-  assert.equal(await expandBtn.locator('svg').count(), 1);
-  await expandBtn.click();
+  const topbarBrandToggle = page.locator('.agency-topbar .agency-brand-toggle');
+  await topbarBrandToggle.waitFor({ state: 'visible' });
+  assert.equal(await topbarBrandToggle.locator('img.agency-topbar-logo').count(), 1);
+  await topbarBrandToggle.click();
   await page.waitForFunction(() => document.querySelector('.agency-sidebar.agency-sidebar-collapsed') === null);
 
   // 8. Viewport and layout verification at 1366x768 and 1920x1080

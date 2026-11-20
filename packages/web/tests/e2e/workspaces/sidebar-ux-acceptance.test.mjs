@@ -388,7 +388,7 @@ test('sidebar ux & branding acceptance suite: drag-and-drop, controls, lifecycle
   const focusOffset = await page.evaluate(() => window.getComputedStyle(document.activeElement).outlineOffset);
   assert.equal(focusOffset, '-2px', 'Tab button focus outline must be inset (-2px) so no vertical line artifact leaks outside');
 
-  // 7. Task 6: Verify Brand Logo
+  // 7. Task 6: Verify Brand Logo and toggle behavior
   const navLogo = page.locator('.agency-nav-logo');
   await navLogo.waitFor({ state: 'visible' });
   const logoSrc = await navLogo.getAttribute('src');
@@ -396,6 +396,22 @@ test('sidebar ux & branding acceptance suite: drag-and-drop, controls, lifecycle
   const brand = page.locator('.agency-nav-brand');
   await brand.getByText('Workbench', { exact: true }).waitFor();
   const logoBox = await navLogo.boundingBox(), brandBox = await brand.boundingBox(), headBox = await page.locator('.agency-nav-head').boundingBox();
-  assert.ok(logoBox?.width >= 56, 'Sidebar logo is visibly larger');
+  assert.ok(Math.abs((logoBox?.width ?? 0) - 38) <= 2, 'Sidebar logo is consistently ~38px');
   assert.ok(brandBox.x - headBox.x <= 20, 'Logo and Workbench title are left-aligned near the left edge');
+
+  // Verify Workbench logo acts as collapse toggle
+  const brandToggle = page.locator('.agency-nav-head .agency-brand-toggle');
+  assert.equal(await brandToggle.getAttribute('aria-expanded'), 'true');
+  await brandToggle.click();
+
+  // Sidebar is now collapsed: topbar brand toggle appears with logo
+  const topbarBrandToggle = page.locator('.agency-topbar .agency-brand-toggle');
+  await topbarBrandToggle.waitFor({ state: 'visible' });
+  assert.equal(await topbarBrandToggle.getAttribute('aria-expanded'), 'false');
+  assert.equal(await page.locator('.agency-topbar-logo').count(), 1);
+  assert.equal(await page.locator('.agency-topbar-divider').count(), 1);
+
+  // Click topbar brand logo to expand sidebar again
+  await topbarBrandToggle.click();
+  await navLogo.waitFor({ state: 'visible' });
 });
