@@ -300,7 +300,7 @@ export function SettingsDialog({
     <div className="modal-backdrop maw-settings-backdrop" onClick={onClose}>
       <div
         ref={dialogRef}
-        className={`modal settings-dialog maw-settings-window ${activeTab === 'usage' ? 'settings-dialog-wide maw-settings-wide' : ''}`}
+        className="modal settings-dialog maw-settings-window"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
