@@ -11,6 +11,16 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
   const [matchCount, setMatchCount] = useState(0);
   const [activeOrdinal, setActiveOrdinal] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchTimerRef = useRef<number | null>(null);
+  const activeSearchQueryRef = useRef<string>('');
+  const highestReceivedReqIdRef = useRef<number>(0);
+
+  const clearPendingSearch = () => {
+    if (searchTimerRef.current !== null) {
+      window.clearTimeout(searchTimerRef.current);
+      searchTimerRef.current = null;
+    }
+  };
 
   // Focus and select all on mount
   useEffect(() => {
@@ -24,6 +34,13 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
     if (!bridge) return;
     const unsubscribe = bridge.subscribe((state) => {
       if (state.type === 'found-in-page' && state.id === id) {
+        if (!activeSearchQueryRef.current) return;
+        if (typeof state.requestId === 'number') {
+          if (state.requestId < highestReceivedReqIdRef.current) {
+            return;
+          }
+          highestReceivedReqIdRef.current = state.requestId;
+        }
         setMatchCount(state.matches ?? 0);
         setActiveOrdinal(state.activeMatchOrdinal ?? 0);
       }
@@ -36,6 +53,7 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
   // Clean up highlights when unmounted
   useEffect(() => {
     return () => {
+      clearPendingSearch();
       void window.mawChatGpt?.command({
         type: 'stop-find-in-page',
         id,
@@ -44,8 +62,11 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
     };
   }, [id]);
 
-  const runFind = (text: string, forward = true, findNext = false) => {
-    if (!text.trim()) {
+  const executeFind = (text: string, forward = true, findNext = false) => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      clearPendingSearch();
+      activeSearchQueryRef.current = '';
       setMatchCount(0);
       setActiveOrdinal(0);
       void window.mawChatGpt?.command({
@@ -55,10 +76,12 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
       });
       return;
     }
+
+    activeSearchQueryRef.current = trimmed;
     void window.mawChatGpt?.command({
       type: 'find-in-page',
       id,
-      text,
+      text: trimmed,
       forward,
       findNext,
     });
@@ -67,31 +90,75 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setQuery(val);
-    runFind(val, true, false);
+    clearPendingSearch();
+    const trimmed = val.trim();
+    if (!trimmed) {
+      executeFind('');
+      return;
+    }
+    searchTimerRef.current = window.setTimeout(() => {
+      searchTimerRef.current = null;
+      executeFind(trimmed, true, false);
+    }, 120);
   };
 
   const handleNext = () => {
-    if (query) runFind(query, true, true);
+    clearPendingSearch();
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    if (activeSearchQueryRef.current !== trimmed) {
+      executeFind(trimmed, true, false);
+    } else {
+      executeFind(trimmed, true, true);
+    }
   };
 
   const handlePrevious = () => {
-    if (query) runFind(query, false, true);
+    clearPendingSearch();
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    if (activeSearchQueryRef.current !== trimmed) {
+      executeFind(trimmed, false, false);
+    } else {
+      executeFind(trimmed, false, true);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape') {
       e.preventDefault();
+      e.stopPropagation();
+      clearPendingSearch();
       onClose();
       return;
     }
     if (e.key === 'Enter') {
       e.preventDefault();
+      if (searchTimerRef.current !== null) {
+        clearPendingSearch();
+        const trimmed = query.trim();
+        if (trimmed) {
+          executeFind(trimmed, !e.shiftKey, false);
+        }
+        return;
+      }
       if (e.shiftKey) {
         handlePrevious();
       } else {
         handleNext();
       }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      handlePrevious();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      handleNext();
     }
+  };
+
+  const handleClose = () => {
+    clearPendingSearch();
+    onClose();
   };
 
   let counterText = '';
@@ -145,7 +212,7 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
         className="maw-browser-find-btn maw-browser-find-close"
         aria-label={t('agency.browser.closeFind')}
         title={t('agency.browser.closeFind')}
-        onClick={onClose}
+        onClick={handleClose}
       >
         ×
       </button>

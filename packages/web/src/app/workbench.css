@@ -1339,39 +1339,50 @@
   flex: none;
   margin: 4px 8px;
   display: flex;
-  gap: 4px;
+  gap: 6px;
   align-items: center;
   height: 32px;
-  padding: 2px 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 6px);
-  background: var(--panel, #18181b);
-  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.3));
+  padding: 4px 8px;
+  background: radial-gradient(400px 180px at 80% 0%, var(--forge-glow-1), transparent 70%), var(--panel);
+  border: 1px solid var(--border-strong);
+  border-top: 2px solid var(--accent-border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  font-size: 12px;
   z-index: 10;
+  animation: maw-fade-in 0.12s ease-out;
 }
 .maw-browser-find-input {
   flex: 1;
   min-width: 140px;
   max-width: 320px;
   height: 24px;
-  background: var(--bg, #111113);
-  border: 1px solid var(--border-subtle, #27272a);
-  border-radius: 4px;
-  color: var(--ink, #fafafa);
+  background: var(--bg-1, #141417);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
   font-size: 12px;
   padding: 0 8px;
   outline: none;
   transition: border-color 120ms ease;
 }
-.maw-browser-find-input:focus {
-  border-color: var(--ember, #ff6b35);
+.agency-app .maw-browser-find-input:focus,
+.agency-app .maw-browser-find-input:focus-visible,
+.agency-app .maw-terminal-search-input:focus,
+.agency-app .maw-terminal-search-input:focus-visible {
+  outline: none !important;
+  outline-offset: 0 !important;
+  border-color: var(--accent) !important;
+  box-shadow: none !important;
 }
 .maw-browser-find-counter {
   flex: none;
   font-size: 11px;
-  font-family: var(--font-mono, monospace);
-  color: var(--muted, #a1a1aa);
-  padding: 0 6px;
+  color: var(--ink-dim);
+  min-width: 32px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  padding: 0 4px;
   white-space: nowrap;
 }
 .maw-browser-find-btn {
@@ -1379,28 +1390,29 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
+  padding: 3px 7px;
+  min-width: 24px;
   height: 24px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
-  color: var(--ink, #fafafa);
-  font-size: 13px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-dim);
+  font-size: 12px;
   cursor: pointer;
   transition: all 120ms ease;
   line-height: 1;
-  padding: 0;
 }
 .maw-browser-find-btn:hover:not(:disabled) {
-  background: var(--hover, #27272a);
-  color: #ffffff;
+  background: var(--agency-hover);
+  color: var(--ink);
+  border-color: var(--border);
 }
 .maw-browser-find-btn:disabled {
   opacity: 0.35;
   cursor: default;
 }
 .maw-browser-find-close {
-  font-size: 16px;
+  font-size: 14px;
   margin-left: 2px;
 }
 
@@ -3288,6 +3300,17 @@
   }
 }
 
+@keyframes maw-terminal-search-fade-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -4px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 /* Floating Terminal Search Bar */
 .maw-terminal-search-bar {
   position: absolute;
@@ -3305,7 +3328,7 @@
   box-shadow: var(--shadow-lg);
   padding: 4px 8px;
   font-size: 12px;
-  animation: maw-fade-in 0.12s ease-out;
+  animation: maw-terminal-search-fade-in 0.12s ease-out;
 }
 
 .maw-terminal-search-input {

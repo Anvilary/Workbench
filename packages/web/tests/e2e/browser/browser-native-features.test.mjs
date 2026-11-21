@@ -287,6 +287,7 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
 
     // Type query
     await findInput.fill('hello');
+    await page.waitForFunction(() => window.__commands.some(c => c.type === 'find-in-page' && c.text === 'hello'));
     commands = await page.evaluate(() => window.__commands);
     const findCmd = commands.find(c => c.type === 'find-in-page' && c.text === 'hello');
     assert.ok(findCmd, 'find-in-page command must be sent when query is typed');

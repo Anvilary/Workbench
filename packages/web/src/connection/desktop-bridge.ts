@@ -25,6 +25,7 @@ export interface DesktopBridgeEvent {
   dictionarySuggestions?: string[];
   matches?: number;
   activeMatchOrdinal?: number;
+  requestId?: number;
   x?: number;
   y?: number;
   zoomFactor?: number;
