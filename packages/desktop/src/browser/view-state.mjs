@@ -28,6 +28,7 @@ export function createBrowserViewState() {
     zoomLevels: new Map(), // id -> number
     tabFavicons: new Map(), // id -> string (best validated favicon URL)
     linkOpenHistory: new Map(),
+    findRequests: new Map(), // tabId -> { requestId, searchId, text }
     // Native clicks must not make an unchanged renderer layout look like a new focus request.
     layoutFocusedId: null,
     reportedFocusedId: null,

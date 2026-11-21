@@ -26,6 +26,8 @@ export interface DesktopBridgeEvent {
   matches?: number;
   activeMatchOrdinal?: number;
   requestId?: number;
+  searchId?: number;
+  searchText?: string;
   x?: number;
   y?: number;
   zoomFactor?: number;

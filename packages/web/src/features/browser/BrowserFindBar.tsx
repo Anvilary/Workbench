@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../../i18n/index.js';
+import { createFindCorrelationController, type FindCorrelationState } from './find-correlation.js';
 
 export interface BrowserFindBarProps {
   id: string;
@@ -8,19 +9,35 @@ export interface BrowserFindBarProps {
 
 export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Element {
   const [query, setQuery] = useState('');
-  const [matchCount, setMatchCount] = useState(0);
-  const [activeOrdinal, setActiveOrdinal] = useState(0);
+  const [findState, setFindState] = useState<FindCorrelationState>({
+    matchCount: 0,
+    activeOrdinal: 0,
+    counterText: '',
+  });
   const inputRef = useRef<HTMLInputElement>(null);
-  const searchTimerRef = useRef<number | null>(null);
-  const activeSearchQueryRef = useRef<string>('');
-  const highestReceivedReqIdRef = useRef<number>(0);
 
-  const clearPendingSearch = () => {
-    if (searchTimerRef.current !== null) {
-      window.clearTimeout(searchTimerRef.current);
-      searchTimerRef.current = null;
-    }
-  };
+  const controller = useMemo(() => {
+    return createFindCorrelationController({
+      tabId: id,
+      dispatchCommand: (cmd) => {
+        const bridge = window.mawChatGpt;
+        if (!bridge) return Promise.resolve();
+        return bridge.command(cmd as any);
+      },
+      onStateChange: (newState) => {
+        setFindState(newState);
+      },
+      debounceMs: 120,
+      formatNoMatches: () => t('agency.browser.noMatches'),
+    });
+  }, [id]);
+
+  // Clean up controller on tabId change or unmount
+  useEffect(() => {
+    return () => {
+      controller.destroy();
+    };
+  }, [controller]);
 
   // Focus and select all on mount
   useEffect(() => {
@@ -28,120 +45,42 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
     inputRef.current?.select();
   }, []);
 
-  // Subscribe to found-in-page events
+  // Subscribe to bridge events
   useEffect(() => {
     const bridge = window.mawChatGpt;
     if (!bridge) return;
     const unsubscribe = bridge.subscribe((state) => {
-      if (state.type === 'found-in-page' && state.id === id) {
-        if (!activeSearchQueryRef.current) return;
-        if (typeof state.requestId === 'number') {
-          if (state.requestId < highestReceivedReqIdRef.current) {
-            return;
-          }
-          highestReceivedReqIdRef.current = state.requestId;
-        }
-        setMatchCount(state.matches ?? 0);
-        setActiveOrdinal(state.activeMatchOrdinal ?? 0);
-      }
+      controller.handleEvent(state);
     });
     return () => {
       unsubscribe();
     };
-  }, [id]);
-
-  // Clean up highlights when unmounted
-  useEffect(() => {
-    return () => {
-      clearPendingSearch();
-      void window.mawChatGpt?.command({
-        type: 'stop-find-in-page',
-        id,
-        action: 'clearSelection',
-      });
-    };
-  }, [id]);
-
-  const executeFind = (text: string, forward = true, findNext = false) => {
-    const trimmed = text.trim();
-    if (!trimmed) {
-      clearPendingSearch();
-      activeSearchQueryRef.current = '';
-      setMatchCount(0);
-      setActiveOrdinal(0);
-      void window.mawChatGpt?.command({
-        type: 'stop-find-in-page',
-        id,
-        action: 'clearSelection',
-      });
-      return;
-    }
-
-    activeSearchQueryRef.current = trimmed;
-    void window.mawChatGpt?.command({
-      type: 'find-in-page',
-      id,
-      text: trimmed,
-      forward,
-      findNext,
-    });
-  };
+  }, [controller]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setQuery(val);
-    clearPendingSearch();
-    const trimmed = val.trim();
-    if (!trimmed) {
-      executeFind('');
-      return;
-    }
-    searchTimerRef.current = window.setTimeout(() => {
-      searchTimerRef.current = null;
-      executeFind(trimmed, true, false);
-    }, 120);
+    controller.setQuery(val);
   };
 
   const handleNext = () => {
-    clearPendingSearch();
-    const trimmed = query.trim();
-    if (!trimmed) return;
-    if (activeSearchQueryRef.current !== trimmed) {
-      executeFind(trimmed, true, false);
-    } else {
-      executeFind(trimmed, true, true);
-    }
+    controller.findNext(true);
   };
 
   const handlePrevious = () => {
-    clearPendingSearch();
-    const trimmed = query.trim();
-    if (!trimmed) return;
-    if (activeSearchQueryRef.current !== trimmed) {
-      executeFind(trimmed, false, false);
-    } else {
-      executeFind(trimmed, false, true);
-    }
+    controller.findNext(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
-      clearPendingSearch();
+      controller.close();
       onClose();
       return;
     }
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (searchTimerRef.current !== null) {
-        clearPendingSearch();
-        const trimmed = query.trim();
-        if (trimmed) {
-          executeFind(trimmed, !e.shiftKey, false);
-        }
-        return;
-      }
       if (e.shiftKey) {
         handlePrevious();
       } else {
@@ -157,18 +96,9 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
   };
 
   const handleClose = () => {
-    clearPendingSearch();
+    controller.close();
     onClose();
   };
-
-  let counterText = '';
-  if (query.trim().length > 0) {
-    if (matchCount === 0) {
-      counterText = t('agency.browser.noMatches');
-    } else {
-      counterText = `${activeOrdinal}/${matchCount}`;
-    }
-  }
 
   return (
     <div className="maw-browser-find-bar" role="search" aria-label={t('agency.browser.findInPage')}>
@@ -182,9 +112,9 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
         onChange={handleChange}
         onKeyDown={handleKeyDown}
       />
-      {counterText && (
+      {findState.counterText && (
         <span className="maw-browser-find-counter" role="status" aria-live="polite">
-          {counterText}
+          {findState.counterText}
         </span>
       )}
       <button
@@ -193,7 +123,7 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
         aria-label={t('agency.browser.previousMatch')}
         title={t('agency.browser.previousMatch')}
         onClick={handlePrevious}
-        disabled={matchCount === 0}
+        disabled={findState.matchCount === 0}
       >
         ↑
       </button>
@@ -203,7 +133,7 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
         aria-label={t('agency.browser.nextMatch')}
         title={t('agency.browser.nextMatch')}
         onClick={handleNext}
-        disabled={matchCount === 0}
+        disabled={findState.matchCount === 0}
       >
         ↓
       </button>

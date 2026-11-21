@@ -378,11 +378,12 @@ export function validCommand(value) {
   if (value.type === 'find-in-page') {
     if (!record(value) || typeof value.id !== 'string' || !UUID.test(value.id) || typeof value.text !== 'string' || value.text.length > 512) return false;
     for (const key of Object.keys(value)) {
-      if (!['type', 'id', 'text', 'forward', 'findNext', 'matchCase'].includes(key)) return false;
+      if (!['type', 'id', 'text', 'forward', 'findNext', 'matchCase', 'searchId'].includes(key)) return false;
     }
     if ('forward' in value && typeof value.forward !== 'boolean') return false;
     if ('findNext' in value && typeof value.findNext !== 'boolean') return false;
     if ('matchCase' in value && typeof value.matchCase !== 'boolean') return false;
+    if ('searchId' in value && (!Number.isSafeInteger(value.searchId) || value.searchId < 0)) return false;
     return true;
   }
   if (value.type === 'stop-find-in-page') {

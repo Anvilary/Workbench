@@ -26,7 +26,7 @@ export function createBrowserViewController({
   const {
     views, urls, providers, profileIds, requestedUrls, failures, popups, popupOwners, authEntryUrls,
     attachedViews, suspendedTabs, lastAccessedAt, activeDownloads, interactionProtected, zoomLevels,
-    tabFavicons, linkOpenHistory, cloningProfiles,
+    tabFavicons, linkOpenHistory, cloningProfiles, findRequests,
   } = state;
 
   const layout = createViewLayout({ win, send, state });
@@ -77,6 +77,7 @@ export function createBrowserViewController({
     urls.delete(id);
     requestedUrls.delete(id);
     failures.delete(id);
+    findRequests.delete(id);
 
     send({ type: 'suspended', id });
   }
@@ -201,6 +202,7 @@ export function createBrowserViewController({
     };
     view.webContents.on('did-navigate', (event, url) => {
       interactionProtected.delete(id);
+      findRequests.delete(id);
       if (!authenticationUrl(url) && durablePage(provider, url)) {
         authEntryUrls.delete(view.webContents);
       }
@@ -281,7 +283,7 @@ export function createBrowserViewController({
       hide(id);
       if (!view.webContents.isDestroyed()) view.webContents.close();
     }
-    views.delete(id); urls.delete(id); providers.delete(id); profileIds.delete(id); requestedUrls.delete(id); failures.delete(id);
+    views.delete(id); urls.delete(id); providers.delete(id); profileIds.delete(id); requestedUrls.delete(id); failures.delete(id); findRequests.delete(id);
   }
 
   function reportNavigation(id) {

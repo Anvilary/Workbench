@@ -6,7 +6,7 @@
 import { externalUrl, targetWebProvider, authenticationUrl } from '../../policy.mjs';
 
 export function createPageCommands({ clipboard, state, guard, send }) {
-  const { views, providers, failures, lastAccessedAt, authEntryUrls } = state;
+  const { views, providers, failures, lastAccessedAt, authEntryUrls, findRequests } = state;
   const { isContentsInAuthFlow, tryOpenOAuthLoopback, openExternal, applyBrowserZoom } = guard;
 
   function browserAction(command) {
@@ -74,12 +74,18 @@ export function createPageCommands({ clipboard, state, guard, send }) {
     if ('findNext' in command) options.findNext = command.findNext;
     if ('matchCase' in command) options.matchCase = command.matchCase;
     const requestId = contents.findInPage(command.text, options);
-    return { ok: true, requestId };
+    findRequests?.set(command.id, {
+      requestId,
+      searchId: command.searchId,
+      text: command.text,
+    });
+    return { ok: true, requestId, searchId: command.searchId };
   }
 
   function stopFindInPage(command) {
     const view = views.get(command.id);
     const contents = view?.webContents;
+    findRequests?.delete(command.id);
     if (!contents || contents.isDestroyed()) return { ok: false };
     const action = command.action || 'clearSelection';
     contents.stopFindInPage(action);

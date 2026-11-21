@@ -306,6 +306,7 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
       text: 'hello',
       forward: true,
       findNext: true,
+      searchId: 1,
     });
 
     // Shift+Enter -> previous
@@ -318,6 +319,7 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
       text: 'hello',
       forward: false,
       findNext: true,
+      searchId: 1,
     });
 
     // Escape closes find bar and stops search

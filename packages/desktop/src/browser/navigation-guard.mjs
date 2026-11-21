@@ -18,7 +18,7 @@ export function createNavigationGuard({
   layout, flushBrowserSession, desktopShortcut,
 }) {
   const { shell, dialog } = electron;
-  const { views, urls, popups, popupOwners, authEntryUrls, interactionProtected, zoomLevels, linkOpenHistory } = state;
+  const { views, urls, popups, popupOwners, authEntryUrls, interactionProtected, zoomLevels, linkOpenHistory, findRequests } = state;
   const { invalidate, hideAll } = layout;
 
   function allowLinkOpen(tabId) {
@@ -236,10 +236,16 @@ export function createNavigationGuard({
     contents.on('found-in-page', (_event, result) => {
       const id = getTabId();
       if (!id) return;
+      const activeFind = findRequests?.get(id);
+      if (activeFind && typeof activeFind.requestId === 'number' && result.requestId !== activeFind.requestId) {
+        return;
+      }
       send({
         type: 'found-in-page',
         id,
         requestId: result.requestId,
+        searchId: activeFind?.searchId,
+        searchText: activeFind?.text,
         activeMatchOrdinal: result.activeMatchOrdinal,
         matches: result.matches,
         selectionArea: result.selectionArea,
