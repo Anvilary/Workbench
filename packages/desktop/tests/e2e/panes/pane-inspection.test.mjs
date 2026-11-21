@@ -186,7 +186,7 @@ test('native webpage pointer focus synchronizes inspection without stealing MAW 
   await page.getByRole('menuitem', { name: /Browser|Web Page/, exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.waitFor();
-  const address = dialog.getByLabel('URL or Search Query', { exact: true });
+  const address = dialog.locator('input.maw-browser-dest-input');
   await address.focus();
   await page.waitForTimeout(150);
   assert.equal(await shellFocused(), true);
