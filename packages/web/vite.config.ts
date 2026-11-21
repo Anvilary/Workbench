@@ -38,4 +38,18 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['@agent-workbench/shared'],
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/@xterm/')) {
+            return 'vendor-xterm';
+          }
+          if (id.includes('node_modules/@dnd-kit/')) {
+            return 'vendor-dndkit';
+          }
+        },
+      },
+    },
+  },
 });
