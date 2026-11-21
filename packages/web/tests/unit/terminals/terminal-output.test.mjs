@@ -95,3 +95,104 @@ test('D-03: truncated reset replay after deep scrollback preserves existing scro
     assert.ok(term.buffer.normal.baseY >= 4900, 'Scrollback depth retained');
   } finally { lane.dispose(); term.dispose(); }
 });
+
+test('split UTF-8 multibyte boundary overlap does not throw, lose characters, or corrupt output', async () => {
+  const term = new Terminal({ cols: 80, rows: 24, allowProposedApi: true });
+  const lane = new TerminalOutput(term);
+  try {
+    // 4-byte UTF-8 character (🚀 = F0 9F 9A 80).
+    // Simulate previous offset landing inside continuation bytes (overlap = 1, 2, 3)
+    lane.output('PRE-', 4);
+    // Incoming: '🚀END\n', 4 + 4 = 8 bytes. offset = 11.
+    // startOffset = 11 - 8 = 3. overlap = 4 - 3 = 1.
+    // bytes[1] is 0x9F (continuation byte).
+    lane.output('🚀END\n', 11);
+    await until(() => text(term).includes('PRE-🚀END'));
+    assert.ok(text(term).includes('PRE-🚀END'), '4-byte emoji preserved across split boundary without crash');
+
+    // 3-byte UTF-8 box-drawing character (─ = E2 94 80).
+    // Current offset is 11.
+    // Incoming: '─BOX\n', 3 + 4 = 7 bytes. offset = 16.
+    // startOffset = 16 - 7 = 9. overlap = 11 - 9 = 2.
+    // bytes[2] is 0x80 (continuation byte).
+    lane.output('─BOX\n', 16);
+    await until(() => text(term).includes('─BOX'));
+    assert.ok(text(term).includes('─BOX'), '3-byte box drawing character preserved across split boundary');
+
+    // 2-byte UTF-8 character (ñ = C3 B1).
+    // Current offset is 16.
+    // Incoming: 'ñandú\n', 2 + 3 + 2 + 1 = 8 bytes (ñ, a, n, d, ú, \n). offset = 23.
+    // startOffset = 23 - 8 = 15. overlap = 16 - 15 = 1.
+    // bytes[1] is 0xB1 (continuation byte).
+    lane.output('ñandú\n', 23);
+    await until(() => text(term).includes('ñandú'));
+    assert.ok(text(term).includes('ñandú'), '2-byte accented character preserved across split boundary');
+  } finally { lane.dispose(); term.dispose(); }
+});
+
+test('duplicate output and older offsets are completely ignored', async () => {
+  const term = new Terminal({ cols: 80, rows: 24, allowProposedApi: true });
+  const lane = new TerminalOutput(term);
+  try {
+    lane.output('INITIAL-', 8);
+    lane.output('INITIAL-', 8); // exact duplicate offset
+    lane.output('OLD-', 4); // older offset
+    lane.output('NEXT\n', 13);
+    await until(() => text(term).includes('INITIAL-NEXT'));
+    const rendered = text(term);
+    assert.equal((rendered.match(/INITIAL-/g) || []).length, 1, 'Duplicate chunk rendered exactly once');
+    assert.equal(rendered.includes('OLD-'), false, 'Older offset completely dropped');
+  } finally { lane.dispose(); term.dispose(); }
+});
+
+test('reconnection with overlapping replay followed by live stream does not duplicate or drop characters', async () => {
+  const term = new Terminal({ cols: 80, rows: 24, allowProposedApi: true });
+  const lane = new TerminalOutput(term);
+  try {
+    // Initial live output
+    lane.output('BEFORE-DISCONNECT\r\n', 19);
+    await until(() => text(term).includes('BEFORE-DISCONNECT'));
+
+    // Incremental replay (reset: false) carrying overlap across boundary
+    lane.replay({
+      type: 'terminal.replay',
+      terminalId: 'reconnect-term',
+      reset: false,
+      truncated: false,
+      data: 'BEFORE-DISCONNECT\r\nREPLAYED-DELTA-🚀\r\n',
+      endOffset: 40,
+    });
+
+    // Immediate live output with partial overlap against replay endOffset
+    lane.output('REPLAYED-DELTA-🚀\r\nLIVE-POST-RECONNECT\r\n', 61);
+    await until(() => text(term).includes('LIVE-POST-RECONNECT'));
+
+    const rendered = text(term);
+    assert.equal((rendered.match(/BEFORE-DISCONNECT/g) || []).length, 1, 'Initial line never duplicated');
+    assert.equal((rendered.match(/REPLAYED-DELTA-🚀/g) || []).length, 1, 'Replayed emoji delta never duplicated');
+    assert.ok(rendered.includes('LIVE-POST-RECONNECT'), 'Post-reconnect live stream rendered');
+  } finally { lane.dispose(); term.dispose(); }
+});
+
+test('concurrent terminals handle interleaved split-boundary frames independently without cross-talk', async () => {
+  const termA = new Terminal({ cols: 80, rows: 24, allowProposedApi: true });
+  const termB = new Terminal({ cols: 80, rows: 24, allowProposedApi: true });
+  const laneA = new TerminalOutput(termA);
+  const laneB = new TerminalOutput(termB);
+  try {
+    laneA.output('A-START-', 8);
+    laneB.output('B-START-', 8);
+
+    // Interleave split-boundary outputs
+    laneA.output('🚀-TERM-A\n', 17); // start = 17 - 10 = 7, overlap = 8 - 7 = 1 (split at F0 9F)
+    laneB.output('界-TERM-B\n', 17); // start = 17 - 10 = 7, overlap = 8 - 7 = 1 (split at E7 95)
+
+    await until(() => text(termA).includes('A-START-🚀-TERM-A') && text(termB).includes('B-START-界-TERM-B'));
+
+    assert.equal(text(termA).includes('TERM-B'), false, 'Terminal A free of Terminal B output');
+    assert.equal(text(termB).includes('TERM-A'), false, 'Terminal B free of Terminal A output');
+  } finally {
+    laneA.dispose(); termA.dispose();
+    laneB.dispose(); termB.dispose();
+  }
+});

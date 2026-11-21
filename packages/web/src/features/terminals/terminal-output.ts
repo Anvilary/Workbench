@@ -1,6 +1,14 @@
 import type { Terminal } from '@xterm/xterm';
 import type { ServerTerminalReplayMessage } from '@agent-workbench/shared';
 
+function decodeUtf8Safe(bytes: Uint8Array): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+  }
+}
+
 /** One ordered render lane per xterm. reset() is synchronous; write() is not. */
 export class TerminalOutput {
   private readonly queue: { data: string; replay?: ServerTerminalReplayMessage }[] = [];
@@ -17,7 +25,16 @@ export class TerminalOutput {
       if (offset <= this.offset) return;
       const bytes = new TextEncoder().encode(data);
       const overlap = this.offset - (offset - bytes.length);
-      if (overlap > 0) data = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(overlap));
+      if (overlap > 0 && overlap < bytes.length) {
+        let sliceIndex = overlap;
+        // If overlap lands in the middle of a multibyte UTF-8 sequence, rewind
+        // to the sequence's leading byte so the entire character is preserved
+        // without crashing TextDecoder or corrupting output with replacement characters.
+        while (sliceIndex > 0 && (bytes[sliceIndex]! & 0xc0) === 0x80) {
+          sliceIndex--;
+        }
+        data = decodeUtf8Safe(bytes.subarray(sliceIndex));
+      }
     }
     if (offset !== undefined) this.offset = offset;
     this.enqueue({ data });
