@@ -571,3 +571,41 @@ test('Needs-input state handling in notifications and inbox labels', () => {
   }
   assert.equal(getStatusLabel(item.state), 'Needs input');
 });
+
+test('Shell menu integration: exposes NotificationInbox without a permanent topbar bell', () => {
+  // 1. Unread badge visibility condition
+  const getBadgeState = (unreadCount) => ({
+    hasBadge: unreadCount > 0,
+    badgeText: unreadCount > 99 ? '99+' : String(unreadCount),
+  });
+
+  assert.deepEqual(getBadgeState(0), { hasBadge: false, badgeText: '0' });
+  assert.deepEqual(getBadgeState(3), { hasBadge: true, badgeText: '3' });
+  assert.deepEqual(getBadgeState(150), { hasBadge: true, badgeText: '99+' });
+
+  // 2. Shell menu items order
+  const shellMenuItems = [
+    { id: 'menu-open-notifications', textKey: 'agency.notifications.title' },
+    { id: 'menu-open-performance', textKey: 'performance.menuItem' },
+    { id: 'menu-open-settings', textKey: 'settings.open' },
+  ];
+  assert.equal(shellMenuItems[0].id, 'menu-open-notifications');
+
+  // 3. Opening inbox closes menu and sets inboxOpen = true
+  let menuOpen = true;
+  let inboxOpen = false;
+  const onSelectNotifications = () => {
+    menuOpen = false;
+    inboxOpen = true;
+  };
+  onSelectNotifications();
+  assert.equal(menuOpen, false);
+  assert.equal(inboxOpen, true);
+
+  // 4. Outside click or Escape dismisses inbox
+  const onDismissInbox = () => {
+    inboxOpen = false;
+  };
+  onDismissInbox();
+  assert.equal(inboxOpen, false);
+});

@@ -653,6 +653,14 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
               }}
             >
               <SettingsMenuIcon />
+              {notificationStore.unreadCount > 0 && (
+                <span
+                  className="maw-unread-badge"
+                  aria-label={t('agency.notifications.unreadCount', { count: notificationStore.unreadCount })}
+                >
+                  {notificationStore.unreadCount > 99 ? '99+' : notificationStore.unreadCount}
+                </span>
+              )}
             </button>
             {menuOpen && (
               <div
@@ -663,6 +671,23 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
                 aria-label={t('agency.ui.workspaceMenu')}
                 onKeyDown={handleMenuKeyDown}
               >
+                <button
+                  type="button"
+                  role="menuitem"
+                  id="menu-open-notifications"
+                  className="agency-dropdown-item maw-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setInboxOpen(true);
+                  }}
+                >
+                  <span className="maw-menu-item-text">{t('agency.notifications.title')}</span>
+                  {notificationStore.unreadCount > 0 && (
+                    <span className="maw-inbox-count-pill" style={{ marginLeft: 'auto' }}>
+                      {notificationStore.unreadCount}
+                    </span>
+                  )}
+                </button>
                 <button
                   type="button"
                   role="menuitem"
