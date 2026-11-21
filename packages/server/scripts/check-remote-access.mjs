@@ -23,6 +23,9 @@
  * una carpeta temporal del chequeo. No abre ningún puerto ni carga node-pty.
  */
 
+// Test isolation: remote access test invariants require standard authentication mode
+delete process.env.MAW_UNSAFE_LOCAL_NO_AUTH;
+
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';

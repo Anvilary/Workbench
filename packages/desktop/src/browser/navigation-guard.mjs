@@ -264,8 +264,8 @@ export function createNavigationGuard({
         isEditable: params.isEditable === true,
         misspelledWord,
         dictionarySuggestions,
-        canGoBack: contents.canGoBack(),
-        canGoForward: contents.canGoForward(),
+        canGoBack: contents.navigationHistory?.canGoBack ? contents.navigationHistory.canGoBack() : contents.canGoBack(),
+        canGoForward: contents.navigationHistory?.canGoForward ? contents.navigationHistory.canGoForward() : contents.canGoForward(),
         x: Number.isFinite(params.x) ? params.x : 0,
         y: Number.isFinite(params.y) ? params.y : 0,
       });

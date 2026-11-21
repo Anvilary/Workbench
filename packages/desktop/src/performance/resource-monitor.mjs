@@ -162,13 +162,58 @@ export function readProcessStat(pid, procRoot = '/proc') {
 }
 
 /**
- * Builds process parent-child adjacency map by reading /proc on Linux.
+ * Builds process parent-child adjacency map on Linux.
+ * When rootPids is provided, attempts fast downward traversal via /proc/[pid]/task/[pid]/children.
+ * If /proc children files are unavailable or fail, gracefully falls back to scanning procRoot.
  *
  * @param {string} [procRoot='/proc']
+ * @param {number[]} [rootPids=null]
  * @returns {Map<number, number[]>} Map of parentPid -> childPids[]
  */
-export function buildProcessTree(procRoot = '/proc') {
+export function buildProcessTree(procRoot = '/proc', rootPids = null) {
   const tree = new Map();
+
+  if (Array.isArray(rootPids) && rootPids.length > 0) {
+    let fastSupported = true;
+    const queue = [...rootPids];
+    const visited = new Set();
+
+    while (queue.length > 0) {
+      const pid = queue.shift();
+      if (!pid || visited.has(pid)) continue;
+      visited.add(pid);
+
+      const childrenPath = path.join(procRoot, String(pid), 'task', String(pid), 'children');
+      try {
+        const raw = fs.readFileSync(childrenPath, 'utf8');
+        const children = raw.trim() ? raw.trim().split(/\s+/).map((n) => parseInt(n, 10)).filter(Boolean) : [];
+        tree.set(pid, children);
+        for (const child of children) {
+          if (!visited.has(child)) queue.push(child);
+        }
+      } catch (err) {
+        if (err?.code === 'ENOENT') {
+          try {
+            if (fs.existsSync(path.join(procRoot, String(pid)))) {
+              fastSupported = false;
+              break;
+            }
+          } catch {
+            // Process vanished, safe to continue
+          }
+        } else {
+          fastSupported = false;
+          break;
+        }
+      }
+    }
+
+    if (fastSupported) {
+      return tree;
+    }
+    tree.clear();
+  }
+
   let entries;
   try {
     entries = fs.readdirSync(procRoot);
@@ -587,15 +632,29 @@ export class ResourceCollector {
         : null;
 
       // 3. Scan system process tree on Linux
-      const processTree = buildProcessTree(this.procRoot);
+      // Roots include all known infrastructure processes plus any active backend terminal roots
+      const prefetchRoots = [
+        electronMainPid,
+        electronWindowPid,
+        electronGpuPid,
+        ...electronUtilityPids,
+        ...electronRendererPids,
+        supervisorPid,
+        backendPid,
+      ].filter((pid) => Number.isInteger(pid) && pid > 0);
+
+      const allKnownRoots = [
+        ...prefetchRoots,
+        ...backendTerminals.map((t) => t.pid),
+      ].filter((pid) => Number.isInteger(pid) && pid > 0);
+
+      const processTree = buildProcessTree(this.procRoot, allKnownRoots);
       const claimedPids = new Set();
       const currentActivePids = new Set();
 
       // smaps_rollup is the expensive part of a sample (about 1.6 ms of kernel time per process, synchronous in the
       // Electron main process). Read it for every process we may measure off the main thread first; measureProcess
       // below uses the cache and falls back to the synchronous read for any pid that was not prefetched.
-      const prefetchRoots = [electronMainPid, electronWindowPid, electronGpuPid, ...electronUtilityPids, ...electronRendererPids, supervisorPid, backendPid]
-        .filter((pid) => Number.isInteger(pid) && pid > 0);
       const smapsCache = await prefetchSmaps(collectSubtreePids(prefetchRoots, processTree), this.procRoot);
 
       // Helper to measure process metrics

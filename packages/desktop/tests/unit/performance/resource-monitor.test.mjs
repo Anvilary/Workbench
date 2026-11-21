@@ -194,6 +194,42 @@ test('Process trees: nested process tree traversal correctly captures grandchild
   assert.equal(pids.includes(9001), false);
 });
 
+test('buildProcessTree: traverses via /proc/[pid]/task/[pid]/children when rootPids provided', async () => {
+  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'maw-proc-tree-'));
+  try {
+    // Setup 100 -> children: [200, 201]
+    await fs.promises.mkdir(path.join(tmpDir, '100', 'task', '100'), { recursive: true });
+    await fs.promises.writeFile(path.join(tmpDir, '100', 'task', '100', 'children'), '200 201\n');
+
+    // 200 -> child: [300]
+    await fs.promises.mkdir(path.join(tmpDir, '200', 'task', '200'), { recursive: true });
+    await fs.promises.writeFile(path.join(tmpDir, '200', 'task', '200', 'children'), '300\n');
+
+    // 201 -> child: []
+    await fs.promises.mkdir(path.join(tmpDir, '201', 'task', '201'), { recursive: true });
+    await fs.promises.writeFile(path.join(tmpDir, '201', 'task', '201', 'children'), '\n');
+
+    // 300 -> child: []
+    await fs.promises.mkdir(path.join(tmpDir, '300', 'task', '300'), { recursive: true });
+    await fs.promises.writeFile(path.join(tmpDir, '300', 'task', '300', 'children'), '');
+
+    // Unrelated 900
+    await fs.promises.mkdir(path.join(tmpDir, '900', 'task', '900'), { recursive: true });
+    await fs.promises.writeFile(path.join(tmpDir, '900', 'task', '900', 'children'), '901\n');
+
+    const tree = buildProcessTree(tmpDir, [100]);
+    assert.deepEqual(tree.get(100), [200, 201]);
+    assert.deepEqual(tree.get(200), [300]);
+    assert.deepEqual(tree.get(201), []);
+    assert.equal(tree.has(900), false);
+
+    const sub = collectSubtreePids([100], tree);
+    assert.deepEqual(sub.sort(), [100, 200, 201, 300]);
+  } finally {
+    await fs.promises.rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
 test('Provider classification: recognizes all supported AI coding agents', async () => {
   const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'maw-classify-'));
 

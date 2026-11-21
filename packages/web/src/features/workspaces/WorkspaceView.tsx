@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AgencyCliProfile, AgencyRuntimeSession, AgencyWorkspace, CliProfileId,
   EditorTab, MawActivityState, SplitDirection, WebTab, WebTabProvider, WorkspaceId, WorkspacePaneLayout,
@@ -60,7 +60,7 @@ interface Props {
 
 const EMPTY_EDITOR_TABS: readonly EditorTab[] = [];
 
-export function WorkspaceView({
+export const WorkspaceView = memo(function WorkspaceView({
   workspace,
   browserProfileId,
   profiles,
@@ -960,4 +960,4 @@ export function WorkspaceView({
       )}
     </section>
   );
-}
+});

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId, AgentInfo, ServerMessage } from '@agent-workbench/shared';
 import { DEFAULT_BROWSER_PROFILE_ID, resolveEffectiveBrowserProfileId } from '@agent-workbench/shared';
 import type { AgentConnection } from '../connection/connection.js';
@@ -78,6 +78,120 @@ function readDrafts(): Record<string, string> {
     )) as Record<string, string>;
   } catch { return {}; }
 }
+
+interface WorkspaceSlotProps {
+  ws: AgencyWorkspace;
+  isSelectedWorkspace: boolean;
+  project?: AgencyProject;
+  browserProfiles?: readonly any[];
+  appSettings: any;
+  connection: AgentConnection;
+  request: any;
+  sendImmediate: (msg: any) => boolean;
+  online: boolean;
+  profiles: readonly any[];
+  sessions: readonly any[];
+  webTabs: readonly any[];
+  editorTabs?: readonly any[];
+  onTabDisplayed: (workspaceId: WorkspaceId, tabId: string) => void;
+  draft: string;
+  updateDraft: (workspaceId: string, value: string) => void;
+  clearDelivered: (workspaceId: string, original: string) => void;
+  markDone: (workspace: AgencyWorkspace) => Promise<void> | void;
+  launchError?: string;
+  setLaunchErrors: React.Dispatch<React.SetStateAction<Record<WorkspaceId, string>>>;
+  placementWarning: string | null;
+  clearLayoutWarning: (workspaceId: WorkspaceId) => void;
+  notificationStore: any;
+  savedLayout?: any;
+  saveLayout?: (workspaceId: WorkspaceId, layout: any) => Promise<unknown>;
+}
+
+const WorkspaceSlot = memo(function WorkspaceSlot({
+  ws,
+  isSelectedWorkspace,
+  project,
+  browserProfiles,
+  appSettings,
+  connection,
+  request,
+  sendImmediate,
+  online,
+  profiles,
+  sessions,
+  webTabs,
+  editorTabs,
+  onTabDisplayed,
+  draft,
+  updateDraft,
+  clearDelivered,
+  markDone,
+  launchError,
+  setLaunchErrors,
+  placementWarning,
+  clearLayoutWarning,
+  notificationStore,
+  savedLayout,
+  saveLayout,
+}: WorkspaceSlotProps): JSX.Element {
+  const browserProfileId = useMemo(
+    () => resolveEffectiveBrowserProfileId(ws, project, browserProfiles),
+    [ws, project, browserProfiles]
+  );
+  const onDraft = useCallback((value: string) => updateDraft(ws.id, value), [ws.id, updateDraft]);
+  const onDelivered = useCallback((value: string) => clearDelivered(ws.id, value), [ws.id, clearDelivered]);
+  const onDone = useCallback(() => { void markDone(ws); }, [ws, markDone]);
+  const onClearPlacementWarning = useCallback(() => clearLayoutWarning(ws.id), [ws.id, clearLayoutWarning]);
+  const onClearLaunchError = useCallback(() => {
+    setLaunchErrors((prev) => {
+      if (!prev[ws.id]) return prev;
+      const next = { ...prev };
+      delete next[ws.id];
+      return next;
+    });
+  }, [ws.id, setLaunchErrors]);
+  const getTabActivityVersion = useCallback(
+    (workspaceId: string, tabId: string) => notificationStore.activityStates.get(workspaceId + '::' + tabId)?.updatedAt ?? '',
+    [notificationStore]
+  );
+
+  return (
+    <div
+      className="agency-workspace-slot"
+      hidden={!isSelectedWorkspace}
+      style={{ display: isSelectedWorkspace ? 'contents' : 'none' }}
+    >
+      <WorkspaceView
+        workspace={ws}
+        activeWorkspace={isSelectedWorkspace}
+        browserProfileId={browserProfileId}
+        appSettings={appSettings}
+        connection={connection}
+        request={request}
+        sendImmediate={sendImmediate}
+        online={online}
+        profiles={profiles}
+        sessions={sessions}
+        webTabs={webTabs}
+        editorTabs={editorTabs}
+        onTabDisplayed={onTabDisplayed}
+        draft={draft}
+        onDraft={onDraft}
+        onDelivered={onDelivered}
+        onDone={onDone}
+        launchError={launchError}
+        placementWarning={placementWarning}
+        onClearPlacementWarning={onClearPlacementWarning}
+        getTabActivity={notificationStore.getTabActivity}
+        getTabActivityVersion={getTabActivityVersion}
+        onAcknowledgeTab={notificationStore.acknowledgeTab}
+        savedLayout={savedLayout}
+        onSaveLayout={saveLayout}
+        onClearLaunchError={onClearLaunchError}
+      />
+    </div>
+  );
+});
 
 /**
  * Integration root for the final integration lane.
@@ -292,13 +406,13 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
     return () => window.removeEventListener('maw:select-tab', onSelectTab);
   }, [handleNotificationNavigate]);
 
-  function updateDraft(workspaceId: string, value: string) {
+  const updateDraft = useCallback((workspaceId: string, value: string) => {
     setDrafts((prev) => putWorkspaceDraft(prev, workspaceId as WorkspaceId, value));
-  }
+  }, []);
 
-  function clearDelivered(workspaceId: string, original: string) {
+  const clearDelivered = useCallback((workspaceId: string, original: string) => {
     setDrafts((prev) => acknowledgeWorkspaceDraft(prev, workspaceId as WorkspaceId, original));
-  }
+  }, []);
 
   const activeProjects = data.projects.filter((project) => project.status !== 'archived');
   const activeWorkspaces = data.workspaces.filter(
@@ -424,14 +538,14 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
     resizerEl.addEventListener('lostpointercapture', onPointerEnd);
   }
 
-  async function markDone(workspace: AgencyWorkspace) {
+  const markDone = useCallback(async (workspace: AgencyWorkspace) => {
     setError(null);
     try {
       const answer = await store.markDone(workspace.id);
       if (answer.type !== 'agency.workspace.done') throw new Error(t('agency.ui.doneWasNotConfirmed'));
       if (selectedId === workspace.id) setSelectedId(null);
     } catch (reason) { setError(reason instanceof Error ? reason.message : t('agency.ui.unableToMarkDone')); }
-  }
+  }, [selectedId, store]);
 
   async function archiveWorkspace(workspace: AgencyWorkspace) {
     setError(null);
@@ -771,48 +885,36 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
             ) : null}
             {mountedWorkspaces.map((ws) => {
               const isSelectedWorkspace = !showingDone && selected?.id === ws.id;
+              const project = data.projects.find((p) => p.id === ws.projectId);
               return (
-                <div
+                <WorkspaceSlot
                   key={ws.id}
-                  className="agency-workspace-slot"
-                  hidden={!isSelectedWorkspace}
-                  style={{ display: isSelectedWorkspace ? 'contents' : 'none' }}
-                >
-                  <WorkspaceView
-                    workspace={ws}
-                    activeWorkspace={isSelectedWorkspace}
-                    browserProfileId={resolveEffectiveBrowserProfileId(ws, data.projects.find(project => project.id === ws.projectId), data.browserProfiles)}
-                    appSettings={appSettings}
-                    connection={connection}
-                    request={store.request}
-                    sendImmediate={agencyTransport.sendImmediate}
-                    online={online && synchronized}
-                    profiles={data.profiles}
-                    sessions={data.sessions}
-                    webTabs={data.webTabs}
-                    editorTabs={data.editorTabs}
-                    onTabDisplayed={handleTabDisplayed}
-                    draft={drafts[ws.id] ?? ''}
-                    onDraft={(value) => updateDraft(ws.id, value)}
-                    onDelivered={(value) => clearDelivered(ws.id, value)}
-                    onDone={() => { void markDone(ws); }}
-                    launchError={launchErrors[ws.id]}
-                    placementWarning={data.layoutWarnings?.[ws.id] ?? null}
-                    onClearPlacementWarning={() => store.clearLayoutWarning(ws.id)}
-                    getTabActivity={notificationStore.getTabActivity}
-                    getTabActivityVersion={(workspaceId, tabId) => notificationStore.activityStates.get(workspaceId + '::' + tabId)?.updatedAt ?? ''}
-                    onAcknowledgeTab={notificationStore.acknowledgeTab}
-                    savedLayout={data.layouts?.[ws.id]}
-                    onSaveLayout={store.saveLayout}
-                    onClearLaunchError={() => {
-                      setLaunchErrors((prev) => {
-                        const next = { ...prev };
-                        delete next[ws.id];
-                        return next;
-                      });
-                    }}
-                  />
-                </div>
+                  ws={ws}
+                  isSelectedWorkspace={isSelectedWorkspace}
+                  project={project}
+                  browserProfiles={data.browserProfiles}
+                  appSettings={appSettings}
+                  connection={connection}
+                  request={store.request}
+                  sendImmediate={agencyTransport.sendImmediate}
+                  online={online && synchronized}
+                  profiles={data.profiles}
+                  sessions={data.sessions}
+                  webTabs={data.webTabs}
+                  editorTabs={data.editorTabs}
+                  onTabDisplayed={handleTabDisplayed}
+                  draft={drafts[ws.id] ?? ''}
+                  updateDraft={updateDraft}
+                  clearDelivered={clearDelivered}
+                  markDone={markDone}
+                  launchError={launchErrors[ws.id]}
+                  setLaunchErrors={setLaunchErrors}
+                  placementWarning={data.layoutWarnings?.[ws.id] ?? null}
+                  clearLayoutWarning={store.clearLayoutWarning}
+                  notificationStore={notificationStore}
+                  savedLayout={data.layouts?.[ws.id]}
+                  saveLayout={store.saveLayout}
+                />
               );
             })}
           </>

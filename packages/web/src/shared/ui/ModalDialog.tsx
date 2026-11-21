@@ -1,8 +1,10 @@
-import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useEscapeKey } from '../hooks/useEscapeKey.js';
 import { isTopmostDialog, useFocusTrap } from '../hooks/useFocusTrap.js';
 import { calculateAnchoredDialogPosition } from '../lib/overlay-position.js';
+
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 export interface AnchorRect {
   left: number;
@@ -58,7 +60,7 @@ export function ModalDialog({
     });
   });
 
-  useLayoutEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     if ((!anchorRect && !centerOn) || typeof window === 'undefined') {
       setAnchoredPos(null);
       return;

@@ -14,8 +14,20 @@ export function createPageCommands({ clipboard, state, guard, send }) {
     const contents = view?.webContents;
     if (!contents || contents.isDestroyed()) return;
     lastAccessedAt.set(command.id, Date.now());
-    if (command.action === 'back' && contents.canGoBack()) contents.goBack();
-    if (command.action === 'forward' && contents.canGoForward()) contents.goForward();
+    if (command.action === 'back') {
+      const canBack = contents.navigationHistory?.canGoBack ? contents.navigationHistory.canGoBack() : contents.canGoBack();
+      if (canBack) {
+        if (typeof contents.navigationHistory?.goBack === 'function') contents.navigationHistory.goBack();
+        else contents.goBack();
+      }
+    }
+    if (command.action === 'forward') {
+      const canForward = contents.navigationHistory?.canGoForward ? contents.navigationHistory.canGoForward() : contents.canGoForward();
+      if (canForward) {
+        if (typeof contents.navigationHistory?.goForward === 'function') contents.navigationHistory.goForward();
+        else contents.goForward();
+      }
+    }
     if (command.action === 'reload') {
       failures.delete(command.id);
       contents.reload();
@@ -91,7 +103,17 @@ export function createPageCommands({ clipboard, state, guard, send }) {
       if (!image || (typeof image.isEmpty === 'function' && image.isEmpty())) {
         return { ok: false };
       }
-      return { ok: true, dataUrl: image.toDataURL() };
+      let dataUrl;
+      if (typeof image.toJPEG === 'function') {
+        try {
+          dataUrl = `data:image/jpeg;base64,${image.toJPEG(75).toString('base64')}`;
+        } catch {
+          dataUrl = image.toDataURL();
+        }
+      } else {
+        dataUrl = image.toDataURL();
+      }
+      return { ok: true, dataUrl };
     } catch {
       return { ok: false };
     } finally {
