@@ -78,6 +78,7 @@ interface Props {
   onExpandBrowserToolbar?: (tabId: string) => void;
   browserFavorites?: readonly BrowserFavorite[];
   searchEngine?: SearchEngine;
+  searchEngines?: readonly SearchEngine[];
   onSelectBrowserFavorite?: (paneId: string, favorite: BrowserFavorite) => void;
   onSelectBrowserOther?: (paneId: string) => void;
   favicons?: Record<string, string>;
@@ -377,6 +378,7 @@ function PaneLeaf(props: Props & {
               <BrowserDestinationPicker
                 favorites={props.browserFavorites ?? DEFAULT_BROWSER_FAVORITES}
                 searchEngine={props.searchEngine ?? getSearchEngine()}
+                searchEngines={props.searchEngines}
                 favicons={props.favicons}
                 onConfirm={(dest) => {
                   props.onCloseBrowserPicker?.();

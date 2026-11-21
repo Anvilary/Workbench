@@ -328,6 +328,7 @@ export function PaneHeader({
                   </span>
                   <span
                     className="agency-truncate"
+                    title={t('agency.web.rename')}
                     onDoubleClick={(event) => beginRename(tab.id, event.currentTarget)}
                   >
                     {displayName}{isUnsaved ? ' •' : ''}
@@ -389,21 +390,16 @@ export function PaneHeader({
               >
                 {t('agency.web.newTab')}
               </button>
-              <button type="button" role="menuitem" onClick={() => choose('file')}>
+              <button
+                type="button"
+                role="menuitem"
+                className="maw-menu-item-disabled"
+                disabled
+                aria-disabled="true"
+                title={t('agency.tabs.comingSoon')}
+              >
                 {t('agency.tabs.openFile')}
               </button>
-              {selectedTabId && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setRenamingTabId(selectedTabId);
-                  }}
-                >
-                  {t('agency.web.rename')}
-                </button>
-              )}
             </PaneMenu>
           )}
         </div>

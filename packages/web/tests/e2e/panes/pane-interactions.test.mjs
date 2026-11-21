@@ -7,7 +7,7 @@ const menu=(page,n)=>pane(page,n).locator('.maw-pane-add-tab');
 const paneAction=(page,n)=>pane(page,n).locator('.maw-pane-menu-toggle');
 const create=async(page,n,kind)=>{
  await menu(page,n).click();
- await page.getByRole('menuitem',{name:kind==='terminal'?'New Terminal':kind==='web'?'Browser':'Open File...',exact:true}).click();
+ await page.getByRole('menuitem',{name:kind==='terminal'?'New Terminal':kind==='web'?'Web Page':'Open File...',exact:true}).click();
  if(kind==='web'){await page.getByRole('dialog').getByRole('menuitem',{name:'ChatGPT',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'Open',exact:true}).click();}
  if(kind==='file'){
    await page.getByRole('dialog').locator('input').fill('src/index.ts');
@@ -37,13 +37,22 @@ test('add menu escapes overflow, clamps at edges, navigates with keys, closes ou
  await menu(page,4).click();const box=await page.getByRole('menu').boundingBox();assert.ok(box.y+box.height<370);
 });
 
-for(const kind of ['terminal','web','file'])test(`create ${kind} in its initiating pane, preserving its neighbor`,async t=>{
+for(const kind of ['terminal','web'])test(`create ${kind} in its initiating pane, preserving its neighbor`,async t=>{
  const page=await setup(t);const before=await layout(page);
  await create(page,2,kind);await page.waitForFunction(()=>window.fixture.state.layout.tree.second.tabIds.length===2);
  const after=await layout(page);assert.deepEqual(after.tree.first,before.tree.first);assert.equal(after.focusedPaneId,'pane-2');assert.equal(after.tree.second.selectedTabId,after.tree.second.tabIds[1]);
  assert.equal(await page.evaluate(kind=>window.fixture.requests.filter(m=>m.type===(kind==='web'?'agency.webTab.create':kind==='file'?'agency.editorTab.open':'agency.session.create')).length,kind),1);
  assert.equal(await page.evaluate(()=>window.fixture.requests.find(m=>m.type==='agency.webTab.create'||m.type==='agency.session.create'||m.type==='agency.editorTab.open').targetPaneId),'pane-2');
  assert.equal(await page.getByRole('menu').count(),0);
+});
+
+test('Open File item is disabled with Coming soon tooltip',async t=>{
+ const page=await setup(t);
+ await menu(page,1).click();
+ const item=page.getByRole('menuitem',{name:'Open File...',exact:true});
+ assert.equal(await item.getAttribute('aria-disabled'),'true');
+ assert.equal(await item.getAttribute('title'),'Coming soon');
+ await page.keyboard.press('Escape');
 });
 
 test('delayed creation retains destination after focus changes, absent snapshots and target deletion; retry works',async t=>{
@@ -131,8 +140,8 @@ test('launch errors surface error banner and web validation prevents unwanted la
  await create(page,2,'terminal');await page.getByRole('alert').filter({hasText:'Fixture launch failed'}).waitFor();
  await page.locator('.agency-error-bar button').click();await frames(page);
  assert.equal(await page.locator('.agency-error-bar').count(),0);
- await menu(page,1).click();await page.getByRole('menuitem',{name:'Browser',exact:true}).click();
- await page.getByRole('dialog').getByLabel('URL or Search Query',{exact:true}).fill('javascript:alert(1)');
+ await menu(page,1).click();await page.getByRole('menuitem',{name:'Web Page',exact:true}).click();
+ await page.getByRole('dialog').getByLabel('Other',{exact:true}).fill('javascript:alert(1)');
  await page.getByRole('dialog').getByRole('button',{name:'Go',exact:true}).click();
  await page.getByRole('dialog').getByRole('alert').waitFor();
  assert.equal(await page.evaluate(()=>window.fixture.requests.filter(m=>m.type==='agency.webTab.create').length),0);

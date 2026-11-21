@@ -145,8 +145,8 @@ test('Browser compatibility preserves CLI input, mixed tabs and external ChatGPT
   await page.getByRole('tab',{name:'CLI renamed'}).waitFor();
   assert.equal(await page.evaluate(()=>window.agencyTest.requests.filter(m=>m.type==='agency.tab.rename').at(-1).tabId),'66666666-6666-4666-8666-666666666666');
   await page.getByRole('button',{name:'Add tab',exact:true}).click();
-  await page.getByRole('menuitem',{name:'Rename tab',exact:true}).click();
-  await input.waitFor(); await input.press('Escape');
+  assert.equal(await page.getByRole('menuitem',{name:'Rename tab',exact:true}).count(),0);
+  await page.keyboard.press('Escape');
   // C-2: an exited agent tab without a native conversation offers Configure profile and Start again.
   await page.getByRole('tab',{name:'CLI renamed'}).click();
   await page.getByRole('button',{name:'Configure profile',exact:true}).click();

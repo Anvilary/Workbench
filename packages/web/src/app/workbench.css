@@ -3585,13 +3585,13 @@
 
 .maw-pane-browser-picker-card {
   width: 100%;
-  max-width: 360px;
-  min-width: 200px;
+  max-width: 440px;
+  min-width: 300px;
   background: var(--bg-2, #141417);
   border: 1px solid var(--border-subtle, #25252b);
   border-radius: var(--radius, 10px);
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
-  padding: 12px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -3600,6 +3600,7 @@
 .maw-browser-dest-picker {
   display: flex;
   flex-direction: column;
+  gap: 10px;
   width: 100%;
   box-sizing: border-box;
 }
@@ -4498,20 +4499,113 @@ body.agency-sidebar-dragging * {
   outline: none;
 }
 
+.maw-browser-dest-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.maw-browser-dest-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-3, #8a877f);
+  padding: 2px 2px;
+}
+
+.maw-browser-dest-favorites-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.maw-browser-dest-engine-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.maw-browser-dest-engine-select {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+  color: var(--ink, #ededea);
+  background: var(--bg-1, #101013);
+  border: 1px solid var(--border-subtle, #25252b);
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.maw-browser-dest-engine-select:focus {
+  outline: none;
+  border-color: var(--ember, #d97442);
+}
+
 .maw-browser-dest-other-form {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .maw-browser-dest-inline-input {
   flex: 1;
   min-width: 0;
-  padding: 6px 9px;
-  font-size: 12px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+  box-sizing: border-box;
 }
 
 .maw-browser-dest-go-btn {
-  padding: 6px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0;
+  background: var(--ember-bold, #d97706);
+  color: #ffffff;
+  border: 1px solid #b45309;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
   flex-shrink: 0;
+}
+
+.maw-browser-dest-go-btn:hover {
+  background: #b45309;
+  border-color: #92400e;
+}
+
+.maw-browser-dest-go-btn:active {
+  background: #92400e;
+}
+
+.maw-browser-dest-go-btn:focus-visible {
+  outline: 2px solid var(--focus-ring, #d97706);
+  outline-offset: 1px;
+}
+
+.agency-dropdown-item.maw-menu-item-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: auto;
+}
+
+.agency-dropdown-item.maw-menu-item-disabled:hover {
+  background: transparent;
+  color: var(--ink-dim, #8a877f);
+}
+
+.maw-close-web-page-title {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink, #ededea);
+  word-break: break-all;
 }

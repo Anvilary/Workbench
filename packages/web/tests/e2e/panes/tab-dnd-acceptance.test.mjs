@@ -6,7 +6,7 @@ const menu = (page, n) => pane(page, n).locator('.maw-pane-add-tab');
 const create = async (page, n, kind) => {
   await menu(page, n).click();
   await page.getByRole('menuitem', {
-    name: kind === 'agent' ? 'New CLI' : kind === 'terminal' ? 'New Terminal' : kind === 'web' ? 'Browser' : 'Open File...',
+    name: kind === 'agent' ? 'New CLI' : kind === 'terminal' ? 'New Terminal' : kind === 'web' ? 'Web Page' : 'Open File...',
     exact: true,
   }).click();
   if (kind === 'agent') await page.getByRole('dialog').getByRole('button', { name: /^(Create|Launch|Start)/ }).click();

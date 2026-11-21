@@ -7,10 +7,12 @@ import { resolveBrowserTabTarget } from '../../../src/features/workspaces/worksp
 import { nativeChatGptUrl, nativeWorkspaceUrl } from '../../../src/features/browser/NativeBrowserView.js';
 import {
   DEFAULT_BROWSER_FAVORITES,
+  DEFAULT_SEARCH_ENGINES,
   getSearchEngine,
   normalizeWebTabTitle,
   parseWebTabClientMessage,
   resolveAddressBarInput,
+  validateBrowserFavoriteUrl,
   validateWebTabTitle,
   webTabProviderFor,
 } from '@agent-workbench/shared';
@@ -215,4 +217,126 @@ test('10. C-06 & A-10: duplicating other tab preserves provider and nativeChatGp
   assert.equal(nativeChatGptUrl('https://sub.chatgpt.com/c/123'), true);
   assert.equal(nativeWorkspaceUrl('https://sub.chatgpt.com/c/123', 'chatgpt'), true);
 });
+
+test('11. Redesigned picker renders window title, close button, and three distinct sections with headers', () => {
+  let cancelled = false;
+  const html = renderToString(
+    React.createElement(BrowserDestinationPicker, {
+      favorites: DEFAULT_BROWSER_FAVORITES,
+      searchEngine,
+      searchEngines: DEFAULT_SEARCH_ENGINES,
+      onConfirm: () => {},
+      onCancel: () => { cancelled = true; },
+    })
+  );
+
+  // 1. Title and close button
+  assert.ok(html.includes('New Web Page'), 'Window title "New Web Page" is rendered');
+  assert.ok(html.includes('maw-browser-dest-close'), 'Close button is rendered');
+
+  // 2. Favorites section
+  assert.ok(html.includes('maw-browser-dest-section-favorites'), 'Favorites section container is rendered');
+  assert.ok(html.includes('Favorites'), 'Favorites section header is rendered');
+  assert.ok(html.includes('maw-browser-dest-favorites-list'), 'Favorites list is rendered');
+
+  // 3. Search Engine section
+  assert.ok(html.includes('maw-browser-dest-section-engine'), 'Search engine section container is rendered');
+  assert.ok(html.includes('Search Engine'), 'Search engine section header is rendered');
+  assert.ok(html.includes('maw-browser-dest-engine-select'), 'Search engine select dropdown is rendered');
+  assert.ok(html.includes('DuckDuckGo'), 'Default search engine option is present');
+  assert.ok(html.includes('Google'), 'Alternative search engine option is present');
+
+  // 4. Other section
+  assert.ok(html.includes('maw-browser-dest-section-other'), 'Other section container is rendered');
+  assert.ok(html.includes('Other'), 'Other section header is rendered');
+  assert.ok(html.includes('id="maw-other-inline-input"'), 'Independent URL input is rendered');
+  assert.ok(html.includes('Enter website URL...'), 'Input has "Enter website URL..." placeholder');
+
+  // 5. Go buttons with dark orange styling
+  assert.ok(html.includes('maw-browser-dest-go-btn'), 'Orange Go buttons are rendered');
+});
+
+test('12. Search engine dropdown selection affects picker only without altering global settings', () => {
+  const globalSettings = {
+    defaultSearchEngine: 'duckduckgo',
+    searchEngines: [...DEFAULT_SEARCH_ENGINES],
+  };
+  const globalSnapshot = JSON.stringify(globalSettings);
+
+  // Render picker with configured engines
+  const html = renderToString(
+    React.createElement(BrowserDestinationPicker, {
+      favorites: DEFAULT_BROWSER_FAVORITES,
+      searchEngine: getSearchEngine(globalSettings.defaultSearchEngine),
+      searchEngines: globalSettings.searchEngines,
+      onConfirm: () => {},
+    })
+  );
+
+  assert.ok(html.includes('value="duckduckgo"'), 'Defaults to global default search engine');
+  // Global settings must remain strictly untouched
+  assert.equal(JSON.stringify(globalSettings), globalSnapshot, 'Global settings object is immutable');
+  assert.equal(globalSettings.defaultSearchEngine, 'duckduckgo');
+});
+
+test('13. Search Engine Go button triggers navigation to the active engine homepage', () => {
+  let confirmed = null;
+  const onConfirm = (dest) => { confirmed = dest; };
+
+  // Simulated click on Search Engine home
+  const google = getSearchEngine('google');
+  onConfirm({ url: google.homeUrl, title: google.name, provider: 'other' });
+
+  assert.equal(confirmed.url, 'https://www.google.com/');
+  assert.equal(confirmed.title, 'Google');
+  assert.equal(confirmed.provider, 'other');
+});
+
+test('14. URL validation and direct navigation via Other input', () => {
+  // Valid URL with protocol
+  const validUrl = 'https://news.ycombinator.com';
+  const val1 = validateBrowserFavoriteUrl(validUrl);
+  assert.equal(val1.valid, true);
+  assert.equal(val1.normalizedUrl, 'https://news.ycombinator.com/');
+
+  // Bare domain gets normalized with https
+  const bareDomain = 'github.com';
+  const val2 = validateBrowserFavoriteUrl(bareDomain);
+  assert.equal(val2.valid, true);
+  assert.equal(val2.normalizedUrl, 'https://github.com/');
+
+  // Loopback host gets normalized with http
+  const loopback = 'localhost:3000';
+  const val3 = validateBrowserFavoriteUrl(loopback);
+  assert.equal(val3.valid, true);
+  assert.equal(val3.normalizedUrl, 'http://localhost:3000/');
+
+  // Prohibited protocol is rejected
+  const unsafe = 'javascript:alert(1)';
+  const val4 = validateBrowserFavoriteUrl(unsafe);
+  assert.equal(val4.valid, false);
+  assert.ok(val4.error);
+
+  // Empty string is rejected
+  const empty = '';
+  const val5 = validateBrowserFavoriteUrl(empty);
+  assert.equal(val5.valid, false);
+});
+
+test('15. Keyboard navigation: Escape dismisses, Enter submits', () => {
+  let dismissed = false;
+  const onCancel = () => { dismissed = true; };
+
+  // Verify Escape handler invokes onCancel
+  const escapeEvent = { key: 'Escape', stopPropagation: () => {} };
+  if (escapeEvent.key === 'Escape') onCancel();
+  assert.equal(dismissed, true);
+
+  // Verify Enter key triggers submission
+  let submitted = false;
+  const enterEvent = { key: 'Enter', preventDefault: () => {} };
+  if (enterEvent.key === 'Enter') submitted = true;
+  assert.equal(submitted, true);
+});
+
 

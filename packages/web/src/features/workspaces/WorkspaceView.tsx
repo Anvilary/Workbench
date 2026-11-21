@@ -815,6 +815,8 @@ export const WorkspaceView = memo(function WorkspaceView({
               setClosing(tab);
             } else if (tab.kind === 'editor' && (unsavedTabIds.has(tab.id) || editorDraftStore.isDirty(tab.id))) {
               setClosing(tab);
+            } else if (tab.kind === 'web') {
+              setClosing(tab);
             } else {
               void close(tab);
             }
@@ -840,6 +842,7 @@ export const WorkspaceView = memo(function WorkspaceView({
           }}
           browserFavorites={browserSettings.favorites}
           searchEngine={browserSettings.searchEngine}
+          searchEngines={browserSettings.searchEngines}
           favicons={favicons}
           onSelectBrowserFavorite={(paneId, fav) => {
             creationTarget.current = paneId;
@@ -899,7 +902,7 @@ export const WorkspaceView = memo(function WorkspaceView({
         tabs={webTabs}
         onCloseTab={(tab) => {
           const match = tabs.find((item) => item.id === tab.id);
-          if (match) void close(match);
+          if (match) setClosing(match);
         }}
         onMoveNext={(tabId) => {
           const panes = getPaneNodes(layoutRef.current.tree);

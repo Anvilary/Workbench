@@ -71,16 +71,29 @@ export function WorkspaceSessionDialogs({
       >
         <h2 id="maw-session-dialog">
           {closing
-            ? t('agency.tabs.confirmClose', { name: getWorkspaceTabDisplayName(closing, profiles) })
+            ? closing.kind === 'web'
+              ? t('agency.web.closeConfirmTitle')
+              : t('agency.tabs.confirmClose', { name: getWorkspaceTabDisplayName(closing, profiles) })
             : t('agency.tabs.openFile')}
         </h2>
 
         {closing ? (
-          <p>
-            {closing.kind === 'editor' && unsavedTabIds.has(closing.id)
-              ? t('agency.tabs.unsavedWarning')
-              : t('agency.tabs.closeExplanation')}
-          </p>
+          closing.kind === 'web' ? (
+            <div>
+              <p>{t('agency.web.closeConfirmMessage')}</p>
+              {closing.web.title ? (
+                <p className="maw-close-web-page-title">
+                  {closing.web.title}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p>
+              {closing.kind === 'editor' && unsavedTabIds.has(closing.id)
+                ? t('agency.tabs.unsavedWarning')
+                : t('agency.tabs.closeExplanation')}
+            </p>
+          )
         ) : (
           <form
             id="maw-open-file-form"
@@ -129,7 +142,7 @@ export function WorkspaceSessionDialogs({
                 if (closing) onConfirmClose(closing);
               }}
             >
-              {t('agency.tabs.closeSession')}
+              {closing?.kind === 'web' ? t('agency.web.closeConfirmAction') : t('agency.tabs.closeSession')}
             </button>
           )}
         </div>

@@ -2,19 +2,20 @@
  * Browser Destination Picker.
  *
  * One cohesive, centered, pane-scoped browser destination picker.
- * Displays user's configured browser favorites by name only with safe favicons,
- * followed by a subtle divider and an inline "Other" section with an immediately
- * usable URL/search input and a separate Search Engine homepage button.
- * Selecting a favorite opens a streamlined preview with the title in the header,
- * an editable one-off destination URL input, and Back / Open actions.
+ * Features:
+ * 1. Title: "New Web Page" with close (X) button.
+ * 2. Favorites section: User favorites by name with favicons or neutral GlobeIcon.
+ * 3. Search Engine section: Dropdown listing user-configured search engines (defaults
+ *    to current default, changes only affect this picker) with dark-orange Go (→) button.
+ * 4. Other section: Independent URL input with dark-orange Go (→) button.
  */
 
 import { useState, useEffect, type FormEvent } from 'react';
 import type { BrowserFavorite, SearchEngine, WebTabProvider } from '@agent-workbench/shared';
 import {
+  DEFAULT_SEARCH_ENGINES,
   normalizeWebTabTitle,
   validateFaviconUrl,
-  resolveAddressBarInput,
   validateBrowserFavoriteUrl,
 } from '@agent-workbench/shared';
 import { GlobeIcon } from '../../shared/ui/GlobeIcon.js';
@@ -24,6 +25,7 @@ export interface BrowserDestinationPickerProps {
   pickerTitle?: string;
   favorites: readonly BrowserFavorite[];
   searchEngine: SearchEngine;
+  searchEngines?: readonly SearchEngine[];
   favicons?: Record<string, string>;
   onConfirm?: (destination: { url: string; title: string; provider?: WebTabProvider }) => void;
   onCancel?: () => void;
@@ -32,6 +34,25 @@ export interface BrowserDestinationPickerProps {
   onBack?: () => void;
   initialMode?: 'list' | 'preview' | 'other';
   initialFavorite?: BrowserFavorite;
+}
+
+function ArrowRightGlyph(): JSX.Element {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M3 8h10M9 4l4 4-4 4" />
+    </svg>
+  );
 }
 
 function SearchGlyph(): JSX.Element {
@@ -58,6 +79,7 @@ export function BrowserDestinationPicker({
   pickerTitle,
   favorites,
   searchEngine,
+  searchEngines,
   favicons,
   onConfirm,
   onCancel,
@@ -70,8 +92,17 @@ export function BrowserDestinationPicker({
   const [mode, setMode] = useState<'list' | 'preview' | 'other'>(initialMode);
   const [selectedFavorite, setSelectedFavorite] = useState<BrowserFavorite | null>(initialFavorite ?? null);
   const [destinationUrl, setDestinationUrl] = useState<string>(initialFavorite?.url ?? '');
-  const [queryInput, setQueryInput] = useState<string>('');
+  const [urlInput, setUrlInput] = useState<string>('');
+  const [selectedEngineId, setSelectedEngineId] = useState<string>(searchEngine.id);
   const [error, setError] = useState<string | null>(null);
+
+  const availableEngines = (searchEngines && searchEngines.length > 0)
+    ? searchEngines
+    : (DEFAULT_SEARCH_ENGINES.some((e) => e.id === searchEngine.id)
+      ? DEFAULT_SEARCH_ENGINES
+      : [searchEngine, ...DEFAULT_SEARCH_ENGINES]);
+
+  const activeEngine = availableEngines.find((e) => e.id === selectedEngineId) ?? searchEngine;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -104,7 +135,7 @@ export function BrowserDestinationPicker({
 
   const handleOpenSearchEngineHome = () => {
     if (onConfirm) {
-      onConfirm({ url: searchEngine.homeUrl, title: searchEngine.name, provider: 'other' });
+      onConfirm({ url: activeEngine.homeUrl, title: activeEngine.name, provider: 'other' });
     } else if (onSelectOther) {
       onSelectOther();
     }
@@ -126,21 +157,20 @@ export function BrowserDestinationPicker({
     }
   };
 
-  const handleConfirmOther = () => {
-    const raw = queryInput.trim();
+  const handleConfirmUrl = () => {
+    const raw = urlInput.trim();
     if (!raw) {
-      handleOpenSearchEngineHome();
+      setError(t('agency.web.invalidUrl'));
       return;
     }
-    const resolved = resolveAddressBarInput(raw, searchEngine, 'other');
-    if (resolved.error) {
-      setError(resolved.error);
+    const validation = validateBrowserFavoriteUrl(raw);
+    if (!validation.valid || !validation.normalizedUrl) {
+      setError(validation.error ?? t('agency.web.invalidUrl'));
       return;
     }
-    const rawTitle = resolved.isSearch ? `${raw} - ${searchEngine.name}` : raw;
-    const title = normalizeWebTabTitle(rawTitle) || normalizeWebTabTitle(searchEngine.name) || 'Browser';
+    const title = normalizeWebTabTitle(raw) || 'Web Page';
     if (onConfirm) {
-      onConfirm({ url: resolved.url, title, provider: 'other' });
+      onConfirm({ url: validation.normalizedUrl, title, provider: 'other' });
     } else if (onSelectOther) {
       onSelectOther();
     }
@@ -148,7 +178,7 @@ export function BrowserDestinationPicker({
 
   const handleOtherSubmit = (e: FormEvent) => {
     e.preventDefault();
-    handleConfirmOther();
+    handleConfirmUrl();
   };
 
   const getFavicon = (fav: BrowserFavorite | null): string | null => {
@@ -189,7 +219,7 @@ export function BrowserDestinationPicker({
             <button
               type="button"
               className="maw-browser-dest-close"
-              aria-label={t('common.cancel')}
+              aria-label={t('common.close')}
               onClick={onCancel}
             >
               ✕
@@ -270,7 +300,7 @@ export function BrowserDestinationPicker({
             <button
               type="button"
               className="maw-browser-dest-close"
-              aria-label={t('common.cancel')}
+              aria-label={t('common.close')}
               onClick={onCancel}
             >
               ✕
@@ -293,23 +323,23 @@ export function BrowserDestinationPicker({
             id="maw-other-query-input"
             type="text"
             className="maw-browser-dest-input"
-            placeholder={t('agency.browser.searchPlaceholder', { engine: searchEngine.name })}
-            value={queryInput}
+            placeholder={t('agency.browser.searchPlaceholder', { engine: activeEngine.name })}
+            value={urlInput}
             onChange={(e) => {
-              setQueryInput(e.target.value);
+              setUrlInput(e.target.value);
               setError(null);
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
-                handleConfirmOther();
+                handleConfirmUrl();
               }
             }}
             autoFocus
             spellCheck={false}
           />
           <p className="maw-browser-preview-hint">
-            {t('agency.browser.searchEngineHint', { engine: searchEngine.name })}
+            {t('agency.browser.searchEngineHint', { engine: activeEngine.name })}
           </p>
           {error && (
             <div className="maw-browser-dest-error" role="alert">
@@ -329,7 +359,7 @@ export function BrowserDestinationPicker({
           <button
             type="submit"
             className="maw-browser-dest-btn-primary"
-            onClick={handleConfirmOther}
+            onClick={handleConfirmUrl}
           >
             {t('agency.browser.open')}
           </button>
@@ -338,101 +368,137 @@ export function BrowserDestinationPicker({
     );
   }
 
-  // List Mode (Default) with Inline Other URL/Search Input + Search Engine Button
+  // List Mode (Default): 1. Title + Close, 2. Favorites, 3. Search Engine, 4. Other
   return (
     <div
       className="maw-browser-dest-picker"
       role="menu"
-      aria-label={t('settings.category.browser')}
+      aria-label={t('agency.browser.pickerTitle')}
     >
-      {(onBack || onCancel || pickerTitle) && (
-        <div className="maw-browser-dest-header">
-          {onBack ? (
-            <button type="button" role="menuitem" className="maw-browser-dest-back" onClick={onBack}>
-              <span aria-hidden="true">‹</span>
-              <span>{t('common.back')}</span>
-            </button>
-          ) : (
-            <span className="maw-browser-dest-header-title">
-              {pickerTitle || t('agency.browser.pickerTitle')}
-            </span>
-          )}
-          {onCancel && (
-            <button
-              type="button"
-              className="maw-browser-dest-close"
-              aria-label={t('common.cancel')}
-              onClick={onCancel}
-            >
-              ✕
-            </button>
-          )}
-        </div>
-      )}
+      <div className="maw-browser-dest-header">
+        {onBack ? (
+          <button type="button" role="menuitem" className="maw-browser-dest-back" onClick={onBack}>
+            <span aria-hidden="true">‹</span>
+            <span>{t('common.back')}</span>
+          </button>
+        ) : (
+          <span className="maw-browser-dest-header-title">
+            {pickerTitle || t('agency.browser.pickerTitle')}
+          </span>
+        )}
+        {onCancel && (
+          <button
+            type="button"
+            className="maw-browser-dest-close"
+            aria-label={t('common.close')}
+            onClick={onCancel}
+          >
+            ✕
+          </button>
+        )}
+      </div>
 
-      {favorites.length > 0 ? (
-        favorites.map((fav) => {
-          const faviconUrl = getFavicon(fav);
-          return (
-            <button
-              key={fav.id}
-              type="button"
-              role="menuitem"
-              className="agency-dropdown-item maw-browser-dest-item"
-              onClick={() => handleFavoriteClick(fav)}
-            >
-              <span className="maw-browser-dest-icon-wrap" aria-hidden="true">
-                {faviconUrl ? (
-                  <img className="maw-browser-dest-favicon" src={faviconUrl} alt="" />
-                ) : (
-                  <GlobeIcon size={14} className="maw-browser-dest-icon" />
-                )}
-              </span>
-              <span className="maw-browser-dest-name">{fav.title}</span>
-            </button>
-          );
-        })
-      ) : (
-        <div className="maw-browser-dest-empty">{t('settings.browser.noFavorites')}</div>
-      )}
+      {/* Section 1: Favorites */}
+      <div className="maw-browser-dest-section maw-browser-dest-section-favorites">
+        <div className="maw-browser-dest-section-title">
+          {t('settings.browser.favorites')}
+        </div>
+        {favorites.length > 0 ? (
+          <div className="maw-browser-dest-favorites-list">
+            {favorites.map((fav) => {
+              const faviconUrl = getFavicon(fav);
+              return (
+                <button
+                  key={fav.id}
+                  type="button"
+                  role="menuitem"
+                  className="agency-dropdown-item maw-browser-dest-item"
+                  onClick={() => handleFavoriteClick(fav)}
+                >
+                  <span className="maw-browser-dest-icon-wrap" aria-hidden="true">
+                    {faviconUrl ? (
+                      <img className="maw-browser-dest-favicon" src={faviconUrl} alt="" />
+                    ) : (
+                      <GlobeIcon size={14} className="maw-browser-dest-icon" />
+                    )}
+                  </span>
+                  <span className="maw-browser-dest-name">{fav.title}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="maw-browser-dest-empty">{t('settings.browser.noFavorites')}</div>
+        )}
+      </div>
 
       <div className="maw-browser-dest-divider" role="separator" />
 
-      <div className="maw-browser-dest-item maw-browser-dest-other-inline maw-browser-dest-item-other">
-        <div className="maw-browser-dest-other-top">
-          <div className="maw-browser-dest-other-label-group">
-            <span className="maw-browser-dest-icon-wrap" aria-hidden="true">
-              <SearchGlyph />
-            </span>
-            <span className="maw-browser-dest-name">{t('agency.tabs.other')}</span>
-          </div>
+      {/* Section 2: Search Engine */}
+      <div className="maw-browser-dest-section maw-browser-dest-section-engine">
+        <div className="maw-browser-dest-section-title">
+          {t('agency.browser.searchEngine')}
+        </div>
+        <div className="maw-browser-dest-engine-row">
+          <select
+            id="maw-browser-dest-engine-select"
+            className="maw-browser-dest-engine-select"
+            value={selectedEngineId}
+            onChange={(e) => setSelectedEngineId(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleOpenSearchEngineHome();
+              }
+            }}
+            aria-label={t('agency.browser.searchEngine')}
+          >
+            {availableEngines.map((engine) => (
+              <option key={engine.id} value={engine.id}>
+                {engine.name}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
-            className="maw-browser-dest-engine-btn maw-browser-dest-url"
-            title={t('agency.browser.openHomePage', { engine: searchEngine.name })}
-            aria-label={t('agency.browser.openHomePage', { engine: searchEngine.name })}
+            className="maw-browser-dest-go-btn"
+            title={t('agency.browser.openHomePage', { engine: activeEngine.name })}
+            aria-label={t('agency.browser.openHomePage', { engine: activeEngine.name })}
             onClick={handleOpenSearchEngineHome}
           >
-            {searchEngine.name}
+            <ArrowRightGlyph />
           </button>
         </div>
+      </div>
 
+      <div className="maw-browser-dest-divider" role="separator" />
+
+      {/* Section 3: Other */}
+      <div className="maw-browser-dest-section maw-browser-dest-section-other maw-browser-dest-item-other">
+        <div className="maw-browser-dest-section-title">
+          {t('agency.tabs.other')}
+        </div>
         <form className="maw-browser-dest-other-form" onSubmit={handleOtherSubmit} noValidate>
           <input
             id="maw-other-inline-input"
             type="text"
             className="maw-browser-dest-input maw-browser-dest-inline-input"
-            placeholder={t('agency.browser.searchPlaceholder', { engine: searchEngine.name })}
-            aria-label={t('agency.browser.urlOrSearch')}
-            value={queryInput}
+            placeholder={t('agency.browser.enterWebsiteUrl')}
+            aria-label={t('agency.tabs.other')}
+            value={urlInput}
             onChange={(e) => {
-              setQueryInput(e.target.value);
+              setUrlInput(e.target.value);
               setError(null);
             }}
             spellCheck={false}
           />
-          <button type="submit" className="maw-browser-dest-btn-primary maw-browser-dest-go-btn">
-            {t('agency.browser.go')}
+          <button
+            type="submit"
+            className="maw-browser-dest-go-btn"
+            title={t('agency.browser.go')}
+            aria-label={t('agency.browser.go')}
+          >
+            <ArrowRightGlyph />
           </button>
         </form>
 
