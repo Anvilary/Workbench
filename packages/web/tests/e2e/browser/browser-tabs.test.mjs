@@ -116,6 +116,10 @@ test('Browser compatibility preserves CLI input, mixed tabs and external ChatGPT
   await page.evaluate(()=>{window.agencyTest.setStatus('closed');window.agencyTest.setStatus('open');});
   await page.waitForFunction(before=>window.agencyTest.requests.filter(m=>m.type==='agency.webTabs.list').length>before,before);
   await page.getByRole('button',{name:'Close Renamed research',exact:true}).click();
+  const confirmBtn = page.getByRole('button', { name: 'Close Page', exact: true });
+  if (await confirmBtn.count()) {
+    await confirmBtn.click();
+  }
   await page.getByRole('tab',{name:'Renamed research'}).waitFor({state:'detached'});
   const shell = page.getByRole('tab', {name:'Native shell'});
   await shell.waitFor();

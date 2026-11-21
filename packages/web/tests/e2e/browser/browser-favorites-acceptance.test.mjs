@@ -749,16 +749,16 @@ test('Browser Acceptance Suite: Settings, Destination Picker, Favicons, Minimal 
 
     const pickerItems = page.locator('.maw-browser-dest-item');
     const pickerCount = await pickerItems.count();
-    // 4 favorites (3 initial + 1 added) + 1 "Other" item = 5 items
-    assert.equal(pickerCount, 5, 'Should show 4 favorites plus Other item');
+    // 4 favorites (3 initial + 1 added)
+    assert.equal(pickerCount, 4, 'Should show 4 favorites');
 
     const dividerCount = await page.locator('.maw-browser-dest-divider').count();
-    assert.equal(dividerCount, 1, 'Should display thin divider between favorites and Other');
+    assert.equal(dividerCount, 2, 'Should display dividers between sections');
 
-    const otherName = await page.locator('.maw-browser-dest-item').last().locator('.maw-browser-dest-name').textContent();
-    assert.equal(otherName.trim(), 'Other');
-    const otherEngine = await page.locator('.maw-browser-dest-item').last().locator('.maw-browser-dest-url').textContent();
-    assert.equal(otherEngine.trim(), 'DuckDuckGo');
+    const otherSection = page.locator('.maw-browser-dest-item-other');
+    assert.equal(await otherSection.count(), 1, 'Should display Other section');
+    const otherEngine = await page.locator('.maw-browser-dest-engine-select').inputValue();
+    assert.equal(otherEngine, 'duckduckgo');
 
     // Capture Browser Destination Picker screenshot
     await page.screenshot({ path: path.join(screenshotsDir, 'browser-destination-picker.png') });

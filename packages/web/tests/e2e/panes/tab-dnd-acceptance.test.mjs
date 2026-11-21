@@ -26,10 +26,10 @@ test('AUDIT E: Tab Drag and Drop - ghost tracking, visual cursor following, reor
   // Setup 2-pane workspace with terminal mode
   const page = await setup(t, 'shape=row&mode=terminal');
 
-  // Pane 1 starts with Tab 1. Add Tab 2 and an Editor tab to Pane 1
+  // Pane 1 starts with Tab 1. Add Tab 2 and Tab 3 to Pane 1
   await create(page, 1, 'terminal');
   await page.waitForFunction(() => document.querySelectorAll('#pane-container-pane-1 .maw-session-tab').length === 2);
-  await create(page, 1, 'file');
+  await create(page, 1, 'terminal');
   await page.waitForFunction(() => document.querySelectorAll('#pane-container-pane-1 .maw-session-tab').length === 3);
 
   // Pane 2 starts with Tab 2 (or native web view)

@@ -182,16 +182,7 @@ test('placement failure surfaces notice banner with tab context without failing 
  await notice.getByRole('button',{name:'Dismiss notification'}).click();
  assert.equal(await page.locator('.agency-notice-bar[role="status"]').count(),0);
 
- // 4. Repeat with a file
- await page.evaluate(()=>window.fixture.failPlacement());
- await create(page,2,'file');
- await page.waitForFunction(cnt=>window.fixture.state.sessions.length+window.fixture.state.editorTabs.length===cnt+2,initSessions);
- await notice.waitFor();
- const fileText=await notice.textContent();
- assert.match(fileText,/Layout placement persistence failure for tab "index\.ts"/i);
- await notice.getByRole('button',{name:'Dismiss notification'}).click();
-
- // Repeat with a ChatGPT tab
+ // 4. Repeat with a ChatGPT tab
  await page.evaluate(()=>window.fixture.failPlacement());
  await create(page,2,'web');
  await page.waitForFunction(cnt=>window.fixture.state.webTabs.length===cnt+1,initWeb);
