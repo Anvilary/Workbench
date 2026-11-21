@@ -830,9 +830,6 @@ export const WorkspaceView = memo(function WorkspaceView({
           onAddTerminalClick={(paneId) => {
             void add('terminal', paneId);
           }}
-          onAddAgentClick={(paneId, profileId) => {
-            void add('agent', paneId, profileId);
-          }}
           onAddWebTabClick={(paneId) => {
             creationTarget.current = paneId;
           }}

@@ -42,7 +42,6 @@ interface Props {
   onToggleMaximize: () => void;
   onClosePane: () => void;
   onAddTerminalClick: () => void;
-  onAddAgentClick?: (profileId?: string) => void;
   onAddWebTabClick: () => void;
   onOpenFileClick?: () => void;
   onMoveTabToPane: (tabId: string, targetPaneId: string, targetIndex?: number) => void;
@@ -91,7 +90,6 @@ export function PaneHeader({
   onToggleMaximize,
   onClosePane,
   onAddTerminalClick,
-  onAddAgentClick,
   onAddWebTabClick,
   onOpenFileClick,
   onMoveTabToPane,
@@ -211,10 +209,9 @@ export function PaneHeader({
     }
   }
 
-  function choose(action: 'terminal' | 'agent' | 'web' | 'file') {
+  function choose(action: 'terminal' | 'web' | 'file') {
     setMenuOpen(false);
     if (action === 'terminal') onAddTerminalClick();
-    else if (action === 'agent') onAddAgentClick?.();
     else if (action === 'web') onAddWebTabClick();
     else if (action === 'file') onOpenFileClick?.();
   }
@@ -375,9 +372,6 @@ export function PaneHeader({
             >
               <button type="button" role="menuitem" onClick={() => choose('terminal')}>
                 {t('agency.tabs.newTerminal')}
-              </button>
-              <button type="button" role="menuitem" onClick={() => choose('agent')}>
-                {t('agency.tabs.codingAgent')}
               </button>
               <button
                 type="button"

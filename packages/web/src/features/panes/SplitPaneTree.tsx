@@ -60,7 +60,6 @@ interface Props {
   onSwapPane: (sourcePaneId: string, targetPaneId: string) => void;
   onMoveTabToPane: (tabId: string, targetPaneId: string, targetIndex?: number) => void;
   onAddTerminalClick: (paneId: string) => void;
-  onAddAgentClick?: (paneId: string, profileId?: string) => void;
   onAddWebTabClick: (paneId: string) => void;
   onOpenFileClick?: (paneId: string) => void;
   onOpenRelativeFile?: (paneId: string, path: string) => void;
@@ -239,7 +238,6 @@ function PaneLeaf(props: Props & {
         onToggleMaximize={() => onToggleMaximize(node.id)}
         onClosePane={handleRequestClosePane}
         onAddTerminalClick={() => onAddTerminalClick(node.id)}
-        onAddAgentClick={props.onAddAgentClick ? (profileId) => props.onAddAgentClick?.(node.id, profileId) : undefined}
         onAddWebTabClick={props.onOpenBrowserPicker ? props.onOpenBrowserPicker : () => onAddWebTabClick(node.id)}
         browserFavorites={props.browserFavorites}
         searchEngine={props.searchEngine}
@@ -286,10 +284,8 @@ function PaneLeaf(props: Props & {
             paneId={node.id}
             online={online}
             busy={busy}
-            profiles={profiles}
             canClose={canClose}
             onAddTerminal={() => onAddTerminalClick(node.id)}
-            onAddAgent={(profileId) => props.onAddAgentClick?.(node.id, profileId)}
             onAddBrowser={props.onOpenBrowserPicker ? props.onOpenBrowserPicker : () => onAddWebTabClick(node.id)}
             onOpenFile={props.onOpenFileClick ? () => props.onOpenFileClick?.(node.id) : () => {}}
             onClosePane={handleRequestClosePane}
