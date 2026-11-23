@@ -17,6 +17,7 @@ import './workbench.css';
 import { useDropdownDismissal } from '../shared/hooks/useDropdownDismissal.js';
 import { useNativeBrowserTabs } from '../features/browser/useNativeBrowserTabs.js';
 import { SettingsDialog, type SettingsTabId } from '../features/settings/SettingsDialog.js';
+import { ArchivedItemsDialog } from '../features/workspaces/ArchivedItemsDialog.js';
 import { useAppSettings } from '../features/settings/useAppSettings.js';
 import { useTerminalTheme } from '../features/terminals/useTerminalTheme.js';
 import { useTheme, type ThemeState } from '../shared/hooks/useTheme.js';
@@ -209,6 +210,7 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
   useNativeBrowserTabs(data.webTabs, online && synchronized, store.request, data.projects, data.workspaces, data.browserProfiles);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [performanceOpen, setPerformanceOpen] = useState(false);
+  const [archivedOpen, setArchivedOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabId>('general');
@@ -817,6 +819,18 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
                 <button
                   type="button"
                   role="menuitem"
+                  id="menu-open-archived"
+                  className="agency-dropdown-item maw-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setArchivedOpen(true);
+                  }}
+                >
+                  <span className="maw-menu-item-text">{t('agency.archive.menuItem')}</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
                   id="menu-open-settings"
                   className="agency-dropdown-item maw-menu-item"
                   onClick={() => {
@@ -848,6 +862,16 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
         )}
         {performanceOpen && (
           <PerformancePanel onClose={() => setPerformanceOpen(false)} />
+        )}
+        {archivedOpen && (
+          <ArchivedItemsDialog
+            projects={data.projects}
+            workspaces={data.workspaces}
+            onUnarchiveProject={store.unarchiveProject}
+            onRestoreWorkspace={store.restore}
+            onClose={() => setArchivedOpen(false)}
+            online={online && synchronized}
+          />
         )}
         {error && <div role="alert" className="agency-error-bar">{error}
           <button type="button" onClick={() => setError(null)} aria-label={t('agency.ui.dismissError')}>×</button></div>}

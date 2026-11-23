@@ -4657,3 +4657,126 @@ body.agency-sidebar-dragging * {
   color: var(--ink, #ededea);
   word-break: break-all;
 }
+
+/* Archived Items Dialog */
+.maw-archived-dialog {
+  width: min(520px, 94vw);
+  max-width: 520px;
+}
+
+.maw-archived-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.maw-archived-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.maw-archived-tab {
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-2, #141417);
+  border: 1px solid var(--border, #25252b);
+  color: var(--ink-2, #b8b6b0);
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.maw-archived-tab:hover {
+  background: var(--bg-3, #1e1e23);
+  color: var(--ink, #ededea);
+}
+
+.maw-archived-tab.selected {
+  background: var(--agency-hover, #232228);
+  border-color: var(--ember, #d97442);
+  color: var(--ink, #ededea);
+  font-weight: 600;
+}
+
+.maw-archived-list {
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle, #1e1e24);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-1, #0e0e10);
+}
+
+.maw-archived-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle, #1e1e24);
+  transition: background 120ms ease;
+}
+
+.maw-archived-row:last-child {
+  border-bottom: none;
+}
+
+.maw-archived-row:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.maw-archived-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.maw-archived-row-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink, #ededea);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.maw-archived-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.maw-archived-parent-tag {
+  background: var(--bg-3, #1e1e24);
+  color: var(--ink-2, #b8b6b0);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+.maw-archived-row-date {
+  font-size: 11px;
+  color: var(--ink-3, #8a877f);
+}
+
+.maw-archived-restore-btn {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.maw-archived-parent-prompt {
+  background: var(--bg-2, #141417);
+  border: 1px solid var(--border, #25252b);
+  border-radius: var(--radius-sm, 6px);
+  padding: 16px;
+}
+
+.maw-archived-prompt-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink, #ededea);
+  line-height: 1.5;
+}
