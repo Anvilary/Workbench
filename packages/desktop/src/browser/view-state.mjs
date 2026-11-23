@@ -24,6 +24,7 @@ export function createBrowserViewState() {
     suspendedTabs: new Map(), // id -> { id, provider, profileId, url, requestedUrl, zoomLevel, suspendedAt }
     lastAccessedAt: new Map(), // id -> number (timestamp)
     activeDownloads: new Map(), // id -> number (count)
+    reservedDownloadPaths: new Set(), // full file paths reserved for in-flight downloads
     interactionProtected: new Set(),
     zoomLevels: new Map(), // id -> number
     tabFavicons: new Map(), // id -> string (best validated favicon URL)

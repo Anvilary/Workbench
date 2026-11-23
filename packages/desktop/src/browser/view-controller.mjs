@@ -244,6 +244,7 @@ export function createBrowserViewController({
       send({ type: 'error', id, message });
     });
     view.webContents.on('render-process-gone', () => {
+      activeDownloads.delete(id);
       const message = `${providerName} renderer stopped. Use Reload page to retry.`;
       failures.set(id, message);
       if (attachedViews.has(id)) hide(id);
@@ -365,6 +366,7 @@ export function createBrowserViewController({
     interactionProtected.clear();
     zoomLevels.clear();
     activeDownloads.clear();
+    state.reservedDownloadPaths.clear();
     for (const partitionSession of sessions.configuredPartitions.values()) {
       try { partitionSession.flushStorageData(); } catch {}
     }

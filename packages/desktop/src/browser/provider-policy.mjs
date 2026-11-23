@@ -3,8 +3,27 @@
  * durable page worth remembering. Pure functions over the URL policy.
  */
 
-import { embeddedUrl, githubEmbeddedUrl, otherUrl, perplexityEmbeddedUrl, perplexityUrl } from '../../policy.mjs';
+import {
+  embeddedUrl,
+  githubEmbeddedUrl,
+  otherUrl,
+  perplexityEmbeddedUrl,
+  perplexityUrl,
+  downloadOriginAllowed,
+  downloadDestinationAllowed,
+  isProviderFileDeliveryUrl,
+  isAllowedBlobDownloadUrl,
+  parseBlobDownloadUrl,
+} from '../../policy.mjs';
 import { isDurableProviderPage } from '../security/session-permissions.mjs';
+
+export {
+  downloadOriginAllowed,
+  downloadDestinationAllowed,
+  isProviderFileDeliveryUrl,
+  isAllowedBlobDownloadUrl,
+  parseBlobDownloadUrl,
+};
 
 export function navigationAllowed(provider, url) {
   if (provider === 'other') return otherUrl(url);

@@ -7,11 +7,11 @@
  * interaction protection) is owned by the BrowserViewController.
  */
 
-import { otherUrl, externalUrl, isDownloadOrFileDeliveryUrl, targetWebProvider, isSameSite, authenticationUrl, decideWindowOpen, getBrowserZoomAction } from '../../policy.mjs';
+import { otherUrl, externalUrl, targetWebProvider, isSameSite, authenticationUrl, decideWindowOpen, getBrowserZoomAction } from '../../policy.mjs';
 import { isTypingInput } from '../performance/resource-budget.mjs';
 import { isOAuthLoopbackCallback, createOAuthLoopbackGate } from '../security/oauth-loopback.mjs';
 import { applyWebContentsZoom } from './zoom-controller.mjs';
-import { navigationAllowed } from './provider-policy.mjs';
+import { navigationAllowed, isProviderFileDeliveryUrl } from './provider-policy.mjs';
 
 export function createNavigationGuard({
   electron, win, send, backend, secure, isWebAuthnEnabled, webauthnPreload, state,
@@ -77,7 +77,17 @@ export function createNavigationGuard({
     const getTabId = () => [...views.entries()].find(([, v]) => v.webContents === contents)?.[0] || popupOwners.get(contents);
     const isAuthFlow = () => isContentsInAuthFlow(contents, provider);
     const handleFileDelivery = (event, url) => {
-      if (provider === 'chatgpt' && isDownloadOrFileDeliveryUrl(url)) {
+      if (typeof url === 'string' && url.startsWith('blob:')) {
+        event.preventDefault();
+        if (isProviderFileDeliveryUrl(provider, url)) {
+          contents.downloadURL(url);
+        } else {
+          const id = getTabId();
+          if (id) send({ type: 'download-failed', id, filename: 'download', reason: 'blocked' });
+        }
+        return true;
+      }
+      if (isProviderFileDeliveryUrl(provider, url)) {
         event.preventDefault();
         contents.downloadURL(url);
         return true;
@@ -162,7 +172,16 @@ export function createNavigationGuard({
       webPreferences: { ...secure, session: contents.session, preload: isWebAuthnEnabled && provider === 'chatgpt' ? webauthnPreload : '', backgroundThrottling: true, autoplayPolicy: 'no-user-gesture-required', webgl: true },
     } });
     contents.setWindowOpenHandler(({ url, disposition, features }) => {
-      if (provider === 'chatgpt' && isDownloadOrFileDeliveryUrl(url)) {
+      if (typeof url === 'string' && url.startsWith('blob:')) {
+        if (isProviderFileDeliveryUrl(provider, url)) {
+          contents.downloadURL(url);
+        } else {
+          const id = getTabId();
+          if (id) send({ type: 'download-failed', id, filename: 'download', reason: 'blocked' });
+        }
+        return { action: 'deny' };
+      }
+      if (isProviderFileDeliveryUrl(provider, url)) {
         contents.downloadURL(url);
         return { action: 'deny' };
       }

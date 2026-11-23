@@ -6,14 +6,14 @@
  * remembers which provider each session belongs to.
  */
 
-import { DEFAULT_BROWSER_PROFILE_ID, isValidBrowserProfileId, partitionForBrowserProfile, otherUrl, isDownloadOrFileDeliveryUrl, chatUrl, authenticationUrl } from '../../policy.mjs';
-import { browserDownloadHandler } from './downloads.mjs';
+import { DEFAULT_BROWSER_PROFILE_ID, isValidBrowserProfileId, partitionForBrowserProfile, otherUrl, authenticationUrl } from '../../policy.mjs';
+import { browserDownloadHandler, resolveDownloadsDirectory } from './downloads.mjs';
 import { configureProviderSessionPermissions } from '../security/session-permissions.mjs';
-import { navigationAllowed, durablePage } from './provider-policy.mjs';
+import { navigationAllowed, durablePage, downloadOriginAllowed, downloadDestinationAllowed } from './provider-policy.mjs';
 
 export function createBrowserSessions({ electron, state, send, trimCapacity }) {
   const { app, BrowserWindow, session } = electron;
-  const { views, providers, popupOwners, popups, activeDownloads, failures } = state;
+  const { views, providers, popupOwners, popups, activeDownloads, reservedDownloadPaths, failures } = state;
   const configuredPartitions = new Map(); // partitionName -> Electron.Session
   const sessionProviders = new Map(); // Electron.Session -> provider
 
@@ -57,23 +57,12 @@ export function createBrowserSessions({ electron, state, send, trimCapacity }) {
     }
     targetSession.on('will-download', browserDownloadHandler({
       provider, views, providers, popupOwners, popups, activeDownloads,
-      allowedOrigin: (value) => {
-        try {
-          const url = new URL(value);
-          if (provider === 'chatgpt') return chatUrl(url.origin);
-          if (provider === 'perplexity') return ['https://perplexity.ai', 'https://www.perplexity.ai'].includes(url.origin);
-          if (provider === 'github') return url.protocol === 'https:' && (url.hostname === 'github.com' || url.hostname.endsWith('.github.com') || url.hostname.endsWith('.githubusercontent.com'));
-          return otherUrl(value);
-        } catch { return false; }
-      },
-      allowedDestination: (value) => {
-        if (provider === 'chatgpt') return isDownloadOrFileDeliveryUrl(value) || chatUrl(value);
-        if (provider === 'other' && value.startsWith('blob:')) return otherUrl(value.slice(5));
-        return navigationAllowed(provider, value);
-      },
+      reservedPaths: reservedDownloadPaths,
+      allowedOrigin: (value) => downloadOriginAllowed(provider, value),
+      allowedDestination: (value) => downloadDestinationAllowed(provider, value),
       windowForContents: (contents) => BrowserWindow.fromWebContents(contents),
-      downloadsDirectory: () => app.getPath('downloads'),
-      autoSave: () => process.env.MAW_DOWNLOAD_AUTO_SAVE === '1',
+      downloadsDirectory: () => resolveDownloadsDirectory(app),
+      autoSave: () => process.env.MAW_DOWNLOAD_AUTO_SAVE !== '0',
       send,
       ready: (id) => {
         const contents = views.get(id)?.webContents;

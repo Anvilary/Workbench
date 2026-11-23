@@ -41,6 +41,20 @@ export function githubUrl(value) {
 }
 
 const githubAssetHosts = new Set(['github.githubassets.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com', 'github-releases.githubusercontent.com', 'codeload.github.com', 'avatars.githubusercontent.com']);
+const githubFileDeliveryHosts = new Set([
+  'objects.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+  'github-releases.githubusercontent.com',
+  'codeload.github.com',
+  'raw.githubusercontent.com',
+  'gist.githubusercontent.com',
+  'media.githubusercontent.com',
+]);
+
+export function isGithubFileDeliveryHost(hostname) {
+  if (!hostname || typeof hostname !== 'string') return false;
+  return githubFileDeliveryHosts.has(hostname.toLowerCase());
+}
 
 export function githubEmbeddedUrl(value) {
   const url = httpsUrl(value);
@@ -50,6 +64,25 @@ export function githubEmbeddedUrl(value) {
 
 const perplexityAuthHosts = new Set(['auth.perplexity.ai', 'accounts.google.com', 'appleid.apple.com']);
 const perplexityAssetHosts = new Set(['cdn.perplexity.ai', 'assets.perplexity.ai', 'media.perplexity.ai']);
+/**
+ * Trusted Perplexity file-delivery hosts:
+ * - Perplexity-owned CDN and export subdomains (`*.perplexity.ai`)
+ * - `pplx-res.cloudinary.com`: Perplexity's official Cloudinary media/export delivery host
+ */
+const perplexityFileDeliveryHosts = new Set([
+  'cdn.perplexity.ai',
+  'assets.perplexity.ai',
+  'media.perplexity.ai',
+  'r2cdn.perplexity.ai',
+  'files.perplexity.ai',
+  'export.perplexity.ai',
+  'pplx-res.cloudinary.com',
+]);
+
+export function isPerplexityFileDeliveryHost(hostname) {
+  if (!hostname || typeof hostname !== 'string') return false;
+  return perplexityFileDeliveryHosts.has(hostname.toLowerCase());
+}
 
 function perplexityHost(hostname) {
   return hostname === 'perplexity.ai' || (hostname.endsWith('.perplexity.ai') && hostname.length > '.perplexity.ai'.length);
@@ -63,7 +96,7 @@ export function perplexityUrl(value) {
 export function perplexityEmbeddedUrl(value) {
   const url = httpsUrl(value);
   if (!url) return false;
-  return perplexityUrl(value) || authHosts.has(url.hostname) || perplexityAuthHosts.has(url.hostname) || perplexityAssetHosts.has(url.hostname);
+  return perplexityUrl(value) || authHosts.has(url.hostname) || perplexityAuthHosts.has(url.hostname) || perplexityAssetHosts.has(url.hostname) || isPerplexityFileDeliveryHost(url.hostname);
 }
 
 export function webProvider(value) {
@@ -206,11 +239,99 @@ export function isFileDeliveryHost(hostname) {
   return fileDeliveryHosts.has(hostname) || hostname.endsWith('.oaiusercontent.com') || hostname.endsWith('.oaistatic.com');
 }
 
-export function isDownloadOrFileDeliveryUrl(value) {
+export function parseBlobDownloadUrl(value, maxLength = 2048) {
+  if (typeof value !== 'string' || !value.startsWith('blob:') || value.length > maxLength || /[\u0000-\u0020\u007f]/.test(value)) {
+    return null;
+  }
+  const inner = value.slice(5);
+  try {
+    const parsed = new URL(inner);
+    if (parsed.username || parsed.password) return null;
+    if (!parsed.pathname || parsed.pathname === '/' || parsed.pathname.includes('..')) return null;
+    return {
+      inner,
+      origin: parsed.origin,
+      protocol: parsed.protocol,
+      hostname: parsed.hostname.toLowerCase(),
+      pathname: parsed.pathname,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function downloadOriginAllowed(provider, value) {
+  if (typeof value !== 'string' || !value || /[\u0000-\u0020\u007f]/.test(value)) return false;
+  try {
+    const url = new URL(value);
+    if (url.username || url.password) return false;
+    if (provider === 'chatgpt') return chatUrl(url.origin);
+    if (provider === 'perplexity') return perplexityUrl(url.origin);
+    if (provider === 'github') {
+      return url.protocol === 'https:' && !url.port && (
+        githubUrl(url.origin) ||
+        isGithubFileDeliveryHost(url.hostname) ||
+        url.hostname.endsWith('.githubusercontent.com')
+      );
+    }
+    if (provider === 'other') return otherUrl(value, 8192);
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export function isAllowedBlobDownloadUrl(provider, value, contextOrigin = null) {
+  const blob = parseBlobDownloadUrl(value);
+  if (!blob) return false;
+
+  let providerOk = false;
+  if (provider === 'chatgpt') providerOk = chatUrl(blob.inner);
+  else if (provider === 'perplexity') providerOk = perplexityUrl(blob.inner);
+  else if (provider === 'github') providerOk = githubUrl(blob.inner);
+  else if (provider === 'other') providerOk = otherUrl(blob.inner);
+  if (!providerOk) return false;
+
+  if (contextOrigin) {
+    try {
+      const ctx = new URL(contextOrigin);
+      if (!downloadOriginAllowed(provider, ctx.origin)) return false;
+      if (provider === 'other') {
+        if (ctx.origin !== blob.origin) return false;
+      } else if (ctx.origin !== blob.origin && !isSameSite(ctx.origin, blob.origin)) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function isProviderFileDeliveryUrl(provider, value) {
   if (typeof value !== 'string') return false;
-  if (value.startsWith('blob:https://chatgpt.com/') || value.startsWith('blob:https://chat.openai.com/')) return true;
+  if (value.startsWith('blob:')) return isAllowedBlobDownloadUrl(provider, value);
   const url = httpsUrl(value);
-  return !!url && isFileDeliveryHost(url.hostname);
+  if (!url) return false;
+  if (provider === 'chatgpt') return isFileDeliveryHost(url.hostname);
+  if (provider === 'perplexity') return isPerplexityFileDeliveryHost(url.hostname);
+  if (provider === 'github') return isGithubFileDeliveryHost(url.hostname);
+  return false;
+}
+
+export function isDownloadOrFileDeliveryUrl(value, provider = 'chatgpt') {
+  return isProviderFileDeliveryUrl(provider, value);
+}
+
+export function downloadDestinationAllowed(provider, value) {
+  if (typeof value !== 'string' || !value) return false;
+  if (value.startsWith('blob:')) return isAllowedBlobDownloadUrl(provider, value);
+  if (authenticationUrl(value)) return false;
+  if (provider === 'chatgpt') return chatUrl(value) || isProviderFileDeliveryUrl('chatgpt', value);
+  if (provider === 'perplexity') return perplexityUrl(value) || isProviderFileDeliveryUrl('perplexity', value);
+  if (provider === 'github') return githubUrl(value) || isProviderFileDeliveryUrl('github', value);
+  if (provider === 'other') return otherUrl(value, 8192);
+  return false;
 }
 
 export function embeddedUrl(value) {

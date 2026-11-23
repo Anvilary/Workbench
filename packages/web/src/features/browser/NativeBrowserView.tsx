@@ -79,6 +79,7 @@ export function NativeBrowserView({
   const [history, setHistory] = useState({ canGoBack: false, canGoForward: false });
   const [findOpen, setFindOpen] = useState(false);
   const addressInput = useRef<HTMLInputElement>(null);
+  const downloadFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const provider = tab.provider ?? nativeWebProvider(tab.url);
 
   useEffect(() => setAddress(tab.url), [tab.url]);
@@ -130,24 +131,38 @@ export function NativeBrowserView({
       onError: (msg) => setError(msg),
       onRestoring: setRestoring,
       onDownloadEvent: (evt) => {
+        if (downloadFeedbackTimer.current) {
+          clearTimeout(downloadFeedbackTimer.current);
+          downloadFeedbackTimer.current = null;
+        }
+        const name = evt.filename || '';
         if (evt.type === 'download-complete') {
-          const name = evt.filename || '';
           setDownloadFeedback({
             message: name ? `${t('agency.ui.fileDownloaded')}: ${name}` : t('agency.ui.fileDownloaded'),
             type: 'success',
           });
-          setTimeout(() => setDownloadFeedback(null), 2000);
+          downloadFeedbackTimer.current = setTimeout(() => {
+            downloadFeedbackTimer.current = null;
+            setDownloadFeedback(null);
+          }, 2500);
         } else if (evt.type === 'download-failed') {
           setDownloadFeedback({
-            message: t('agency.ui.downloadFailed'),
+            message: name && name !== 'download' ? `${t('agency.ui.downloadFailed')}: ${name}` : t('agency.ui.downloadFailed'),
             type: 'error',
           });
-          setTimeout(() => setDownloadFeedback(null), 2000);
+          downloadFeedbackTimer.current = setTimeout(() => {
+            downloadFeedbackTimer.current = null;
+            setDownloadFeedback(null);
+          }, 3000);
         }
       },
     });
 
     return () => {
+      if (downloadFeedbackTimer.current) {
+        clearTimeout(downloadFeedbackTimer.current);
+        downloadFeedbackTimer.current = null;
+      }
       unsubscribe();
       unregister();
     };
