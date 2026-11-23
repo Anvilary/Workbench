@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { calculateMenuPosition, isSupportedBrowserLink } from '../../../src/features/browser/BrowserContextMenu.js';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { calculateMenuPosition, isSupportedBrowserLink, buildBrowserContextMenuItems } from '../../../src/features/browser/BrowserContextMenu.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 test('isSupportedBrowserLink: validates public web hyperlinks and rejects invalid/unsupported links', () => {
   // Supported web URLs:
@@ -126,44 +132,71 @@ test('calculateMenuPosition: handles narrow panes and split panes correctly', ()
   assert.ok(pos.x >= 706);
 });
 
-test('Context-aware Copy logic: selection > link URL > page URL', () => {
-  function resolveCopyTarget({ selection, selectionText, linkURL, pageURL }) {
-    if (selection) return { action: 'copy-selection', payload: selectionText };
-    if (isSupportedBrowserLink(linkURL)) return { action: 'copy-link', payload: linkURL.trim() };
-    return { action: 'copy-url', payload: pageURL };
-  }
+test('UI-03: buildBrowserContextMenuItems: provides explicit Copy Page URL, conditional Copy Link / Selection, and prevents duplicates', () => {
+  let copiedSelection = false;
+  let copiedLink = false;
+  let copiedPageUrl = false;
 
-  // 1. Selection takes precedence over link and page URL
-  assert.deepEqual(resolveCopyTarget({
-    selection: true,
-    selectionText: 'Selected snippet',
-    linkURL: 'https://example.com/link',
-    pageURL: 'https://example.com/page',
-  }), { action: 'copy-selection', payload: 'Selected snippet' });
+  const resetCalls = () => {
+    copiedSelection = false;
+    copiedLink = false;
+    copiedPageUrl = false;
+  };
 
-  // 2. Link URL takes precedence over page URL when no selection
-  assert.deepEqual(resolveCopyTarget({
-    selection: false,
-    selectionText: '',
-    linkURL: 'https://example.com/link',
-    pageURL: 'https://example.com/page',
-  }), { action: 'copy-link', payload: 'https://example.com/link' });
+  const createParams = (overrides = {}) => ({
+    hasSelection: false,
+    isValidLink: false,
+    canOpenUrl: false,
+    canGoBack: false,
+    canGoForward: false,
+    onCopySelection: () => { copiedSelection = true; },
+    onCopyLink: () => { copiedLink = true; },
+    onCopyPageUrl: () => { copiedPageUrl = true; },
+    onOpenUrl: () => {},
+    onReload: () => {},
+    onBack: () => {},
+    onForward: () => {},
+    onSearch: () => {},
+    ...overrides,
+  });
 
-  // 3. Page URL is fallback when neither selection nor link
-  assert.deepEqual(resolveCopyTarget({
-    selection: false,
-    selectionText: '',
-    linkURL: '',
-    pageURL: 'https://example.com/page',
-  }), { action: 'copy-url', payload: 'https://example.com/page' });
+  // 1. Regular click on background: Only Copy Page URL is present (no selection, no link, no duplicate copy)
+  resetCalls();
+  const regularItems = buildBrowserContextMenuItems(createParams());
+  assert.equal(regularItems[0].id, 'copy-page-url');
+  assert.equal(regularItems[0].label, 'Copy Page URL');
+  regularItems[0].run();
+  assert.equal(copiedPageUrl, true);
+  assert.deepEqual(regularItems.map(i => i.id), ['copy-page-url', 'open-url', 'reload', 'back', 'forward', 'search']);
 
-  // 4. Invalid or unsafe link falls back to page URL
-  assert.deepEqual(resolveCopyTarget({
-    selection: false,
-    selectionText: '',
-    linkURL: 'javascript:alert(1)',
-    pageURL: 'https://example.com/page',
-  }), { action: 'copy-url', payload: 'https://example.com/page' });
+  // 2. Right-click over a link: Copy Link Address + Copy Page URL (no generic copy duplicate)
+  resetCalls();
+  const linkItems = buildBrowserContextMenuItems(createParams({ isValidLink: true, canOpenUrl: true }));
+  assert.equal(linkItems[0].id, 'copy-link');
+  assert.equal(linkItems[0].label, 'Copy Link Address');
+  assert.equal(linkItems[1].id, 'copy-page-url');
+  assert.equal(linkItems[1].label, 'Copy Page URL');
+  linkItems[0].run();
+  assert.equal(copiedLink, true);
+  linkItems[1].run();
+  assert.equal(copiedPageUrl, true);
+  assert.deepEqual(linkItems.map(i => i.id), ['copy-link', 'copy-page-url', 'open-url', 'reload', 'back', 'forward', 'search']);
+
+  // 3. Right-click with selected text: Copy Selected Text + Copy Page URL
+  resetCalls();
+  const selectionItems = buildBrowserContextMenuItems(createParams({ hasSelection: true }));
+  assert.equal(selectionItems[0].id, 'copy-selection');
+  assert.equal(selectionItems[0].label, 'Copy Selected Text');
+  assert.equal(selectionItems[1].id, 'copy-page-url');
+  assert.equal(selectionItems[1].label, 'Copy Page URL');
+  selectionItems[0].run();
+  assert.equal(copiedSelection, true);
+  assert.deepEqual(selectionItems.map(i => i.id), ['copy-selection', 'copy-page-url', 'open-url', 'reload', 'back', 'forward', 'search']);
+
+  // 4. Right-click with selection over a link: Copy Selected Text + Copy Link Address + Copy Page URL
+  resetCalls();
+  const allItems = buildBrowserContextMenuItems(createParams({ hasSelection: true, isValidLink: true, canOpenUrl: true }));
+  assert.deepEqual(allItems.map(i => i.id), ['copy-selection', 'copy-link', 'copy-page-url', 'open-url', 'reload', 'back', 'forward', 'search']);
 });
 
 test('Context-aware Open URL logic: link URL > selected URL > disabled, rejects unsafe schemes', () => {
@@ -204,8 +237,8 @@ test('Context-aware Open URL logic: link URL > selected URL > disabled, rejects 
   }), { enabled: false, targetUrl: '' });
 });
 
-test('Context menu composition: exact 6 items in order, spelling section only when misspelling present', () => {
-  function getMenuItems({ misspelledWord, dictionarySuggestions }) {
+test('Context menu composition: standard items in order, spelling section only when misspelling present', () => {
+  function getMenuItems({ misspelledWord, dictionarySuggestions, params = {} }) {
     const sections = [];
     if (misspelledWord) {
       sections.push({
@@ -213,25 +246,41 @@ test('Context menu composition: exact 6 items in order, spelling section only wh
         suggestions: dictionarySuggestions.length > 0 ? dictionarySuggestions : ['No spelling suggestions'],
       });
     }
+    const standard = buildBrowserContextMenuItems({
+      hasSelection: false,
+      isValidLink: false,
+      canOpenUrl: false,
+      canGoBack: false,
+      canGoForward: false,
+      onCopySelection: () => {},
+      onCopyLink: () => {},
+      onCopyPageUrl: () => {},
+      onOpenUrl: () => {},
+      onReload: () => {},
+      onBack: () => {},
+      onForward: () => {},
+      onSearch: () => {},
+      ...params,
+    });
     sections.push({
       type: 'standard',
-      items: ['Copy', 'Open URL', 'Reload', 'Back', 'Forward', 'Search'],
+      items: standard.map(i => i.label),
     });
     return sections;
   }
 
-  // Regular click: standard 6 items only
+  // Regular click: standard items starting with Copy Page URL
   const regular = getMenuItems({ misspelledWord: '', dictionarySuggestions: [] });
   assert.equal(regular.length, 1);
   assert.equal(regular[0].type, 'standard');
-  assert.deepEqual(regular[0].items, ['Copy', 'Open URL', 'Reload', 'Back', 'Forward', 'Search']);
+  assert.deepEqual(regular[0].items, ['Copy Page URL', 'Open URL', 'Reload', 'Back', 'Forward', 'Search']);
 
   // Misspelling with suggestions
   const withSuggestions = getMenuItems({ misspelledWord: 'teh', dictionarySuggestions: ['the', 'tea'] });
   assert.equal(withSuggestions.length, 2);
   assert.equal(withSuggestions[0].type, 'spelling');
   assert.deepEqual(withSuggestions[0].suggestions, ['the', 'tea']);
-  assert.deepEqual(withSuggestions[1].items, ['Copy', 'Open URL', 'Reload', 'Back', 'Forward', 'Search']);
+  assert.deepEqual(withSuggestions[1].items, ['Copy Page URL', 'Open URL', 'Reload', 'Back', 'Forward', 'Search']);
 
   // Misspelling without suggestions
   const emptySuggestions = getMenuItems({ misspelledWord: 'xyzabc', dictionarySuggestions: [] });

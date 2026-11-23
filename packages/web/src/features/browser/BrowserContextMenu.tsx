@@ -148,6 +148,48 @@ interface MenuState {
   dictionarySuggestions: string[];
 }
 
+export interface ContextMenuItem {
+  id?: string;
+  label: string;
+  disabled?: boolean;
+  run: () => void;
+}
+
+export function buildBrowserContextMenuItems(params: {
+  hasSelection: boolean;
+  isValidLink: boolean;
+  canOpenUrl: boolean;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  onCopySelection: () => void;
+  onCopyLink: () => void;
+  onCopyPageUrl: () => void;
+  onOpenUrl: () => void;
+  onReload: () => void;
+  onBack: () => void;
+  onForward: () => void;
+  onSearch: () => void;
+}): ContextMenuItem[] {
+  const items: ContextMenuItem[] = [];
+
+  if (params.hasSelection) {
+    items.push({ id: 'copy-selection', label: t('agency.browser.copySelectedText'), run: params.onCopySelection });
+  }
+
+  if (params.isValidLink) {
+    items.push({ id: 'copy-link', label: t('agency.browser.copyLinkAddress'), run: params.onCopyLink });
+  }
+
+  items.push({ id: 'copy-page-url', label: t('agency.browser.copyPageUrl'), run: params.onCopyPageUrl });
+  items.push({ id: 'open-url', label: t('agency.browser.openUrl'), disabled: !params.canOpenUrl, run: params.onOpenUrl });
+  items.push({ id: 'reload', label: t('agency.browser.reload'), run: params.onReload });
+  items.push({ id: 'back', label: t('agency.browser.back'), disabled: !params.canGoBack, run: params.onBack });
+  items.push({ id: 'forward', label: t('agency.browser.forward'), disabled: !params.canGoForward, run: params.onForward });
+  items.push({ id: 'search', label: t('agency.browser.search'), run: params.onSearch });
+
+  return items;
+}
+
 /**
  * Context menu for a native browser tab. Commands go to the desktop main
  * process, which owns the WebContents. The page itself gets no preload.
@@ -240,16 +282,6 @@ export function BrowserContextMenu({
   const targetOpenUrl = isValidLink ? link : (selectionIsUrl ? trimmedSelection : '');
   const canOpenUrl = Boolean(targetOpenUrl);
 
-  const handleCopy = () => {
-    if (menu.selection) {
-      send('copy-selection');
-    } else if (isValidLink && link) {
-      send('copy-link', link);
-    } else {
-      send('copy-url');
-    }
-  };
-
   const handleOpenUrl = () => {
     if (!targetOpenUrl) return;
     send('open-link', targetOpenUrl);
@@ -270,14 +302,21 @@ export function BrowserContextMenu({
     setMenu(null);
   };
 
-  const standardItems: { label: string; disabled?: boolean; run: () => void }[] = [
-    { label: t('agency.browser.copy'), run: handleCopy },
-    { label: t('agency.browser.openUrl'), disabled: !canOpenUrl, run: handleOpenUrl },
-    { label: t('agency.browser.reload'), run: () => send('reload') },
-    { label: t('agency.browser.back'), disabled: !menu.canGoBack, run: () => send('back') },
-    { label: t('agency.browser.forward'), disabled: !menu.canGoForward, run: () => send('forward') },
-    { label: t('agency.browser.search'), run: handleSearch },
-  ];
+  const standardItems = buildBrowserContextMenuItems({
+    hasSelection: menu.selection,
+    isValidLink: Boolean(isValidLink && link),
+    canOpenUrl,
+    canGoBack: menu.canGoBack,
+    canGoForward: menu.canGoForward,
+    onCopySelection: () => send('copy-selection'),
+    onCopyLink: () => send('copy-link', link),
+    onCopyPageUrl: () => send('copy-url'),
+    onOpenUrl: handleOpenUrl,
+    onReload: () => send('reload'),
+    onBack: () => send('back'),
+    onForward: () => send('forward'),
+    onSearch: handleSearch,
+  });
 
   const { bounds, originX, originY } = getBrowserContentBounds(menu.id);
   const pointerX = originX + menu.x;
