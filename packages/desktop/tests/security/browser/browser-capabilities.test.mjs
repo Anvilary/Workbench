@@ -358,15 +358,20 @@ window.mawChatGpt.subscribe(s => {
       const isVisible = contents ? !!contents.getOwnerBrowserWindow() : false;
       const jsResult = await contents.executeJavaScript(`(async () => {
         let rafCount = 0;
-        const start = performance.now();
         await new Promise(r => {
-          function tick() {
+          let start = 0;
+          function tick(ts) {
+            if (start === 0) {
+              start = ts;
+              requestAnimationFrame(tick);
+              return;
+            }
             rafCount++;
-            if (performance.now() - start >= 400) r();
+            if (ts - start >= 400) r();
             else requestAnimationFrame(tick);
           }
           requestAnimationFrame(tick);
-          setTimeout(r, 1000); // safety fallback
+          setTimeout(r, 1200); // safety fallback
         });
         return { frames: rafCount };
       })()`);

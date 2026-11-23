@@ -223,7 +223,9 @@ export function useSidebarDrag({
     const onLostPointerCapture = (capEvent: PointerEvent) => {
       if (capEvent.pointerId === pointerId && hasCapture) {
         hasCapture = false;
-        onCancel();
+        // Detaching a native Chromium WebContentsView when the drag shield mounts can
+        // release element pointer capture without ending the physical drag. Keep the
+        // drag session alive via window-level pointermove/pointerup/pointercancel/blur.
       }
     };
 

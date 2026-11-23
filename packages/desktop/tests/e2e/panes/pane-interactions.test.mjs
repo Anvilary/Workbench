@@ -65,7 +65,8 @@ async function setup(t,query){
   const box=await locator.boundingBox(),origin=await desktop.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].getContentBounds());
   return {x:Math.round(origin.x+box.x+box.width/2),y:Math.round(origin.y+box.y+box.height/2)};
  };
- const mouse=async(x,y,...commands)=>exec('xdotool',['mousemove','--sync',String(Math.round(x)),String(Math.round(y)),...commands]);
+ const xdo=(args)=>exec('xdotool',args,{timeout:5000,killSignal:'SIGKILL'});
+ const mouse=async(x,y,...commands)=>xdo(['mousemove',String(Math.round(x)),String(Math.round(y)),...commands]);
  const osDrag=async(from,to,{cancel=false,outside=false,record=false}={})=>{
   const source=await point(pane(page,from).locator('.maw-pane-grip')),target=await point(pane(page,to));
   await mouse(source.x,source.y,'mousedown','1');await mouse(source.x+12,source.y);
@@ -73,19 +74,19 @@ async function setup(t,query){
   await eventually(async()=> (await attached()).length===0,'temporary shield captures and conceals native surfaces');
   assert.equal(await page.locator('.maw-capture-backdrop').count(),nativeCount);
   assert.equal(await page.locator('.maw-pane-drag-preview textarea,.maw-pane-drag-preview canvas').count(),0);
-  for(let n=1;n<=12;n++)await mouse(source.x+(target.x-source.x)*n/12,source.y+(target.y-source.y)*n/12);
+  for(let n=1;n<=12;n++){await mouse(source.x+(target.x-source.x)*n/12,source.y+(target.y-source.y)*n/12);await new Promise(resolve=>setTimeout(resolve,12))}
   if(!cancel&&!outside&&from!==to){await page.waitForFunction(n=>document.getElementById('pane-container-pane-'+n)?.classList.contains('is-pane-drop-target'),to)}
   if(record&&artifactDir)await screenshot('03-pane-landing.png');
-  if(cancel)await exec('xdotool',['key','Escape']);
+  if(cancel)await xdo(['key','Escape']);
   if(outside)await mouse(5,5);
-  await exec('xdotool',['mouseup','1']);
+  await xdo(['mouseup','1']);
   await page.waitForSelector('.maw-pane-drag-shield',{state:'detached'});
   await eventually(async()=> (await attached()).length===nativeCount,'native surfaces restored after drag');await frames(page,16);
  };
  const screenshot=async name=>{
   if(!artifactDir)return;await mkdir(artifactDir,{recursive:true});
   // This display contains only our synthetic, temporary Electron instance.
-  await exec('ffmpeg',['-y','-loglevel','error','-f','x11grab','-video_size','1280x860','-i',process.env.DISPLAY+'+0,0','-frames:v','1',path.join(artifactDir,name)]);
+  await exec('ffmpeg',['-y','-loglevel','error','-f','x11grab','-video_size','1280x860','-i',process.env.DISPLAY+'+0,0','-frames:v','1',path.join(artifactDir,name)],{timeout:15000,killSignal:'SIGKILL'});
  };
  return {page,desktop:()=>desktop,identities,attached,osDrag,mouse,point,screenshot,data,restart:async()=>{await closeDesktop();return launch()}};
 }
@@ -134,7 +135,7 @@ test('native menu, creation, cancellation, clipboard, download and cold restart'
  // OS input now goes to the moved native page, proving the shield has been removed.
  const bounds=await app.desktop().evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows()[0];const view=win.contentView.children.find(v=>v.webContents);return {outer:win.getContentBounds(),inner:view.getBounds()}});
  await app.mouse(bounds.outer.x+bounds.inner.x+80,bounds.outer.y+bounds.inner.y+140,'click','1');
- await exec('xdotool',['key','ctrl+a']);await exec('xdotool',['key','ctrl+c']);
+ await exec('xdotool',['key','ctrl+a'],{timeout:5000,killSignal:'SIGKILL'});await exec('xdotool',['key','ctrl+c'],{timeout:5000,killSignal:'SIGKILL'});
  await eventually(()=>app.desktop().evaluate(async({clipboard})=>(await clipboard.readText())==='Native page state survives pane swaps'),'native clipboard after swap');
  await app.desktop().evaluate(({webContents},id)=>webContents.fromId(id).downloadURL('https://chatgpt.com/sample.txt'),ids[0]);
  await eventually(async()=>{try{return (await readFile(path.join(app.data,'swap.txt'),'utf8')).includes('Synthetic download')}catch{return false}},'native download after swap');
@@ -188,15 +189,15 @@ test('native tab drag accepts the destination pane body and keeps the browser se
     await mouse(destination.x, destination.y);
   }
   await startDrag();
-  await exec('xdotool', ['key', 'Escape']);
-  await exec('xdotool', ['mouseup', '1']);
+  await exec('xdotool', ['key', 'Escape'], { timeout: 5000, killSignal: 'SIGKILL' });
+  await exec('xdotool', ['mouseup', '1'], { timeout: 5000, killSignal: 'SIGKILL' });
   await page.locator('.maw-tab-drag-ghost').waitFor({ state: 'detached' });
   await eventually(async () => (await app.attached()).length === 2, 'native views restored after cancellation');
   assert.deepEqual(await page.evaluate(() => window.fixture.state.layout.tree), initial);
 
   await startDrag();
   await app.screenshot('06-native-cross-pane-tab-preview.png');
-  await exec('xdotool', ['mouseup', '1']);
+  await exec('xdotool', ['mouseup', '1'], { timeout: 5000, killSignal: 'SIGKILL' });
   await page.waitForFunction(() => window.fixture.state.layout.tree.first.tabIds.length === 0);
   const after = await page.evaluate(() => window.fixture.state.layout.tree);
   assert.deepEqual(after.second.tabIds, [...initial.second.tabIds, ...initial.first.tabIds]);

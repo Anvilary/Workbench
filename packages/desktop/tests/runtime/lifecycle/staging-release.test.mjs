@@ -148,9 +148,9 @@ test('staging release creates and restores a general Browser tab through the rea
     await screenshot('electron-sidebar.png');
 
     await page.locator('.maw-pane-add-tab').first().click();
-    await page.getByRole('menuitem', { name: /^browser$/i }).click();
+    await page.getByRole('menuitem', { name: /^Web Page$/i }).click();
     const browserDialog = page.getByRole('dialog');
-    const destinationInput = browserDialog.getByLabel('URL or Search Query', { exact: true });
+    const destinationInput = browserDialog.locator('input.maw-browser-dest-input');
     await destinationInput.fill('https://docs.maw-audit.com/one');
     await screenshot('electron-browser-picker.png');
     await destinationInput.press('Enter');
