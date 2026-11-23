@@ -164,23 +164,23 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
 
     await page.waitForSelector('.maw-context-menu');
     const menuButtons = await page.$$eval('.maw-context-menu button', btns => btns.map(b => b.textContent.trim()));
-    assert.deepEqual(menuButtons, ['Copy', 'Open URL', 'Reload', 'Back', 'Forward', 'Search']);
+    assert.deepEqual(menuButtons, ['Copy Page URL', 'Open URL', 'Reload', 'Back', 'Forward', 'Search']);
 
     // Check Open URL is disabled when no link/selection
-    const openUrlDisabled = await page.$eval('.maw-context-menu button:nth-child(2)', b => b.disabled);
-    assert.equal(openUrlDisabled, true, 'Open URL must be disabled when no link or URL is selected');
+    const openUrlBtn = page.locator('.maw-context-menu button', { hasText: 'Open URL' });
+    assert.equal(await openUrlBtn.isDisabled(), true, 'Open URL must be disabled when no link or URL is selected');
 
     // Check Back is enabled, Forward is disabled
-    const backDisabled = await page.$eval('.maw-context-menu button:nth-child(4)', b => b.disabled);
-    const forwardDisabled = await page.$eval('.maw-context-menu button:nth-child(5)', b => b.disabled);
-    assert.equal(backDisabled, false, 'Back should be enabled when canGoBack is true');
-    assert.equal(forwardDisabled, true, 'Forward should be disabled when canGoForward is false');
+    const backBtn = page.locator('.maw-context-menu button', { hasText: 'Back' });
+    const forwardBtn = page.locator('.maw-context-menu button', { hasText: 'Forward' });
+    assert.equal(await backBtn.isDisabled(), false, 'Back should be enabled when canGoBack is true');
+    assert.equal(await forwardBtn.isDisabled(), true, 'Forward should be disabled when canGoForward is false');
 
     // Dismiss menu
     await page.keyboard.press('Escape');
     await page.waitForSelector('.maw-context-menu', { state: 'detached' });
 
-    // 2. Right-click on link: Copy copies link, Open URL is enabled
+    // 2. Right-click on link: Copy Link Address + Copy Page URL, Open URL is enabled
     await page.evaluate((id) => {
       window.__emitState({
         type: 'browser-context',
@@ -198,11 +198,14 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
     }, tabId);
 
     await page.waitForSelector('.maw-context-menu');
-    const openUrlEnabledOnLink = await page.$eval('.maw-context-menu button:nth-child(2)', b => !b.disabled);
+    const linkMenuButtons = await page.$$eval('.maw-context-menu button', btns => btns.map(b => b.textContent.trim()));
+    assert.deepEqual(linkMenuButtons, ['Copy Link Address', 'Copy Page URL', 'Open URL', 'Reload', 'Back', 'Forward', 'Search']);
+
+    const openUrlEnabledOnLink = await page.locator('.maw-context-menu button', { hasText: 'Open URL' }).isEnabled();
     assert.equal(openUrlEnabledOnLink, true, 'Open URL must be enabled when right clicking a valid link');
 
     // Click Open URL -> sends open-link command
-    await page.click('.maw-context-menu button:nth-child(2)');
+    await page.locator('.maw-context-menu button', { hasText: 'Open URL' }).click();
     await page.waitForSelector('.maw-context-menu', { state: 'detached' });
 
     let commands = await page.evaluate(() => window.__commands);
