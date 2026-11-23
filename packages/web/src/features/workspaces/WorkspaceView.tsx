@@ -438,6 +438,7 @@ export const WorkspaceView = memo(function WorkspaceView({
   useEffect(() => {
     if (!activeWorkspace) return;
     nativeLayoutCoordinator.setFocusedTabId(activeTabId ?? null);
+    nativeLayoutCoordinator.remeasure();
   }, [activeTabId, activeWorkspace]);
 
   useEffect(() => {
@@ -873,6 +874,7 @@ export const WorkspaceView = memo(function WorkspaceView({
           browserToolbarOpen={browserToolbarOpen}
           onToggleBrowserToolbar={handleToggleBrowserToolbar}
           onExpandBrowserToolbar={handleExpandBrowserToolbar}
+          activeWorkspace={activeWorkspace}
         />
         <PersistentSessionPanes
           tabs={tabs}

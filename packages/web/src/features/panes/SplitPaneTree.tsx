@@ -82,6 +82,7 @@ interface Props {
   onSelectBrowserOther?: (paneId: string) => void;
   favicons?: Record<string, string>;
   onCreateBrowserTab?: (paneId: string, options: { url: string; title?: string; provider?: WebTabProvider }) => void;
+  activeWorkspace?: boolean;
 }
 
 function PaneLeaf(props: Props & {
@@ -267,6 +268,7 @@ function PaneLeaf(props: Props & {
             onDisplayed={onTabDisplayed}
             onFocused={() => onFocusPane(node.id)}
             searchEngine={props.searchEngine}
+            activeWorkspace={props.activeWorkspace}
           />
         ) : selectedTab?.kind === 'editor' ? (
           <EditorPaneView

@@ -47,6 +47,7 @@ export function NativeBrowserView({
   onDisplayed,
   onFocused,
   searchEngine,
+  activeWorkspace = true,
 }: {
   tab: WebTab;
   profileId?: string;
@@ -55,6 +56,7 @@ export function NativeBrowserView({
   onDisplayed: (id: string, ready: boolean) => void;
   onFocused?: () => void;
   searchEngine?: SearchEngine;
+  activeWorkspace?: boolean;
 }): JSX.Element {
   const effectiveSearchEngine = searchEngine ?? getSearchEngine();
   const { id } = tab;
@@ -70,6 +72,7 @@ export function NativeBrowserView({
   const host = useRef<HTMLDivElement>(null);
   const [error, setError] = useState('');
   const [restoring, setRestoring] = useState(false);
+  const [isPageReady, setIsPageReady] = useState(() => nativeLayoutCoordinator.isReady(id));
   const [captureBackdrop, setCaptureBackdrop] = useState<string | null>(null);
   const [downloadFeedback, setDownloadFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [address, setAddress] = useState(tab.url);
@@ -82,13 +85,24 @@ export function NativeBrowserView({
 
   useEffect(() => {
     const bridge = window.mawChatGpt;
-    if (!bridge || !supported || !host.current) return;
+    if (!bridge || !supported || !host.current || !activeWorkspace) return;
 
     void bridge.command({ type: 'open', id, url: url.current, provider: tab.provider ?? nativeWebProvider(url.current), profileId }).catch((err) => {
       setError(String(err));
     });
     const unsubscribe = bridge.subscribe((state) => {
       if (state.id !== id) return;
+      if (state.type === 'ready') {
+        setIsPageReady(true);
+        setRestoring(false);
+      }
+      if (state.type === 'loading') {
+        setIsPageReady(false);
+      }
+      if (state.type === 'restoring') {
+        setRestoring(true);
+        setIsPageReady(false);
+      }
       if (state.type === 'open-find-in-page') {
         setFindOpen(true);
       }
@@ -110,6 +124,7 @@ export function NativeBrowserView({
       id,
       element: host.current,
       onDisplayed: (ready) => callback.current(id, ready),
+      onReadyChange: (ready) => setIsPageReady(ready),
       onFocused: () => focusCallback.current?.(),
       setCaptureBackdrop,
       onError: (msg) => setError(msg),
@@ -136,7 +151,7 @@ export function NativeBrowserView({
       unsubscribe();
       unregister();
     };
-  }, [id, profileId, supported]);
+  }, [id, profileId, supported, activeWorkspace]);
 
   useEffect(() => {
     const onOpenFind = (e: Event) => {
@@ -216,9 +231,15 @@ export function NativeBrowserView({
       ) : (
         <>
           {captureBackdrop && <img className="maw-capture-backdrop" src={captureBackdrop} alt="" />}
-          {restoring && !captureBackdrop && (
-            <div className="agency-shell-placeholder" role="status">
-              <p>{t('agency.splits.restorePane')}</p>
+          {(!isPageReady || restoring) && !captureBackdrop && (
+            <div className="maw-browser-loading-container" role="status" aria-label={t('agency.web.loadingPage')}>
+              <img
+                src="/brand/workbench-logo-128.png"
+                className="maw-browser-loading-logo"
+                alt=""
+                width="32"
+                height="32"
+              />
             </div>
           )}
           {downloadFeedback && (

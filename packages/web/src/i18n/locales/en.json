@@ -343,6 +343,7 @@
   "agency.web.externalOpen": "Open website",
   "agency.web.invalidTitle": "Enter a title between 1 and 120 characters.",
   "agency.web.invalidUrl": "Enter a valid URL for the selected browser provider.",
+  "agency.web.loadingPage": "Loading page",
   "agency.web.navigate": "Open URL",
   "agency.web.newTab": "Web Page",
   "agency.web.provider": "Browser provider",

@@ -349,6 +349,7 @@
   "agency.web.externalOpen": "Открыть сайт",
   "agency.web.invalidTitle": "Введите заголовок длиной от 1 до 120 символов.",
   "agency.web.invalidUrl": "Введите допустимый URL для выбранного сервиса.",
+  "agency.web.loadingPage": "Загрузка страницы",
   "agency.web.navigate": "Открыть URL",
   "agency.web.newTab": "Веб-страница",
   "agency.web.provider": "Провайдер браузера",

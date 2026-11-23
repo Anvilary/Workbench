@@ -2,6 +2,7 @@ export interface NativeViewRegistration {
   id: string;
   element: HTMLElement;
   onDisplayed: (ready: boolean) => void;
+  onReadyChange?: (ready: boolean) => void;
   onFocused?: () => void;
   setCaptureBackdrop: (dataUrl: string | null) => void;
   onError?: (message: string) => void;
@@ -191,6 +192,16 @@ class NativeLayoutCoordinator {
     return this.focusedId === tabId;
   }
 
+  isReady(tabId: string): boolean {
+    return this.views.get(tabId)?.isReady ?? false;
+  }
+
+  remeasure(): void {
+    this.lastSerialized = '';
+    this.invalidateClippingCache();
+    this.schedule();
+  }
+
   register(reg: NativeViewRegistration): () => void {
     this.views.set(reg.id, {
       ...reg,
@@ -341,19 +352,23 @@ class NativeLayoutCoordinator {
         const wasReady = entry.isReady;
         entry.isReady = true;
         entry.onRestoring?.(false);
+        entry.onReadyChange?.(true);
         if (!wasReady) {
           this.lastSerialized = '';
           this.schedule();
         }
       } else if (state.type === 'loading' && entry) {
         entry.isReady = false;
+        entry.onReadyChange?.(false);
         entry.onDisplayed(false);
       } else if (state.type === 'restoring' && entry) {
         entry.isReady = false;
+        entry.onReadyChange?.(false);
         entry.onDisplayed(false);
         entry.onRestoring?.(true);
       } else if (state.type === 'suspended' && entry) {
         entry.isReady = false;
+        entry.onReadyChange?.(false);
         entry.onDisplayed(false);
         entry.onRestoring?.(false);
       } else if (state.type === 'layout-needed') {

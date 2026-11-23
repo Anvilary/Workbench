@@ -343,6 +343,7 @@
   "agency.web.externalOpen": "Website öffnen",
   "agency.web.invalidTitle": "Gib einen Titel mit 1 bis 120 Zeichen ein.",
   "agency.web.invalidUrl": "Gib eine gültige URL für den gewählten Anbieter ein.",
+  "agency.web.loadingPage": "Seite wird geladen",
   "agency.web.navigate": "URL öffnen",
   "agency.web.newTab": "Webseite",
   "agency.web.provider": "Browser-Anbieter",

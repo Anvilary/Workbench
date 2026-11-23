@@ -86,7 +86,8 @@ export function createViewLayout({ win, send, state }) {
       const bounds = nativeBoundsForRect(item.bounds, command.viewport, contentSize, zoom);
       if (!bounds) continue;
 
-      if (!attachedViews.has(item.id)) {
+      const wasAttached = attachedViews.has(item.id);
+      if (!wasAttached) {
         win.contentView.addChildView(view);
         attachedViews.set(item.id, view);
       }
@@ -94,13 +95,19 @@ export function createViewLayout({ win, send, state }) {
       view.setBounds(bounds);
       view.setVisible(true);
       try { view.webContents.setBackgroundThrottling(false); } catch {}
+      if (!wasAttached) {
+        try { view.webContents.invalidate(); } catch {}
+      }
     }
 
     // Geometry updates and overlay restoration must preserve focus in MAW controls.
-    if (focusChanged && focusedId && attachedViews.has(focusedId)) {
+    if (focusedId && attachedViews.has(focusedId)) {
       const focusedView = attachedViews.get(focusedId);
-      if (focusedView && !focusedView.webContents.isDestroyed() && !focusedView.webContents.isFocused()) {
-        focusedView.webContents.focus();
+      if (focusedView && !focusedView.webContents.isDestroyed()) {
+        try { focusedView.webContents.invalidate(); } catch {}
+        if (focusChanged && !focusedView.webContents.isFocused()) {
+          focusedView.webContents.focus();
+        }
       }
     }
   }

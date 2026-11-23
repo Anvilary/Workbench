@@ -340,6 +340,7 @@
   "agency.web.externalOpen": "웹사이트 열기",
   "agency.web.invalidTitle": "1~120자의 제목을 입력하세요.",
   "agency.web.invalidUrl": "선택한 서비스에 사용할 수 있는 URL을 입력하세요.",
+  "agency.web.loadingPage": "페이지 로드 중",
   "agency.web.navigate": "URL 열기",
   "agency.web.newTab": "웹 페이지",
   "agency.web.provider": "브라우저 제공자",

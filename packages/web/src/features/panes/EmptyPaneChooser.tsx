@@ -21,7 +21,7 @@ export function EmptyPaneChooser({
   canClose,
   onAddTerminal,
   onAddBrowser,
-  onOpenFile,
+  onOpenFile: _onOpenFile,
   onClosePane,
   onMoveTabToPane: _onMoveTabToPane,
 }: EmptyPaneChooserProps): JSX.Element {
@@ -79,10 +79,10 @@ export function EmptyPaneChooser({
 
           <button
             type="button"
-            className="maw-empty-pane-action"
-            disabled={disabled}
-            onClick={onOpenFile}
-            aria-label={t('agency.tabs.openFile')}
+            className="maw-empty-pane-action maw-empty-pane-action-disabled"
+            disabled={true}
+            title={t('agency.tabs.comingSoon')}
+            aria-label={`${t('agency.tabs.openFile')} (${t('agency.tabs.comingSoon')})`}
           >
             <span className="maw-empty-pane-icon" aria-hidden="true">
               <svg viewBox="0 0 16 16" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
@@ -90,7 +90,10 @@ export function EmptyPaneChooser({
                 <path d="M9 1.5V6h4.5" />
               </svg>
             </span>
-            <span className="maw-empty-pane-label">{t('agency.tabs.openFile')}</span>
+            <span className="maw-empty-pane-label">
+              {t('agency.tabs.openFile')}
+              <span className="maw-empty-pane-badge">{t('agency.tabs.comingSoon')}</span>
+            </span>
           </button>
         </div>
 

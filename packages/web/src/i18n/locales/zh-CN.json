@@ -340,6 +340,7 @@
   "agency.web.externalOpen": "打开网站",
   "agency.web.invalidTitle": "请输入 1 到 120 个字符的标题。",
   "agency.web.invalidUrl": "请输入适用于所选服务的有效网址。",
+  "agency.web.loadingPage": "正在加载页面",
   "agency.web.navigate": "打开网址",
   "agency.web.newTab": "网页",
   "agency.web.provider": "浏览器提供方",

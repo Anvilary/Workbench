@@ -956,22 +956,12 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
         profiles={data.profiles}
         initialProject={creatorProject}
         onClose={() => setCreatingWorkspace(false)}
-        onCreate={async (projectId, name, pickerId, options) => {
+        onCreate={async (projectId, name, pickerId) => {
           const answer = await store.createWorkspace(projectId, name, pickerId);
           if (answer.type !== 'agency.workspace.created') throw new Error(t('agency.errors.internalError'));
           const newWorkspace = answer.workspace;
           setSelectedId(newWorkspace.id);
           setShowingDone(false);
-
-          const failures: string[] = [];
-          const launch = async (kind: 'agent' | 'terminal') => {
-            try {
-              await store.request({ type: 'agency.session.create', workspaceId: newWorkspace.id, kind, launchId: crypto.randomUUID(), cols: 100, rows: 30,
-                ...(kind === 'agent' && options.profileId ? { profileId: options.profileId } : {}) } as Parameters<typeof store.request>[0]);
-            } catch (reason) { failures.push((kind === 'agent' ? t('agency.ui.agentLabel') : t('agency.ui.shell')) + ': ' + String(reason)); }
-          };
-          await launch('terminal');
-          if (failures.length) setLaunchErrors(prev => ({ ...prev, [newWorkspace.id]: failures.join(' · ') }));
         }} />}
       {settingsOpen && (
         <SettingsDialog
