@@ -482,7 +482,7 @@ function App() {
 createRoot(document.getElementById('root')).render(<App />);
 `;
 
-test('Download reliability: Perplexity, GitHub, General Web, Blob, redirects, duplicates, popups, failures, and default Downloads dir', { timeout: 120000 }, async () => {
+test('Download reliability: native Save As dialog, remembered directory across restarts, Perplexity, GitHub, General Web, Blob, redirects, duplicates, popups, and failures', { timeout: 120000 }, async () => {
   const bundle = await build({
     stdin: { contents: multiProviderFixture, resolveDir: path.join(here, '../web'), loader: 'tsx' },
     bundle: true,
@@ -504,35 +504,67 @@ test('Download reliability: Perplexity, GitHub, General Web, Blob, redirects, du
 
   const data = await mkdtemp(path.join(tmpdir(), 'maw-download-reliability-'));
   const downloadsDir = path.join(data, 'Downloads');
+  const researchDir = path.join(data, 'Documents', 'Research');
   const configDir = path.join(data, '.config');
+  const userDataDir = path.join(data, 'desktop-profile');
   await mkdir(downloadsDir, { recursive: true });
+  await mkdir(researchDir, { recursive: true });
   await mkdir(configDir, { recursive: true });
+  await mkdir(userDataDir, { recursive: true });
 
   const pplxId = '11111111-1111-4111-8111-111111111111';
   const ghId = '22222222-2222-4222-8222-222222222222';
   const otherId = '33333333-3333-4333-8333-333333333333';
 
-  let desktop;
-  try {
-    // Deliberately omit MAW_DOWNLOAD_AUTO_SAVE to verify automatic saving to OS Downloads by default
-    const launchEnv = {
-      ...process.env,
-      HOME: data,
-      XDG_CONFIG_HOME: configDir,
-      MAW_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
-      MAW_DESKTOP_DATA_DIR: data,
-      MAW_EXTERNAL_POLICY: 'deny',
-    };
-    delete launchEnv.MAW_DOWNLOAD_AUTO_SAVE;
+  // Deliberately omit MAW_DOWNLOAD_AUTO_SAVE to verify native Save As is the interactive default
+  const launchEnv = {
+    ...process.env,
+    HOME: data,
+    XDG_CONFIG_HOME: configDir,
+    MAW_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
+    MAW_DESKTOP_DATA_DIR: userDataDir,
+    MAW_EXTERNAL_POLICY: 'deny',
+  };
+  delete launchEnv.MAW_DOWNLOAD_AUTO_SAVE;
 
-    desktop = await electron.launch({
-      chromiumSandbox: true,
-      executablePath: electronExecutable,
-      args: [here, '--ozone-platform=x11'],
-      env: launchEnv,
-    });
+  const installFixturesAndDialogDriver = async (app) => {
+    await app.evaluate(({ session }) => {
+      globalThis.dialogObservations = [];
+      globalThis.dialogScript = [];
 
-    await desktop.evaluate(({ session }) => {
+      for (const part of ['persist:maw-perplexity', 'persist:maw-github', 'persist:maw-browser']) {
+        const sess = session.fromPartition(part);
+        sess.on('will-download', (event, item) => {
+          if (event.defaultPrevented) {
+            globalThis.dialogObservations.push({
+              partition: part,
+              rejected: true,
+              url: item.getURL(),
+              savePathBeforeDialog: item.getSavePath(),
+              dialogOptions: typeof item.getSaveDialogOptions === 'function' ? item.getSaveDialogOptions() : null,
+            });
+            return;
+          }
+          const dialogOptions = typeof item.getSaveDialogOptions === 'function' ? item.getSaveDialogOptions() : null;
+          const obs = {
+            partition: part,
+            rejected: false,
+            filename: item.getFilename(),
+            savePathBeforeDialog: item.getSavePath(),
+            dialogOptions,
+          };
+          globalThis.dialogObservations.push(obs);
+          const step = globalThis.dialogScript.shift() || { action: 'confirm-default' };
+          if (step.action === 'cancel') {
+            item.cancel();
+          } else if (step.action === 'choose-path') {
+            item.setSavePath(step.targetPath);
+          } else if (dialogOptions?.defaultPath) {
+            item.setSavePath(dialogOptions.defaultPath);
+          }
+        });
+      }
+
       // Perplexity partition fixture
       const pplx = session.fromPartition('persist:maw-perplexity');
       pplx.protocol.handle('https', (req) => {
@@ -725,9 +757,20 @@ test('Download reliability: Perplexity, GitHub, General Web, Blob, redirects, du
         `, { headers: { 'Content-Type': 'text/html' } });
       });
     });
+  };
 
-    const page = await desktop.firstWindow();
+  let desktop;
+  try {
+    desktop = await electron.launch({
+      chromiumSandbox: true,
+      executablePath: electronExecutable,
+      args: [here, '--ozone-platform=x11'],
+      env: launchEnv,
+    });
+
+    let page = await desktop.firstWindow();
     await page.waitForFunction(() => typeof window.__openTab === 'function');
+    await installFixturesAndDialogDriver(desktop);
 
     const getEvents = async () => JSON.parse((await page.textContent('#all-events')) || '[]');
     const waitForEvent = async (predicate) => {
@@ -739,6 +782,13 @@ test('Download reliability: Perplexity, GitHub, General Web, Blob, redirects, du
       });
       return found;
     };
+    const queueDialog = (step) => desktop.evaluate((_electron, s) => globalThis.dialogScript.push(s), step);
+    const popLastObservation = () => desktop.evaluate(() => globalThis.dialogObservations.at(-1));
+
+    const clickInPartition = (partition, selector) => desktop.evaluate(async ({ webContents, session }, { part, sel }) => {
+      const c = webContents.getAllWebContents().find(w => w.session === session.fromPartition(part));
+      await c.executeJavaScript(`document.querySelector(${JSON.stringify(sel)}).click()`);
+    }, { part: partition, sel: selector });
 
     // --- 1. Perplexity scenarios ---
     await page.evaluate(({ id }) => window.__openTab(id, 'perplexity', 'https://www.perplexity.ai/'), { id: pplxId });
@@ -747,73 +797,104 @@ test('Download reliability: Perplexity, GitHub, General Web, Blob, redirects, du
       return c?.getURL() === 'https://www.perplexity.ai/' && !c.isLoading();
     }));
 
-    const clickInPartition = (partition, selector) => desktop.evaluate(async ({ webContents, session }, { part, sel }) => {
-      const c = webContents.getAllWebContents().find(w => w.session === session.fromPartition(part));
-      await c.executeJavaScript(`document.querySelector(${JSON.stringify(sel)}).click()`);
-    }, { part: partition, sel: selector });
-
-    // 1a. Perplexity direct HTTPS download
+    // 1a. First download opens Save As in ~/Downloads; user chooses ~/Documents/Research
+    const researchFile = path.join(researchDir, 'perplexity-direct.md');
+    await queueDialog({ action: 'choose-path', targetPath: researchFile });
     await clickInPartition('persist:maw-perplexity', '#dl-direct');
-    const evDirect = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'perplexity-direct.md');
-    assert.equal(path.dirname(evDirect.savePath), downloadsDir);
-    assert.equal(await readFile(evDirect.savePath, 'utf8'), '# Perplexity Direct Export\n');
+    const evDirect = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.savePath === researchFile);
+    const obsDirect = await popLastObservation();
+    assert.equal(obsDirect.savePathBeforeDialog, '', 'Default mode must open Save As rather than auto-saving');
+    assert.equal(obsDirect.dialogOptions.defaultPath, path.join(downloadsDir, 'perplexity-direct.md'), 'First download opens in Downloads');
+    assert.equal(evDirect.savePath, researchFile);
+    assert.equal(await readFile(researchFile, 'utf8'), '# Perplexity Direct Export\n');
 
-    // 1b. Perplexity Blob download
+    // 1b. Perplexity Blob download defaults Save As to remembered ~/Documents/Research
+    await queueDialog({ action: 'confirm-default' });
     await clickInPartition('persist:maw-perplexity', '#dl-blob');
     const evBlob = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'perplexity-blob.md');
-    assert.equal(path.dirname(evBlob.savePath), downloadsDir);
+    const obsBlob = await popLastObservation();
+    assert.equal(obsBlob.dialogOptions.defaultPath, path.join(researchDir, 'perplexity-blob.md'), 'Next download remembers previous directory');
+    assert.equal(path.dirname(evBlob.savePath), researchDir);
     assert.equal(await readFile(evBlob.savePath, 'utf8'), '# Perplexity Blob Export\n');
 
-    // 1c. Perplexity redirected attachment (www.perplexity.ai -> cdn.perplexity.ai)
-    await clickInPartition('persist:maw-perplexity', '#dl-redirect');
-    const evRedirect = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'perplexity-redirect.pdf');
-    assert.equal(path.dirname(evRedirect.savePath), downloadsDir);
-    assert.equal(await readFile(evRedirect.savePath, 'utf8'), '%PDF-1.4 pplx redirect');
-
-    // 1d. Perplexity CDN inline link without download attribute (intercepted via navigation guard)
+    // 1c. Cancelled Save As preserves remembered directory (~/Documents/Research)
+    await queueDialog({ action: 'cancel' });
     await clickInPartition('persist:maw-perplexity', '#dl-cdn-inline');
-    const evCdnInline = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'inline-export.md');
-    assert.equal(path.dirname(evCdnInline.savePath), downloadsDir);
-    assert.equal(await readFile(evCdnInline.savePath, 'utf8'), '# CDN Inline Export');
+    await waitForEvent(e => e.id === pplxId && e.type === 'download-cancelled' && e.filename === 'inline-export.md');
+    const obsCancel = await popLastObservation();
+    assert.equal(obsCancel.dialogOptions.defaultPath, path.join(researchDir, 'inline-export.md'));
 
-    // 1e. Duplicate filenames (report.pdf and report (1).pdf)
+    // 1d. Failed download preserves remembered directory and does not leak query tokens
+    await queueDialog({ action: 'confirm-default' });
+    await clickInPartition('persist:maw-perplexity', '#dl-fail');
+    const evFail = await waitForEvent(e => e.id === pplxId && e.type === 'download-failed' && e.filename === 'failing-export.pdf');
+    assert.equal(JSON.stringify(evFail).includes('secret-url-token'), false, 'Failure event must not leak URL query tokens');
+
+    // 1e. Restart Electron with the same userData profile and verify remembered directory persists
+    await desktop.close();
+    desktop = await electron.launch({
+      chromiumSandbox: true,
+      executablePath: electronExecutable,
+      args: [here, '--ozone-platform=x11'],
+      env: launchEnv,
+    });
+    page = await desktop.firstWindow();
+    await page.waitForFunction(() => typeof window.__openTab === 'function');
+    await installFixturesAndDialogDriver(desktop);
+    await page.evaluate(({ id }) => window.__openTab(id, 'perplexity', 'https://www.perplexity.ai/'), { id: pplxId });
+    await eventually(() => desktop.evaluate(({ webContents, session }) => {
+      const c = webContents.getAllWebContents().find(w => w.session === session.fromPartition('persist:maw-perplexity'));
+      return c?.getURL() === 'https://www.perplexity.ai/' && !c.isLoading();
+    }));
+
+    // User saves renamed file back in ~/Downloads via Save As
+    const renamedPath = path.join(downloadsDir, 'custom-renamed.pdf');
+    await queueDialog({ action: 'choose-path', targetPath: renamedPath });
+    await clickInPartition('persist:maw-perplexity', '#dl-redirect');
+    const evRedirect = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'custom-renamed.pdf');
+    const obsAfterRestart = await popLastObservation();
+    assert.equal(obsAfterRestart.dialogOptions.defaultPath, path.join(researchDir, 'perplexity-redirect.pdf'), 'Remembered directory must survive restart');
+    assert.equal(evRedirect.savePath, renamedPath);
+    assert.equal(await readFile(renamedPath, 'utf8'), '%PDF-1.4 pplx redirect');
+
+    // Now switch remembered directory to a temp folder, delete it, and verify safe fallback to ~/Downloads
+    const transientDir = path.join(data, 'TransientFolder');
+    await mkdir(transientDir, { recursive: true });
+    await queueDialog({ action: 'choose-path', targetPath: path.join(transientDir, 'inline-export.md') });
+    await clickInPartition('persist:maw-perplexity', '#dl-cdn-inline');
+    await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'inline-export.md');
+    await rm(transientDir, { recursive: true, force: true });
+
+    // 1f. Duplicate filenames in fallback ~/Downloads (report.pdf and report (1).pdf)
+    await queueDialog({ action: 'confirm-default' });
     await clickInPartition('persist:maw-perplexity', '#dl-dup-1');
     const evDup1 = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'report.pdf');
-    assert.equal(path.dirname(evDup1.savePath), downloadsDir);
+    const obsDup1 = await popLastObservation();
+    assert.equal(obsDup1.dialogOptions.defaultPath, path.join(downloadsDir, 'report.pdf'), 'Deleted remembered folder falls back safely to Downloads');
     assert.equal(await readFile(evDup1.savePath, 'utf8'), 'first-report-bytes');
 
+    await queueDialog({ action: 'confirm-default' });
     await clickInPartition('persist:maw-perplexity', '#dl-dup-2');
     const evDup2 = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'report (1).pdf');
     assert.equal(path.dirname(evDup2.savePath), downloadsDir);
     assert.equal(await readFile(evDup2.savePath, 'utf8'), 'second-report-bytes');
     assert.equal(await readFile(evDup1.savePath, 'utf8'), 'first-report-bytes', 'First report.pdf must not be overwritten');
 
-    // 1f. Popup downloads (target=_blank delivery + window.open popup)
+    // 1g. Popup downloads (target=_blank delivery + window.open popup)
+    await queueDialog({ action: 'confirm-default' });
     await clickInPartition('persist:maw-perplexity', '#dl-popup-direct');
     const evPopupDirect = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'popup-direct.pdf');
     assert.equal(path.dirname(evPopupDirect.savePath), downloadsDir);
     assert.equal(await readFile(evPopupDirect.savePath, 'utf8'), '%PDF-1.4 pplx popup direct');
 
+    await queueDialog({ action: 'confirm-default' });
     await clickInPartition('persist:maw-perplexity', '#dl-popup-window');
     const evPopupWindow = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'popup-window.pdf');
     assert.equal(path.dirname(evPopupWindow.savePath), downloadsDir);
     assert.equal(await readFile(evPopupWindow.savePath, 'utf8'), '%PDF-1.4 pplx popup window');
     await eventually(async () => (await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)) === 1);
 
-    // 1g. Failed download followed by successful retry
-    await clickInPartition('persist:maw-perplexity', '#dl-fail');
-    const evFail = await waitForEvent(e => e.id === pplxId && e.type === 'download-failed' && e.filename === 'failing-export.pdf');
-    assert.equal(JSON.stringify(evFail).includes('secret-url-token'), false, 'Failure event must not leak URL query tokens');
-
-    await clickInPartition('persist:maw-perplexity', '#dl-direct');
-    const retryCompletes = (await getEvents()).filter(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'perplexity-direct (1).md');
-    let evRetry = retryCompletes[0];
-    if (!evRetry) {
-      evRetry = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'perplexity-direct (1).md');
-    }
-    assert.equal(await readFile(evRetry.savePath, 'utf8'), '# Perplexity Direct Export\n');
-
-    // 1h. Rejected downloads leave existing files untouched and create no unauthorized files
+    // 1h. Rejected downloads never open Save As, leave existing files untouched, and emit download-failed
     const sentinelPath = path.join(downloadsDir, 'blocked.pdf');
     await writeFile(sentinelPath, 'keep-intact');
     await desktop.evaluate(({ webContents, session }) => {
@@ -822,6 +903,9 @@ test('Download reliability: Perplexity, GitHub, General Web, Blob, redirects, du
       c.downloadURL('https://untrusted.example.com/blocked.pdf');
     });
     await waitForEvent(e => e.id === pplxId && e.type === 'download-failed' && e.reason === 'blocked' && e.filename === 'blocked.pdf');
+    const obsRejected = await popLastObservation();
+    assert.equal(obsRejected.rejected, true);
+    assert.equal(obsRejected.dialogOptions?.defaultPath || '', '', 'Rejected download must not configure Save As dialog');
     await clickInPartition('persist:maw-perplexity', '#dl-bad-blob');
     await clickInPartition('persist:maw-perplexity', '#dl-unsafe-redirect');
     await clickInPartition('persist:maw-perplexity', '#dl-untrusted');
@@ -837,11 +921,13 @@ test('Download reliability: Perplexity, GitHub, General Web, Blob, redirects, du
       return c?.getURL() === 'https://github.com/owner/repo' && !c.isLoading();
     }));
 
+    await queueDialog({ action: 'confirm-default' });
     await clickInPartition('persist:maw-github', '#gh-release');
     const evGhRelease = await waitForEvent(e => e.id === ghId && e.type === 'download-complete' && e.filename === 'tool.tar.gz');
     assert.equal(path.dirname(evGhRelease.savePath), downloadsDir);
     assert.equal(await readFile(evGhRelease.savePath, 'utf8'), 'github-release-bytes');
 
+    await queueDialog({ action: 'confirm-default' });
     await clickInPartition('persist:maw-github', '#gh-blob');
     const evGhBlob = await waitForEvent(e => e.id === ghId && e.type === 'download-complete' && e.filename === 'github-blob.txt');
     assert.equal(path.dirname(evGhBlob.savePath), downloadsDir);
@@ -854,11 +940,13 @@ test('Download reliability: Perplexity, GitHub, General Web, Blob, redirects, du
       return c?.getURL() === 'https://docs.example.org/guide' && !c.isLoading();
     }));
 
+    await queueDialog({ action: 'confirm-default' });
     await clickInPartition('persist:maw-browser', '#other-direct');
     const evOtherDirect = await waitForEvent(e => e.id === otherId && e.type === 'download-complete' && e.filename === 'guide.pdf');
     assert.equal(path.dirname(evOtherDirect.savePath), downloadsDir);
     assert.equal(await readFile(evOtherDirect.savePath, 'utf8'), '%PDF-1.4 general web guide');
 
+    await queueDialog({ action: 'confirm-default' });
     await clickInPartition('persist:maw-browser', '#other-blob');
     const evOtherBlob = await waitForEvent(e => e.id === otherId && e.type === 'download-complete' && e.filename === 'other-blob.txt');
     assert.equal(path.dirname(evOtherBlob.savePath), downloadsDir);

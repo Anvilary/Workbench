@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -8,8 +8,12 @@ import {
   allocateDownloadTarget,
   browserDownloadHandler,
   formatDuplicateFilename,
+  readRememberedDownloadDirectory,
+  rememberCompletedDownloadPath,
+  resolveDefaultDownloadsDirectory,
   resolveDownloadsDirectory,
   sanitizeDownloadFilename,
+  writeRememberedDownloadDirectory,
 } from '../../../src/browser/downloads.mjs';
 import {
   downloadDestinationAllowed,
@@ -51,7 +55,7 @@ function makeItem({
   });
 }
 
-function createHarness(t, { provider = 'perplexity', pageUrl = 'https://www.perplexity.ai/', downloadsDir } = {}) {
+async function createHarness(t, { provider = 'perplexity', pageUrl = 'https://www.perplexity.ai/', downloadsDir, userDataDir, autoSave } = {}) {
   const contents = Object.assign(new EventEmitter(), { getURL: () => pageUrl });
   const views = new Map([['tab', { webContents: contents }]]);
   const providers = new Map([['tab', provider]]);
@@ -62,29 +66,40 @@ function createHarness(t, { provider = 'perplexity', pageUrl = 'https://www.perp
   const events = [];
   const readyIds = [];
   let dir = downloadsDir;
-  const setup = async () => {
-    if (!dir) {
-      dir = await mkdtemp(path.join(tmpdir(), 'maw-dl-unit-'));
-      t.after(() => rm(dir, { recursive: true, force: true }));
-    }
-    const handler = browserDownloadHandler({
-      provider,
-      views,
-      providers,
-      popupOwners,
-      popups,
-      activeDownloads,
-      reservedPaths,
-      allowedOrigin: (value) => downloadOriginAllowed(provider, value),
-      allowedDestination: (value) => downloadDestinationAllowed(provider, value),
-      windowForContents: () => null,
-      downloadsDirectory: () => dir,
-      send: (evt) => events.push(evt),
-      ready: (id) => readyIds.push(id),
-    });
-    return { handler, dir, contents, views, providers, popupOwners, popups, activeDownloads, reservedPaths, events, readyIds };
+  let uDir = userDataDir;
+  if (!dir) {
+    dir = await mkdtemp(path.join(tmpdir(), 'maw-dl-unit-'));
+    t.after(() => rm(dir, { recursive: true, force: true }));
+  }
+  if (!uDir) {
+    uDir = await mkdtemp(path.join(tmpdir(), 'maw-dl-userdata-'));
+    t.after(() => rm(uDir, { recursive: true, force: true }));
+  }
+  const fakeApp = {
+    getPath(name) {
+      if (name === 'downloads') return dir;
+      if (name === 'userData') return uDir;
+      return dir;
+    },
   };
-  return setup();
+  const handler = browserDownloadHandler({
+    provider,
+    views,
+    providers,
+    popupOwners,
+    popups,
+    activeDownloads,
+    reservedPaths,
+    allowedOrigin: (value) => downloadOriginAllowed(provider, value),
+    allowedDestination: (value) => downloadDestinationAllowed(provider, value),
+    windowForContents: () => null,
+    downloadsDirectory: () => resolveDownloadsDirectory(fakeApp),
+    rememberDownloadDirectory: (savedFilePath) => rememberCompletedDownloadPath(savedFilePath, { app: fakeApp }),
+    ...(autoSave !== undefined ? { autoSave: () => autoSave } : {}),
+    send: (evt) => events.push(evt),
+    ready: (id) => readyIds.push(id),
+  });
+  return { handler, dir, userDataDir: uDir, fakeApp, contents, views, providers, popupOwners, popups, activeDownloads, reservedPaths, events, readyIds };
 }
 
 test('rejected downloads never alter concurrent download registrations', () => {
@@ -116,8 +131,11 @@ test('rejected downloads never alter concurrent download registrations', () => {
   assert.equal(activeDownloads.has('tab'), false);
 });
 
-test('1. Valid HTTPS download accepted and auto-saved to Downloads directory by default', async (t) => {
-  const { handler, dir, contents, activeDownloads, events, readyIds } = await createHarness(t, { provider: 'perplexity' });
+test('1. Valid HTTPS download opens native Save As dialog by default and respects user directory and filename changes', async (t) => {
+  const { handler, dir, userDataDir, contents, activeDownloads, events, readyIds } = await createHarness(t, { provider: 'perplexity' });
+  const customDir = path.join(dir, 'Documents', 'Research');
+  await mkdir(customDir, { recursive: true });
+
   const item = makeItem({
     origin: 'https://www.perplexity.ai',
     url: 'https://www.perplexity.ai/exports/answer.md',
@@ -126,22 +144,126 @@ test('1. Valid HTTPS download accepted and auto-saved to Downloads directory by 
   const event = { preventDefault() { this.denied = true; } };
   handler(event, item, contents);
   assert.equal(event.denied, undefined);
-  assert.equal(item.getSavePath(), path.join(dir, 'answer.md'));
+  assert.equal(item.getSavePath(), '', 'must not auto-save by default; native Save As dialog must open');
+  assert.deepEqual(item.getSaveDialogOptions(), {
+    defaultPath: path.join(dir, 'answer.md'),
+    title: 'Save File',
+  });
   assert.equal(activeDownloads.get('tab'), 1);
   assert.deepEqual(events[0], { type: 'download-start', id: 'tab', filename: 'answer.md' });
 
   item.emit('updated', {}, 'progressing');
   assert.deepEqual(events[1], { type: 'download-progress', id: 'tab', filename: 'answer.md', percent: 50 });
 
+  // Simulate user choosing a different directory and renaming the file in Save As
+  const userChosenPath = path.join(customDir, 'renamed-notes.md');
+  await writeFile(userChosenPath, '# Research Notes');
+  item.setSavePath(userChosenPath);
   item.emit('done', {}, 'completed');
+
   assert.equal(activeDownloads.has('tab'), false);
   assert.deepEqual(events[2], {
     type: 'download-complete',
     id: 'tab',
-    filename: 'answer.md',
-    savePath: path.join(dir, 'answer.md'),
+    filename: 'renamed-notes.md',
+    savePath: userChosenPath,
   });
   assert.deepEqual(readyIds, ['tab']);
+  assert.equal(readRememberedDownloadDirectory(userDataDir), customDir);
+});
+
+test('1b. Explicit autoSave compatibility mode sets savePath directly and remembers directory', async (t) => {
+  const { handler, dir, userDataDir, contents, events } = await createHarness(t, { provider: 'perplexity', autoSave: true });
+  const item = makeItem({
+    origin: 'https://www.perplexity.ai',
+    url: 'https://www.perplexity.ai/exports/auto.md',
+    filename: 'auto.md',
+  });
+  const expectedPath = path.join(dir, 'auto.md');
+  handler({ preventDefault() {} }, item, contents);
+  assert.equal(item.getSavePath(), expectedPath);
+  assert.equal(item.getSaveDialogOptions(), null);
+  await writeFile(expectedPath, 'auto');
+  item.emit('done', {}, 'completed');
+  assert.equal(events.at(-1)?.savePath, expectedPath);
+  assert.equal(readRememberedDownloadDirectory(userDataDir), dir);
+});
+
+test('1c. Remembered download directory persists across restarts, ignores cancel/failure, and falls back when deleted', async (t) => {
+  const base = await mkdtemp(path.join(tmpdir(), 'maw-dl-persist-'));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const defaultDir = path.join(base, 'Downloads');
+  const researchDir = path.join(base, 'Documents', 'Research');
+  const userDataDir = path.join(base, 'userData');
+  await mkdir(defaultDir, { recursive: true });
+  await mkdir(researchDir, { recursive: true });
+  await mkdir(userDataDir, { recursive: true });
+
+  const session1 = await createHarness(t, { provider: 'perplexity', downloadsDir: defaultDir, userDataDir });
+
+  // 1) First download defaults to ~/Downloads; user saves in ~/Documents/Research
+  const item1 = makeItem({ filename: 'paper.pdf' });
+  session1.handler({ preventDefault() {} }, item1, session1.contents);
+  assert.equal(item1.getSaveDialogOptions().defaultPath, path.join(defaultDir, 'paper.pdf'));
+  const saved1 = path.join(researchDir, 'paper.pdf');
+  await writeFile(saved1, 'pdf-1');
+  item1.setSavePath(saved1);
+  item1.emit('done', {}, 'completed');
+
+  // 2) Next download defaults to ~/Documents/Research; user cancels
+  const item2 = makeItem({ filename: 'cancelled.pdf' });
+  session1.handler({ preventDefault() {} }, item2, session1.contents);
+  assert.equal(item2.getSaveDialogOptions().defaultPath, path.join(researchDir, 'cancelled.pdf'));
+  item2.emit('done', {}, 'cancelled');
+  assert.equal(readRememberedDownloadDirectory(userDataDir), researchDir);
+
+  // 3) Failing download preserves ~/Documents/Research
+  const item3 = makeItem({ filename: 'failed.pdf' });
+  session1.handler({ preventDefault() {} }, item3, session1.contents);
+  assert.equal(item3.getSaveDialogOptions().defaultPath, path.join(researchDir, 'failed.pdf'));
+  item3.emit('updated', {}, 'interrupted');
+  assert.equal(readRememberedDownloadDirectory(userDataDir), researchDir);
+
+  // 4) Simulated restart: new harness on a different provider reads the same userDataDir
+  const session2 = await createHarness(t, {
+    provider: 'github',
+    pageUrl: 'https://github.com/owner/repo',
+    downloadsDir: defaultDir,
+    userDataDir,
+  });
+  const item4 = makeItem({
+    origin: 'https://github.com',
+    url: 'https://objects.githubusercontent.com/archive.zip',
+    filename: 'archive.zip',
+  });
+  session2.handler({ preventDefault() {} }, item4, session2.contents);
+  assert.equal(item4.getSaveDialogOptions().defaultPath, path.join(researchDir, 'archive.zip'));
+  item4.emit('done', {}, 'cancelled');
+
+  // Check preference file permissions and symlink rejection
+  const prefStat = await lstat(path.join(userDataDir, 'download-preferences.json'));
+  assert.equal(prefStat.mode & 0o777, 0o600);
+
+  // 5) Delete remembered directory -> graceful fallback to default Downloads directory
+  await rm(researchDir, { recursive: true, force: true });
+  const item5 = makeItem({
+    origin: 'https://github.com',
+    url: 'https://objects.githubusercontent.com/fallback.zip',
+    filename: 'fallback.zip',
+  });
+  session2.handler({ preventDefault() {} }, item5, session2.contents);
+  assert.equal(item5.getSaveDialogOptions().defaultPath, path.join(defaultDir, 'fallback.zip'));
+  item5.emit('done', {}, 'cancelled');
+
+  // Symlink preference file is ignored
+  const outsideDir = path.join(base, 'outside');
+  await mkdir(outsideDir);
+  const linkSource = path.join(base, 'target-prefs.json');
+  await writeFile(linkSource, JSON.stringify({ lastDownloadDirectory: outsideDir }));
+  await rm(path.join(userDataDir, 'download-preferences.json'));
+  await symlink(linkSource, path.join(userDataDir, 'download-preferences.json'));
+  assert.equal(readRememberedDownloadDirectory(userDataDir), null);
+  assert.equal(writeRememberedDownloadDirectory(userDataDir, outsideDir), false);
 });
 
 test('2. Valid Perplexity Blob downloads accepted for www.perplexity.ai and perplexity.ai', async (t) => {
@@ -155,7 +277,10 @@ test('2. Valid Perplexity Blob downloads accepted for www.perplexity.ai and perp
     const event = { preventDefault() { this.denied = true; } };
     handler(event, item, contents);
     assert.equal(event.denied, undefined);
-    assert.equal(item.getSavePath(), path.join(dir, filename));
+    const expected = path.join(dir, filename);
+    assert.equal(item.getSaveDialogOptions().defaultPath, expected);
+    await writeFile(expected, 'blob');
+    item.setSavePath(expected);
     item.emit('done', {}, 'completed');
   }
   assert.equal(events.filter(e => e.type === 'download-complete').length, 2);
@@ -179,9 +304,9 @@ test('3. Invalid Blob origins and HTTP-to-blob chains are rejected with failure 
     handler(event, item, contents);
     assert.equal(event.denied, true);
     assert.equal(item.getSavePath(), '');
+    assert.equal(item.getSaveDialogOptions(), null);
   }
 
-  // Other provider rejects cross-origin blob URLs
   const other = await createHarness(t, { provider: 'other', pageUrl: 'https://docs.example.com/guide' });
   const crossOriginBlob = makeItem({
     origin: 'https://docs.example.com',
@@ -240,7 +365,10 @@ test('5. Unsafe redirect chains are rejected while trusted Perplexity CDN redire
   const safeEvent = { preventDefault() { this.denied = true; } };
   handler(safeEvent, safeItem, contents);
   assert.equal(safeEvent.denied, undefined);
-  assert.equal(safeItem.getSavePath(), path.join(dir, 'report.pdf'));
+  const expected = path.join(dir, 'report.pdf');
+  assert.equal(safeItem.getSaveDialogOptions().defaultPath, expected);
+  await writeFile(expected, 'pdf');
+  safeItem.setSavePath(expected);
   safeItem.emit('done', {}, 'completed');
   assert.equal(events.at(-1)?.type, 'download-complete');
 });
@@ -271,7 +399,7 @@ test('7. Download directory resolution prefers OS Downloads, resolves ~/Download
   const customDownloads = path.join(base, 'CustomDownloads');
   await mkdir(customDownloads);
   assert.equal(
-    resolveDownloadsDirectory({ getPath: (name) => (name === 'downloads' ? customDownloads : base) }),
+    resolveDefaultDownloadsDirectory({ getPath: (name) => (name === 'downloads' ? customDownloads : base) }),
     customDownloads,
   );
 
@@ -279,7 +407,7 @@ test('7. Download directory resolution prefers OS Downloads, resolves ~/Download
   const userDownloads = path.join(base, 'Downloads');
   await mkdir(userDownloads);
   assert.equal(
-    resolveDownloadsDirectory({ getPath: () => base }),
+    resolveDownloadsDirectory({ getPath: (name) => (name === 'userData' ? path.join(base, 'missing-ud') : base) }),
     userDownloads,
   );
 
@@ -343,7 +471,10 @@ test('9. Duplicate filename handling preserves existing files and allocates repo
   const event = { preventDefault() { this.denied = true; } };
   handler(event, item, contents);
   assert.equal(event.denied, undefined);
-  assert.equal(item.getSavePath(), path.join(dir, 'report (2).pdf'));
+  const expected = path.join(dir, 'report (2).pdf');
+  assert.equal(item.getSaveDialogOptions().defaultPath, expected);
+  await writeFile(expected, 'new-2');
+  item.setSavePath(expected);
   item.emit('done', {}, 'completed');
 
   assert.equal(await readFile(path.join(dir, 'report.pdf'), 'utf8'), 'original-0');
@@ -352,11 +483,11 @@ test('9. Duplicate filename handling preserves existing files and allocates repo
     type: 'download-complete',
     id: 'tab',
     filename: 'report (2).pdf',
-    savePath: path.join(dir, 'report (2).pdf'),
+    savePath: expected,
   });
 });
 
-test('10. Concurrent download collision handling allocates distinct names and releases reservations on finish', async (t) => {
+test('10. Concurrent download collision handling allocates distinct Save As defaults and releases reservations on finish', async (t) => {
   const { handler, dir, contents, reservedPaths, events } = await createHarness(t);
   const items = [0, 1, 2].map(() => makeItem({ filename: 'report.pdf' }));
   for (const item of items) {
@@ -365,7 +496,7 @@ test('10. Concurrent download collision handling allocates distinct names and re
     assert.equal(event.denied, undefined);
   }
 
-  assert.deepEqual(items.map(i => i.getSavePath()), [
+  assert.deepEqual(items.map(i => i.getSaveDialogOptions().defaultPath), [
     path.join(dir, 'report.pdf'),
     path.join(dir, 'report (1).pdf'),
     path.join(dir, 'report (2).pdf'),
@@ -375,11 +506,14 @@ test('10. Concurrent download collision handling allocates distinct names and re
   items[1].emit('done', {}, 'cancelled');
   assert.equal(reservedPaths.size, 2);
 
-  // A new download can reuse the released reservation slot if not written to disk
   const reused = allocateDownloadTarget(dir, 'report.pdf', reservedPaths);
   assert.equal(reused.filename, 'report (1).pdf');
   reservedPaths.delete(reused.targetPath);
 
+  await writeFile(path.join(dir, 'report.pdf'), '0');
+  await writeFile(path.join(dir, 'report (2).pdf'), '2');
+  items[0].setSavePath(path.join(dir, 'report.pdf'));
+  items[2].setSavePath(path.join(dir, 'report (2).pdf'));
   items[0].emit('done', {}, 'completed');
   items[2].emit('done', {}, 'completed');
   assert.equal(reservedPaths.size, 0);
@@ -436,8 +570,6 @@ test('12. Download failure notification handles interrupted updates (even when c
   const item = makeItem({ url: sensitiveUrl, chain: [sensitiveUrl], filename: 'export.pdf', canResume: true });
   handler({ preventDefault() {} }, item, contents);
 
-  // Chromium emits updated('interrupted') with canResume() === true for failed downloads;
-  // cancelling triggers done('cancelled'), which must still emit download-failed once.
   item.emit('updated', {}, 'interrupted');
   item.emit('done', {}, 'cancelled');
 

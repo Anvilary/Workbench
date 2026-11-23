@@ -2,6 +2,129 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isSameSite, parseBlobDownloadUrl } from '../../policy.mjs';
 
+const DOWNLOAD_PREFS_FILENAME = 'download-preferences.json';
+
+function tryGetAppPath(app, name) {
+  try {
+    if (typeof app?.getPath === 'function') {
+      const value = app.getPath(name);
+      return typeof value === 'string' ? value : '';
+    }
+  } catch {}
+  return '';
+}
+
+export function isWritableDirectory(dirPath) {
+  if (typeof dirPath !== 'string' || !dirPath || !path.isAbsolute(dirPath) || /[\u0000-\u001f\u007f]/.test(dirPath)) {
+    return false;
+  }
+  try {
+    const resolved = path.resolve(dirPath);
+    const stat = fs.statSync(resolved);
+    if (!stat.isDirectory()) return false;
+    fs.accessSync(resolved, fs.constants.W_OK | fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function resolveDefaultDownloadsDirectory(app) {
+  const configured = tryGetAppPath(app, 'downloads');
+  try {
+    const home = tryGetAppPath(app, 'home');
+    if (configured && home && path.resolve(configured) === path.resolve(home)) {
+      const candidate = path.join(home, 'Downloads');
+      if (fs.statSync(candidate).isDirectory()) {
+        return candidate;
+      }
+    }
+  } catch {}
+  return configured;
+}
+
+export function readRememberedDownloadDirectory(userDataDir) {
+  if (typeof userDataDir !== 'string' || !userDataDir || !path.isAbsolute(userDataDir) || /[\u0000-\u001f\u007f]/.test(userDataDir)) {
+    return null;
+  }
+  try {
+    const resolvedUserData = path.resolve(userDataDir);
+    const dirStat = fs.lstatSync(resolvedUserData);
+    if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) return null;
+
+    const prefPath = path.join(resolvedUserData, DOWNLOAD_PREFS_FILENAME);
+    const prefStat = fs.lstatSync(prefPath);
+    if (prefStat.isSymbolicLink() || !prefStat.isFile()) return null;
+
+    const parsed = JSON.parse(fs.readFileSync(prefPath, 'utf8'));
+    const candidate = parsed?.lastDownloadDirectory;
+    if (!isWritableDirectory(candidate)) return null;
+    return path.resolve(candidate);
+  } catch {
+    return null;
+  }
+}
+
+export function writeRememberedDownloadDirectory(userDataDir, directoryPath) {
+  if (typeof userDataDir !== 'string' || !userDataDir || !path.isAbsolute(userDataDir) || /[\u0000-\u001f\u007f]/.test(userDataDir)) {
+    return false;
+  }
+  if (!isWritableDirectory(directoryPath)) return false;
+
+  const resolvedUserData = path.resolve(userDataDir);
+  try {
+    const dirStat = fs.lstatSync(resolvedUserData);
+    if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) return false;
+  } catch (err) {
+    if (err?.code !== 'ENOENT') return false;
+    fs.mkdirSync(resolvedUserData, { recursive: true, mode: 0o700 });
+  }
+
+  const prefPath = path.join(resolvedUserData, DOWNLOAD_PREFS_FILENAME);
+  try {
+    const existingStat = fs.lstatSync(prefPath);
+    if (existingStat.isSymbolicLink() || !existingStat.isFile()) return false;
+  } catch (err) {
+    if (err?.code !== 'ENOENT') return false;
+  }
+
+  const payload = JSON.stringify({
+    version: 1,
+    lastDownloadDirectory: path.resolve(directoryPath),
+  }, null, 2) + '\n';
+  const tmpPath = path.join(resolvedUserData, `.${DOWNLOAD_PREFS_FILENAME}.tmp.${process.pid}.${Date.now()}`);
+  try {
+    fs.writeFileSync(tmpPath, payload, { encoding: 'utf8', mode: 0o600 });
+    fs.renameSync(tmpPath, prefPath);
+    return true;
+  } catch {
+    try { fs.unlinkSync(tmpPath); } catch {}
+    return false;
+  }
+}
+
+export function resolveDownloadsDirectory(app, { userDataDir } = {}) {
+  const effectiveUserDataDir = userDataDir ?? tryGetAppPath(app, 'userData');
+  const remembered = effectiveUserDataDir ? readRememberedDownloadDirectory(effectiveUserDataDir) : null;
+  if (remembered) return remembered;
+  return resolveDefaultDownloadsDirectory(app);
+}
+
+export function rememberCompletedDownloadPath(savedFilePath, { app, userDataDir } = {}) {
+  if (typeof savedFilePath !== 'string' || !savedFilePath || !path.isAbsolute(savedFilePath) || /[\u0000-\u001f\u007f]/.test(savedFilePath)) {
+    return false;
+  }
+  try {
+    const resolvedFile = path.resolve(savedFilePath);
+    if (!fs.statSync(resolvedFile).isFile()) return false;
+    const effectiveUserDataDir = userDataDir ?? tryGetAppPath(app, 'userData');
+    if (!effectiveUserDataDir) return false;
+    return writeRememberedDownloadDirectory(effectiveUserDataDir, path.dirname(resolvedFile));
+  } catch {
+    return false;
+  }
+}
+
 export function sanitizeDownloadFilename(rawName) {
   if (typeof rawName !== 'string') return 'download';
   const lastSegment = rawName.split(/[/\\]/).pop() || '';
@@ -31,20 +154,6 @@ export function formatDuplicateFilename(safeName, index) {
   const ext = path.extname(safeName);
   const stem = ext ? safeName.slice(0, -ext.length) : safeName;
   return `${stem} (${index})${ext}`;
-}
-
-export function resolveDownloadsDirectory(app) {
-  const configured = app.getPath('downloads');
-  try {
-    const home = typeof app.getPath === 'function' ? app.getPath('home') : '';
-    if (configured && home && path.resolve(configured) === path.resolve(home)) {
-      const candidate = path.join(home, 'Downloads');
-      if (fs.statSync(candidate).isDirectory()) {
-        return candidate;
-      }
-    }
-  } catch {}
-  return configured;
 }
 
 export function allocateDownloadTarget(dir, safeName, reservedPaths = new Set()) {
@@ -98,7 +207,8 @@ export function browserDownloadHandler({
   provider, views, providers, popupOwners, popups, activeDownloads,
   reservedPaths = new Set(),
   allowedOrigin, allowedDestination,
-  windowForContents, downloadsDirectory, autoSave = () => true,
+  windowForContents, downloadsDirectory, autoSave = () => false,
+  rememberDownloadDirectory = null,
   send, ready,
 }) {
   return (event, item, contents) => {
@@ -154,12 +264,13 @@ export function browserDownloadHandler({
     let finalName = safeName;
     let target;
     let reservedTarget = null;
+    const saveAutomatically = Boolean(autoSave());
     try {
       const allocated = allocateDownloadTarget(downloadsDirectory(), safeName, reservedPaths);
       finalName = allocated.filename;
       target = allocated.targetPath;
       reservedTarget = allocated.targetPath;
-      if (autoSave()) item.setSavePath(target);
+      if (saveAutomatically) item.setSavePath(target);
       else item.setSaveDialogOptions({ defaultPath: target, title: 'Save File' });
     } catch {
       if (reservedTarget) reservedPaths.delete(reservedTarget);
@@ -199,13 +310,20 @@ export function browserDownloadHandler({
         : effectiveState === 'cancelled'
           ? 'download-cancelled'
           : 'download-failed';
+      const actualSavePath = typeof item.getSavePath === 'function' ? item.getSavePath() : '';
       const savePath = effectiveState === 'completed'
-        ? ((typeof item.getSavePath === 'function' && item.getSavePath()) || target)
+        ? (actualSavePath || (saveAutomatically ? target : ''))
         : undefined;
+      const reportedName = actualSavePath ? sanitizeDownloadFilename(path.basename(actualSavePath)) : finalName;
+      if (effectiveState === 'completed' && savePath && typeof rememberDownloadDirectory === 'function') {
+        try {
+          rememberDownloadDirectory(savePath);
+        } catch {}
+      }
       send({
         type,
         id,
-        filename: finalName,
+        filename: reportedName,
         ...(savePath ? { savePath } : {}),
         ...(type === 'download-failed' ? { reason: effectiveState } : {}),
       });

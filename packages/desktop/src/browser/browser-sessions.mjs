@@ -7,7 +7,7 @@
  */
 
 import { DEFAULT_BROWSER_PROFILE_ID, isValidBrowserProfileId, partitionForBrowserProfile, otherUrl, authenticationUrl } from '../../policy.mjs';
-import { browserDownloadHandler, resolveDownloadsDirectory } from './downloads.mjs';
+import { browserDownloadHandler, resolveDownloadsDirectory, rememberCompletedDownloadPath } from './downloads.mjs';
 import { configureProviderSessionPermissions } from '../security/session-permissions.mjs';
 import { navigationAllowed, durablePage, downloadOriginAllowed, downloadDestinationAllowed } from './provider-policy.mjs';
 
@@ -62,7 +62,9 @@ export function createBrowserSessions({ electron, state, send, trimCapacity }) {
       allowedDestination: (value) => downloadDestinationAllowed(provider, value),
       windowForContents: (contents) => BrowserWindow.fromWebContents(contents),
       downloadsDirectory: () => resolveDownloadsDirectory(app),
-      autoSave: () => process.env.MAW_DOWNLOAD_AUTO_SAVE !== '0',
+      rememberDownloadDirectory: (savedPath) => rememberCompletedDownloadPath(savedPath, { app }),
+      // Native Save As is the interactive default; MAW_DOWNLOAD_AUTO_SAVE=1 is an explicit opt-in for automated/headless compatibility.
+      autoSave: () => process.env.MAW_DOWNLOAD_AUTO_SAVE === '1',
       send,
       ready: (id) => {
         const contents = views.get(id)?.webContents;
