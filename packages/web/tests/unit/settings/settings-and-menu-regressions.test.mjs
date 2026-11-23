@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   buildSearchUrl,
   validateSearchEngine,
@@ -7,6 +10,9 @@ import {
 } from '@agent-workbench/shared';
 import { handleMenuArrowNavigation } from '../../../src/shared/hooks/useMenuKeyboardNav.ts';
 import { buildSettingsSearchCatalog, filterSettingsSearchCatalog, ALL_TABS } from '../../../src/features/settings/settings-search.ts';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 test('C-15: validateSearchEngine and buildSearchUrl accept {query}, {q}, and %s placeholders', () => {
   const res = validateSearchEngine({
@@ -172,4 +178,23 @@ test('C-09: handleMenuArrowNavigation does not hijack arrow keys or Tab inside e
     globalThis.HTMLElement = prevHTMLElement;
     globalThis.document = prevDocument;
   }
+});
+
+test('UI-01: focus borders consistency: input and textarea focus rules do not produce double concentric focus rings', () => {
+  const css = readFileSync(path.join(__dirname, '../../../src/app/workbench.css'), 'utf8');
+  // Ensure .agency-app input:focus-visible does NOT specify outline-offset
+  const globalInputMatch = css.match(/\.agency-app\s+input:focus-visible[^{]*\{([^}]+)\}/);
+  assert.ok(globalInputMatch, 'Should find .agency-app input:focus-visible rule');
+  assert.ok(globalInputMatch[1].includes('outline: none'), 'input:focus-visible must have outline: none');
+  assert.ok(!globalInputMatch[1].includes('outline-offset'), 'input:focus-visible must not set outline-offset');
+
+  // Ensure .agency-field input:focus does not specify outline along with border-color
+  const fieldInputMatch = css.match(/\.agency-field\s+input:focus[^{]*\{([^}]+)\}/);
+  assert.ok(fieldInputMatch, 'Should find .agency-field input:focus rule');
+  assert.ok(fieldInputMatch[1].includes('outline: none'), '.agency-field input:focus must have outline: none');
+
+  // Ensure destination input does not set outline
+  const destInputMatch = css.match(/\.maw-browser-dest-input:focus[^{]*\{([^}]+)\}/);
+  assert.ok(destInputMatch, 'Should find .maw-browser-dest-input:focus rule');
+  assert.ok(destInputMatch[1].includes('outline: none'), '.maw-browser-dest-input:focus must have outline: none');
 });
