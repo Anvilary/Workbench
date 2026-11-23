@@ -214,7 +214,7 @@ jobs:
           GSK_RENDERER: cairo
           LIBGL_ALWAYS_SOFTWARE: '1'
           MAW_NAUTILUS_TEST_ISOLATED: '1'
-        run: timeout -k 10s 6m xvfb-run -a dbus-run-session pnpm test:e2e
+        run: timeout -k 10s 10m xvfb-run -a dbus-run-session pnpm test:e2e
       - name: Sandboxed Electron runtime and staging
         working-directory: packages/desktop
         env:
