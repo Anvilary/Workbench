@@ -1,3 +1,6 @@
+> [!NOTE]
+> This localized README is a historical upstream translation and may not reflect the latest Anvilary Workbench Linux desktop installation, multi-pane browser features, or native Save As downloads. See the canonical English **[README.md](README.md)** for the latest documentation.
+
 # Anvilary Workbench
 
 [![npm](https://img.shields.io/npm/v/agent-workbench)](https://www.npmjs.com/package/agent-workbench)

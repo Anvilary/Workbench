@@ -3,13 +3,13 @@
     {
       "profileId": "codex-0",
       "provider": "codex",
-      "executable": "/home/user/.local/bin/codex-0",
+      "executable": "/home/developer/.local/bin/codex-0",
       "args": [],
       "environmentOverrides": {},
-      "home": "/home/user/.codex",
+      "home": "/home/developer/.codex",
       "launchContext": {
-        "HOME": "/home/user",
-        "USER": "user",
+        "HOME": "/home/developer",
+        "USER": "developer",
         "SHELL": "/usr/bin/zsh",
         "XDG_CONFIG_HOME": null,
         "XDG_DATA_HOME": null,
@@ -18,29 +18,29 @@
         "CLAUDE_CONFIG_DIR": null
       },
       "commands": {
-        "codex": "/home/user/.nvm/versions/node/v24.22.0/bin/codex",
-        "node": "/home/user/.nvm/versions/node/v24.22.0/bin/node",
+        "codex": "/home/developer/.nvm/versions/node/v24.22.0/bin/codex",
+        "node": "/home/developer/.nvm/versions/node/v24.22.0/bin/node",
         "bash": "/usr/bin/bash"
       },
       "artifacts": [
-        "/home/user/.local/bin/codex-0",
-        "/home/user/.nvm/versions/node/v24.22.0/bin/codex",
-        "/home/user/.nvm/versions/node/v24.22.0/bin/node",
+        "/home/developer/.local/bin/codex-0",
+        "/home/developer/.nvm/versions/node/v24.22.0/bin/codex",
+        "/home/developer/.nvm/versions/node/v24.22.0/bin/node",
         "/usr/bin/bash",
-        "/home/user/.nvm/versions/node/v24.22.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex"
+        "/home/developer/.nvm/versions/node/v24.22.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex"
       ],
       "requiredEnvironment": []
     },
     {
       "profileId": "codex-1",
       "provider": "codex",
-      "executable": "/home/user/.local/bin/codex-1",
+      "executable": "/home/developer/.local/bin/codex-1",
       "args": [],
       "environmentOverrides": {},
-      "home": "/home/user/.codex-ar",
+      "home": "/home/developer/.codex-ar",
       "launchContext": {
-        "HOME": "/home/user",
-        "USER": "user",
+        "HOME": "/home/developer",
+        "USER": "developer",
         "SHELL": "/usr/bin/zsh",
         "XDG_CONFIG_HOME": null,
         "XDG_DATA_HOME": null,
@@ -49,29 +49,29 @@
         "CLAUDE_CONFIG_DIR": null
       },
       "commands": {
-        "codex": "/home/user/.nvm/versions/node/v24.22.0/bin/codex",
-        "node": "/home/user/.nvm/versions/node/v24.22.0/bin/node",
+        "codex": "/home/developer/.nvm/versions/node/v24.22.0/bin/codex",
+        "node": "/home/developer/.nvm/versions/node/v24.22.0/bin/node",
         "bash": "/usr/bin/bash"
       },
       "artifacts": [
-        "/home/user/.local/bin/codex-1",
-        "/home/user/.nvm/versions/node/v24.22.0/bin/codex",
-        "/home/user/.nvm/versions/node/v24.22.0/bin/node",
+        "/home/developer/.local/bin/codex-1",
+        "/home/developer/.nvm/versions/node/v24.22.0/bin/codex",
+        "/home/developer/.nvm/versions/node/v24.22.0/bin/node",
         "/usr/bin/bash",
-        "/home/user/.nvm/versions/node/v24.22.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex"
+        "/home/developer/.nvm/versions/node/v24.22.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex"
       ],
       "requiredEnvironment": []
     },
     {
       "profileId": "codex-3",
       "provider": "codex",
-      "executable": "/home/user/.local/bin/codex-3",
+      "executable": "/home/developer/.local/bin/codex-3",
       "args": [],
       "environmentOverrides": {},
-      "home": "/home/user/.codex-3",
+      "home": "/home/developer/.codex-3",
       "launchContext": {
-        "HOME": "/home/user",
-        "USER": "user",
+        "HOME": "/home/developer",
+        "USER": "developer",
         "SHELL": "/usr/bin/zsh",
         "XDG_CONFIG_HOME": null,
         "XDG_DATA_HOME": null,
@@ -80,29 +80,29 @@
         "CLAUDE_CONFIG_DIR": null
       },
       "commands": {
-        "codex": "/home/user/.nvm/versions/node/v24.22.0/bin/codex",
-        "node": "/home/user/.nvm/versions/node/v24.22.0/bin/node",
+        "codex": "/home/developer/.nvm/versions/node/v24.22.0/bin/codex",
+        "node": "/home/developer/.nvm/versions/node/v24.22.0/bin/node",
         "bash": "/usr/bin/bash"
       },
       "artifacts": [
-        "/home/user/.local/bin/codex-3",
-        "/home/user/.nvm/versions/node/v24.22.0/bin/codex",
-        "/home/user/.nvm/versions/node/v24.22.0/bin/node",
+        "/home/developer/.local/bin/codex-3",
+        "/home/developer/.nvm/versions/node/v24.22.0/bin/codex",
+        "/home/developer/.nvm/versions/node/v24.22.0/bin/node",
         "/usr/bin/bash",
-        "/home/user/.nvm/versions/node/v24.22.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex"
+        "/home/developer/.nvm/versions/node/v24.22.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex"
       ],
       "requiredEnvironment": []
     },
     {
       "profileId": "agy-0",
       "provider": "antigravity",
-      "executable": "/home/user/.local/bin/agy-0",
+      "executable": "/home/developer/.local/bin/agy-0",
       "args": [],
       "environmentOverrides": {},
-      "home": "/home/user/.gemini/antigravity-cli",
+      "home": "/home/developer/.gemini/antigravity-cli",
       "launchContext": {
-        "HOME": "/home/user",
-        "USER": "user",
+        "HOME": "/home/developer",
+        "USER": "developer",
         "SHELL": "/usr/bin/zsh",
         "XDG_CONFIG_HOME": null,
         "XDG_DATA_HOME": null,
@@ -112,7 +112,7 @@
       },
       "commands": {},
       "artifacts": [
-        "/home/user/.local/bin/agy-0"
+        "/home/developer/.local/bin/agy-0"
       ],
       "requiredEnvironment": [
         "DBUS_SESSION_BUS_ADDRESS"
@@ -122,13 +122,13 @@
     {
       "profileId": "agy-1",
       "provider": "antigravity",
-      "executable": "/home/user/.local/bin/agy-1",
+      "executable": "/home/developer/.local/bin/agy-1",
       "args": [],
       "environmentOverrides": {},
-      "home": "/home/user/.local/share/agy-1-profile/home/.gemini/antigravity-cli",
+      "home": "/home/developer/.local/share/agy-1-profile/home/.gemini/antigravity-cli",
       "launchContext": {
-        "HOME": "/home/user",
-        "USER": "user",
+        "HOME": "/home/developer",
+        "USER": "developer",
         "SHELL": "/usr/bin/zsh",
         "XDG_CONFIG_HOME": null,
         "XDG_DATA_HOME": null,
@@ -150,9 +150,9 @@
         "env": "/usr/bin/env"
       },
       "artifacts": [
-        "/home/user/.local/bin/agy-1",
-        "/home/user/.local/bin/agy-1-profile-start",
-        "/home/user/.local/bin/agy",
+        "/home/developer/.local/bin/agy-1",
+        "/home/developer/.local/bin/agy-1-profile-start",
+        "/home/developer/.local/bin/agy",
         "/usr/bin/bash",
         "/usr/bin/dbus-daemon",
         "/usr/bin/gnome-keyring-daemon",
@@ -171,13 +171,13 @@
     {
       "profileId": "agy-2",
       "provider": "antigravity",
-      "executable": "/home/user/.local/bin/agy-2",
+      "executable": "/home/developer/.local/bin/agy-2",
       "args": [],
       "environmentOverrides": {},
-      "home": "/home/user/.local/share/agy-2-profile/home/.gemini/antigravity-cli",
+      "home": "/home/developer/.local/share/agy-2-profile/home/.gemini/antigravity-cli",
       "launchContext": {
-        "HOME": "/home/user",
-        "USER": "user",
+        "HOME": "/home/developer",
+        "USER": "developer",
         "SHELL": "/usr/bin/zsh",
         "XDG_CONFIG_HOME": null,
         "XDG_DATA_HOME": null,
@@ -199,9 +199,9 @@
         "env": "/usr/bin/env"
       },
       "artifacts": [
-        "/home/user/.local/bin/agy-2",
-        "/home/user/.local/bin/agy-2-profile-start",
-        "/home/user/.local/bin/agy",
+        "/home/developer/.local/bin/agy-2",
+        "/home/developer/.local/bin/agy-2-profile-start",
+        "/home/developer/.local/bin/agy",
         "/usr/bin/bash",
         "/usr/bin/dbus-daemon",
         "/usr/bin/gnome-keyring-daemon",
@@ -220,13 +220,13 @@
     {
       "profileId": "agy-3",
       "provider": "antigravity",
-      "executable": "/home/user/.local/bin/agy-3",
+      "executable": "/home/developer/.local/bin/agy-3",
       "args": [],
       "environmentOverrides": {},
-      "home": "/home/user/.local/share/agy-3-profile/home/.gemini/antigravity-cli",
+      "home": "/home/developer/.local/share/agy-3-profile/home/.gemini/antigravity-cli",
       "launchContext": {
-        "HOME": "/home/user",
-        "USER": "user",
+        "HOME": "/home/developer",
+        "USER": "developer",
         "SHELL": "/usr/bin/zsh",
         "XDG_CONFIG_HOME": null,
         "XDG_DATA_HOME": null,
@@ -248,9 +248,9 @@
         "env": "/usr/bin/env"
       },
       "artifacts": [
-        "/home/user/.local/bin/agy-3",
-        "/home/user/.local/bin/agy-3-profile-start",
-        "/home/user/.local/bin/agy",
+        "/home/developer/.local/bin/agy-3",
+        "/home/developer/.local/bin/agy-3-profile-start",
+        "/home/developer/.local/bin/agy",
         "/usr/bin/bash",
         "/usr/bin/dbus-daemon",
         "/usr/bin/gnome-keyring-daemon",
@@ -269,13 +269,13 @@
     {
       "profileId": "agy-4",
       "provider": "antigravity",
-      "executable": "/home/user/.local/bin/agy-4",
+      "executable": "/home/developer/.local/bin/agy-4",
       "args": [],
       "environmentOverrides": {},
-      "home": "/home/user/.local/share/agy-4-profile/home/.gemini/antigravity-cli",
+      "home": "/home/developer/.local/share/agy-4-profile/home/.gemini/antigravity-cli",
       "launchContext": {
-        "HOME": "/home/user",
-        "USER": "user",
+        "HOME": "/home/developer",
+        "USER": "developer",
         "SHELL": "/usr/bin/zsh",
         "XDG_CONFIG_HOME": null,
         "XDG_DATA_HOME": null,
@@ -297,9 +297,9 @@
         "env": "/usr/bin/env"
       },
       "artifacts": [
-        "/home/user/.local/bin/agy-4",
-        "/home/user/.local/bin/agy-4-profile-start",
-        "/home/user/.local/bin/agy",
+        "/home/developer/.local/bin/agy-4",
+        "/home/developer/.local/bin/agy-4-profile-start",
+        "/home/developer/.local/bin/agy",
         "/usr/bin/bash",
         "/usr/bin/dbus-daemon",
         "/usr/bin/gnome-keyring-daemon",
@@ -318,13 +318,13 @@
     {
       "profileId": "agy-5",
       "provider": "antigravity",
-      "executable": "/home/user/.local/bin/agy-5",
+      "executable": "/home/developer/.local/bin/agy-5",
       "args": [],
       "environmentOverrides": {},
-      "home": "/home/user/.local/share/agy-5-profile/home/.gemini/antigravity-cli",
+      "home": "/home/developer/.local/share/agy-5-profile/home/.gemini/antigravity-cli",
       "launchContext": {
-        "HOME": "/home/user",
-        "USER": "user",
+        "HOME": "/home/developer",
+        "USER": "developer",
         "SHELL": "/usr/bin/zsh",
         "XDG_CONFIG_HOME": null,
         "XDG_DATA_HOME": null,
@@ -346,9 +346,9 @@
         "env": "/usr/bin/env"
       },
       "artifacts": [
-        "/home/user/.local/bin/agy-5",
-        "/home/user/.local/bin/agy-5-profile-start",
-        "/home/user/.local/bin/agy",
+        "/home/developer/.local/bin/agy-5",
+        "/home/developer/.local/bin/agy-5-profile-start",
+        "/home/developer/.local/bin/agy",
         "/usr/bin/bash",
         "/usr/bin/dbus-daemon",
         "/usr/bin/gnome-keyring-daemon",
@@ -367,13 +367,13 @@
     {
       "profileId": "claude-code",
       "provider": "claude-code",
-      "executable": "/home/user/.local/bin/claude",
+      "executable": "/home/developer/.local/bin/claude",
       "args": [],
       "environmentOverrides": {},
-      "home": "/home/user/.claude",
+      "home": "/home/developer/.claude",
       "launchContext": {
-        "HOME": "/home/user",
-        "USER": "user",
+        "HOME": "/home/developer",
+        "USER": "developer",
         "SHELL": "/usr/bin/zsh",
         "XDG_CONFIG_HOME": null,
         "XDG_DATA_HOME": null,
@@ -383,7 +383,7 @@
       },
       "commands": {},
       "artifacts": [
-        "/home/user/.local/bin/claude"
+        "/home/developer/.local/bin/claude"
       ],
       "requiredEnvironment": []
     }

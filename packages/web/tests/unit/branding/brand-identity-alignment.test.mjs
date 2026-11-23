@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '../../../../../');
-const canonicalDir = process.env.CANONICAL_BRAND_DIR || '/home/user/Projects/Anvilary-Tools/assets/anvilary-tools-logo-v2.1';
+const canonicalDir = process.env.CANONICAL_BRAND_DIR || '';
 
 test('UI-04: Favicons match canonical Anvilary Tools logo byte-for-byte', () => {
   const icoPath = path.join(repoRoot, 'packages/web/public/favicon.ico');
@@ -20,7 +20,7 @@ test('UI-04: Favicons match canonical Anvilary Tools logo byte-for-byte', () => 
   assert.ok(existsSync(png16Path), 'favicon-16x16.png must exist');
   assert.ok(existsSync(applePath), 'apple-touch-icon.png must exist');
 
-  if (existsSync(canonicalDir)) {
+  if (canonicalDir && existsSync(canonicalDir)) {
     const expectedIco = readFileSync(path.join(canonicalDir, 'favicons/favicon.ico'));
     const actualIco = readFileSync(icoPath);
     assert.deepEqual(actualIco, expectedIco, 'favicon.ico must match canonical favicon.ico exactly');
@@ -50,7 +50,7 @@ test('UI-04: Web app brand logos match canonical Anvilary Tools transparent logo
     const expectedInternal = readFileSync(internalCanonical);
     assert.deepEqual(actual, expectedInternal, `workbench-logo-${s}.png must match repository canonical brand logo of size ${s}`);
 
-    if (existsSync(canonicalDir)) {
+    if (canonicalDir && existsSync(canonicalDir)) {
       const expected = readFileSync(path.join(canonicalDir, `png/transparent/anvilary-tools-${s}.png`));
       assert.deepEqual(actual, expected, `workbench-logo-${s}.png must match canonical transparent logo of size ${s}`);
     }
@@ -71,7 +71,7 @@ test('UI-04: Desktop application icon and launcher icons match canonical Anvilar
       const internalCanonical = path.join(repoRoot, `packages/web/public/brand/anvilary-tools-${s}.png`);
       assert.deepEqual(readFileSync(launcherIcon), readFileSync(internalCanonical), `maw-${s}.png must match repository canonical brand logo size ${s}`);
     }
-    if (existsSync(canonicalDir)) {
+    if (canonicalDir && existsSync(canonicalDir)) {
       const expected = readFileSync(path.join(canonicalDir, `png/transparent/anvilary-tools-${s}.png`));
       assert.deepEqual(readFileSync(launcherIcon), expected, `maw-${s}.png must match canonical transparent logo size ${s}`);
     }

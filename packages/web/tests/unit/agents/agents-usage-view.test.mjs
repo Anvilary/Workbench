@@ -72,7 +72,7 @@ test('formatReset handles relative seconds and timestamps', () => {
 });
 
 test('formatPath abbreviates user home directory cleanly', () => {
-  assert.equal(formatPath('/home/user/.codex-0'), '~/.codex-0');
+  assert.equal(formatPath('/home/developer/.codex-0'), '~/.codex-0');
   assert.equal(formatPath('/home/user/some/path'), '~/some/path');
   assert.equal(formatPath('/var/log/syslog'), '/var/log/syslog');
 });

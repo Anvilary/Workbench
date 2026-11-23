@@ -2,14 +2,14 @@
 
 # Anvilary Workbench
 
-**Local-first desktop workstation for autonomous AI coding agents.** Organizes projects, persistent terminals, installed coding CLIs, and native Chromium web tabs in a supervised, fluid multi-pane desktop interface.
+**Local-first desktop workstation for AI coding agents, persistent terminals, native Chromium tabs, and multi-pane development workflows.** Organizes projects, supervised terminal sessions, installed coding CLIs, and isolated Chromium web views in a fluid Linux desktop interface.
 
 An open-source product from [Anvilary Tools](https://anvilary.tools).
 
 [![CI](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Electron](https://img.shields.io/badge/electron-45.2.0-blue.svg)](https://www.electronjs.org/)
-[![React](https://img.shields.io/badge/react-19.0.0-61dafb.svg)](https://react.dev/)
+[![React](https://img.shields.io/badge/react-18.3-61dafb.svg)](https://react.dev/)
 
 **English** · [Español](README.es.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [Português (Brasil)](README.pt-BR.md) · [Русский](README.ru.md) · [한국어](README.ko.md) · [Français](README.fr.md) · [Deutsch](README.de.md)
 
@@ -26,7 +26,7 @@ Watch the complete **Project Organization -> Persistent Terminal -> Coding Agent
 <details>
 <summary><strong>Video Scene Breakdown & Demonstration Transcript</strong></summary>
 
-1. **Scene 1: Initial Viewport & Single-Pane Workspace (0:00 - 0:08)**: Opening the clean dark desktop interface with Anvilary orange accents, displaying the synthetic project tree in the sidebar and an uncluttered single full-width pane.
+1. **Scene 1: Initial Viewport & Single-Pane Workspace (0:00 - 0:08)**: Opening the clean dark desktop interface with canonical Anvilary orange identity accents, displaying the synthetic project tree in the sidebar and an uncluttered single full-width pane.
 2. **Scene 2: Project Organization & Workspace Navigation (0:08 - 0:20)**: Navigating fluidly between multiple projects (Demo Application, Backend Service, and Docs & Guides) in the sidebar navigation tree.
 3. **Scene 3: Supervised Persistent Terminal & Genuine Coding CLI (0:20 - 0:38)**: Launching a persistent terminal session, executing unit tests (`npm test` 3/3 passing), and verifying the installed Codex AI coding agent (`codex --version` and `codex --help`).
 4. **Scene 4: Fluid Multi-Pane Split & Divider Resizing (0:38 - 0:50)**: Splitting the workspace vertically into balanced 50% / 50% columns, followed by interactive split divider dragging.
@@ -42,139 +42,177 @@ Watch the complete **Project Organization -> Persistent Terminal -> Coding Agent
 
 ## Why Workbench?
 
-- **Persistent PTY Daemon**: Terminal sessions are supervised by an independent background daemon (`maw-ptyd`). Long-running builds, autonomous coding agents, and test runners survive application updates, desktop window reloads, and desktop restarts without losing state or scrollback history.
-- **Zero Credential Access**: Workbench starts the coding CLIs you already have installed and authenticated locally (such as `codex`, `claude`, `opencode`, or `agy`). It never intercepts or stores your personal API keys, passwords, or authentication tokens.
-- **Native Chromium Web Tabs**: Native Chromium `WebContentsView` instances embed documentation, web applications, and AI chat interfaces directly into your workspace panes with zero iframe styling quirks and full hardware acceleration.
-- **Fluid Multi-Pane Split Layouts**: Split your workspace horizontally or vertically with fluid divider resizing, drag-and-drop tab organization, and independent pane focus synchronization.
-- **Local-First Architecture**: Your code, logs, session data, and workspace layout state remain strictly on your local machine. No cloud sync, no forced accounts, and no telemetry tracking your keystrokes.
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- **Linux / Ubuntu**: Desktop environment (X11 or Wayland) with Node.js 20+ and pnpm installed.
-- **AI Coding CLIs** (optional): Install your preferred agents (`claude`, `codex`, `opencode`, or `agy`) on your PATH.
-
-### Installation and Launch
-
-```bash
-# Clone the repository
-git clone https://github.com/Anvilary/Workbench.git
-cd Workbench
-
-# Install dependencies
-pnpm install
-
-# Build all packages
-pnpm build
-
-# Launch the desktop workstation
-pnpm desktop
-```
+- **Persistent PTY Daemon**: Terminal sessions are supervised by an independent background daemon (`maw-ptyd`). Long-running builds, autonomous coding agents, and test runners survive backend restarts and application updates without losing active processes or scrollback history.
+- **Zero Credential Access**: Workbench runs the coding CLIs you already have installed and authenticated locally (such as `codex`, `claude`, `opencode`, or `agy`) inside standard terminals. It never intercepts, copies, or stores your API keys, passwords, or provider tokens.
+- **Native Chromium Web Tabs**: Native Chromium `WebContentsView` instances embed documentation, web apps, and AI web interfaces directly inside workspace panes with isolated profiles, hardware acceleration, and native Find in Page.
+- **Fluid Multi-Pane Split Layouts**: Split any workspace horizontally or vertically with interactive divider resizing, drag-and-drop tab and pane reordering, and independent pane focus synchronization.
+- **Local-First Architecture**: Code, terminal history, browser profiles, and workspace layout state remain on your local machine. No cloud sync, no accounts, and no telemetry.
 
 ---
 
 ## Key Features
 
-### Persistent Terminals and Coding Agents
-- **Supervised Processes**: The dedicated `maw-ptyd` daemon supervises pseudo-terminals across restarts.
-- **Scrollback and Search**: High-performance xterm.js terminal integration with incremental text search.
-- **Direct CLI Execution**: Run any standard developer CLI (`npm`, `cargo`, `git`) alongside autonomous AI coding tools.
+### Persistent Terminals and Coding CLIs
+- **Clean Empty Workspace Start**: New workspaces open with an empty starting panel; no terminal launches automatically and no separate Coding Agent tab creator clutters the panel. Start any installed coding CLI (`claude`, `codex`, `opencode`, `agy`) or standard developer tool (`npm`, `cargo`, `git`) directly inside a terminal tab.
+- **Supervised Processes**: The independent `maw-ptyd` Unix-socket daemon supervises pseudo-terminals across backend restarts.
+- **Scrollback and Search**: xterm.js terminal integration with scrollback persistence and incremental search.
 
-### Fluid Multi-Pane Layouts
-- **Dynamic Tree Splitting**: Split any pane horizontally or vertically into balanced sub-panes.
-- **Smooth Divider Resizing**: Interactive divider bars with minimum boundary protection.
-- **Tab Drag and Drop**: Reorder tabs within a pane or drag tabs between distinct panes.
+### Native Chromium Web Tabs and Reliable Downloads
+- **Isolated Browser Profiles**: Dedicated Electron session partitions (`persist:maw-browser`, provider partitions, and custom workspace/project browser profiles) keep cookies and sessions isolated from Workbench internals.
+- **Native Workspace Switching & Loading Identity**: Switching between projects and workspaces preserves active native Chromium views and displays the animated canonical Anvilary logo while pages load.
+- **Destination Picker & Native Find in Page**: Quick access to developer favorites, search engines, arbitrary URLs, and Chromium-powered in-page search (`Ctrl+F`) with occurrence counters and smooth scrolling.
+- **Native Save As & Remembered Destination**: Permitted browser downloads (including HTTPS attachments, provider delivery endpoints, validated redirects, and verified `blob:` exports) open the operating system's native Save As dialog by default. After a completed download, Workbench privately remembers the chosen destination directory across websites and application restarts, falling back safely to `Downloads` if a folder becomes unavailable. (`MAW_DOWNLOAD_AUTO_SAVE=1` is available strictly as an opt-in for headless automation.)
 
-### Native Chromium Web Tabs
-- **Direct Web Navigation**: Open documentation sites, local web servers (`http://localhost:*`), and web tools.
-- **Destination Picker**: Quick access to developer favorites, search engines, and arbitrary URLs.
-- **Native Find in Page**: Chromium-powered in-page search with occurrence counters, keyboard shortcuts, and smooth viewport auto-scrolling.
-
-### Project and Workspace Organization
-- **Hierarchical Sidebar**: Organize multiple projects, each containing isolated working folders and Git worktrees.
-- **Status Badges**: Visual indicators displaying active sessions and pane activity.
-- **Workspace Navigation**: Instant switching between project workspaces while background terminals continue executing.
+### Project, Workspace, and Pane Organization
+- **Hierarchical Sidebar & Archive Recovery**: Organize multiple projects with isolated directories or Git worktrees, drag to reorder projects and workspaces, archive completed work, and restore archived projects and workspaces from the Archive recovery dialog.
+- **Dynamic Split Layouts**: Split panes horizontally or vertically, drag split dividers smoothly, reorder tabs within panes, or drag tabs across panes.
+- **Canonical Anvilary Identity**: Unified canonical Anvilary Tools branding across the desktop window, application icons, favicons, and browser loading states.
 
 ### Remote Access over SSH
-Leave Workbench running on one computer and access it from another device on your local network through a secure SSH tunnel. The application remains bound strictly to loopback (`127.0.0.1`).
+Leave Workbench running on your host machine and reach it over a private SSH tunnel. The server remains bound strictly to loopback (`127.0.0.1`) with per-start authentication tokens and strict `Host`/`Origin` validation.
 
-1. Enable the OpenSSH server on your host machine:
+1. Enable OpenSSH on your host machine:
 
-- **Windows 10/11** (PowerShell as administrator):
+- **Linux (Debian / Ubuntu)**:
+  ```bash
+  sudo apt install openssh-server
+  sudo systemctl enable --now ssh
+  ```
+
+- **Windows 10/11** (headless server host, PowerShell as administrator):
   ```powershell
   Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
   Start-Service sshd
   Set-Service -Name sshd -StartupType Automatic
   ```
 
-- **Linux** (Debian / Ubuntu):
-  ```bash
-  sudo apt install openssh-server
-  sudo systemctl enable --now ssh
-  ```
-
-2. Enable remote access in Workbench settings and connect via SSH port forwarding (`ssh -N -L 24837:127.0.0.1:24837 user@host`).
+2. Enable remote access in Workbench settings, pair your device, and connect through SSH port forwarding (`ssh -N -L 24837:127.0.0.1:24837 user@host`).
 
 ---
 
-## Local-First Architecture and Privacy
+## Supported Platforms and Prerequisites
+
+- **Desktop Workstation (Primary Target)**: **Linux (Ubuntu / Debian)** with X11 or Wayland desktop environment, systemd user sessions (for production service installation), **Node.js >= 22.12** (Node.js 22.13+ required for full local test and check suites), and **pnpm 12** (`corepack enable` uses the pinned `pnpm@12.21.0`).
+- **Headless Web Server / CLI Package**: Runs on Node.js 20+ (validated in CI across Linux, macOS, and Windows for the headless server/CLI package only). Native Windows and macOS Electron desktop installers are not yet shipped.
+- **AI Coding CLIs (Optional)**: Install your preferred CLIs (`claude`, `codex`, `opencode`, `agy`) on your `PATH`.
+
+---
+
+## Installation and Launch
+
+### Option 1: Development Launch (Isolated Prototype, No Systemd Changes)
+
+Use this workflow to build and run Workbench directly from a cloned checkout with isolated temporary state in `.native-chatgpt-local/`:
+
+```bash
+# Clone the repository
+git clone https://github.com/Anvilary/Workbench.git
+cd Workbench
+
+# Install dependencies using the frozen lockfile
+pnpm install --frozen-lockfile
+
+# Build server and web production bundles
+pnpm build
+
+# Launch the isolated desktop prototype
+pnpm desktop
+```
+
+### Option 2: Production Linux Installation (Supervised Systemd Services + Desktop Runtime)
+
+For daily local workstation use on Ubuntu/Debian with persistent `maw-ptyd.service` terminal supervision, atomic release staging, and desktop launcher integration:
+
+```bash
+# 1. Install dependencies and build
+pnpm install --frozen-lockfile
+pnpm build
+
+# 2. Install the launcher scripts, initial isolated release, and systemd user units
+sh scripts/maw/install.sh --service
+
+# 3. Build and install the sandboxed Electron desktop runtime package (.deb) and desktop icons
+sh scripts/maw/install.sh --desktop
+
+# 4. Start the supervised local service and launch Workbench desktop
+anvil-bench start
+anvil-bench desktop
+```
+
+Routine updates stage into an isolated release directory without interrupting running terminals:
+
+```bash
+anvil-bench update --no-restart   # Stage the latest release
+anvil-bench restart               # Activate safely while preserving maw-ptyd.service
+anvil-bench status                # Inspect service health and release pointers
+```
+
+---
+
+## Local-First Architecture and Security
 
 | Boundary Area | Isolation Mechanism | Verification Detail |
 |---|---|---|
-| **Terminal Processes** | Supervised under local PTY daemon socket | Process execution runs under your standard local user permissions; no network proxies. |
-| **Browser Profiles** | Partitioned Electron storage (`persist:maw-browser`) | Web tabs are isolated from desktop internals with strict Content Security Policy. |
-| **Session Metadata** | Atomic JSON persistence in `~/.config/agent-workbench` | Workspaces, layout trees, and tab states are saved locally with automatic `.bak` backups. |
-| **Network Requests** | Direct client connections only | Workbench makes zero external phone-home calls and collects no telemetry without consent. |
+| **Local HTTP & WebSocket Server** | Loopback-only (`127.0.0.1`) with random per-start auth token | Authenticated mode is always the default; foreign `Origin` and non-loopback `Host` headers are rejected. |
+| **Terminal Processes** | Independent `maw-ptyd` Unix socket (`0700` dir, `0600` auth token) | Runs under your standard local user permissions; survives backend restarts without touching CLI credentials. |
+| **Desktop & Browser Isolation** | Sandboxed Electron renderer + partitioned `WebContentsView` sessions | `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`; remote pages have zero privileged IPC. |
+| **Downloads** | Scoped download policy + filename sanitization + native Save As | Validates URLs, redirects, and initiating `blob:` origins; prevents path traversal and silent overwrites. |
+| **Session Metadata** | Atomic JSON storage in `~/.config/agent-workbench` | Workspaces, layout trees, and tab states persist locally with `.bak` recovery and zero telemetry. |
+
+See [SECURITY.md](SECURITY.md) for vulnerability reporting and security boundaries, and [PRIVACY.md](PRIVACY.md) for privacy details.
 
 ---
 
 ## Technology Stack
 
-- **Desktop Shell**: [Electron 45](https://www.electronjs.org/) (Chromium 134, Node.js integration, WebContentsView)
-- **Frontend UI**: [React 19](https://react.dev/), [TypeScript](https://www.typescriptlang.org/), [Tailwind CSS](https://tailwindcss.com/)
-- **Terminal Rendering**: [xterm.js](https://xtermjs.org/) with WebGL addon and search addon
-- **Process Supervision**: Dedicated Unix domain socket daemon (`maw-ptyd`) with node-pty
-- **Layout Engine**: Custom binary split-tree reducer with `@dnd-kit` drag-and-drop orchestration
-- **Build System**: [Turborepo](https://turbo.build/), [Vite](https://vite.dev/), [tsup](https://tsup.egoist.dev/)
+- **Desktop Shell**: [Electron 45.2.0](https://www.electronjs.org/) (`WebContentsView`, strict Chromium sandboxing)
+- **Frontend UI**: [React 18.3](https://react.dev/), [TypeScript](https://www.typescriptlang.org/), custom CSS design tokens
+- **Terminal Rendering**: [xterm.js](https://xtermjs.org/) with search and WebGL addons
+- **Process Supervision**: Dedicated Unix-domain-socket daemon (`maw-ptyd`) with `node-pty`
+- **Layout Engine**: Binary split-tree reducer with `@dnd-kit` drag-and-drop orchestration
+- **Build & Monorepo Tooling**: [pnpm workspaces](https://pnpm.io/workspaces), [Vite 6](https://vite.dev/), [esbuild](https://esbuild.github.io/)
 
 ---
 
 ## Local Development
 
-### Verification Commands
-
 ```bash
-# Type check all packages
+# Typecheck all workspace packages
 pnpm typecheck
 
-# Code formatting and linting
-pnpm lint
+# Run static, i18n, parser, and path-guard checks
+env -u MAW_UNSAFE_LOCAL_NO_AUTH pnpm check
 
-# Unit test suites across packages
-pnpm test
+# Run unit tests across shared, desktop, server, and web packages
+pnpm test:unit
 
-# Build all web and server packages
+# Build production server and web bundles
 pnpm build
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/architecture/ci-and-release-runbook.md](docs/architecture/ci-and-release-runbook.md) for integration, security, and Electron E2E test commands.
 
 ---
 
 ## Documentation Directory
 
 - [Architecture v2 Specification](docs/architecture/architecture-v2.md): Modular design, dependency rules, and IPC contracts.
-- [Browser Tabs Architecture](docs/maw/BROWSER-TABS.md): WebContentsView lifecycle, native focus coordination, and find-in-page.
-- [Update and Rollback Guide](docs/maw/UPDATE-ROLLBACK.md): Atomic release staging, symlink promotion, and zero-downtime rollback.
+- [Browser Tabs Architecture](docs/maw/BROWSER-TABS.md): `WebContentsView` lifecycle, native focus coordination, and Find in Page.
+- [Update and Rollback Guide](docs/maw/UPDATE-ROLLBACK.md): Atomic release staging, symlink promotion, and rollback safety.
+- [CI and Release Runbook](docs/architecture/ci-and-release-runbook.md): CI tiers, local release checklist, and operational invariants.
+- [Security Policy](SECURITY.md): Security model, loopback auth defaults, and private vulnerability reporting.
+
+*Note: Files under `docs/maw/` and `docs/research/` include historical design and audit records from earlier development milestones alongside active operational runbooks.*
 
 ---
 
 ## Known Boundaries and Honest Limitations
 
-- **Desktop Platform Support**: The desktop workstation currently targets Linux (Ubuntu / Debian with X11 or Wayland). Native Windows and macOS desktop packages are roadmap targets.
-- **WebContentsView Z-Ordering**: Native Chromium browser views are rendered by Electron's native compositor. HTML modal overlays within Workbench use coordinate masking when hovering over active web views.
-- **Daemon Socket Isolation**: `maw-ptyd` relies on local Unix domain socket permissions (`0700`) within `$XDG_RUNTIME_DIR`. Multi-user shared Linux systems require standard filesystem permission hygiene.
+- **Desktop Platform Support**: Native Electron desktop packaging and supervision currently target Linux (Ubuntu / Debian with X11 or Wayland). Native Windows and macOS desktop installers are not yet available.
+- **Open File Tab Action**: The `Open File...` entry in the pane `+` tab menu is currently disabled and marked `Coming soon`.
+- **Authenticated Third-Party Web Exports**: Native browser downloads (including Save As, remembered destinations, and Perplexity/GitHub `blob:` flows) are verified with deterministic synthetic fixtures; third-party site changes behind authenticated sessions may require future policy updates.
+- **WebContentsView Z-Ordering**: Native Chromium views render in Electron's native compositor; HTML menus and modals coordinate surface visibility over active web views.
+- **Daemon Socket Isolation**: `maw-ptyd` relies on per-user Unix socket directory permissions (`0700`) under `$XDG_RUNTIME_DIR`.
 
 ---
 
@@ -184,9 +222,9 @@ Anvilary Workbench is open-source software licensed under the **[MIT License](LI
 
 ### Provenance and Upstream Attribution
 
-Workbench builds upon and extends the foundational architecture of Agent Workbench. We gratefully acknowledge the original authors and contributors of the Agent Workbench project:
+Anvilary Workbench builds upon and extends the foundational open-source architecture of **Agent Workbench**. Original upstream copyright and MIT license notices are preserved intact:
 
-- Copyright (c) 2024-2025 Christian Velasquez and Agent Workbench contributors.
-- Copyright (c) 2026 Alexandre Teixeira and Anvilary contributors.
+- Upstream Agent Workbench: Copyright (c) 2026 Christian Velasquez (see [LICENSE](LICENSE)).
+- Anvilary Workbench derivative extensions, Linux desktop shell, PTY supervisor, and multi-pane Chromium integration: Copyright (c) 2026 Alexandre Teixeira and Anvilary contributors.
 
-See [LICENSE](LICENSE) for the full text of the MIT license.
+See [LICENSE](LICENSE) for the full MIT License text.

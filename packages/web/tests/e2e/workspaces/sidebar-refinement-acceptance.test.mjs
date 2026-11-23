@@ -54,9 +54,9 @@ let projects = [
 ];
 
 let workspaces = [
-  { id: ws1, projectId: p1, name: 'Workbench', status: 'active', cwd: '/home/user/Projects', createdAt: now, updatedAt: now, doneAt: null },
-  { id: ws2, projectId: p1, name: 'Workbench Core', status: 'active', cwd: '/home/user/Projects/core', createdAt: now, updatedAt: now, doneAt: null },
-  { id: 'ws3', projectId: p2, name: 'Service Bus', status: 'active', cwd: '/home/user/Projects/bus', createdAt: now, updatedAt: now, doneAt: null },
+  { id: ws1, projectId: p1, name: 'Workbench', status: 'active', cwd: '/home/developer/Projects', createdAt: now, updatedAt: now, doneAt: null },
+  { id: ws2, projectId: p1, name: 'Workbench Core', status: 'active', cwd: '/home/developer/Projects/core', createdAt: now, updatedAt: now, doneAt: null },
+  { id: 'ws3', projectId: p2, name: 'Service Bus', status: 'active', cwd: '/home/developer/Projects/bus', createdAt: now, updatedAt: now, doneAt: null },
   { id: 'ws4', projectId: 'p3', name: 'Gateway', status: 'active', cwd: '/var/cloud/gateway', createdAt: now, updatedAt: now, doneAt: null },
   { id: 'ws5', projectId: 'p4', name: 'Orchestrator', status: 'active', cwd: '/var/ops/orch', createdAt: now, updatedAt: now, doneAt: null },
   { id: 'ws6', projectId: 'p5', name: 'Metrics Collector', status: 'active', cwd: '/opt/telemetry', createdAt: now, updatedAt: now, doneAt: null },
@@ -314,7 +314,7 @@ test('Sidebar, branding, header, and navigation pre-release UI refinement', asyn
   const breadcrumbText = await page.locator('.agency-breadcrumbs').innerText();
   assert.ok(breadcrumbText.includes('Anvilary Tools'), 'Project title first');
   assert.ok(breadcrumbText.includes('Workbench'), 'Workspace title second');
-  assert.ok(breadcrumbText.includes('/home/user/Projects'), 'Workspace path last');
+  assert.ok(breadcrumbText.includes('/home/developer/Projects'), 'Workspace path last');
 
   // Click logo to collapse sidebar
   await page.click('.agency-nav-head .agency-brand-toggle');
