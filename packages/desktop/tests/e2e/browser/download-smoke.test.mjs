@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -344,8 +344,10 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
       await view.webContents.executeJavaScript(`document.getElementById('dl-fail').click()`);
     });
 
-    // Wait briefly for failure to settle
-    await new Promise(r => setTimeout(r, 600));
+    await eventually(async () => {
+      const text = await page.textContent('#event-state');
+      return text && text.includes('download-failed');
+    });
     assert.equal((await nativeState()).url, 'https://chatgpt.com/', 'URL remains chatgpt.com on failure');
 
     // Second download succeeds immediately after
@@ -435,6 +437,432 @@ test('FEATURE 10: ChatGPT file download lifecycle in real Electron with click na
 
     await new Promise(r => setTimeout(r, 300));
     assert.equal((await nativeState()).url, 'https://chatgpt.com/c/active-conversation', 'Live URL remains steady after checkpoint update');
+  } finally {
+    if (desktop) await desktop.close();
+    server.close();
+    await rm(data, { recursive: true, force: true });
+  }
+});
+
+const multiProviderFixture = `
+import React, { useEffect, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+
+function App() {
+  const [events, setEvents] = useState([]);
+
+  useEffect(() => {
+    const bridge = window.mawChatGpt;
+    if (!bridge) return;
+    window.__openTab = (id, provider, url) => {
+      const v = { width: window.innerWidth, height: window.innerHeight };
+      bridge.command({ type: 'open', id, provider, url });
+      bridge.command({
+        type: 'layout',
+        views: [{ id, bounds: { x: 0, y: 0, width: v.width, height: v.height } }],
+        viewport: v,
+      });
+    };
+    return bridge.subscribe((state) => {
+      setEvents((prev) => [...prev, state]);
+      if (state.type === 'layout-needed' && state.id) {
+        const v = { width: window.innerWidth, height: window.innerHeight };
+        bridge.command({
+          type: 'layout',
+          views: [{ id: state.id, bounds: { x: 0, y: 0, width: v.width, height: v.height } }],
+          viewport: v,
+        });
+      }
+    });
+  }, []);
+
+  return <div id="all-events">{JSON.stringify(events)}</div>;
+}
+
+createRoot(document.getElementById('root')).render(<App />);
+`;
+
+test('Download reliability: Perplexity, GitHub, General Web, Blob, redirects, duplicates, popups, failures, and default Downloads dir', { timeout: 120000 }, async () => {
+  const bundle = await build({
+    stdin: { contents: multiProviderFixture, resolveDir: path.join(here, '../web'), loader: 'tsx' },
+    bundle: true,
+    write: false,
+    format: 'esm',
+    jsx: 'automatic',
+    logLevel: 'silent',
+  });
+
+  const server = createServer((request, response) => {
+    if (request.url === '/bundle.js') {
+      response.setHeader('Content-Type', 'text/javascript');
+      response.end(bundle.outputFiles[0].text);
+    } else {
+      response.end('<!doctype html><html><body style="margin:0"><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>');
+    }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+
+  const data = await mkdtemp(path.join(tmpdir(), 'maw-download-reliability-'));
+  const downloadsDir = path.join(data, 'Downloads');
+  const configDir = path.join(data, '.config');
+  await mkdir(downloadsDir, { recursive: true });
+  await mkdir(configDir, { recursive: true });
+
+  const pplxId = '11111111-1111-4111-8111-111111111111';
+  const ghId = '22222222-2222-4222-8222-222222222222';
+  const otherId = '33333333-3333-4333-8333-333333333333';
+
+  let desktop;
+  try {
+    // Deliberately omit MAW_DOWNLOAD_AUTO_SAVE to verify automatic saving to OS Downloads by default
+    const launchEnv = {
+      ...process.env,
+      HOME: data,
+      XDG_CONFIG_HOME: configDir,
+      MAW_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
+      MAW_DESKTOP_DATA_DIR: data,
+      MAW_EXTERNAL_POLICY: 'deny',
+    };
+    delete launchEnv.MAW_DOWNLOAD_AUTO_SAVE;
+
+    desktop = await electron.launch({
+      chromiumSandbox: true,
+      executablePath: electronExecutable,
+      args: [here, '--ozone-platform=x11'],
+      env: launchEnv,
+    });
+
+    await desktop.evaluate(({ session }) => {
+      // Perplexity partition fixture
+      const pplx = session.fromPartition('persist:maw-perplexity');
+      pplx.protocol.handle('https', (req) => {
+        const u = new URL(req.url);
+        if (u.hostname === 'www.perplexity.ai' && u.pathname === '/export.md') {
+          return new Response('# Perplexity Direct Export\n', {
+            headers: {
+              'Content-Type': 'text/markdown',
+              'Content-Disposition': 'attachment; filename="perplexity-direct.md"',
+            },
+          });
+        }
+        if (u.hostname === 'www.perplexity.ai' && u.pathname === '/redirect-export') {
+          return new Response(null, {
+            status: 302,
+            headers: { Location: 'https://cdn.perplexity.ai/redirect-report.pdf' },
+          });
+        }
+        if (u.hostname === 'cdn.perplexity.ai' && u.pathname === '/redirect-report.pdf') {
+          return new Response('%PDF-1.4 pplx redirect', {
+            headers: {
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': 'attachment; filename="perplexity-redirect.pdf"',
+            },
+          });
+        }
+        if (u.hostname === 'cdn.perplexity.ai' && u.pathname === '/inline-export.md') {
+          return new Response('# CDN Inline Export', {
+            headers: { 'Content-Type': 'text/markdown' },
+          });
+        }
+        if (u.hostname === 'cdn.perplexity.ai' && u.pathname === '/popup-direct.pdf') {
+          return new Response('%PDF-1.4 pplx popup direct', {
+            headers: {
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': 'attachment; filename="popup-direct.pdf"',
+            },
+          });
+        }
+        if (u.hostname === 'www.perplexity.ai' && u.pathname === '/popup-page') {
+          return new Response(`<!doctype html>
+            <title>Perplexity Export Popup</title>
+            <script>
+              setTimeout(() => {
+                const a = document.createElement('a');
+                a.href = 'https://www.perplexity.ai/popup-attachment.pdf';
+                a.download = 'popup-window.pdf';
+                document.body.appendChild(a);
+                a.click();
+              }, 30);
+            </script>
+          `, { headers: { 'Content-Type': 'text/html' } });
+        }
+        if (u.hostname === 'www.perplexity.ai' && u.pathname === '/popup-attachment.pdf') {
+          return new Response('%PDF-1.4 pplx popup window', {
+            headers: {
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': 'attachment; filename="popup-window.pdf"',
+            },
+          });
+        }
+        if (u.hostname === 'www.perplexity.ai' && u.pathname === '/report-v1.pdf') {
+          return new Response('first-report-bytes', {
+            headers: {
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': 'attachment; filename="report.pdf"',
+            },
+          });
+        }
+        if (u.hostname === 'www.perplexity.ai' && u.pathname === '/report-v2.pdf') {
+          return new Response('second-report-bytes', {
+            headers: {
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': 'attachment; filename="report.pdf"',
+            },
+          });
+        }
+        if (u.hostname === 'www.perplexity.ai' && u.pathname === '/failing-export.pdf') {
+          return Response.error();
+        }
+        if (u.hostname === 'www.perplexity.ai' && u.pathname === '/unsafe-redirect') {
+          return new Response(null, {
+            status: 302,
+            headers: { Location: 'https://untrusted.example.com/blocked.pdf' },
+          });
+        }
+        if (u.hostname === 'untrusted.example.com') {
+          return new Response('unauthorized-payload', {
+            headers: {
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': 'attachment; filename="blocked.pdf"',
+            },
+          });
+        }
+        return new Response(`<!doctype html>
+          <title>Perplexity</title>
+          <a id="dl-direct" href="https://www.perplexity.ai/export.md" download="perplexity-direct.md">Direct</a>
+          <a id="dl-redirect" href="https://www.perplexity.ai/redirect-export">Redirect</a>
+          <a id="dl-cdn-inline" href="https://cdn.perplexity.ai/inline-export.md">CDN Inline</a>
+          <a id="dl-popup-direct" href="https://cdn.perplexity.ai/popup-direct.pdf" target="_blank">Popup Direct</a>
+          <button id="dl-popup-window">Popup Window</button>
+          <a id="dl-dup-1" href="https://www.perplexity.ai/report-v1.pdf" download="report.pdf">Dup 1</a>
+          <a id="dl-dup-2" href="https://www.perplexity.ai/report-v2.pdf" download="report.pdf">Dup 2</a>
+          <a id="dl-fail" href="https://www.perplexity.ai/failing-export.pdf?token=secret-url-token" download="failing-export.pdf">Fail</a>
+          <a id="dl-unsafe-redirect" href="https://www.perplexity.ai/unsafe-redirect" download="blocked.pdf">Unsafe Redirect</a>
+          <a id="dl-untrusted" href="https://untrusted.example.com/blocked.pdf" download="blocked.pdf">Untrusted</a>
+          <button id="dl-blob">Blob</button>
+          <button id="dl-bad-blob">Bad Blob</button>
+          <script>
+            document.getElementById('dl-blob').addEventListener('click', () => {
+              const blob = new Blob(['# Perplexity Blob Export\\n'], { type: 'text/markdown' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'perplexity-blob.md';
+              document.body.appendChild(a);
+              a.click();
+            });
+            document.getElementById('dl-popup-window').addEventListener('click', () => {
+              window.open('https://www.perplexity.ai/popup-page', '_blank', 'width=500,height=600');
+            });
+            document.getElementById('dl-bad-blob').addEventListener('click', () => {
+              window.open('blob:https://evil.example.com/11111111-1111-1111-1111-111111111111', '_blank');
+            });
+          </script>
+        `, { headers: { 'Content-Type': 'text/html' } });
+      });
+
+      // GitHub partition fixture
+      const gh = session.fromPartition('persist:maw-github');
+      gh.protocol.handle('https', (req) => {
+        const u = new URL(req.url);
+        if (u.hostname === 'github.com' && u.pathname === '/owner/repo/releases/download/v1.0/tool.tar.gz') {
+          return new Response(null, {
+            status: 302,
+            headers: { Location: 'https://objects.githubusercontent.com/tool.tar.gz' },
+          });
+        }
+        if (u.hostname === 'objects.githubusercontent.com' && u.pathname === '/tool.tar.gz') {
+          return new Response('github-release-bytes', {
+            headers: {
+              'Content-Type': 'application/gzip',
+              'Content-Disposition': 'attachment; filename="tool.tar.gz"',
+            },
+          });
+        }
+        return new Response(`<!doctype html>
+          <title>GitHub</title>
+          <a id="gh-release" href="https://github.com/owner/repo/releases/download/v1.0/tool.tar.gz">Release</a>
+          <button id="gh-blob">GH Blob</button>
+          <script>
+            document.getElementById('gh-blob').addEventListener('click', () => {
+              const blob = new Blob(['github-blob-bytes'], { type: 'text/plain' });
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = 'github-blob.txt';
+              document.body.appendChild(a);
+              a.click();
+            });
+          </script>
+        `, { headers: { 'Content-Type': 'text/html' } });
+      });
+
+      // General web ('other') partition fixture
+      const other = session.fromPartition('persist:maw-browser');
+      other.protocol.handle('https', (req) => {
+        const u = new URL(req.url);
+        if (u.hostname === 'docs.example.org' && u.pathname === '/guide.pdf') {
+          return new Response('%PDF-1.4 general web guide', {
+            headers: {
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': 'attachment; filename="guide.pdf"',
+            },
+          });
+        }
+        return new Response(`<!doctype html>
+          <title>Example Docs</title>
+          <a id="other-direct" href="https://docs.example.org/guide.pdf" download="guide.pdf">Guide</a>
+          <button id="other-blob">Other Blob</button>
+          <script>
+            document.getElementById('other-blob').addEventListener('click', () => {
+              const blob = new Blob(['other-blob-bytes'], { type: 'text/plain' });
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = 'other-blob.txt';
+              document.body.appendChild(a);
+              a.click();
+            });
+          </script>
+        `, { headers: { 'Content-Type': 'text/html' } });
+      });
+    });
+
+    const page = await desktop.firstWindow();
+    await page.waitForFunction(() => typeof window.__openTab === 'function');
+
+    const getEvents = async () => JSON.parse((await page.textContent('#all-events')) || '[]');
+    const waitForEvent = async (predicate) => {
+      let found = null;
+      await eventually(async () => {
+        const all = await getEvents();
+        found = all.find(predicate) || null;
+        return !!found;
+      });
+      return found;
+    };
+
+    // --- 1. Perplexity scenarios ---
+    await page.evaluate(({ id }) => window.__openTab(id, 'perplexity', 'https://www.perplexity.ai/'), { id: pplxId });
+    await eventually(() => desktop.evaluate(({ webContents, session }) => {
+      const c = webContents.getAllWebContents().find(w => w.session === session.fromPartition('persist:maw-perplexity'));
+      return c?.getURL() === 'https://www.perplexity.ai/' && !c.isLoading();
+    }));
+
+    const clickInPartition = (partition, selector) => desktop.evaluate(async ({ webContents, session }, { part, sel }) => {
+      const c = webContents.getAllWebContents().find(w => w.session === session.fromPartition(part));
+      await c.executeJavaScript(`document.querySelector(${JSON.stringify(sel)}).click()`);
+    }, { part: partition, sel: selector });
+
+    // 1a. Perplexity direct HTTPS download
+    await clickInPartition('persist:maw-perplexity', '#dl-direct');
+    const evDirect = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'perplexity-direct.md');
+    assert.equal(path.dirname(evDirect.savePath), downloadsDir);
+    assert.equal(await readFile(evDirect.savePath, 'utf8'), '# Perplexity Direct Export\n');
+
+    // 1b. Perplexity Blob download
+    await clickInPartition('persist:maw-perplexity', '#dl-blob');
+    const evBlob = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'perplexity-blob.md');
+    assert.equal(path.dirname(evBlob.savePath), downloadsDir);
+    assert.equal(await readFile(evBlob.savePath, 'utf8'), '# Perplexity Blob Export\n');
+
+    // 1c. Perplexity redirected attachment (www.perplexity.ai -> cdn.perplexity.ai)
+    await clickInPartition('persist:maw-perplexity', '#dl-redirect');
+    const evRedirect = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'perplexity-redirect.pdf');
+    assert.equal(path.dirname(evRedirect.savePath), downloadsDir);
+    assert.equal(await readFile(evRedirect.savePath, 'utf8'), '%PDF-1.4 pplx redirect');
+
+    // 1d. Perplexity CDN inline link without download attribute (intercepted via navigation guard)
+    await clickInPartition('persist:maw-perplexity', '#dl-cdn-inline');
+    const evCdnInline = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'inline-export.md');
+    assert.equal(path.dirname(evCdnInline.savePath), downloadsDir);
+    assert.equal(await readFile(evCdnInline.savePath, 'utf8'), '# CDN Inline Export');
+
+    // 1e. Duplicate filenames (report.pdf and report (1).pdf)
+    await clickInPartition('persist:maw-perplexity', '#dl-dup-1');
+    const evDup1 = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'report.pdf');
+    assert.equal(path.dirname(evDup1.savePath), downloadsDir);
+    assert.equal(await readFile(evDup1.savePath, 'utf8'), 'first-report-bytes');
+
+    await clickInPartition('persist:maw-perplexity', '#dl-dup-2');
+    const evDup2 = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'report (1).pdf');
+    assert.equal(path.dirname(evDup2.savePath), downloadsDir);
+    assert.equal(await readFile(evDup2.savePath, 'utf8'), 'second-report-bytes');
+    assert.equal(await readFile(evDup1.savePath, 'utf8'), 'first-report-bytes', 'First report.pdf must not be overwritten');
+
+    // 1f. Popup downloads (target=_blank delivery + window.open popup)
+    await clickInPartition('persist:maw-perplexity', '#dl-popup-direct');
+    const evPopupDirect = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'popup-direct.pdf');
+    assert.equal(path.dirname(evPopupDirect.savePath), downloadsDir);
+    assert.equal(await readFile(evPopupDirect.savePath, 'utf8'), '%PDF-1.4 pplx popup direct');
+
+    await clickInPartition('persist:maw-perplexity', '#dl-popup-window');
+    const evPopupWindow = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'popup-window.pdf');
+    assert.equal(path.dirname(evPopupWindow.savePath), downloadsDir);
+    assert.equal(await readFile(evPopupWindow.savePath, 'utf8'), '%PDF-1.4 pplx popup window');
+    await eventually(async () => (await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)) === 1);
+
+    // 1g. Failed download followed by successful retry
+    await clickInPartition('persist:maw-perplexity', '#dl-fail');
+    const evFail = await waitForEvent(e => e.id === pplxId && e.type === 'download-failed' && e.filename === 'failing-export.pdf');
+    assert.equal(JSON.stringify(evFail).includes('secret-url-token'), false, 'Failure event must not leak URL query tokens');
+
+    await clickInPartition('persist:maw-perplexity', '#dl-direct');
+    const retryCompletes = (await getEvents()).filter(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'perplexity-direct (1).md');
+    let evRetry = retryCompletes[0];
+    if (!evRetry) {
+      evRetry = await waitForEvent(e => e.id === pplxId && e.type === 'download-complete' && e.filename === 'perplexity-direct (1).md');
+    }
+    assert.equal(await readFile(evRetry.savePath, 'utf8'), '# Perplexity Direct Export\n');
+
+    // 1h. Rejected downloads leave existing files untouched and create no unauthorized files
+    const sentinelPath = path.join(downloadsDir, 'blocked.pdf');
+    await writeFile(sentinelPath, 'keep-intact');
+    await desktop.evaluate(({ webContents, session }) => {
+      const c = webContents.getAllWebContents().find(w => w.session === session.fromPartition('persist:maw-perplexity'));
+      c.downloadURL('blob:https://evil.example.com/11111111-1111-1111-1111-111111111111');
+      c.downloadURL('https://untrusted.example.com/blocked.pdf');
+    });
+    await waitForEvent(e => e.id === pplxId && e.type === 'download-failed' && e.reason === 'blocked' && e.filename === 'blocked.pdf');
+    await clickInPartition('persist:maw-perplexity', '#dl-bad-blob');
+    await clickInPartition('persist:maw-perplexity', '#dl-unsafe-redirect');
+    await clickInPartition('persist:maw-perplexity', '#dl-untrusted');
+    await new Promise(r => setTimeout(r, 400));
+    assert.equal(await readFile(sentinelPath, 'utf8'), 'keep-intact');
+    const filesInDownloads = await readdir(downloadsDir);
+    assert.equal(filesInDownloads.some(f => f.startsWith('blocked (')), false);
+
+    // --- 2. GitHub scenarios ---
+    await page.evaluate(({ id }) => window.__openTab(id, 'github', 'https://github.com/owner/repo'), { id: ghId });
+    await eventually(() => desktop.evaluate(({ webContents, session }) => {
+      const c = webContents.getAllWebContents().find(w => w.session === session.fromPartition('persist:maw-github'));
+      return c?.getURL() === 'https://github.com/owner/repo' && !c.isLoading();
+    }));
+
+    await clickInPartition('persist:maw-github', '#gh-release');
+    const evGhRelease = await waitForEvent(e => e.id === ghId && e.type === 'download-complete' && e.filename === 'tool.tar.gz');
+    assert.equal(path.dirname(evGhRelease.savePath), downloadsDir);
+    assert.equal(await readFile(evGhRelease.savePath, 'utf8'), 'github-release-bytes');
+
+    await clickInPartition('persist:maw-github', '#gh-blob');
+    const evGhBlob = await waitForEvent(e => e.id === ghId && e.type === 'download-complete' && e.filename === 'github-blob.txt');
+    assert.equal(path.dirname(evGhBlob.savePath), downloadsDir);
+    assert.equal(await readFile(evGhBlob.savePath, 'utf8'), 'github-blob-bytes');
+
+    // --- 3. General Web Page ('other') scenarios ---
+    await page.evaluate(({ id }) => window.__openTab(id, 'other', 'https://docs.example.org/guide'), { id: otherId });
+    await eventually(() => desktop.evaluate(({ webContents, session }) => {
+      const c = webContents.getAllWebContents().find(w => w.session === session.fromPartition('persist:maw-browser'));
+      return c?.getURL() === 'https://docs.example.org/guide' && !c.isLoading();
+    }));
+
+    await clickInPartition('persist:maw-browser', '#other-direct');
+    const evOtherDirect = await waitForEvent(e => e.id === otherId && e.type === 'download-complete' && e.filename === 'guide.pdf');
+    assert.equal(path.dirname(evOtherDirect.savePath), downloadsDir);
+    assert.equal(await readFile(evOtherDirect.savePath, 'utf8'), '%PDF-1.4 general web guide');
+
+    await clickInPartition('persist:maw-browser', '#other-blob');
+    const evOtherBlob = await waitForEvent(e => e.id === otherId && e.type === 'download-complete' && e.filename === 'other-blob.txt');
+    assert.equal(path.dirname(evOtherBlob.savePath), downloadsDir);
+    assert.equal(await readFile(evOtherBlob.savePath, 'utf8'), 'other-blob-bytes');
   } finally {
     if (desktop) await desktop.close();
     server.close();

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { embeddedUrl, externalUrl, otherUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl, githubUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, isSameSite, targetWebProvider, authenticationUrl, decideWindowOpen, getBrowserZoomAction, validateFaviconUrl, selectBestFavicon } from '../../../policy.mjs';
+import { embeddedUrl, externalUrl, otherUrl, serviceUrl, trustedSender, validCommand, nativeBounds, isDownloadOrFileDeliveryUrl, githubUrl, githubEmbeddedUrl, perplexityUrl, perplexityEmbeddedUrl, isSameSite, targetWebProvider, authenticationUrl, decideWindowOpen, getBrowserZoomAction, validateFaviconUrl, selectBestFavicon, downloadOriginAllowed, downloadDestinationAllowed, isAllowedBlobDownloadUrl, isProviderFileDeliveryUrl } from '../../../policy.mjs';
 const id = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
 test('getBrowserZoomAction: recognizes zoom shortcuts and rejects unrelated keys', () => {
   // Zoom in
@@ -170,6 +170,40 @@ test('FEATURE 10: file delivery and download URL policy', () => {
   assert.equal(isDownloadOrFileDeliveryUrl('https://evil.com/fake.pdf'), false);
   assert.equal(isDownloadOrFileDeliveryUrl('blob:https://evil.com/fake'), false);
   assert.equal(isDownloadOrFileDeliveryUrl('http://files.oaiusercontent.com/file'), false);
+
+  // Provider-scoped download origins, file delivery hosts, and Blob validation
+  assert.equal(downloadOriginAllowed('perplexity', 'https://www.perplexity.ai'), true);
+  assert.equal(downloadOriginAllowed('perplexity', 'https://perplexity.ai'), true);
+  assert.equal(downloadOriginAllowed('perplexity', 'https://chatgpt.com'), false);
+  assert.equal(downloadOriginAllowed('github', 'https://github.com'), true);
+  assert.equal(downloadOriginAllowed('github', 'https://objects.githubusercontent.com'), true);
+  assert.equal(downloadOriginAllowed('other', 'https://docs.python.org'), true);
+  assert.equal(downloadOriginAllowed('other', 'http://127.0.0.1:8080'), false);
+
+  assert.equal(isProviderFileDeliveryUrl('perplexity', 'https://cdn.perplexity.ai/export.md'), true);
+  assert.equal(isProviderFileDeliveryUrl('perplexity', 'https://pplx-res.cloudinary.com/image.png'), true);
+  assert.equal(isProviderFileDeliveryUrl('perplexity', 'blob:https://www.perplexity.ai/uuid-1'), true);
+  assert.equal(isProviderFileDeliveryUrl('perplexity', 'https://files.oaiusercontent.com/file-1'), false);
+  assert.equal(isProviderFileDeliveryUrl('github', 'https://objects.githubusercontent.com/archive.zip'), true);
+  assert.equal(isProviderFileDeliveryUrl('github', 'blob:https://github.com/uuid-1'), true);
+
+  assert.equal(isAllowedBlobDownloadUrl('perplexity', 'blob:https://www.perplexity.ai/uuid-1', 'https://www.perplexity.ai'), true);
+  assert.equal(isAllowedBlobDownloadUrl('perplexity', 'blob:https://perplexity.ai/uuid-1', 'https://www.perplexity.ai'), true);
+  assert.equal(isAllowedBlobDownloadUrl('perplexity', 'blob:https://evil.com/uuid-1', 'https://www.perplexity.ai'), false);
+  assert.equal(isAllowedBlobDownloadUrl('perplexity', 'blob:https://chatgpt.com/uuid-1', 'https://www.perplexity.ai'), false);
+  assert.equal(isAllowedBlobDownloadUrl('perplexity', 'blob:null/uuid-1', 'https://www.perplexity.ai'), false);
+  assert.equal(isAllowedBlobDownloadUrl('other', 'blob:https://example.com/uuid-1', 'https://example.com'), true);
+  assert.equal(isAllowedBlobDownloadUrl('other', 'blob:https://other.com/uuid-1', 'https://example.com'), false);
+
+  assert.equal(downloadDestinationAllowed('perplexity', 'https://www.perplexity.ai/export.md'), true);
+  assert.equal(downloadDestinationAllowed('perplexity', 'https://cdn.perplexity.ai/export.md'), true);
+  assert.equal(downloadDestinationAllowed('perplexity', 'blob:https://www.perplexity.ai/uuid-1'), true);
+  assert.equal(downloadDestinationAllowed('perplexity', 'https://accounts.google.com/o/oauth2/auth'), false);
+  assert.equal(downloadDestinationAllowed('perplexity', 'https://untrusted.example.com/evil.pdf'), false);
+  assert.equal(downloadDestinationAllowed('github', 'https://objects.githubusercontent.com/a.tar.gz'), true);
+  assert.equal(downloadDestinationAllowed('github', 'https://untrusted.example.com/a.tar.gz'), false);
+  assert.equal(downloadDestinationAllowed('other', 'https://example.org/file.pdf'), true);
+  assert.equal(downloadDestinationAllowed('other', 'http://127.0.0.1:3000/file.pdf'), false);
 });
 
 test('FEATURE 11: Perplexity URL and embedded auth navigation policy', () => {
