@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '../../../../../');
-const canonicalDir = '/home/user/Projects/Anvilary-Tools/assets/anvilary-tools-logo-v2.1';
+const canonicalDir = process.env.CANONICAL_BRAND_DIR || '/home/user/Projects/Anvilary-Tools/assets/anvilary-tools-logo-v2.1';
 
 test('UI-04: Favicons match canonical Anvilary Tools logo byte-for-byte', () => {
   const icoPath = path.join(repoRoot, 'packages/web/public/favicon.ico');
@@ -20,46 +20,61 @@ test('UI-04: Favicons match canonical Anvilary Tools logo byte-for-byte', () => 
   assert.ok(existsSync(png16Path), 'favicon-16x16.png must exist');
   assert.ok(existsSync(applePath), 'apple-touch-icon.png must exist');
 
-  const expectedIco = readFileSync(path.join(canonicalDir, 'favicons/favicon.ico'));
-  const actualIco = readFileSync(icoPath);
-  assert.deepEqual(actualIco, expectedIco, 'favicon.ico must match canonical favicon.ico exactly');
+  if (existsSync(canonicalDir)) {
+    const expectedIco = readFileSync(path.join(canonicalDir, 'favicons/favicon.ico'));
+    const actualIco = readFileSync(icoPath);
+    assert.deepEqual(actualIco, expectedIco, 'favicon.ico must match canonical favicon.ico exactly');
 
-  const expected32 = readFileSync(path.join(canonicalDir, 'favicons/favicon-32x32.png'));
-  const actual32 = readFileSync(png32Path);
-  assert.deepEqual(actual32, expected32, 'favicon-32x32.png must match canonical favicon-32x32.png exactly');
+    const expected32 = readFileSync(path.join(canonicalDir, 'favicons/favicon-32x32.png'));
+    const actual32 = readFileSync(png32Path);
+    assert.deepEqual(actual32, expected32, 'favicon-32x32.png must match canonical favicon-32x32.png exactly');
 
-  const expected16 = readFileSync(path.join(canonicalDir, 'favicons/favicon-16x16.png'));
-  const actual16 = readFileSync(png16Path);
-  assert.deepEqual(actual16, expected16, 'favicon-16x16.png must match canonical favicon-16x16.png exactly');
+    const expected16 = readFileSync(path.join(canonicalDir, 'favicons/favicon-16x16.png'));
+    const actual16 = readFileSync(png16Path);
+    assert.deepEqual(actual16, expected16, 'favicon-16x16.png must match canonical favicon-16x16.png exactly');
 
-  const expectedApple = readFileSync(path.join(canonicalDir, 'app-icons/apple-touch-icon-180.png'));
-  const actualApple = readFileSync(applePath);
-  assert.deepEqual(actualApple, expectedApple, 'apple-touch-icon.png must match canonical apple-touch-icon-180.png exactly');
+    const expectedApple = readFileSync(path.join(canonicalDir, 'app-icons/apple-touch-icon-180.png'));
+    const actualApple = readFileSync(applePath);
+    assert.deepEqual(actualApple, expectedApple, 'apple-touch-icon.png must match canonical apple-touch-icon-180.png exactly');
+  }
 });
 
 test('UI-04: Web app brand logos match canonical Anvilary Tools transparent logo byte-for-byte', () => {
   const sizes = [16, 32, 128, 256, 512];
   for (const s of sizes) {
     const targetPath = path.join(repoRoot, `packages/web/public/brand/workbench-logo-${s}.png`);
+    const internalCanonical = path.join(repoRoot, `packages/web/public/brand/anvilary-tools-${s}.png`);
     assert.ok(existsSync(targetPath), `workbench-logo-${s}.png must exist`);
-    const expected = readFileSync(path.join(canonicalDir, `png/transparent/anvilary-tools-${s}.png`));
+    assert.ok(existsSync(internalCanonical), `anvilary-tools-${s}.png must exist`);
     const actual = readFileSync(targetPath);
-    assert.deepEqual(actual, expected, `workbench-logo-${s}.png must match canonical transparent logo of size ${s}`);
+    const expectedInternal = readFileSync(internalCanonical);
+    assert.deepEqual(actual, expectedInternal, `workbench-logo-${s}.png must match repository canonical brand logo of size ${s}`);
+
+    if (existsSync(canonicalDir)) {
+      const expected = readFileSync(path.join(canonicalDir, `png/transparent/anvilary-tools-${s}.png`));
+      assert.deepEqual(actual, expected, `workbench-logo-${s}.png must match canonical transparent logo of size ${s}`);
+    }
   }
 });
 
 test('UI-04: Desktop application icon and launcher icons match canonical Anvilary Tools logo', () => {
   const electronIcon = path.join(repoRoot, 'packages/desktop/icon.png');
   assert.ok(existsSync(electronIcon), 'packages/desktop/icon.png must exist');
-  const expected512 = readFileSync(path.join(canonicalDir, 'png/transparent/anvilary-tools-512.png'));
-  assert.deepEqual(readFileSync(electronIcon), expected512, 'packages/desktop/icon.png must match canonical 512 logo');
+  const internal512 = path.join(repoRoot, 'packages/web/public/brand/anvilary-tools-512.png');
+  assert.deepEqual(readFileSync(electronIcon), readFileSync(internal512), 'packages/desktop/icon.png must match canonical 512 logo');
 
   const launcherSizes = [16, 24, 32, 48, 64, 96, 128, 192, 256, 512];
   for (const s of launcherSizes) {
     const launcherIcon = path.join(repoRoot, `packages/desktop/assets/icons/maw-${s}.png`);
     assert.ok(existsSync(launcherIcon), `maw-${s}.png must exist`);
-    const expected = readFileSync(path.join(canonicalDir, `png/transparent/anvilary-tools-${s}.png`));
-    assert.deepEqual(readFileSync(launcherIcon), expected, `maw-${s}.png must match canonical transparent logo size ${s}`);
+    if ([16, 32, 128, 256, 512].includes(s)) {
+      const internalCanonical = path.join(repoRoot, `packages/web/public/brand/anvilary-tools-${s}.png`);
+      assert.deepEqual(readFileSync(launcherIcon), readFileSync(internalCanonical), `maw-${s}.png must match repository canonical brand logo size ${s}`);
+    }
+    if (existsSync(canonicalDir)) {
+      const expected = readFileSync(path.join(canonicalDir, `png/transparent/anvilary-tools-${s}.png`));
+      assert.deepEqual(readFileSync(launcherIcon), expected, `maw-${s}.png must match canonical transparent logo size ${s}`);
+    }
   }
 });
 

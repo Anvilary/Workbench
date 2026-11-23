@@ -11,9 +11,21 @@ import { WEB_ROOT } from '../../helpers/paths.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = WEB_ROOT;
 const evidenceDir = path.join(webRoot, 'tests/evidence/brand');
-const artifactEvidenceDir = '/home/user/.local/share/agy-5-profile/home/.gemini/antigravity-cli/brain/63d72703-9f11-400b-a643-fe0cc65e6ecd/visual-evidence';
+const artifactEvidenceDir = process.env.ARTIFACT_EVIDENCE_DIR || '';
 mkdirSync(evidenceDir, { recursive: true });
-mkdirSync(artifactEvidenceDir, { recursive: true });
+if (artifactEvidenceDir) {
+  try {
+    mkdirSync(artifactEvidenceDir, { recursive: true });
+  } catch {}
+}
+
+function saveEvidence(srcPath, filename) {
+  if (artifactEvidenceDir && existsSync(artifactEvidenceDir)) {
+    try {
+      copyFileSync(srcPath, path.join(artifactEvidenceDir, filename));
+    } catch {}
+  }
+}
 
 function browserExecutable() {
   if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE) return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
@@ -203,7 +215,7 @@ test('Brand Identity Acceptance: canonical logo rendering across sidebar, topbar
   assert.ok(navLogoNaturalWidth > 0, 'Expanded sidebar logo must load successfully with positive naturalWidth');
   const sidebarPath = path.join(evidenceDir, 'brand-expanded-sidebar.png');
   await page.locator('.agency-nav-brand').screenshot({ path: sidebarPath });
-  copyFileSync(sidebarPath, path.join(artifactEvidenceDir, 'brand-expanded-sidebar.png'));
+  saveEvidence(sidebarPath, 'brand-expanded-sidebar.png');
 
   // 2. Welcome screen logo
   const welcomeLogo = page.locator('.agency-welcome-logo');
@@ -212,7 +224,7 @@ test('Brand Identity Acceptance: canonical logo rendering across sidebar, topbar
   assert.ok(welcomeNaturalWidth > 0, 'Welcome screen logo must load successfully with positive naturalWidth');
   const welcomePath = path.join(evidenceDir, 'brand-welcome-screen.png');
   await page.locator('.agency-welcome').screenshot({ path: welcomePath });
-  copyFileSync(welcomePath, path.join(artifactEvidenceDir, 'brand-welcome-screen.png'));
+  saveEvidence(welcomePath, 'brand-welcome-screen.png');
 
   // 3. Collapsed sidebar brand logo (topbar)
   await page.click('button.agency-brand-toggle');
@@ -222,7 +234,7 @@ test('Brand Identity Acceptance: canonical logo rendering across sidebar, topbar
   assert.ok(topbarNaturalWidth > 0, 'Collapsed sidebar topbar logo must load successfully with positive naturalWidth');
   const topbarPath = path.join(evidenceDir, 'brand-collapsed-sidebar.png');
   await page.locator('.agency-topbar-collapsed-brand').screenshot({ path: topbarPath });
-  copyFileSync(topbarPath, path.join(artifactEvidenceDir, 'brand-collapsed-sidebar.png'));
+  saveEvidence(topbarPath, 'brand-collapsed-sidebar.png');
 
   // 4. Open Settings and verify About section logo
   await page.click('#maw-shell-menu-trigger');
@@ -238,7 +250,7 @@ test('Brand Identity Acceptance: canonical logo rendering across sidebar, topbar
   assert.ok(aboutNaturalWidth > 0, 'About settings section logo must load successfully with positive naturalWidth');
   const aboutPath = path.join(evidenceDir, 'brand-about-section.png');
   await page.locator('.maw-settings-about-hero').screenshot({ path: aboutPath });
-  copyFileSync(aboutPath, path.join(artifactEvidenceDir, 'brand-about-section.png'));
+  saveEvidence(aboutPath, 'brand-about-section.png');
 
   // 5. Verify direct favicon fetch
   const faviconRes = await page.request.get(`http://127.0.0.1:${port}/favicon.ico`);
