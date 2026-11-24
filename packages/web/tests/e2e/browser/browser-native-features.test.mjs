@@ -429,3 +429,270 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
     await new Promise(r => server.close(r));
   }
 });
+
+const integrationFixture = `
+import React, { useEffect, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { BrowserContextMenu } from './src/features/browser/BrowserContextMenu.tsx';
+import { useBrowserSettings, resetBrowserSettingsStoreForTests } from './src/features/browser/useBrowserSettings.ts';
+import { SettingsDialog } from './src/features/settings/SettingsDialog.tsx';
+import './src/app/workbench.css';
+
+resetBrowserSettingsStoreForTests();
+
+const tabId = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
+const listeners = new Set();
+window.__commands = [];
+window.__serverUpdates = [];
+window.__failNextAdd = false;
+window.__preexistingStatus = {
+  enabled: true,
+  languages: ['en-US', 'fr'],
+  statuses: {
+    'en-US': { status: 'ready', failedPartitions: [] },
+    'fr': { status: 'failed', failedPartitions: ['persist:maw-chatgpt'] },
+  },
+};
+
+window.mawChatGpt = {
+  command: async (cmd) => {
+    window.__commands.push(cmd);
+    if (cmd.type === 'get-available-spellcheck-languages') {
+      return { ok: true, languages: ['en-US', 'fr', 'pt-PT'] };
+    }
+    if (cmd.type === 'get-spellcheck-status') {
+      return { ok: true, ...window.__preexistingStatus };
+    }
+    if (cmd.type === 'add-custom-dictionary-word') {
+      if (window.__failNextAdd) {
+        window.__failNextAdd = false;
+        return { ok: false, error: 'Simulated native dictionary failure' };
+      }
+      return { ok: true };
+    }
+    if (cmd.type === 'remove-custom-dictionary-word') {
+      return { ok: true };
+    }
+    return { ok: true };
+  },
+  subscribe: (cb) => {
+    listeners.add(cb);
+    return () => listeners.delete(cb);
+  },
+};
+
+window.__emitState = (s) => {
+  for (const l of listeners) l(s);
+};
+
+function IntegrationApp() {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [remoteClient, setRemoteClient] = useState(false);
+  const [browserState, setBrowserState] = useState({
+    defaultSearchEngine: 'duckduckgo',
+    favorites: [{ id: 'chatgpt', title: 'ChatGPT', url: 'https://chatgpt.com/' }],
+    searchEngines: [{ id: 'duckduckgo', name: 'DuckDuckGo', homeUrl: 'https://duckduckgo.com/', searchUrl: 'https://duckduckgo.com/?q=%s', isBuiltin: true }],
+    spellCheck: {
+      enabled: true,
+      languages: ['en-US', 'fr'],
+      configuredLanguages: ['en-US', 'fr'],
+      customWordsByProfile: { main: ['initialword'] },
+    },
+  });
+
+  const appSettings = {
+    status: {
+      consoleShell: 'auto',
+      consoleShells: [{ id: 'bash', label: 'Bash (/bin/bash)' }],
+      shellName: 'bash',
+      disabledAgents: [],
+      disabledAtStart: [],
+      browser: browserState,
+    },
+    problem: null,
+    setConsoleShell: () => {},
+    setDisabledAgents: () => {},
+    setBrowserSettings: (next) => {
+      window.__serverUpdates.push(next);
+    },
+    dismissProblem: () => {},
+  };
+
+  // Expose helper to simulate delayed/older server echo vs authoritative server push
+  window.__pushServerStatus = (nextBrowser) => {
+    setBrowserState(nextBrowser);
+  };
+
+  // Multiple mounted consumers sharing authoritative appSettings (never duplicates IPC)
+  useBrowserSettings(appSettings);
+  useBrowserSettings(appSettings);
+
+  return (
+    <div style={{ width: '100vw', height: '100vh', background: '#111', color: '#fff' }}>
+      <button id="open-settings-btn" onClick={() => setSettingsOpen(true)}>Open Settings</button>
+      <button id="toggle-remote-btn" style={{ position: 'fixed', top: 8, right: 8, zIndex: 99999 }} onClick={() => setRemoteClient((v) => !v)}>Toggle Remote</button>
+      <div className="maw-browser-pane" style={{ width: 800, height: 600 }}>
+        <div className="maw-browser-viewer" data-native-id={tabId}>Viewer</div>
+      </div>
+      <BrowserContextMenu appSettings={appSettings} />
+      {settingsOpen && (
+        <SettingsDialog
+          onClose={() => setSettingsOpen(false)}
+          terminalTheme={{ preference: 'dark', current: 'dark', setPreference: () => {} }}
+          appSettings={appSettings}
+          agents={[]}
+          remoteClient={remoteClient}
+          initialTab="browser"
+          browserProfiles={[
+            { id: 'main', name: 'Main', createdAt: '', updatedAt: '', isDefault: true },
+            { id: 'work-profile', name: 'Work Profile', createdAt: '', updatedAt: '' },
+          ]}
+        />
+      )}
+    </div>
+  );
+}
+
+createRoot(document.getElementById('root')).render(<IntegrationApp />);
+`;
+
+test('R1/R2/R4/R5: context-menu dictionary persistence without Settings, failure handling, empty configured languages, and pre-existing status', async () => {
+  const executable = browserExecutable();
+  if (!executable) {
+    console.log('Skipping Playwright browser test (no executable available)');
+    return;
+  }
+
+  const bundle = await build({
+    stdin: { contents: integrationFixture, resolveDir: WEB_ROOT, sourcefile: 'integration-app.tsx', loader: 'tsx' },
+    bundle: true,
+    write: false,
+    format: 'esm',
+    jsx: 'automatic',
+    loader: { '.css': 'empty' },
+    define: { 'process.env.NODE_ENV': '"test"' },
+  });
+  const js = bundle.outputFiles[0]?.text || '';
+  const css = existsSync(WEB_ROOT + '/src/app/workbench.css')
+    ? (await import('node:fs')).readFileSync(WEB_ROOT + '/src/app/workbench.css', 'utf8')
+    : '';
+
+  const server = createServer((req, res) => {
+    if (req.url === '/test.css') {
+      res.writeHead(200, { 'Content-Type': 'text/css' });
+      res.end(css);
+    } else if (req.url === '/test.js') {
+      res.writeHead(200, { 'Content-Type': 'application/javascript' });
+      res.end(js);
+    } else {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/test.css"></head><body><div id="root"></div><script type="module" src="/test.js"></script></body></html>');
+    }
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const port = server.address().port;
+  const browser = await chromium.launch({ executablePath: executable, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${port}/`);
+    await page.waitForSelector('.maw-browser-pane');
+
+    // Deduplicated IPC across multiple mounted hooks
+    const updateCmds = await page.evaluate(() => window.__commands.filter((c) => c.type === 'update-spellcheck-settings').length);
+    assert.equal(updateCmds, 1, 'Multiple mounted useBrowserSettings hooks must deduplicate native IPC');
+
+    // 1. Add word via BrowserContextMenu BEFORE SettingsDialog has ever been opened!
+    await page.evaluate(() => {
+      window.__emitState({
+        type: 'browser-context',
+        id: '8e4fefc1-e565-40cc-b85b-f7d43a16b1df',
+        profileId: 'work-profile',
+        x: 100,
+        y: 100,
+        linkURL: '',
+        selection: false,
+        canGoBack: false,
+        canGoForward: false,
+        isEditable: true,
+        misspelledWord: 'ctxnewword',
+        dictionarySuggestions: [],
+      });
+    });
+    await page.waitForSelector('.maw-context-menu');
+    await page.locator('.maw-context-menu-action-item', { hasText: 'Add to Dictionary' }).click();
+    await page.waitForSelector('.maw-context-menu', { state: 'detached' });
+
+    await page.waitForFunction(() => window.__serverUpdates.length >= 1);
+    const afterCtxSave = await page.evaluate(() => window.__serverUpdates.at(-1));
+    assert.deepEqual(afterCtxSave.spellCheck.customWordsByProfile['work-profile'], ['ctxnewword']);
+
+    // Older server status echo must NOT overwrite newer acknowledged dictionary addition
+    await page.evaluate(() => {
+      window.__pushServerStatus({
+        defaultSearchEngine: 'duckduckgo',
+        favorites: [{ id: 'chatgpt', title: 'ChatGPT', url: 'https://chatgpt.com/' }],
+        searchEngines: [{ id: 'duckduckgo', name: 'DuckDuckGo', homeUrl: 'https://duckduckgo.com/', searchUrl: 'https://duckduckgo.com/?q=%s', isBuiltin: true }],
+        spellCheck: {
+          enabled: true,
+          languages: ['en-US', 'fr'],
+          configuredLanguages: ['en-US', 'fr'],
+          customWordsByProfile: { main: ['initialword'] },
+        },
+      });
+    });
+
+    // 2. Native IPC failure prevents settings mutation (no false success)
+    await page.evaluate(() => {
+      window.__failNextAdd = true;
+      window.__emitState({
+        type: 'browser-context',
+        id: '8e4fefc1-e565-40cc-b85b-f7d43a16b1df',
+        profileId: 'main',
+        x: 100,
+        y: 100,
+        linkURL: '',
+        selection: false,
+        canGoBack: false,
+        canGoForward: false,
+        isEditable: true,
+        misspelledWord: 'shouldnotpersist',
+        dictionarySuggestions: [],
+      });
+    });
+    await page.waitForSelector('.maw-context-menu');
+    const prevUpdateCount = await page.evaluate(() => window.__serverUpdates.length);
+    await page.locator('.maw-context-menu-action-item', { hasText: 'Add to Dictionary' }).click();
+    await page.waitForTimeout(100);
+    assert.equal(await page.evaluate(() => window.__serverUpdates.length), prevUpdateCount, 'Failed native add must not commit to settings');
+
+    // 3. Open SettingsDialog later -> pre-existing dictionary failure and ctxnewword must both be visible!
+    await page.click('#open-settings-btn');
+    await page.waitForSelector('#setting-card-spellcheck');
+    const spellCard = page.locator('#setting-card-spellcheck');
+    const warningText = await spellCard.locator('.maw-settings-warning-text').textContent();
+    assert.ok(warningText?.includes('French'), `Expected pre-existing French failure warning, got: ${warningText}`);
+
+    await spellCard.locator('select.maw-settings-select').selectOption('work-profile');
+    const dictWords = await spellCard.locator('.maw-settings-dict-word').allTextContents();
+    assert.deepEqual(dictWords, ['ctxnewword']);
+
+    // 4. Remove all configured languages -> preserves empty state without restoring en-US
+    const removeButtons = spellCard.locator('.maw-settings-lang-item button[aria-label^="Remove"]');
+    while ((await removeButtons.count()) > 0) {
+      await removeButtons.first().click();
+    }
+    await spellCard.locator('.maw-settings-empty-hint', { hasText: 'No spell check languages configured.' }).waitFor();
+    const emptySave = await page.evaluate(() => window.__serverUpdates.at(-1));
+    assert.deepEqual(emptySave.spellCheck.configuredLanguages, []);
+    assert.deepEqual(emptySave.spellCheck.languages, []);
+
+    // 5. Remote client without local desktop editing shows explicit read-only state
+    await page.click('#toggle-remote-btn');
+    await spellCard.locator('div[role="status"]', { hasText: 'desktop app' }).waitFor();
+    assert.equal(await spellCard.locator('.maw-settings-dict-add-form input').isDisabled(), true);
+  } finally {
+    await browser.close();
+    await new Promise((r) => server.close(r));
+  }
+});

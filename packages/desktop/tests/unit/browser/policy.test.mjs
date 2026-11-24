@@ -456,10 +456,18 @@ test('validCommand: supports spellcheck commands', () => {
   assert.equal(validCommand({ type: 'get-available-spellcheck-languages' }), true);
   assert.equal(validCommand({ type: 'get-available-spellcheck-languages', extra: true }), false);
 
+  assert.equal(validCommand({ type: 'get-spellcheck-status' }), true);
+  assert.equal(validCommand({ type: 'get-spellcheck-status', extra: true }), false);
+
   assert.equal(validCommand({ type: 'update-spellcheck-settings', enabled: true, languages: ['en-US', 'pt-PT'] }), true);
   assert.equal(validCommand({ type: 'update-spellcheck-settings', enabled: false, languages: [] }), true);
   assert.equal(validCommand({ type: 'update-spellcheck-settings', enabled: 'yes', languages: [] }), false);
   assert.equal(validCommand({ type: 'update-spellcheck-settings', enabled: true, languages: ['invalid/tag'] }), false);
+
+  assert.equal(validCommand({ type: 'reconcile-custom-dictionary', customWordsByProfile: { main: ['anvilary', 'ação'], work: ['k8s'] } }), true);
+  assert.equal(validCommand({ type: 'reconcile-custom-dictionary', customWordsByProfile: { '../bad': ['word'] } }), false);
+  assert.equal(validCommand({ type: 'reconcile-custom-dictionary', customWordsByProfile: { main: ['bad\nword'] } }), false);
+  assert.equal(validCommand({ type: 'reconcile-custom-dictionary', customWordsByProfile: {} }), true);
 
   assert.equal(validCommand({ type: 'list-custom-dictionary-words' }), true);
   assert.equal(validCommand({ type: 'list-custom-dictionary-words', profileId: 'work-1' }), true);

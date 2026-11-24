@@ -24,7 +24,16 @@ async function eventually(check, message = 'condition', timeoutMs = 15000) {
   assert.fail('Timed out waiting for ' + message);
 }
 
-test('verify rich interactive web content capabilities in native WebContentsView', { timeout: 60000 }, async (t) => {
+/**
+ * Verifies Chromium Web API availability and synthetic local fixture rendering
+ * (Canvas 2D, SVG, WebGL 1, WebGL 2, WebAssembly, Web Workers, IndexedDB,
+ * LocalStorage) inside an isolated native WebContentsView.
+ *
+ * Scope boundary: this validates runtime capability availability in the native
+ * browser container; it does not claim or verify interactive parity for live
+ * authenticated ChatGPT responses.
+ */
+test('verify Chromium web API availability and synthetic fixture rendering in native WebContentsView', { timeout: 60000 }, async (t) => {
   const tabId = '33333333-3333-4333-8333-333333333333';
 
   const richHtml = `<!doctype html>

@@ -16,6 +16,7 @@ import { useLocale } from '../i18n/useLocale.js';
 import './workbench.css';
 import { useDropdownDismissal } from '../shared/hooks/useDropdownDismissal.js';
 import { useNativeBrowserTabs } from '../features/browser/useNativeBrowserTabs.js';
+import { useBrowserSettings } from '../features/browser/useBrowserSettings.js';
 import { SettingsDialog, type SettingsTabId } from '../features/settings/SettingsDialog.js';
 import { ArchivedItemsDialog } from '../features/workspaces/ArchivedItemsDialog.js';
 import { useAppSettings } from '../features/settings/useAppSettings.js';
@@ -249,6 +250,7 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
     }
   }, []);
   const appSettings = useAppSettings(connection);
+  const browserSettings = useBrowserSettings(appSettings);
   const terminalTheme = useTerminalTheme('dark');
   const [agents, setAgents] = useState<AgentInfo[]>([]);
 
@@ -1015,6 +1017,7 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
                 console.warn('[maw-browser-profile] delete-profile cleanup failed:', err);
               });
             }
+            browserSettings.clearProfileCustomDictionary(profileId);
           }}
           onClearBrowserProfileSiteAuth={window.mawChatGpt && (async (profileId, sites) => {
             for (const site of sites) {

@@ -478,6 +478,7 @@ export function SettingsDialog({
                 {activeTab === 'browser' && (
                   <BrowserSettingsSection
                     browserSettings={browserSettings}
+                    remoteClient={remoteClient}
                     highlightedCardId={highlightedCardId}
                     expandSignal={expandSignal}
                     browserProfiles={browserProfiles}

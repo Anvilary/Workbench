@@ -615,14 +615,25 @@ export function parseBrowserSettings(value: unknown): BrowserSettings | null {
     if (rawRecord) {
       const enabled = rawRecord['enabled'] !== false;
       const parsedLanguages = sanitizeSpellCheckLanguages(rawRecord['languages']);
-      const languages = parsedLanguages !== null ? parsedLanguages : ['en-US'];
       const parsedConfigured = sanitizeSpellCheckLanguages(rawRecord['configuredLanguages']);
-      const configuredLanguages =
-        parsedConfigured !== null && parsedConfigured.length > 0
-          ? parsedConfigured
-          : languages.length > 0
-            ? [...languages]
-            : ['en-US'];
+
+      let configuredLanguages: string[];
+      let languages: string[];
+      if (parsedConfigured !== null) {
+        // Explicit configuredLanguages array (including []) is preserved verbatim.
+        configuredLanguages = parsedConfigured;
+        const allowed = new Set(configuredLanguages);
+        languages = parsedLanguages !== null
+          ? parsedLanguages.filter((l) => allowed.has(l))
+          : [...configuredLanguages];
+      } else if (parsedLanguages !== null) {
+        // Legacy shape with explicit languages array (including []) and no configuredLanguages.
+        languages = parsedLanguages;
+        configuredLanguages = [...languages];
+      } else {
+        languages = ['en-US'];
+        configuredLanguages = ['en-US'];
+      }
 
       const rawByProfile = asRecord(rawRecord['customWordsByProfile']);
       let customWordsByProfile: Record<string, string[]>;

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { DEFAULT_BROWSER_PROFILE_ID, type BrowserProfile } from '@agent-workbench/shared';
 import { getLocale, t } from '../../i18n/index.js';
+import type { SpellCheckDictionaryStatusEntry } from '../../connection/desktop-bridge.js';
 import type { UseBrowserSettingsResult } from './useBrowserSettings.js';
 import { CollapsibleSubsection } from '../settings/CollapsibleSubsection.js';
 
@@ -31,6 +32,7 @@ export function getLanguageDisplayName(code: string, displayLocale = 'en'): stri
 export interface SpellCheckSettingsSectionProps {
   browserSettings: UseBrowserSettingsResult;
   browserProfiles?: readonly BrowserProfile[];
+  remoteClient?: boolean;
   highlighted?: boolean;
   expandSignal?: number;
 }
@@ -38,6 +40,7 @@ export interface SpellCheckSettingsSectionProps {
 export function SpellCheckSettingsSection({
   browserSettings,
   browserProfiles,
+  remoteClient = false,
   highlighted,
   expandSignal,
 }: SpellCheckSettingsSectionProps): JSX.Element {
@@ -48,17 +51,17 @@ export function SpellCheckSettingsSection({
     addSpellCheckLanguage,
     removeSpellCheckLanguage,
     getCustomDictionaryWords,
-    syncProfileCustomDictionary,
     addCustomDictionaryWord,
     removeCustomDictionaryWord,
   } = browserSettings;
 
   const isEnabled = spellCheck.enabled !== false;
-  const configuredLanguages = spellCheck.configuredLanguages && spellCheck.configuredLanguages.length > 0
+  const configuredLanguages = Array.isArray(spellCheck.configuredLanguages)
     ? spellCheck.configuredLanguages
-    : (spellCheck.languages && spellCheck.languages.length > 0 ? spellCheck.languages : ['en-US']);
-  const activeLanguages = spellCheck.languages || [];
+    : (Array.isArray(spellCheck.languages) ? spellCheck.languages : []);
+  const activeLanguages = Array.isArray(spellCheck.languages) ? spellCheck.languages : [];
   const currentLocale = getLocale();
+  const canEditCustomDictionary = typeof window !== 'undefined' && Boolean(window.mawChatGpt) && !remoteClient;
 
   const availableProfiles = useMemo<readonly BrowserProfile[]>(() => {
     if (browserProfiles && browserProfiles.length > 0) return browserProfiles;
@@ -86,7 +89,7 @@ export function SpellCheckSettingsSection({
   const [isAddingLanguage, setIsAddingLanguage] = useState(false);
   const [langSearchQuery, setLangSearchQuery] = useState('');
   const [availableLanguages, setAvailableLanguages] = useState<string[]>(FALLBACK_AVAILABLE_LANGUAGES);
-  const [failedDictionaries, setFailedDictionaries] = useState<Record<string, boolean>>({});
+  const [dictionaryStatuses, setDictionaryStatuses] = useState<Record<string, SpellCheckDictionaryStatusEntry>>({});
 
   const [newWordInput, setNewWordInput] = useState('');
   const [wordError, setWordError] = useState<string | null>(null);
@@ -114,24 +117,32 @@ export function SpellCheckSettingsSection({
   }, []);
 
   useEffect(() => {
-    void syncProfileCustomDictionary(selectedProfileId);
-  }, [selectedProfileId, syncProfileCustomDictionary]);
+    let cancelled = false;
+    const fetchStatus = async () => {
+      try {
+        const res = await window.mawChatGpt?.command({ type: 'get-spellcheck-status' }) as {
+          ok?: boolean;
+          statuses?: Record<string, SpellCheckDictionaryStatusEntry>;
+        } | undefined;
+        if (!cancelled && res?.ok && res.statuses && typeof res.statuses === 'object') {
+          setDictionaryStatuses(res.statuses);
+        }
+      } catch {
+        // Ignore bridge unavailability
+      }
+    };
+    void fetchStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEnabled, activeLanguages.join(',')]);
 
   useEffect(() => {
     return window.mawChatGpt?.subscribe((state) => {
-      if (state.type !== 'spellcheck-dictionary-status' || !state.language) return;
-      const language = state.language;
-      setFailedDictionaries((prev) => {
-        if (state.status === 'failed') {
-          return prev[language] ? prev : { ...prev, [language]: true };
-        }
-        if (state.status === 'ready' && prev[language]) {
-          const next = { ...prev };
-          delete next[language];
-          return next;
-        }
-        return prev;
-      });
+      if (state.type !== 'spellcheck-dictionary-status') return;
+      if (state.statuses && typeof state.statuses === 'object') {
+        setDictionaryStatuses(state.statuses);
+      }
     });
   }, []);
 
@@ -167,7 +178,24 @@ export function SpellCheckSettingsSection({
     }
   };
 
-  const failedActiveLanguages = activeLanguages.filter((code) => failedDictionaries[code]);
+  const handleRemoveWord = async (word: string) => {
+    const res = await removeCustomDictionaryWord(word, selectedProfileId);
+    if (res.success) {
+      setWordError(null);
+    } else {
+      setWordError(res.error || 'Failed to remove word');
+    }
+  };
+
+  const failedActiveLanguages = isEnabled
+    ? activeLanguages.filter((code) => dictionaryStatuses[code]?.status === 'failed')
+    : [];
+  const unsupportedActiveLanguages = isEnabled
+    ? activeLanguages.filter((code) => dictionaryStatuses[code]?.status === 'unsupported')
+    : [];
+  const downloadingActiveLanguages = isEnabled
+    ? activeLanguages.filter((code) => dictionaryStatuses[code]?.status === 'downloading')
+    : [];
 
   return (
     <CollapsibleSubsection
@@ -260,7 +288,6 @@ export function SpellCheckSettingsSection({
         <div className="maw-settings-lang-list" role="list">
           {configuredLanguages.map((code) => {
             const isLangActive = activeLanguages.includes(code);
-            const canRemove = configuredLanguages.length > 1;
             const displayName = getLanguageDisplayName(code, currentLocale);
 
             return (
@@ -281,7 +308,6 @@ export function SpellCheckSettingsSection({
                   className="icon-button maw-settings-fav-btn maw-settings-fav-delete"
                   title={t('settings.browser.removeLanguage', { name: displayName })}
                   aria-label={t('settings.browser.removeLanguage', { name: displayName })}
-                  disabled={!canRemove}
                   onClick={() => removeSpellCheckLanguage(code)}
                 >
                   ✕
@@ -289,10 +315,23 @@ export function SpellCheckSettingsSection({
               </div>
             );
           })}
+          {configuredLanguages.length === 0 && (
+            <div className="maw-settings-empty-hint">{t('settings.browser.noConfiguredLanguages')}</div>
+          )}
         </div>
+        {downloadingActiveLanguages.map((code) => (
+          <div key={`dl-${code}`} className="maw-settings-empty-hint" role="status">
+            {t('settings.browser.dictionaryDownloading', { name: getLanguageDisplayName(code, currentLocale) })}
+          </div>
+        ))}
         {failedActiveLanguages.map((code) => (
-          <div key={code} className="maw-settings-warning-text" role="status">
+          <div key={`fail-${code}`} className="maw-settings-warning-text" role="status">
             {t('settings.browser.dictionaryDownloadFailed', { name: getLanguageDisplayName(code, currentLocale) })}
+          </div>
+        ))}
+        {unsupportedActiveLanguages.map((code) => (
+          <div key={`unsup-${code}`} className="maw-settings-warning-text" role="status">
+            {t('settings.browser.dictionaryUnsupported', { name: getLanguageDisplayName(code, currentLocale) })}
           </div>
         ))}
       </div>
@@ -324,6 +363,12 @@ export function SpellCheckSettingsSection({
           </label>
         </div>
 
+        {!canEditCustomDictionary && (
+          <div className="maw-settings-empty-hint" role="status">
+            {t('settings.browser.customDictionaryDesktopOnly')}
+          </div>
+        )}
+
         {/* Add Word Form */}
         <form onSubmit={handleAddWordSubmit} className="maw-settings-dict-add-form">
           <input
@@ -331,12 +376,17 @@ export function SpellCheckSettingsSection({
             className="maw-settings-input"
             placeholder={t('settings.browser.wordPlaceholder')}
             value={newWordInput}
+            disabled={!canEditCustomDictionary}
             onChange={(e) => {
               setNewWordInput(e.target.value);
               if (wordError) setWordError(null);
             }}
           />
-          <button type="submit" className="maw-settings-btn-primary" disabled={!newWordInput.trim()}>
+          <button
+            type="submit"
+            className="maw-settings-btn-primary"
+            disabled={!canEditCustomDictionary || !newWordInput.trim()}
+          >
             + {t('settings.browser.addWord')}
           </button>
         </form>
@@ -365,7 +415,8 @@ export function SpellCheckSettingsSection({
                 className="icon-button maw-settings-fav-btn maw-settings-fav-delete"
                 title={t('settings.browser.removeWord', { word })}
                 aria-label={t('settings.browser.removeWord', { word })}
-                onClick={() => void removeCustomDictionaryWord(word, selectedProfileId)}
+                disabled={!canEditCustomDictionary}
+                onClick={() => void handleRemoveWord(word)}
               >
                 ✕
               </button>

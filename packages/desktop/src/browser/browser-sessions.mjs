@@ -16,8 +16,12 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
   const { views, providers, popupOwners, popups, activeDownloads, reservedDownloadPaths, failures } = state;
   const configuredPartitions = new Map(); // partitionName -> Electron.Session
   const sessionProviders = new Map(); // Electron.Session -> provider
-  const dictionaryStatuses = new Map(); // languageCode -> 'downloading' | 'ready' | 'failed'
+  const partitionProfileIds = new Map(); // partitionName -> profileId
+  const dictionaryStatusesByLanguage = new Map(); // languageCode -> Map<partitionName, 'downloading' | 'ready' | 'failed'>
   const spellCheckListenersAttached = new WeakSet();
+  const authoritativeCustomWords = new Map(); // profileId -> Set<string>
+  const reconcilePromises = new Map(); // partitionName -> Promise<unknown>
+  let hasAuthoritativeDictionarySync = false;
   const PROFILE_PROVIDERS = ['chatgpt', 'github', 'perplexity', 'other'];
   const spellCheckConfig = {
     enabled: true,
@@ -29,16 +33,73 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
     return isValidBrowserProfileId(profileId) ? profileId : null;
   }
 
-  function getProfileSessions(profileId) {
+  function getProfilePartitionEntries(profileId, { ensure = false } = {}) {
     const effective = resolveStrictProfileId(profileId);
     if (!effective) return [];
-    const sessionsList = [];
+    const entries = [];
     for (const provider of PROFILE_PROVIDERS) {
       const partitionName = partitionForBrowserProfile(effective, provider);
-      const sess = configuredPartitions.get(partitionName) || session.fromPartition(partitionName);
-      if (sess) sessionsList.push(sess);
+      const sess = configuredPartitions.get(partitionName) || (ensure ? ensurePartitionSession(effective, provider) : null);
+      if (sess) {
+        entries.push({ provider, partitionName, session: sess });
+      }
     }
-    return sessionsList;
+    return entries;
+  }
+
+  function sanitizeDictionaryWord(word) {
+    if (typeof word !== 'string' || word.length > 128 || /[\r\n\0]/.test(word)) return null;
+    const clean = word.trim();
+    return clean.length > 0 && clean.length <= 128 ? clean : null;
+  }
+
+  async function awaitPendingReconcilesForProfile(profileId) {
+    const pending = [];
+    for (const provider of PROFILE_PROVIDERS) {
+      const partitionName = partitionForBrowserProfile(profileId, provider);
+      const promise = reconcilePromises.get(partitionName);
+      if (promise) pending.push(promise);
+    }
+    if (pending.length > 0) {
+      await Promise.allSettled(pending);
+    }
+  }
+
+  async function mutatePartitionWord(sess, action, clean) {
+    if (
+      !sess ||
+      typeof sess.addWordToSpellCheckerDictionary !== 'function' ||
+      typeof sess.removeWordFromSpellCheckerDictionary !== 'function' ||
+      typeof sess.listWordsInSpellCheckerDictionary !== 'function'
+    ) {
+      return { ok: false, mutated: false, reason: 'missing-capability' };
+    }
+    let rawResult;
+    try {
+      rawResult = action === 'add'
+        ? sess.addWordToSpellCheckerDictionary(clean)
+        : sess.removeWordFromSpellCheckerDictionary(clean);
+    } catch (err) {
+      return { ok: false, mutated: false, reason: err?.message || 'native-error' };
+    }
+    if (rawResult === true) {
+      return { ok: true, mutated: true };
+    }
+    // Chromium/Electron returns false both on failure and on idempotent no-op calls
+    // (word already present on add, or word absent on remove). Disambiguate via list().
+    try {
+      const words = await sess.listWordsInSpellCheckerDictionary();
+      if (!Array.isArray(words)) {
+        return { ok: false, mutated: false, reason: 'native-list-invalid' };
+      }
+      const present = words.includes(clean);
+      if ((action === 'add' && present) || (action === 'remove' && !present)) {
+        return { ok: true, mutated: false };
+      }
+      return { ok: false, mutated: false, reason: 'native-returned-false' };
+    } catch (err) {
+      return { ok: false, mutated: false, reason: err?.message || 'native-verify-error' };
+    }
   }
 
   function applySpellCheckToSession(targetSession) {
@@ -59,15 +120,83 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
     } catch {}
   }
 
-  function attachSpellCheckListeners(targetSession) {
+  function getKnownAvailableLanguagesSet() {
+    const langs = getAvailableSpellCheckerLanguages();
+    return langs.length > 0 ? new Set(langs) : null;
+  }
+
+  function getSpellCheckStatus() {
+    const statuses = {};
+    if (!spellCheckConfig.enabled) {
+      return { enabled: false, languages: [...spellCheckConfig.languages], statuses };
+    }
+    const availableSet = getKnownAvailableLanguagesSet();
+    for (const lang of spellCheckConfig.languages) {
+      if (availableSet && !availableSet.has(lang)) {
+        statuses[lang] = { status: 'unsupported', failedPartitions: [] };
+        continue;
+      }
+      const partMap = dictionaryStatusesByLanguage.get(lang);
+      const failedPartitions = [];
+      let hasDownloading = false;
+      let hasReady = false;
+      if (partMap) {
+        for (const [partitionName, stateValue] of partMap.entries()) {
+          if (!configuredPartitions.has(partitionName)) continue;
+          if (stateValue === 'failed') failedPartitions.push(partitionName);
+          else if (stateValue === 'downloading') hasDownloading = true;
+          else if (stateValue === 'ready') hasReady = true;
+        }
+      }
+      if (failedPartitions.length > 0) {
+        statuses[lang] = { status: 'failed', failedPartitions: failedPartitions.sort() };
+      } else if (hasDownloading) {
+        statuses[lang] = { status: 'downloading', failedPartitions: [] };
+      } else if (hasReady) {
+        statuses[lang] = { status: 'ready', failedPartitions: [] };
+      } else {
+        statuses[lang] = { status: 'pending', failedPartitions: [] };
+      }
+    }
+    return {
+      enabled: spellCheckConfig.enabled,
+      languages: [...spellCheckConfig.languages],
+      statuses,
+    };
+  }
+
+  function emitSpellCheckStatus() {
+    try {
+      send({ type: 'spellcheck-dictionary-status', ...getSpellCheckStatus() });
+    } catch {}
+  }
+
+  function pruneRetainedDictionaryStatuses() {
+    if (!spellCheckConfig.enabled) {
+      dictionaryStatusesByLanguage.clear();
+      return;
+    }
+    const activeSet = new Set(spellCheckConfig.languages);
+    for (const lang of [...dictionaryStatusesByLanguage.keys()]) {
+      if (!activeSet.has(lang)) {
+        dictionaryStatusesByLanguage.delete(lang);
+      }
+    }
+  }
+
+  function attachSpellCheckListeners(targetSession, partitionName) {
     if (!targetSession || typeof targetSession.on !== 'function' || spellCheckListenersAttached.has(targetSession)) return;
     spellCheckListenersAttached.add(targetSession);
     const reportStatus = (languageCode, status) => {
       if (typeof languageCode !== 'string' || !languageCode) return;
-      dictionaryStatuses.set(languageCode, status);
-      try {
-        send({ type: 'spellcheck-dictionary-status', language: languageCode, status });
-      } catch {}
+      if (!spellCheckConfig.enabled || !spellCheckConfig.languages.includes(languageCode)) return;
+      let partMap = dictionaryStatusesByLanguage.get(languageCode);
+      if (!partMap) {
+        partMap = new Map();
+        dictionaryStatusesByLanguage.set(languageCode, partMap);
+      }
+      partMap.set(partitionName, status);
+      emitSpellCheckStatus();
     };
     targetSession.on('spellcheck-dictionary-initialized', (_event, languageCode) => reportStatus(languageCode, 'ready'));
     targetSession.on('spellcheck-dictionary-download-begin', (_event, languageCode) => reportStatus(languageCode, 'downloading'));
@@ -83,9 +212,11 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
     if (Array.isArray(config.languages)) {
       spellCheckConfig.languages = [...config.languages];
     }
+    pruneRetainedDictionaryStatuses();
     for (const targetSession of configuredPartitions.values()) {
       applySpellCheckToSession(targetSession);
     }
+    emitSpellCheckStatus();
   }
 
   function getAvailableSpellCheckerLanguages() {
@@ -103,58 +234,214 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
   }
 
   async function listCustomDictionaryWords(profileId) {
-    const profileSessions = getProfileSessions(profileId);
-    if (profileSessions.length === 0) return [];
-    const collected = new Set();
-    for (const sess of profileSessions) {
+    const effective = resolveStrictProfileId(profileId);
+    if (!effective) {
+      return { ok: false, words: [], consistent: false, failedPartitions: [], inconsistentWords: [], byProvider: {} };
+    }
+    await awaitPendingReconcilesForProfile(effective);
+    let entries = getProfilePartitionEntries(effective, { ensure: false });
+    if (entries.length === 0) {
+      for (const provider of PROFILE_PROVIDERS) {
+        const partitionName = partitionForBrowserProfile(effective, provider);
+        const sess = session.fromPartition(partitionName);
+        if (sess) entries.push({ provider, partitionName, session: sess });
+      }
+    }
+    const byProvider = {};
+    const providerSets = [];
+    const union = new Set();
+    const failedPartitions = [];
+    for (const entry of entries) {
       try {
-        if (typeof sess.listWordsInSpellCheckerDictionary === 'function') {
-          const words = await sess.listWordsInSpellCheckerDictionary();
-          if (Array.isArray(words)) {
-            for (const word of words) {
-              if (typeof word === 'string' && word.trim()) collected.add(word);
-            }
+        if (typeof entry.session.listWordsInSpellCheckerDictionary !== 'function') {
+          failedPartitions.push(entry.partitionName);
+          continue;
+        }
+        const words = await entry.session.listWordsInSpellCheckerDictionary();
+        if (!Array.isArray(words)) {
+          failedPartitions.push(entry.partitionName);
+          continue;
+        }
+        const cleanSet = new Set();
+        for (const word of words) {
+          if (typeof word === 'string' && word.trim()) {
+            cleanSet.add(word);
+            union.add(word);
           }
         }
-      } catch {}
+        byProvider[entry.provider] = [...cleanSet].sort();
+        providerSets.push(cleanSet);
+      } catch {
+        failedPartitions.push(entry.partitionName);
+      }
     }
-    return [...collected].sort();
+    const inconsistentWords = [];
+    for (const word of union) {
+      if (providerSets.some((set) => !set.has(word))) {
+        inconsistentWords.push(word);
+      }
+    }
+    inconsistentWords.sort();
+    return {
+      ok: failedPartitions.length === 0,
+      words: [...union].sort(),
+      consistent: failedPartitions.length === 0 && inconsistentWords.length === 0,
+      failedPartitions,
+      inconsistentWords,
+      byProvider,
+    };
   }
 
-  async function addCustomDictionaryWord(word, profileId) {
-    if (typeof word !== 'string' || word.length > 128 || /[\r\n\0]/.test(word)) return false;
-    const clean = word.trim();
-    if (!clean) return false;
-    const profileSessions = getProfileSessions(profileId);
-    if (profileSessions.length === 0) return false;
-    let result = false;
-    for (const sess of profileSessions) {
-      try {
-        if (typeof sess.addWordToSpellCheckerDictionary === 'function') {
-          sess.addWordToSpellCheckerDictionary(clean);
-          result = true;
-        }
-      } catch {}
+  async function mutateProfileDictionaryWord(action, word, profileId) {
+    const clean = sanitizeDictionaryWord(word);
+    if (!clean) return { ok: false, error: 'Invalid dictionary word' };
+    const effective = resolveStrictProfileId(profileId);
+    if (!effective) return { ok: false, error: 'Invalid browser profile ID' };
+    const entries = getProfilePartitionEntries(effective, { ensure: true });
+    await awaitPendingReconcilesForProfile(effective);
+    if (entries.length === 0) return { ok: false, error: 'No browser partitions available' };
+
+    const mutatedEntries = [];
+    const failedPartitions = [];
+    for (const entry of entries) {
+      const outcome = await mutatePartitionWord(entry.session, action, clean);
+      if (outcome.ok) {
+        if (outcome.mutated) mutatedEntries.push(entry);
+      } else {
+        failedPartitions.push({ partition: entry.partitionName, reason: outcome.reason });
+      }
     }
-    return result;
+
+    if (failedPartitions.length > 0) {
+      const inverseAction = action === 'add' ? 'remove' : 'add';
+      for (const entry of mutatedEntries) {
+        try {
+          await mutatePartitionWord(entry.session, inverseAction, clean);
+          flushBrowserSession(entry.session);
+        } catch {}
+      }
+      return {
+        ok: false,
+        error: `Failed to ${action} custom dictionary word across all partitions`,
+        failedPartitions: failedPartitions.map((f) => f.partition),
+        rolledBack: true,
+      };
+    }
+
+    for (const entry of entries) {
+      flushBrowserSession(entry.session);
+    }
+
+    let profileSet = authoritativeCustomWords.get(effective);
+    if (!profileSet) {
+      profileSet = new Set();
+      authoritativeCustomWords.set(effective, profileSet);
+    }
+    if (action === 'add') profileSet.add(clean);
+    else profileSet.delete(clean);
+
+    return { ok: true, profileId: effective, partitionsUpdated: entries.length };
   }
 
-  async function removeCustomDictionaryWord(word, profileId) {
-    if (typeof word !== 'string' || word.length > 128 || /[\r\n\0]/.test(word)) return false;
-    const clean = word.trim();
-    if (!clean) return false;
-    const profileSessions = getProfileSessions(profileId);
-    if (profileSessions.length === 0) return false;
-    let result = false;
-    for (const sess of profileSessions) {
-      try {
-        if (typeof sess.removeWordFromSpellCheckerDictionary === 'function') {
-          sess.removeWordFromSpellCheckerDictionary(clean);
-          result = true;
-        }
-      } catch {}
+  function addCustomDictionaryWord(word, profileId) {
+    return mutateProfileDictionaryWord('add', word, profileId);
+  }
+
+  function removeCustomDictionaryWord(word, profileId) {
+    return mutateProfileDictionaryWord('remove', word, profileId);
+  }
+
+  async function reconcileSessionDictionary(partitionName, targetSession, expectedSet) {
+    if (
+      !targetSession ||
+      typeof targetSession.listWordsInSpellCheckerDictionary !== 'function' ||
+      typeof targetSession.addWordToSpellCheckerDictionary !== 'function' ||
+      typeof targetSession.removeWordFromSpellCheckerDictionary !== 'function'
+    ) {
+      return { ok: false, partition: partitionName, failedWords: [...expectedSet] };
     }
-    return result;
+    let currentWords;
+    try {
+      currentWords = await targetSession.listWordsInSpellCheckerDictionary();
+    } catch {
+      return { ok: false, partition: partitionName, failedWords: [...expectedSet] };
+    }
+    if (!Array.isArray(currentWords)) {
+      return { ok: false, partition: partitionName, failedWords: [...expectedSet] };
+    }
+    const currentSet = new Set(currentWords.filter((w) => typeof w === 'string' && w.trim()));
+    const failedWords = [];
+    for (const word of expectedSet) {
+      if (!currentSet.has(word)) {
+        const res = await mutatePartitionWord(targetSession, 'add', word);
+        if (!res.ok) failedWords.push(word);
+      }
+    }
+    for (const word of currentSet) {
+      if (!expectedSet.has(word)) {
+        const res = await mutatePartitionWord(targetSession, 'remove', word);
+        if (!res.ok) failedWords.push(word);
+      }
+    }
+    flushBrowserSession(targetSession);
+    return { ok: failedWords.length === 0, partition: partitionName, failedWords };
+  }
+
+  function schedulePartitionReconcile(partitionName, targetSession, expectedSet) {
+    const previous = reconcilePromises.get(partitionName) || Promise.resolve();
+    const next = previous
+      .catch(() => {})
+      .then(() => reconcileSessionDictionary(partitionName, targetSession, expectedSet))
+      .finally(() => {
+        if (reconcilePromises.get(partitionName) === next) {
+          reconcilePromises.delete(partitionName);
+        }
+      });
+    reconcilePromises.set(partitionName, next);
+    return next;
+  }
+
+  async function reconcileCustomDictionary(customWordsByProfile) {
+    if (!customWordsByProfile || typeof customWordsByProfile !== 'object' || Array.isArray(customWordsByProfile)) {
+      return { ok: false, error: 'Invalid customWordsByProfile map' };
+    }
+    authoritativeCustomWords.clear();
+    for (const [profileId, words] of Object.entries(customWordsByProfile)) {
+      if (!isValidBrowserProfileId(profileId) || !Array.isArray(words)) continue;
+      const set = new Set();
+      for (const rawWord of words) {
+        const clean = sanitizeDictionaryWord(rawWord);
+        if (clean) set.add(clean);
+      }
+      authoritativeCustomWords.set(profileId, set);
+    }
+    hasAuthoritativeDictionarySync = true;
+
+    const results = [];
+    for (const [partitionName, targetSession] of configuredPartitions.entries()) {
+      const profileId = partitionProfileIds.get(partitionName) ?? DEFAULT_BROWSER_PROFILE_ID;
+      const expectedSet = authoritativeCustomWords.get(profileId) ?? new Set();
+      results.push(await schedulePartitionReconcile(partitionName, targetSession, expectedSet));
+    }
+    const failedPartitions = results.filter((r) => !r.ok).map((r) => r.partition);
+    return { ok: failedPartitions.length === 0, failedPartitions };
+  }
+
+  function onProfileDeleted(profileId, partitionNames = []) {
+    authoritativeCustomWords.delete(profileId);
+    let statusChanged = false;
+    for (const partitionName of partitionNames) {
+      partitionProfileIds.delete(partitionName);
+      reconcilePromises.delete(partitionName);
+      for (const partMap of dictionaryStatusesByLanguage.values()) {
+        if (partMap.delete(partitionName)) {
+          statusChanged = true;
+        }
+      }
+    }
+    if (statusChanged) {
+      emitSpellCheckStatus();
+    }
   }
 
   function flushBrowserSession(sess) {
@@ -178,6 +465,7 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
     const targetSession = session.fromPartition(partitionName);
     configuredPartitions.set(partitionName, targetSession);
     sessionProviders.set(targetSession, provider);
+    partitionProfileIds.set(partitionName, effectiveProfileId);
     configureProviderSessionPermissions({
       provider,
       session: targetSession,
@@ -185,8 +473,14 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
       otherUrl,
       authenticationUrl,
     });
+    // Attach listeners before initiating dictionary loading so synchronous or early
+    // spellcheck-dictionary-* events are never missed.
+    attachSpellCheckListeners(targetSession, partitionName);
     applySpellCheckToSession(targetSession);
-    attachSpellCheckListeners(targetSession);
+    if (hasAuthoritativeDictionarySync || authoritativeCustomWords.has(effectiveProfileId)) {
+      const expectedSet = authoritativeCustomWords.get(effectiveProfileId) ?? new Set();
+      void schedulePartitionReconcile(partitionName, targetSession, expectedSet);
+    }
     targetSession.on('will-download', browserDownloadHandler({
       provider, views, providers, popupOwners, popups, activeDownloads,
       reservedPaths: reservedDownloadPaths,
@@ -218,8 +512,11 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
     flushBrowserSession,
     applySpellCheckSettings,
     getAvailableSpellCheckerLanguages,
+    getSpellCheckStatus,
     listCustomDictionaryWords,
     addCustomDictionaryWord,
     removeCustomDictionaryWord,
+    reconcileCustomDictionary,
+    onProfileDeleted,
   };
 }

@@ -899,6 +899,7 @@ export const WorkspaceView = memo(function WorkspaceView({
       </PaneMovement>
       {activeWorkspace && <BrowserContextMenu
         tabs={webTabs}
+        appSettings={appSettings}
         onCloseTab={(tab) => {
           const match = tabs.find((item) => item.id === tab.id);
           if (match) setClosing(match);

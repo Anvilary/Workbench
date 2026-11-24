@@ -116,10 +116,15 @@ function cloneSpellCheck(sc: SpellCheckSettings = DEFAULT_SPELLCHECK_SETTINGS): 
       customWordsByProfile[profileId] = [...words];
     }
   }
-  const languages = [...(sc.languages ?? [])];
-  const configured = sc.configuredLanguages && sc.configuredLanguages.length > 0
+  const hasConfigured = Array.isArray(sc.configuredLanguages);
+  const configured = hasConfigured
     ? [...sc.configuredLanguages]
-    : (languages.length > 0 ? [...languages] : [...DEFAULT_SPELLCHECK_SETTINGS.configuredLanguages]);
+    : Array.isArray(sc.languages)
+      ? [...sc.languages]
+      : [...DEFAULT_SPELLCHECK_SETTINGS.configuredLanguages];
+  const allowed = new Set(configured);
+  const rawLanguages = Array.isArray(sc.languages) ? sc.languages : configured;
+  const languages = rawLanguages.filter((l) => allowed.has(l));
   return {
     enabled: sc.enabled !== false,
     languages,

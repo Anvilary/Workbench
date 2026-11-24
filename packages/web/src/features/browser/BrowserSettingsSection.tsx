@@ -150,6 +150,7 @@ function FavoriteRowItem({
 
 export interface BrowserSettingsSectionProps {
   browserSettings: UseBrowserSettingsResult;
+  remoteClient?: boolean;
   highlightedCardId?: string | null;
   expandSignal?: number;
   browserProfiles?: readonly BrowserProfile[];
@@ -168,6 +169,7 @@ export interface BrowserSettingsSectionProps {
 
 export function BrowserSettingsSection({
   browserSettings,
+  remoteClient,
   highlightedCardId,
   expandSignal,
   browserProfiles,
@@ -1033,6 +1035,7 @@ export function BrowserSettingsSection({
       <SpellCheckSettingsSection
         browserSettings={browserSettings}
         browserProfiles={effectiveProfiles}
+        remoteClient={remoteClient}
         highlighted={highlightedCardId === 'setting-card-spellcheck'}
         expandSignal={(expandSignal ?? 0) + sectionExpandSignal}
       />

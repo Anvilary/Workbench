@@ -4,6 +4,7 @@ import { getLocale, t } from '../../i18n/index.js';
 import type { useWorkbenchStore } from '../workspaces/useWorkbenchStore.js';
 import { useBrowserSettings } from './useBrowserSettings.js';
 import { getLanguageDisplayName } from './SpellCheckSettingsSection.js';
+import type { AppSettingsApi } from '../settings/useAppSettings.js';
 
 export interface BoundingBox {
   left: number;
@@ -210,11 +211,13 @@ export function buildBrowserContextMenuItems(params: {
  */
 export function BrowserContextMenu({
   tabs,
+  appSettings,
   onCloseTab: _onCloseTab,
   onMoveNext: _onMoveNext,
   onDuplicate: _onDuplicate,
 }: {
   tabs?: readonly WebTab[];
+  appSettings?: AppSettingsApi;
   request?: ReturnType<typeof useWorkbenchStore>['request'];
   onCloseTab?: (tab: WebTab) => void;
   onMoveNext?: (tabId: string) => void;
@@ -223,7 +226,7 @@ export function BrowserContextMenu({
   const [menu, setMenu] = useState<MenuState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [measuredSize, setMeasuredSize] = useState<{ width: number; height: number }>({ width: 190, height: 220 });
-  const { spellCheck, addCustomDictionaryWord } = useBrowserSettings();
+  const { spellCheck, addCustomDictionaryWord } = useBrowserSettings(appSettings);
   const [suggestionsExpanded, setSuggestionsExpanded] = useState(true);
   const [activeLanguagesExpanded, setActiveLanguagesExpanded] = useState(false);
 

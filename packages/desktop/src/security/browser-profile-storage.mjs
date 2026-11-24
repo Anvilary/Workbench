@@ -274,6 +274,22 @@ export async function clearProfileSiteAuth({
   };
 }
 
+async function clearSessionCustomDictionary(targetSession) {
+  if (typeof targetSession?.listWordsInSpellCheckerDictionary !== 'function' ||
+      typeof targetSession?.removeWordFromSpellCheckerDictionary !== 'function') {
+    return;
+  }
+  try {
+    const words = await targetSession.listWordsInSpellCheckerDictionary();
+    if (Array.isArray(words) && words.length > 0) {
+      for (const word of words) {
+        try { targetSession.removeWordFromSpellCheckerDictionary(word); } catch {}
+      }
+      await flushSessionSafely(targetSession);
+    }
+  } catch {}
+}
+
 /**
  * Wipes all cookies, storage, caches, and auth state across every site
  * partition belonging to a deleted custom browser profile.
@@ -291,23 +307,18 @@ export async function deleteBrowserProfileStorage({
   }
 
   const clearedPartitions = [];
+  const partitionSessions = [];
   for (const site of PROFILE_SITES) {
     const provider = SITE_TO_PROVIDER[site];
     const partition = partitionForProfile(profileId, provider);
     const targetSession = sessionApi.fromPartition(partition);
-    if (typeof targetSession.listWordsInSpellCheckerDictionary === 'function' &&
-        typeof targetSession.removeWordFromSpellCheckerDictionary === 'function') {
-      try {
-        const words = await targetSession.listWordsInSpellCheckerDictionary();
-        if (Array.isArray(words)) {
-          for (const word of words) {
-            try { targetSession.removeWordFromSpellCheckerDictionary(word); } catch {}
-          }
-        }
-      } catch {}
-    }
+    partitionSessions.push(targetSession);
     await clearSessionAllData(targetSession);
+    await clearSessionCustomDictionary(targetSession);
     clearedPartitions.push(partition);
+  }
+  for (const targetSession of partitionSessions) {
+    await clearSessionCustomDictionary(targetSession);
   }
 
   return {

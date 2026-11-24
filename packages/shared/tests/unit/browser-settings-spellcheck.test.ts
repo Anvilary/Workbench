@@ -6,13 +6,81 @@ import {
   parseBrowserSettings,
 } from '../../src/index.js';
 
-test('parseBrowserSettings: migrates legacy settings missing spellCheck safely', () => {
-  const parsed = parseBrowserSettings({
+test('parseBrowserSettings: distinguishes missing spellCheck from explicit empty arrays', () => {
+  // 1. Missing spellCheck restores defaults
+  const missing = parseBrowserSettings({
     defaultSearchEngine: 'duckduckgo',
     favorites: [],
   });
-  assert.ok(parsed);
-  assert.deepEqual(parsed.spellCheck, DEFAULT_SPELLCHECK_SETTINGS);
+  assert.ok(missing);
+  assert.deepEqual(missing.spellCheck, DEFAULT_SPELLCHECK_SETTINGS);
+
+  // 2. spellCheck object with missing language arrays restores defaults
+  const missingArrays = parseBrowserSettings({
+    defaultSearchEngine: 'duckduckgo',
+    favorites: [],
+    spellCheck: { enabled: true },
+  });
+  assert.ok(missingArrays);
+  assert.deepEqual(missingArrays.spellCheck, {
+    enabled: true,
+    languages: ['en-US'],
+    configuredLanguages: ['en-US'],
+    customWordsByProfile: {},
+  });
+
+  // 3. Explicitly empty configuredLanguages and languages MUST stay empty (no en-US resurrection)
+  const emptyConfigured = parseBrowserSettings({
+    defaultSearchEngine: 'duckduckgo',
+    favorites: [],
+    spellCheck: {
+      enabled: true,
+      languages: [],
+      configuredLanguages: [],
+      customWordsByProfile: {},
+    },
+  });
+  assert.ok(emptyConfigured);
+  assert.deepEqual(emptyConfigured.spellCheck, {
+    enabled: true,
+    languages: [],
+    configuredLanguages: [],
+    customWordsByProfile: {},
+  });
+
+  // 4. Configured but all disabled (configuredLanguages populated, languages empty)
+  const configuredButDisabled = parseBrowserSettings({
+    defaultSearchEngine: 'duckduckgo',
+    favorites: [],
+    spellCheck: {
+      enabled: true,
+      languages: [],
+      configuredLanguages: ['en-US', 'pt-PT'],
+      customWordsByProfile: {},
+    },
+  });
+  assert.ok(configuredButDisabled);
+  assert.deepEqual(configuredButDisabled.spellCheck, {
+    enabled: true,
+    languages: [],
+    configuredLanguages: ['en-US', 'pt-PT'],
+    customWordsByProfile: {},
+  });
+
+  // 5. Active languages outside configuredLanguages are filtered out
+  const filteredActive = parseBrowserSettings({
+    defaultSearchEngine: 'duckduckgo',
+    favorites: [],
+    spellCheck: {
+      enabled: true,
+      languages: ['en-US', 'es'],
+      configuredLanguages: ['es'],
+      customWordsByProfile: {},
+    },
+  });
+  assert.ok(filteredActive);
+  assert.deepEqual(filteredActive.spellCheck?.languages, ['es']);
+  assert.deepEqual(filteredActive.spellCheck?.configuredLanguages, ['es']);
 });
 
 test('parseBrowserSettings: migrates legacy flat customWords strictly to main profile only', () => {
@@ -36,14 +104,13 @@ test('parseBrowserSettings: migrates legacy flat customWords strictly to main pr
   });
 });
 
-test('parseBrowserSettings: preserves explicit empty active languages and isolates customWordsByProfile', () => {
+test('parseBrowserSettings: legacy empty languages without configuredLanguages preserves empty state and round-trips cleanly', () => {
   const parsed = parseBrowserSettings({
     defaultSearchEngine: 'duckduckgo',
     favorites: [],
     spellCheck: {
       enabled: false,
       languages: [],
-      configuredLanguages: ['en-US', 'fr', 'invalid/lang'],
       customWordsByProfile: {
         work: ['k8s', 'grpc'],
         main: ['workbench'],
@@ -56,14 +123,13 @@ test('parseBrowserSettings: preserves explicit empty active languages and isolat
   assert.deepEqual(parsed.spellCheck, {
     enabled: false,
     languages: [],
-    configuredLanguages: ['en-US', 'fr'],
+    configuredLanguages: [],
     customWordsByProfile: {
       main: ['workbench'],
       work: ['k8s', 'grpc'],
     },
   });
 
-  // Round-trip serialization is deterministic
   const reparsed = parseBrowserSettings(JSON.parse(JSON.stringify(parsed)));
   assert.equal(JSON.stringify(reparsed), JSON.stringify(parsed));
 });

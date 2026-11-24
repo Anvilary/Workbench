@@ -10,7 +10,7 @@ import { cloneBrowserProfileStorage, clearProfileSiteAuth, deleteBrowserProfileS
 export function createProfileOperations({ electron, state, sessions, closeView }) {
   const { session } = electron;
   const { views, urls, requestedUrls, profileIds, failures, tabFavicons, suspendedTabs, cloningProfiles, popups, popupOwners } = state;
-  const { configuredPartitions, sessionProviders } = sessions;
+  const { configuredPartitions, sessionProviders, onProfileDeleted } = sessions;
 
   async function cloneProfile(command) {
     const { sourceProfileId, targetProfileId, clearSites } = command;
@@ -124,6 +124,9 @@ export function createProfileOperations({ electron, state, sessions, closeView }
       }
       for (const sess of partitionSessions) {
         sessionProviders.delete(sess);
+      }
+      if (typeof onProfileDeleted === 'function') {
+        onProfileDeleted(command.profileId, partitionNames);
       }
       return result;
     } finally {

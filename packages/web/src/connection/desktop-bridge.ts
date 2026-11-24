@@ -3,6 +3,11 @@
  * `packages/desktop/preload.cjs`). The global keeps its historical name.
  */
 
+export interface SpellCheckDictionaryStatusEntry {
+  status: 'ready' | 'downloading' | 'failed' | 'unsupported' | 'pending';
+  failedPartitions?: string[];
+}
+
 export interface DesktopBridgeEvent {
   type: string;
   id?: string;
@@ -26,6 +31,9 @@ export interface DesktopBridgeEvent {
   dictionarySuggestions?: string[];
   language?: string;
   status?: string;
+  enabled?: boolean;
+  languages?: string[];
+  statuses?: Record<string, SpellCheckDictionaryStatusEntry>;
   matches?: number;
   activeMatchOrdinal?: number;
   requestId?: number;

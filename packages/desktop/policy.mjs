@@ -662,11 +662,24 @@ export function validCommand(value, options = {}) {
     return exact(value, ['type', 'id']);
   }
   if (value.type === 'get-available-spellcheck-languages') return exact(value, ['type']);
+  if (value.type === 'get-spellcheck-status') return exact(value, ['type']);
   if (value.type === 'update-spellcheck-settings') {
     if (!exact(value, ['type', 'enabled', 'languages'])) return false;
     if (typeof value.enabled !== 'boolean') return false;
     if (!Array.isArray(value.languages) || value.languages.length > 64) return false;
     return value.languages.every(lang => typeof lang === 'string' && /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,4})*$/.test(lang) && lang.length <= 32);
+  }
+  if (value.type === 'reconcile-custom-dictionary') {
+    if (!exact(value, ['type', 'customWordsByProfile'])) return false;
+    if (!record(value.customWordsByProfile)) return false;
+    const entries = Object.entries(value.customWordsByProfile);
+    if (entries.length > 64) return false;
+    return entries.every(([profileId, words]) =>
+      isValidBrowserProfileId(profileId) &&
+      Array.isArray(words) &&
+      words.length <= 2048 &&
+      words.every(w => typeof w === 'string' && w.trim().length > 0 && w.length <= 128 && !/[\r\n\0]/.test(w)),
+    );
   }
   if (value.type === 'list-custom-dictionary-words') {
     return exact(value, ['type']) || (exact(value, ['type', 'profileId']) && isValidBrowserProfileId(value.profileId));
