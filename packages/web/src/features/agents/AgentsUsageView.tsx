@@ -1,97 +1,102 @@
 /**
  * Agents Usage view component for MAW Settings.
  *
- * Implements read-only monitoring of coding agent profiles (Codex, AGY, Claude).
- * Strictly distinguishes between zero usage, unavailable telemetry, missing profiles,
- * collection errors, and unsupported metrics. Never invents numbers.
+ * Implements compact, read-only monitoring of coding agent profiles (Codex, AGY, Claude)
+ * with visible 5-hour and weekly quota progress bars, localized labels, accurate reset
+ * countdowns, manual refresh, and 5-minute automatic refresh.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   AgentProfileUsage,
   CostMetrics,
   TokenUsageMetrics,
   WindowUtilization,
 } from '@agent-workbench/shared';
-import type { AgentConnection } from '../../connection/connection.js';
+import { t } from '../../i18n/index.js';
+import type { UsageConnectionLike } from './useAgentsUsage.js';
 import { useAgentsUsage } from './useAgentsUsage.js';
+import {
+  computeQuotaDisplay,
+  computeQuotaFillClass,
+  filterProfiles,
+  formatExactNumber,
+  formatPath,
+  formatReset,
+  formatResetCountdown,
+  formatTokens,
+  getProfileFamily,
+} from './usage-format.js';
+
+export {
+  computeQuotaDisplay,
+  computeQuotaFillClass,
+  filterProfiles,
+  formatExactNumber,
+  formatPath,
+  formatReset,
+  formatResetCountdown,
+  formatTokens,
+  getProfileFamily,
+};
+
+const COUNTDOWN_TICK_MS = 30_000;
 
 interface AgentsUsageViewProps {
-  connection?: AgentConnection;
-}
-
-export function formatTokens(n: number | undefined): string {
-  if (n === undefined || n === null) return '—';
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return n.toLocaleString();
-}
-
-export function formatExactNumber(n: number | undefined): string {
-  if (n === undefined || n === null) return '—';
-  return n.toLocaleString();
-}
-
-export function formatReset(window: WindowUtilization): string {
-  if (window.resetsInSeconds !== undefined && window.resetsInSeconds > 0) {
-    const hours = Math.floor(window.resetsInSeconds / 3600);
-    const mins = Math.floor((window.resetsInSeconds % 3600) / 60);
-    if (hours > 0) return `in ${hours}h ${mins}m`;
-    return `in ${mins}m`;
-  }
-  if (window.resetsAt !== undefined) {
-    const date = new Date(window.resetsAt);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-  return '';
-}
-
-export function formatPath(p: string): string {
-  const home = '/home/' + (p.split('/')[2] || '');
-  if (p.startsWith(home)) {
-    return '~' + p.slice(home.length);
-  }
-  return p;
-}
-
-export function getProfileFamily(profile: AgentProfileUsage): 'Codex' | 'AGY' | 'Claude' | 'Other' {
-  const prov = (profile.provider || '').toLowerCase();
-  const id = (profile.profileId || '').toLowerCase();
-  if (prov === 'openai' || id.startsWith('codex')) return 'Codex';
-  if (prov === 'google' || id.startsWith('agy') || id.startsWith('antigravity')) return 'AGY';
-  if (prov === 'anthropic' || id.startsWith('claude')) return 'Claude';
-  return 'Other';
+  connection?: UsageConnectionLike;
 }
 
 export function AgentsUsageView({ connection }: AgentsUsageViewProps): JSX.Element {
-  const { snapshot, loading, refreshing, error, refresh } = useAgentsUsage(connection, true);
+  const { snapshot, loading, refreshing, error, lastUpdatedAt, refresh } = useAgentsUsage(
+    connection,
+    true,
+  );
   const [providerFilter, setProviderFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
+  // Tick displayed countdowns locally without triggering telemetry collection.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNowMs(Date.now());
+    }, COUNTDOWN_TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Sync local clock immediately when a fresh snapshot arrives.
+  useEffect(() => {
+    if (lastUpdatedAt !== null) {
+      setNowMs(Date.now());
+    }
+  }, [lastUpdatedAt]);
+
+  const availableProviders = useMemo(() => {
+    const base = ['OpenAI', 'Google', 'Anthropic'];
+    if (!snapshot) return base;
+    const seen = new Set(base.map((p) => p.toLowerCase()));
+    const extra: string[] = [];
+    for (const p of snapshot.profiles) {
+      const key = p.provider.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        extra.push(p.provider);
+      }
+    }
+    return [...base, ...extra];
+  }, [snapshot]);
 
   const profiles = useMemo(() => {
     if (!snapshot) return [];
-    let list = snapshot.profiles;
-    if (providerFilter !== 'all') {
-      list = list.filter((p) => p.provider.toLowerCase() === providerFilter.toLowerCase());
-    }
-    if (searchQuery.trim()) {
-      const q = searchQuery.trim().toLowerCase();
-      list = list.filter(
-        (p) =>
-          p.profileId.toLowerCase().includes(q) ||
-          p.label.toLowerCase().includes(q) ||
-          (p.model && p.model.toLowerCase().includes(q)) ||
-          p.provider.toLowerCase().includes(q),
-      );
-    }
-    return list;
+    return filterProfiles(snapshot.profiles, providerFilter, searchQuery);
   }, [snapshot, providerFilter, searchQuery]);
 
   const groupedProfiles = useMemo(() => {
     const families: Array<'Codex' | 'AGY' | 'Claude' | 'Other'> = ['Codex', 'AGY', 'Claude'];
-    const groups: Record<string, { family: string; profiles: AgentProfileUsage[]; totalTokens: number }> = {
+    const groups: Record<
+      string,
+      { family: string; profiles: AgentProfileUsage[]; totalTokens: number }
+    > = {
       Codex: { family: 'Codex', profiles: [], totalTokens: 0 },
       AGY: { family: 'AGY', profiles: [], totalTokens: 0 },
       Claude: { family: 'Claude', profiles: [], totalTokens: 0 },
@@ -111,153 +116,186 @@ export function AgentsUsageView({ connection }: AgentsUsageViewProps): JSX.Eleme
   }, [profiles]);
 
   const toggleGroup = (group: string) => {
-    setExpandedGroups((prev) => ({
+    setCollapsedGroups((prev) => ({
       ...prev,
       [group]: !prev[group],
     }));
   };
 
+  const isBusy = loading || refreshing;
+  const rawLastRefresh = snapshot?.aggregated.lastRefresh;
+  const parsedSnapshotTs =
+    typeof rawLastRefresh === 'number' && Number.isFinite(rawLastRefresh)
+      ? rawLastRefresh
+      : typeof rawLastRefresh === 'string' && !Number.isNaN(Date.parse(rawLastRefresh))
+        ? Date.parse(rawLastRefresh)
+        : null;
+  const displayedTimestamp = lastUpdatedAt ?? parsedSnapshotTs;
+  const formattedLastUpdated = displayedTimestamp
+    ? new Date(displayedTimestamp).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : null;
+
   return (
     <div className="agents-usage-view">
-      {/* Header controls */}
+      {/* Compact Usage header */}
       <div className="agents-usage-header">
-        <div>
-          <h2 className="agents-usage-title">Agents Usage</h2>
-          <p className="agents-usage-subtitle">
-            Local telemetry, quota windows, and resource usage for agent profiles
-          </p>
+        <div className="agents-usage-heading">
+          <h2 className="agents-usage-title">{t('usage.title')}</h2>
+          <p className="agents-usage-subtitle">{t('usage.subtitle')}</p>
         </div>
         <div className="agents-usage-actions">
-          {snapshot?.aggregated.lastRefresh ? (
-            <span className="agents-usage-last-refresh">
-              Refreshed: {new Date(snapshot.aggregated.lastRefresh).toLocaleTimeString()}
-            </span>
-          ) : null}
+          <span
+            className="agents-usage-last-refresh"
+            role="status"
+            aria-live="polite"
+            title={t('usage.autoRefreshHint')}
+          >
+            {formattedLastUpdated
+              ? t('usage.lastUpdated', { time: formattedLastUpdated })
+              : null}
+          </span>
           <button
             type="button"
-            className="primary-button primary-button-small agents-usage-refresh-btn"
-            disabled={loading || refreshing}
+            className="agents-usage-refresh-btn"
+            disabled={isBusy}
+            aria-busy={isBusy}
             onClick={() => refresh(true)}
           >
-            {refreshing || loading ? 'Refreshing…' : 'Refresh'}
+            {isBusy && <span className="agents-usage-btn-spinner" aria-hidden="true" />}
+            <span>{isBusy ? t('usage.refreshing') : t('usage.refresh')}</span>
           </button>
         </div>
       </div>
 
-      {/* Error banner */}
+      {/* Concise error banner; preserves last snapshot */}
       {error && (
         <div className="agents-usage-banner error" role="alert">
-          <span className="agents-usage-banner-icon">⚠</span>
-          <span>{error}</span>
-          <button type="button" className="link-button" onClick={() => refresh(true)}>
-            Retry
+          <span className="agents-usage-banner-icon" aria-hidden="true">!</span>
+          <span className="agents-usage-banner-text">{error}</span>
+          <button
+            type="button"
+            className="agents-usage-retry-btn"
+            disabled={isBusy}
+            onClick={() => refresh(true)}
+          >
+            {t('usage.retry')}
           </button>
         </div>
       )}
 
-      {/* Loading state when no snapshot yet */}
+      {/* Initial loading state before first snapshot */}
       {loading && !snapshot && (
-        <div className="agents-usage-loading">
-          <div className="agents-usage-spinner" />
-          <span>Collecting local agent telemetry…</span>
+        <div className="agents-usage-loading" role="status" aria-live="polite">
+          <div className="agents-usage-spinner" aria-hidden="true" />
+          <span>{t('usage.collecting')}</span>
         </div>
       )}
 
       {snapshot && (
         <>
-          {/* Aggregated summary row - simplified to 2 cards */}
+          {/* Compact aggregate summary strip */}
           <div className="agents-usage-summary-grid two-cards">
             <div className="agents-usage-summary-card">
-              <span className="summary-label">Profiles Monitored</span>
+              <span className="summary-label">{t('usage.summary.profiles')}</span>
               <div className="summary-value">
                 <span className="value-highlight">{snapshot.aggregated.availableProfiles}</span>
                 <span className="value-total"> / {snapshot.aggregated.totalProfiles}</span>
               </div>
               <span className="summary-sub">
                 {snapshot.aggregated.missingProfiles > 0
-                  ? `${snapshot.aggregated.missingProfiles} missing / unconfigured`
-                  : 'All configured profiles detected'}
+                  ? t('usage.summary.missingProfiles', {
+                      count: snapshot.aggregated.missingProfiles,
+                    })
+                  : t('usage.summary.allDetected')}
               </span>
             </div>
 
             <div className="agents-usage-summary-card">
-              <span className="summary-label">Recorded Tokens</span>
+              <span className="summary-label">{t('usage.summary.recordedTokens')}</span>
               <div className="summary-value value-highlight">
                 {formatTokens(snapshot.aggregated.totalTokens)}
               </div>
-              <span className="summary-sub" title={formatExactNumber(snapshot.aggregated.totalTokens)}>
+              <span
+                className="summary-sub"
+                title={formatExactNumber(snapshot.aggregated.totalTokens)}
+              >
                 {snapshot.aggregated.totalTokens > 0
-                  ? `${formatTokens(snapshot.aggregated.totalInputTokens)} in · ${formatTokens(snapshot.aggregated.totalOutputTokens)} out`
-                  : 'No token telemetry available'}
+                  ? t('usage.summary.tokensInOut', {
+                      input: formatTokens(snapshot.aggregated.totalInputTokens),
+                      output: formatTokens(snapshot.aggregated.totalOutputTokens),
+                    })
+                  : t('usage.summary.noTokenTelemetry')}
               </span>
             </div>
           </div>
 
-          {/* Provider summaries - single horizontal row */}
-          <div className="agents-usage-providers-section">
-            <h3 className="section-title">Providers Overview</h3>
-            <div className="agents-usage-providers-row">
-              {snapshot.providers.map((p) => {
+          {/* Filter and search toolbar */}
+          <div className="agents-usage-filter-bar">
+            <div className="filter-tabs" role="tablist" aria-label={t('usage.filterByProvider')}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={providerFilter === 'all'}
+                className={`filter-tab ${providerFilter === 'all' ? 'active' : ''}`}
+                onClick={() => setProviderFilter('all')}
+              >
+                {t('usage.filterAll')}
+              </button>
+              {availableProviders.map((prov) => {
+                const active = providerFilter.toLowerCase() === prov.toLowerCase();
                 return (
-                  <div key={p.provider} className={`provider-summary-item provider-${p.provider.toLowerCase()}`}>
-                    <div className="provider-summary-name-row">
-                      <span className="provider-name">{p.provider}</span>
-                      <span className={`provider-status status-${p.status}`}>{p.status}</span>
-                    </div>
-                    <div className="provider-summary-details">
-                      <span><strong>Profiles:</strong> {p.availableCount} / {p.profileCount}</span>
-                      <span><strong>Tokens:</strong> {formatTokens(p.totalTokens)}</span>
-                      {p.totalCostUSD !== undefined && p.totalCostUSD > 0 && (
-                        <span><strong>Cost:</strong> ${p.totalCostUSD.toFixed(2)}</span>
-                      )}
-                    </div>
-                  </div>
+                  <button
+                    key={prov}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    className={`filter-tab ${active ? 'active' : ''}`}
+                    onClick={() => setProviderFilter(prov.toLowerCase())}
+                  >
+                    {prov}
+                  </button>
                 );
               })}
             </div>
-          </div>
-
-          {/* Profile filter & search toolbar */}
-          <div className="agents-usage-filter-bar">
-            <div className="filter-tabs">
-              {(['all', 'OpenAI', 'Google', 'Anthropic'] as const).map((prov) => (
-                <button
-                  key={prov}
-                  type="button"
-                  className={`filter-tab ${providerFilter.toLowerCase() === prov.toLowerCase() ? 'active' : ''}`}
-                  onClick={() => setProviderFilter(prov.toLowerCase())}
-                >
-                  {prov === 'all' ? 'All Profiles' : prov}
-                </button>
-              ))}
-            </div>
             <div className="filter-search">
               <input
-                type="text"
-                placeholder="Search profiles or models…"
+                type="search"
+                aria-label={t('usage.searchPlaceholder')}
+                placeholder={t('usage.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="filter-search-input"
               />
               {searchQuery && (
-                <button type="button" className="filter-search-clear" onClick={() => setSearchQuery('')}>
+                <button
+                  type="button"
+                  className="filter-search-clear"
+                  aria-label={t('usage.clearSearch')}
+                  onClick={() => setSearchQuery('')}
+                >
                   ×
                 </button>
               )}
             </div>
           </div>
 
-          {/* Profile Groups: Collapsible groups collapsed by default */}
+          {/* Provider groups: expanded by default so quota bars are immediately visible */}
           <div className="agents-usage-profiles-list">
             {groupedProfiles.length === 0 ? (
-              <div className="agents-usage-empty">No agent profiles match current filter.</div>
+              <div className="agents-usage-empty">{t('usage.emptyFilter')}</div>
             ) : (
               groupedProfiles.map((group) => {
                 const isSearching = searchQuery.trim().length > 0;
-                const isExpanded = isSearching ? true : !!expandedGroups[group.family];
+                const isExpanded = isSearching ? true : !collapsedGroups[group.family];
+                const availableCount = group.profiles.filter(
+                  (p) => p.availability === 'available',
+                ).length;
 
                 return (
-                  <div key={group.family} className="profile-family-group">
+                  <section key={group.family} className="profile-family-group">
                     <button
                       type="button"
                       className="profile-family-header"
@@ -265,22 +303,37 @@ export function AgentsUsageView({ connection }: AgentsUsageViewProps): JSX.Eleme
                       aria-expanded={isExpanded}
                     >
                       <div className="profile-family-title-group">
-                        <span className={`profile-family-chevron ${isExpanded ? 'expanded' : ''}`}>▶</span>
-                        <span>{group.family} ({group.profiles.length})</span>
+                        <span
+                          className={`profile-family-chevron ${isExpanded ? 'expanded' : ''}`}
+                          aria-hidden="true"
+                        >
+                          ▶
+                        </span>
+                        <span>
+                          {group.family} ({group.profiles.length})
+                        </span>
                       </div>
                       <span className="profile-family-stats">
-                        {group.profiles.filter((p) => p.availability === 'available').length} available &bull; {formatTokens(group.totalTokens)} tokens
+                        {t('usage.groupStats', {
+                          available: availableCount,
+                          tokens: formatTokens(group.totalTokens),
+                        })}
                       </span>
                     </button>
 
                     {isExpanded && (
                       <div className="profile-family-content">
                         {group.profiles.map((profile) => (
-                          <ProfileUsageCard key={profile.profileId} profile={profile} />
+                          <ProfileUsageCard
+                            key={profile.profileId}
+                            profile={profile}
+                            nowMs={nowMs}
+                            snapshotTimestamp={displayedTimestamp ?? nowMs}
+                          />
                         ))}
                       </div>
                     )}
-                  </div>
+                  </section>
                 );
               })
             )}
@@ -291,106 +344,253 @@ export function AgentsUsageView({ connection }: AgentsUsageViewProps): JSX.Eleme
   );
 }
 
-function ProfileUsageCard({ profile }: { profile: AgentProfileUsage }): JSX.Element {
+interface ProfileUsageCardProps {
+  profile: AgentProfileUsage;
+  nowMs: number;
+  snapshotTimestamp: number;
+}
+
+function ProfileUsageCard({
+  profile,
+  nowMs,
+  snapshotTimestamp,
+}: ProfileUsageCardProps): JSX.Element {
+  const [detailsOpen, setDetailsOpen] = useState<boolean>(false);
+  const anchorMs = profile.observedAt ?? snapshotTimestamp;
+
+  const availabilityLabel =
+    profile.availability === 'available'
+      ? t('usage.status.available')
+      : profile.availability === 'missing'
+        ? t('usage.status.missing')
+        : profile.availability === 'unconfigured'
+          ? t('usage.status.unconfigured')
+          : t('usage.status.error');
+
+  const collectionLabel =
+    profile.collectionStatus === 'partial'
+      ? t('usage.collection.partial')
+      : profile.collectionStatus === 'unavailable'
+        ? t('usage.collection.unavailable')
+        : profile.collectionStatus === 'error'
+          ? t('usage.collection.error')
+          : profile.collectionStatus === 'missing'
+            ? t('usage.collection.missing')
+            : null;
+
+  const showCollectionBadge =
+    collectionLabel !== null && profile.collectionStatus !== profile.availability;
+
+  const hasTokenData = Boolean(
+    profile.tokens &&
+      (profile.tokens.status === 'available' ||
+        profile.tokens.status === 'zero' ||
+        profile.tokens.status === undefined) &&
+      profile.tokens.totalTokens !== undefined,
+  );
+  const hasCostData = Boolean(
+    profile.cost &&
+      (profile.cost.status === 'available' ||
+        profile.cost.status === 'zero' ||
+        profile.cost.status === undefined) &&
+      profile.cost.amount !== undefined &&
+      profile.cost.amount > 0,
+  );
+
+  const showLabel =
+    profile.label && profile.label.toLowerCase() !== profile.profileId.toLowerCase();
+
   return (
-    <div className={`profile-usage-card availability-${profile.availability}`}>
+    <article className={`profile-usage-card availability-${profile.availability}`}>
+      {/* Clean single-line profile header */}
       <div className="profile-card-header">
-        <div className="profile-card-title-group">
+        <div className="profile-card-identity">
           <span className="profile-id">{profile.profileId}</span>
-          <span className="profile-label">{profile.label}</span>
-          <span className={`provider-badge provider-badge-${profile.provider.toLowerCase()}`}>
+          {showLabel && (
+            <>
+              <span className="profile-sep" aria-hidden="true">·</span>
+              <span className="profile-label">{profile.label}</span>
+            </>
+          )}
+          <span className="profile-sep" aria-hidden="true">·</span>
+          <span className={`profile-provider provider-${profile.provider.toLowerCase()}`}>
             {profile.provider}
           </span>
+          {profile.planType && (
+            <>
+              <span className="profile-sep" aria-hidden="true">·</span>
+              <span className="profile-plan">{profile.planType}</span>
+            </>
+          )}
           {profile.isSharedStorage && (
-            <span className="storage-badge" title="Shares underlying configuration or credentials">
-              Shared storage
+            <span className="storage-badge" title={t('usage.sharedStorageHint')}>
+              {t('usage.sharedStorage')}
             </span>
           )}
         </div>
+
         <div className="profile-card-badges">
           <span className={`availability-badge badge-${profile.availability}`}>
-            {profile.availability === 'available' ? 'Available' : profile.availability}
+            {availabilityLabel}
           </span>
-          {profile.collectionStatus !== 'healthy' && (
+          {showCollectionBadge && (
             <span className={`collection-badge badge-${profile.collectionStatus}`}>
-              {profile.collectionStatus}
+              {collectionLabel}
             </span>
           )}
         </div>
       </div>
 
-      <div className="profile-card-meta">
-        <span className="meta-item">
-          <strong>Model:</strong> {profile.model || <span className="dim">Default</span>}
-        </span>
-        {profile.planType && (
-          <span className="meta-item">
-            <strong>Plan:</strong> {profile.planType}
-          </span>
-        )}
-        <span className="meta-item meta-path" title={profile.profileDir}>
-          <strong>Path:</strong> {formatPath(profile.profileDir)}
-        </span>
+      {/* Availability or telemetry error message */}
+      {profile.collectionError && (
+        <div className="profile-card-error" role="status">
+          <span className="error-icon" aria-hidden="true">!</span>
+          <span>{profile.collectionError}</span>
+        </div>
+      )}
+
+      {/* Primary quota windows directly beneath the header */}
+      <div className="profile-card-quotas">
+        <QuotaBar
+          label={t('usage.fiveHourUsage')}
+          window={profile.fiveHourUtilization}
+          nowMs={nowMs}
+          anchorMs={anchorMs}
+        />
+        <QuotaBar
+          label={t('usage.weeklyUsage')}
+          window={profile.weeklyUtilization}
+          nowMs={nowMs}
+          anchorMs={anchorMs}
+        />
       </div>
 
-      {profile.collectionError && (
-        <div className="profile-card-error">
-          <span className="error-icon">ℹ</span> {profile.collectionError}
-        </div>
-      )}
+      {/* Secondary token, cost, model, and path details in a compact collapsible section */}
+      <div className="profile-details-section">
+        <button
+          type="button"
+          className="profile-details-toggle"
+          aria-expanded={detailsOpen}
+          onClick={() => setDetailsOpen((open) => !open)}
+        >
+          <span className="profile-details-toggle-left">
+            <span
+              className={`profile-details-chevron ${detailsOpen ? 'expanded' : ''}`}
+              aria-hidden="true"
+            >
+              ▶
+            </span>
+            <span>{t('usage.detailsToggle')}</span>
+          </span>
+          <span className="profile-details-preview">
+            {hasTokenData
+              ? t('usage.detailsTokensPreview', {
+                  tokens: formatTokens(profile.tokens.totalTokens),
+                })
+              : t('usage.detailsNoTokens')}
+            {hasCostData ? ` · $${(profile.cost.amount ?? 0).toFixed(2)}` : ''}
+          </span>
+        </button>
 
-      {/* Quota window metrics */}
-      {((profile.fiveHourUtilization?.status === 'available' || profile.fiveHourUtilization?.status === 'zero') ||
-        (profile.weeklyUtilization?.status === 'available' || profile.weeklyUtilization?.status === 'zero')) && (
-        <div className="profile-card-quotas">
-          <span className="sub-heading">Quota Windows</span>
-          <div className="quota-bars">
-            {(profile.fiveHourUtilization?.status === 'available' || profile.fiveHourUtilization?.status === 'zero') && (
-              <QuotaBar label="5-Hour Quota" window={profile.fiveHourUtilization} />
-            )}
-            {(profile.weeklyUtilization?.status === 'available' || profile.weeklyUtilization?.status === 'zero') && (
-              <QuotaBar label="Weekly Quota" window={profile.weeklyUtilization} />
-            )}
+        {detailsOpen && (
+          <div className="profile-details-body">
+            {hasTokenData && <TokenMetricsRow metrics={profile.tokens} />}
+            {hasCostData && <CostMetricsRow cost={profile.cost} model={profile.model} />}
+            <div className="profile-details-meta">
+              <div className="profile-detail-pair">
+                <span className="profile-detail-label">{t('usage.modelLabel')}</span>
+                <span className="profile-detail-value">
+                  {profile.model || <span className="dim">{t('usage.modelDefault')}</span>}
+                </span>
+              </div>
+              <div className="profile-detail-pair profile-detail-path">
+                <span className="profile-detail-label">{t('usage.pathLabel')}</span>
+                <span className="profile-detail-value mono" title={profile.profileDir}>
+                  {formatPath(profile.profileDir)}
+                </span>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* Token breakdown */}
-      {profile.tokens && (
-        <div className="profile-card-tokens">
-          <span className="sub-heading">Token Breakdown</span>
-          <TokenMetricsRow metrics={profile.tokens} />
-        </div>
-      )}
-
-      {/* Cost metrics */}
-      {profile.cost && profile.cost.amount !== undefined && profile.cost.amount > 0 && (
-        <div className="profile-card-cost">
-          <span className="sub-heading">Estimated Cost</span>
-          <CostMetricsRow cost={profile.cost} model={profile.model} />
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </article>
   );
 }
 
-function QuotaBar({ label, window }: { label: string; window: WindowUtilization }): JSX.Element {
-  const pct = Math.min(100, Math.max(0, window.usedPercent ?? 0));
-  let fillClass = '';
-  if (pct >= 80) fillClass = 'fill-high';
-  else if (pct >= 50) fillClass = 'fill-medium';
+interface QuotaBarProps {
+  label: string;
+  window: WindowUtilization | undefined;
+  nowMs: number;
+  anchorMs: number;
+}
+
+function QuotaBar({ label, window, nowMs, anchorMs }: QuotaBarProps): JSX.Element {
+  const display = computeQuotaDisplay(window);
+
+  if (!display.hasBar) {
+    const unavailableText =
+      display.reason === 'unsupported'
+        ? t('usage.telemetryUnsupported')
+        : display.reason === 'error'
+          ? t('usage.telemetryError')
+          : t('usage.telemetryUnavailable');
+
+    return (
+      <div className="quota-bar-item quota-bar-unavailable">
+        <div className="quota-bar-label-row">
+          <span className="quota-label">{label}</span>
+          <span className={`quota-status-text status-${display.reason}`}>{unavailableText}</span>
+        </div>
+        <div className={`quota-bar-track track-${display.reason}`} aria-hidden="true" />
+      </div>
+    );
+  }
+
+  const fillClass = computeQuotaFillClass(display.usedPercent);
+  const resetText = formatResetCountdown(window, {
+    nowMs,
+    anchorMs,
+  });
+
+  const severityLabel =
+    display.severity === 'critical'
+      ? t('usage.severityCritical')
+      : display.severity === 'elevated'
+        ? t('usage.severityElevated')
+        : null;
+
+  const valueText = t('usage.usedRemaining', {
+    used: display.usedPercent,
+    remaining: display.remainingPercent,
+  });
 
   return (
-    <div className="quota-bar-item">
+    <div className={`quota-bar-item severity-${display.severity}`}>
       <div className="quota-bar-label-row">
-        <span className="quota-label">{label}</span>
-        <span className="quota-values">
-          {window.usedPercent ?? 0}%
-          {formatReset(window) ? <span className="quota-reset"> · resets {formatReset(window)}</span> : null}
+        <span className="quota-label">
+          {label}
+          {severityLabel && (
+            <span className={`quota-severity-tag tag-${display.severity}`}>{severityLabel}</span>
+          )}
         </span>
+        <span className="quota-values">{valueText}</span>
       </div>
-      <div className="progress-track" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
-        <div className={`progress-fill ${fillClass}`} style={{ width: `${pct}%` }} />
+      <div
+        className="quota-bar-track"
+        role="progressbar"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={display.usedPercent}
+        aria-valuetext={`${valueText}. ${resetText}`}
+      >
+        <div
+          className={`quota-bar-fill ${fillClass}`.trim()}
+          style={{ width: `${display.usedPercent}%` }}
+        />
+      </div>
+      <div className="quota-reset-row">
+        <span className="quota-reset">{resetText}</span>
       </div>
     </div>
   );
@@ -400,26 +600,26 @@ function TokenMetricsRow({ metrics }: { metrics: TokenUsageMetrics }): JSX.Eleme
   return (
     <div className="token-metrics-row">
       <div className="token-stat">
-        <span className="token-stat-label">Total</span>
+        <span className="token-stat-label">{t('usage.tokens.total')}</span>
         <span className="token-stat-val" title={formatExactNumber(metrics.totalTokens)}>
           {formatTokens(metrics.totalTokens)}
         </span>
       </div>
       <div className="token-stat">
-        <span className="token-stat-label">Input</span>
+        <span className="token-stat-label">{t('usage.tokens.input')}</span>
         <span className="token-stat-val" title={formatExactNumber(metrics.inputTokens)}>
           {formatTokens(metrics.inputTokens)}
         </span>
       </div>
       <div className="token-stat">
-        <span className="token-stat-label">Output</span>
+        <span className="token-stat-label">{t('usage.tokens.output')}</span>
         <span className="token-stat-val" title={formatExactNumber(metrics.outputTokens)}>
           {formatTokens(metrics.outputTokens)}
         </span>
       </div>
       {metrics.cachedInputTokens !== undefined && metrics.cachedInputTokens > 0 && (
         <div className="token-stat">
-          <span className="token-stat-label">Cached</span>
+          <span className="token-stat-label">{t('usage.tokens.cached')}</span>
           <span className="token-stat-val" title={formatExactNumber(metrics.cachedInputTokens)}>
             {formatTokens(metrics.cachedInputTokens)}
           </span>
@@ -427,7 +627,7 @@ function TokenMetricsRow({ metrics }: { metrics: TokenUsageMetrics }): JSX.Eleme
       )}
       {metrics.reasoningOutputTokens !== undefined && metrics.reasoningOutputTokens > 0 && (
         <div className="token-stat">
-          <span className="token-stat-label">Reasoning</span>
+          <span className="token-stat-label">{t('usage.tokens.reasoning')}</span>
           <span className="token-stat-val" title={formatExactNumber(metrics.reasoningOutputTokens)}>
             {formatTokens(metrics.reasoningOutputTokens)}
           </span>
@@ -437,14 +637,19 @@ function TokenMetricsRow({ metrics }: { metrics: TokenUsageMetrics }): JSX.Eleme
   );
 }
 
-function CostMetricsRow({ cost, model }: { cost: CostMetrics; model?: string | null }): JSX.Element {
+function CostMetricsRow({
+  cost,
+  model,
+}: {
+  cost: CostMetrics;
+  model?: string | null;
+}): JSX.Element {
   return (
     <div className="cost-metrics-row">
+      <span className="profile-detail-label">{t('usage.estimatedCost')}</span>
       <span className="cost-val">${(cost.amount ?? 0).toFixed(2)}</span>
       <span className="cost-currency">{cost.currency || 'USD'}</span>
-      {model && (
-        <span className="cost-model">({model})</span>
-      )}
+      {model && <span className="cost-model">({model})</span>}
     </div>
   );
 }

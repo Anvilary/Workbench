@@ -3200,8 +3200,8 @@
 
 .maw-settings-content .agents-usage-view {
   padding: 20px 24px 28px;
-  gap: 16px;
-  overflow-y: auto;
+  gap: 14px;
+  overflow: visible;
   box-sizing: border-box;
 }
 
