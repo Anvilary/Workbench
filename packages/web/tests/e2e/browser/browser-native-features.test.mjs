@@ -164,7 +164,7 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
 
     await page.waitForSelector('.maw-context-menu');
     const menuButtons = await page.$$eval('.maw-context-menu button', btns => btns.map(b => b.textContent.trim()));
-    assert.deepEqual(menuButtons, ['Copy Page URL', 'Open URL', 'Reload', 'Back', 'Forward', 'Search']);
+    assert.deepEqual(menuButtons, ['Copy Page URL', 'Open URL', 'Open in external browser', 'Reload', 'Back', 'Forward', 'Search']);
 
     // Check Open URL is disabled when no link/selection
     const openUrlBtn = page.locator('.maw-context-menu button', { hasText: 'Open URL' });
@@ -199,7 +199,7 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
 
     await page.waitForSelector('.maw-context-menu');
     const linkMenuButtons = await page.$$eval('.maw-context-menu button', btns => btns.map(b => b.textContent.trim()));
-    assert.deepEqual(linkMenuButtons, ['Copy Link Address', 'Copy Page URL', 'Open URL', 'Reload', 'Back', 'Forward', 'Search']);
+    assert.deepEqual(linkMenuButtons, ['Copy Link Address', 'Open link in external browser', 'Copy Page URL', 'Open URL', 'Open in external browser', 'Reload', 'Back', 'Forward', 'Search']);
 
     const openUrlEnabledOnLink = await page.locator('.maw-context-menu button', { hasText: 'Open URL' }).isEnabled();
     assert.equal(openUrlEnabledOnLink, true, 'Open URL must be enabled when right clicking a valid link');
