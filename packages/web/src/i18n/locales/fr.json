@@ -34,6 +34,8 @@
   "agency.browser.oneOffHint": "Navigation ponctuelle. La modification n'altère pas votre favori enregistré.",
   "agency.browser.open": "Ouvrir",
   "agency.browser.openHomePage": "Ouvrir la page d’accueil de {{engine}}",
+  "agency.browser.openInExternalBrowser": "Ouvrir dans le navigateur externe",
+  "agency.browser.openLinkInExternalBrowser": "Ouvrir le lien dans le navigateur externe",
   "agency.browser.openUrl": "Ouvrir l URL",
   "agency.browser.pickerTitle": "Nouvelle page web",
   "agency.browser.previewTitle": "Aperçu de la destination",

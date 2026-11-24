@@ -34,6 +34,8 @@
   "agency.browser.oneOffHint": "일회성 탐색입니다. 편집해도 저장된 즐겨찾기는 변경되지 않습니다.",
   "agency.browser.open": "열기",
   "agency.browser.openHomePage": "{{engine}} 홈페이지 열기",
+  "agency.browser.openInExternalBrowser": "외부 브라우저에서 열기",
+  "agency.browser.openLinkInExternalBrowser": "외부 브라우저에서 링크 열기",
   "agency.browser.openUrl": "URL 열기",
   "agency.browser.pickerTitle": "새 웹 페이지",
   "agency.browser.previewTitle": "대상 미리보기",

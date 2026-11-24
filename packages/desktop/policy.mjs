@@ -492,7 +492,7 @@ export function validCommand(value) {
       return value.action === 'replace-misspelling' && UUID.test(value.id) && typeof value.word === 'string' && value.word.length <= 256 && !/[\r\n\0]/.test(value.word);
     }
     if (exact(value, ['type', 'id', 'action', 'url'])) {
-      return (value.action === 'open-link' || value.action === 'copy-link') && UUID.test(value.id) && externalUrl(value.url);
+      return (value.action === 'open-link' || value.action === 'open-link-external' || value.action === 'copy-link') && UUID.test(value.id) && externalUrl(value.url);
     }
     return false;
   }

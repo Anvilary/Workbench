@@ -34,6 +34,8 @@
   "agency.browser.oneOffHint": "Разовый переход. Редактирование не изменит сохранённую закладку.",
   "agency.browser.open": "Открыть",
   "agency.browser.openHomePage": "Открыть главную страницу {{engine}}",
+  "agency.browser.openInExternalBrowser": "Открыть во внешнем браузере",
+  "agency.browser.openLinkInExternalBrowser": "Открыть ссылку во внешнем браузере",
   "agency.browser.openUrl": "Открыть URL",
   "agency.browser.pickerTitle": "Новая веб-страница",
   "agency.browser.previewTitle": "Предпросмотр назначения",

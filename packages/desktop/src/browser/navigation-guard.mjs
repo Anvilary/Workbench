@@ -119,19 +119,12 @@ export function createNavigationGuard({
         return true;
       }
       // Leave the identity provider only for the site that started sign-in, or the popup opener.
-      if (authenticationUrl(currentUrl) && navigationAllowed(provider, url)) {
+      if (authenticationUrl(currentUrl) && (navigationAllowed(provider, url) || (provider === 'other' && otherUrl(url, 8192)))) {
         if (provider !== 'other') return true;
-        const entry = authEntryUrls.get(contents) || '';
-        if (entry && isSameSite(entry, url)) return true;
-        const openerId = getTabId();
-        const opener = openerId ? views.get(openerId)?.webContents : null;
-        if (opener && opener !== contents && !opener.isDestroyed()) {
-          try { if (isSameSite(opener.getURL(), url)) return true; } catch { /* opener is gone */ }
-        }
+        return otherUrl(url, 8192);
       }
       if (provider === 'other') {
-        if (!currentUrl || currentUrl === 'about:blank' || urls.get(getTabId()) === url) return otherUrl(url);
-        return otherUrl(url) && isSameSite(currentUrl, url);
+        return otherUrl(url, 8192);
       }
       return navigationAllowed(provider, url);
     };
@@ -145,13 +138,17 @@ export function createNavigationGuard({
       if (isSameSiteOrAllowed(url)) return;
       event.preventDefault();
       const id = getTabId();
-      if (id && targetWebProvider(url)) {
+      if (id && provider !== 'other' && targetWebProvider(url)) {
         if (allowLinkOpen(id)) {
           send({ type: 'open-web-tab', sourceTabId: id, url });
         }
         return;
       }
-      void openExternal(url).catch(() => send({ type: 'error', message: 'Could not open external browser.' }));
+      if (id) {
+        send({ type: 'error', id, message: `Navigation to "${url}" was blocked for security.` });
+      } else {
+        send({ type: 'error', message: `Navigation to "${url}" was blocked for security.` });
+      }
     };
     const redirect = (event, url, isInPlace, isMainFrame) => {
       if (isMainFrame === false) return;
@@ -161,8 +158,20 @@ export function createNavigationGuard({
         return;
       }
       if (navigationAllowed(provider, url) || authenticationUrl(url)) return;
+      if (provider === 'other' && otherUrl(url, 8192)) return;
       event.preventDefault();
-      void openExternal(url).catch(() => send({ type: 'error', message: 'Could not open external browser.' }));
+      const id = getTabId();
+      if (id && provider !== 'other' && targetWebProvider(url)) {
+        if (allowLinkOpen(id)) {
+          send({ type: 'open-web-tab', sourceTabId: id, url });
+        }
+        return;
+      }
+      if (id) {
+        send({ type: 'error', id, message: `Redirect to "${url}" was blocked for security.` });
+      } else {
+        send({ type: 'error', message: `Redirect to "${url}" was blocked for security.` });
+      }
     };
     contents.on('will-navigate', navigation);
     contents.on('will-redirect', redirect);

@@ -34,6 +34,8 @@
   "agency.browser.oneOffHint": "Navegación puntual. Editar esto no modifica tu favorito guardado.",
   "agency.browser.open": "Abrir",
   "agency.browser.openHomePage": "Abrir página principal de {{engine}}",
+  "agency.browser.openInExternalBrowser": "Abrir en el navegador externo",
+  "agency.browser.openLinkInExternalBrowser": "Abrir enlace en el navegador externo",
   "agency.browser.openUrl": "Abrir URL",
   "agency.browser.pickerTitle": "Nueva página web",
   "agency.browser.previewTitle": "Vista previa del destino",

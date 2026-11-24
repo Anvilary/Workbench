@@ -3,9 +3,10 @@
  * copy, zoom, spellcheck replacement, opening links, find in page and capture.
  */
 
-import { externalUrl, targetWebProvider, authenticationUrl } from '../../policy.mjs';
+import { otherUrl, externalUrl, targetWebProvider, authenticationUrl } from '../../policy.mjs';
 
-export function createPageCommands({ clipboard, state, guard, send }) {
+export function createPageCommands({ electron, clipboard, state, guard, send }) {
+  const { shell } = electron || {};
   const { views, providers, failures, lastAccessedAt, authEntryUrls, findRequests } = state;
   const { isContentsInAuthFlow, tryOpenOAuthLoopback, openExternal, applyBrowserZoom } = guard;
 
@@ -40,7 +41,25 @@ export function createPageCommands({ clipboard, state, guard, send }) {
         contents.replaceMisspelling(command.word);
       }
     }
-    if (command.action === 'open-page') void openExternal(contents.getURL());
+    if (command.action === 'open-page') {
+      const pageUrl = contents.getURL();
+      if ((externalUrl(pageUrl) || otherUrl(pageUrl, 8192)) && !contents.isDestroyed()) {
+        if (process.env.MAW_EXTERNAL_POLICY === 'deny') {
+          send({ type: 'error', message: 'External browser opening was cancelled.' });
+        } else if (shell) {
+          void shell.openExternal(pageUrl).catch(() => send({ type: 'error', message: 'Could not open external browser.' }));
+        }
+      }
+    }
+    if (command.action === 'open-link-external' && typeof command.url === 'string') {
+      if ((externalUrl(command.url) || otherUrl(command.url, 8192)) && !contents.isDestroyed()) {
+        if (process.env.MAW_EXTERNAL_POLICY === 'deny') {
+          send({ type: 'error', message: 'External browser opening was cancelled.' });
+        } else if (shell) {
+          void shell.openExternal(command.url).catch(() => send({ type: 'error', message: 'Could not open external browser.' }));
+        }
+      }
+    }
     if (command.action === 'open-link') {
       if (isContentsInAuthFlow(contents, providers.get(command.id)) && tryOpenOAuthLoopback(command.url, command.id)) {
         return;

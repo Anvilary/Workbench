@@ -136,11 +136,15 @@ test('UI-03: buildBrowserContextMenuItems: provides explicit Copy Page URL, cond
   let copiedSelection = false;
   let copiedLink = false;
   let copiedPageUrl = false;
+  let openedExternalLink = false;
+  let openedExternalPage = false;
 
   const resetCalls = () => {
     copiedSelection = false;
     copiedLink = false;
     copiedPageUrl = false;
+    openedExternalLink = false;
+    openedExternalPage = false;
   };
 
   const createParams = (overrides = {}) => ({
@@ -153,6 +157,8 @@ test('UI-03: buildBrowserContextMenuItems: provides explicit Copy Page URL, cond
     onCopyLink: () => { copiedLink = true; },
     onCopyPageUrl: () => { copiedPageUrl = true; },
     onOpenUrl: () => {},
+    onOpenLinkExternal: () => { openedExternalLink = true; },
+    onOpenExternalPage: () => { openedExternalPage = true; },
     onReload: () => {},
     onBack: () => {},
     onForward: () => {},
@@ -162,41 +168,45 @@ test('UI-03: buildBrowserContextMenuItems: provides explicit Copy Page URL, cond
 
   // 1. Regular click on background: Only Copy Page URL is present (no selection, no link, no duplicate copy)
   resetCalls();
-  const regularItems = buildBrowserContextMenuItems(createParams());
+  const regularItems = buildBrowserContextMenuItems(createParams({ onOpenLinkExternal: undefined }));
   assert.equal(regularItems[0].id, 'copy-page-url');
   assert.equal(regularItems[0].label, 'Copy Page URL');
   regularItems[0].run();
   assert.equal(copiedPageUrl, true);
-  assert.deepEqual(regularItems.map(i => i.id), ['copy-page-url', 'open-url', 'reload', 'back', 'forward', 'search']);
+  assert.deepEqual(regularItems.map(i => i.id), ['copy-page-url', 'open-url', 'open-external-page', 'reload', 'back', 'forward', 'search']);
 
-  // 2. Right-click over a link: Copy Link Address + Copy Page URL (no generic copy duplicate)
+  // 2. Right-click over a link: Copy Link Address + Open link in external browser + Copy Page URL + Open in external browser
   resetCalls();
   const linkItems = buildBrowserContextMenuItems(createParams({ isValidLink: true, canOpenUrl: true }));
   assert.equal(linkItems[0].id, 'copy-link');
   assert.equal(linkItems[0].label, 'Copy Link Address');
-  assert.equal(linkItems[1].id, 'copy-page-url');
-  assert.equal(linkItems[1].label, 'Copy Page URL');
+  assert.equal(linkItems[1].id, 'open-link-external');
+  assert.equal(linkItems[1].label, 'Open link in external browser');
+  assert.equal(linkItems[2].id, 'copy-page-url');
+  assert.equal(linkItems[2].label, 'Copy Page URL');
   linkItems[0].run();
   assert.equal(copiedLink, true);
   linkItems[1].run();
+  assert.equal(openedExternalLink, true);
+  linkItems[2].run();
   assert.equal(copiedPageUrl, true);
-  assert.deepEqual(linkItems.map(i => i.id), ['copy-link', 'copy-page-url', 'open-url', 'reload', 'back', 'forward', 'search']);
+  assert.deepEqual(linkItems.map(i => i.id), ['copy-link', 'open-link-external', 'copy-page-url', 'open-url', 'open-external-page', 'reload', 'back', 'forward', 'search']);
 
-  // 3. Right-click with selected text: Copy Selected Text + Copy Page URL
+  // 3. Right-click with selected text: Copy Selected Text + Copy Page URL + Open in external browser
   resetCalls();
-  const selectionItems = buildBrowserContextMenuItems(createParams({ hasSelection: true }));
+  const selectionItems = buildBrowserContextMenuItems(createParams({ hasSelection: true, onOpenLinkExternal: undefined }));
   assert.equal(selectionItems[0].id, 'copy-selection');
   assert.equal(selectionItems[0].label, 'Copy Selected Text');
   assert.equal(selectionItems[1].id, 'copy-page-url');
   assert.equal(selectionItems[1].label, 'Copy Page URL');
   selectionItems[0].run();
   assert.equal(copiedSelection, true);
-  assert.deepEqual(selectionItems.map(i => i.id), ['copy-selection', 'copy-page-url', 'open-url', 'reload', 'back', 'forward', 'search']);
+  assert.deepEqual(selectionItems.map(i => i.id), ['copy-selection', 'copy-page-url', 'open-url', 'open-external-page', 'reload', 'back', 'forward', 'search']);
 
-  // 4. Right-click with selection over a link: Copy Selected Text + Copy Link Address + Copy Page URL
+  // 4. Right-click with selection over a link: Copy Selected Text + Copy Link Address + Open link in external browser + Copy Page URL
   resetCalls();
   const allItems = buildBrowserContextMenuItems(createParams({ hasSelection: true, isValidLink: true, canOpenUrl: true }));
-  assert.deepEqual(allItems.map(i => i.id), ['copy-selection', 'copy-link', 'copy-page-url', 'open-url', 'reload', 'back', 'forward', 'search']);
+  assert.deepEqual(allItems.map(i => i.id), ['copy-selection', 'copy-link', 'open-link-external', 'copy-page-url', 'open-url', 'open-external-page', 'reload', 'back', 'forward', 'search']);
 });
 
 test('Context-aware Open URL logic: link URL > selected URL > disabled, rejects unsafe schemes', () => {
@@ -256,6 +266,7 @@ test('Context menu composition: standard items in order, spelling section only w
       onCopyLink: () => {},
       onCopyPageUrl: () => {},
       onOpenUrl: () => {},
+      onOpenExternalPage: () => {},
       onReload: () => {},
       onBack: () => {},
       onForward: () => {},
@@ -273,14 +284,14 @@ test('Context menu composition: standard items in order, spelling section only w
   const regular = getMenuItems({ misspelledWord: '', dictionarySuggestions: [] });
   assert.equal(regular.length, 1);
   assert.equal(regular[0].type, 'standard');
-  assert.deepEqual(regular[0].items, ['Copy Page URL', 'Open URL', 'Reload', 'Back', 'Forward', 'Search']);
+  assert.deepEqual(regular[0].items, ['Copy Page URL', 'Open URL', 'Open in external browser', 'Reload', 'Back', 'Forward', 'Search']);
 
   // Misspelling with suggestions
   const withSuggestions = getMenuItems({ misspelledWord: 'teh', dictionarySuggestions: ['the', 'tea'] });
   assert.equal(withSuggestions.length, 2);
   assert.equal(withSuggestions[0].type, 'spelling');
   assert.deepEqual(withSuggestions[0].suggestions, ['the', 'tea']);
-  assert.deepEqual(withSuggestions[1].items, ['Copy Page URL', 'Open URL', 'Reload', 'Back', 'Forward', 'Search']);
+  assert.deepEqual(withSuggestions[1].items, ['Copy Page URL', 'Open URL', 'Open in external browser', 'Reload', 'Back', 'Forward', 'Search']);
 
   // Misspelling without suggestions
   const emptySuggestions = getMenuItems({ misspelledWord: 'xyzabc', dictionarySuggestions: [] });

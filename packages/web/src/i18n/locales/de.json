@@ -34,6 +34,8 @@
   "agency.browser.oneOffHint": "Einmalige Navigation. Das Bearbeiten ändert nicht den gespeicherten Favoriten.",
   "agency.browser.open": "Öffnen",
   "agency.browser.openHomePage": "{{engine}}-Startseite öffnen",
+  "agency.browser.openInExternalBrowser": "In externem Browser öffnen",
+  "agency.browser.openLinkInExternalBrowser": "Link in externem Browser öffnen",
   "agency.browser.openUrl": "URL öffnen",
   "agency.browser.pickerTitle": "Neue Webseite",
   "agency.browser.previewTitle": "Zielvorschau",

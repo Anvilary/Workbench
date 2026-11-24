@@ -165,6 +165,8 @@ export function buildBrowserContextMenuItems(params: {
   onCopyLink: () => void;
   onCopyPageUrl: () => void;
   onOpenUrl: () => void;
+  onOpenLinkExternal?: () => void;
+  onOpenExternalPage: () => void;
   onReload: () => void;
   onBack: () => void;
   onForward: () => void;
@@ -178,10 +180,14 @@ export function buildBrowserContextMenuItems(params: {
 
   if (params.isValidLink) {
     items.push({ id: 'copy-link', label: t('agency.browser.copyLinkAddress'), run: params.onCopyLink });
+    if (params.onOpenLinkExternal) {
+      items.push({ id: 'open-link-external', label: t('agency.browser.openLinkInExternalBrowser'), run: params.onOpenLinkExternal });
+    }
   }
 
   items.push({ id: 'copy-page-url', label: t('agency.browser.copyPageUrl'), run: params.onCopyPageUrl });
   items.push({ id: 'open-url', label: t('agency.browser.openUrl'), disabled: !params.canOpenUrl, run: params.onOpenUrl });
+  items.push({ id: 'open-external-page', label: t('agency.browser.openInExternalBrowser'), run: params.onOpenExternalPage });
   items.push({ id: 'reload', label: t('agency.browser.reload'), run: params.onReload });
   items.push({ id: 'back', label: t('agency.browser.back'), disabled: !params.canGoBack, run: params.onBack });
   items.push({ id: 'forward', label: t('agency.browser.forward'), disabled: !params.canGoForward, run: params.onForward });
@@ -312,6 +318,8 @@ export function BrowserContextMenu({
     onCopyLink: () => send('copy-link', link),
     onCopyPageUrl: () => send('copy-url'),
     onOpenUrl: handleOpenUrl,
+    onOpenLinkExternal: Boolean(isValidLink && link) ? () => send('open-link-external', link) : undefined,
+    onOpenExternalPage: () => send('open-page'),
     onReload: () => send('reload'),
     onBack: () => send('back'),
     onForward: () => send('forward'),

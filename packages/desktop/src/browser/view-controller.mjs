@@ -163,7 +163,7 @@ export function createBrowserViewController({
     const viewPreload = isWebAuthnEnabled && provider === 'chatgpt' ? webauthnPreload : '';
     const view = new WebContentsView({ webPreferences: { ...secure, session: targetSession, spellcheck: true, preload: viewPreload, backgroundThrottling: true, autoplayPolicy: 'no-user-gesture-required', webgl: true } });
     view.setVisible(false);
-    view.setBackgroundColor('#212121');
+    view.setBackgroundColor(provider === 'chatgpt' ? '#212121' : '#ffffff');
     views.set(id, view);
     providers.set(id, provider);
     profileIds.set(id, effectiveProfileId);
@@ -295,7 +295,7 @@ export function createBrowserViewController({
     send({ type: 'navigation', id, url: current, canGoBack: contents.navigationHistory.canGoBack(), canGoForward: contents.navigationHistory.canGoForward() });
   }
 
-  const pageCommands = createPageCommands({ clipboard, state, guard: navigation, send });
+  const pageCommands = createPageCommands({ electron, clipboard, state, guard: navigation, send });
   const profileOperations = createProfileOperations({ electron, state, sessions, closeView });
 
   /** The durable browser tabs, resident or suspended, for the shell to restore after a reload. */

@@ -34,6 +34,8 @@
   "agency.browser.oneOffHint": "一回限りのナビゲーションです。編集しても保存されたブックマークは変更されません。",
   "agency.browser.open": "開く",
   "agency.browser.openHomePage": "{{engine}} のホームページを開く",
+  "agency.browser.openInExternalBrowser": "外部ブラウザで開く",
+  "agency.browser.openLinkInExternalBrowser": "リンクを外部ブラウザで開く",
   "agency.browser.openUrl": "URLを開く",
   "agency.browser.pickerTitle": "新しいウェブページ",
   "agency.browser.previewTitle": "宛先のプレビュー",

@@ -34,6 +34,8 @@
   "agency.browser.oneOffHint": "One-off navigation. Editing this does not alter your saved favorite.",
   "agency.browser.open": "Open",
   "agency.browser.openHomePage": "Open {{engine}} home page",
+  "agency.browser.openInExternalBrowser": "Open in external browser",
+  "agency.browser.openLinkInExternalBrowser": "Open link in external browser",
   "agency.browser.openUrl": "Open URL",
   "agency.browser.pickerTitle": "New Web Page",
   "agency.browser.previewTitle": "Preview Destination",

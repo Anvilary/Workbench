@@ -24,7 +24,7 @@ export function nativePerplexityUrl(value: string): boolean {
 }
 
 export function nativeWorkspaceUrl(value: string, provider?: WebTab['provider']): boolean {
-  if (typeof value !== 'string' || value.length > 2048 || /[\u0000-\u0020\u007f]/.test(value)) return false;
+  if (typeof value !== 'string' || value.length > 8192 || /[\u0000-\u0020\u007f]/.test(value)) return false;
   if (provider === 'other') return validateOtherWebUrl(value).valid;
   if (nativeChatGptUrl(value)) return provider === undefined || provider === 'chatgpt';
   if (nativePerplexityUrl(value)) return provider === undefined || provider === 'perplexity';

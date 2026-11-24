@@ -316,9 +316,13 @@ test('authentication popups keep their opener, session, and failure fallback', {
     await clearEvents();
     mark('docs-tab');
     await assign(docsUrl);
-    await eventually(async () => (await events()).some(event => event.type === 'open-web-tab' && event.url === docsUrl), 'ordinary cross-site navigation did not request a workspace tab');
-    assert.equal((await tabState()).url, linkedinUrl);
+    await eventually(async () => (await tabState())?.url.startsWith(docsUrl), 'ordinary cross-site navigation did not stay in the tab');
+    assert.equal((await tabState()).id, openerId);
     assert.equal((await popupUrl()).url, '');
+    assert.equal((await events()).some(event => event.type === 'open-web-tab'), false);
+    mark('back-linkedin');
+    await navigate(linkedinUrl);
+    await eventually(async () => (await tabState())?.url === linkedinUrl);
 
     await clearEvents();
     const longOpen = await run(`window.open(${JSON.stringify(longAuthUrl)}, 'long-auth', 'width=480,height=640') ? 'opened' : 'null'`);

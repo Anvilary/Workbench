@@ -287,8 +287,8 @@ export function isLoopbackHost(host: string): boolean {
 }
 
 /** Public HTTP(S) or local loopback URLs for explicitly user-created Other tabs. */
-export function validateOtherWebUrl(rawUrl: string): UrlValidationResult {
-  if (typeof rawUrl !== 'string' || !rawUrl.trim() || rawUrl.length > 2048 || /[\u0000-\u001f\u007f]/.test(rawUrl)) {
+export function validateOtherWebUrl(rawUrl: string, maxLength: number = 8192): UrlValidationResult {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim() || rawUrl.length > maxLength || /[\u0000-\u001f\u007f]/.test(rawUrl)) {
     return { valid: false, error: 'Invalid URL' };
   }
   let trimmed = rawUrl.trim();

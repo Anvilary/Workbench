@@ -34,6 +34,8 @@
   "agency.browser.oneOffHint": "仅限本次导航。修改不会改变已保存的收藏。",
   "agency.browser.open": "打开",
   "agency.browser.openHomePage": "打开 {{engine}} 主页",
+  "agency.browser.openInExternalBrowser": "在外部浏览器中打开",
+  "agency.browser.openLinkInExternalBrowser": "在外部浏览器中打开链接",
   "agency.browser.openUrl": "打开 URL",
   "agency.browser.pickerTitle": "新建网页",
   "agency.browser.previewTitle": "目标预览",
