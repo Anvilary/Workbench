@@ -277,17 +277,38 @@ export async function clearProfileSiteAuth({
 async function clearSessionCustomDictionary(targetSession) {
   if (typeof targetSession?.listWordsInSpellCheckerDictionary !== 'function' ||
       typeof targetSession?.removeWordFromSpellCheckerDictionary !== 'function') {
-    return;
+    return { ok: true, remainingWords: [] };
   }
+  let words;
   try {
-    const words = await targetSession.listWordsInSpellCheckerDictionary();
-    if (Array.isArray(words) && words.length > 0) {
-      for (const word of words) {
-        try { targetSession.removeWordFromSpellCheckerDictionary(word); } catch {}
-      }
-      await flushSessionSafely(targetSession);
-    }
-  } catch {}
+    words = await targetSession.listWordsInSpellCheckerDictionary();
+  } catch (err) {
+    return { ok: false, remainingWords: [], error: err?.message || 'dictionary-list-failed' };
+  }
+  if (!Array.isArray(words)) {
+    return { ok: false, remainingWords: [], error: 'dictionary-list-invalid' };
+  }
+  if (words.length === 0) {
+    return { ok: true, remainingWords: [] };
+  }
+  for (const word of words) {
+    try {
+      targetSession.removeWordFromSpellCheckerDictionary(word);
+    } catch {}
+  }
+  await flushSessionSafely(targetSession);
+  try {
+    const remaining = await targetSession.listWordsInSpellCheckerDictionary();
+    const cleanRemaining = Array.isArray(remaining)
+      ? remaining.filter((w) => typeof w === 'string' && w.trim().length > 0)
+      : [];
+    return {
+      ok: cleanRemaining.length === 0,
+      remainingWords: cleanRemaining,
+    };
+  } catch (err) {
+    return { ok: false, remainingWords: words, error: err?.message || 'dictionary-verify-failed' };
+  }
 }
 
 /**
@@ -307,23 +328,28 @@ export async function deleteBrowserProfileStorage({
   }
 
   const clearedPartitions = [];
-  const partitionSessions = [];
+  const partitionEntries = [];
   for (const site of PROFILE_SITES) {
     const provider = SITE_TO_PROVIDER[site];
     const partition = partitionForProfile(profileId, provider);
     const targetSession = sessionApi.fromPartition(partition);
-    partitionSessions.push(targetSession);
+    partitionEntries.push({ partition, session: targetSession });
     await clearSessionAllData(targetSession);
     await clearSessionCustomDictionary(targetSession);
     clearedPartitions.push(partition);
   }
-  for (const targetSession of partitionSessions) {
-    await clearSessionCustomDictionary(targetSession);
+  const failedDictionaryPartitions = [];
+  for (const entry of partitionEntries) {
+    const verification = await clearSessionCustomDictionary(entry.session);
+    if (!verification.ok) {
+      failedDictionaryPartitions.push(entry.partition);
+    }
   }
 
   return {
-    ok: true,
+    ok: failedDictionaryPartitions.length === 0,
     profileId,
     clearedPartitions,
+    ...(failedDictionaryPartitions.length > 0 ? { failedDictionaryPartitions } : {}),
   };
 }

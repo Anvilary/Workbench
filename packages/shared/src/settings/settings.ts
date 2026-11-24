@@ -10,7 +10,19 @@
  */
 
 import { isAgentId, type AgentId } from '../agents/agents.js';
-import { parseBrowserSettings, type BrowserSettings } from '../browser/browser-settings.js';
+import {
+  DEFAULT_BROWSER_PROFILE_ID,
+  isValidBrowserProfileId,
+} from '../browser/browser-profiles.js';
+import {
+  parseBrowserFavorite,
+  parseBrowserSettings,
+  parseSearchEngine,
+  type BrowserFavorite,
+  type BrowserSettings,
+  type SearchEngine,
+  type SearchEngineId,
+} from '../browser/browser-settings.js';
 import { asArrayFiltered, asLiteral, asNonEmptyString, asRecord } from '../validation/narrowing.js';
 
 /**
@@ -95,30 +107,184 @@ export function parseAppSettingsStatus(value: unknown): AppSettingsStatus | null
   return { consoleShell, consoleShells, shellName, disabledAgents, disabledAtStart, ...(browser ? { browser } : {}) };
 }
 
+export interface SpellCheckSettingsPatch {
+  enabled?: boolean;
+  languages?: string[];
+  configuredLanguages?: string[];
+  customWordsByProfile?: Record<string, string[]>;
+}
+
+export interface BrowserSettingsPatch {
+  favorites?: BrowserFavorite[];
+  defaultSearchEngine?: SearchEngineId;
+  searchEngines?: SearchEngine[];
+  spellCheck?: SpellCheckSettingsPatch;
+}
+
+export type CustomDictionaryMutation =
+  | { action: 'add' | 'remove'; profileId: string; word: string }
+  | { action: 'clear-profile'; profileId: string };
+
 /** El cambio que pide Ajustes: al menos uno. */
 export interface AppSettingsChange {
   consoleShell?: ConsoleShellId;
   disabledAgents?: AgentId[];
-  browser?: Partial<BrowserSettings>;
+  browser?: BrowserSettingsPatch;
+  customDictionary?: CustomDictionaryMutation;
+}
+
+const CHANGE_LANG_RE = /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,4})*$/;
+
+function parseChangeSpellCheck(value: unknown): SpellCheckSettingsPatch | null {
+  const rec = asRecord(value);
+  if (rec === null) return null;
+  const patch: SpellCheckSettingsPatch = {};
+  let hasField = false;
+
+  if ('enabled' in rec && rec['enabled'] !== undefined) {
+    if (typeof rec['enabled'] !== 'boolean') return null;
+    patch.enabled = rec['enabled'];
+    hasField = true;
+  }
+
+  const parseLangArray = (raw: unknown): string[] | null => {
+    if (!Array.isArray(raw)) return null;
+    const seen = new Set<string>();
+    for (const item of raw) {
+      if (typeof item === 'string' && item.length <= 32 && CHANGE_LANG_RE.test(item)) {
+        seen.add(item);
+      }
+    }
+    return [...seen];
+  };
+
+  if ('configuredLanguages' in rec && rec['configuredLanguages'] !== undefined) {
+    const parsed = parseLangArray(rec['configuredLanguages']);
+    if (parsed === null) return null;
+    patch.configuredLanguages = parsed;
+    hasField = true;
+  }
+
+  if ('languages' in rec && rec['languages'] !== undefined) {
+    const parsed = parseLangArray(rec['languages']);
+    if (parsed === null) return null;
+    patch.languages = patch.configuredLanguages
+      ? parsed.filter((l) => patch.configuredLanguages!.includes(l))
+      : parsed;
+    hasField = true;
+  }
+
+  if ('customWordsByProfile' in rec && rec['customWordsByProfile'] !== undefined) {
+    const mapRec = asRecord(rec['customWordsByProfile']);
+    if (mapRec === null) return null;
+    const normalized: Record<string, string[]> = {};
+    for (const profileId of Object.keys(mapRec).sort()) {
+      if (!isValidBrowserProfileId(profileId)) return null;
+      const rawList = mapRec[profileId];
+      if (!Array.isArray(rawList)) return null;
+      const seen = new Set<string>();
+      for (const item of rawList) {
+        if (typeof item !== 'string' || item.length > 128 || /[\r\n\0]/.test(item)) continue;
+        const clean = item.trim();
+        if (clean.length > 0 && clean.length <= 128) seen.add(clean);
+      }
+      if (seen.size > 0) normalized[profileId] = [...seen];
+    }
+    patch.customWordsByProfile = normalized;
+    hasField = true;
+  }
+
+  return hasField ? patch : null;
+}
+
+function parseBrowserSettingsPatch(value: unknown): BrowserSettingsPatch | null {
+  const rec = asRecord(value);
+  if (rec === null) return null;
+  const patch: BrowserSettingsPatch = {};
+  let hasField = false;
+
+  if ('defaultSearchEngine' in rec && rec['defaultSearchEngine'] !== undefined) {
+    const engine = asNonEmptyString(rec['defaultSearchEngine']);
+    if (engine === null || engine.length > 128) return null;
+    patch.defaultSearchEngine = engine;
+    hasField = true;
+  }
+
+  if ('favorites' in rec && rec['favorites'] !== undefined) {
+    if (!Array.isArray(rec['favorites'])) return null;
+    const parsed = asArrayFiltered(rec['favorites'], parseBrowserFavorite);
+    if (parsed === null) return null;
+    patch.favorites = parsed;
+    hasField = true;
+  }
+
+  if ('searchEngines' in rec && rec['searchEngines'] !== undefined) {
+    if (!Array.isArray(rec['searchEngines'])) return null;
+    if (rec['searchEngines'].length === 0) {
+      patch.searchEngines = [];
+    } else {
+      const parsed = asArrayFiltered(rec['searchEngines'], parseSearchEngine);
+      if (parsed === null || parsed.length === 0) return null;
+      patch.searchEngines = parsed;
+    }
+    hasField = true;
+  }
+
+  if ('spellCheck' in rec && rec['spellCheck'] !== undefined) {
+    const parsedSpellCheck = parseChangeSpellCheck(rec['spellCheck']);
+    if (parsedSpellCheck === null) return null;
+    patch.spellCheck = parsedSpellCheck;
+    hasField = true;
+  }
+
+  return hasField ? patch : null;
+}
+
+function parseCustomDictionaryMutation(value: unknown): CustomDictionaryMutation | null {
+  const rec = asRecord(value);
+  if (rec === null) return null;
+  const action = rec['action'];
+  const profileId = rec['profileId'];
+  if (typeof profileId !== 'string' || !isValidBrowserProfileId(profileId)) return null;
+  if (action === 'clear-profile') {
+    if (profileId === DEFAULT_BROWSER_PROFILE_ID) return null;
+    return { action: 'clear-profile', profileId };
+  }
+  if (action === 'add' || action === 'remove') {
+    const rawWord = rec['word'];
+    if (typeof rawWord !== 'string' || rawWord.length > 128 || /[\r\n\0]/.test(rawWord)) return null;
+    const word = rawWord.trim();
+    if (word.length === 0 || word.length > 128) return null;
+    return { action, profileId, word };
+  }
+  return null;
 }
 
 export function parseAppSettingsChange(record: Record<string, unknown>): AppSettingsChange | null {
   const rawShell = record['consoleShell'];
   const rawAgents = record['disabledAgents'];
   const rawBrowser = record['browser'];
+  const rawCustomDict = record['customDictionary'];
   const consoleShell = rawShell === undefined ? undefined : asConsoleShellId(rawShell);
   const disabledAgents = rawAgents === undefined ? undefined : asAgentIdList(rawAgents);
-  let browser: Partial<BrowserSettings> | undefined;
+  let browser: BrowserSettingsPatch | undefined;
   if (rawBrowser !== undefined) {
-    const parsed = parseBrowserSettings(rawBrowser);
+    const parsed = parseBrowserSettingsPatch(rawBrowser);
     if (parsed === null) return null;
     browser = parsed;
   }
+  let customDictionary: CustomDictionaryMutation | undefined;
+  if (rawCustomDict !== undefined) {
+    const parsed = parseCustomDictionaryMutation(rawCustomDict);
+    if (parsed === null) return null;
+    customDictionary = parsed;
+  }
   if (consoleShell === null || disabledAgents === null) return null;
-  if (consoleShell === undefined && disabledAgents === undefined && browser === undefined) return null;
+  if (consoleShell === undefined && disabledAgents === undefined && browser === undefined && customDictionary === undefined) return null;
   return {
     ...(consoleShell !== undefined ? { consoleShell } : {}),
     ...(disabledAgents !== undefined ? { disabledAgents } : {}),
     ...(browser !== undefined ? { browser } : {}),
+    ...(customDictionary !== undefined ? { customDictionary } : {}),
   };
 }

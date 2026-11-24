@@ -453,3 +453,24 @@ test('WebAuthn Orchestrator honors AbortSignal and normalizes mixed-case rpId', 
   assert.equal(preAborted.success, false);
   assert.equal(preAborted.error.name, 'NotAllowedError');
 });
+
+test('deleteBrowserProfileStorage verifies custom dictionary cleanup and reports residual partitions honestly', async () => {
+  const res = await deleteBrowserProfileStorage({
+    profileId: 'stuck-profile',
+    sessionApi: {
+      fromPartition: (name) => ({
+        async clearStorageData() {},
+        async clearAuthCache() {},
+        cookies: { async flushStore() {} },
+        async listWordsInSpellCheckerDictionary() {
+          return name.endsWith('-github') ? ['stuckword'] : [];
+        },
+        removeWordFromSpellCheckerDictionary() {
+          return false;
+        },
+      }),
+    },
+  });
+  assert.equal(res.ok, false);
+  assert.deepEqual(res.failedDictionaryPartitions, ['persist:maw-profile-stuck-profile-github']);
+});

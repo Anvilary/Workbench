@@ -36,13 +36,17 @@ import {
   asRecord,
   isRemotePort,
   parseBrowserSettings,
+  DEFAULT_BROWSER_PROFILE_ID,
   DEFAULT_BROWSER_SETTINGS,
   DEFAULT_SPELLCHECK_SETTINGS,
   type AgentId,
   type ConsoleShellId,
   type BrowserSettings,
+  type BrowserSettingsPatch,
   type BrowserFavorite,
+  type CustomDictionaryMutation,
   type SpellCheckSettings,
+  type SpellCheckSettingsPatch,
 } from '@agent-workbench/shared';
 import { appSettingsPath } from '../../shared/app-paths.js';
 import { writeFileAtomic } from '../vault/write.js';
@@ -105,7 +109,69 @@ export interface SettingsPatch {
   remote?: Partial<RemoteSettings>;
   console?: Partial<ConsoleSettings>;
   agents?: Partial<AgentsSettings>;
-  browser?: Partial<BrowserSettings>;
+  browser?: BrowserSettingsPatch;
+  customDictionary?: CustomDictionaryMutation;
+}
+
+function mergeSpellCheck(current: SpellCheckSettings, patch: SpellCheckSettingsPatch): SpellCheckSettings {
+  const configured = Array.isArray(patch.configuredLanguages)
+    ? [...patch.configuredLanguages]
+    : Array.isArray(current.configuredLanguages)
+      ? [...current.configuredLanguages]
+      : [...DEFAULT_SPELLCHECK_SETTINGS.configuredLanguages];
+  const allowed = new Set(configured);
+  const rawLanguages = Array.isArray(patch.languages)
+    ? patch.languages
+    : Array.isArray(current.languages)
+      ? current.languages
+      : configured;
+  const languages = rawLanguages.filter((l) => allowed.has(l));
+  const rawWordsMap = patch.customWordsByProfile !== undefined
+    ? patch.customWordsByProfile
+    : current.customWordsByProfile;
+  const customWordsByProfile: Record<string, string[]> = {};
+  for (const profileId of Object.keys(rawWordsMap ?? {}).sort()) {
+    const words = rawWordsMap[profileId];
+    if (Array.isArray(words) && words.length > 0) {
+      customWordsByProfile[profileId] = [...words];
+    }
+  }
+  return {
+    enabled: patch.enabled !== undefined ? patch.enabled : current.enabled !== false,
+    languages,
+    configuredLanguages: configured,
+    customWordsByProfile,
+  };
+}
+
+function applyCustomDictionaryMutation(
+  sc: SpellCheckSettings,
+  mutation: CustomDictionaryMutation,
+): SpellCheckSettings {
+  const base = cloneSpellCheck(sc);
+  const map: Record<string, string[]> = { ...base.customWordsByProfile };
+  if (mutation.action === 'clear-profile') {
+    if (mutation.profileId !== DEFAULT_BROWSER_PROFILE_ID) {
+      delete map[mutation.profileId];
+    }
+  } else {
+    const cleanWord = mutation.word.trim();
+    if (cleanWord) {
+      const existing = map[mutation.profileId] ?? [];
+      if (mutation.action === 'add') {
+        const nextSet = new Set([...existing, cleanWord]);
+        map[mutation.profileId] = [...nextSet].sort();
+      } else {
+        const nextWords = existing.filter((w) => w !== cleanWord);
+        if (nextWords.length > 0) {
+          map[mutation.profileId] = nextWords;
+        } else {
+          delete map[mutation.profileId];
+        }
+      }
+    }
+  }
+  return cloneSpellCheck({ ...base, customWordsByProfile: map });
 }
 
 function cloneSpellCheck(sc: SpellCheckSettings = DEFAULT_SPELLCHECK_SETTINGS): SpellCheckSettings {
@@ -386,7 +452,12 @@ export class SettingsStore {
         next.browser.searchEngines = patch.browser.searchEngines.map((e) => ({ ...e }));
       }
       if (patch.browser?.spellCheck !== undefined) {
-        next.browser.spellCheck = cloneSpellCheck(patch.browser.spellCheck);
+        const currentSc = next.browser.spellCheck ?? cloneSpellCheck(DEFAULT_SPELLCHECK_SETTINGS);
+        next.browser.spellCheck = mergeSpellCheck(currentSc, patch.browser.spellCheck);
+      }
+      if (patch.customDictionary !== undefined) {
+        const currentSc = next.browser.spellCheck ?? cloneSpellCheck(DEFAULT_SPELLCHECK_SETTINGS);
+        next.browser.spellCheck = applyCustomDictionaryMutation(currentSc, patch.customDictionary);
       }
       const remote = patch.remote ?? {};
       if (remote.enabled !== undefined) next.remote.enabled = remote.enabled;

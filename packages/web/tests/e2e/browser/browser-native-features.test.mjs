@@ -444,7 +444,8 @@ const tabId = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
 const listeners = new Set();
 window.__commands = [];
 window.__serverUpdates = [];
-window.__failNextAdd = false;
+window.__failNextBackendCommit = false;
+window.__failNextReconcile = false;
 window.__preexistingStatus = {
   enabled: true,
   languages: ['en-US', 'fr'],
@@ -463,15 +464,12 @@ window.mawChatGpt = {
     if (cmd.type === 'get-spellcheck-status') {
       return { ok: true, ...window.__preexistingStatus };
     }
-    if (cmd.type === 'add-custom-dictionary-word') {
-      if (window.__failNextAdd) {
-        window.__failNextAdd = false;
-        return { ok: false, error: 'Simulated native dictionary failure' };
+    if (cmd.type === 'reconcile-custom-dictionary') {
+      if (window.__failNextReconcile) {
+        window.__failNextReconcile = false;
+        return { ok: false, failedPartitions: ['persist:maw-chatgpt'], error: 'Simulated partition sync failure' };
       }
-      return { ok: true };
-    }
-    if (cmd.type === 'remove-custom-dictionary-word') {
-      return { ok: true };
+      return { ok: true, failedPartitions: [] };
     }
     return { ok: true };
   },
@@ -484,6 +482,34 @@ window.mawChatGpt = {
 window.__emitState = (s) => {
   for (const l of listeners) l(s);
 };
+
+function applyServerChange(prev, change) {
+  const next = {
+    ...prev,
+    ...(change.browser?.defaultSearchEngine !== undefined ? { defaultSearchEngine: change.browser.defaultSearchEngine } : {}),
+    ...(change.browser?.favorites !== undefined ? { favorites: change.browser.favorites } : {}),
+    ...(change.browser?.searchEngines !== undefined ? { searchEngines: change.browser.searchEngines } : {}),
+    spellCheck: {
+      ...prev.spellCheck,
+      ...(change.browser?.spellCheck ?? {}),
+      customWordsByProfile: { ...(prev.spellCheck.customWordsByProfile ?? {}) },
+    },
+  };
+  if (change.customDictionary) {
+    const { action, profileId, word } = change.customDictionary;
+    const map = { ...next.spellCheck.customWordsByProfile };
+    const cur = map[profileId] ?? [];
+    if (action === 'add' && !cur.includes(word)) {
+      map[profileId] = [...cur, word].sort();
+    } else if (action === 'remove') {
+      const filtered = cur.filter((w) => w !== word);
+      if (filtered.length > 0) map[profileId] = filtered;
+      else delete map[profileId];
+    }
+    next.spellCheck.customWordsByProfile = map;
+  }
+  return next;
+}
 
 function IntegrationApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -499,27 +525,45 @@ function IntegrationApp() {
       customWordsByProfile: { main: ['initialword'] },
     },
   });
+  const latestBrowserRef = React.useRef(browserState);
+  latestBrowserRef.current = browserState;
+
+  const makeStatus = (browser) => ({
+    consoleShell: 'auto',
+    consoleShells: [{ id: 'bash', label: 'Bash (/bin/bash)' }],
+    shellName: 'bash',
+    disabledAgents: [],
+    disabledAtStart: [],
+    browser,
+  });
 
   const appSettings = {
-    status: {
-      consoleShell: 'auto',
-      consoleShells: [{ id: 'bash', label: 'Bash (/bin/bash)' }],
-      shellName: 'bash',
-      disabledAgents: [],
-      disabledAtStart: [],
-      browser: browserState,
-    },
+    status: makeStatus(browserState),
     problem: null,
     setConsoleShell: () => {},
     setDisabledAgents: () => {},
-    setBrowserSettings: (next) => {
+    setBrowserSettings: (patch) => {
+      const next = applyServerChange(latestBrowserRef.current, { browser: patch });
+      latestBrowserRef.current = next;
       window.__serverUpdates.push(next);
+      setBrowserState(next);
+    },
+    updateBrowserSettings: async (change) => {
+      if (window.__failNextBackendCommit) {
+        window.__failNextBackendCommit = false;
+        return { ok: false, code: 'rejected', error: 'Simulated server write failure' };
+      }
+      const next = applyServerChange(latestBrowserRef.current, change);
+      latestBrowserRef.current = next;
+      window.__serverUpdates.push(next);
+      setBrowserState(next);
+      return { ok: true, settings: makeStatus(next) };
     },
     dismissProblem: () => {},
   };
 
-  // Expose helper to simulate delayed/older server echo vs authoritative server push
   window.__pushServerStatus = (nextBrowser) => {
+    latestBrowserRef.current = nextBrowser;
     setBrowserState(nextBrowser);
   };
 
@@ -627,24 +671,11 @@ test('R1/R2/R4/R5: context-menu dictionary persistence without Settings, failure
     const afterCtxSave = await page.evaluate(() => window.__serverUpdates.at(-1));
     assert.deepEqual(afterCtxSave.spellCheck.customWordsByProfile['work-profile'], ['ctxnewword']);
 
-    // Older server status echo must NOT overwrite newer acknowledged dictionary addition
+    // 2. Backend commit rejection prevents state mutation and skips native reconciliation
+    const prevRecCount = await page.evaluate(() => window.__commands.filter((c) => c.type === 'reconcile-custom-dictionary').length);
+    const prevUpdateCount = await page.evaluate(() => window.__serverUpdates.length);
     await page.evaluate(() => {
-      window.__pushServerStatus({
-        defaultSearchEngine: 'duckduckgo',
-        favorites: [{ id: 'chatgpt', title: 'ChatGPT', url: 'https://chatgpt.com/' }],
-        searchEngines: [{ id: 'duckduckgo', name: 'DuckDuckGo', homeUrl: 'https://duckduckgo.com/', searchUrl: 'https://duckduckgo.com/?q=%s', isBuiltin: true }],
-        spellCheck: {
-          enabled: true,
-          languages: ['en-US', 'fr'],
-          configuredLanguages: ['en-US', 'fr'],
-          customWordsByProfile: { main: ['initialword'] },
-        },
-      });
-    });
-
-    // 2. Native IPC failure prevents settings mutation (no false success)
-    await page.evaluate(() => {
-      window.__failNextAdd = true;
+      window.__failNextBackendCommit = true;
       window.__emitState({
         type: 'browser-context',
         id: '8e4fefc1-e565-40cc-b85b-f7d43a16b1df',
@@ -661,21 +692,52 @@ test('R1/R2/R4/R5: context-menu dictionary persistence without Settings, failure
       });
     });
     await page.waitForSelector('.maw-context-menu');
-    const prevUpdateCount = await page.evaluate(() => window.__serverUpdates.length);
     await page.locator('.maw-context-menu-action-item', { hasText: 'Add to Dictionary' }).click();
-    await page.waitForTimeout(100);
-    assert.equal(await page.evaluate(() => window.__serverUpdates.length), prevUpdateCount, 'Failed native add must not commit to settings');
+    await page.waitForSelector('.maw-context-menu', { state: 'detached' });
+    await page.waitForTimeout(50);
+    assert.equal(await page.evaluate(() => window.__serverUpdates.length), prevUpdateCount, 'Rejected server commit must not record update');
+    assert.equal(
+      await page.evaluate(() => window.__commands.filter((c) => c.type === 'reconcile-custom-dictionary').length),
+      prevRecCount,
+      'Rejected backend commit must not mutate native dictionary',
+    );
 
-    // 3. Open SettingsDialog later -> pre-existing dictionary failure and ctxnewword must both be visible!
+    // 2b. Authoritative commit + failed native reconciliation surfaces recoverable Retry sync banner in Settings
+    await page.evaluate(() => {
+      window.__failNextReconcile = true;
+      window.__emitState({
+        type: 'browser-context',
+        id: '8e4fefc1-e565-40cc-b85b-f7d43a16b1df',
+        profileId: 'work-profile',
+        x: 100,
+        y: 100,
+        linkURL: '',
+        selection: false,
+        canGoBack: false,
+        canGoForward: false,
+        isEditable: true,
+        misspelledWord: 'durablepending',
+        dictionarySuggestions: [],
+      });
+    });
+    await page.waitForSelector('.maw-context-menu');
+    await page.locator('.maw-context-menu-action-item', { hasText: 'Add to Dictionary' }).click();
+    await page.waitForSelector('.maw-context-menu', { state: 'detached' });
+
+    // 3. Open SettingsDialog later -> pre-existing dictionary failure, retry sync warning, and committed words must all be visible!
     await page.click('#open-settings-btn');
     await page.waitForSelector('#setting-card-spellcheck');
     const spellCard = page.locator('#setting-card-spellcheck');
+    const retryBtn = spellCard.locator('button', { hasText: 'Retry sync' });
+    await retryBtn.waitFor();
+    await retryBtn.click();
+    await retryBtn.waitFor({ state: 'detached' });
     const warningText = await spellCard.locator('.maw-settings-warning-text').textContent();
     assert.ok(warningText?.includes('French'), `Expected pre-existing French failure warning, got: ${warningText}`);
 
     await spellCard.locator('select.maw-settings-select').selectOption('work-profile');
     const dictWords = await spellCard.locator('.maw-settings-dict-word').allTextContents();
-    assert.deepEqual(dictWords, ['ctxnewword']);
+    assert.deepEqual(dictWords, ['ctxnewword', 'durablepending']);
 
     // 4. Remove all configured languages -> preserves empty state without restoring en-US
     const removeButtons = spellCard.locator('.maw-settings-lang-item button[aria-label^="Remove"]');

@@ -250,7 +250,7 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
     }
   }, []);
   const appSettings = useAppSettings(connection);
-  const browserSettings = useBrowserSettings(appSettings);
+  useBrowserSettings(appSettings);
   const terminalTheme = useTerminalTheme('dark');
   const [agents, setAgents] = useState<AgentInfo[]>([]);
 
@@ -1017,7 +1017,6 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
                 console.warn('[maw-browser-profile] delete-profile cleanup failed:', err);
               });
             }
-            browserSettings.clearProfileCustomDictionary(profileId);
           }}
           onClearBrowserProfileSiteAuth={window.mawChatGpt && (async (profileId, sites) => {
             for (const site of sites) {

@@ -325,7 +325,6 @@ export function BrowserSettingsSection({
     setProfileError(null);
     try {
       await Promise.resolve(onDeleteBrowserProfile?.(profileId));
-      browserSettings.clearProfileCustomDictionary(profileId);
       if (renamingProfileId === profileId) setRenamingProfileId(null);
       if (clearingProfileId === profileId) setClearingProfileId(null);
       setDeletingProfile(null);

@@ -4,6 +4,8 @@ import {
   DEFAULT_BROWSER_PROFILE_ID,
   DEFAULT_SPELLCHECK_SETTINGS,
   parseBrowserSettings,
+  parseClientMessage,
+  parseServerMessage,
 } from '../../src/index.js';
 
 test('parseBrowserSettings: distinguishes missing spellCheck from explicit empty arrays', () => {
@@ -132,4 +134,65 @@ test('parseBrowserSettings: legacy empty languages without configuredLanguages p
 
   const reparsed = parseBrowserSettings(JSON.parse(JSON.stringify(parsed)));
   assert.equal(JSON.stringify(reparsed), JSON.stringify(parsed));
+});
+
+test('settings protocol messages: supports requestId, partial browser patches, and customDictionary mutations', () => {
+  const partialMsg = parseClientMessage(JSON.stringify({
+    type: 'settings.update',
+    requestId: 'req-1',
+    browser: {
+      defaultSearchEngine: 'brave',
+      spellCheck: { configuredLanguages: [], languages: [] },
+    },
+  }));
+  assert.deepEqual(partialMsg, {
+    type: 'settings.update',
+    requestId: 'req-1',
+    browser: {
+      defaultSearchEngine: 'brave',
+      spellCheck: { configuredLanguages: [], languages: [] },
+    },
+  });
+
+  const dictMsg = parseClientMessage(JSON.stringify({
+    type: 'settings.update',
+    requestId: 'req-dict',
+    customDictionary: { action: 'add', profileId: 'work-1', word: '  ação  ' },
+  }));
+  assert.deepEqual(dictMsg, {
+    type: 'settings.update',
+    requestId: 'req-dict',
+    customDictionary: { action: 'add', profileId: 'work-1', word: 'ação' },
+  });
+
+  // Invalid customDictionary mutations and empty browser patches must be rejected
+  assert.equal(parseClientMessage(JSON.stringify({
+    type: 'settings.update',
+    customDictionary: { action: 'clear-profile', profileId: DEFAULT_BROWSER_PROFILE_ID },
+  })), null);
+  assert.equal(parseClientMessage(JSON.stringify({
+    type: 'settings.update',
+    customDictionary: { action: 'add', profileId: '../escape', word: 'ok' },
+  })), null);
+  assert.equal(parseClientMessage(JSON.stringify({
+    type: 'settings.update',
+    browser: {},
+  })), null);
+
+  // Server settings.status preserves optional requestId only when present
+  const ack = parseServerMessage(JSON.stringify({
+    type: 'settings.status',
+    requestId: 'req-ack',
+    settings: {
+      consoleShell: 'auto',
+      consoleShells: [],
+      shellName: null,
+      disabledAgents: [],
+      disabledAtStart: [],
+    },
+  }));
+  assert.equal(ack?.type, 'settings.status');
+  if (ack?.type === 'settings.status') {
+    assert.equal(ack.requestId, 'req-ack');
+  }
 });

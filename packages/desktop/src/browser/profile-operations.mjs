@@ -10,7 +10,7 @@ import { cloneBrowserProfileStorage, clearProfileSiteAuth, deleteBrowserProfileS
 export function createProfileOperations({ electron, state, sessions, closeView }) {
   const { session } = electron;
   const { views, urls, requestedUrls, profileIds, failures, tabFavicons, suspendedTabs, cloningProfiles, popups, popupOwners } = state;
-  const { configuredPartitions, sessionProviders, onProfileDeleted } = sessions;
+  const { configuredPartitions, sessionProviders, beginProfileDeletion, finishProfileDeletion, onProfileDeleted } = sessions;
 
   async function cloneProfile(command) {
     const { sourceProfileId, targetProfileId, clearSites } = command;
@@ -87,7 +87,13 @@ export function createProfileOperations({ electron, state, sessions, closeView }
   async function deleteProfile(command) {
     if (cloningProfiles.has(command.profileId)) throw new Error('Browser profile operation is in progress');
     cloningProfiles.add(command.profileId);
+    const partitionNames = ['chatgpt', 'github', 'perplexity', 'other'].map(
+      (provider) => partitionForBrowserProfile(command.profileId, provider),
+    );
     try {
+      if (typeof beginProfileDeletion === 'function') {
+        await beginProfileDeletion(command.profileId);
+      }
       const tabsToClose = new Set();
       for (const [id, pid] of profileIds.entries()) {
         if (pid === command.profileId) tabsToClose.add(id);
@@ -98,9 +104,6 @@ export function createProfileOperations({ electron, state, sessions, closeView }
       for (const id of tabsToClose) {
         closeView(id);
       }
-      const partitionNames = ['chatgpt', 'github', 'perplexity', 'other'].map(
-        (provider) => partitionForBrowserProfile(command.profileId, provider),
-      );
       const partitionSessions = new Set(
         partitionNames.map((name) => configuredPartitions.get(name) || session.fromPartition(name)),
       );
@@ -125,11 +128,13 @@ export function createProfileOperations({ electron, state, sessions, closeView }
       for (const sess of partitionSessions) {
         sessionProviders.delete(sess);
       }
-      if (typeof onProfileDeleted === 'function') {
-        onProfileDeleted(command.profileId, partitionNames);
-      }
       return result;
     } finally {
+      if (typeof finishProfileDeletion === 'function') {
+        finishProfileDeletion(command.profileId, partitionNames);
+      } else if (typeof onProfileDeleted === 'function') {
+        onProfileDeleted(command.profileId, partitionNames);
+      }
       cloningProfiles.delete(command.profileId);
     }
   }

@@ -25,7 +25,10 @@ import { asArrayFiltered, asNonEmptyString, type UnknownRecord } from '../valida
  * se nombra por su id, nunca por su ruta. Solo lo atiende una ventana del
  * anfitrion.
  */
-export type ClientSettingsUpdateMessage = { type: 'settings.update' } & AppSettingsChange;
+export type ClientSettingsUpdateMessage = {
+  type: 'settings.update';
+  requestId?: string;
+} & AppSettingsChange;
 
 export interface ClientAgentsUsageGetMessage {
   type: 'agents.usage.get';
@@ -40,6 +43,7 @@ export interface ClientAgentsUsageGetMessage {
 export interface ServerSettingsStatusMessage {
   type: 'settings.status';
   settings: AppSettingsStatus;
+  requestId?: string;
 }
 
 export interface ServerAgentsUsageSnapshotMessage {
@@ -81,7 +85,11 @@ export function parseClientSettingsMessage(record: UnknownRecord): ClientSetting
   switch (record['type']) {
     case 'settings.update': {
       const change = parseAppSettingsChange(record);
-      return change === null ? null : { type: 'settings.update', ...change };
+      if (change === null) return null;
+      const requestId = asNonEmptyString(record['requestId']);
+      return requestId !== null
+        ? { type: 'settings.update', requestId, ...change }
+        : { type: 'settings.update', ...change };
     }
     case 'agents.usage.get': {
       const requestId = asNonEmptyString(record['requestId']);
@@ -99,7 +107,11 @@ export function parseServerSettingsMessage(record: UnknownRecord): ServerSetting
   switch (record['type']) {
     case 'settings.status': {
       const settings = parseAppSettingsStatus(record['settings']);
-      return settings === null ? null : { type: 'settings.status', settings };
+      if (settings === null) return null;
+      const requestId = asNonEmptyString(record['requestId']);
+      return requestId !== null
+        ? { type: 'settings.status', settings, requestId }
+        : { type: 'settings.status', settings };
     }
     case 'plan.limits': {
       // Filtrada: una CLI que este lado no conoce no se lleva la de las demas.

@@ -99,6 +99,20 @@ function ShellApp() {
         .then((r) => r.json())
         .then((updated) => setStatus(updated));
     },
+    updateBrowserSettings: async (change) => {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(change),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Settings write failed' }));
+        return { ok: false, code: 'rejected', error: err.error || 'Settings write failed' };
+      }
+      const updated = await res.json();
+      setStatus(updated);
+      return { ok: true, settings: updated };
+    },
     dismissProblem: () => {},
   };
 
@@ -291,21 +305,32 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
       const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
       win.focus();
       v.focus();
-      v.sendInputEvent({ type: 'mouseDown', x: 40, y: 40, button: 'left', clickCount: 1 });
-      v.sendInputEvent({ type: 'mouseUp', x: 40, y: 40, button: 'left', clickCount: 1 });
+      await v.executeJavaScript('document.getElementById("ed").focus();');
       await new Promise((r) => setTimeout(r, 150));
       await v.insertText('teh ');
     });
-    await new Promise((r) => setTimeout(r, 600));
+    await eventually(async () => {
+      const val = await desktop.evaluate(async ({ session, webContents }) => {
+        const s = session.fromPartition('persist:maw-browser');
+        const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
+        return await v.executeJavaScript('document.getElementById("ed").value');
+      });
+      return val === 'teh ';
+    }, 'teh inserted into native textarea');
 
-    await desktop.evaluate(({ session, webContents }) => {
-      const s = session.fromPartition('persist:maw-browser');
-      const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
-      v.sendInputEvent({ type: 'mouseDown', x: 35, y: 38, button: 'right', clickCount: 1 });
-      v.sendInputEvent({ type: 'mouseUp', x: 35, y: 38, button: 'right', clickCount: 1 });
-    });
-
-    await page.waitForSelector('.maw-context-menu-suggestion');
+    // Poll boundedly for Chromium's async spellchecker underline pass to populate suggestions
+    await eventually(async () => {
+      const hasMenu = await page.locator('.maw-context-menu-suggestion').count();
+      if (hasMenu > 0) return true;
+      await desktop.evaluate(({ session, webContents }) => {
+        const s = session.fromPartition('persist:maw-browser');
+        const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
+        v.sendInputEvent({ type: 'mouseDown', x: 42, y: 38, button: 'right', clickCount: 1 });
+        v.sendInputEvent({ type: 'mouseUp', x: 42, y: 38, button: 'right', clickCount: 1 });
+      });
+      await new Promise((r) => setTimeout(r, 250));
+      return (await page.locator('.maw-context-menu-suggestion').count()) > 0;
+    }, 'Chromium spelling suggestions menu to open', 15000);
     const suggestions = await page.locator('.maw-context-menu-suggestion').allTextContents();
     assert.ok(suggestions.includes('the'), `Expected Chromium suggestion 'the', got: ${JSON.stringify(suggestions)}`);
     await page.locator('.maw-context-menu-suggestion', { hasText: /^the$/ }).click();
@@ -387,12 +412,12 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
     assert.equal(defaultWords.includes('anvilaryctxword'), false);
     assert.equal(defaultWords.includes('résumé'), false);
 
-    // 10. Simulate native partition divergence directly on one partition and verify reconciliation recovers deterministically
+    // 10. Simulate native partition divergence directly on one active partition ('main' / github) and verify reconciliation recovers deterministically
     await desktop.evaluate(({ session }) => {
-      const gh = session.fromPartition('persist:maw-profile-work-profile-github');
+      const gh = session.fromPartition('persist:maw-github');
       gh.addWordToSpellCheckerDictionary('divergentghost');
     });
-    const divergentRead = await command({ type: 'list-custom-dictionary-words', profileId: 'work-profile' });
+    const divergentRead = await command({ type: 'list-custom-dictionary-words', profileId: 'main' });
     assert.equal(divergentRead.consistent, false);
     assert.deepEqual(divergentRead.inconsistentWords, ['divergentghost']);
 
@@ -400,9 +425,9 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
       type: 'reconcile-custom-dictionary',
       customWordsByProfile: { main: ['anvilaryctxword', 'ação'], 'work-profile': ['résumé'] },
     });
-    const recoveredRead = await command({ type: 'list-custom-dictionary-words', profileId: 'work-profile' });
+    const recoveredRead = await command({ type: 'list-custom-dictionary-words', profileId: 'main' });
     assert.equal(recoveredRead.consistent, true);
-    assert.deepEqual(recoveredRead.words, ['résumé']);
+    assert.deepEqual(recoveredRead.words, ['anvilaryctxword', 'ação']);
 
     // 11. Remove all configured languages in Settings -> verify empty state persists in settings.json
     const langRemoveButtons = spellCard.locator('.maw-settings-lang-item button[aria-label^="Remove "]');

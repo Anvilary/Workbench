@@ -46,6 +46,8 @@ export function SpellCheckSettingsSection({
 }: SpellCheckSettingsSectionProps): JSX.Element {
   const {
     spellCheck,
+    nativeDictionarySync,
+    retryNativeDictionarySync,
     setSpellCheckEnabled,
     toggleSpellCheckLanguage,
     addSpellCheckLanguage,
@@ -391,6 +393,18 @@ export function SpellCheckSettingsSection({
           </button>
         </form>
         {wordError && <div className="maw-settings-error-text">{wordError}</div>}
+        {nativeDictionarySync.status === 'failed' && canEditCustomDictionary && (
+          <div className="maw-settings-warning-text" role="status" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span>{t('settings.browser.customDictionarySyncPending')}</span>
+            <button
+              type="button"
+              className="maw-settings-btn-secondary maw-settings-btn-sm"
+              onClick={() => void retryNativeDictionarySync()}
+            >
+              {t('settings.browser.retrySync')}
+            </button>
+          </div>
+        )}
 
         {/* Search Custom Words */}
         {customWords.length > 5 && (

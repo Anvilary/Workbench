@@ -18,9 +18,9 @@ type BrowserProfileMessage = Extract<ClientMessage, { type: (typeof browserProfi
 
 export async function handleBrowserProfileMessage(
   message: BrowserProfileMessage,
-  ctx: HandlerContext<'agencyBrowserProfileStore' | 'agencyWorkspaceStore' | 'broadcast' | 'browserProfileMutations' | 'send' | 'socket'>,
+  ctx: HandlerContext<'agencyBrowserProfileStore' | 'agencyWorkspaceStore' | 'appSettings' | 'broadcast' | 'browserProfileMutations' | 'send' | 'socket'>,
 ): Promise<void> {
-  const { agencyBrowserProfileStore, agencyWorkspaceStore, broadcast, browserProfileMutations, send, socket } = ctx;
+  const { agencyBrowserProfileStore, agencyWorkspaceStore, appSettings, broadcast, browserProfileMutations, send, socket } = ctx;
   switch (message.type) {
     case 'agency.browserProfiles.list': {
       send(socket, {
@@ -73,6 +73,7 @@ export async function handleBrowserProfileMessage(
           if (profile?.isDefault) {
             throw new DomainError('conflict', 'The default Main browser profile cannot be deleted');
           }
+          await appSettings.clearProfileCustomDictionary(message.profileId);
           const cleared = await agencyWorkspaceStore.clearBrowserProfile(message.profileId);
           for (const project of cleared.projects) {
             broadcast({ type: 'agency.project.changed', change: 'updated', projectId: project.id, project });

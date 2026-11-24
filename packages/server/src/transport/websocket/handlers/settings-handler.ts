@@ -38,16 +38,27 @@ export async function handleSettingsMessage(
       remota no llega: lo frena `remoteRefusal`.
     */
     case 'settings.update': {
-      const { type: _type, ...change } = message;
-      void appSettings.update(change).catch((error: unknown) => {
-        if (error instanceof AppSettingsChangeError) {
-          sendError(socket, 'settings-failed', serverText('settingsShellMissing'));
-          return;
-        }
-        const detail = error instanceof Error ? error.message : String(error);
-        console.warn('[settings] a change failed:', detail);
-        sendError(socket, 'settings-failed', serverText('settingsFailed'), detail);
-      });
+      const { type: _type, requestId, ...change } = message;
+      void appSettings.update(change).then(
+        (nextStatus) => {
+          if (requestId !== undefined) {
+            send(socket, {
+              type: 'settings.status',
+              settings: nextStatus,
+              requestId,
+            });
+          }
+        },
+        (error: unknown) => {
+          if (error instanceof AppSettingsChangeError) {
+            sendError(socket, 'settings-failed', serverText('settingsShellMissing'), undefined, requestId);
+            return;
+          }
+          const detail = error instanceof Error ? error.message : String(error);
+          console.warn('[settings] a change failed:', detail);
+          sendError(socket, 'settings-failed', serverText('settingsFailed'), detail, requestId);
+        },
+      );
       break;
     }
     case 'agents.usage.get': {

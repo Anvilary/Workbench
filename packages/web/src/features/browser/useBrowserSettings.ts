@@ -1,19 +1,3 @@
-/**
- * Browser settings state hook.
- *
- * Manages user-configurable favorites, search engines, default search engine,
- * and spellcheck preferences (including profile-isolated custom dictionaries).
- *
- * Architecture:
- * - Single module-level coordinated store shared across all consumers
- *   (`WorkbenchApp`, `WorkspaceView`, `BrowserContextMenu`, `SettingsDialog`).
- * - `settings.json` via `appSettings` is authoritative when connected; `localStorage`
- *   acts as an offline/startup cache.
- * - Custom dictionary additions/removals await native Electron partition mutations
- *   first and only commit to authoritative settings after native confirmation,
- *   preventing false success or stale reconciliation overwrites.
- */
-
 import { useCallback, useEffect, useState } from 'react';
 import {
   DEFAULT_BROWSER_FAVORITES,
@@ -23,140 +7,30 @@ import {
   DEFAULT_SPELLCHECK_SETTINGS,
   getSearchEngine,
   isValidBrowserProfileId,
-  parseBrowserSettings,
   validateBrowserFavoriteUrl,
   validateSearchEngine,
   type BrowserFavorite,
-  type BrowserSettings,
   type SearchEngine,
   type SearchEngineCandidate,
   type SearchEngineId,
   type SpellCheckSettings,
 } from '@agent-workbench/shared';
 import type { AppSettingsApi } from '../settings/useAppSettings.js';
+import {
+  createDefaultBrowserSettings,
+  getBrowserSettingsStoreState,
+  mutateAuthoritativeCustomDictionary,
+  persistBrowserPreferencePatch,
+  retryNativeDictionarySync,
+  setActiveAppSettings,
+  subscribeBrowserSettingsStore,
+  syncAuthoritativeBrowserSettings,
+  type DictionaryMutationResult,
+  type NativeDictionarySyncState,
+} from './browser-settings-store.js';
 
-export const BROWSER_SETTINGS_STORAGE_KEY = 'agency-ui.browser-settings.v1';
-
-type BrowserSettingsListener = (next: BrowserSettings) => void;
-const browserSettingsListeners = new Set<BrowserSettingsListener>();
-
-let currentSettings: BrowserSettings | null = null;
-let activeAppSettings: AppSettingsApi | null = null;
-let pendingServerSaves: string[] = [];
-let lastServerStatusObject: BrowserSettings | undefined;
-let lastSyncedSpellCheckKey = '';
-let lastReconciledDictKey = '';
-let lastBridgeRef: unknown = null;
-
-function createDefaultSpellCheck(): SpellCheckSettings {
-  return {
-    enabled: DEFAULT_SPELLCHECK_SETTINGS.enabled,
-    languages: [...DEFAULT_SPELLCHECK_SETTINGS.languages],
-    configuredLanguages: [...DEFAULT_SPELLCHECK_SETTINGS.configuredLanguages],
-    customWordsByProfile: {},
-  };
-}
-
-function createDefaultBrowserSettings(): BrowserSettings {
-  return {
-    defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
-    favorites: [...DEFAULT_BROWSER_FAVORITES],
-    searchEngines: [...DEFAULT_SEARCH_ENGINES],
-    spellCheck: createDefaultSpellCheck(),
-  };
-}
-
-function loadCachedBrowserSettings(): BrowserSettings {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    return createDefaultBrowserSettings();
-  }
-  try {
-    const raw = window.localStorage.getItem(BROWSER_SETTINGS_STORAGE_KEY);
-    if (!raw) {
-      return createDefaultBrowserSettings();
-    }
-    const parsed = parseBrowserSettings(JSON.parse(raw));
-    if (parsed) return parsed;
-  } catch {
-    // Malformed cache falls back cleanly
-  }
-  return createDefaultBrowserSettings();
-}
-
-function getCurrentSettings(): BrowserSettings {
-  if (currentSettings === null) {
-    currentSettings = loadCachedBrowserSettings();
-  }
-  return currentSettings;
-}
-
-function saveCachedBrowserSettings(settings: BrowserSettings): void {
-  if (typeof window === 'undefined' || !window.localStorage) return;
-  try {
-    window.localStorage.setItem(BROWSER_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // Ignore storage quota or disabled errors
-  }
-}
-
-function broadcastBrowserSettings(next: BrowserSettings): void {
-  for (const listener of browserSettingsListeners) {
-    listener(next);
-  }
-}
-
-function syncSpellCheckConfigToDesktop(sc: SpellCheckSettings): void {
-  const bridge = typeof window !== 'undefined' ? window.mawChatGpt : undefined;
-  if (!bridge) return;
-  if (lastBridgeRef !== bridge) {
-    lastBridgeRef = bridge;
-    lastSyncedSpellCheckKey = '';
-    lastReconciledDictKey = '';
-  }
-  const key = JSON.stringify({ enabled: sc.enabled !== false, languages: sc.languages ?? [] });
-  if (lastSyncedSpellCheckKey === key) return;
-  lastSyncedSpellCheckKey = key;
-  void bridge.command({
-    type: 'update-spellcheck-settings',
-    enabled: sc.enabled !== false,
-    languages: sc.languages ?? [],
-  });
-}
-
-function syncCustomDictionaryToDesktop(sc: SpellCheckSettings): void {
-  const bridge = typeof window !== 'undefined' ? window.mawChatGpt : undefined;
-  if (!bridge) return;
-  if (lastBridgeRef !== bridge) {
-    lastBridgeRef = bridge;
-    lastSyncedSpellCheckKey = '';
-    lastReconciledDictKey = '';
-  }
-  const map = sc.customWordsByProfile ?? {};
-  const key = JSON.stringify(map);
-  if (lastReconciledDictKey === key) return;
-  lastReconciledDictKey = key;
-  void bridge.command({
-    type: 'reconcile-custom-dictionary',
-    customWordsByProfile: map,
-  });
-}
-
-function syncAllDesktopSpellCheck(sc: SpellCheckSettings | undefined): void {
-  if (!sc) return;
-  syncSpellCheckConfigToDesktop(sc);
-  syncCustomDictionaryToDesktop(sc);
-}
-
-/** Resets module-level browser-settings coordination state (for unit/E2E test isolation). */
-export function resetBrowserSettingsStoreForTests(): void {
-  currentSettings = null;
-  activeAppSettings = null;
-  pendingServerSaves = [];
-  lastServerStatusObject = undefined;
-  lastSyncedSpellCheckKey = '';
-  lastReconciledDictKey = '';
-  lastBridgeRef = null;
-}
+export { resetBrowserSettingsStoreForTests, BROWSER_SETTINGS_STORAGE_KEY } from './browser-settings-store.js';
+export type { NativeDictionarySyncState, DictionaryMutationResult } from './browser-settings-store.js';
 
 export interface UseBrowserSettingsResult {
   favorites: readonly BrowserFavorite[];
@@ -164,14 +38,15 @@ export interface UseBrowserSettingsResult {
   defaultSearchEngine: SearchEngineId;
   searchEngine: SearchEngine;
   spellCheck: SpellCheckSettings;
+  nativeDictionarySync: NativeDictionarySyncState;
+  retryNativeDictionarySync: () => Promise<{ ok: boolean; failedPartitions?: string[]; error?: string }>;
   setSpellCheckEnabled: (enabled: boolean) => void;
   toggleSpellCheckLanguage: (code: string) => void;
   addSpellCheckLanguage: (code: string) => void;
   removeSpellCheckLanguage: (code: string) => void;
   getCustomDictionaryWords: (profileId?: string) => string[];
-  addCustomDictionaryWord: (word: string, profileId?: string) => Promise<{ success: boolean; error?: string }>;
-  removeCustomDictionaryWord: (word: string, profileId?: string) => Promise<{ success: boolean; error?: string }>;
-  clearProfileCustomDictionary: (profileId: string) => void;
+  addCustomDictionaryWord: (word: string, profileId?: string) => Promise<DictionaryMutationResult>;
+  removeCustomDictionaryWord: (word: string, profileId?: string) => Promise<DictionaryMutationResult>;
   addFavorite: (favorite: { title: string; url: string }) => { success: boolean; error?: string };
   editFavorite: (id: string, updates: { title?: string; url?: string }) => { success: boolean; error?: string };
   removeFavorite: (id: string) => void;
@@ -186,85 +61,32 @@ export interface UseBrowserSettingsResult {
   resetToDefaults: () => void;
 }
 
+function createDefaultSpellCheck(): SpellCheckSettings {
+  return {
+    enabled: DEFAULT_SPELLCHECK_SETTINGS.enabled,
+    languages: [...DEFAULT_SPELLCHECK_SETTINGS.languages],
+    configuredLanguages: [...DEFAULT_SPELLCHECK_SETTINGS.configuredLanguages],
+    customWordsByProfile: {},
+  };
+}
+
 export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSettingsResult {
-  const [settings, setSettings] = useState<BrowserSettings>(() => getCurrentSettings());
+  const [snapshot, setSnapshot] = useState(() => getBrowserSettingsStoreState());
+  const settings = snapshot.settings;
 
   useEffect(() => {
-    if (appSettings) {
-      activeAppSettings = appSettings;
-    }
+    setActiveAppSettings(appSettings);
   }, [appSettings]);
 
-  useEffect(() => {
-    const listener: BrowserSettingsListener = (next) => {
-      setSettings(next);
-    };
-    browserSettingsListeners.add(listener);
-    // Sync immediately if another caller mutated module state before this effect subscribed.
-    const latest = getCurrentSettings();
-    setSettings(latest);
-    if (!appSettings?.status?.browser) {
-      syncAllDesktopSpellCheck(latest.spellCheck);
-    }
-    return () => {
-      browserSettingsListeners.delete(listener);
-    };
-  }, []);
+  useEffect(() => subscribeBrowserSettingsStore(setSnapshot, Boolean(appSettings?.status?.browser)), []);
 
   useEffect(() => {
-    if (appSettings?.problem) {
-      pendingServerSaves = [];
-    }
-  }, [appSettings?.problem]);
-
-  // Synchronize when authoritative server status arrives or updates
-  useEffect(() => {
-    const serverBrowser = appSettings?.status?.browser;
-    if (!serverBrowser || serverBrowser === lastServerStatusObject) return;
-    const isInitialServerSync = lastServerStatusObject === undefined;
-    lastServerStatusObject = serverBrowser;
-
-    const incomingSerialized = JSON.stringify(serverBrowser);
-    if (pendingServerSaves.length > 0) {
-      const matchIdx = pendingServerSaves.indexOf(incomingSerialized);
-      if (matchIdx !== -1) {
-        pendingServerSaves.splice(0, matchIdx + 1);
-      }
-      // If newer local saves are still awaiting server acknowledgment, keep them
-      // instead of regressing to an older echo.
-      if (pendingServerSaves.length > 0) {
-        return;
-      }
-      if (matchIdx === -1 && !isInitialServerSync) {
-        return;
-      }
-    }
-
-    currentSettings = serverBrowser;
-    setSettings(serverBrowser);
-    saveCachedBrowserSettings(serverBrowser);
-    broadcastBrowserSettings(serverBrowser);
-    syncAllDesktopSpellCheck(serverBrowser.spellCheck);
+    syncAuthoritativeBrowserSettings(appSettings?.status?.browser);
   }, [appSettings?.status?.browser]);
-
-  const persist = useCallback(
-    (next: BrowserSettings) => {
-      currentSettings = next;
-      setSettings(next);
-      saveCachedBrowserSettings(next);
-      broadcastBrowserSettings(next);
-      const targetApi = appSettings ?? activeAppSettings;
-      if (targetApi) {
-        pendingServerSaves.push(JSON.stringify(next));
-        targetApi.setBrowserSettings(next);
-      }
-    },
-    [appSettings],
-  );
 
   const addFavorite = useCallback(
     (fav: { title: string; url: string }) => {
-      const latest = getCurrentSettings();
+      const latest = getBrowserSettingsStoreState().settings;
       const title = fav.title.trim();
       if (!title || title.length > 120) {
         return { success: false, error: 'Name must be between 1 and 120 characters' };
@@ -274,36 +96,22 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
         return { success: false, error: urlCheck.error ?? 'Invalid web URL' };
       }
       const normalizedUrl = urlCheck.normalizedUrl;
-
-      const isDuplicate = latest.favorites.some(
-        (f) => f.url.toLowerCase() === normalizedUrl.toLowerCase(),
-      );
-      if (isDuplicate) {
+      if (latest.favorites.some((f) => f.url.toLowerCase() === normalizedUrl.toLowerCase())) {
         return { success: false, error: 'A favorite with this URL already exists' };
       }
-
       const id = typeof crypto !== 'undefined' && crypto.randomUUID
         ? crypto.randomUUID()
         : `fav-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      const newFav: BrowserFavorite = {
-        id,
-        title,
-        url: normalizedUrl,
-      };
-
-      const next: BrowserSettings = {
-        ...latest,
-        favorites: [...latest.favorites, newFav],
-      };
-      persist(next);
+      const nextFavorites = [...latest.favorites, { id, title, url: normalizedUrl }];
+      persistBrowserPreferencePatch({ ...latest, favorites: nextFavorites }, { favorites: nextFavorites }, appSettings);
       return { success: true };
     },
-    [persist],
+    [appSettings],
   );
 
   const editFavorite = useCallback(
     (id: string, updates: { title?: string; url?: string }) => {
-      const latest = getCurrentSettings();
+      const latest = getBrowserSettingsStoreState().settings;
       const index = latest.favorites.findIndex((f) => f.id === id);
       if (index === -1) return { success: false, error: 'Favorite not found' };
 
@@ -325,42 +133,32 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
           return { success: false, error: urlCheck.error ?? 'Invalid web URL' };
         }
         const normalized = urlCheck.normalizedUrl;
-        const duplicate = latest.favorites.some(
-          (f) => f.id !== id && f.url.toLowerCase() === normalized.toLowerCase(),
-        );
-        if (duplicate) {
+        if (latest.favorites.some((f) => f.id !== id && f.url.toLowerCase() === normalized.toLowerCase())) {
           return { success: false, error: 'A favorite with this URL already exists' };
         }
         url = normalized;
       }
 
-      const updatedList = [...latest.favorites];
-      updatedList[index] = { id, title, url };
-      const next: BrowserSettings = {
-        ...latest,
-        favorites: updatedList,
-      };
-      persist(next);
+      const nextFavorites = [...latest.favorites];
+      nextFavorites[index] = { id, title, url };
+      persistBrowserPreferencePatch({ ...latest, favorites: nextFavorites }, { favorites: nextFavorites }, appSettings);
       return { success: true };
     },
-    [persist],
+    [appSettings],
   );
 
   const removeFavorite = useCallback(
     (id: string) => {
-      const latest = getCurrentSettings();
-      const next: BrowserSettings = {
-        ...latest,
-        favorites: latest.favorites.filter((f) => f.id !== id),
-      };
-      persist(next);
+      const latest = getBrowserSettingsStoreState().settings;
+      const nextFavorites = latest.favorites.filter((f) => f.id !== id);
+      persistBrowserPreferencePatch({ ...latest, favorites: nextFavorites }, { favorites: nextFavorites }, appSettings);
     },
-    [persist],
+    [appSettings],
   );
 
   const reorderFavorites = useCallback(
     (ids: readonly string[]) => {
-      const latest = getCurrentSettings();
+      const latest = getBrowserSettingsStoreState().settings;
       const map = new Map(latest.favorites.map((f) => [f.id, f]));
       const ordered: BrowserFavorite[] = [];
       for (const id of ids) {
@@ -370,18 +168,14 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
       for (const f of latest.favorites) {
         if (!ids.includes(f.id)) ordered.push(f);
       }
-      const next: BrowserSettings = {
-        ...latest,
-        favorites: ordered,
-      };
-      persist(next);
+      persistBrowserPreferencePatch({ ...latest, favorites: ordered }, { favorites: ordered }, appSettings);
     },
-    [persist],
+    [appSettings],
   );
 
   const moveFavorite = useCallback(
     (id: string, direction: 'up' | 'down') => {
-      const latest = getCurrentSettings();
+      const latest = getBrowserSettingsStoreState().settings;
       const index = latest.favorites.findIndex((f) => f.id === id);
       if (index === -1) return;
       if (direction === 'up' && index === 0) return;
@@ -392,57 +186,42 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
       const item = updated[index]!;
       updated[index] = updated[targetIndex]!;
       updated[targetIndex] = item;
-
-      const next: BrowserSettings = {
-        ...latest,
-        favorites: updated,
-      };
-      persist(next);
+      persistBrowserPreferencePatch({ ...latest, favorites: updated }, { favorites: updated }, appSettings);
     },
-    [persist],
+    [appSettings],
   );
 
   const setDefaultSearchEngine = useCallback(
     (engineId: SearchEngineId) => {
-      const latest = getCurrentSettings();
+      const latest = getBrowserSettingsStoreState().settings;
       const currentList = latest.searchEngines ?? DEFAULT_SEARCH_ENGINES;
-      const exists = currentList.some((e) => e.id === engineId);
-      if (!exists && !DEFAULT_SEARCH_ENGINES.some((d) => d.id === engineId)) return;
-      const next: BrowserSettings = {
-        ...latest,
-        defaultSearchEngine: engineId,
-      };
-      persist(next);
+      if (!currentList.some((e) => e.id === engineId) && !DEFAULT_SEARCH_ENGINES.some((d) => d.id === engineId)) return;
+      persistBrowserPreferencePatch({ ...latest, defaultSearchEngine: engineId }, { defaultSearchEngine: engineId }, appSettings);
     },
-    [persist],
+    [appSettings],
   );
 
   const addSearchEngine = useCallback(
     (candidate: { name: string; homeUrl: string; searchUrl: string }) => {
-      const latest = getCurrentSettings();
+      const latest = getBrowserSettingsStoreState().settings;
       const currentList = latest.searchEngines ?? DEFAULT_SEARCH_ENGINES;
       const validated = validateSearchEngine(candidate, currentList);
       if (!validated.valid || !validated.normalized) {
         return { success: false, error: validated.error ?? 'Invalid search engine' };
       }
-      const next: BrowserSettings = {
-        ...latest,
-        searchEngines: [...currentList, validated.normalized],
-      };
-      persist(next);
+      const nextEngines = [...currentList, validated.normalized];
+      persistBrowserPreferencePatch({ ...latest, searchEngines: nextEngines }, { searchEngines: nextEngines }, appSettings);
       return { success: true };
     },
-    [persist],
+    [appSettings],
   );
 
   const editSearchEngine = useCallback(
     (id: string, updates: { name: string; homeUrl: string; searchUrl: string }) => {
-      const latest = getCurrentSettings();
+      const latest = getBrowserSettingsStoreState().settings;
       const currentList = latest.searchEngines ?? DEFAULT_SEARCH_ENGINES;
       const index = currentList.findIndex((e) => e.id === id);
-      if (index === -1) {
-        return { success: false, error: 'Search engine not found' };
-      }
+      if (index === -1) return { success: false, error: 'Search engine not found' };
       const existing = currentList[index]!;
       const candidate: SearchEngineCandidate = {
         id,
@@ -454,27 +233,19 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
       if (!validated.valid || !validated.normalized) {
         return { success: false, error: validated.error ?? 'Invalid search engine' };
       }
-      const updatedList = [...currentList];
-      updatedList[index] = {
-        ...validated.normalized,
-        isBuiltin: existing.isBuiltin,
-      };
-      const next: BrowserSettings = {
-        ...latest,
-        searchEngines: updatedList,
-      };
-      persist(next);
+      const nextEngines = [...currentList];
+      nextEngines[index] = { ...validated.normalized, isBuiltin: existing.isBuiltin };
+      persistBrowserPreferencePatch({ ...latest, searchEngines: nextEngines }, { searchEngines: nextEngines }, appSettings);
       return { success: true };
     },
-    [persist],
+    [appSettings],
   );
 
   const removeSearchEngine = useCallback(
     (id: string) => {
-      const latest = getCurrentSettings();
+      const latest = getBrowserSettingsStoreState().settings;
       const currentList = latest.searchEngines ?? DEFAULT_SEARCH_ENGINES;
-      const existing = currentList.find((e) => e.id === id);
-      if (!existing) {
+      if (!currentList.some((e) => e.id === id)) {
         return { success: false, error: 'Search engine not found' };
       }
       if (currentList.length <= 1) {
@@ -485,92 +256,80 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
       if (latest.defaultSearchEngine === id || !filtered.some((e) => e.id === nextDefault)) {
         nextDefault = filtered[0]?.id ?? DEFAULT_SEARCH_ENGINE_ID;
       }
-      const next: BrowserSettings = {
-        ...latest,
-        defaultSearchEngine: nextDefault,
-        searchEngines: filtered,
-      };
-      persist(next);
+      persistBrowserPreferencePatch(
+        { ...latest, defaultSearchEngine: nextDefault, searchEngines: filtered },
+        { defaultSearchEngine: nextDefault, searchEngines: filtered },
+        appSettings,
+      );
       return { success: true };
     },
-    [persist],
+    [appSettings],
   );
 
   const restoreBuiltinSearchEngines = useCallback(() => {
-    const latest = getCurrentSettings();
+    const latest = getBrowserSettingsStoreState().settings;
     const currentList = latest.searchEngines ?? DEFAULT_SEARCH_ENGINES;
     const customEngines = currentList.filter(
       (e) => !e.isBuiltin && !DEFAULT_SEARCH_ENGINES.some((d) => d.id === e.id),
     );
     const restored = [...DEFAULT_SEARCH_ENGINES, ...customEngines];
-    const defaultExists = restored.some((e) => e.id === latest.defaultSearchEngine);
-    const next: BrowserSettings = {
-      ...latest,
-      defaultSearchEngine: defaultExists ? latest.defaultSearchEngine : DEFAULT_SEARCH_ENGINE_ID,
-      searchEngines: restored,
-    };
-    persist(next);
-  }, [persist]);
+    const nextDefault = restored.some((e) => e.id === latest.defaultSearchEngine)
+      ? latest.defaultSearchEngine
+      : DEFAULT_SEARCH_ENGINE_ID;
+    persistBrowserPreferencePatch(
+      { ...latest, defaultSearchEngine: nextDefault, searchEngines: restored },
+      { defaultSearchEngine: nextDefault, searchEngines: restored },
+      appSettings,
+    );
+  }, [appSettings]);
 
   const resetFavoritesToDefaults = useCallback(() => {
-    const latest = getCurrentSettings();
-    const next: BrowserSettings = {
-      ...latest,
-      favorites: [...DEFAULT_BROWSER_FAVORITES],
-    };
-    persist(next);
-  }, [persist]);
+    const latest = getBrowserSettingsStoreState().settings;
+    const nextFavorites = [...DEFAULT_BROWSER_FAVORITES];
+    persistBrowserPreferencePatch({ ...latest, favorites: nextFavorites }, { favorites: nextFavorites }, appSettings);
+  }, [appSettings]);
 
   const spellCheck = settings.spellCheck ?? createDefaultSpellCheck();
 
   const setSpellCheckEnabled = useCallback(
     (enabled: boolean) => {
-      const latest = getCurrentSettings();
+      const latest = getBrowserSettingsStoreState().settings;
       const currentSpellCheck = latest.spellCheck ?? createDefaultSpellCheck();
-      const nextSpellCheck: SpellCheckSettings = {
-        ...currentSpellCheck,
-        enabled,
-      };
-      const next: BrowserSettings = {
-        ...latest,
-        spellCheck: nextSpellCheck,
-      };
-      persist(next);
-      syncSpellCheckConfigToDesktop(nextSpellCheck);
+      const nextSpellCheck: SpellCheckSettings = { ...currentSpellCheck, enabled };
+      persistBrowserPreferencePatch(
+        { ...latest, spellCheck: nextSpellCheck },
+        { spellCheck: { enabled } },
+        appSettings,
+      );
     },
-    [persist],
+    [appSettings],
   );
 
   const toggleSpellCheckLanguage = useCallback(
     (code: string) => {
-      const latest = getCurrentSettings();
+      const latest = getBrowserSettingsStoreState().settings;
       const currentSpellCheck = latest.spellCheck ?? createDefaultSpellCheck();
       const configured = Array.isArray(currentSpellCheck.configuredLanguages)
         ? currentSpellCheck.configuredLanguages
         : currentSpellCheck.languages;
       if (!configured.includes(code)) return;
       const currentLanguages = currentSpellCheck.languages || [];
-      const isEnabled = currentLanguages.includes(code);
-      const nextLanguages = isEnabled
+      const nextLanguages = currentLanguages.includes(code)
         ? currentLanguages.filter((c) => c !== code)
         : [...currentLanguages, code];
-      const nextSpellCheck: SpellCheckSettings = {
-        ...currentSpellCheck,
-        languages: nextLanguages,
-      };
-      const next: BrowserSettings = {
-        ...latest,
-        spellCheck: nextSpellCheck,
-      };
-      persist(next);
-      syncSpellCheckConfigToDesktop(nextSpellCheck);
+      const nextSpellCheck: SpellCheckSettings = { ...currentSpellCheck, languages: nextLanguages };
+      persistBrowserPreferencePatch(
+        { ...latest, spellCheck: nextSpellCheck },
+        { spellCheck: { languages: nextLanguages } },
+        appSettings,
+      );
     },
-    [persist],
+    [appSettings],
   );
 
   const addSpellCheckLanguage = useCallback(
     (code: string) => {
-      const latest = getCurrentSettings();
+      const latest = getBrowserSettingsStoreState().settings;
       const currentSpellCheck = latest.spellCheck ?? createDefaultSpellCheck();
       const configured = Array.isArray(currentSpellCheck.configuredLanguages)
         ? currentSpellCheck.configuredLanguages
@@ -583,19 +342,18 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
         configuredLanguages: nextConfigured,
         languages: nextLanguages,
       };
-      const next: BrowserSettings = {
-        ...latest,
-        spellCheck: nextSpellCheck,
-      };
-      persist(next);
-      syncSpellCheckConfigToDesktop(nextSpellCheck);
+      persistBrowserPreferencePatch(
+        { ...latest, spellCheck: nextSpellCheck },
+        { spellCheck: { configuredLanguages: nextConfigured, languages: nextLanguages } },
+        appSettings,
+      );
     },
-    [persist],
+    [appSettings],
   );
 
   const removeSpellCheckLanguage = useCallback(
     (code: string) => {
-      const latest = getCurrentSettings();
+      const latest = getBrowserSettingsStoreState().settings;
       const currentSpellCheck = latest.spellCheck ?? createDefaultSpellCheck();
       const configured = Array.isArray(currentSpellCheck.configuredLanguages)
         ? currentSpellCheck.configuredLanguages
@@ -607,167 +365,39 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
         configuredLanguages: nextConfigured,
         languages: nextLanguages,
       };
-      const next: BrowserSettings = {
-        ...latest,
-        spellCheck: nextSpellCheck,
-      };
-      persist(next);
-      syncSpellCheckConfigToDesktop(nextSpellCheck);
+      persistBrowserPreferencePatch(
+        { ...latest, spellCheck: nextSpellCheck },
+        { spellCheck: { configuredLanguages: nextConfigured, languages: nextLanguages } },
+        appSettings,
+      );
     },
-    [persist],
+    [appSettings],
   );
-
-  const resolveProfile = (profileId?: string): string | null => {
-    if (profileId === undefined) return DEFAULT_BROWSER_PROFILE_ID;
-    return isValidBrowserProfileId(profileId) ? profileId : null;
-  };
 
   const getCustomDictionaryWords = useCallback(
     (profileId: string = DEFAULT_BROWSER_PROFILE_ID): string[] => {
-      const effective = resolveProfile(profileId);
-      if (!effective) return [];
-      return spellCheck.customWordsByProfile?.[effective] ?? [];
+      if (!isValidBrowserProfileId(profileId)) return [];
+      return spellCheck.customWordsByProfile?.[profileId] ?? [];
     },
     [spellCheck],
   );
 
   const addCustomDictionaryWord = useCallback(
-    async (word: string, profileId: string = DEFAULT_BROWSER_PROFILE_ID) => {
-      const effective = resolveProfile(profileId);
-      if (!effective) return { success: false, error: 'Invalid browser profile' };
-      if (/[\r\n\0]/.test(word)) return { success: false, error: 'Word contains invalid characters' };
-      const clean = word.trim();
-      if (!clean) return { success: false, error: 'Word cannot be empty' };
-      if (clean.length > 128) return { success: false, error: 'Word exceeds 128 characters' };
-
-      const bridge = typeof window !== 'undefined' ? window.mawChatGpt : undefined;
-      if (!bridge) {
-        return { success: false, error: 'Custom dictionary changes require the desktop app' };
-      }
-
-      const initialLatest = getCurrentSettings();
-      const initialWords = initialLatest.spellCheck?.customWordsByProfile?.[effective] ?? [];
-      if (initialWords.includes(clean)) {
-        return { success: false, error: 'Word already exists in dictionary' };
-      }
-
-      let res: { ok?: boolean; error?: string } | undefined;
-      try {
-        res = (await bridge.command({
-          type: 'add-custom-dictionary-word',
-          word: clean,
-          profileId: effective,
-        })) as { ok?: boolean; error?: string } | undefined;
-      } catch (err) {
-        return { success: false, error: err instanceof Error ? err.message : 'Failed to update custom dictionary' };
-      }
-      if (!res?.ok) {
-        return { success: false, error: res?.error || 'Failed to update custom dictionary' };
-      }
-
-      const latest = getCurrentSettings();
-      const currentSpellCheck = latest.spellCheck ?? createDefaultSpellCheck();
-      const existingMap = currentSpellCheck.customWordsByProfile ?? {};
-      const currentWords = existingMap[effective] ?? [];
-      if (currentWords.includes(clean)) {
-        return { success: true };
-      }
-
-      const nextWords = [...currentWords, clean];
-      const nextMap: Record<string, string[]> = {};
-      for (const pid of Object.keys({ ...existingMap, [effective]: nextWords }).sort()) {
-        const list = pid === effective ? nextWords : existingMap[pid];
-        if (list && list.length > 0) nextMap[pid] = list;
-      }
-      const nextSpellCheck: SpellCheckSettings = {
-        ...currentSpellCheck,
-        customWordsByProfile: nextMap,
-      };
-      lastReconciledDictKey = JSON.stringify(nextMap);
-      persist({ ...latest, spellCheck: nextSpellCheck });
-      return { success: true };
-    },
-    [persist],
+    (word: string, profileId: string = DEFAULT_BROWSER_PROFILE_ID) =>
+      mutateAuthoritativeCustomDictionary('add', word, profileId, appSettings),
+    [appSettings],
   );
 
   const removeCustomDictionaryWord = useCallback(
-    async (word: string, profileId: string = DEFAULT_BROWSER_PROFILE_ID) => {
-      const effective = resolveProfile(profileId);
-      if (!effective) return { success: false, error: 'Invalid browser profile' };
-      if (/[\r\n\0]/.test(word)) return { success: false, error: 'Word contains invalid characters' };
-      const clean = word.trim();
-      if (!clean) return { success: false, error: 'Word cannot be empty' };
-
-      const bridge = typeof window !== 'undefined' ? window.mawChatGpt : undefined;
-      if (!bridge) {
-        return { success: false, error: 'Custom dictionary changes require the desktop app' };
-      }
-
-      let res: { ok?: boolean; error?: string } | undefined;
-      try {
-        res = (await bridge.command({
-          type: 'remove-custom-dictionary-word',
-          word: clean,
-          profileId: effective,
-        })) as { ok?: boolean; error?: string } | undefined;
-      } catch (err) {
-        return { success: false, error: err instanceof Error ? err.message : 'Failed to remove custom dictionary word' };
-      }
-      if (!res?.ok) {
-        return { success: false, error: res?.error || 'Failed to remove custom dictionary word' };
-      }
-
-      const latest = getCurrentSettings();
-      const currentSpellCheck = latest.spellCheck ?? createDefaultSpellCheck();
-      const existingMap = currentSpellCheck.customWordsByProfile ?? {};
-      const currentWords = existingMap[effective] ?? [];
-      const nextWords = currentWords.filter((w) => w !== clean);
-      const nextMap: Record<string, string[]> = {};
-      for (const pid of Object.keys(existingMap).sort()) {
-        const list = pid === effective ? nextWords : existingMap[pid];
-        if (list && list.length > 0) nextMap[pid] = list;
-      }
-      const nextSpellCheck: SpellCheckSettings = {
-        ...currentSpellCheck,
-        customWordsByProfile: nextMap,
-      };
-      lastReconciledDictKey = JSON.stringify(nextMap);
-      persist({ ...latest, spellCheck: nextSpellCheck });
-      return { success: true };
-    },
-    [persist],
-  );
-
-  const clearProfileCustomDictionary = useCallback(
-    (profileId: string) => {
-      if (!profileId || profileId === DEFAULT_BROWSER_PROFILE_ID) return;
-      const latest = getCurrentSettings();
-      const currentSpellCheck = latest.spellCheck ?? createDefaultSpellCheck();
-      const existingMap = currentSpellCheck.customWordsByProfile ?? {};
-      if (!(profileId in existingMap)) return;
-      const nextMap: Record<string, string[]> = {};
-      for (const pid of Object.keys(existingMap).sort()) {
-        if (pid !== profileId && existingMap[pid]?.length) {
-          nextMap[pid] = existingMap[pid];
-        }
-      }
-      lastReconciledDictKey = JSON.stringify(nextMap);
-      persist({
-        ...latest,
-        spellCheck: {
-          ...currentSpellCheck,
-          customWordsByProfile: nextMap,
-        },
-      });
-    },
-    [persist],
+    (word: string, profileId: string = DEFAULT_BROWSER_PROFILE_ID) =>
+      mutateAuthoritativeCustomDictionary('remove', word, profileId, appSettings),
+    [appSettings],
   );
 
   const resetToDefaults = useCallback(() => {
     const next = createDefaultBrowserSettings();
-    persist(next);
-    syncAllDesktopSpellCheck(next.spellCheck);
-  }, [persist]);
+    persistBrowserPreferencePatch(next, next, appSettings);
+  }, [appSettings]);
 
   const currentSearchEngines = settings.searchEngines ?? DEFAULT_SEARCH_ENGINES;
 
@@ -777,6 +407,8 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
     defaultSearchEngine: settings.defaultSearchEngine,
     searchEngine: getSearchEngine(settings.defaultSearchEngine, currentSearchEngines),
     spellCheck,
+    nativeDictionarySync: snapshot.nativeDictionarySync,
+    retryNativeDictionarySync,
     setSpellCheckEnabled,
     toggleSpellCheckLanguage,
     addSpellCheckLanguage,
@@ -784,7 +416,6 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
     getCustomDictionaryWords,
     addCustomDictionaryWord,
     removeCustomDictionaryWord,
-    clearProfileCustomDictionary,
     addFavorite,
     editFavorite,
     removeFavorite,

@@ -321,3 +321,108 @@ test('createBrowserSessions: attaches lifecycle listeners before configuring dic
   h.sessions.onProfileDeleted('temp-prof', ['persist:maw-profile-temp-prof-browser']);
   assert.equal(h.sessions.getSpellCheckStatus().statuses['pt-PT'].status, 'failed'); // persist:maw-chatgpt also failed in this mock
 });
+
+test('Scenario 9: primary partition failure followed by rollback failure reports rolledBack=false truthfully and recovers via reconcileCustomDictionary', async () => {
+  let rejectRemove = false;
+  const h = harness({
+    'persist:maw-profile-rbfail-chatgpt': () => {
+      const s = createMockSession();
+      const origRemove = s.removeWordFromSpellCheckerDictionary;
+      s.removeWordFromSpellCheckerDictionary = (w) => {
+        if (rejectRemove) return false;
+        return origRemove(w);
+      };
+      return s;
+    },
+    'persist:maw-profile-rbfail-github': () => createMockSession({ failAdd: true }),
+  });
+
+  // Allow chatgpt add to succeed, make inverse remove fail on chatgpt during rollback after github add fails
+  rejectRemove = true;
+  const res = await h.sessions.addCustomDictionaryWord('partialstuck', 'rbfail');
+  assert.equal(res.ok, false);
+  assert.equal(res.rolledBack, false);
+  assert.deepEqual(res.failedPartitions, ['persist:maw-profile-rbfail-github']);
+  assert.deepEqual(res.rollbackFailedPartitions, ['persist:maw-profile-rbfail-chatgpt']);
+
+  // Listing truthfully shows divergence left behind by failed rollback
+  const listed = await h.sessions.listCustomDictionaryWords('rbfail');
+  assert.equal(listed.consistent, false);
+  assert.deepEqual(listed.inconsistentWords, ['partialstuck']);
+
+  // Reconcile against authoritative empty set after failure recovers once partition accepts writes again
+  rejectRemove = false;
+  const gh = h.partitions.get('persist:maw-profile-rbfail-github');
+  gh.addWordToSpellCheckerDictionary = (w) => {
+    if (gh.customDictionary.has(w)) return false;
+    gh.customDictionary.add(w);
+    return true;
+  };
+  const rec = await h.sessions.reconcileCustomDictionary({ rbfail: [] });
+  assert.equal(rec.ok, true);
+  const after = await h.sessions.listCustomDictionaryWords('rbfail');
+  assert.equal(after.consistent, true);
+  assert.deepEqual(after.words, []);
+});
+
+test('Scenario 10: profile deletion awaits in-flight reconcile deterministically and prevents repopulation', async () => {
+  let releaseList;
+  let listEntered;
+  const listEnteredPromise = new Promise((r) => { listEntered = r; });
+  const listGatePromise = new Promise((r) => { releaseList = r; });
+  let pauseList = true;
+
+  const h = harness({
+    'persist:maw-profile-racep-chatgpt': () => {
+      const s = createMockSession();
+      const origList = s.listWordsInSpellCheckerDictionary;
+      s.listWordsInSpellCheckerDictionary = async () => {
+        if (pauseList) {
+          listEntered();
+          await listGatePromise;
+        }
+        return await origList();
+      };
+      return s;
+    },
+  });
+
+  h.sessions.ensurePartitionSession('racep', 'chatgpt');
+  h.sessions.ensurePartitionSession('main', 'chatgpt');
+  await h.sessions.addCustomDictionaryWord('mainkeep', 'main');
+
+  // Start reconcile that pauses inside chatgpt's listWordsInSpellCheckerDictionary()
+  const reconcilePromise = h.sessions.reconcileCustomDictionary({
+    main: ['mainkeep'],
+    racep: ['shouldnotarrive'],
+  });
+  await listEnteredPromise;
+
+  // Concurrent deletion marks profile deleting & awaits in-flight reconcile before wiping
+  let deletionFinished = false;
+  const deletionPromise = (async () => {
+    await h.sessions.beginProfileDeletion('racep');
+    pauseList = false;
+    const afterPause = await h.sessions.listCustomDictionaryWords('racep');
+    assert.deepEqual(afterPause.words, []);
+    h.sessions.finishProfileDeletion('racep', ['persist:maw-profile-racep-chatgpt']);
+    deletionFinished = true;
+  })();
+
+  // Mutations targeting a profile currently being deleted reject cleanly
+  const duringDeleteAdd = await h.sessions.addCustomDictionaryWord('rejectedduringdelete', 'racep');
+  assert.equal(duringDeleteAdd.ok, false);
+  assert.equal(duringDeleteAdd.aborted, true);
+  assert.equal(deletionFinished, false);
+
+  // Release paused list() -> reconcile must abort without writing 'shouldnotarrive', then deletion finishes
+  pauseList = false;
+  releaseList();
+  const [recRes] = await Promise.all([reconcilePromise, deletionPromise]);
+  assert.ok(recRes.abortedPartitions?.includes('persist:maw-profile-racep-chatgpt'));
+
+  const chatSess = h.partitions.get('persist:maw-profile-racep-chatgpt');
+  assert.deepEqual([...chatSess.customDictionary], []);
+  assert.deepEqual((await h.sessions.listCustomDictionaryWords('main')).words, ['mainkeep']);
+  assert.deepEqual(await h.defaultSession.listWordsInSpellCheckerDictionary(), []);
+});

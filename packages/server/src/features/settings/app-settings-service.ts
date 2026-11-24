@@ -12,7 +12,14 @@
  */
 
 import { EventEmitter } from 'node:events';
-import type { AgentId, AppSettingsChange, AppSettingsStatus, ConsoleShellId } from '@agent-workbench/shared';
+import {
+  DEFAULT_BROWSER_PROFILE_ID,
+  isValidBrowserProfileId,
+  type AgentId,
+  type AppSettingsChange,
+  type AppSettingsStatus,
+  type ConsoleShellId,
+} from '@agent-workbench/shared';
 import type { AgentRegistry } from '../../agents/registry.js';
 import type { SettingsStore } from './settings-store.js';
 import { pickShell, type ShellCandidate, type ShellLocation } from '../terminals/shell-locator.js';
@@ -77,7 +84,7 @@ export class AppSettingsService extends EventEmitter {
   }
 
   /** Guarda el cambio, avisa al registro si cambio la consola, y emite `status`. */
-  async update(change: AppSettingsChange): Promise<void> {
+  async update(change: AppSettingsChange): Promise<AppSettingsStatus> {
     if (change.consoleShell !== undefined && !this.offered(change.consoleShell)) {
       throw new AppSettingsChangeError('shell-not-installed');
     }
@@ -86,10 +93,27 @@ export class AppSettingsService extends EventEmitter {
       ...(change.consoleShell !== undefined ? { console: { shell: change.consoleShell } } : {}),
       ...(change.disabledAgents !== undefined ? { agents: { disabled: change.disabledAgents } } : {}),
       ...(change.browser !== undefined ? { browser: change.browser } : {}),
+      ...(change.customDictionary !== undefined ? { customDictionary: change.customDictionary } : {}),
     });
     const after = this.currentShell();
     if (after !== before) this.options.onShellChange(after);
-    this.emit('status', this.status());
+    const nextStatus = this.status();
+    this.emit('status', nextStatus);
+    return nextStatus;
+  }
+
+  /** Removes custom dictionary entries owned by a deleted custom browser profile. */
+  async clearProfileCustomDictionary(profileId: string): Promise<AppSettingsStatus | null> {
+    if (!isValidBrowserProfileId(profileId) || profileId === DEFAULT_BROWSER_PROFILE_ID) {
+      return null;
+    }
+    const existing = this.options.settings.get().browser.spellCheck?.customWordsByProfile?.[profileId];
+    if (!existing || existing.length === 0) {
+      return null;
+    }
+    return this.update({
+      customDictionary: { action: 'clear-profile', profileId },
+    });
   }
 
   private offered(choice: ConsoleShellId): boolean {
