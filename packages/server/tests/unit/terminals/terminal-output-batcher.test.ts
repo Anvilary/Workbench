@@ -169,6 +169,18 @@ test('TerminalOutputBatcher: high-throughput flood benchmark assertion', () => {
   const totalLines = 10_000;
   const lineChunk = 'line: 0123456789abcdef0123456789abcdef0123456789abcdef\n'; // 56 bytes
 
+  // Warm up V8 JIT outside the timed measurement so shared CI runners do not
+  // include initial compilation overhead in the 10k-line throughput window.
+  const warmup = new TerminalOutputBatcher({
+    maxWaitMs: 2,
+    maxBatchBytes: 64 * 1024,
+    onFlush: () => {},
+  });
+  for (let i = 0; i < 2_000; i++) {
+    warmup.push(tId('term-warmup'), lineChunk);
+  }
+  warmup.dispose();
+
   const start = performance.now();
   for (let i = 0; i < totalLines; i++) {
     batcher.push(tId('term-1'), lineChunk);
