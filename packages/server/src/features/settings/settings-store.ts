@@ -203,6 +203,16 @@ function frozen(settings: AppSettings): AppSettings {
       ...(settings.browser.searchEngines
         ? { searchEngines: Object.freeze(settings.browser.searchEngines.map((e) => Object.freeze({ ...e }))) as any }
         : {}),
+      ...(settings.browser.spellCheck
+        ? {
+            spellCheck: Object.freeze({
+              ...settings.browser.spellCheck,
+              languages: Object.freeze([...settings.browser.spellCheck.languages]) as any,
+              configuredLanguages: Object.freeze([...(settings.browser.spellCheck.configuredLanguages || settings.browser.spellCheck.languages)]) as any,
+              customWords: Object.freeze([...(settings.browser.spellCheck.customWords || [])]) as any,
+            }),
+          }
+        : {}),
     }),
   });
 }
@@ -311,6 +321,16 @@ export class SettingsStore {
           ...(this.current.browser.searchEngines
             ? { searchEngines: this.current.browser.searchEngines.map((e) => ({ ...e })) }
             : {}),
+          ...(this.current.browser.spellCheck
+            ? {
+                spellCheck: {
+                  enabled: this.current.browser.spellCheck.enabled,
+                  languages: [...this.current.browser.spellCheck.languages],
+                  configuredLanguages: [...(this.current.browser.spellCheck.configuredLanguages || this.current.browser.spellCheck.languages)],
+                  customWords: [...(this.current.browser.spellCheck.customWords || [])],
+                },
+              }
+            : {}),
         },
       };
       const vault = patch.vault ?? {};
@@ -334,6 +354,14 @@ export class SettingsStore {
       }
       if (patch.browser?.searchEngines !== undefined) {
         next.browser.searchEngines = patch.browser.searchEngines.map((e) => ({ ...e }));
+      }
+      if (patch.browser?.spellCheck !== undefined) {
+        next.browser.spellCheck = {
+          enabled: patch.browser.spellCheck.enabled,
+          languages: [...patch.browser.spellCheck.languages],
+          configuredLanguages: [...(patch.browser.spellCheck.configuredLanguages || patch.browser.spellCheck.languages)],
+          customWords: [...(patch.browser.spellCheck.customWords || [])],
+        };
       }
       const remote = patch.remote ?? {};
       if (remote.enabled !== undefined) next.remote.enabled = remote.enabled;

@@ -337,16 +337,32 @@ export const DEFAULT_BROWSER_FAVORITES: readonly BrowserFavorite[] = [
   { id: 'github', title: 'GitHub', url: 'https://github.com/' },
 ] as const;
 
+export interface SpellCheckSettings {
+  enabled: boolean;
+  languages: string[];
+  configuredLanguages?: string[];
+  customWords?: string[];
+}
+
+export const DEFAULT_SPELLCHECK_SETTINGS: SpellCheckSettings = {
+  enabled: true,
+  languages: ['en-US'],
+  configuredLanguages: ['en-US'],
+  customWords: [],
+};
+
 export interface BrowserSettings {
   favorites: BrowserFavorite[];
   defaultSearchEngine: SearchEngineId;
   searchEngines?: SearchEngine[];
+  spellCheck?: SpellCheckSettings;
 }
 
 export const DEFAULT_BROWSER_SETTINGS: BrowserSettings = {
   favorites: [...DEFAULT_BROWSER_FAVORITES],
   defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
   searchEngines: [...DEFAULT_SEARCH_ENGINES],
+  spellCheck: { ...DEFAULT_SPELLCHECK_SETTINGS },
 };
 
 /**
@@ -546,9 +562,40 @@ export function parseBrowserSettings(value: unknown): BrowserSettings | null {
   const engineExists = searchEngines.some((e) => e.id === defaultSearchEngine);
   const resolvedDefault = engineExists ? defaultSearchEngine : (searchEngines[0]?.id ?? DEFAULT_SEARCH_ENGINE_ID);
 
+  let spellCheck: SpellCheckSettings | undefined;
+  const rawSpellCheck = record['spellCheck'];
+  if (rawSpellCheck && typeof rawSpellCheck === 'object') {
+    const rawRecord = asRecord(rawSpellCheck);
+    if (rawRecord) {
+      const enabled = rawRecord['enabled'] !== false;
+      const rawLangs = rawRecord['languages'];
+      const languages = Array.isArray(rawLangs)
+        ? rawLangs.filter((l): l is string => typeof l === 'string' && /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,4})*$/.test(l))
+        : ['en-US'];
+      const rawConfigured = rawRecord['configuredLanguages'];
+      const configuredLanguages = Array.isArray(rawConfigured)
+        ? rawConfigured.filter((l): l is string => typeof l === 'string' && /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,4})*$/.test(l))
+        : [...languages];
+      const rawWords = rawRecord['customWords'];
+      const customWords = Array.isArray(rawWords)
+        ? rawWords.filter((w): w is string => typeof w === 'string' && w.trim().length > 0 && w.length <= 128)
+        : [];
+      spellCheck = {
+        enabled,
+        languages: languages.length > 0 ? languages : ['en-US'],
+        configuredLanguages: configuredLanguages.length > 0 ? configuredLanguages : ['en-US'],
+        customWords,
+      };
+    }
+  }
+  if (!spellCheck) {
+    spellCheck = { ...DEFAULT_SPELLCHECK_SETTINGS };
+  }
+
   return {
     defaultSearchEngine: resolvedDefault,
     favorites,
     searchEngines,
+    spellCheck,
   };
 }

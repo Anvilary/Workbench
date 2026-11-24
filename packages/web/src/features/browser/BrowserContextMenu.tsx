@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { classifyWebTabUrl, validateOtherWebUrl, type WebTab } from '@agent-workbench/shared';
 import { t } from '../../i18n/index.js';
 import type { useWorkbenchStore } from '../workspaces/useWorkbenchStore.js';
+import { useBrowserSettings } from './useBrowserSettings.js';
+import { getLanguageDisplayName } from './SpellCheckSettingsSection.js';
 
 export interface BoundingBox {
   left: number;
@@ -171,6 +173,7 @@ export function buildBrowserContextMenuItems(params: {
   onBack: () => void;
   onForward: () => void;
   onSearch: () => void;
+  onInspectPage?: () => void;
 }): ContextMenuItem[] {
   const items: ContextMenuItem[] = [];
 
@@ -192,6 +195,10 @@ export function buildBrowserContextMenuItems(params: {
   items.push({ id: 'back', label: t('agency.browser.back'), disabled: !params.canGoBack, run: params.onBack });
   items.push({ id: 'forward', label: t('agency.browser.forward'), disabled: !params.canGoForward, run: params.onForward });
   items.push({ id: 'search', label: t('agency.browser.search'), run: params.onSearch });
+
+  if (params.onInspectPage) {
+    items.push({ id: 'inspect-page', label: t('agency.browser.inspectPage'), run: params.onInspectPage });
+  }
 
   return items;
 }
@@ -298,6 +305,46 @@ export function BrowserContextMenu({
     setMenu(null);
   };
 
+  const { spellCheck } = useBrowserSettings();
+  const enabledLanguages = spellCheck?.languages && spellCheck.languages.length > 0
+    ? spellCheck.languages
+    : ['en-US'];
+
+  const [expandedLanguages, setExpandedLanguages] = useState<Record<string, boolean>>(() => ({
+    [enabledLanguages[0] || 'en-US']: true,
+  }));
+
+  const toggleLanguageExpand = (code: string) => {
+    setExpandedLanguages((prev) => ({
+      ...prev,
+      [code]: !prev[code],
+    }));
+  };
+
+  const handleAddToDictionary = () => {
+    if (!menu.misspelledWord) return;
+    void window.mawChatGpt?.command({
+      type: 'add-custom-dictionary-word',
+      word: menu.misspelledWord,
+    });
+    setMenu(null);
+  };
+
+  const handleManageSpellCheck = () => {
+    window.dispatchEvent(new CustomEvent('workbench:open-settings', { detail: { tab: 'browser' } }));
+    setMenu(null);
+  };
+
+  const handleInspectPage = () => {
+    void window.mawChatGpt?.command({
+      type: 'inspect-page',
+      id: menu.id,
+      x: Math.round(menu.x),
+      y: Math.round(menu.y),
+    });
+    setMenu(null);
+  };
+
   const handleReplaceMisspelling = (word: string) => {
     void window.mawChatGpt?.command({
       type: 'browser-action',
@@ -350,23 +397,81 @@ export function BrowserContextMenu({
     >
       {hasMisspelling && (
         <div className="maw-context-menu-spelling" role="group" aria-label={t('agency.browser.spellingSuggestions')}>
-          {menu.dictionarySuggestions.length > 0 ? (
-            menu.dictionarySuggestions.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                role="menuitem"
-                className="maw-context-menu-suggestion"
-                onClick={() => handleReplaceMisspelling(suggestion)}
-              >
-                {suggestion}
-              </button>
-            ))
+          <div className="maw-context-menu-header">{t('agency.browser.spellCheck')}</div>
+          {enabledLanguages.length > 1 ? (
+            enabledLanguages.map((code, idx) => {
+              const isExpanded = expandedLanguages[code] ?? (idx === 0);
+              const langName = getLanguageDisplayName(code);
+              return (
+                <div key={code} className="maw-context-menu-category">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="maw-context-menu-category-btn"
+                    onClick={() => toggleLanguageExpand(code)}
+                  >
+                    <span className="maw-context-menu-chevron" aria-hidden="true">{isExpanded ? '▾' : '▸'}</span>
+                    <span className="maw-context-menu-category-name">{langName}</span>
+                  </button>
+                  {isExpanded && (
+                    <div className="maw-context-menu-category-content">
+                      {menu.dictionarySuggestions.length > 0 ? (
+                        menu.dictionarySuggestions.map((suggestion) => (
+                          <button
+                            key={suggestion}
+                            type="button"
+                            role="menuitem"
+                            className="maw-context-menu-suggestion"
+                            onClick={() => handleReplaceMisspelling(suggestion)}
+                          >
+                            {suggestion}
+                          </button>
+                        ))
+                      ) : (
+                        <button type="button" role="menuitem" disabled className="maw-context-menu-disabled-item">
+                          {t('agency.browser.noSpellingSuggestions')}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })
           ) : (
-            <button type="button" role="menuitem" disabled className="maw-context-menu-disabled-item">
-              {t('agency.browser.noSpellingSuggestions')}
-            </button>
+            menu.dictionarySuggestions.length > 0 ? (
+              menu.dictionarySuggestions.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  role="menuitem"
+                  className="maw-context-menu-suggestion"
+                  onClick={() => handleReplaceMisspelling(suggestion)}
+                >
+                  {suggestion}
+                </button>
+              ))
+            ) : (
+              <button type="button" role="menuitem" disabled className="maw-context-menu-disabled-item">
+                {t('agency.browser.noSpellingSuggestions')}
+              </button>
+            )
           )}
+          <button
+            type="button"
+            role="menuitem"
+            className="maw-context-menu-action-item"
+            onClick={handleAddToDictionary}
+          >
+            {t('agency.browser.addToDictionary')}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="maw-context-menu-action-item"
+            onClick={handleManageSpellCheck}
+          >
+            {t('agency.browser.manageSpellCheck')}
+          </button>
           <div className="maw-context-menu-divider" role="separator" />
         </div>
       )}
@@ -375,6 +480,14 @@ export function BrowserContextMenu({
           {item.label}
         </button>
       ))}
+      <div className="maw-context-menu-divider" role="separator" />
+      <button
+        type="button"
+        role="menuitem"
+        onClick={handleInspectPage}
+      >
+        {t('agency.browser.inspectPage')}
+      </button>
     </div>
   );
 }

@@ -16,6 +16,85 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
   const { views, providers, popupOwners, popups, activeDownloads, reservedDownloadPaths, failures } = state;
   const configuredPartitions = new Map(); // partitionName -> Electron.Session
   const sessionProviders = new Map(); // Electron.Session -> provider
+  const spellCheckConfig = {
+    enabled: true,
+    languages: ['en-US'],
+  };
+
+  function applySpellCheckSettings(config) {
+    if (!config) return;
+    if (typeof config.enabled === 'boolean') {
+      spellCheckConfig.enabled = config.enabled;
+    }
+    if (Array.isArray(config.languages)) {
+      spellCheckConfig.languages = [...config.languages];
+    }
+    for (const targetSession of configuredPartitions.values()) {
+      try {
+        if (typeof targetSession.setSpellCheckerEnabled === 'function') {
+          targetSession.setSpellCheckerEnabled(spellCheckConfig.enabled);
+        }
+        if (typeof targetSession.setSpellCheckerLanguages === 'function') {
+          const available = targetSession.availableSpellCheckerLanguages || [];
+          const toEnable = spellCheckConfig.languages.filter(
+            (lang) => available.length === 0 || available.includes(lang),
+          );
+          targetSession.setSpellCheckerLanguages(toEnable);
+        }
+      } catch {}
+    }
+  }
+
+  function getAvailableSpellCheckerLanguages() {
+    try {
+      if (session.defaultSession && Array.isArray(session.defaultSession.availableSpellCheckerLanguages)) {
+        return [...session.defaultSession.availableSpellCheckerLanguages];
+      }
+    } catch {}
+    return [];
+  }
+
+  async function listCustomDictionaryWords() {
+    try {
+      const sess = configuredPartitions.values().next().value || session.defaultSession;
+      if (sess && typeof sess.listWordsInSpellCheckerDictionary === 'function') {
+        return await sess.listWordsInSpellCheckerDictionary();
+      }
+    } catch {}
+    return [];
+  }
+
+  async function addCustomDictionaryWord(word) {
+    if (typeof word !== 'string' || !word.trim()) return false;
+    const clean = word.trim();
+    let result = false;
+    const allSessions = [session.defaultSession, ...configuredPartitions.values()];
+    for (const sess of allSessions) {
+      try {
+        if (sess && typeof sess.addWordToSpellCheckerDictionary === 'function') {
+          sess.addWordToSpellCheckerDictionary(clean);
+          result = true;
+        }
+      } catch {}
+    }
+    return result;
+  }
+
+  async function removeCustomDictionaryWord(word) {
+    if (typeof word !== 'string' || !word.trim()) return false;
+    const clean = word.trim();
+    let result = false;
+    const allSessions = [session.defaultSession, ...configuredPartitions.values()];
+    for (const sess of allSessions) {
+      try {
+        if (sess && typeof sess.removeWordFromSpellCheckerDictionary === 'function') {
+          sess.removeWordFromSpellCheckerDictionary(clean);
+          result = true;
+        }
+      } catch {}
+    }
+    return result;
+  }
 
   function flushBrowserSession(sess) {
     if (!sess) return;
@@ -46,13 +125,12 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
       authenticationUrl,
     });
     if (typeof targetSession.setSpellCheckerEnabled === 'function') {
-      try { targetSession.setSpellCheckerEnabled(true); } catch {}
+      try { targetSession.setSpellCheckerEnabled(spellCheckConfig.enabled); } catch {}
     }
     if (typeof targetSession.setSpellCheckerLanguages === 'function') {
       try {
         const available = targetSession.availableSpellCheckerLanguages || [];
-        const preferred = ['en-US', 'pt-PT', 'pt-BR', 'pt'];
-        const toEnable = preferred.filter(lang => available.length === 0 || available.includes(lang));
+        const toEnable = spellCheckConfig.languages.filter(lang => available.length === 0 || available.includes(lang));
         if (toEnable.length > 0) targetSession.setSpellCheckerLanguages(toEnable);
       } catch {}
     }
@@ -80,5 +158,15 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
     ensurePartitionSession(DEFAULT_BROWSER_PROFILE_ID, defaultProvider);
   }
 
-  return { ensurePartitionSession, configuredPartitions, sessionProviders, flushBrowserSession };
+  return {
+    ensurePartitionSession,
+    configuredPartitions,
+    sessionProviders,
+    flushBrowserSession,
+    applySpellCheckSettings,
+    getAvailableSpellCheckerLanguages,
+    listCustomDictionaryWords,
+    addCustomDictionaryWord,
+    removeCustomDictionaryWord,
+  };
 }

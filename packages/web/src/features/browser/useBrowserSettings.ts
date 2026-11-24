@@ -12,6 +12,7 @@ import {
   DEFAULT_BROWSER_FAVORITES,
   DEFAULT_SEARCH_ENGINES,
   DEFAULT_SEARCH_ENGINE_ID,
+  DEFAULT_SPELLCHECK_SETTINGS,
   getSearchEngine,
   parseBrowserSettings,
   validateBrowserFavoriteUrl,
@@ -21,6 +22,7 @@ import {
   type SearchEngine,
   type SearchEngineCandidate,
   type SearchEngineId,
+  type SpellCheckSettings,
 } from '@agent-workbench/shared';
 import type { AppSettingsApi } from '../settings/useAppSettings.js';
 
@@ -41,6 +43,7 @@ function loadCachedBrowserSettings(): BrowserSettings {
       defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
       favorites: [...DEFAULT_BROWSER_FAVORITES],
       searchEngines: [...DEFAULT_SEARCH_ENGINES],
+      spellCheck: { ...DEFAULT_SPELLCHECK_SETTINGS },
     };
   }
   try {
@@ -50,6 +53,7 @@ function loadCachedBrowserSettings(): BrowserSettings {
         defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
         favorites: [...DEFAULT_BROWSER_FAVORITES],
         searchEngines: [...DEFAULT_SEARCH_ENGINES],
+        spellCheck: { ...DEFAULT_SPELLCHECK_SETTINGS },
       };
     }
     const parsed = parseBrowserSettings(JSON.parse(raw));
@@ -61,6 +65,7 @@ function loadCachedBrowserSettings(): BrowserSettings {
     defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
     favorites: [...DEFAULT_BROWSER_FAVORITES],
     searchEngines: [...DEFAULT_SEARCH_ENGINES],
+    spellCheck: { ...DEFAULT_SPELLCHECK_SETTINGS },
   };
 }
 
@@ -78,6 +83,13 @@ export interface UseBrowserSettingsResult {
   searchEngines: readonly SearchEngine[];
   defaultSearchEngine: SearchEngineId;
   searchEngine: SearchEngine;
+  spellCheck: SpellCheckSettings;
+  setSpellCheckEnabled: (enabled: boolean) => void;
+  toggleSpellCheckLanguage: (code: string) => void;
+  addSpellCheckLanguage: (code: string) => void;
+  removeSpellCheckLanguage: (code: string) => void;
+  addCustomDictionaryWord: (word: string) => Promise<{ success: boolean; error?: string }>;
+  removeCustomDictionaryWord: (word: string) => Promise<{ success: boolean }>;
   addFavorite: (favorite: { title: string; url: string }) => { success: boolean; error?: string };
   editFavorite: (id: string, updates: { title?: string; url?: string }) => { success: boolean; error?: string };
   removeFavorite: (id: string) => void;
@@ -375,14 +387,160 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
     persist(next);
   }, [settings, persist]);
 
+  const spellCheck = settings.spellCheck ?? DEFAULT_SPELLCHECK_SETTINGS;
+
+  const syncSpellCheckToDesktop = useCallback((sc: SpellCheckSettings) => {
+    void window.mawChatGpt?.command({
+      type: 'update-spellcheck-settings',
+      enabled: sc.enabled,
+      languages: sc.languages,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (settings.spellCheck) {
+      syncSpellCheckToDesktop(settings.spellCheck);
+    }
+  }, [settings.spellCheck, syncSpellCheckToDesktop]);
+
+  const setSpellCheckEnabled = useCallback(
+    (enabled: boolean) => {
+      const nextSpellCheck: SpellCheckSettings = {
+        ...spellCheck,
+        enabled,
+      };
+      const next: BrowserSettings = {
+        ...settings,
+        spellCheck: nextSpellCheck,
+      };
+      persist(next);
+      syncSpellCheckToDesktop(nextSpellCheck);
+    },
+    [settings, spellCheck, persist, syncSpellCheckToDesktop],
+  );
+
+  const toggleSpellCheckLanguage = useCallback(
+    (code: string) => {
+      const currentLanguages = spellCheck.languages || [];
+      const isEnabled = currentLanguages.includes(code);
+      const nextLanguages = isEnabled
+        ? currentLanguages.filter((c) => c !== code)
+        : [...currentLanguages, code];
+      const nextSpellCheck: SpellCheckSettings = {
+        ...spellCheck,
+        languages: nextLanguages,
+      };
+      const next: BrowserSettings = {
+        ...settings,
+        spellCheck: nextSpellCheck,
+      };
+      persist(next);
+      syncSpellCheckToDesktop(nextSpellCheck);
+    },
+    [settings, spellCheck, persist, syncSpellCheckToDesktop],
+  );
+
+  const addSpellCheckLanguage = useCallback(
+    (code: string) => {
+      const configured = spellCheck.configuredLanguages || spellCheck.languages || [];
+      if (configured.includes(code)) return;
+      const nextConfigured = [...configured, code];
+      const nextLanguages = [...(spellCheck.languages || []), code];
+      const nextSpellCheck: SpellCheckSettings = {
+        ...spellCheck,
+        configuredLanguages: nextConfigured,
+        languages: nextLanguages,
+      };
+      const next: BrowserSettings = {
+        ...settings,
+        spellCheck: nextSpellCheck,
+      };
+      persist(next);
+      syncSpellCheckToDesktop(nextSpellCheck);
+    },
+    [settings, spellCheck, persist, syncSpellCheckToDesktop],
+  );
+
+  const removeSpellCheckLanguage = useCallback(
+    (code: string) => {
+      const configured = spellCheck.configuredLanguages || spellCheck.languages || [];
+      const nextConfigured = configured.filter((c) => c !== code);
+      const nextLanguages = (spellCheck.languages || []).filter((c) => c !== code);
+      const nextSpellCheck: SpellCheckSettings = {
+        ...spellCheck,
+        configuredLanguages: nextConfigured,
+        languages: nextLanguages,
+      };
+      const next: BrowserSettings = {
+        ...settings,
+        spellCheck: nextSpellCheck,
+      };
+      persist(next);
+      syncSpellCheckToDesktop(nextSpellCheck);
+    },
+    [settings, spellCheck, persist, syncSpellCheckToDesktop],
+  );
+
+  const addCustomDictionaryWord = useCallback(
+    async (word: string) => {
+      const clean = word.trim();
+      if (!clean) return { success: false, error: 'Word cannot be empty' };
+      if (clean.length > 128) return { success: false, error: 'Word exceeds 128 characters' };
+      const currentWords = spellCheck.customWords || [];
+      if (currentWords.includes(clean)) return { success: false, error: 'Word already exists in dictionary' };
+
+      const nextWords = [...currentWords, clean];
+      const nextSpellCheck: SpellCheckSettings = {
+        ...spellCheck,
+        customWords: nextWords,
+      };
+      const next: BrowserSettings = {
+        ...settings,
+        spellCheck: nextSpellCheck,
+      };
+      persist(next);
+      void window.mawChatGpt?.command({
+        type: 'add-custom-dictionary-word',
+        word: clean,
+      });
+      return { success: true };
+    },
+    [settings, spellCheck, persist],
+  );
+
+  const removeCustomDictionaryWord = useCallback(
+    async (word: string) => {
+      const clean = word.trim();
+      const currentWords = spellCheck.customWords || [];
+      const nextWords = currentWords.filter((w) => w !== clean);
+      const nextSpellCheck: SpellCheckSettings = {
+        ...spellCheck,
+        customWords: nextWords,
+      };
+      const next: BrowserSettings = {
+        ...settings,
+        spellCheck: nextSpellCheck,
+      };
+      persist(next);
+      void window.mawChatGpt?.command({
+        type: 'remove-custom-dictionary-word',
+        word: clean,
+      });
+      return { success: true };
+    },
+    [settings, spellCheck, persist],
+  );
+
   const resetToDefaults = useCallback(() => {
     const next: BrowserSettings = {
       defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
       favorites: [...DEFAULT_BROWSER_FAVORITES],
       searchEngines: [...DEFAULT_SEARCH_ENGINES],
+      spellCheck: { ...DEFAULT_SPELLCHECK_SETTINGS },
     };
     persist(next);
-  }, [persist]);
+    syncSpellCheckToDesktop(DEFAULT_SPELLCHECK_SETTINGS);
+  }, [persist, syncSpellCheckToDesktop]);
 
   const currentSearchEngines = settings.searchEngines ?? DEFAULT_SEARCH_ENGINES;
 
@@ -391,6 +549,13 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
     searchEngines: currentSearchEngines,
     defaultSearchEngine: settings.defaultSearchEngine,
     searchEngine: getSearchEngine(settings.defaultSearchEngine, currentSearchEngines),
+    spellCheck,
+    setSpellCheckEnabled,
+    toggleSpellCheckLanguage,
+    addSpellCheckLanguage,
+    removeSpellCheckLanguage,
+    addCustomDictionaryWord,
+    removeCustomDictionaryWord,
     addFavorite,
     editFavorite,
     removeFavorite,

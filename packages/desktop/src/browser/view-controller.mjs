@@ -71,6 +71,9 @@ export function createBrowserViewController({
 
     hide(id);
     if (!view.webContents.isDestroyed()) {
+      try {
+        if (typeof view.webContents.closeDevTools === 'function') view.webContents.closeDevTools();
+      } catch {}
       view.webContents.close();
     }
     views.delete(id);
@@ -286,7 +289,12 @@ export function createBrowserViewController({
     const view = views.get(id);
     if (view) {
       hide(id);
-      if (!view.webContents.isDestroyed()) view.webContents.close();
+      if (!view.webContents.isDestroyed()) {
+        try {
+          if (typeof view.webContents.closeDevTools === 'function') view.webContents.closeDevTools();
+        } catch {}
+        view.webContents.close();
+      }
     }
     views.delete(id); urls.delete(id); providers.delete(id); profileIds.delete(id); requestedUrls.delete(id); failures.delete(id); findRequests.delete(id);
   }
@@ -393,6 +401,12 @@ export function createBrowserViewController({
     findInPage: pageCommands.findInPage,
     stopFindInPage: pageCommands.stopFindInPage,
     capture: pageCommands.capture,
+    inspectPage: pageCommands.inspectPage,
+    applySpellCheckSettings: sessions.applySpellCheckSettings,
+    getAvailableSpellCheckerLanguages: sessions.getAvailableSpellCheckerLanguages,
+    listCustomDictionaryWords: sessions.listCustomDictionaryWords,
+    addCustomDictionaryWord: sessions.addCustomDictionaryWord,
+    removeCustomDictionaryWord: sessions.removeCustomDictionaryWord,
     cloneProfile: profileOperations.cloneProfile,
     clearProfileSite: profileOperations.clearProfileSite,
     deleteProfile: profileOperations.deleteProfile,

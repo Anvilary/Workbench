@@ -146,5 +146,25 @@ export function createPageCommands({ electron, clipboard, state, guard, send }) 
     }
   }
 
-  return { browserAction, findInPage, stopFindInPage, capture };
+  function inspectPage(command) {
+    const view = views.get(command.id);
+    const contents = view?.webContents;
+    if (!contents || contents.isDestroyed()) return { ok: false };
+    lastAccessedAt.set(command.id, Date.now());
+    try {
+      if (typeof contents.openDevTools === 'function') {
+        contents.openDevTools({ mode: 'detach', activate: true });
+        if (typeof command.x === 'number' && typeof command.y === 'number') {
+          if (typeof contents.inspectElement === 'function') {
+            contents.inspectElement(Math.round(command.x), Math.round(command.y));
+          }
+        }
+      }
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err?.message || 'Failed to open DevTools' };
+    }
+  }
+
+  return { browserAction, findInPage, stopFindInPage, capture, inspectPage };
 }

@@ -64,6 +64,27 @@ export function registerCommandRouter({ ipcMain, win, dialog, backend, controlle
     'retain': async (command) => { controller.retain(command); },
     'capture': (command) => controller.capture(command),
     'layout': async (command) => { controller.applyLayout(command); },
+    'inspect-page': async (command) => controller.inspectPage(command),
+    'get-available-spellcheck-languages': async () => ({
+      ok: true,
+      languages: controller.getAvailableSpellCheckerLanguages(),
+    }),
+    'update-spellcheck-settings': async (command) => {
+      controller.applySpellCheckSettings(command);
+      return { ok: true };
+    },
+    'list-custom-dictionary-words': async () => {
+      const words = await controller.listCustomDictionaryWords();
+      return { ok: true, words };
+    },
+    'add-custom-dictionary-word': async (command) => {
+      const ok = await controller.addCustomDictionaryWord(command.word);
+      return { ok };
+    },
+    'remove-custom-dictionary-word': async (command) => {
+      const ok = await controller.removeCustomDictionaryWord(command.word);
+      return { ok };
+    },
   };
 
   ipcMain.handle(CHANNEL, async (event, command) => {

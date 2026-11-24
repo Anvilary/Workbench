@@ -21,6 +21,7 @@ import { t, type MessageKey } from '../../i18n/index.js';
 import type { UseBrowserSettingsResult } from './useBrowserSettings.js';
 import { CollapsibleSubsection } from '../settings/CollapsibleSubsection.js';
 import { ConfirmDialog } from '../../shared/ui/ConfirmDialog.js';
+import { SpellCheckSettingsSection } from './SpellCheckSettingsSection.js';
 
 const sensors = [
   PointerSensor.configure({
@@ -1027,6 +1028,12 @@ export function BrowserSettingsSection({
           </button>
         </div>
       </CollapsibleSubsection>
+
+      <SpellCheckSettingsSection
+        browserSettings={browserSettings}
+        highlighted={highlightedCardId === 'setting-card-spellcheck'}
+        expandSignal={(expandSignal ?? 0) + sectionExpandSignal}
+      />
 
       {deletingProfile && (
         <ConfirmDialog

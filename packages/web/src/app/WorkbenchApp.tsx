@@ -270,6 +270,16 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
+
+  useEffect(() => {
+    const handleOpenSettings = (event: Event) => {
+      const custom = event as CustomEvent<{ tab?: SettingsTabId }>;
+      setSettingsInitialTab(custom.detail?.tab ?? 'browser');
+      setSettingsOpen(true);
+    };
+    window.addEventListener('workbench:open-settings', handleOpenSettings);
+    return () => window.removeEventListener('workbench:open-settings', handleOpenSettings);
+  }, []);
   const [notificationsEnabled, setNotificationsEnabled] = useState(readNotificationsEnabled);
   const [desktopPermission, setDesktopPermission] = useState<DesktopPermission>(readDesktopPermission);
   const [selectedId, setSelectedId] = useState<WorkspaceId | null>(() => { try { return localStorage.getItem('agency-ui.selected-workspace.v1') as WorkspaceId | null; } catch { return null; } });

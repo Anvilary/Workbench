@@ -652,6 +652,29 @@ export function validCommand(value, options = {}) {
       typeof value.relative === 'string' && value.relative.length > 0 && value.relative.length <= 512 && !value.relative.startsWith('/') && !value.relative.includes('\0');
   }
   if (value.type === 'close' || value.type === 'capture') return exact(value, ['type', 'id']) && typeof value.id === 'string' && UUID.test(value.id);
+  if (value.type === 'inspect-page') {
+    if (!record(value) || typeof value.id !== 'string' || !UUID.test(value.id)) return false;
+    if ('x' in value || 'y' in value) {
+      if (!exact(value, ['type', 'id', 'x', 'y'])) return false;
+      return Number.isSafeInteger(value.x) && value.x >= 0 && value.x <= 32768 &&
+        Number.isSafeInteger(value.y) && value.y >= 0 && value.y <= 32768;
+    }
+    return exact(value, ['type', 'id']);
+  }
+  if (value.type === 'get-available-spellcheck-languages') return exact(value, ['type']);
+  if (value.type === 'update-spellcheck-settings') {
+    if (!exact(value, ['type', 'enabled', 'languages'])) return false;
+    if (typeof value.enabled !== 'boolean') return false;
+    if (!Array.isArray(value.languages) || value.languages.length > 64) return false;
+    return value.languages.every(lang => typeof lang === 'string' && /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,4})*$/.test(lang) && lang.length <= 32);
+  }
+  if (value.type === 'list-custom-dictionary-words') return exact(value, ['type']);
+  if (value.type === 'add-custom-dictionary-word') {
+    return exact(value, ['type', 'word']) && typeof value.word === 'string' && value.word.trim().length > 0 && value.word.length <= 128 && !/[\r\n\0]/.test(value.word);
+  }
+  if (value.type === 'remove-custom-dictionary-word') {
+    return exact(value, ['type', 'word']) && typeof value.word === 'string' && value.word.trim().length > 0 && value.word.length <= 128 && !/[\r\n\0]/.test(value.word);
+  }
   if (value.type === 'get-backend-endpoint') return exact(value, ['type']);
   if (value.type === 'get-favicons') return exact(value, ['type']);
   if (value.type === 'restore-shell-storage') return exact(value, ['type']);

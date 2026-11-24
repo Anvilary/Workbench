@@ -161,6 +161,7 @@ export function canEvictView({
   const view = views.get(id);
   if (!view || view.webContents.isDestroyed()) return false;
   if (view.webContents.isLoading()) return false;
+  if (typeof view.webContents.isDevToolsOpened === 'function' && view.webContents.isDevToolsOpened()) return false;
 
   const provider = providers.get(id) ?? 'chatgpt';
   if (!durablePage(provider, view.webContents.getURL())) return false;

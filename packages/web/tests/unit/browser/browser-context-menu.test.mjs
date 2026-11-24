@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { calculateMenuPosition, isSupportedBrowserLink, buildBrowserContextMenuItems } from '../../../src/features/browser/BrowserContextMenu.js';
+import { getLanguageDisplayName } from '../../../src/features/browser/SpellCheckSettingsSection.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -312,4 +313,40 @@ test('Find in Page match counter format matches specification', () => {
   assert.equal(formatMatchCount('test', 0, 0), 'No results');
   assert.equal(formatMatchCount('test', 1, 5), '1/5');
   assert.equal(formatMatchCount('test', 3, 10), '3/10');
+});
+
+test('buildBrowserContextMenuItems: includes inspect-page when onInspectPage is provided', () => {
+  let inspected = false;
+  const items = buildBrowserContextMenuItems({
+    hasSelection: false,
+    isValidLink: false,
+    canOpenUrl: false,
+    canGoBack: false,
+    canGoForward: false,
+    onCopySelection: () => {},
+    onCopyLink: () => {},
+    onCopyPageUrl: () => {},
+    onOpenUrl: () => {},
+    onOpenExternalPage: () => {},
+    onReload: () => {},
+    onBack: () => {},
+    onForward: () => {},
+    onSearch: () => {},
+    onInspectPage: () => { inspected = true; },
+  });
+
+  const inspectItem = items.find((i) => i.id === 'inspect-page');
+  assert.ok(inspectItem, 'inspect-page item should be present');
+  assert.equal(inspectItem.label, 'Inspect Page');
+  inspectItem.run();
+  assert.equal(inspected, true);
+});
+
+test('getLanguageDisplayName: returns localized capitalized language names', () => {
+  const en = getLanguageDisplayName('en-US', 'en');
+  assert.ok(en.includes('English'), `Expected American English or English, got: ${en}`);
+  const pt = getLanguageDisplayName('pt-PT', 'en');
+  assert.ok(pt.includes('Portuguese'), `Expected European Portuguese, got: ${pt}`);
+  const es = getLanguageDisplayName('es', 'en');
+  assert.equal(es, 'Spanish');
 });

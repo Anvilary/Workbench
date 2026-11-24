@@ -440,3 +440,35 @@ test('validCommand: supports get-favicons', () => {
   assert.equal(validCommand({ type: 'get-favicons' }), true);
   assert.equal(validCommand({ type: 'get-favicons', extra: 1 }), false);
 });
+
+test('validCommand: supports inspect-page', () => {
+  const id = '123e4567-e89b-42d3-a456-426614174000';
+  assert.equal(validCommand({ type: 'inspect-page', id }), true);
+  assert.equal(validCommand({ type: 'inspect-page', id, x: 100, y: 200 }), true);
+  assert.equal(validCommand({ type: 'inspect-page', id, x: 0, y: 0 }), true);
+  assert.equal(validCommand({ type: 'inspect-page', id: 'not-uuid' }), false);
+  assert.equal(validCommand({ type: 'inspect-page', id, x: -1, y: 10 }), false);
+  assert.equal(validCommand({ type: 'inspect-page', id, x: 10 }), false);
+  assert.equal(validCommand({ type: 'inspect-page', id, x: 10, y: 20, extra: true }), false);
+});
+
+test('validCommand: supports spellcheck commands', () => {
+  assert.equal(validCommand({ type: 'get-available-spellcheck-languages' }), true);
+  assert.equal(validCommand({ type: 'get-available-spellcheck-languages', extra: true }), false);
+
+  assert.equal(validCommand({ type: 'update-spellcheck-settings', enabled: true, languages: ['en-US', 'pt-PT'] }), true);
+  assert.equal(validCommand({ type: 'update-spellcheck-settings', enabled: false, languages: [] }), true);
+  assert.equal(validCommand({ type: 'update-spellcheck-settings', enabled: 'yes', languages: [] }), false);
+  assert.equal(validCommand({ type: 'update-spellcheck-settings', enabled: true, languages: ['invalid/tag'] }), false);
+
+  assert.equal(validCommand({ type: 'list-custom-dictionary-words' }), true);
+  assert.equal(validCommand({ type: 'list-custom-dictionary-words', extra: 1 }), false);
+
+  assert.equal(validCommand({ type: 'add-custom-dictionary-word', word: 'myterm' }), true);
+  assert.equal(validCommand({ type: 'add-custom-dictionary-word', word: '' }), false);
+  assert.equal(validCommand({ type: 'add-custom-dictionary-word', word: 'bad\nword' }), false);
+  assert.equal(validCommand({ type: 'add-custom-dictionary-word' }), false);
+
+  assert.equal(validCommand({ type: 'remove-custom-dictionary-word', word: 'myterm' }), true);
+  assert.equal(validCommand({ type: 'remove-custom-dictionary-word', word: '' }), false);
+});
