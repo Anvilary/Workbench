@@ -53,8 +53,8 @@ test('createOAuthLoopbackGate rate limits repeated loopback handoffs per source'
   assert.equal(allow('tab-1'), true);
 });
 
-test('configureProviderSessionPermissions blocks local-network requests across all provider partitions', () => {
-  for (const provider of ['chatgpt', 'github', 'perplexity', 'other']) {
+test('configureProviderSessionPermissions blocks local-network requests across restricted provider partitions', () => {
+  for (const provider of ['chatgpt', 'github', 'perplexity']) {
     let beforeRequestHandler = null;
     const fakeSession = {
       setPermissionRequestHandler() {},
@@ -100,6 +100,72 @@ test('configureProviderSessionPermissions blocks local-network requests across a
       assert.equal(checkCancel(allowed), false, `${provider} must allow ${allowed}`);
     }
   }
+});
+
+test('configureProviderSessionPermissions allows local web apps and enforces backend port and PNA protection for other partition', () => {
+  let beforeRequestHandler = null;
+  const fakeSession = {
+    setPermissionRequestHandler() {},
+    setPermissionCheckHandler() {},
+    webRequest: {
+      onBeforeRequest(handler) {
+        beforeRequestHandler = handler;
+      },
+    },
+  };
+  configureProviderSessionPermissions({
+    provider: 'other',
+    session: fakeSession,
+    backendPort: 34187,
+  });
+  assert.equal(typeof beforeRequestHandler, 'function', 'other must register webRequest.onBeforeRequest');
+
+  const check = (details) => {
+    let result = null;
+    const req = typeof details === 'string' ? { url: details } : details;
+    beforeRequestHandler(req, (res) => { result = res; });
+    return result?.cancel;
+  };
+
+  // Workbench backend loopback port is strictly blocked
+  assert.equal(check('http://127.0.0.1:34187/api/state'), true, 'other must block Workbench backend port');
+  assert.equal(check('ws://127.0.0.1:34187/ws'), true, 'other must block Workbench backend WebSocket');
+
+  // Local web applications and private network hosts are permitted for direct navigation
+  for (const allowedLocal of [
+    'http://127.0.0.1:8080/dashboard',
+    'ws://127.0.0.1:8080/ws',
+    'http://localhost:3000/',
+    'http://[::1]:8080/',
+    'http://192.168.1.1/admin',
+    'http://10.0.0.1/',
+    'http://router.local/',
+  ]) {
+    assert.equal(check(allowedLocal), false, `other must allow local web app ${allowedLocal}`);
+  }
+
+  // Private Network Access (PNA) protection:
+  // Remote public site attempting subresource request to local/private network is blocked
+  assert.equal(
+    check({
+      url: 'http://127.0.0.1:8080/secret',
+      resourceType: 'xhr',
+      initiator: 'https://attacker.example.com',
+    }),
+    true,
+    'other must block cross-network subresource access from public initiator to local host',
+  );
+
+  // Local site subresource request to local network is permitted
+  assert.equal(
+    check({
+      url: 'http://127.0.0.1:8080/api/data',
+      resourceType: 'xhr',
+      initiator: 'http://127.0.0.1:8080',
+    }),
+    false,
+    'other must allow local initiator to access local network subresources',
+  );
 });
 
 test('configureShellSessionSecurity blocks non-shell local SSRF and strips cookies/Referer on cross-origin requests', () => {
@@ -185,7 +251,10 @@ test('isDurableProviderPage distinguishes durable provider routes from sensitive
   assert.equal(isDurableProviderPage('github', 'https://github.com/login/oauth/authorize?code=1'), false);
 
   assert.equal(isDurableProviderPage('other', 'https://example.com/docs'), true);
-  assert.equal(isDurableProviderPage('other', 'http://127.0.0.1:3000/'), false);
+  assert.equal(isDurableProviderPage('other', 'http://127.0.0.1:3000/'), true);
+  assert.equal(isDurableProviderPage('other', 'http://127.0.0.1:3000/auth/login'), false);
+  assert.equal(isDurableProviderPage('other', 'http://127.0.0.1:3000/?token=secret'), false);
+  assert.equal(isDurableProviderPage('other', 'javascript:alert(1)'), false);
 });
 
 test('applyWebContentsZoom bounds zoom levels, tracks map state, and emits zoom percentage', () => {
