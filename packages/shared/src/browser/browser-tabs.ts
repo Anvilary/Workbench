@@ -275,7 +275,7 @@ export function isLoopbackHost(host: string): boolean {
   }
   if (clean === 'localhost' || clean.endsWith('.localhost')) return true;
   const unbracketed = clean.startsWith('[') && clean.endsWith(']') ? clean.slice(1, -1) : clean;
-  if (unbracketed === '::1') return true;
+  if (unbracketed === '::1' || unbracketed === '0:0:0:0:0:0:0:1') return true;
   const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(clean);
   if (match) {
     const octets = [Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4])];
@@ -286,15 +286,106 @@ export function isLoopbackHost(host: string): boolean {
   return false;
 }
 
-/** Public HTTP(S) or local loopback URLs for explicitly user-created Other tabs. */
+/** Returns true for IPv4 addresses in private (RFC 1918), loopback (RFC 1122), or link-local (RFC 3927) ranges. */
+export function isPrivateOrLoopbackIPv4(ip: string): boolean {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+  if (!match) return false;
+  const [b0, b1, b2, b3] = [Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4])];
+  if ([b0, b1, b2, b3].some(b => b < 0 || b > 255)) return false;
+  if (b0 === 127) return true; // 127.0.0.0/8 loopback
+  if (b0 === 10) return true; // 10.0.0.0/8 private
+  if (b0 === 172 && b1 >= 16 && b1 <= 31) return true; // 172.16.0.0/12 private
+  if (b0 === 192 && b1 === 168) return true; // 192.168.0.0/16 private
+  if (b0 === 169 && b1 === 254) return true; // 169.254.0.0/16 link-local
+  return false;
+}
+
+/** Returns true for IPv6 addresses in loopback (::1), unique-local (fc00::/7), or link-local (fe80::/10) ranges. */
+export function isPrivateOrLoopbackIPv6(ip: string): boolean {
+  let clean = ip.toLowerCase().trim();
+  if (clean.startsWith('[') && clean.endsWith(']')) clean = clean.slice(1, -1);
+  clean = clean.split('%')[0] ?? '';
+  if (clean === '::1' || clean === '0:0:0:0:0:0:0:1') return true;
+  if (clean.startsWith('::ffff:')) {
+    const v4 = clean.slice(7);
+    return isPrivateOrLoopbackIPv4(v4);
+  }
+  const hextets = clean.split(':');
+  if (hextets.length < 3) return false;
+  const firstHextet = clean.startsWith('::') ? '0' : (hextets[0] ?? '');
+  if (/^[0-9a-f]{1,4}$/i.test(firstHextet)) {
+    const num = parseInt(firstHextet, 16);
+    if (!Number.isNaN(num)) {
+      if ((num & 0xfe00) === 0xfc00) return true; // fc00::/7 unique local
+      if ((num & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
+    }
+  }
+  return false;
+}
+
+/** Returns true for local or internal hostnames (.local, .internal, .lan, .home, .home.arpa, localhost, or valid single-label LAN hosts). */
+export function isLocalHostname(host: string): boolean {
+  if (typeof host !== 'string') return false;
+  let clean = host.trim().toLowerCase();
+  if (clean.startsWith('[') && clean.includes(']')) return false;
+  if (clean.includes(':')) clean = clean.split(':')[0] ?? '';
+  if (!clean || clean.length > 253 || clean.endsWith('.')) return false;
+
+  const localSuffixes = ['local', 'internal', 'lan', 'home', 'home.arpa'];
+  if (localSuffixes.some(suffix => clean === suffix || clean.endsWith('.' + suffix))) {
+    return true;
+  }
+  if (clean === 'localhost' || clean.endsWith('.localhost')) {
+    return true;
+  }
+  if (!clean.includes('.')) {
+    if (/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(clean) && !/^\d+$/.test(clean)) {
+      const reserved = new Set(['test', 'invalid', 'example']);
+      if (!reserved.has(clean)) return true;
+    }
+  }
+  return false;
+}
+
+/** Returns true for loopback addresses, private networks, or local domain hostnames. */
+export function isLocalOrPrivateHost(host: string): boolean {
+  if (typeof host !== 'string') return false;
+  let clean = host.trim().toLowerCase();
+  if (clean.startsWith('[') && clean.includes(']')) {
+    const closeIdx = clean.indexOf(']');
+    clean = clean.slice(0, closeIdx + 1);
+  } else if (!clean.includes(':') || clean.indexOf(':') === clean.lastIndexOf(':')) {
+    clean = clean.split(':')[0] ?? clean;
+  }
+  if (clean.endsWith('.')) return false;
+  if (isPrivateOrLoopbackIPv4(clean)) return true;
+  if (isPrivateOrLoopbackIPv6(clean)) return true;
+  return isLocalHostname(clean);
+}
+
+/** Public HTTP(S), local loopback, or private network URLs for explicitly user-created Other tabs. */
 export function validateOtherWebUrl(rawUrl: string, maxLength: number = 8192): UrlValidationResult {
   if (typeof rawUrl !== 'string' || !rawUrl.trim() || rawUrl.length > maxLength || /[\u0000-\u001f\u007f]/.test(rawUrl)) {
     return { valid: false, error: 'Invalid URL' };
   }
   let trimmed = rawUrl.trim();
+
+  // Extract raw host before WHATWG URL normalizes legacy numeric IPs or strips trailing dots
+  const match = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/([^/?#]+)/.exec(trimmed);
+  let rawHost = match ? (match[1]?.split('@').pop() ?? '') : trimmed.split('/')[0] ?? '';
+  if (rawHost.startsWith('[')) {
+    const end = rawHost.indexOf(']');
+    rawHost = end !== -1 ? rawHost.slice(0, end + 1) : rawHost;
+  } else {
+    rawHost = rawHost.split(':')[0] ?? '';
+  }
+  if (rawHost.endsWith('.') || /^\d+$/.test(rawHost) || /^0x[0-9a-f]+$/i.test(rawHost)) {
+    return { valid: false, error: 'Hostnames with trailing dots or numeric IP literals are not allowed' };
+  }
+
   if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
     const candidateHost = trimmed.split('/')[0] ?? '';
-    if (isLoopbackHost(candidateHost)) {
+    if (isLocalOrPrivateHost(candidateHost)) {
       trimmed = 'http://' + trimmed;
     }
   }
@@ -311,7 +402,10 @@ export function validateOtherWebUrl(rawUrl: string, maxLength: number = 8192): U
     return { valid: false, error: 'URLs with user credentials are not allowed' };
   }
   const host = url.hostname.toLowerCase();
-  if (isLoopbackHost(host)) {
+  if (host.endsWith('.')) {
+    return { valid: false, error: 'Hostnames with trailing dots are not allowed' };
+  }
+  if (isLocalOrPrivateHost(host)) {
     return { valid: true, normalizedUrl: url.toString() };
   }
   const ipv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
@@ -320,7 +414,6 @@ export function validateOtherWebUrl(rawUrl: string, maxLength: number = 8192): U
     ipv4 ||
     ipv6 ||
     !host.includes('.') ||
-    host.endsWith('.') ||
     ['localhost', 'local', 'internal', 'lan', 'home', 'home.arpa', 'test', 'invalid', 'example'].some(
       suffix => host === suffix || host.endsWith('.' + suffix),
     )

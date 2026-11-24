@@ -2,7 +2,6 @@ import { useEffect, type MutableRefObject } from 'react';
 import {
   classifyWebTabUrl,
   getPaneNodes,
-  isLoopbackHost,
   validateOtherWebUrl,
   type WebTabProvider,
   type WorkspaceId,
@@ -60,17 +59,6 @@ export function useNativeWebTabLinks({
 
       const provider: WebTabProvider = classification.provider ?? 'other';
       const urlToOpen = classification.normalizedUrl ?? otherValidation.normalizedUrl ?? targetUrl;
-      if (provider === 'other') {
-        try {
-          if (isLoopbackHost(new URL(urlToOpen).hostname)) {
-            onError(t('agency.web.invalidUrl'));
-            return;
-          }
-        } catch {
-          onError(t('agency.web.invalidUrl'));
-          return;
-        }
-      }
       let title = '';
       try {
         if (provider === 'github') title = 'GitHub';

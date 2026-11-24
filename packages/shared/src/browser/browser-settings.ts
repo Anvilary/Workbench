@@ -12,6 +12,7 @@ import {
   validateOtherWebUrl,
   validateWebTabTitle,
   isLoopbackHost,
+  isLocalOrPrivateHost,
   type WebTabProvider,
 } from './browser-tabs.js';
 import { asArrayFiltered, asNonEmptyString, asRecord } from '../validation/narrowing.js';
@@ -361,7 +362,7 @@ export function validateBrowserFavoriteUrl(rawUrl: string): { valid: boolean; no
 
   if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
     const candidateHost = trimmed.split('/')[0] ?? '';
-    if (isLoopbackHost(candidateHost)) {
+    if (isLocalOrPrivateHost(candidateHost)) {
       trimmed = 'http://' + trimmed;
     } else {
       trimmed = 'https://' + trimmed;
@@ -442,13 +443,19 @@ export function resolveAddressBarInput(
     return { url: '', isSearch: false, error: 'Protocol is not allowed. Only HTTP and HTTPS are permitted.' };
   }
 
-  // Candidate without scheme: check if it looks like a domain or loopback host
+  // Candidate without scheme: check if it looks like a domain or local/private host
   const firstSegment = trimmed.split('/')[0] ?? '';
   const hasDot = firstSegment.includes('.');
+  const hasPort = /:\d+$/.test(firstSegment);
   const isLoop = isLoopbackHost(firstSegment);
+  const isLocal = isLocalOrPrivateHost(firstSegment);
 
-  if (hasDot || isLoop) {
-    const candidateWithScheme = (isLoop ? 'http://' : 'https://') + trimmed;
+  // Single-label non-loopback hostnames without dot (e.g. "nas") require a port or explicit scheme to navigate,
+  // otherwise single words default to search query.
+  const shouldAttemptDirectNavigation = hasDot || isLoop || (isLocal && hasPort);
+
+  if (shouldAttemptDirectNavigation) {
+    const candidateWithScheme = (isLocal ? 'http://' : 'https://') + trimmed;
     const directCheck = validateOtherWebUrl(candidateWithScheme);
     if (directCheck.valid) {
       return { url: directCheck.normalizedUrl!, isSearch: false };

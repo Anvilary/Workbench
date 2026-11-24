@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { classifyWebTabUrl, isLoopbackHost, validateOtherWebUrl, type WebTab } from '@agent-workbench/shared';
+import { classifyWebTabUrl, validateOtherWebUrl, type WebTab } from '@agent-workbench/shared';
 import { t } from '../../i18n/index.js';
 import type { useWorkbenchStore } from '../workspaces/useWorkbenchStore.js';
 
@@ -13,11 +13,11 @@ export interface BoundingBox {
 export function isSupportedBrowserLink(rawUrl: string | null | undefined): boolean {
   if (!rawUrl || typeof rawUrl !== 'string') return false;
   const trimmed = rawUrl.trim();
-  if (!trimmed.startsWith('https://')) return false;
+  if (!trimmed.startsWith('https://') && !trimmed.startsWith('http://')) return false;
   try {
     const parsed = new URL(trimmed);
-    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port) return false;
-    if (isLoopbackHost(parsed.hostname)) return false;
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+    if (parsed.username || parsed.password) return false;
     const classification = classifyWebTabUrl(trimmed);
     if (classification.valid) return true;
     const other = validateOtherWebUrl(trimmed);

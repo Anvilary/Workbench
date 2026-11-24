@@ -8,7 +8,7 @@
  * watchdog call this object; nothing else mutates a view or its bookkeeping.
  */
 
-import { DEFAULT_BROWSER_PROFILE_ID, isValidBrowserProfileId, authenticationUrl, selectBestFavicon } from '../../policy.mjs';
+import { DEFAULT_BROWSER_PROFILE_ID, isValidBrowserProfileId, authenticationUrl, selectBestFavicon, isWorkbenchBackendUrl } from '../../policy.mjs';
 import { navigationAllowed, durablePage } from './provider-policy.mjs';
 import { createBrowserViewState } from './view-state.mjs';
 import { createViewLayout } from './view-layout.mjs';
@@ -37,7 +37,7 @@ export function createBrowserViewController({
     desktopShortcut,
   });
   const { guard, openExternal } = navigation;
-  const sessions = createBrowserSessions({ electron, state, send, trimCapacity: (...args) => trimCapacity(...args) });
+  const sessions = createBrowserSessions({ electron, state, send, backend, trimCapacity: (...args) => trimCapacity(...args) });
   const { ensurePartitionSession } = sessions;
 
   function evictTab(id) {
@@ -97,6 +97,10 @@ export function createBrowserViewController({
   }
 
   function open(id, url, provider = 'chatgpt', explicit = true, requestedProfileId = undefined) {
+    if (isWorkbenchBackendUrl(url, backend?.current()?.port)) {
+      send({ type: 'error', id, message: 'Navigation to Workbench backend port is blocked.' });
+      return;
+    }
     const providerName = provider === 'other' ? 'Browser' : provider === 'github' ? 'GitHub' : provider === 'perplexity' ? 'Perplexity' : 'ChatGPT';
     const effectiveProfileId = resolveTabProfileIdOrFail(id, requestedProfileId);
     if (cloningProfiles.has(effectiveProfileId)) throw new Error('Browser profile operation is in progress');

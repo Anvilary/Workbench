@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { isAllowedChatGptUrl, validateChatGptUrl, validatePerplexityUrl, validateGithubUrl, validateOtherWebUrl, classifyWebTabUrl, webTabProviderFor, isLoopbackHost } from '@agent-workbench/shared';
 
-test('Other tabs accept public HTTP(S) and local loopback while rejecting non-loopback private IPs, credentials, and privileged schemes', () => {
+test('Other tabs accept public HTTP(S), local loopback, and private network hosts while rejecting dangerous schemes and malformed hosts', () => {
   for (const url of [
     'http://example.org:8080/path',
     'https://github.com/owner/repo',
@@ -12,18 +12,23 @@ test('Other tabs accept public HTTP(S) and local loopback while rejecting non-lo
     'http://localhost/',
     'localhost:7012',
     'http://127.0.0.1:7012/',
+    'http://10.0.0.1/',
+    'https://192.168.1.1/',
+    'http://router.home/',
+    'http://hosting-bay.local:3000/',
+    'http://dev-box:8080/',
   ]) {
     assert.equal(validateOtherWebUrl(url).valid, true, url);
   }
   for (const url of [
     'file:///etc/passwd',
     'javascript:alert(1)',
-    'http://10.0.0.1/',
-    'https://192.168.1.1/',
-    'http://router.home/',
     'https://u:p@example.org/',
     'https://example.org/\n',
     'https://example.org./',
+    'http://localhost.:3000/',
+    'http://router.local./',
+    'http://2130706433/',
   ]) {
     assert.equal(validateOtherWebUrl(url).valid, false, url);
   }

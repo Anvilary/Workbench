@@ -31,17 +31,41 @@ test('getBrowserZoomAction: recognizes zoom shortcuts and rejects unrelated keys
   assert.equal(getBrowserZoomAction({ type: 'keyUp', control: true, key: '0', code: 'Digit0' }), null);
 });
 
-test('general web URLs cannot name local services or privileged protocols', () => {
+test('general web URLs support public websites and local applications while rejecting dangerous schemes', () => {
   assert.equal(validCommand({ type: 'restore-shell-storage' }), true);
   assert.equal(validCommand({ type: 'restore-shell-storage', origin: 'https://attacker.com' }), false);
-  for (const url of ['https://www.wikipedia.org/wiki/Browser', 'http://example.com:8080/', 'https://github.com/']) {
+  for (const url of [
+    'https://www.wikipedia.org/wiki/Browser',
+    'http://example.com:8080/',
+    'https://github.com/',
+    'http://127.0.0.1:3000/',
+    'http://[::1]/',
+    'http://localhost/',
+    'http://host.local/',
+    'https://host.home.arpa/',
+    'https://host.internal/',
+    'http://192.168.1.100:9000/',
+    'http://10.0.0.5:8080/',
+    'http://dev-box:3000/',
+  ]) {
     assert.equal(otherUrl(url), true, url);
     assert.equal(validCommand({ type: 'open', id, url, provider: 'other' }), true, url);
   }
-  for (const url of ['http://127.0.0.1:3000/', 'http://2130706433/', 'http://[::1]/', 'http://localhost/', 'http://localhost.:3000/', 'http://router.local./', 'http://host.local/', 'https://host.home.arpa/', 'https://host.internal/', 'file:///etc/passwd', 'javascript:alert(1)', 'https://u:p@example.com/', 'https://example.com/\n']) {
+  for (const url of [
+    'http://2130706433/',
+    'http://localhost.:3000/',
+    'http://router.local./',
+    'file:///etc/passwd',
+    'javascript:alert(1)',
+    'https://u:p@example.com/',
+    'https://example.com/\n',
+  ]) {
     assert.equal(otherUrl(url), false, url);
     assert.equal(validCommand({ type: 'open', id, url, provider: 'other' }), false, url);
   }
+  // Workbench backend loopback port rejection
+  assert.equal(otherUrl('http://127.0.0.1:52341/', 2048, { backendPort: 52341 }), false);
+  assert.equal(otherUrl('http://localhost:52341/api', 2048, { backendPort: 52341 }), false);
 });
 test('exact HTTPS navigation and initial ChatGPT URL allowlist', () => {
   for (const url of ['https://chatgpt.com/', 'https://auth.openai.com/log-in', 'https://accounts.google.com/o/oauth2/auth', 'https://appleid.apple.com/auth/authorize']) assert.equal(embeddedUrl(url), true, url);
@@ -60,9 +84,11 @@ test('exact HTTPS navigation and initial ChatGPT URL allowlist', () => {
   assert.equal(validCommand({ type: 'open', id, url: 'https://chatgpt.com/', provider: 'github' }), false);
   assert.equal(validCommand({ type: 'browser-action', id, action: 'reload' }), true);
   assert.equal(validCommand({ type: 'browser-action', id, action: 'open-link', url: 'https://example.com/a' }), true);
-  assert.equal(validCommand({ type: 'browser-action', id, action: 'open-link', url: 'http://127.0.0.1/' }), false);
+  assert.equal(validCommand({ type: 'browser-action', id, action: 'open-link', url: 'http://127.0.0.1:3000/' }), true);
+  assert.equal(validCommand({ type: 'browser-action', id, action: 'open-link', url: 'javascript:alert(1)' }), false);
   assert.equal(validCommand({ type: 'browser-action', id, action: 'open-link-external', url: 'https://example.com/a' }), true);
-  assert.equal(validCommand({ type: 'browser-action', id, action: 'open-link-external', url: 'http://127.0.0.1/' }), false);
+  assert.equal(validCommand({ type: 'browser-action', id, action: 'open-link-external', url: 'http://127.0.0.1:3000/' }), true);
+  assert.equal(validCommand({ type: 'browser-action', id, action: 'open-link-external', url: 'file:///etc/passwd' }), false);
   assert.equal(validCommand({ type: 'browser-action', id, action: 'copy-link', url: 'https://example.com/a' }), true);
   assert.equal(validCommand({ type: 'browser-action', id, action: 'copy-link', url: 'javascript:alert(1)' }), false);
   assert.equal(validCommand({ type: 'browser-action', id, action: 'replace-misspelling', word: 'correct' }), true);
@@ -180,7 +206,9 @@ test('FEATURE 10: file delivery and download URL policy', () => {
   assert.equal(downloadOriginAllowed('github', 'https://github.com'), true);
   assert.equal(downloadOriginAllowed('github', 'https://objects.githubusercontent.com'), true);
   assert.equal(downloadOriginAllowed('other', 'https://docs.python.org'), true);
-  assert.equal(downloadOriginAllowed('other', 'http://127.0.0.1:8080'), false);
+  assert.equal(downloadOriginAllowed('other', 'http://127.0.0.1:8080'), true);
+  assert.equal(downloadOriginAllowed('other', 'http://127.0.0.1.:8080'), false);
+  assert.equal(downloadOriginAllowed('other', 'javascript:alert(1)'), false);
 
   assert.equal(isProviderFileDeliveryUrl('perplexity', 'https://cdn.perplexity.ai/export.md'), true);
   assert.equal(isProviderFileDeliveryUrl('perplexity', 'https://pplx-res.cloudinary.com/image.png'), true);
@@ -205,7 +233,9 @@ test('FEATURE 10: file delivery and download URL policy', () => {
   assert.equal(downloadDestinationAllowed('github', 'https://objects.githubusercontent.com/a.tar.gz'), true);
   assert.equal(downloadDestinationAllowed('github', 'https://untrusted.example.com/a.tar.gz'), false);
   assert.equal(downloadDestinationAllowed('other', 'https://example.org/file.pdf'), true);
-  assert.equal(downloadDestinationAllowed('other', 'http://127.0.0.1:3000/file.pdf'), false);
+  assert.equal(downloadDestinationAllowed('other', 'http://127.0.0.1:3000/file.pdf'), true);
+  assert.equal(downloadDestinationAllowed('other', 'http://127.0.0.1.:3000/file.pdf'), false);
+  assert.equal(downloadDestinationAllowed('other', 'file:///etc/passwd'), false);
 });
 
 test('FEATURE 11: Perplexity URL and embedded auth navigation policy', () => {
@@ -251,10 +281,13 @@ test('FEATURE: targetWebProvider classification and boundary safety', () => {
   assert.equal(targetWebProvider('https://en.wikipedia.org/wiki/Main_Page'), 'other');
   assert.equal(targetWebProvider('https://docs.anthropic.com/en/docs'), 'other');
 
+  // Local web applications and services resolve to other provider
+  assert.equal(targetWebProvider('http://localhost:3000/'), 'other');
+  assert.equal(targetWebProvider('http://127.0.0.1:8080/'), 'other');
+  assert.equal(targetWebProvider('http://192.168.1.1/'), 'other');
+  assert.equal(targetWebProvider('http://hosting-bay.local:3000/'), 'other');
+
   // Blocked / non-embeddable destinations
-  assert.equal(targetWebProvider('http://localhost:3000/'), null);
-  assert.equal(targetWebProvider('http://127.0.0.1:8080/'), null);
-  assert.equal(targetWebProvider('http://192.168.1.1/'), null);
   assert.equal(targetWebProvider('file:///etc/passwd'), null);
   assert.equal(targetWebProvider('javascript:alert(1)'), null);
   assert.equal(targetWebProvider('data:text/html,<h1>hi</h1>'), null);

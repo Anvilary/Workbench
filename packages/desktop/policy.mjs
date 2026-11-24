@@ -347,23 +347,157 @@ export function externalUrl(value) {
     !['localhost', 'local', 'internal', 'test', 'invalid', 'example'].some(suffix => host === suffix || host.endsWith('.' + suffix));
 }
 
-/**
- * General web pages in embedded Electron WebContentsViews get their own
- * partition and deliberately exclude all loopback, IP literal, and local-network
- * origins. Although `@agent-workbench/shared`'s `validateOtherWebUrl` permits
- * loopback URLs for web-mode or external browser links, native desktop views
- * fail closed on loopback so untrusted general websites cannot navigate,
- * redirect, or issue subresource requests to local services or Workbench's own
- * loopback backend.
- */
-export function otherUrl(value, maxLength = 2048) {
-  if (typeof value !== 'string' || value.length > maxLength || /[\u0000-\u0020\u007f]/.test(value)) return false;
+export function isLoopbackHost(host) {
+  if (typeof host !== 'string') return false;
+  let clean = host.trim().toLowerCase();
+  if (clean.startsWith('[') && clean.includes(']')) {
+    const closeIdx = clean.indexOf(']');
+    clean = clean.slice(0, closeIdx + 1);
+  } else if (!clean.includes(':') || clean.indexOf(':') === clean.lastIndexOf(':')) {
+    clean = clean.split(':')[0] ?? clean;
+  }
+  if (clean === 'localhost' || clean.endsWith('.localhost')) return true;
+  const unbracketed = clean.startsWith('[') && clean.endsWith(']') ? clean.slice(1, -1) : clean;
+  if (unbracketed === '::1' || unbracketed === '0:0:0:0:0:0:0:1') return true;
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(clean);
+  if (match) {
+    const octets = [Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4])];
+    if (octets.every(o => o >= 0 && o <= 255)) {
+      return octets[0] === 127;
+    }
+  }
+  return false;
+}
+
+export function isPrivateOrLoopbackIPv4(ip) {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+  if (!match) return false;
+  const [b0, b1, b2, b3] = [Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4])];
+  if ([b0, b1, b2, b3].some(b => b < 0 || b > 255)) return false;
+  if (b0 === 127) return true; // 127.0.0.0/8 loopback
+  if (b0 === 10) return true; // 10.0.0.0/8 private
+  if (b0 === 172 && b1 >= 16 && b1 <= 31) return true; // 172.16.0.0/12 private
+  if (b0 === 192 && b1 === 168) return true; // 192.168.0.0/16 private
+  if (b0 === 169 && b1 === 254) return true; // 169.254.0.0/16 link-local
+  return false;
+}
+
+export function isPrivateOrLoopbackIPv6(ip) {
+  let clean = ip.toLowerCase().trim();
+  if (clean.startsWith('[') && clean.endsWith(']')) clean = clean.slice(1, -1);
+  clean = clean.split('%')[0] ?? '';
+  if (clean === '::1' || clean === '0:0:0:0:0:0:0:1') return true;
+  if (clean.startsWith('::ffff:')) {
+    const v4 = clean.slice(7);
+    return isPrivateOrLoopbackIPv4(v4);
+  }
+  const hextets = clean.split(':');
+  if (hextets.length < 3) return false;
+  const firstHextet = clean.startsWith('::') ? '0' : hextets[0];
+  if (/^[0-9a-f]{1,4}$/i.test(firstHextet)) {
+    const num = parseInt(firstHextet, 16);
+    if (!Number.isNaN(num)) {
+      if ((num & 0xfe00) === 0xfc00) return true; // fc00::/7 unique local
+      if ((num & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
+    }
+  }
+  return false;
+}
+
+export function isLocalHostname(host) {
+  if (typeof host !== 'string') return false;
+  let clean = host.trim().toLowerCase();
+  if (clean.startsWith('[') && clean.includes(']')) return false;
+  if (clean.includes(':')) clean = clean.split(':')[0] ?? '';
+  if (!clean || clean.length > 253 || clean.endsWith('.')) return false;
+
+  const localSuffixes = ['local', 'internal', 'lan', 'home', 'home.arpa'];
+  if (localSuffixes.some(suffix => clean === suffix || clean.endsWith('.' + suffix))) {
+    return true;
+  }
+  if (clean === 'localhost' || clean.endsWith('.localhost')) {
+    return true;
+  }
+  if (!clean.includes('.')) {
+    if (/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(clean) && !/^\d+$/.test(clean)) {
+      const reserved = new Set(['test', 'invalid', 'example']);
+      if (!reserved.has(clean)) return true;
+    }
+  }
+  return false;
+}
+
+export function isLocalOrPrivateHost(host) {
+  if (typeof host !== 'string') return false;
+  let clean = host.trim().toLowerCase();
+  if (clean.startsWith('[') && clean.includes(']')) {
+    const closeIdx = clean.indexOf(']');
+    clean = clean.slice(0, closeIdx + 1);
+  } else if (!clean.includes(':') || clean.indexOf(':') === clean.lastIndexOf(':')) {
+    clean = clean.split(':')[0] ?? clean;
+  }
+  if (clean.endsWith('.')) return false;
+  if (isPrivateOrLoopbackIPv4(clean)) return true;
+  if (isPrivateOrLoopbackIPv6(clean)) return true;
+  return isLocalHostname(clean);
+}
+
+export function isWorkbenchBackendUrl(value, backendPort) {
+  if (!backendPort || typeof value !== 'string') return false;
   try {
     const url = new URL(value);
     const host = url.hostname.toLowerCase();
-    return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password &&
-      !isIP(host.replace(/^\[|\]$/g, '')) && host.includes('.') && !host.endsWith('.') &&
-      !blockedPublicSuffixes.some(suffix => host === suffix || host.endsWith('.' + suffix));
+    if (!isLoopbackHost(host)) return false;
+    const port = Number(url.port || (url.protocol === 'http:' ? 80 : 443));
+    return port === Number(backendPort);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * General web pages in embedded Electron WebContentsViews support public HTTP(S)
+ * as well as local web applications, developer servers, Docker services, LAN
+ * dashboards, and self-hosted services on loopback and private networks.
+ * Requests to Workbench's own backend loopback port are strictly excluded.
+ */
+export function otherUrl(value, maxLength = 2048, options = {}) {
+  if (typeof value !== 'string' || value.length > maxLength || /[\u0000-\u0020\u007f]/.test(value)) return false;
+
+  const rawHostMatch = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/([^/?#]+)/.exec(value);
+  if (!rawHostMatch) return false;
+  let rawHost = rawHostMatch[1].split('@').pop() ?? '';
+  if (rawHost.startsWith('[')) {
+    const end = rawHost.indexOf(']');
+    if (end === -1) return false;
+    rawHost = rawHost.slice(0, end + 1);
+  } else {
+    rawHost = rawHost.split(':')[0] ?? '';
+  }
+  if (rawHost.endsWith('.') || /^\d+$/.test(rawHost) || /^0x[0-9a-f]+$/i.test(rawHost)) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value);
+    if (!['https:', 'http:'].includes(url.protocol)) return false;
+    if (url.username || url.password) return false;
+    const host = url.hostname.toLowerCase();
+    if (host.endsWith('.')) return false;
+
+    const backendPort = options?.backendPort;
+    if (backendPort && isWorkbenchBackendUrl(value, backendPort)) {
+      return false;
+    }
+
+    if (isLocalOrPrivateHost(host)) {
+      return true;
+    }
+
+    const bareHost = host.replace(/^\[|\]$/g, '');
+    if (isIP(bareHost) || !host.includes('.')) return false;
+    if (blockedPublicSuffixes.some(suffix => host === suffix || host.endsWith('.' + suffix))) return false;
+    return true;
   } catch { return false; }
 }
 
@@ -444,7 +578,7 @@ export function partitionForBrowserProfile(profileId, provider = 'chatgpt') {
   return `persist:maw-profile-${effective}-${suffix}`;
 }
 
-export function validCommand(value) {
+export function validCommand(value, options = {}) {
   if (!record(value)) return false;
   if (value.type === 'retain') return exact(value, ['type', 'ids']) && Array.isArray(value.ids) && value.ids.length <= 4096 && value.ids.every(id => typeof id === 'string' && UUID.test(id));
   if (value.type === 'open' || value.type === 'update') {
@@ -458,7 +592,7 @@ export function validCommand(value) {
     if (value.provider === 'chatgpt') return chatUrl(value.url);
     if (value.provider === 'github') return githubUrl(value.url);
     if (value.provider === 'perplexity') return perplexityUrl(value.url);
-    if (value.provider === 'other') return otherUrl(value.url);
+    if (value.provider === 'other') return otherUrl(value.url, 2048, options);
     return false;
   }
   if (value.type === 'clone-profile') {
@@ -492,7 +626,7 @@ export function validCommand(value) {
       return value.action === 'replace-misspelling' && UUID.test(value.id) && typeof value.word === 'string' && value.word.length <= 256 && !/[\r\n\0]/.test(value.word);
     }
     if (exact(value, ['type', 'id', 'action', 'url'])) {
-      return (value.action === 'open-link' || value.action === 'open-link-external' || value.action === 'copy-link') && UUID.test(value.id) && externalUrl(value.url);
+      return (value.action === 'open-link' || value.action === 'open-link-external' || value.action === 'copy-link') && UUID.test(value.id) && (externalUrl(value.url) || otherUrl(value.url));
     }
     return false;
   }

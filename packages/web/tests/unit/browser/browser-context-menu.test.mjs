@@ -8,26 +8,27 @@ import { calculateMenuPosition, isSupportedBrowserLink, buildBrowserContextMenuI
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-test('isSupportedBrowserLink: validates public web hyperlinks and rejects invalid/unsupported links', () => {
-  // Supported web URLs:
+test('isSupportedBrowserLink: validates public web hyperlinks and local web applications while rejecting dangerous schemes', () => {
+  // Supported web URLs (HTTPS and HTTP):
   assert.equal(isSupportedBrowserLink('https://chatgpt.com/'), true);
   assert.equal(isSupportedBrowserLink('https://chat.openai.com/c/123'), true);
   assert.equal(isSupportedBrowserLink('https://github.com/microsoft/vscode'), true);
   assert.equal(isSupportedBrowserLink('https://perplexity.ai/search?q=test'), true);
   assert.equal(isSupportedBrowserLink('https://en.wikipedia.org/wiki/Main_Page'), true);
   assert.equal(isSupportedBrowserLink('https://docs.anthropic.com/en/docs'), true);
+  assert.equal(isSupportedBrowserLink('http://example.com/'), true);
+  assert.equal(isSupportedBrowserLink('http://127.0.0.1:8080/'), true);
+  assert.equal(isSupportedBrowserLink('http://localhost:3000/'), true);
+  assert.equal(isSupportedBrowserLink('http://192.168.1.1/'), true);
+  assert.equal(isSupportedBrowserLink('http://hosting-bay.local:3000/'), true);
 
-  // Unsupported protocols or formats:
-  assert.equal(isSupportedBrowserLink('http://example.com/'), false); // plain http rejected
+  // Unsupported protocols or dangerous schemes:
   assert.equal(isSupportedBrowserLink('javascript:alert(1)'), false);
   assert.equal(isSupportedBrowserLink('data:text/html,<h1>hi</h1>'), false);
   assert.equal(isSupportedBrowserLink('mailto:alice@example.com'), false);
   assert.equal(isSupportedBrowserLink('file:///etc/passwd'), false);
-
-  // Loopback and internal addresses rejected:
-  assert.equal(isSupportedBrowserLink('https://127.0.0.1:8080/'), false);
-  assert.equal(isSupportedBrowserLink('https://localhost:3000/'), false);
-  assert.equal(isSupportedBrowserLink('https://192.168.1.1/'), false);
+  assert.equal(isSupportedBrowserLink('http://2130706433/'), false);
+  assert.equal(isSupportedBrowserLink('http://localhost.:3000/'), false);
 
   // Non-strings or empty:
   assert.equal(isSupportedBrowserLink(''), false);

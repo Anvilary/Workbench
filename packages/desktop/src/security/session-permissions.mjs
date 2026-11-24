@@ -3,6 +3,8 @@ import {
   externalUrl as defaultExternalUrl,
   otherUrl as defaultOtherUrl,
   perplexityUrl as defaultPerplexityUrl,
+  isLocalOrPrivateHost,
+  isWorkbenchBackendUrl,
 } from '../../policy.mjs';
 
 const CHAT_ALLOWED_ORIGINS = ['https://chatgpt.com', 'https://chat.openai.com'];
@@ -24,22 +26,78 @@ function sameOriginMatch(contents, requestingUrl, allowedOrigins) {
   }
 }
 
-function installLocalNetworkFilter(session, { otherUrl, authenticationUrl }) {
+function installLocalNetworkFilter(session, {
+  provider,
+  backendPort,
+  otherUrl = defaultOtherUrl,
+  authenticationUrl = defaultAuthenticationUrl,
+}) {
   if (!session?.webRequest || typeof session.webRequest.onBeforeRequest !== 'function') return;
   session.webRequest.onBeforeRequest((details, callback) => {
-    // Block direct local-network URLs (loopback, private IPs, local TLDs),
-    // including subframes, fetches, and WebSockets, across all browser partitions.
     const url = typeof details?.url === 'string' ? details.url : '';
     const network = /^(https?|wss?):/i.test(url);
     if (!network) {
       callback({ cancel: false });
       return;
     }
+
+    const currentPort = typeof backendPort === 'function' ? backendPort() : backendPort;
+    if (currentPort && isWorkbenchBackendUrl(url, currentPort)) {
+      callback({ cancel: true });
+      return;
+    }
+
     const checked = url.replace(/^ws:/i, 'http:').replace(/^wss:/i, 'https:');
+
+    // For restricted provider partitions (chatgpt, github, perplexity):
+    // Block all local/private network destinations unconditionally.
+    if (provider && provider !== 'other') {
+      try {
+        const parsed = new URL(checked);
+        if (isLocalOrPrivateHost(parsed.hostname)) {
+          callback({ cancel: true });
+          return;
+        }
+      } catch {
+        callback({ cancel: true });
+        return;
+      }
+      callback({ cancel: false });
+      return;
+    }
+
+    // For general browser partition (provider === 'other' or unspecified default):
     const allowed =
       otherUrl(checked, 8192) ||
       (/^https:/i.test(checked) && authenticationUrl(checked));
-    callback({ cancel: !allowed });
+    if (!allowed) {
+      callback({ cancel: true });
+      return;
+    }
+
+    // Private Network Access Protection:
+    // If target is local or private host, protect against public site subresource probing/CSRF.
+    try {
+      const targetHost = new URL(checked).hostname;
+      if (isLocalOrPrivateHost(targetHost)) {
+        if (details.resourceType !== 'mainFrame') {
+          const initiator = details.initiator;
+          if (initiator) {
+            const initHost = new URL(initiator).hostname;
+            if (!isLocalOrPrivateHost(initHost)) {
+              // Remote public site attempting subresource access to local/private network
+              callback({ cancel: true });
+              return;
+            }
+          }
+        }
+      }
+    } catch {
+      callback({ cancel: true });
+      return;
+    }
+
+    callback({ cancel: false });
   });
 }
 
@@ -137,12 +195,13 @@ export function configureShellSessionSecurity({
 export function configureProviderSessionPermissions({
   provider,
   session,
+  backendPort,
   otherUrl = defaultOtherUrl,
   authenticationUrl = defaultAuthenticationUrl,
 }) {
   if (!session) return;
 
-  installLocalNetworkFilter(session, { otherUrl, authenticationUrl });
+  installLocalNetworkFilter(session, { provider, backendPort, otherUrl, authenticationUrl });
 
   if (provider === 'other') {
     session.setPermissionRequestHandler((_contents, permission, callback) => {
@@ -224,13 +283,14 @@ export function configureBrowserSessionPermissions({
   githubSession,
   perplexitySession,
   browserSession,
+  backendPort,
   otherUrl = defaultOtherUrl,
   authenticationUrl = defaultAuthenticationUrl,
 }) {
-  configureProviderSessionPermissions({ provider: 'other', session: browserSession, otherUrl, authenticationUrl });
-  configureProviderSessionPermissions({ provider: 'chatgpt', session: chatSession, otherUrl, authenticationUrl });
-  configureProviderSessionPermissions({ provider: 'github', session: githubSession, otherUrl, authenticationUrl });
-  configureProviderSessionPermissions({ provider: 'perplexity', session: perplexitySession, otherUrl, authenticationUrl });
+  configureProviderSessionPermissions({ provider: 'other', session: browserSession, backendPort, otherUrl, authenticationUrl });
+  configureProviderSessionPermissions({ provider: 'chatgpt', session: chatSession, backendPort, otherUrl, authenticationUrl });
+  configureProviderSessionPermissions({ provider: 'github', session: githubSession, backendPort, otherUrl, authenticationUrl });
+  configureProviderSessionPermissions({ provider: 'perplexity', session: perplexitySession, backendPort, otherUrl, authenticationUrl });
 }
 
 function hasSensitiveParamsOrAuthPath(url, checkAuthPath = true) {

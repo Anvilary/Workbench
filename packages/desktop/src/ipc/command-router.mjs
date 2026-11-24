@@ -67,7 +67,7 @@ export function registerCommandRouter({ ipcMain, win, dialog, backend, controlle
   };
 
   ipcMain.handle(CHANNEL, async (event, command) => {
-    if (!trustedSender(event, win.webContents, backend.current().origin) || !validCommand(command)) throw new Error('Invalid desktop request');
+    if (!trustedSender(event, win.webContents, backend.current().origin) || !validCommand(command, { backendPort: backend.current().port })) throw new Error('Invalid desktop request');
     if (!Object.hasOwn(handlers, command.type)) return undefined;
     return handlers[command.type](command);
   });

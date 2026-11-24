@@ -7,7 +7,7 @@
  * interaction protection) is owned by the BrowserViewController.
  */
 
-import { otherUrl, externalUrl, targetWebProvider, isSameSite, authenticationUrl, decideWindowOpen, getBrowserZoomAction } from '../../policy.mjs';
+import { otherUrl, externalUrl, targetWebProvider, isSameSite, authenticationUrl, decideWindowOpen, getBrowserZoomAction, isLocalOrPrivateHost, isWorkbenchBackendUrl } from '../../policy.mjs';
 import { isTypingInput } from '../performance/resource-budget.mjs';
 import { isOAuthLoopbackCallback, createOAuthLoopbackGate } from '../security/oauth-loopback.mjs';
 import { applyWebContentsZoom } from './zoom-controller.mjs';
@@ -128,13 +128,38 @@ export function createNavigationGuard({
       }
       return navigationAllowed(provider, url);
     };
-    const navigation = (event, url, isInPlace, isMainFrame) => {
+    const navigation = async (event, url, isInPlace, isMainFrame) => {
       if (isMainFrame === false) return;
       if (handleFileDelivery(event, url)) return;
       if (isAuthFlow() && tryOpenOAuthLoopback(url, getTabId() || 'popup')) {
         event.preventDefault();
         return;
       }
+
+      if (isWorkbenchBackendUrl(url, backend.current().port)) {
+        event.preventDefault();
+        const id = getTabId();
+        if (id) send({ type: 'error', id, message: 'Navigation to Workbench backend port is blocked.' });
+        else send({ type: 'error', message: 'Navigation to Workbench backend port is blocked.' });
+        return;
+      }
+
+      let currentUrl = '';
+      try { currentUrl = contents.getURL() || ''; } catch {}
+      if (currentUrl && currentUrl !== 'about:blank') {
+        try {
+          const currentHost = new URL(currentUrl).hostname;
+          const targetHost = new URL(url).hostname;
+          if (!isLocalOrPrivateHost(currentHost) && isLocalOrPrivateHost(targetHost)) {
+            event.preventDefault();
+            const id = getTabId();
+            if (id) send({ type: 'error', id, message: `Navigation to "${url}" was blocked for security.` });
+            else send({ type: 'error', message: `Navigation to "${url}" was blocked for security.` });
+            return;
+          }
+        } catch {}
+      }
+
       if (isSameSiteOrAllowed(url)) return;
       event.preventDefault();
       const id = getTabId();
@@ -157,6 +182,31 @@ export function createNavigationGuard({
         event.preventDefault();
         return;
       }
+
+      if (isWorkbenchBackendUrl(url, backend.current().port)) {
+        event.preventDefault();
+        const id = getTabId();
+        if (id) send({ type: 'error', id, message: 'Navigation to Workbench backend port is blocked.' });
+        else send({ type: 'error', message: 'Navigation to Workbench backend port is blocked.' });
+        return;
+      }
+
+      let currentUrl = '';
+      try { currentUrl = contents.getURL() || ''; } catch {}
+      if (currentUrl && currentUrl !== 'about:blank') {
+        try {
+          const currentHost = new URL(currentUrl).hostname;
+          const targetHost = new URL(url).hostname;
+          if (!isLocalOrPrivateHost(currentHost) && isLocalOrPrivateHost(targetHost)) {
+            event.preventDefault();
+            const id = getTabId();
+            if (id) send({ type: 'error', id, message: 'Automatic redirection from public websites to local or private network addresses is blocked for security.' });
+            else send({ type: 'error', message: 'Automatic redirection from public websites to local or private network addresses is blocked for security.' });
+            return;
+          }
+        } catch {}
+      }
+
       if (navigationAllowed(provider, url) || authenticationUrl(url)) return;
       if (provider === 'other' && otherUrl(url, 8192)) return;
       event.preventDefault();

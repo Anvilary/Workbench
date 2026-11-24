@@ -11,7 +11,7 @@ import { browserDownloadHandler, resolveDownloadsDirectory, rememberCompletedDow
 import { configureProviderSessionPermissions } from '../security/session-permissions.mjs';
 import { navigationAllowed, durablePage, downloadOriginAllowed, downloadDestinationAllowed } from './provider-policy.mjs';
 
-export function createBrowserSessions({ electron, state, send, trimCapacity }) {
+export function createBrowserSessions({ electron, state, send, backend, trimCapacity }) {
   const { app, BrowserWindow, session } = electron;
   const { views, providers, popupOwners, popups, activeDownloads, reservedDownloadPaths, failures } = state;
   const configuredPartitions = new Map(); // partitionName -> Electron.Session
@@ -41,6 +41,7 @@ export function createBrowserSessions({ electron, state, send, trimCapacity }) {
     configureProviderSessionPermissions({
       provider,
       session: targetSession,
+      backendPort: () => backend?.current()?.port,
       otherUrl,
       authenticationUrl,
     });

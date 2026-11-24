@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { isSameSite, parseBlobDownloadUrl } from '../../policy.mjs';
+import { isSameSite, parseBlobDownloadUrl, isLocalOrPrivateHost } from '../../policy.mjs';
 
 const DOWNLOAD_PREFS_FILENAME = 'download-preferences.json';
 
@@ -250,7 +250,26 @@ export function browserDownloadHandler({
       }
     }
 
+    let crossNetworkDownloadBlocked = false;
+    if (initiator) {
+      try {
+        const initHost = new URL(initiator).hostname;
+        if (!isLocalOrPrivateHost(initHost)) {
+          for (const entry of chain) {
+            if (typeof entry === 'string' && !entry.startsWith('blob:')) {
+              const entryHost = new URL(entry).hostname;
+              if (isLocalOrPrivateHost(entryHost)) {
+                crossNetworkDownloadBlocked = true;
+                break;
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+
     if (
+      crossNetworkDownloadBlocked ||
       (initiator && !allowedOrigin(initiator)) ||
       chain.length === 0 ||
       !chain.every(allowedDestination) ||
