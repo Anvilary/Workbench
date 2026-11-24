@@ -142,7 +142,7 @@ window.ready = async () => {
     // Scrollback and scrollbar usability in normal screen, including focus elsewhere.
     const activeScrollbackLimit = 42000;
     const printedLines = 25000;
-    await command(0, `printf '\\033[2J\\033[H'; seq 1 ${printedLines}; printf 'HISTORY_READY\\n'\r`);
+    await command(0, `printf '\\033[2J\\033[H'; seq 1 ${printedLines}; printf 'HISTORY_%s\\n' READY\r`);
     await waitText(0, 'HISTORY_READY');
     await delay(150);
     let normal = await read(0);

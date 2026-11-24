@@ -29,9 +29,23 @@ async function setup(t,query){
  let desktop;
  const closeDesktop = async () => {
   if (!desktop) return;
-  const child = desktop.process();
-  const deadline = setTimeout(() => child.kill('SIGKILL'), 5000);
-  try { await desktop.close(); } finally { clearTimeout(deadline); }
+  const target = desktop;
+  desktop = undefined;
+  const child = target.process();
+  let timer;
+  try {
+    await Promise.race([
+      target.close().catch(() => {}),
+      new Promise(resolve => {
+        timer = setTimeout(() => {
+          try { child.kill('SIGKILL'); } catch {}
+          resolve();
+        }, 5000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
  };
  t.after(async()=>{await closeDesktop();await rm(data,{recursive:true,force:true})});
  const launch=async()=>{

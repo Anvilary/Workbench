@@ -12,7 +12,7 @@ export async function serveFixture(t){
  const bundle=await build({stdin:{contents:fixture,loader:'tsx',resolveDir:path.join(root,'packages/web')},bundle:true,write:false,outdir:'/tmp/maw-interaction-bundle',format:'esm',jsx:'automatic',logLevel:'silent'});
  const server=createServer((req,res)=>{const name=req.url?.split('?')[0];res.setHeader('Content-Type',name==='/bundle.js'?'text/javascript':name==='/bundle.css'?'text/css':'text/html');res.end(name?.startsWith('/bundle.')?bundle.outputFiles.find(file=>file.path.endsWith(name==='/bundle.css'?'.css':'.js')).text:html)});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
- t.after(()=>new Promise(resolve=>server.close(resolve)));
+ t.after(()=>new Promise(resolve=>{server.closeAllConnections?.();server.close(resolve)}));
  return 'http://127.0.0.1:'+server.address().port;
 }
 export function executable(){
