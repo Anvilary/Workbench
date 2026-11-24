@@ -30,6 +30,7 @@ interface Props {
   destinations: { id: string; title: string }[];
   onSwapPane: (source: string, target: string) => void;
   canClose: boolean;
+  canMaximize?: boolean;
   isMaximized: boolean;
   online: boolean;
   busy: boolean;
@@ -78,6 +79,7 @@ export function PaneHeader({
   destinations,
   onSwapPane,
   canClose,
+  canMaximize,
   isMaximized,
   online,
   busy,
@@ -106,6 +108,7 @@ export function PaneHeader({
 }: Props): JSX.Element {
   const selectedTab = tabs.find((tab) => tab.id === selectedTabId);
   const isWebTab = selectedTab?.kind === 'web';
+  const canToggleMaximize = isMaximized || (canMaximize ?? canClose);
   const [zoomPercentage, setZoomPercentage] = useState<number | null>(null);
   const zoomTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -405,6 +408,33 @@ export function PaneHeader({
         )}
 
       <div className="maw-pane-actions">
+        <button
+          type="button"
+          className={`maw-pane-action-button maw-pane-expand-button${isMaximized ? ' active' : ''}`}
+          data-pane-expand
+          title={isMaximized ? t('agency.splits.collapsePane') : t('agency.splits.expandPane')}
+          aria-label={isMaximized ? t('agency.splits.collapsePane') : t('agency.splits.expandPane')}
+          aria-pressed={isMaximized}
+          disabled={!canToggleMaximize || !online}
+          onClick={onToggleMaximize}
+        >
+          {isMaximized ? (
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2.5 6.5H6.5V2.5" />
+              <path d="M13.5 6.5H9.5V2.5" />
+              <path d="M2.5 9.5H6.5V13.5" />
+              <path d="M13.5 9.5H9.5V13.5" />
+            </svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2.5 6V2.5H6" />
+              <path d="M10 2.5H13.5V6" />
+              <path d="M2.5 10V13.5H6" />
+              <path d="M10 13.5H13.5V10" />
+            </svg>
+          )}
+        </button>
+        <PaneGrip paneId={paneId} workspaceId={workspaceId} disabled={moveDisabled} destinations={destinations} onSwap={onSwapPane} />
         {isWebTab && (
           <button
             type="button"
@@ -469,32 +499,6 @@ export function PaneHeader({
             >
               <span className="agency-dropdown-label">{t('agency.splits.splitHorizontally')}</span>
             </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="agency-dropdown-item"
-              onClick={() => {
-                setPaneActionsOpen(false);
-                onToggleMaximize();
-              }}
-            >
-              <span className="agency-dropdown-label">
-                {isMaximized ? t('agency.splits.restorePane') : t('agency.splits.maximizePane')}
-              </span>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="agency-dropdown-item"
-              disabled={!canClose || !online}
-              title={!canClose ? t('agency.splits.singlePane') : undefined}
-              onClick={() => {
-                setPaneActionsOpen(false);
-                onClosePane();
-              }}
-            >
-              <span className="agency-dropdown-label">{t('agency.splits.closePane')}</span>
-            </button>
             {showSinglePane && onSinglePane && (
               <button
                 type="button"
@@ -523,7 +527,6 @@ export function PaneHeader({
             )}
           </PaneMenu>
         )}
-        <PaneGrip paneId={paneId} workspaceId={workspaceId} disabled={moveDisabled} destinations={destinations} onSwap={onSwapPane} />
         <button
           type="button"
           className="maw-pane-action-button maw-pane-close-button"

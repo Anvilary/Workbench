@@ -317,7 +317,7 @@ test('staging release creates and restores a general Browser tab through the rea
     await page.getByRole('menuitem', { name: 'New Terminal', exact: true }).click();
     await extraPane.getByRole('tab').waitFor();
     const paneClose = extraPane.locator('[data-pane-close]');
-    assert.equal(await paneClose.evaluate(button => button.previousElementSibling?.classList.contains('maw-pane-grip')), true);
+    assert.equal(await paneClose.evaluate(button => button.previousElementSibling?.classList.contains('maw-pane-menu-toggle')), true);
     await paneClose.click();
     const paneConfirmation = page.getByRole('dialog', { name: 'Close pane?', exact: true });
     const targetBounds = await extraPane.locator('.maw-pane-body').boundingBox();

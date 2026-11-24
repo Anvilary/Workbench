@@ -226,6 +226,7 @@ function PaneLeaf(props: Props & {
         })}
         onSwapPane={props.onSwapPane}
         canClose={canClose}
+        canMaximize={totalLeaves > 1}
         isMaximized={isMaximized}
         online={online}
         busy={busy}

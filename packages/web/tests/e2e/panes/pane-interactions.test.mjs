@@ -91,10 +91,8 @@ test('self, outside and Escape are no-ops; keyboard swap persists across workspa
  assert.deepEqual(await order(page),['pane-2','pane-1']);
  await page.evaluate(()=>window.fixture.switchWorkspace());await page.evaluate(()=>window.fixture.switchWorkspace());await frames(page);assert.deepEqual(await order(page),['pane-2','pane-1']);
  await page.reload();await page.locator('#start').click();await frames(page);assert.deepEqual(await order(page),['pane-2','pane-1']);
- await paneAction(page,1).click();
- await page.getByRole('menuitem',{name:'Maximize pane',exact:true}).click();assert.equal(await pane(page,1).locator('.maw-pane-grip').isDisabled(),true);
- await paneAction(page,1).click();
- await page.getByRole('menuitem',{name:'Restore pane',exact:true}).click();await frames(page);assert.equal(await pane(page,1).locator('.maw-pane-grip').isDisabled(),false);
+ await pane(page,1).locator('.maw-pane-expand-button').click();assert.equal(await pane(page,1).locator('.maw-pane-grip').isDisabled(),true);
+ await pane(page,1).locator('.maw-pane-expand-button').click();await frames(page);assert.equal(await pane(page,1).locator('.maw-pane-grip').isDisabled(),false);
 });
 
 test('terminal scrollback, selection, viewport and attachments survive repeated swaps; reduced motion and dividers work',async t=>{
