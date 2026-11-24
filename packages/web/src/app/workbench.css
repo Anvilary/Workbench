@@ -2022,6 +2022,12 @@
 .maw-context-menu-action-item:hover {
   color: var(--ink, #fff) !important;
 }
+.maw-context-menu-lang-indicator {
+  font-size: 11px;
+  color: var(--ink-dim, #8a877f);
+  padding: 3px 14px;
+  user-select: none;
+}
 
 /* Spellcheck Settings */
 .maw-settings-group {
@@ -2132,6 +2138,25 @@
   color: var(--danger, #ff4d4f);
   font-size: 11px;
   margin-top: 4px;
+}
+.maw-settings-warning-text {
+  color: var(--ember, #d97442);
+  font-size: 11px;
+  margin-top: 6px;
+}
+.maw-settings-dict-profile-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.maw-settings-select {
+  background: var(--bg-2, #141417);
+  color: var(--ink, #ededea);
+  border: 1px solid var(--border, #25252b);
+  border-radius: var(--radius-sm, 4px);
+  font-size: 12px;
+  padding: 4px 8px;
 }
 .maw-settings-empty-hint {
   font-size: 12px;

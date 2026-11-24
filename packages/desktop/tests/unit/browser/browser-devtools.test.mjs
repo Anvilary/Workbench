@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createPageCommands } from '../../../src/browser/page-commands.mjs';
-import { canEvictView } from '../../../src/performance/resource-budget.mjs';
+import { canEvictView, MemoryPressureTier, selectEvictionCandidate } from '../../../src/performance/resource-budget.mjs';
 
 function mockWebContents({ isOpened = false } = {}) {
   let devToolsOpened = isOpened;
@@ -140,4 +140,70 @@ test('canEvictView: protects tabs with open DevTools from background eviction', 
   });
 
   assert.equal(evictableAfterClose, true);
+});
+
+test('canEvictView and selectEvictionCandidate: bounded DevTools protection yields under CRITICAL pressure after ordinary tabs', () => {
+  const devToolsContents = mockWebContents({ isOpened: true });
+  const ordinaryContents = mockWebContents({ isOpened: false });
+  const views = new Map([
+    ['tab-devtools', { webContents: devToolsContents }],
+    ['tab-ordinary', { webContents: ordinaryContents }],
+  ]);
+  const providers = new Map([
+    ['tab-devtools', 'other'],
+    ['tab-ordinary', 'other'],
+  ]);
+  const lastAccessedAt = new Map([
+    ['tab-devtools', 1000],
+    ['tab-ordinary', 2000],
+  ]);
+
+  for (const tier of [MemoryPressureTier.NORMAL, MemoryPressureTier.MODERATE, MemoryPressureTier.HIGH]) {
+    assert.equal(canEvictView({
+      id: 'tab-devtools',
+      attachedViews: new Set(),
+      layoutFocusedId: null,
+      activeDownloads: new Map(),
+      popupOwners: new Map(),
+      views,
+      providers,
+      interactionProtected: new Set(),
+      durablePage: () => true,
+      memoryTier: tier,
+    }), false, `DevTools tab must be protected under ${tier} pressure`);
+  }
+
+  // Under CRITICAL pressure, DevTools tab becomes eligible, but ordinary tab is selected first
+  assert.equal(canEvictView({
+    id: 'tab-devtools',
+    attachedViews: new Set(),
+    layoutFocusedId: null,
+    activeDownloads: new Map(),
+    popupOwners: new Map(),
+    views,
+    providers,
+    interactionProtected: new Set(),
+    durablePage: () => true,
+    memoryTier: MemoryPressureTier.CRITICAL,
+  }), true);
+
+  const firstCandidate = selectEvictionCandidate({
+    residentIds: views.keys(),
+    lastAccessedAt,
+    canEvict: (id) => canEvictView({
+      id,
+      attachedViews: new Set(),
+      layoutFocusedId: null,
+      activeDownloads: new Map(),
+      popupOwners: new Map(),
+      views,
+      providers,
+      interactionProtected: new Set(),
+      durablePage: () => true,
+      memoryTier: MemoryPressureTier.CRITICAL,
+    }),
+    isProtected: (id) => Boolean(views.get(id)?.webContents?.isDevToolsOpened?.()),
+    now: 50_000,
+  });
+  assert.equal(firstCandidate, 'tab-ordinary');
 });

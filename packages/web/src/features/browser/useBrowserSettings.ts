@@ -7,13 +7,15 @@
  * - Server-side settings synchronization (survives desktop restart, workspace switches, multi-window)
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   DEFAULT_BROWSER_FAVORITES,
+  DEFAULT_BROWSER_PROFILE_ID,
   DEFAULT_SEARCH_ENGINES,
   DEFAULT_SEARCH_ENGINE_ID,
   DEFAULT_SPELLCHECK_SETTINGS,
   getSearchEngine,
+  isValidBrowserProfileId,
   parseBrowserSettings,
   validateBrowserFavoriteUrl,
   validateSearchEngine,
@@ -37,36 +39,35 @@ function broadcastBrowserSettings(next: BrowserSettings): void {
   }
 }
 
+function createDefaultBrowserSettings(): BrowserSettings {
+  return {
+    defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
+    favorites: [...DEFAULT_BROWSER_FAVORITES],
+    searchEngines: [...DEFAULT_SEARCH_ENGINES],
+    spellCheck: {
+      enabled: DEFAULT_SPELLCHECK_SETTINGS.enabled,
+      languages: [...DEFAULT_SPELLCHECK_SETTINGS.languages],
+      configuredLanguages: [...DEFAULT_SPELLCHECK_SETTINGS.configuredLanguages],
+      customWordsByProfile: {},
+    },
+  };
+}
+
 function loadCachedBrowserSettings(): BrowserSettings {
   if (typeof window === 'undefined' || !window.localStorage) {
-    return {
-      defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
-      favorites: [...DEFAULT_BROWSER_FAVORITES],
-      searchEngines: [...DEFAULT_SEARCH_ENGINES],
-      spellCheck: { ...DEFAULT_SPELLCHECK_SETTINGS },
-    };
+    return createDefaultBrowserSettings();
   }
   try {
     const raw = window.localStorage.getItem(BROWSER_SETTINGS_STORAGE_KEY);
     if (!raw) {
-      return {
-        defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
-        favorites: [...DEFAULT_BROWSER_FAVORITES],
-        searchEngines: [...DEFAULT_SEARCH_ENGINES],
-        spellCheck: { ...DEFAULT_SPELLCHECK_SETTINGS },
-      };
+      return createDefaultBrowserSettings();
     }
     const parsed = parseBrowserSettings(JSON.parse(raw));
     if (parsed) return parsed;
   } catch {
     // Malformed cache falls back cleanly
   }
-  return {
-    defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
-    favorites: [...DEFAULT_BROWSER_FAVORITES],
-    searchEngines: [...DEFAULT_SEARCH_ENGINES],
-    spellCheck: { ...DEFAULT_SPELLCHECK_SETTINGS },
-  };
+  return createDefaultBrowserSettings();
 }
 
 function saveCachedBrowserSettings(settings: BrowserSettings): void {
@@ -88,8 +89,11 @@ export interface UseBrowserSettingsResult {
   toggleSpellCheckLanguage: (code: string) => void;
   addSpellCheckLanguage: (code: string) => void;
   removeSpellCheckLanguage: (code: string) => void;
-  addCustomDictionaryWord: (word: string) => Promise<{ success: boolean; error?: string }>;
-  removeCustomDictionaryWord: (word: string) => Promise<{ success: boolean }>;
+  getCustomDictionaryWords: (profileId?: string) => string[];
+  syncProfileCustomDictionary: (profileId?: string) => Promise<string[]>;
+  addCustomDictionaryWord: (word: string, profileId?: string) => Promise<{ success: boolean; error?: string }>;
+  removeCustomDictionaryWord: (word: string, profileId?: string) => Promise<{ success: boolean }>;
+  clearProfileCustomDictionary: (profileId: string) => void;
   addFavorite: (favorite: { title: string; url: string }) => { success: boolean; error?: string };
   editFavorite: (id: string, updates: { title?: string; url?: string }) => { success: boolean; error?: string };
   removeFavorite: (id: string) => void;
@@ -118,16 +122,23 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
   }, []);
 
   // Synchronize when server status arrives or updates
+  const lastServerSyncRef = useRef<string>('');
   useEffect(() => {
     const serverBrowser = appSettings?.status?.browser;
     if (serverBrowser) {
-      setSettings(serverBrowser);
-      saveCachedBrowserSettings(serverBrowser);
+      const serialized = JSON.stringify(serverBrowser);
+      if (lastServerSyncRef.current !== serialized) {
+        lastServerSyncRef.current = serialized;
+        setSettings(serverBrowser);
+        saveCachedBrowserSettings(serverBrowser);
+        broadcastBrowserSettings(serverBrowser);
+      }
     }
   }, [appSettings?.status?.browser]);
 
   const persist = useCallback(
     (next: BrowserSettings) => {
+      lastServerSyncRef.current = JSON.stringify(next);
       setSettings(next);
       saveCachedBrowserSettings(next);
       broadcastBrowserSettings(next);
@@ -387,9 +398,19 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
     persist(next);
   }, [settings, persist]);
 
-  const spellCheck = settings.spellCheck ?? DEFAULT_SPELLCHECK_SETTINGS;
+  const spellCheck = settings.spellCheck ?? {
+    enabled: DEFAULT_SPELLCHECK_SETTINGS.enabled,
+    languages: [...DEFAULT_SPELLCHECK_SETTINGS.languages],
+    configuredLanguages: [...DEFAULT_SPELLCHECK_SETTINGS.configuredLanguages],
+    customWordsByProfile: {},
+  };
+
+  const lastSyncedSpellCheckRef = useRef<string>('');
 
   const syncSpellCheckToDesktop = useCallback((sc: SpellCheckSettings) => {
+    const key = JSON.stringify({ enabled: sc.enabled, languages: sc.languages });
+    if (lastSyncedSpellCheckRef.current === key) return;
+    lastSyncedSpellCheckRef.current = key;
     void window.mawChatGpt?.command({
       type: 'update-spellcheck-settings',
       enabled: sc.enabled,
@@ -481,18 +502,76 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
     [settings, spellCheck, persist, syncSpellCheckToDesktop],
   );
 
+  const resolveProfile = (profileId?: string): string | null => {
+    if (profileId === undefined) return DEFAULT_BROWSER_PROFILE_ID;
+    return isValidBrowserProfileId(profileId) ? profileId : null;
+  };
+
+  const getCustomDictionaryWords = useCallback(
+    (profileId: string = DEFAULT_BROWSER_PROFILE_ID): string[] => {
+      const effective = resolveProfile(profileId);
+      if (!effective) return [];
+      return spellCheck.customWordsByProfile?.[effective] ?? [];
+    },
+    [spellCheck],
+  );
+
+  const syncProfileCustomDictionary = useCallback(
+    async (profileId: string = DEFAULT_BROWSER_PROFILE_ID): Promise<string[]> => {
+      const effective = resolveProfile(profileId);
+      if (!effective) return [];
+      try {
+        const res = (await window.mawChatGpt?.command({
+          type: 'list-custom-dictionary-words',
+          profileId: effective,
+        })) as { ok?: boolean; words?: string[] } | undefined;
+        if (res?.ok && Array.isArray(res.words)) {
+          const cleanWords = [...new Set(res.words.map((w) => (typeof w === 'string' ? w.trim() : '')).filter(Boolean))];
+          const existingMap = spellCheck.customWordsByProfile ?? {};
+          const mergedMap: Record<string, string[]> = { ...existingMap };
+          if (cleanWords.length > 0) {
+            mergedMap[effective] = cleanWords;
+          } else {
+            delete mergedMap[effective];
+          }
+          const prevWords = existingMap[effective] ?? [];
+          if (JSON.stringify(prevWords) !== JSON.stringify(cleanWords)) {
+            const nextSpellCheck: SpellCheckSettings = {
+              ...spellCheck,
+              customWordsByProfile: mergedMap,
+            };
+            persist({ ...settings, spellCheck: nextSpellCheck });
+          }
+          return cleanWords;
+        }
+      } catch {
+        // Ignore bridge unavailability
+      }
+      return spellCheck.customWordsByProfile?.[effective] ?? [];
+    },
+    [settings, spellCheck, persist],
+  );
+
   const addCustomDictionaryWord = useCallback(
-    async (word: string) => {
+    async (word: string, profileId: string = DEFAULT_BROWSER_PROFILE_ID) => {
+      const effective = resolveProfile(profileId);
+      if (!effective) return { success: false, error: 'Invalid browser profile' };
+      if (/[\r\n\0]/.test(word)) return { success: false, error: 'Word contains invalid characters' };
       const clean = word.trim();
       if (!clean) return { success: false, error: 'Word cannot be empty' };
       if (clean.length > 128) return { success: false, error: 'Word exceeds 128 characters' };
-      const currentWords = spellCheck.customWords || [];
+      const existingMap = spellCheck.customWordsByProfile ?? {};
+      const currentWords = existingMap[effective] ?? [];
       if (currentWords.includes(clean)) return { success: false, error: 'Word already exists in dictionary' };
 
       const nextWords = [...currentWords, clean];
+      const nextMap: Record<string, string[]> = {
+        ...existingMap,
+        [effective]: nextWords,
+      };
       const nextSpellCheck: SpellCheckSettings = {
         ...spellCheck,
-        customWords: nextWords,
+        customWordsByProfile: nextMap,
       };
       const next: BrowserSettings = {
         ...settings,
@@ -502,6 +581,7 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
       void window.mawChatGpt?.command({
         type: 'add-custom-dictionary-word',
         word: clean,
+        profileId: effective,
       });
       return { success: true };
     },
@@ -509,13 +589,22 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
   );
 
   const removeCustomDictionaryWord = useCallback(
-    async (word: string) => {
+    async (word: string, profileId: string = DEFAULT_BROWSER_PROFILE_ID) => {
+      const effective = resolveProfile(profileId);
+      if (!effective) return { success: false };
       const clean = word.trim();
-      const currentWords = spellCheck.customWords || [];
+      const existingMap = spellCheck.customWordsByProfile ?? {};
+      const currentWords = existingMap[effective] ?? [];
       const nextWords = currentWords.filter((w) => w !== clean);
+      const nextMap: Record<string, string[]> = { ...existingMap };
+      if (nextWords.length > 0) {
+        nextMap[effective] = nextWords;
+      } else {
+        delete nextMap[effective];
+      }
       const nextSpellCheck: SpellCheckSettings = {
         ...spellCheck,
-        customWords: nextWords,
+        customWordsByProfile: nextMap,
       };
       const next: BrowserSettings = {
         ...settings,
@@ -525,21 +614,35 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
       void window.mawChatGpt?.command({
         type: 'remove-custom-dictionary-word',
         word: clean,
+        profileId: effective,
       });
       return { success: true };
     },
     [settings, spellCheck, persist],
   );
 
+  const clearProfileCustomDictionary = useCallback(
+    (profileId: string) => {
+      if (!profileId || profileId === DEFAULT_BROWSER_PROFILE_ID) return;
+      const existingMap = spellCheck.customWordsByProfile ?? {};
+      if (!(profileId in existingMap)) return;
+      const nextMap: Record<string, string[]> = { ...existingMap };
+      delete nextMap[profileId];
+      persist({
+        ...settings,
+        spellCheck: {
+          ...spellCheck,
+          customWordsByProfile: nextMap,
+        },
+      });
+    },
+    [settings, spellCheck, persist],
+  );
+
   const resetToDefaults = useCallback(() => {
-    const next: BrowserSettings = {
-      defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
-      favorites: [...DEFAULT_BROWSER_FAVORITES],
-      searchEngines: [...DEFAULT_SEARCH_ENGINES],
-      spellCheck: { ...DEFAULT_SPELLCHECK_SETTINGS },
-    };
+    const next = createDefaultBrowserSettings();
     persist(next);
-    syncSpellCheckToDesktop(DEFAULT_SPELLCHECK_SETTINGS);
+    syncSpellCheckToDesktop(next.spellCheck!);
   }, [persist, syncSpellCheckToDesktop]);
 
   const currentSearchEngines = settings.searchEngines ?? DEFAULT_SEARCH_ENGINES;
@@ -554,8 +657,11 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
     toggleSpellCheckLanguage,
     addSpellCheckLanguage,
     removeSpellCheckLanguage,
+    getCustomDictionaryWords,
+    syncProfileCustomDictionary,
     addCustomDictionaryWord,
     removeCustomDictionaryWord,
+    clearProfileCustomDictionary,
     addFavorite,
     editFavorite,
     removeFavorite,

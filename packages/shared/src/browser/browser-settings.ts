@@ -15,6 +15,7 @@ import {
   isLocalOrPrivateHost,
   type WebTabProvider,
 } from './browser-tabs.js';
+import { DEFAULT_BROWSER_PROFILE_ID, isValidBrowserProfileId } from './browser-profiles.js';
 import { asArrayFiltered, asNonEmptyString, asRecord } from '../validation/narrowing.js';
 
 export type BuiltinSearchEngineId = 'duckduckgo' | 'google' | 'brave' | 'bing' | 'ecosia';
@@ -340,15 +341,15 @@ export const DEFAULT_BROWSER_FAVORITES: readonly BrowserFavorite[] = [
 export interface SpellCheckSettings {
   enabled: boolean;
   languages: string[];
-  configuredLanguages?: string[];
-  customWords?: string[];
+  configuredLanguages: string[];
+  customWordsByProfile: Record<string, string[]>;
 }
 
 export const DEFAULT_SPELLCHECK_SETTINGS: SpellCheckSettings = {
   enabled: true,
   languages: ['en-US'],
   configuredLanguages: ['en-US'],
-  customWords: [],
+  customWordsByProfile: {},
 };
 
 export interface BrowserSettings {
@@ -362,7 +363,12 @@ export const DEFAULT_BROWSER_SETTINGS: BrowserSettings = {
   favorites: [...DEFAULT_BROWSER_FAVORITES],
   defaultSearchEngine: DEFAULT_SEARCH_ENGINE_ID,
   searchEngines: [...DEFAULT_SEARCH_ENGINES],
-  spellCheck: { ...DEFAULT_SPELLCHECK_SETTINGS },
+  spellCheck: {
+    enabled: DEFAULT_SPELLCHECK_SETTINGS.enabled,
+    languages: [...DEFAULT_SPELLCHECK_SETTINGS.languages],
+    configuredLanguages: [...DEFAULT_SPELLCHECK_SETTINGS.configuredLanguages],
+    customWordsByProfile: {},
+  },
 };
 
 /**
@@ -529,6 +535,46 @@ export function parseSearchEngine(value: unknown): SearchEngine | null {
   return validated.normalized;
 }
 
+const SPELLCHECK_LANG_RE = /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,4})*$/;
+
+function sanitizeSpellCheckLanguages(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (typeof item === 'string' && item.length <= 32 && SPELLCHECK_LANG_RE.test(item)) {
+      seen.add(item);
+    }
+  }
+  return [...seen];
+}
+
+function sanitizeCustomWords(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (typeof item !== 'string' || item.length > 128 || /[\r\n\0]/.test(item)) continue;
+    const trimmed = item.trim();
+    if (trimmed.length > 0 && trimmed.length <= 128) {
+      seen.add(trimmed);
+    }
+  }
+  return [...seen];
+}
+
+function normalizeCustomWordsByProfile(rawMap: unknown): Record<string, string[]> {
+  const mapRecord = asRecord(rawMap);
+  if (!mapRecord) return {};
+  const result: Record<string, string[]> = {};
+  for (const profileId of Object.keys(mapRecord).sort()) {
+    if (!isValidBrowserProfileId(profileId)) continue;
+    const words = sanitizeCustomWords(mapRecord[profileId]);
+    if (words.length > 0) {
+      result[profileId] = words;
+    }
+  }
+  return result;
+}
+
 export function parseBrowserSettings(value: unknown): BrowserSettings | null {
   const record = asRecord(value);
   if (!record) return null;
@@ -568,28 +614,43 @@ export function parseBrowserSettings(value: unknown): BrowserSettings | null {
     const rawRecord = asRecord(rawSpellCheck);
     if (rawRecord) {
       const enabled = rawRecord['enabled'] !== false;
-      const rawLangs = rawRecord['languages'];
-      const languages = Array.isArray(rawLangs)
-        ? rawLangs.filter((l): l is string => typeof l === 'string' && /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,4})*$/.test(l))
-        : ['en-US'];
-      const rawConfigured = rawRecord['configuredLanguages'];
-      const configuredLanguages = Array.isArray(rawConfigured)
-        ? rawConfigured.filter((l): l is string => typeof l === 'string' && /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,4})*$/.test(l))
-        : [...languages];
-      const rawWords = rawRecord['customWords'];
-      const customWords = Array.isArray(rawWords)
-        ? rawWords.filter((w): w is string => typeof w === 'string' && w.trim().length > 0 && w.length <= 128)
-        : [];
+      const parsedLanguages = sanitizeSpellCheckLanguages(rawRecord['languages']);
+      const languages = parsedLanguages !== null ? parsedLanguages : ['en-US'];
+      const parsedConfigured = sanitizeSpellCheckLanguages(rawRecord['configuredLanguages']);
+      const configuredLanguages =
+        parsedConfigured !== null && parsedConfigured.length > 0
+          ? parsedConfigured
+          : languages.length > 0
+            ? [...languages]
+            : ['en-US'];
+
+      const rawByProfile = asRecord(rawRecord['customWordsByProfile']);
+      let customWordsByProfile: Record<string, string[]>;
+      if (rawByProfile !== null) {
+        customWordsByProfile = normalizeCustomWordsByProfile(rawByProfile);
+      } else if (Array.isArray(rawRecord['customWords'])) {
+        // Legacy migration: assign previously un-scoped words solely to the default ('main') profile.
+        const legacyWords = sanitizeCustomWords(rawRecord['customWords']);
+        customWordsByProfile = legacyWords.length > 0 ? { [DEFAULT_BROWSER_PROFILE_ID]: legacyWords } : {};
+      } else {
+        customWordsByProfile = {};
+      }
+
       spellCheck = {
         enabled,
-        languages: languages.length > 0 ? languages : ['en-US'],
-        configuredLanguages: configuredLanguages.length > 0 ? configuredLanguages : ['en-US'],
-        customWords,
+        languages,
+        configuredLanguages,
+        customWordsByProfile,
       };
     }
   }
   if (!spellCheck) {
-    spellCheck = { ...DEFAULT_SPELLCHECK_SETTINGS };
+    spellCheck = {
+      enabled: DEFAULT_SPELLCHECK_SETTINGS.enabled,
+      languages: [...DEFAULT_SPELLCHECK_SETTINGS.languages],
+      configuredLanguages: [...DEFAULT_SPELLCHECK_SETTINGS.configuredLanguages],
+      customWordsByProfile: {},
+    };
   }
 
   return {

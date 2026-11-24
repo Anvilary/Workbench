@@ -37,10 +37,12 @@ import {
   isRemotePort,
   parseBrowserSettings,
   DEFAULT_BROWSER_SETTINGS,
+  DEFAULT_SPELLCHECK_SETTINGS,
   type AgentId,
   type ConsoleShellId,
   type BrowserSettings,
   type BrowserFavorite,
+  type SpellCheckSettings,
 } from '@agent-workbench/shared';
 import { appSettingsPath } from '../../shared/app-paths.js';
 import { writeFileAtomic } from '../vault/write.js';
@@ -106,6 +108,26 @@ export interface SettingsPatch {
   browser?: Partial<BrowserSettings>;
 }
 
+function cloneSpellCheck(sc: SpellCheckSettings = DEFAULT_SPELLCHECK_SETTINGS): SpellCheckSettings {
+  const customWordsByProfile: Record<string, string[]> = {};
+  for (const profileId of Object.keys(sc.customWordsByProfile ?? {}).sort()) {
+    const words = sc.customWordsByProfile[profileId];
+    if (Array.isArray(words) && words.length > 0) {
+      customWordsByProfile[profileId] = [...words];
+    }
+  }
+  const languages = [...(sc.languages ?? [])];
+  const configured = sc.configuredLanguages && sc.configuredLanguages.length > 0
+    ? [...sc.configuredLanguages]
+    : (languages.length > 0 ? [...languages] : [...DEFAULT_SPELLCHECK_SETTINGS.configuredLanguages]);
+  return {
+    enabled: sc.enabled !== false,
+    languages,
+    configuredLanguages: configured,
+    customWordsByProfile,
+  };
+}
+
 export function defaultAppSettings(): AppSettings {
   return {
     version: SETTINGS_VERSION,
@@ -117,6 +139,7 @@ export function defaultAppSettings(): AppSettings {
       defaultSearchEngine: DEFAULT_BROWSER_SETTINGS.defaultSearchEngine,
       favorites: DEFAULT_BROWSER_SETTINGS.favorites.map((f) => ({ ...f })),
       ...(DEFAULT_BROWSER_SETTINGS.searchEngines ? { searchEngines: DEFAULT_BROWSER_SETTINGS.searchEngines.map((e) => ({ ...e })) } : {}),
+      spellCheck: cloneSpellCheck(DEFAULT_SPELLCHECK_SETTINGS),
     },
   };
 }
@@ -206,10 +229,19 @@ function frozen(settings: AppSettings): AppSettings {
       ...(settings.browser.spellCheck
         ? {
             spellCheck: Object.freeze({
-              ...settings.browser.spellCheck,
-              languages: Object.freeze([...settings.browser.spellCheck.languages]) as any,
-              configuredLanguages: Object.freeze([...(settings.browser.spellCheck.configuredLanguages || settings.browser.spellCheck.languages)]) as any,
-              customWords: Object.freeze([...(settings.browser.spellCheck.customWords || [])]) as any,
+              enabled: settings.browser.spellCheck.enabled,
+              languages: Object.freeze([...settings.browser.spellCheck.languages]) as string[],
+              configuredLanguages: Object.freeze([...(settings.browser.spellCheck.configuredLanguages || settings.browser.spellCheck.languages)]) as string[],
+              customWordsByProfile: Object.freeze(
+                Object.fromEntries(
+                  Object.keys(settings.browser.spellCheck.customWordsByProfile ?? {})
+                    .sort()
+                    .map((profileId) => [
+                      profileId,
+                      Object.freeze([...(settings.browser.spellCheck!.customWordsByProfile[profileId] ?? [])]) as string[],
+                    ]),
+                ),
+              ) as Record<string, string[]>,
             }),
           }
         : {}),
@@ -322,14 +354,7 @@ export class SettingsStore {
             ? { searchEngines: this.current.browser.searchEngines.map((e) => ({ ...e })) }
             : {}),
           ...(this.current.browser.spellCheck
-            ? {
-                spellCheck: {
-                  enabled: this.current.browser.spellCheck.enabled,
-                  languages: [...this.current.browser.spellCheck.languages],
-                  configuredLanguages: [...(this.current.browser.spellCheck.configuredLanguages || this.current.browser.spellCheck.languages)],
-                  customWords: [...(this.current.browser.spellCheck.customWords || [])],
-                },
-              }
+            ? { spellCheck: cloneSpellCheck(this.current.browser.spellCheck) }
             : {}),
         },
       };
@@ -356,12 +381,7 @@ export class SettingsStore {
         next.browser.searchEngines = patch.browser.searchEngines.map((e) => ({ ...e }));
       }
       if (patch.browser?.spellCheck !== undefined) {
-        next.browser.spellCheck = {
-          enabled: patch.browser.spellCheck.enabled,
-          languages: [...patch.browser.spellCheck.languages],
-          configuredLanguages: [...(patch.browser.spellCheck.configuredLanguages || patch.browser.spellCheck.languages)],
-          customWords: [...(patch.browser.spellCheck.customWords || [])],
-        };
+        next.browser.spellCheck = cloneSpellCheck(patch.browser.spellCheck);
       }
       const remote = patch.remote ?? {};
       if (remote.enabled !== undefined) next.remote.enabled = remote.enabled;

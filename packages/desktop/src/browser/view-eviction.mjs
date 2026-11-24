@@ -65,7 +65,11 @@ export function createViewEviction({ app, state, evictTab }) {
         residentIds: views.keys(),
         lastAccessedAt,
         canEvict: (id) => canEvict(id, memoryTier),
-        isProtected: (id) => isProtectedProvider(providers.get(id) ?? 'chatgpt') || interactionProtected.has(id),
+        isProtected: (id) => {
+          const contents = views.get(id)?.webContents;
+          const hasDevTools = Boolean(contents && !contents.isDestroyed() && typeof contents.isDevToolsOpened === 'function' && contents.isDevToolsOpened());
+          return hasDevTools || isProtectedProvider(providers.get(id) ?? 'chatgpt') || interactionProtected.has(id);
+        },
         excludeId,
       });
 

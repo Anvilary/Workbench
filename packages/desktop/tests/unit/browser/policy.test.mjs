@@ -462,13 +462,19 @@ test('validCommand: supports spellcheck commands', () => {
   assert.equal(validCommand({ type: 'update-spellcheck-settings', enabled: true, languages: ['invalid/tag'] }), false);
 
   assert.equal(validCommand({ type: 'list-custom-dictionary-words' }), true);
+  assert.equal(validCommand({ type: 'list-custom-dictionary-words', profileId: 'work-1' }), true);
+  assert.equal(validCommand({ type: 'list-custom-dictionary-words', profileId: '../bad' }), false);
   assert.equal(validCommand({ type: 'list-custom-dictionary-words', extra: 1 }), false);
 
   assert.equal(validCommand({ type: 'add-custom-dictionary-word', word: 'myterm' }), true);
+  assert.equal(validCommand({ type: 'add-custom-dictionary-word', word: 'ação', profileId: 'work-1' }), true);
+  assert.equal(validCommand({ type: 'add-custom-dictionary-word', word: 'myterm', profileId: 'INVALID' }), false);
   assert.equal(validCommand({ type: 'add-custom-dictionary-word', word: '' }), false);
   assert.equal(validCommand({ type: 'add-custom-dictionary-word', word: 'bad\nword' }), false);
   assert.equal(validCommand({ type: 'add-custom-dictionary-word' }), false);
 
   assert.equal(validCommand({ type: 'remove-custom-dictionary-word', word: 'myterm' }), true);
+  assert.equal(validCommand({ type: 'remove-custom-dictionary-word', word: 'myterm', profileId: 'work-1' }), true);
+  assert.equal(validCommand({ type: 'remove-custom-dictionary-word', word: 'myterm', profileId: '' }), false);
   assert.equal(validCommand({ type: 'remove-custom-dictionary-word', word: '' }), false);
 });

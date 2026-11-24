@@ -668,12 +668,18 @@ export function validCommand(value, options = {}) {
     if (!Array.isArray(value.languages) || value.languages.length > 64) return false;
     return value.languages.every(lang => typeof lang === 'string' && /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,4})*$/.test(lang) && lang.length <= 32);
   }
-  if (value.type === 'list-custom-dictionary-words') return exact(value, ['type']);
+  if (value.type === 'list-custom-dictionary-words') {
+    return exact(value, ['type']) || (exact(value, ['type', 'profileId']) && isValidBrowserProfileId(value.profileId));
+  }
   if (value.type === 'add-custom-dictionary-word') {
-    return exact(value, ['type', 'word']) && typeof value.word === 'string' && value.word.trim().length > 0 && value.word.length <= 128 && !/[\r\n\0]/.test(value.word);
+    const validShape = exact(value, ['type', 'word']) ||
+      (exact(value, ['type', 'word', 'profileId']) && isValidBrowserProfileId(value.profileId));
+    return validShape && typeof value.word === 'string' && value.word.trim().length > 0 && value.word.length <= 128 && !/[\r\n\0]/.test(value.word);
   }
   if (value.type === 'remove-custom-dictionary-word') {
-    return exact(value, ['type', 'word']) && typeof value.word === 'string' && value.word.trim().length > 0 && value.word.length <= 128 && !/[\r\n\0]/.test(value.word);
+    const validShape = exact(value, ['type', 'word']) ||
+      (exact(value, ['type', 'word', 'profileId']) && isValidBrowserProfileId(value.profileId));
+    return validShape && typeof value.word === 'string' && value.word.trim().length > 0 && value.word.length <= 128 && !/[\r\n\0]/.test(value.word);
   }
   if (value.type === 'get-backend-endpoint') return exact(value, ['type']);
   if (value.type === 'get-favicons') return exact(value, ['type']);

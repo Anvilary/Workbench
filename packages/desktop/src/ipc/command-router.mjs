@@ -73,16 +73,16 @@ export function registerCommandRouter({ ipcMain, win, dialog, backend, controlle
       controller.applySpellCheckSettings(command);
       return { ok: true };
     },
-    'list-custom-dictionary-words': async () => {
-      const words = await controller.listCustomDictionaryWords();
+    'list-custom-dictionary-words': async (command) => {
+      const words = await controller.listCustomDictionaryWords(command.profileId);
       return { ok: true, words };
     },
     'add-custom-dictionary-word': async (command) => {
-      const ok = await controller.addCustomDictionaryWord(command.word);
+      const ok = await controller.addCustomDictionaryWord(command.word, command.profileId);
       return { ok };
     },
     'remove-custom-dictionary-word': async (command) => {
-      const ok = await controller.removeCustomDictionaryWord(command.word);
+      const ok = await controller.removeCustomDictionaryWord(command.word, command.profileId);
       return { ok };
     },
   };

@@ -7,7 +7,7 @@
  * interaction protection) is owned by the BrowserViewController.
  */
 
-import { otherUrl, externalUrl, targetWebProvider, isSameSite, authenticationUrl, decideWindowOpen, getBrowserZoomAction, isLocalOrPrivateHost, isWorkbenchBackendUrl } from '../../policy.mjs';
+import { DEFAULT_BROWSER_PROFILE_ID, otherUrl, externalUrl, targetWebProvider, isSameSite, authenticationUrl, decideWindowOpen, getBrowserZoomAction, isLocalOrPrivateHost, isWorkbenchBackendUrl } from '../../policy.mjs';
 import { isTypingInput } from '../performance/resource-budget.mjs';
 import { isOAuthLoopbackCallback, createOAuthLoopbackGate } from '../security/oauth-loopback.mjs';
 import { applyWebContentsZoom } from './zoom-controller.mjs';
@@ -18,7 +18,7 @@ export function createNavigationGuard({
   layout, flushBrowserSession, desktopShortcut,
 }) {
   const { shell, dialog } = electron;
-  const { views, urls, popups, popupOwners, authEntryUrls, interactionProtected, zoomLevels, linkOpenHistory, findRequests } = state;
+  const { views, urls, profileIds, popups, popupOwners, authEntryUrls, interactionProtected, zoomLevels, linkOpenHistory, findRequests } = state;
   const { invalidate, hideAll } = layout;
 
   function allowLinkOpen(tabId) {
@@ -341,6 +341,7 @@ export function createNavigationGuard({
       send({
         type: 'browser-context',
         id,
+        profileId: profileIds?.get(id) ?? DEFAULT_BROWSER_PROFILE_ID,
         selection: typeof params.selectionText === 'string' && params.selectionText.length > 0,
         selectionText: typeof params.selectionText === 'string' ? params.selectionText : '',
         linkURL: typeof params.linkURL === 'string' ? params.linkURL : '',

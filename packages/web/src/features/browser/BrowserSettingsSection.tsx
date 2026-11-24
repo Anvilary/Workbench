@@ -323,6 +323,7 @@ export function BrowserSettingsSection({
     setProfileError(null);
     try {
       await Promise.resolve(onDeleteBrowserProfile?.(profileId));
+      browserSettings.clearProfileCustomDictionary(profileId);
       if (renamingProfileId === profileId) setRenamingProfileId(null);
       if (clearingProfileId === profileId) setClearingProfileId(null);
       setDeletingProfile(null);
@@ -1031,6 +1032,7 @@ export function BrowserSettingsSection({
 
       <SpellCheckSettingsSection
         browserSettings={browserSettings}
+        browserProfiles={effectiveProfiles}
         highlighted={highlightedCardId === 'setting-card-spellcheck'}
         expandSignal={(expandSignal ?? 0) + sectionExpandSignal}
       />

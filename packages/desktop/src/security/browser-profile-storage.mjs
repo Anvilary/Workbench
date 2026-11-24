@@ -295,6 +295,17 @@ export async function deleteBrowserProfileStorage({
     const provider = SITE_TO_PROVIDER[site];
     const partition = partitionForProfile(profileId, provider);
     const targetSession = sessionApi.fromPartition(partition);
+    if (typeof targetSession.listWordsInSpellCheckerDictionary === 'function' &&
+        typeof targetSession.removeWordFromSpellCheckerDictionary === 'function') {
+      try {
+        const words = await targetSession.listWordsInSpellCheckerDictionary();
+        if (Array.isArray(words)) {
+          for (const word of words) {
+            try { targetSession.removeWordFromSpellCheckerDictionary(word); } catch {}
+          }
+        }
+      } catch {}
+    }
     await clearSessionAllData(targetSession);
     clearedPartitions.push(partition);
   }

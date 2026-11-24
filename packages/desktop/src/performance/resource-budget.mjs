@@ -136,9 +136,9 @@ export function isTypingInput(input) {
 /**
  * Evaluates whether a resident browser view is eligible for background eviction.
  * Attached, focused, loading, downloading, and popup-owning views are never evicted.
- * Protected AI providers and views with unsaved typing input are preserved under
- * NORMAL/MODERATE/HIGH memory pressure and only become emergency eviction candidates
- * under CRITICAL pressure (after unprotected tabs via selectEvictionCandidate).
+ * Protected AI providers, views with unsaved typing input, and views with open DevTools
+ * are preserved under NORMAL/MODERATE/HIGH memory pressure and only become emergency
+ * eviction candidates under CRITICAL pressure (after unprotected tabs via selectEvictionCandidate).
  */
 export function canEvictView({
   id,
@@ -161,12 +161,12 @@ export function canEvictView({
   const view = views.get(id);
   if (!view || view.webContents.isDestroyed()) return false;
   if (view.webContents.isLoading()) return false;
-  if (typeof view.webContents.isDevToolsOpened === 'function' && view.webContents.isDevToolsOpened()) return false;
 
   const provider = providers.get(id) ?? 'chatgpt';
   if (!durablePage(provider, view.webContents.getURL())) return false;
 
   if (memoryTier !== MemoryPressureTier.CRITICAL) {
+    if (typeof view.webContents.isDevToolsOpened === 'function' && view.webContents.isDevToolsOpened()) return false;
     if (interactionProtected.has(id) || isProtectedProvider(provider)) return false;
   }
 

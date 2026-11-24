@@ -57,6 +57,21 @@ export class AppSettingsService extends EventEmitter {
       browser: {
         defaultSearchEngine: settings.browser.defaultSearchEngine,
         favorites: settings.browser.favorites.map((f) => ({ ...f })),
+        ...(settings.browser.searchEngines
+          ? { searchEngines: settings.browser.searchEngines.map((e) => ({ ...e })) }
+          : {}),
+        ...(settings.browser.spellCheck
+          ? {
+              spellCheck: {
+                enabled: settings.browser.spellCheck.enabled,
+                languages: [...settings.browser.spellCheck.languages],
+                configuredLanguages: [...settings.browser.spellCheck.configuredLanguages],
+                customWordsByProfile: Object.fromEntries(
+                  Object.entries(settings.browser.spellCheck.customWordsByProfile).map(([pid, words]) => [pid, [...words]]),
+                ),
+              },
+            }
+          : {}),
       },
     };
   }

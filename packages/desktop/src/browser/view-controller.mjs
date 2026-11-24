@@ -252,6 +252,11 @@ export function createBrowserViewController({
     });
     view.webContents.on('render-process-gone', () => {
       activeDownloads.delete(id);
+      if (!view.webContents.isDestroyed()) {
+        try {
+          if (typeof view.webContents.closeDevTools === 'function') view.webContents.closeDevTools();
+        } catch {}
+      }
       const message = `${providerName} renderer stopped. Use Reload page to retry.`;
       failures.set(id, message);
       if (attachedViews.has(id)) hide(id);
@@ -371,7 +376,14 @@ export function createBrowserViewController({
   function shutdown() {
     hideAll();
     destroyAllPopups();
-    for (const view of views.values()) if (!view.webContents.isDestroyed()) view.webContents.close();
+    for (const view of views.values()) {
+      if (!view.webContents.isDestroyed()) {
+        try {
+          if (typeof view.webContents.closeDevTools === 'function') view.webContents.closeDevTools();
+        } catch {}
+        view.webContents.close();
+      }
+    }
     views.clear();
     suspendedTabs.clear();
     lastAccessedAt.clear();

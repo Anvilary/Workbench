@@ -145,7 +145,7 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
 
     const tabId = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
 
-    // 1. Regular right-click: Exactly 6 standard items, no spelling section
+    // 1. Regular right-click: Standard items + Inspect Page, no spelling section
     await page.evaluate((id) => {
       window.__emitState({
         type: 'browser-context',
@@ -164,7 +164,7 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
 
     await page.waitForSelector('.maw-context-menu');
     const menuButtons = await page.$$eval('.maw-context-menu button', btns => btns.map(b => b.textContent.trim()));
-    assert.deepEqual(menuButtons, ['Copy Page URL', 'Open URL', 'Open in external browser', 'Reload', 'Back', 'Forward', 'Search']);
+    assert.deepEqual(menuButtons, ['Copy Page URL', 'Open URL', 'Open in external browser', 'Reload', 'Back', 'Forward', 'Search', 'Inspect Page']);
 
     // Check Open URL is disabled when no link/selection
     const openUrlBtn = page.locator('.maw-context-menu button', { hasText: 'Open URL' });
@@ -199,7 +199,7 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
 
     await page.waitForSelector('.maw-context-menu');
     const linkMenuButtons = await page.$$eval('.maw-context-menu button', btns => btns.map(b => b.textContent.trim()));
-    assert.deepEqual(linkMenuButtons, ['Copy Link Address', 'Open link in external browser', 'Copy Page URL', 'Open URL', 'Open in external browser', 'Reload', 'Back', 'Forward', 'Search']);
+    assert.deepEqual(linkMenuButtons, ['Copy Link Address', 'Open link in external browser', 'Copy Page URL', 'Open URL', 'Open in external browser', 'Reload', 'Back', 'Forward', 'Search', 'Inspect Page']);
 
     const openUrlEnabledOnLink = await page.locator('.maw-context-menu button', { hasText: 'Open URL' }).isEnabled();
     assert.equal(openUrlEnabledOnLink, true, 'Open URL must be enabled when right clicking a valid link');
@@ -277,8 +277,96 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
     const noSuggDisabled = await page.$eval('.maw-context-menu-disabled-item', b => b.disabled);
     assert.equal(noSuggDisabled, true);
 
-    // 5. Context menu Search item triggers Find in Page
-    await page.click('.maw-context-menu button:last-child');
+    // 5. Inspect Page action sends inspect-page command with coordinates
+    await page.locator('.maw-context-menu button', { hasText: 'Inspect Page' }).click();
+    await page.waitForSelector('.maw-context-menu', { state: 'detached' });
+
+    commands = await page.evaluate(() => window.__commands);
+    const inspectCmd = commands[commands.length - 1];
+    assert.deepEqual(inspectCmd, {
+      type: 'inspect-page',
+      id: tabId,
+      x: 120,
+      y: 120,
+    });
+
+    // 6. Multilingual context menu: suggestions are shown once (not duplicated), active dictionaries toggle separately, Add to Dictionary scopes to profileId
+    await page.evaluate(() => {
+      localStorage.setItem('agency-ui.browser-settings.v1', JSON.stringify({
+        defaultSearchEngine: 'duckduckgo',
+        favorites: [],
+        spellCheck: {
+          enabled: true,
+          languages: ['en-US', 'pt-PT'],
+          configuredLanguages: ['en-US', 'pt-PT'],
+          customWordsByProfile: {},
+        },
+      }));
+      window.__openSettingsEvents = [];
+      window.addEventListener('workbench:open-settings', (e) => window.__openSettingsEvents.push(e.detail));
+    });
+
+    // Reload page so useBrowserSettings initializes from seeded localStorage cleanly
+    await page.reload();
+    await page.waitForSelector('#browser-pane');
+
+    await page.evaluate((id) => {
+      window.__emitState({
+        type: 'browser-context',
+        id,
+        profileId: 'custom-profile-1',
+        x: 130,
+        y: 140,
+        linkURL: '',
+        selection: false,
+        canGoBack: false,
+        canGoForward: false,
+        isEditable: true,
+        misspelledWord: 'computadorr',
+        dictionarySuggestions: ['computador', 'computer'],
+      });
+    }, tabId);
+
+    await page.waitForSelector('.maw-context-menu');
+    const multiSuggestions = await page.$$eval('.maw-context-menu-suggestion', btns => btns.map(b => b.textContent.trim()));
+    assert.deepEqual(multiSuggestions, ['computador', 'computer'], 'Combined suggestions must not be duplicated across language categories');
+
+    const activeLangBtn = page.locator('.maw-context-menu-category-btn', { hasText: 'Active dictionaries (2)' });
+    assert.equal(await activeLangBtn.getAttribute('aria-expanded'), 'false');
+    await activeLangBtn.click();
+    assert.equal(await activeLangBtn.getAttribute('aria-expanded'), 'true');
+    const indicators = await page.$$eval('.maw-context-menu-lang-indicator', els => els.map(e => e.textContent.trim()));
+    assert.equal(indicators.length, 2);
+
+    await page.locator('.maw-context-menu-action-item', { hasText: 'Add to Dictionary' }).click();
+    await page.waitForSelector('.maw-context-menu', { state: 'detached' });
+
+    commands = await page.evaluate(() => window.__commands);
+    const addDictCmd = commands.find(c => c.type === 'add-custom-dictionary-word');
+    assert.deepEqual(addDictCmd, {
+      type: 'add-custom-dictionary-word',
+      word: 'computadorr',
+      profileId: 'custom-profile-1',
+    });
+
+    // Reopen menu and test Context menu Search item triggers Find in Page
+    await page.evaluate((id) => {
+      window.__emitState({
+        type: 'browser-context',
+        id,
+        x: 120,
+        y: 120,
+        linkURL: '',
+        selection: false,
+        canGoBack: false,
+        canGoForward: false,
+        isEditable: false,
+        misspelledWord: '',
+        dictionarySuggestions: [],
+      });
+    }, tabId);
+    await page.waitForSelector('.maw-context-menu');
+    await page.locator('.maw-context-menu button', { hasText: 'Search' }).click();
     await page.waitForSelector('.maw-context-menu', { state: 'detached' });
     await page.waitForSelector('.maw-browser-find-bar');
 

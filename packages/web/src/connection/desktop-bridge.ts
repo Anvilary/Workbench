@@ -6,6 +6,7 @@
 export interface DesktopBridgeEvent {
   type: string;
   id?: string;
+  profileId?: string;
   sourceTabId?: string;
   url?: string;
   token?: string;
@@ -23,6 +24,8 @@ export interface DesktopBridgeEvent {
   isEditable?: boolean;
   misspelledWord?: string;
   dictionarySuggestions?: string[];
+  language?: string;
+  status?: string;
   matches?: number;
   activeMatchOrdinal?: number;
   requestId?: number;

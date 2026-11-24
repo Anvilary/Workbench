@@ -55,9 +55,9 @@ test('validated commands are routed to the owner of the resource', async () => {
   await call(trusted, { type: 'inspect-page', id: UUID, x: 100, y: 200 });
   await call(trusted, { type: 'get-available-spellcheck-languages' });
   await call(trusted, { type: 'update-spellcheck-settings', enabled: true, languages: ['en-US', 'pt-PT'] });
-  await call(trusted, { type: 'list-custom-dictionary-words' });
-  await call(trusted, { type: 'add-custom-dictionary-word', word: 'customterm' });
-  await call(trusted, { type: 'remove-custom-dictionary-word', word: 'customterm' });
+  await call(trusted, { type: 'list-custom-dictionary-words', profileId: 'work-1' });
+  await call(trusted, { type: 'add-custom-dictionary-word', word: 'customterm', profileId: 'work-1' });
+  await call(trusted, { type: 'remove-custom-dictionary-word', word: 'customterm', profileId: 'work-1' });
   assert.deepEqual(calls.map((entry) => entry.slice(0, 2).map((x) => (typeof x === 'object' ? x.type : x))), [
     ['retain', 'retain'],
     ['open', 'open'],
@@ -65,10 +65,12 @@ test('validated commands are routed to the owner of the resource', async () => {
     ['inspectPage', 'inspect-page'],
     ['getAvailableSpellCheckerLanguages'],
     ['applySpellCheckSettings', 'update-spellcheck-settings'],
-    ['listCustomDictionaryWords'],
+    ['listCustomDictionaryWords', 'work-1'],
     ['addCustomDictionaryWord', 'customterm'],
     ['removeCustomDictionaryWord', 'customterm'],
   ]);
+  assert.equal(calls.at(-2)[2], 'work-1');
+  assert.equal(calls.at(-1)[2], 'work-1');
 });
 
 test('inherited object keys are not commands', async () => {

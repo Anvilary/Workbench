@@ -16,10 +16,64 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
   const { views, providers, popupOwners, popups, activeDownloads, reservedDownloadPaths, failures } = state;
   const configuredPartitions = new Map(); // partitionName -> Electron.Session
   const sessionProviders = new Map(); // Electron.Session -> provider
+  const dictionaryStatuses = new Map(); // languageCode -> 'downloading' | 'ready' | 'failed'
+  const spellCheckListenersAttached = new WeakSet();
+  const PROFILE_PROVIDERS = ['chatgpt', 'github', 'perplexity', 'other'];
   const spellCheckConfig = {
     enabled: true,
     languages: ['en-US'],
   };
+
+  function resolveStrictProfileId(profileId) {
+    if (profileId === undefined) return DEFAULT_BROWSER_PROFILE_ID;
+    return isValidBrowserProfileId(profileId) ? profileId : null;
+  }
+
+  function getProfileSessions(profileId) {
+    const effective = resolveStrictProfileId(profileId);
+    if (!effective) return [];
+    const sessionsList = [];
+    for (const provider of PROFILE_PROVIDERS) {
+      const partitionName = partitionForBrowserProfile(effective, provider);
+      const sess = configuredPartitions.get(partitionName) || session.fromPartition(partitionName);
+      if (sess) sessionsList.push(sess);
+    }
+    return sessionsList;
+  }
+
+  function applySpellCheckToSession(targetSession) {
+    if (!targetSession) return;
+    try {
+      if (typeof targetSession.setSpellCheckerEnabled === 'function') {
+        targetSession.setSpellCheckerEnabled(spellCheckConfig.enabled);
+      }
+      if (typeof targetSession.setSpellCheckerLanguages === 'function') {
+        const available = Array.isArray(targetSession.availableSpellCheckerLanguages)
+          ? targetSession.availableSpellCheckerLanguages
+          : [];
+        const toEnable = spellCheckConfig.languages.filter(
+          (lang) => available.length === 0 || available.includes(lang),
+        );
+        targetSession.setSpellCheckerLanguages(toEnable);
+      }
+    } catch {}
+  }
+
+  function attachSpellCheckListeners(targetSession) {
+    if (!targetSession || typeof targetSession.on !== 'function' || spellCheckListenersAttached.has(targetSession)) return;
+    spellCheckListenersAttached.add(targetSession);
+    const reportStatus = (languageCode, status) => {
+      if (typeof languageCode !== 'string' || !languageCode) return;
+      dictionaryStatuses.set(languageCode, status);
+      try {
+        send({ type: 'spellcheck-dictionary-status', language: languageCode, status });
+      } catch {}
+    };
+    targetSession.on('spellcheck-dictionary-initialized', (_event, languageCode) => reportStatus(languageCode, 'ready'));
+    targetSession.on('spellcheck-dictionary-download-begin', (_event, languageCode) => reportStatus(languageCode, 'downloading'));
+    targetSession.on('spellcheck-dictionary-download-success', (_event, languageCode) => reportStatus(languageCode, 'ready'));
+    targetSession.on('spellcheck-dictionary-download-failure', (_event, languageCode) => reportStatus(languageCode, 'failed'));
+  }
 
   function applySpellCheckSettings(config) {
     if (!config) return;
@@ -30,48 +84,53 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
       spellCheckConfig.languages = [...config.languages];
     }
     for (const targetSession of configuredPartitions.values()) {
-      try {
-        if (typeof targetSession.setSpellCheckerEnabled === 'function') {
-          targetSession.setSpellCheckerEnabled(spellCheckConfig.enabled);
-        }
-        if (typeof targetSession.setSpellCheckerLanguages === 'function') {
-          const available = targetSession.availableSpellCheckerLanguages || [];
-          const toEnable = spellCheckConfig.languages.filter(
-            (lang) => available.length === 0 || available.includes(lang),
-          );
-          targetSession.setSpellCheckerLanguages(toEnable);
-        }
-      } catch {}
+      applySpellCheckToSession(targetSession);
     }
   }
 
   function getAvailableSpellCheckerLanguages() {
     try {
-      if (session.defaultSession && Array.isArray(session.defaultSession.availableSpellCheckerLanguages)) {
+      if (session.defaultSession && Array.isArray(session.defaultSession.availableSpellCheckerLanguages) && session.defaultSession.availableSpellCheckerLanguages.length > 0) {
         return [...session.defaultSession.availableSpellCheckerLanguages];
       }
-    } catch {}
-    return [];
-  }
-
-  async function listCustomDictionaryWords() {
-    try {
-      const sess = configuredPartitions.values().next().value || session.defaultSession;
-      if (sess && typeof sess.listWordsInSpellCheckerDictionary === 'function') {
-        return await sess.listWordsInSpellCheckerDictionary();
+      for (const sess of configuredPartitions.values()) {
+        if (Array.isArray(sess.availableSpellCheckerLanguages) && sess.availableSpellCheckerLanguages.length > 0) {
+          return [...sess.availableSpellCheckerLanguages];
+        }
       }
     } catch {}
     return [];
   }
 
-  async function addCustomDictionaryWord(word) {
-    if (typeof word !== 'string' || !word.trim()) return false;
-    const clean = word.trim();
-    let result = false;
-    const allSessions = [session.defaultSession, ...configuredPartitions.values()];
-    for (const sess of allSessions) {
+  async function listCustomDictionaryWords(profileId) {
+    const profileSessions = getProfileSessions(profileId);
+    if (profileSessions.length === 0) return [];
+    const collected = new Set();
+    for (const sess of profileSessions) {
       try {
-        if (sess && typeof sess.addWordToSpellCheckerDictionary === 'function') {
+        if (typeof sess.listWordsInSpellCheckerDictionary === 'function') {
+          const words = await sess.listWordsInSpellCheckerDictionary();
+          if (Array.isArray(words)) {
+            for (const word of words) {
+              if (typeof word === 'string' && word.trim()) collected.add(word);
+            }
+          }
+        }
+      } catch {}
+    }
+    return [...collected].sort();
+  }
+
+  async function addCustomDictionaryWord(word, profileId) {
+    if (typeof word !== 'string' || word.length > 128 || /[\r\n\0]/.test(word)) return false;
+    const clean = word.trim();
+    if (!clean) return false;
+    const profileSessions = getProfileSessions(profileId);
+    if (profileSessions.length === 0) return false;
+    let result = false;
+    for (const sess of profileSessions) {
+      try {
+        if (typeof sess.addWordToSpellCheckerDictionary === 'function') {
           sess.addWordToSpellCheckerDictionary(clean);
           result = true;
         }
@@ -80,14 +139,16 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
     return result;
   }
 
-  async function removeCustomDictionaryWord(word) {
-    if (typeof word !== 'string' || !word.trim()) return false;
+  async function removeCustomDictionaryWord(word, profileId) {
+    if (typeof word !== 'string' || word.length > 128 || /[\r\n\0]/.test(word)) return false;
     const clean = word.trim();
+    if (!clean) return false;
+    const profileSessions = getProfileSessions(profileId);
+    if (profileSessions.length === 0) return false;
     let result = false;
-    const allSessions = [session.defaultSession, ...configuredPartitions.values()];
-    for (const sess of allSessions) {
+    for (const sess of profileSessions) {
       try {
-        if (sess && typeof sess.removeWordFromSpellCheckerDictionary === 'function') {
+        if (typeof sess.removeWordFromSpellCheckerDictionary === 'function') {
           sess.removeWordFromSpellCheckerDictionary(clean);
           result = true;
         }
@@ -124,16 +185,8 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
       otherUrl,
       authenticationUrl,
     });
-    if (typeof targetSession.setSpellCheckerEnabled === 'function') {
-      try { targetSession.setSpellCheckerEnabled(spellCheckConfig.enabled); } catch {}
-    }
-    if (typeof targetSession.setSpellCheckerLanguages === 'function') {
-      try {
-        const available = targetSession.availableSpellCheckerLanguages || [];
-        const toEnable = spellCheckConfig.languages.filter(lang => available.length === 0 || available.includes(lang));
-        if (toEnable.length > 0) targetSession.setSpellCheckerLanguages(toEnable);
-      } catch {}
-    }
+    applySpellCheckToSession(targetSession);
+    attachSpellCheckListeners(targetSession);
     targetSession.on('will-download', browserDownloadHandler({
       provider, views, providers, popupOwners, popups, activeDownloads,
       reservedPaths: reservedDownloadPaths,
