@@ -94,7 +94,7 @@ test('link opened from a tab in Pane 2 opens in Pane 2', async (t) => {
   assert.equal(updatedLayout.tree.first.tabIds.length, 1);
 });
 
-test('untrusted or unsafe schemes (localhost, IP) are rejected and do not create tabs', async (t) => {
+test('dangerous schemes are rejected and do not create tabs, while local web apps are accepted', async (t) => {
   const page = await setup(t, 'mode=web&shape=row');
   const sourceTabId = id(1);
 
@@ -102,7 +102,26 @@ test('untrusted or unsafe schemes (localhost, IP) are rejected and do not create
     window.fixture.requests.filter(r => r.type === 'agency.webTab.create').length
   );
 
-  // Attempt local URL
+  // Attempt dangerous schemes
+  for (const dangerous of ['javascript:alert(1)', 'file:///etc/passwd', 'data:text/html;base64,PHNjcmlwdD4=']) {
+    await page.evaluate(({ sourceTabId, dangerous }) => {
+      window.fixtureBridgeSend({
+        type: 'open-web-tab',
+        sourceTabId,
+        url: dangerous,
+      });
+    }, { sourceTabId, dangerous });
+  }
+
+  await frames(page, 5);
+
+  const countAfterDangerous = await page.evaluate(() =>
+    window.fixture.requests.filter(r => r.type === 'agency.webTab.create').length
+  );
+
+  assert.equal(countAfterDangerous, countBefore, 'Dangerous schemes must be rejected without creating a tab');
+
+  // Attempt local web app URL (should succeed)
   await page.evaluate(({ sourceTabId }) => {
     window.fixtureBridgeSend({
       type: 'open-web-tab',
@@ -111,11 +130,13 @@ test('untrusted or unsafe schemes (localhost, IP) are rejected and do not create
     });
   }, { sourceTabId });
 
-  await frames(page, 5);
-
-  const countAfter = await page.evaluate(() =>
-    window.fixture.requests.filter(r => r.type === 'agency.webTab.create').length
+  await page.waitForFunction(() =>
+    window.fixture.requests.some(r => r.type === 'agency.webTab.create' && r.url === 'http://localhost:3000/admin')
   );
 
-  assert.equal(countAfter, countBefore, 'Localhost URLs must be rejected without creating a tab');
+  const req = await page.evaluate(() =>
+    window.fixture.requests.find(r => r.type === 'agency.webTab.create' && r.url === 'http://localhost:3000/admin')
+  );
+  assert.ok(req, 'Local web app link must create a web tab');
+  assert.equal(req.provider, 'other');
 });

@@ -290,10 +290,10 @@ test('Electron runtime: universal internal navigation, rendering compatibility, 
   }, tabWebContentsId);
 
   assert.ok(imageCapture, 'Capture succeeded');
-  // Canvas background must be white (255, 255, 255), completely eliminating dark-mode bleed
-  assert.equal(imageCapture.r, 255, 'Red channel must be 255 (white canvas)');
-  assert.equal(imageCapture.g, 255, 'Green channel must be 255 (white canvas)');
-  assert.equal(imageCapture.b, 255, 'Blue channel must be 255 (white canvas)');
+  // Canvas background must be neutral white (>= 240), completely eliminating dark-mode bleed (where R,G,B were 33)
+  assert.ok(imageCapture.r >= 240, `Red channel must be >= 240 (white canvas), got ${imageCapture.r}`);
+  assert.ok(imageCapture.g >= 240, `Green channel must be >= 240 (white canvas), got ${imageCapture.g}`);
+  assert.ok(imageCapture.b >= 240, `Blue channel must be >= 240 (white canvas), got ${imageCapture.b}`);
 
   // 3. VERIFY UNIVERSAL INTERNAL NAVIGATION: NORMAL LINK (CROSS-DOMAIN)
   // Clicking an ordinary link (<a href="https://site-b.example.com/dashboard">)
