@@ -167,14 +167,24 @@ const makeServe = (options = {}) => {
 };
 
 const basicOf = (endpoint) => `Basic ${Buffer.from(`${endpoint.username}:${endpoint.password}`).toString('base64')}`;
-/** Manda algo al control del falso. Sin cuerpo es GET. */
-const control = async (endpoint, route, body) => {
-  const response = await fetch(`${endpoint.url}${route}`, {
-    method: body === undefined ? 'GET' : 'POST',
-    headers: { authorization: basicOf(endpoint), 'content-type': 'application/json' },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  return response.json();
+/** Manda algo al control del falso. Sin cuerpo es GET. Con reintentos por ECONNRESET esporadico. */
+const control = async (endpoint, route, body, retries = 2) => {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(`${endpoint.url}${route}`, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: { authorization: basicOf(endpoint), 'content-type': 'application/json' },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      return await response.json();
+    } catch (err) {
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 60));
+        continue;
+      }
+      throw err;
+    }
+  }
 };
 const requestsOf = (endpoint) => control(endpoint, '/__fake/requests');
 

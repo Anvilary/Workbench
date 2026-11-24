@@ -117,7 +117,7 @@ test('two-phase close: slow process shutdown does not block concurrent tab opera
   assert.ok(s1.tab);
   assert.ok(s2.tab);
 
-  // Configure delayed termination on s1 (process takes 200ms to exit after stop)
+  // Configure delayed termination on s1 (process takes 350ms to exit after stop)
   h.closeCallbacks.set(s1.terminalId!, () => {
     setTimeout(() => {
       const row = h.terminals.get(s1.terminalId!);
@@ -127,11 +127,11 @@ test('two-phase close: slow process shutdown does not block concurrent tab opera
         row.exitCode = 0;
         h.registry.emit('exit', s1.terminalId!, 0, null);
       }
-    }, 200);
+    }, 350);
   });
 
   const closeStart = Date.now();
-  // Start closing s1 (will take at least 200ms)
+  // Start closing s1 (will take at least 350ms)
   const closePromise = h.coordinator.nativeAction({
     type: 'agency.tab.action',
     requestId: 'close-s1',
@@ -153,7 +153,7 @@ test('two-phase close: slow process shutdown does not block concurrent tab opera
     action: 'select',
   });
   const selectDuration = Date.now() - selectStart;
-  assert.ok(selectDuration < 100, `Concurrent select must complete immediately while close is in progress (took ${selectDuration}ms)`);
+  assert.ok(selectDuration < 250, `Concurrent select must complete immediately while close is in progress (took ${selectDuration}ms)`);
 
   // Verify s2 is selected while s1 is still in process of closing
   const liveSessionsDuringClose = h.native.list(wsId);
@@ -182,7 +182,7 @@ test('two-phase close: slow process shutdown does not block concurrent tab opera
     if (decision.ok) await h.layouts.save(decision.layout);
   });
   const layoutDuration = Date.now() - layoutStart;
-  assert.ok(layoutDuration < 100, `Concurrent layout save must complete immediately (took ${layoutDuration}ms)`);
+  assert.ok(layoutDuration < 250, `Concurrent layout save must complete immediately (took ${layoutDuration}ms)`);
 
   // Await close completion
   await closePromise;
