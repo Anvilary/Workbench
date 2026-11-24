@@ -5,7 +5,7 @@
 
 [![npm](https://img.shields.io/npm/v/agent-workbench)](https://www.npmjs.com/package/agent-workbench)
 [![CI](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml)
-[![license: MIT](https://img.shields.io/npm/l/agent-workbench)](LICENSE)
+[![license: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm_Noncommercial_1.0.0-blue.svg)](LICENSE)
 [![Mentioned in Awesome Claude Code](https://awesome.re/mentioned-badge.svg)](https://github.com/hesreallyhim/awesome-claude-code)
 
 [English](README.md) · [Español](README.es.md) · [简体中文](README.zh-CN.md) · **日本語** · [Português (Brasil)](README.pt-BR.md) · [Русский](README.ru.md) · [한국어](README.ko.md) · [Français](README.fr.md) · [Deutsch](README.de.md)
@@ -400,6 +400,6 @@ Anvilary Workbench が役に立っているなら、支援をご検討くださ�
 
 ## ライセンス
 
-MIT。[`LICENSE`](LICENSE) を参照してください。
+Anvilary 独自の変更には PolyForm Noncommercial 1.0.0 が適用され、元の Agent Workbench のコードは引き続き MIT ライセンスです。[`LICENSE`](LICENSE) と [`LICENSE.UPSTREAM`](LICENSE.UPSTREAM) を参照してください。
 
 Anvilary Workbench は独立したプロジェクトです。Claude Code、Codex、OpenCode、Antigravity、Pi の各 CLI で動作しますが、Anthropic、OpenAI、OpenCode の作者、Google、Earendil のいずれとも提携しておらず、これらから承認や支持を受けたものでもありません。

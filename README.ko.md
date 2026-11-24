@@ -5,7 +5,7 @@
 
 [![npm](https://img.shields.io/npm/v/agent-workbench)](https://www.npmjs.com/package/agent-workbench)
 [![CI](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml)
-[![license: MIT](https://img.shields.io/npm/l/agent-workbench)](LICENSE)
+[![license: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm_Noncommercial_1.0.0-blue.svg)](LICENSE)
 [![Mentioned in Awesome Claude Code](https://awesome.re/mentioned-badge.svg)](https://github.com/hesreallyhim/awesome-claude-code)
 
 [English](README.md) · [Español](README.es.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · [Português (Brasil)](README.pt-BR.md) · [Русский](README.ru.md) · **한국어** · [Français](README.fr.md) · [Deutsch](README.de.md)
@@ -400,6 +400,6 @@ Anvilary Workbench가 유용하다면 [Buy Me a Coffee](https://buymeacoffee.com
 
 ## 라이선스
 
-MIT. [`LICENSE`](LICENSE)를 참고하세요.
+Anvilary 고유의 변경 사항에는 PolyForm Noncommercial 1.0.0이 적용되며 원래 Agent Workbench 코드는 MIT 라이선스를 유지합니다. [`LICENSE`](LICENSE) 및 [`LICENSE.UPSTREAM`](LICENSE.UPSTREAM)을 참고하세요.
 
 Anvilary Workbench는 독립 프로젝트입니다. Claude Code, Codex, OpenCode, Antigravity, Pi CLI와 함께 작동하지만, Anthropic, OpenAI, OpenCode 제작자, Google, Earendil과 제휴 관계가 없으며 이들로부터 보증을 받지도 않았습니다.
