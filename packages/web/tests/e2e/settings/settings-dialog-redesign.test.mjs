@@ -529,6 +529,14 @@ test('SettingsDialog acceptance suite: 2-pane navigation, tabs, accessibility, a
     await page.waitForTimeout(400); // Allow telemetry mock to populate
     const usageCards = await page.locator('.agents-usage-summary-card').count();
     assert.equal(usageCards, 2, 'Agents usage view rendered summary cards');
+    const refreshDisabled = await page.locator('.agents-usage-refresh-btn').isDisabled();
+    assert.equal(refreshDisabled, false, 'Usage Refresh button must be enabled after initial snapshot');
+    const visibleQuotaBars = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('[role="progressbar"] .quota-bar-fill'))
+        .map((el) => el.getBoundingClientRect().width)
+        .filter((w) => w > 0).length,
+    );
+    assert.ok(visibleQuotaBars >= 2, `Expected visible nonzero-width quota bars, got ${visibleQuotaBars}`);
     await page.screenshot({ path: path.join(artifactDir, 'screenshots', 'settings-after-usage.png') });
 
     // 8. Navigate to About Tab
