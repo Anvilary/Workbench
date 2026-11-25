@@ -114,8 +114,8 @@ test('open rejects when active capacity is full, but allows opening when slots a
   const registry = createMockRegistry();
   const internal = registry as any;
 
-  // Populate 42 terminals where 41 are exited and 1 is active
-  for (let i = 0; i < 41; i++) {
+  // Populate 100 terminals where 99 are exited and 1 is active
+  for (let i = 0; i < 99; i++) {
     const id = `dead-${i}`;
     internal.terminals.set(id, createMockEntry({
       descriptor: { terminalId: id, alive: false, sleeping: false, exitCode: 0, launchedAt: null, kind: 'shell' },
@@ -127,11 +127,11 @@ test('open rejects when active capacity is full, but allows opening when slots a
     session: { pid: 9999, dispose: () => {} },
   }));
 
-  assert.equal(internal.terminals.size, 42);
+  assert.equal(internal.terminals.size, 100);
   assert.equal(registry.activeCount(), 1);
 
-  // Now populate up to 42 active terminals
-  for (let i = 1; i < 42; i++) {
+  // Now populate up to 100 active terminals
+  for (let i = 1; i < 100; i++) {
     const id = `live-${i}`;
     internal.terminals.set(id, createMockEntry({
       descriptor: { terminalId: id, alive: true, sleeping: false, exitCode: null, launchedAt: Date.now(), kind: 'shell' },
@@ -139,9 +139,9 @@ test('open rejects when active capacity is full, but allows opening when slots a
     }));
   }
 
-  assert.equal(registry.activeCount(), 42);
+  assert.equal(registry.activeCount(), 100);
 
-  // Attempting to open when activeCount is 42 must throw too-many-terminals
+  // Attempting to open when activeCount is 100 must throw too-many-terminals
   await assert.rejects(
     registry.open({ cwd: process.cwd(), kind: 'shell' }),
     (err: any) => err.code === 'too-many-terminals',
@@ -154,8 +154,8 @@ test('wake rejects with too-many-terminals when active count is at maximum', asy
   const registry = createMockRegistry();
   const internal = registry as any;
 
-  // Add 42 active terminals
-  for (let i = 0; i < 42; i++) {
+  // Add 100 active terminals
+  for (let i = 0; i < 100; i++) {
     const id = `live-${i}`;
     internal.terminals.set(id, createMockEntry({
       descriptor: { terminalId: id, alive: true, sleeping: false, exitCode: null, launchedAt: Date.now(), kind: 'agent' },
@@ -567,8 +567,8 @@ test('inFlightOpens reserves capacity atomically across concurrent open calls', 
   const registry = createMockRegistry();
   const internal = registry as any;
 
-  // Add 41 active terminals (limit is 42)
-  for (let i = 0; i < 41; i++) {
+  // Add 99 active terminals (limit is 100)
+  for (let i = 0; i < 99; i++) {
     const id = `live-${i}`;
     internal.terminals.set(id, createMockEntry({
       descriptor: { terminalId: id, alive: true, sleeping: false, exitCode: null, launchedAt: Date.now(), kind: 'shell' },
@@ -576,7 +576,7 @@ test('inFlightOpens reserves capacity atomically across concurrent open calls', 
     }));
   }
 
-  assert.equal(registry.activeCount(), 41);
+  assert.equal(registry.activeCount(), 99);
 
   // Intercept worktreeFor to add an async yield
   const originalWorktree = internal.worktreeFor.bind(internal);

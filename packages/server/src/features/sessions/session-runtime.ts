@@ -23,7 +23,7 @@ import { CodexTurnWatcher } from '../../agents/codex/turn-watcher.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ACTIVE = new Set(['starting', 'running', 'stopping']);
-const MAX_ACTIVE_SESSIONS = 42;
+const MAX_ACTIVE_SESSIONS = 100;
 const NOW = (): string => new Date().toISOString();
 
 export type AgencySessionCreateInput =

@@ -61,7 +61,7 @@ import { ActivityBook, wakeActionFor, type ActivityEntry } from './terminal-acti
 import { TerminalOpenError, resolveLaunchPlan } from './terminal-open-error.js';
 
 /** Tope defensivo: cada pestana es un proceso real. */
-const MAX_TERMINALS = 42;
+const MAX_TERMINALS = 100;
 
 /** Cuanto se espera a que termine la CLI de una pestana que se relanza. */
 const RESTART_EXIT_TIMEOUT_MS = 10_000;

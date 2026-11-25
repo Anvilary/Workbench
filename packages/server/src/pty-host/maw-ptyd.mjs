@@ -26,7 +26,7 @@ import { TerminalState } from './terminal-state.mjs';
 
 const PROTOCOL_VERSION = 1;
 const DEFAULT_LIMIT_BYTES = 256 * 1024; // 256 KiB ring buffer por terminal
-const DEFAULT_MAX_SESSIONS = 42;
+const DEFAULT_MAX_SESSIONS = 100;
 const DEFAULT_MAX_TOMBSTONES = 64;
 const DEFAULT_TOMBSTONE_TTL_MS = 10 * 60 * 1000; // 10 minutos
 const DEFAULT_HANDSHAKE_TIMEOUT_MS = 3000;
