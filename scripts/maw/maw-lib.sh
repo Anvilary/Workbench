@@ -319,3 +319,83 @@ maw_restart_locked() {
   [ -e "$restart_lock" ] || return 1
   ! flock -n "$restart_lock" true 2>/dev/null
 }
+
+# Refresh installed desktop icons (hicolor) and maw.desktop launcher from RELEASE_DIR.
+# Arguments: RELEASE_DIR [EXPLICIT_LAUNCHER_BIN]
+# When EXPLICIT_LAUNCHER_BIN is omitted (automatic activation/rollback refresh), skips
+# cleanly if RELEASE_DIR has no desktop icon assets and preserves any existing Exec= line.
+maw_refresh_desktop_assets() {
+  _release_dir="${1:-}"
+  _explicit_launcher="${2:-}"
+  [ -n "$_release_dir" ] && [ -d "$_release_dir" ] || return 0
+  [ -n "${node_bin:-}" ] && [ -x "$node_bin" ] || return 0
+
+  _icon_root="$_release_dir/packages/desktop/assets/icons"
+  _has_icons=false
+  for _s in 16 24 32 48 64 96 128 192 256 512; do
+    if [ -f "$_icon_root/maw-${_s}.png" ]; then
+      _has_icons=true
+      break
+    fi
+  done
+  if [ -z "$_explicit_launcher" ] && [ "$_has_icons" != true ]; then
+    return 0
+  fi
+
+  _data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+  _desktop_apps="$_data_home/applications"
+  _hicolor_dir="$_data_home/icons/hicolor"
+  install -d "$_desktop_apps"
+
+  for _s in 16 24 32 48 64 96 128 192 256 512; do
+    _icon_src="$_icon_root/maw-${_s}.png"
+    if [ -f "$_icon_src" ]; then
+      _icon_dir="$_hicolor_dir/${_s}x${_s}/apps"
+      install -d "$_icon_dir"
+      _tmp_icon="$_icon_dir/.maw-workspace.png.tmp.$$"
+      install -m 644 "$_icon_src" "$_tmp_icon" && mv -f "$_tmp_icon" "$_icon_dir/maw-workspace.png"
+    fi
+  done
+
+  if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -q -f -t "$_hicolor_dir" 2>/dev/null || true
+  fi
+
+  _default_launcher="${MAW_BIN_DIR:-$HOME/.local/bin}/anvil-bench"
+  "$node_bin" -e '
+    const fs = require("fs");
+    const desktopPath = process.argv[1];
+    const explicitBin = process.argv[2];
+    const defaultBin = process.argv[3];
+    let execLine = "";
+    if (!explicitBin && fs.existsSync(desktopPath)) {
+      const existing = fs.readFileSync(desktopPath, "utf8");
+      const match = existing.match(/^Exec=[^\n\r]+$/m);
+      if (match) execLine = match[0];
+    }
+    if (!execLine) {
+      const cmd = explicitBin || defaultBin;
+      if (/[\n\r]/.test(cmd)) throw Error("Invalid launcher path");
+      const escaped = cmd.replace(/([\\\"`$])/g, "\\$1").replace(/%/g, "%%");
+      execLine = `Exec="${escaped}" desktop`;
+    }
+    const content = `[Desktop Entry]\nType=Application\nName=Workbench\nGenericName=Anvilary Workbench\n${execLine}\nIcon=maw-workspace\nTerminal=false\nCategories=Development;\nKeywords=Anvilary;Workbench;anvil-bench;MAW;MaW;Workspace;Terminal;ChatGPT;GitHub;\n`;
+    const tmp = `${desktopPath}.tmp.${process.pid}`;
+    fs.writeFileSync(tmp, content);
+    fs.renameSync(tmp, desktopPath);
+  ' "$_desktop_apps/maw.desktop" "$_explicit_launcher" "$_default_launcher"
+
+  if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$_desktop_apps" 2>/dev/null || true
+  fi
+}
+
+# Refresh desktop integration assets after activation or rollback only on non-headless
+# installations that already have desktop integration installed.
+maw_refresh_desktop_assets_if_enabled() {
+  [ "${MAW_HEADLESS:-}" = "1" ] && return 0
+  [ -f "$state_dir/headless" ] && return 0
+  _data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+  [ -f "$_data_home/applications/maw.desktop" ] || return 0
+  maw_refresh_desktop_assets "${1:-}"
+}

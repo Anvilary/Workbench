@@ -150,27 +150,7 @@ if [ "$mode" = --desktop ]; then
 fi
 
 if [ "$mode" = --desktop ] || [ "$mode" = --desktop-assets ] || [ "$mode" = --integrate-desktop ]; then
-  desktop_apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
-  install -d "$desktop_apps"
-  for s in 16 24 32 48 64 96 128 192 256 512; do
-    icon_dir="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/${s}x${s}/apps"
-    icon_src="$repo_dir/packages/desktop/assets/icons/maw-${s}.png"
-    if [ -f "$icon_src" ]; then
-      install -d "$icon_dir"
-      install -m 644 "$icon_src" "$icon_dir/maw-workspace.png"
-    fi
-  done
-  if command -v gtk-update-icon-cache >/dev/null 2>&1; then
-    gtk-update-icon-cache -q -f -t "${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor" 2>/dev/null || true
-  fi
-  # Desktop Exec uses quoted absolute paths, independent of the graphical PATH.
-  "$node_bin" -e '
-    const fs=require("fs"); const command=process.argv[1];
-    if (/[\n\r]/.test(command)) throw Error("Invalid launcher path");
-    const escaped=command.replace(/([\\\"`$])/g,"\\$1").replace(/%/g,"%%");
-    fs.writeFileSync(process.argv[2], `[Desktop Entry]\nType=Application\nName=Workbench\nGenericName=Anvilary Workbench\nExec="${escaped}" desktop\nIcon=maw-workspace\nTerminal=false\nCategories=Development;\nKeywords=Anvilary;Workbench;anvil-bench;MAW;MaW;Workspace;Terminal;ChatGPT;GitHub;\n`);
-  ' "$bin_dir/anvil-bench" "$desktop_apps/maw.desktop"
-  if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database "$desktop_apps" 2>/dev/null || true; fi
+  maw_refresh_desktop_assets "$repo_dir" "$bin_dir/anvil-bench"
   printf '%s\n' 'Desktop installed. Start the existing service with anvil-bench start if needed, then launch: anvil-bench desktop'
 fi
 

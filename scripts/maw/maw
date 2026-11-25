@@ -60,6 +60,8 @@ run_activation() {   # extra helper args...
     [ -z "${MAW_SYSTEMD_RUNTIME_DIR:-}" ] || _extra_setenv="--setenv=MAW_SYSTEMD_RUNTIME_DIR=$MAW_SYSTEMD_RUNTIME_DIR"
     _extra_bus_setenv=""
     [ -z "${MAW_SYSTEMD_BUS_ADDRESS:-}" ] || _extra_bus_setenv="--setenv=MAW_SYSTEMD_BUS_ADDRESS=$MAW_SYSTEMD_BUS_ADDRESS"
+    _extra_bin_setenv=""
+    [ -z "${MAW_BIN_DIR:-}" ] || _extra_bin_setenv="--setenv=MAW_BIN_DIR=$MAW_BIN_DIR"
     if maw_systemd_run \
         --unit="${MAW_HELPER_UNIT:-maw-restart-helper}" \
         --collect \
@@ -75,10 +77,12 @@ run_activation() {   # extra helper args...
         --setenv=MAW_RUNTIME_DIR="$runtime_dir" \
         --setenv=MAW_PTYD_UNIT="$ptyd_unit" \
         --setenv=XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
+        --setenv=XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}" \
         --setenv=MAW_RESTART_LOCK="$restart_lock" \
         --setenv=MAW_NODE_BIN="$node_bin" \
         --setenv=MAW_CONTROL_SCRIPT="$control_script" \
         --setenv=MAW_CLI_NAME="$cli_name" \
+        ${_extra_bin_setenv:+"$_extra_bin_setenv"} \
         ${_extra_setenv:+"$_extra_setenv"} \
         ${_extra_bus_setenv:+"$_extra_bus_setenv"} \
         /bin/sh "$restart_helper" --unit "$unit" "$@"; then

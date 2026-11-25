@@ -273,6 +273,7 @@ if start_and_verify "$target"; then
       [ -n "$healthy" ] && maw_set_pointer previous "$healthy"
       maw_set_pointer healthy "$target"
     fi
+    maw_refresh_desktop_assets_if_enabled "$target" || true
   fi
   maw_log activation-success release "$target_name" managed "$managed"
   printf '%s\n' "MAW service $unit is healthy on release $target_name."
@@ -336,6 +337,7 @@ if [ -n "$healthy" ] && [ "$healthy" != "$target" ]; then
     fi
   fi
   if maw_set_pointer current "$healthy" && start_and_verify "$healthy"; then
+    maw_refresh_desktop_assets_if_enabled "$healthy" || true
     maw_log rollback-success release "$healthy_name" failed "$target_name"
     printf '%s\n' "UPDATE FAILED, SERVICE RECOVERED: $healthy_name is active and verified healthy." \
       "The failed release $target_name was not kept staged." >&2

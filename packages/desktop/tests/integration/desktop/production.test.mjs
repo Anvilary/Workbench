@@ -177,3 +177,242 @@ test('desktop integration enables login startup and refreshes search assets with
   assert.deepEqual(await readFile(path.join(env.XDG_DATA_HOME, 'icons/hicolor/256x256/apps/maw-workspace.png')),
     await readFile(path.join(root, 'packages/desktop/assets/icons/maw-256.png')));
 });
+
+const ICON_SIZES = [16, 24, 32, 48, 64, 96, 128, 192, 256, 512];
+
+async function makeMockRelease(releasesDir, id, commit, iconSeed = null) {
+  const dir = path.join(releasesDir, id);
+  await mkdir(path.join(dir, 'packages/server/src'), { recursive: true });
+  await mkdir(path.join(dir, 'packages/server/dist'), { recursive: true });
+  await mkdir(path.join(dir, 'packages/server/node_modules/tsx/dist'), { recursive: true });
+  await writeFile(path.join(dir, 'package.json'), JSON.stringify({ name: 'agent-workbench', version: '1.0.0' }) + '\n');
+  await writeFile(path.join(dir, 'packages/server/src/maw-host.ts'), '');
+  await writeFile(path.join(dir, 'packages/server/src/index.ts'), '');
+  await writeFile(path.join(dir, 'packages/server/node_modules/tsx/dist/loader.mjs'), '');
+  await writeFile(path.join(dir, 'packages/server/dist/index.mjs'), 'export {};\n');
+  await writeFile(path.join(dir, 'packages/server/dist/maw-ptyd.mjs'), '#!/usr/bin/env node\n');
+  await writeFile(path.join(dir, 'packages/server/dist/terminal-state.mjs'), 'export {};\n');
+  await writeFile(path.join(dir, '.maw-release-meta.json'), JSON.stringify({ releaseId: id, commit, schema: 2, supervisor: true }) + '\n');
+  if (iconSeed !== null) {
+    await mkdir(path.join(dir, 'packages/desktop/assets/icons'), { recursive: true });
+    for (const s of ICON_SIZES) {
+      await writeFile(path.join(dir, `packages/desktop/assets/icons/maw-${s}.png`), `${iconSeed}-${s}`);
+    }
+  }
+  return dir;
+}
+
+async function setupActivationHarness(dir, { healthyId, stagedId = null, brokenIds = [] } = {}) {
+  const stateDir = path.join(dir, 'state');
+  const releasesDir = path.join(stateDir, 'releases');
+  const runtimeDir = path.join(dir, 'runtime');
+  const toolsDir = path.join(dir, 'tools');
+  await mkdir(releasesDir, { recursive: true });
+  await mkdir(runtimeDir, { recursive: true, mode: 0o700 });
+  await mkdir(toolsDir, { recursive: true });
+
+  await writeFile(path.join(dir, 'running'), path.join(releasesDir, healthyId));
+  await writeFile(path.join(dir, 'broken.json'), JSON.stringify(brokenIds));
+  await writeFile(path.join(toolsDir, 'systemctl'), `#!/bin/sh
+cmd=""; for a in "$@"; do case "$a" in --*) ;; *) [ -z "$cmd" ] && cmd="$a" ;; esac; done
+case "$cmd" in
+  show)
+    case "$*" in
+      *ActiveState*) echo active; exit 0 ;;
+      *ControlGroup*) echo ""; exit 0 ;;
+      *MainPID*) echo 0; exit 0 ;;
+      *Result*) echo exit-code; exit 0 ;;
+    esac
+    exit 0 ;;
+  restart|start)
+    case "$*" in *maw-ptyd*) exit 0 ;; esac
+    readlink -f ${JSON.stringify(path.join(stateDir, 'current'))} > ${JSON.stringify(path.join(dir, 'running'))}
+    exit 0 ;;
+  stop) exit 0 ;;
+esac
+exit 0
+`, { mode: 0o755 });
+
+  const mockControl = path.join(toolsDir, 'mock-control.mjs');
+  await writeFile(mockControl, `
+import fs from 'node:fs';
+const cmd = process.argv[2];
+if (cmd === 'check-data' || cmd === 'ptyd-empty') process.exit(0);
+if (cmd === 'ptyd-release') { console.log(${JSON.stringify(path.join(releasesDir, healthyId))}); process.exit(0); }
+if (cmd === 'status') {
+  const running = fs.readFileSync(${JSON.stringify(path.join(dir, 'running'))}, 'utf8').trim().split('/').pop();
+  const broken = JSON.parse(fs.readFileSync(${JSON.stringify(path.join(dir, 'broken.json'))}, 'utf8'));
+  const expected = process.env.MAW_EXPECT_RELEASE_ID || '';
+  if (!running || broken.includes(running) || (expected && expected !== running)) process.exit(1);
+  process.exit(0);
+}
+process.exit(0);
+`);
+
+  await symlink(path.join(releasesDir, healthyId), path.join(stateDir, 'current'));
+  await symlink(path.join(releasesDir, healthyId), path.join(stateDir, 'healthy'));
+  if (stagedId) {
+    await symlink(path.join(releasesDir, stagedId), path.join(stateDir, 'staged'));
+  }
+  return { stateDir, releasesDir, runtimeDir, toolsDir, mockControl };
+}
+
+test('desktop assets installation covers all icon sizes, supports XDG overrides, and avoids duplicate entries', async t => {
+  const { readdir } = await import('node:fs/promises');
+  const dir = await mkdtemp(path.join(tmpdir(), 'maw-desktop-assets-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const xdgData = path.join(dir, 'xdg-data');
+  const defaultShare = path.join(dir, 'home/.local/share');
+  const env = {
+    ...process.env,
+    HOME: path.join(dir, 'home'),
+    XDG_DATA_HOME: xdgData,
+    MAW_STATE_DIR: path.join(dir, 'state'),
+    MAW_LIB_DIR: path.join(dir, 'lib'),
+    MAW_BIN_DIR: path.join(dir, 'bin'),
+    MAW_NODE_BIN: process.execPath,
+  };
+  await mkdir(env.HOME, { recursive: true });
+  for (let i = 0; i < 2; i++) {
+    await exec('/bin/sh', [path.join(root, 'scripts/maw/install.sh'), '--desktop-assets'], { env });
+  }
+  assert.equal(existsSync(defaultShare), false, 'XDG_DATA_HOME override must leave HOME/.local/share untouched');
+  const apps = await readdir(path.join(xdgData, 'applications'));
+  assert.deepEqual(apps.filter(f => f.endsWith('.desktop')), ['maw.desktop']);
+  for (const s of ICON_SIZES) {
+    assert.deepEqual(
+      await readFile(path.join(xdgData, `icons/hicolor/${s}x${s}/apps/maw-workspace.png`)),
+      await readFile(path.join(root, `packages/desktop/assets/icons/maw-${s}.png`)),
+      `installed ${s}px icon must match repository asset`,
+    );
+  }
+});
+
+test('installed helpers refresh desktop assets on activation and rollback while preserving launcher identity and failing safely', async t => {
+  const { readdir } = await import('node:fs/promises');
+  const dir = await mkdtemp(path.join(tmpdir(), 'maw-desktop-lifecycle-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+
+  const xdgData = path.join(dir, 'xdg-data');
+  const libDir = path.join(dir, 'lib');
+  const binDir = path.join(dir, 'custom bin');
+  const installEnv = {
+    ...process.env,
+    HOME: path.join(dir, 'home'),
+    XDG_DATA_HOME: xdgData,
+    MAW_STATE_DIR: path.join(dir, 'state'),
+    MAW_LIB_DIR: libDir,
+    MAW_BIN_DIR: binDir,
+    MAW_NODE_BIN: process.execPath,
+  };
+  await mkdir(installEnv.HOME, { recursive: true });
+  await exec('/bin/sh', [path.join(root, 'scripts/maw/install.sh'), '--desktop-assets'], { env: installEnv });
+
+  const v1Id = '20261124000001-aaaa111';
+  const v2Id = '20261124000002-bbbb222';
+  const v3BadId = '20261124000003-cccc333';
+  const v4NoIconsId = '20261124000004-dddd444';
+
+  const { stateDir, releasesDir, runtimeDir, toolsDir, mockControl } = await setupActivationHarness(dir, {
+    healthyId: v1Id,
+    stagedId: v3BadId,
+    brokenIds: [v3BadId],
+  });
+  await makeMockRelease(releasesDir, v1Id, 'aaaa111', 'brand-v1');
+  await makeMockRelease(releasesDir, v2Id, 'bbbb222', 'brand-v2');
+  await makeMockRelease(releasesDir, v3BadId, 'cccc333', 'brand-v3-bad');
+  await makeMockRelease(releasesDir, v4NoIconsId, 'dddd444', null);
+
+  const env = {
+    ...installEnv,
+    PATH: `${toolsDir}:${process.env.PATH}`,
+    MAW_STATE_DIR: stateDir,
+    MAW_RELEASES_DIR: releasesDir,
+    MAW_RUNTIME_DIR: runtimeDir,
+    MAW_UNIT: 'maw-fixture.service',
+    MAW_CONTROL_SCRIPT: mockControl,
+    MAW_READY_TIMEOUT: '2',
+    MAW_CGROUP_FILE: path.join(dir, 'no-cgroup'),
+  };
+
+  // Failed activation rolls back to v1 and recovers v1 branding instead of leaking v3 branding.
+  await assert.rejects(
+    exec('/bin/sh', [path.join(libDir, 'maw-restart-helper.sh'), '--unit', 'maw-fixture.service', '--force'], { env }),
+    err => err.code === 2,
+  );
+  for (const s of ICON_SIZES) {
+    assert.equal(await readFile(path.join(xdgData, `icons/hicolor/${s}x${s}/apps/maw-workspace.png`), 'utf8'), `brand-v1-${s}`);
+  }
+
+  // Successful activation of v2 updates all icon sizes and preserves the custom launcher Exec= path.
+  await symlink(path.join(releasesDir, v2Id), path.join(stateDir, 'staged'));
+  await exec('/bin/sh', [path.join(libDir, 'maw-restart-helper.sh'), '--unit', 'maw-fixture.service', '--force'], { env });
+  for (const s of ICON_SIZES) {
+    assert.equal(await readFile(path.join(xdgData, `icons/hicolor/${s}x${s}/apps/maw-workspace.png`), 'utf8'), `brand-v2-${s}`);
+  }
+  const desktopText = await readFile(path.join(xdgData, 'applications/maw.desktop'), 'utf8');
+  assert.ok(desktopText.includes(`Exec="${path.join(binDir, 'anvil-bench')}" desktop`));
+  assert.match(desktopText, /^Icon=maw-workspace$/m);
+  assert.match(desktopText, /^Name=Workbench$/m);
+  assert.deepEqual((await readdir(path.join(xdgData, 'applications'))).filter(f => f.endsWith('.desktop')), ['maw.desktop']);
+
+  // Explicit rollback via installed anvil-bench activates v1 and restores v1 icons.
+  await exec(path.join(binDir, 'anvil-bench'), ['rollback'], { env });
+  for (const s of ICON_SIZES) {
+    assert.equal(await readFile(path.join(xdgData, `icons/hicolor/${s}x${s}/apps/maw-workspace.png`), 'utf8'), `brand-v1-${s}`);
+  }
+
+  // Missing desktop assets in a release must not fail activation or erase existing desktop integration.
+  await symlink(path.join(releasesDir, v4NoIconsId), path.join(stateDir, 'staged'));
+  await exec('/bin/sh', [path.join(libDir, 'maw-restart-helper.sh'), '--unit', 'maw-fixture.service', '--force'], { env });
+  assert.equal(await readFile(path.join(xdgData, 'icons/hicolor/512x512/apps/maw-workspace.png'), 'utf8'), 'brand-v1-512');
+  assert.equal(existsSync(path.join(xdgData, 'applications/maw.desktop')), true);
+});
+
+test('headless installations remain untouched during activation', async t => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'maw-desktop-headless-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+
+  const xdgData = path.join(dir, 'xdg-data');
+  const v1Id = '20261124000001-aaaa111';
+  const v2Id = '20261124000002-bbbb222';
+  const { stateDir, releasesDir, runtimeDir, toolsDir, mockControl } = await setupActivationHarness(dir, {
+    healthyId: v1Id,
+    stagedId: v2Id,
+  });
+  await makeMockRelease(releasesDir, v1Id, 'aaaa111', 'brand-v1');
+  await makeMockRelease(releasesDir, v2Id, 'bbbb222', 'brand-v2');
+  await writeFile(path.join(stateDir, 'headless'), 'headless\n');
+
+  const env = {
+    ...process.env,
+    HOME: path.join(dir, 'home'),
+    XDG_DATA_HOME: xdgData,
+    PATH: `${toolsDir}:${process.env.PATH}`,
+    MAW_STATE_DIR: stateDir,
+    MAW_RELEASES_DIR: releasesDir,
+    MAW_RUNTIME_DIR: runtimeDir,
+    MAW_UNIT: 'maw-fixture.service',
+    MAW_NODE_BIN: process.execPath,
+    MAW_CONTROL_SCRIPT: mockControl,
+    MAW_READY_TIMEOUT: '2',
+    MAW_CGROUP_FILE: path.join(dir, 'no-cgroup'),
+  };
+  await mkdir(env.HOME, { recursive: true });
+  await exec('/bin/sh', [path.join(root, 'scripts/maw/maw-restart-helper.sh'), '--unit', 'maw-fixture.service', '--force'], { env });
+  assert.equal(existsSync(path.join(xdgData, 'applications/maw.desktop')), false);
+  assert.equal(existsSync(path.join(xdgData, 'icons')), false);
+
+  // MAW_HEADLESS=1 also prevents desktop asset writes even if state_dir/headless is absent.
+  await rm(path.join(stateDir, 'headless'));
+  await symlink(path.join(releasesDir, v1Id), path.join(stateDir, 'staged'));
+  await exec('/bin/sh', [path.join(root, 'scripts/maw/maw-restart-helper.sh'), '--unit', 'maw-fixture.service', '--force'], {
+    env: { ...env, MAW_HEADLESS: '1' },
+  });
+  assert.equal(existsSync(path.join(xdgData, 'applications/maw.desktop')), false);
+  assert.equal(existsSync(path.join(xdgData, 'icons')), false);
+
+  // Staging script does not touch desktop assets prematurely.
+  const updaterSource = await readFile(path.join(root, 'scripts/maw/maw-update.sh'), 'utf8');
+  assert.ok(!updaterSource.includes('maw_refresh_desktop_assets'), 'staging script must not refresh desktop assets prematurely');
+});
