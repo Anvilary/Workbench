@@ -73,10 +73,7 @@ export function registerCommandRouter({ ipcMain, win, dialog, backend, controlle
       ok: true,
       ...controller.getSpellCheckStatus(),
     }),
-    'update-spellcheck-settings': async (command) => {
-      controller.applySpellCheckSettings(command);
-      return { ok: true };
-    },
+    'update-spellcheck-settings': async (command) => controller.applySpellCheckSettings(command),
     'list-custom-dictionary-words': async (command) => controller.listCustomDictionaryWords(command.profileId),
     'add-custom-dictionary-word': async (command) => controller.addCustomDictionaryWord(command.word, command.profileId),
     'remove-custom-dictionary-word': async (command) => controller.removeCustomDictionaryWord(command.word, command.profileId),

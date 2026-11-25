@@ -215,6 +215,9 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabId>('general');
+  const [pendingBrowserProfileCleanups, setPendingBrowserProfileCleanups] = useState<
+    Array<{ profileId: string; profileName: string; failedPartitions?: string[]; error?: string }>
+  >([]);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const menuDropdownRef = useRef<HTMLDivElement | null>(null);
 
@@ -1011,11 +1014,70 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
             await store.renameBrowserProfile(profileId, name);
           }}
           onDeleteBrowserProfile={async (profileId) => {
+            const profileName = data.browserProfiles?.find((p) => p.id === profileId)?.name ?? profileId;
             await store.deleteBrowserProfile(profileId);
-            if (window.mawChatGpt && profileId !== DEFAULT_BROWSER_PROFILE_ID) {
-              await window.mawChatGpt.command({ type: 'delete-profile', profileId }).catch((err) => {
+            const bridge = window.mawChatGpt;
+            if (bridge && profileId !== DEFAULT_BROWSER_PROFILE_ID) {
+              try {
+                const cleanupRes = (await bridge.command({ type: 'delete-profile', profileId })) as
+                  | { ok?: boolean; failedDictionaryPartitions?: string[]; error?: string }
+                  | undefined;
+                if (cleanupRes && cleanupRes.ok === false) {
+                  setPendingBrowserProfileCleanups((prev) => [
+                    ...prev.filter((item) => item.profileId !== profileId),
+                    {
+                      profileId,
+                      profileName,
+                      failedPartitions: cleanupRes.failedDictionaryPartitions ?? [],
+                      error: cleanupRes.error,
+                    },
+                  ]);
+                } else {
+                  setPendingBrowserProfileCleanups((prev) => prev.filter((item) => item.profileId !== profileId));
+                }
+              } catch (err) {
                 console.warn('[maw-browser-profile] delete-profile cleanup failed:', err);
-              });
+                setPendingBrowserProfileCleanups((prev) => [
+                  ...prev.filter((item) => item.profileId !== profileId),
+                  {
+                    profileId,
+                    profileName,
+                    error: err instanceof Error ? err.message : String(err),
+                  },
+                ]);
+              }
+            }
+          }}
+          pendingBrowserProfileCleanups={pendingBrowserProfileCleanups}
+          onRetryBrowserProfileCleanup={async (profileId, profileName) => {
+            const bridge = window.mawChatGpt;
+            if (!bridge || profileId === DEFAULT_BROWSER_PROFILE_ID) return;
+            try {
+              const cleanupRes = (await bridge.command({ type: 'delete-profile', profileId })) as
+                | { ok?: boolean; failedDictionaryPartitions?: string[]; error?: string }
+                | undefined;
+              if (cleanupRes?.ok !== false) {
+                setPendingBrowserProfileCleanups((prev) => prev.filter((item) => item.profileId !== profileId));
+              } else {
+                setPendingBrowserProfileCleanups((prev) => [
+                  ...prev.filter((item) => item.profileId !== profileId),
+                  {
+                    profileId,
+                    profileName,
+                    failedPartitions: cleanupRes.failedDictionaryPartitions ?? [],
+                    error: cleanupRes.error,
+                  },
+                ]);
+              }
+            } catch (err) {
+              setPendingBrowserProfileCleanups((prev) => [
+                ...prev.filter((item) => item.profileId !== profileId),
+                {
+                  profileId,
+                  profileName,
+                  error: err instanceof Error ? err.message : String(err),
+                },
+              ]);
             }
           }}
           onClearBrowserProfileSiteAuth={window.mawChatGpt && (async (profileId, sites) => {

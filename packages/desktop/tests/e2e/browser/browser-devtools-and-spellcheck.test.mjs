@@ -431,8 +431,14 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
 
     // 11. Remove all configured languages in Settings -> verify empty state persists in settings.json
     const langRemoveButtons = spellCard.locator('.maw-settings-lang-item button[aria-label^="Remove "]');
-    while ((await langRemoveButtons.count()) > 0) {
+    while (true) {
+      const count = await langRemoveButtons.count();
+      if (count === 0) break;
       await langRemoveButtons.first().click();
+      await page.waitForFunction(
+        (expectedMax) => document.querySelectorAll('#setting-card-spellcheck .maw-settings-lang-item').length < expectedMax,
+        count,
+      );
     }
     await spellCard.locator('.maw-settings-empty-hint', { hasText: 'No spell check languages configured.' }).waitFor();
     await eventually(async () => {

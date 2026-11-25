@@ -471,6 +471,17 @@ window.mawChatGpt = {
       }
       return { ok: true, failedPartitions: [] };
     }
+    if (cmd.type === 'delete-profile') {
+      if (window.__failNextDeleteProfileCleanup) {
+        window.__failNextDeleteProfileCleanup = false;
+        return {
+          ok: false,
+          failedDictionaryPartitions: ['persist:maw-profile-' + cmd.profileId + '-github'],
+          error: 'Simulated native profile cleanup failure',
+        };
+      }
+      return { ok: true, failedDictionaryPartitions: [] };
+    }
     return { ok: true };
   },
   subscribe: (cb) => {
@@ -514,6 +525,11 @@ function applyServerChange(prev, change) {
 function IntegrationApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [remoteClient, setRemoteClient] = useState(false);
+  const [profiles, setProfiles] = useState([
+    { id: 'main', name: 'Main', createdAt: '', updatedAt: '', isDefault: true },
+    { id: 'work-profile', name: 'Work Profile', createdAt: '', updatedAt: '' },
+  ]);
+  const [pendingCleanups, setPendingCleanups] = useState([]);
   const [browserState, setBrowserState] = useState({
     defaultSearchEngine: 'duckduckgo',
     favorites: [{ id: 'chatgpt', title: 'ChatGPT', url: 'https://chatgpt.com/' }],
@@ -587,10 +603,33 @@ function IntegrationApp() {
           agents={[]}
           remoteClient={remoteClient}
           initialTab="browser"
-          browserProfiles={[
-            { id: 'main', name: 'Main', createdAt: '', updatedAt: '', isDefault: true },
-            { id: 'work-profile', name: 'Work Profile', createdAt: '', updatedAt: '' },
-          ]}
+          browserProfiles={profiles}
+          onCreateBrowserProfile={async () => {
+            window.__createProfileCalls = (window.__createProfileCalls || 0) + 1;
+          }}
+          onDeleteBrowserProfile={async (profileId) => {
+            const targetName = profiles.find((p) => p.id === profileId)?.name ?? profileId;
+            setProfiles((prev) => prev.filter((p) => p.id !== profileId));
+            const res = await window.mawChatGpt.command({ type: 'delete-profile', profileId });
+            if (res && res.ok === false) {
+              setPendingCleanups((prev) => [
+                ...prev.filter((c) => c.profileId !== profileId),
+                { profileId, profileName: targetName, failedPartitions: res.failedDictionaryPartitions ?? [], error: res.error },
+              ]);
+            }
+          }}
+          pendingBrowserProfileCleanups={pendingCleanups}
+          onRetryBrowserProfileCleanup={async (profileId, profileName) => {
+            const res = await window.mawChatGpt.command({ type: 'delete-profile', profileId });
+            if (res?.ok !== false) {
+              setPendingCleanups((prev) => prev.filter((c) => c.profileId !== profileId));
+            } else {
+              setPendingCleanups((prev) => [
+                ...prev.filter((c) => c.profileId !== profileId),
+                { profileId, profileName, failedPartitions: res.failedDictionaryPartitions ?? [], error: res.error },
+              ]);
+            }
+          }}
         />
       )}
     </div>
@@ -694,7 +733,10 @@ test('R1/R2/R4/R5: context-menu dictionary persistence without Settings, failure
     await page.waitForSelector('.maw-context-menu');
     await page.locator('.maw-context-menu-action-item', { hasText: 'Add to Dictionary' }).click();
     await page.waitForSelector('.maw-context-menu', { state: 'detached' });
-    await page.waitForTimeout(50);
+    await page.waitForSelector('.maw-context-menu-alert');
+    const ctxAlertText = await page.locator('.maw-context-menu-alert').textContent();
+    assert.ok(ctxAlertText?.includes('Simulated server write failure'), `Expected visible context-menu error alert, got: ${ctxAlertText}`);
+    await page.locator('.maw-context-menu-alert button').click();
     assert.equal(await page.evaluate(() => window.__serverUpdates.length), prevUpdateCount, 'Rejected server commit must not record update');
     assert.equal(
       await page.evaluate(() => window.__commands.filter((c) => c.type === 'reconcile-custom-dictionary').length),
@@ -741,15 +783,40 @@ test('R1/R2/R4/R5: context-menu dictionary persistence without Settings, failure
 
     // 4. Remove all configured languages -> preserves empty state without restoring en-US
     const removeButtons = spellCard.locator('.maw-settings-lang-item button[aria-label^="Remove"]');
-    while ((await removeButtons.count()) > 0) {
+    while (true) {
+      const count = await removeButtons.count();
+      if (count === 0) break;
       await removeButtons.first().click();
+      await page.waitForFunction(
+        (expectedMax) => document.querySelectorAll('#setting-card-spellcheck .maw-settings-lang-item').length < expectedMax,
+        count,
+      );
     }
     await spellCard.locator('.maw-settings-empty-hint', { hasText: 'No spell check languages configured.' }).waitFor();
     const emptySave = await page.evaluate(() => window.__serverUpdates.at(-1));
     assert.deepEqual(emptySave.spellCheck.configuredLanguages, []);
     assert.deepEqual(emptySave.spellCheck.languages, []);
 
-    // 5. Remote client without local desktop editing shows explicit read-only state
+    // 5. Partial native profile cleanup failure shows recoverable Retry cleanup without recreating backend profile
+    await page.evaluate(() => {
+      window.__createProfileCalls = 0;
+      window.__failNextDeleteProfileCleanup = true;
+    });
+    const profilesCard = page.locator('#setting-card-browser-profiles');
+    await profilesCard.locator('.maw-settings-profile-row[data-profile-id="work-profile"] .maw-settings-profile-delete-btn').click();
+    await page.locator('[role="dialog"] button', { hasText: 'Delete profile' }).last().click();
+    const cleanupAlert = page.locator('[data-cleanup-profile-id="work-profile"]');
+    await cleanupAlert.waitFor();
+    assert.equal(await profilesCard.locator('.maw-settings-profile-row[data-profile-id="work-profile"]').count(), 0);
+    await cleanupAlert.locator('button', { hasText: 'Retry cleanup' }).click();
+    await cleanupAlert.waitFor({ state: 'detached' });
+    assert.equal(await page.evaluate(() => window.__createProfileCalls || 0), 0);
+    assert.equal(
+      await page.evaluate(() => window.__commands.filter((c) => c.type === 'delete-profile' && c.profileId === 'work-profile').length),
+      2,
+    );
+
+    // 6. Remote client without local desktop editing shows explicit read-only state
     await page.click('#toggle-remote-btn');
     await spellCard.locator('div[role="status"]', { hasText: 'desktop app' }).waitFor();
     assert.equal(await spellCard.locator('.maw-settings-dict-add-form input').isDisabled(), true);

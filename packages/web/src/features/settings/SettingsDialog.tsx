@@ -80,6 +80,13 @@ export interface SettingsDialogProps {
     profileId: BrowserProfileId,
     sites: readonly BrowserProfileSite[],
   ) => void | Promise<unknown>;
+  pendingBrowserProfileCleanups?: readonly {
+    profileId: BrowserProfileId;
+    profileName: string;
+    failedPartitions?: readonly string[];
+    error?: string;
+  }[];
+  onRetryBrowserProfileCleanup?: (profileId: BrowserProfileId, profileName: string) => void | Promise<unknown>;
 }
 
 export function SettingsDialog({
@@ -101,6 +108,8 @@ export function SettingsDialog({
   onRenameBrowserProfile,
   onDeleteBrowserProfile,
   onClearBrowserProfileSiteAuth,
+  pendingBrowserProfileCleanups,
+  onRetryBrowserProfileCleanup,
 }: SettingsDialogProps): JSX.Element {
   const mappedInitial: SettingsTabId =
     initialTab === 'agents-usage'
@@ -486,6 +495,8 @@ export function SettingsDialog({
                     onRenameBrowserProfile={onRenameBrowserProfile}
                     onDeleteBrowserProfile={onDeleteBrowserProfile}
                     onClearBrowserProfileSiteAuth={onClearBrowserProfileSiteAuth}
+                    pendingBrowserProfileCleanups={pendingBrowserProfileCleanups}
+                    onRetryBrowserProfileCleanup={onRetryBrowserProfileCleanup}
                   />
                 )}
 

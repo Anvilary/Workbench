@@ -2,7 +2,7 @@
  * App settings, the agent list and agents usage.
  */
 
-import { serverText, type ClientMessage } from '@agent-workbench/shared';
+import { DEFAULT_BROWSER_PROFILE_ID, serverText, type ClientMessage } from '@agent-workbench/shared';
 import { AppSettingsChangeError } from '../../../features/settings/app-settings-service.js';
 import type { HandlerContext } from '../handler-context.js';
 
@@ -14,11 +14,48 @@ export const settingsMessageTypes = [
 
 type SettingsMessage = Extract<ClientMessage, { type: (typeof settingsMessageTypes)[number] }>;
 
+async function runWithProfileLocks<T>(
+  mutex: HandlerContext<'browserProfileMutations'>['browserProfileMutations'],
+  profileIds: readonly string[],
+  fn: () => Promise<T>,
+): Promise<T> {
+  const sorted = [...new Set(profileIds)].sort();
+  const acquire = (index: number): Promise<T> => {
+    if (index >= sorted.length) return fn();
+    return mutex.runExclusive(sorted[index]!, () => acquire(index + 1));
+  };
+  return acquire(0);
+}
+
 export async function handleSettingsMessage(
   message: SettingsMessage,
-  ctx: HandlerContext<'agents' | 'agentsMessage' | 'agentsUsageCollector' | 'appSettings' | 'broadcast' | 'send' | 'sendError' | 'socket'>,
+  ctx: HandlerContext<
+    | 'agencyBrowserProfileStore'
+    | 'agents'
+    | 'agentsMessage'
+    | 'agentsUsageCollector'
+    | 'appSettings'
+    | 'broadcast'
+    | 'browserProfileMutations'
+    | 'send'
+    | 'sendError'
+    | 'socket'
+    | 'tabReady'
+  >,
 ): Promise<void> {
-  const { agents, agentsMessage, agentsUsageCollector, appSettings, broadcast, send, sendError, socket } = ctx;
+  const {
+    agencyBrowserProfileStore,
+    agents,
+    agentsMessage,
+    agentsUsageCollector,
+    appSettings,
+    broadcast,
+    browserProfileMutations,
+    send,
+    sendError,
+    socket,
+    tabReady,
+  } = ctx;
   switch (message.type) {
     /*
       "Comprobar" del dialogo de la status line: relee la configuracion de
@@ -39,17 +76,79 @@ export async function handleSettingsMessage(
     */
     case 'settings.update': {
       const { type: _type, requestId, ...change } = message;
-      void appSettings.update(change).then(
-        (nextStatus) => {
-          if (requestId !== undefined) {
-            send(socket, {
-              type: 'settings.status',
-              settings: nextStatus,
-              requestId,
-            });
+      void (async () => {
+        try {
+          const verifiedNonMainIds = new Set<string>();
+          if (
+            change.customDictionary &&
+            (change.customDictionary.action === 'add' || change.customDictionary.action === 'remove') &&
+            change.customDictionary.profileId !== DEFAULT_BROWSER_PROFILE_ID
+          ) {
+            verifiedNonMainIds.add(change.customDictionary.profileId);
           }
-        },
-        (error: unknown) => {
+
+          const incomingMap = change.browser?.spellCheck?.customWordsByProfile;
+          if (incomingMap && typeof incomingMap === 'object') {
+            for (const pid of Object.keys(incomingMap)) {
+              if (pid !== DEFAULT_BROWSER_PROFILE_ID) {
+                verifiedNonMainIds.add(pid);
+              }
+            }
+          }
+
+          const lockIds = new Set<string>(verifiedNonMainIds);
+          if (
+            change.customDictionary &&
+            change.customDictionary.profileId !== DEFAULT_BROWSER_PROFILE_ID
+          ) {
+            lockIds.add(change.customDictionary.profileId);
+          }
+          if (incomingMap && typeof incomingMap === 'object') {
+            const existingMap = appSettings.status().browser?.spellCheck?.customWordsByProfile;
+            if (existingMap) {
+              for (const pid of Object.keys(existingMap)) {
+                if (pid !== DEFAULT_BROWSER_PROFILE_ID) {
+                  lockIds.add(pid);
+                }
+              }
+            }
+          }
+
+          const applyChange = async () => {
+            const nextStatus = await appSettings.update(change);
+            if (requestId !== undefined) {
+              send(socket, {
+                type: 'settings.status',
+                settings: nextStatus,
+                requestId,
+              });
+            }
+          };
+
+          if (lockIds.size > 0) {
+            await tabReady;
+            const missingProfile = await runWithProfileLocks(browserProfileMutations, [...lockIds], async () => {
+              for (const pid of verifiedNonMainIds) {
+                if (!agencyBrowserProfileStore.getProfile(pid)) {
+                  return pid;
+                }
+              }
+              await applyChange();
+              return null;
+            });
+            if (missingProfile !== null) {
+              sendError(
+                socket,
+                'settings-failed',
+                serverText('settingsFailed'),
+                `Browser profile not found: ${missingProfile}`,
+                requestId,
+              );
+            }
+          } else {
+            await applyChange();
+          }
+        } catch (error: unknown) {
           if (error instanceof AppSettingsChangeError) {
             sendError(socket, 'settings-failed', serverText('settingsShellMissing'), undefined, requestId);
             return;
@@ -57,8 +156,8 @@ export async function handleSettingsMessage(
           const detail = error instanceof Error ? error.message : String(error);
           console.warn('[settings] a change failed:', detail);
           sendError(socket, 'settings-failed', serverText('settingsFailed'), detail, requestId);
-        },
-      );
+        }
+      })();
       break;
     }
     case 'agents.usage.get': {

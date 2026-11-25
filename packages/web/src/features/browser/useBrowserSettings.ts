@@ -17,10 +17,11 @@ import {
 } from '@agent-workbench/shared';
 import type { AppSettingsApi } from '../settings/useAppSettings.js';
 import {
+  commitBrowserPreferenceMutation,
   createDefaultBrowserSettings,
+  dismissPreferenceError,
   getBrowserSettingsStoreState,
   mutateAuthoritativeCustomDictionary,
-  persistBrowserPreferencePatch,
   retryNativeDictionarySync,
   setActiveAppSettings,
   subscribeBrowserSettingsStore,
@@ -39,6 +40,8 @@ export interface UseBrowserSettingsResult {
   searchEngine: SearchEngine;
   spellCheck: SpellCheckSettings;
   nativeDictionarySync: NativeDictionarySyncState;
+  preferenceError: string | null;
+  dismissPreferenceError: () => void;
   retryNativeDictionarySync: () => Promise<{ ok: boolean; failedPartitions?: string[]; error?: string }>;
   setSpellCheckEnabled: (enabled: boolean) => void;
   toggleSpellCheckLanguage: (code: string) => void;
@@ -102,8 +105,13 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
       const id = typeof crypto !== 'undefined' && crypto.randomUUID
         ? crypto.randomUUID()
         : `fav-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      const nextFavorites = [...latest.favorites, { id, title, url: normalizedUrl }];
-      persistBrowserPreferencePatch({ ...latest, favorites: nextFavorites }, { favorites: nextFavorites }, appSettings);
+      void commitBrowserPreferenceMutation((base) => {
+        if (base.favorites.some((f) => f.url.toLowerCase() === normalizedUrl.toLowerCase())) {
+          return null;
+        }
+        const nextFavorites = [...base.favorites, { id, title, url: normalizedUrl }];
+        return { nextSettings: { ...base, favorites: nextFavorites }, patch: { favorites: nextFavorites } };
+      }, appSettings);
       return { success: true };
     },
     [appSettings],
@@ -116,32 +124,36 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
       if (index === -1) return { success: false, error: 'Favorite not found' };
 
       const existing = latest.favorites[index]!;
-      let title = existing.title;
-      let url = existing.url;
-
-      if (updates.title !== undefined) {
-        const t = updates.title.trim();
-        if (!t || t.length > 120) {
-          return { success: false, error: 'Name must be between 1 and 120 characters' };
-        }
-        title = t;
+      let nextTitle = updates.title !== undefined ? updates.title.trim() : existing.title;
+      if (updates.title !== undefined && (!nextTitle || nextTitle.length > 120)) {
+        return { success: false, error: 'Name must be between 1 and 120 characters' };
       }
 
+      let nextNormalizedUrl = existing.url;
       if (updates.url !== undefined) {
         const urlCheck = validateBrowserFavoriteUrl(updates.url);
         if (!urlCheck.valid || !urlCheck.normalizedUrl) {
           return { success: false, error: urlCheck.error ?? 'Invalid web URL' };
         }
-        const normalized = urlCheck.normalizedUrl;
-        if (latest.favorites.some((f) => f.id !== id && f.url.toLowerCase() === normalized.toLowerCase())) {
+        nextNormalizedUrl = urlCheck.normalizedUrl;
+        if (latest.favorites.some((f) => f.id !== id && f.url.toLowerCase() === nextNormalizedUrl.toLowerCase())) {
           return { success: false, error: 'A favorite with this URL already exists' };
         }
-        url = normalized;
       }
 
-      const nextFavorites = [...latest.favorites];
-      nextFavorites[index] = { id, title, url };
-      persistBrowserPreferencePatch({ ...latest, favorites: nextFavorites }, { favorites: nextFavorites }, appSettings);
+      void commitBrowserPreferenceMutation((base) => {
+        const idx = base.favorites.findIndex((f) => f.id === id);
+        if (idx === -1) return null;
+        const baseExisting = base.favorites[idx]!;
+        const title = updates.title !== undefined ? nextTitle : baseExisting.title;
+        const url = updates.url !== undefined ? nextNormalizedUrl : baseExisting.url;
+        if (base.favorites.some((f) => f.id !== id && f.url.toLowerCase() === url.toLowerCase())) {
+          return null;
+        }
+        const nextFavorites = [...base.favorites];
+        nextFavorites[idx] = { id, title, url };
+        return { nextSettings: { ...base, favorites: nextFavorites }, patch: { favorites: nextFavorites } };
+      }, appSettings);
       return { success: true };
     },
     [appSettings],
@@ -149,54 +161,60 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
 
   const removeFavorite = useCallback(
     (id: string) => {
-      const latest = getBrowserSettingsStoreState().settings;
-      const nextFavorites = latest.favorites.filter((f) => f.id !== id);
-      persistBrowserPreferencePatch({ ...latest, favorites: nextFavorites }, { favorites: nextFavorites }, appSettings);
+      void commitBrowserPreferenceMutation((base) => {
+        const nextFavorites = base.favorites.filter((f) => f.id !== id);
+        return { nextSettings: { ...base, favorites: nextFavorites }, patch: { favorites: nextFavorites } };
+      }, appSettings);
     },
     [appSettings],
   );
 
   const reorderFavorites = useCallback(
     (ids: readonly string[]) => {
-      const latest = getBrowserSettingsStoreState().settings;
-      const map = new Map(latest.favorites.map((f) => [f.id, f]));
-      const ordered: BrowserFavorite[] = [];
-      for (const id of ids) {
-        const f = map.get(id);
-        if (f) ordered.push(f);
-      }
-      for (const f of latest.favorites) {
-        if (!ids.includes(f.id)) ordered.push(f);
-      }
-      persistBrowserPreferencePatch({ ...latest, favorites: ordered }, { favorites: ordered }, appSettings);
+      void commitBrowserPreferenceMutation((base) => {
+        const map = new Map(base.favorites.map((f) => [f.id, f]));
+        const ordered: BrowserFavorite[] = [];
+        for (const id of ids) {
+          const f = map.get(id);
+          if (f) ordered.push(f);
+        }
+        for (const f of base.favorites) {
+          if (!ids.includes(f.id)) ordered.push(f);
+        }
+        return { nextSettings: { ...base, favorites: ordered }, patch: { favorites: ordered } };
+      }, appSettings);
     },
     [appSettings],
   );
 
   const moveFavorite = useCallback(
     (id: string, direction: 'up' | 'down') => {
-      const latest = getBrowserSettingsStoreState().settings;
-      const index = latest.favorites.findIndex((f) => f.id === id);
-      if (index === -1) return;
-      if (direction === 'up' && index === 0) return;
-      if (direction === 'down' && index === latest.favorites.length - 1) return;
+      void commitBrowserPreferenceMutation((base) => {
+        const index = base.favorites.findIndex((f) => f.id === id);
+        if (index === -1) return null;
+        if (direction === 'up' && index === 0) return null;
+        if (direction === 'down' && index === base.favorites.length - 1) return null;
 
-      const targetIndex = direction === 'up' ? index - 1 : index + 1;
-      const updated = [...latest.favorites];
-      const item = updated[index]!;
-      updated[index] = updated[targetIndex]!;
-      updated[targetIndex] = item;
-      persistBrowserPreferencePatch({ ...latest, favorites: updated }, { favorites: updated }, appSettings);
+        const targetIndex = direction === 'up' ? index - 1 : index + 1;
+        const updated = [...base.favorites];
+        const item = updated[index]!;
+        updated[index] = updated[targetIndex]!;
+        updated[targetIndex] = item;
+        return { nextSettings: { ...base, favorites: updated }, patch: { favorites: updated } };
+      }, appSettings);
     },
     [appSettings],
   );
 
   const setDefaultSearchEngine = useCallback(
     (engineId: SearchEngineId) => {
-      const latest = getBrowserSettingsStoreState().settings;
-      const currentList = latest.searchEngines ?? DEFAULT_SEARCH_ENGINES;
-      if (!currentList.some((e) => e.id === engineId) && !DEFAULT_SEARCH_ENGINES.some((d) => d.id === engineId)) return;
-      persistBrowserPreferencePatch({ ...latest, defaultSearchEngine: engineId }, { defaultSearchEngine: engineId }, appSettings);
+      void commitBrowserPreferenceMutation((base) => {
+        const currentList = base.searchEngines ?? DEFAULT_SEARCH_ENGINES;
+        if (!currentList.some((e) => e.id === engineId) && !DEFAULT_SEARCH_ENGINES.some((d) => d.id === engineId)) {
+          return null;
+        }
+        return { nextSettings: { ...base, defaultSearchEngine: engineId }, patch: { defaultSearchEngine: engineId } };
+      }, appSettings);
     },
     [appSettings],
   );
@@ -209,8 +227,13 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
       if (!validated.valid || !validated.normalized) {
         return { success: false, error: validated.error ?? 'Invalid search engine' };
       }
-      const nextEngines = [...currentList, validated.normalized];
-      persistBrowserPreferencePatch({ ...latest, searchEngines: nextEngines }, { searchEngines: nextEngines }, appSettings);
+      void commitBrowserPreferenceMutation((base) => {
+        const baseList = base.searchEngines ?? DEFAULT_SEARCH_ENGINES;
+        const baseValidated = validateSearchEngine(candidate, baseList);
+        if (!baseValidated.valid || !baseValidated.normalized) return null;
+        const nextEngines = [...baseList, baseValidated.normalized];
+        return { nextSettings: { ...base, searchEngines: nextEngines }, patch: { searchEngines: nextEngines } };
+      }, appSettings);
       return { success: true };
     },
     [appSettings],
@@ -222,7 +245,6 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
       const currentList = latest.searchEngines ?? DEFAULT_SEARCH_ENGINES;
       const index = currentList.findIndex((e) => e.id === id);
       if (index === -1) return { success: false, error: 'Search engine not found' };
-      const existing = currentList[index]!;
       const candidate: SearchEngineCandidate = {
         id,
         name: updates.name,
@@ -233,9 +255,17 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
       if (!validated.valid || !validated.normalized) {
         return { success: false, error: validated.error ?? 'Invalid search engine' };
       }
-      const nextEngines = [...currentList];
-      nextEngines[index] = { ...validated.normalized, isBuiltin: existing.isBuiltin };
-      persistBrowserPreferencePatch({ ...latest, searchEngines: nextEngines }, { searchEngines: nextEngines }, appSettings);
+      void commitBrowserPreferenceMutation((base) => {
+        const baseList = base.searchEngines ?? DEFAULT_SEARCH_ENGINES;
+        const idx = baseList.findIndex((e) => e.id === id);
+        if (idx === -1) return null;
+        const baseExisting = baseList[idx]!;
+        const baseValidated = validateSearchEngine(candidate, baseList, id);
+        if (!baseValidated.valid || !baseValidated.normalized) return null;
+        const nextEngines = [...baseList];
+        nextEngines[idx] = { ...baseValidated.normalized, isBuiltin: baseExisting.isBuiltin };
+        return { nextSettings: { ...base, searchEngines: nextEngines }, patch: { searchEngines: nextEngines } };
+      }, appSettings);
       return { success: true };
     },
     [appSettings],
@@ -251,125 +281,126 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
       if (currentList.length <= 1) {
         return { success: false, error: 'At least one search engine must remain configured' };
       }
-      const filtered = currentList.filter((e) => e.id !== id);
-      let nextDefault = latest.defaultSearchEngine;
-      if (latest.defaultSearchEngine === id || !filtered.some((e) => e.id === nextDefault)) {
-        nextDefault = filtered[0]?.id ?? DEFAULT_SEARCH_ENGINE_ID;
-      }
-      persistBrowserPreferencePatch(
-        { ...latest, defaultSearchEngine: nextDefault, searchEngines: filtered },
-        { defaultSearchEngine: nextDefault, searchEngines: filtered },
-        appSettings,
-      );
+      void commitBrowserPreferenceMutation((base) => {
+        const baseList = base.searchEngines ?? DEFAULT_SEARCH_ENGINES;
+        if (!baseList.some((e) => e.id === id) || baseList.length <= 1) return null;
+        const filtered = baseList.filter((e) => e.id !== id);
+        let nextDefault = base.defaultSearchEngine;
+        if (base.defaultSearchEngine === id || !filtered.some((e) => e.id === nextDefault)) {
+          nextDefault = filtered[0]?.id ?? DEFAULT_SEARCH_ENGINE_ID;
+        }
+        return {
+          nextSettings: { ...base, defaultSearchEngine: nextDefault, searchEngines: filtered },
+          patch: { defaultSearchEngine: nextDefault, searchEngines: filtered },
+        };
+      }, appSettings);
       return { success: true };
     },
     [appSettings],
   );
 
   const restoreBuiltinSearchEngines = useCallback(() => {
-    const latest = getBrowserSettingsStoreState().settings;
-    const currentList = latest.searchEngines ?? DEFAULT_SEARCH_ENGINES;
-    const customEngines = currentList.filter(
-      (e) => !e.isBuiltin && !DEFAULT_SEARCH_ENGINES.some((d) => d.id === e.id),
-    );
-    const restored = [...DEFAULT_SEARCH_ENGINES, ...customEngines];
-    const nextDefault = restored.some((e) => e.id === latest.defaultSearchEngine)
-      ? latest.defaultSearchEngine
-      : DEFAULT_SEARCH_ENGINE_ID;
-    persistBrowserPreferencePatch(
-      { ...latest, defaultSearchEngine: nextDefault, searchEngines: restored },
-      { defaultSearchEngine: nextDefault, searchEngines: restored },
-      appSettings,
-    );
+    void commitBrowserPreferenceMutation((base) => {
+      const currentList = base.searchEngines ?? DEFAULT_SEARCH_ENGINES;
+      const customEngines = currentList.filter(
+        (e) => !e.isBuiltin && !DEFAULT_SEARCH_ENGINES.some((d) => d.id === e.id),
+      );
+      const restored = [...DEFAULT_SEARCH_ENGINES, ...customEngines];
+      const nextDefault = restored.some((e) => e.id === base.defaultSearchEngine)
+        ? base.defaultSearchEngine
+        : DEFAULT_SEARCH_ENGINE_ID;
+      return {
+        nextSettings: { ...base, defaultSearchEngine: nextDefault, searchEngines: restored },
+        patch: { defaultSearchEngine: nextDefault, searchEngines: restored },
+      };
+    }, appSettings);
   }, [appSettings]);
 
   const resetFavoritesToDefaults = useCallback(() => {
-    const latest = getBrowserSettingsStoreState().settings;
-    const nextFavorites = [...DEFAULT_BROWSER_FAVORITES];
-    persistBrowserPreferencePatch({ ...latest, favorites: nextFavorites }, { favorites: nextFavorites }, appSettings);
+    void commitBrowserPreferenceMutation((base) => {
+      const nextFavorites = [...DEFAULT_BROWSER_FAVORITES];
+      return { nextSettings: { ...base, favorites: nextFavorites }, patch: { favorites: nextFavorites } };
+    }, appSettings);
   }, [appSettings]);
 
   const spellCheck = settings.spellCheck ?? createDefaultSpellCheck();
 
   const setSpellCheckEnabled = useCallback(
     (enabled: boolean) => {
-      const latest = getBrowserSettingsStoreState().settings;
-      const currentSpellCheck = latest.spellCheck ?? createDefaultSpellCheck();
-      const nextSpellCheck: SpellCheckSettings = { ...currentSpellCheck, enabled };
-      persistBrowserPreferencePatch(
-        { ...latest, spellCheck: nextSpellCheck },
-        { spellCheck: { enabled } },
-        appSettings,
-      );
+      void commitBrowserPreferenceMutation((base) => {
+        const currentSpellCheck = base.spellCheck ?? createDefaultSpellCheck();
+        const nextSpellCheck: SpellCheckSettings = { ...currentSpellCheck, enabled };
+        return { nextSettings: { ...base, spellCheck: nextSpellCheck }, patch: { spellCheck: { enabled } } };
+      }, appSettings);
     },
     [appSettings],
   );
 
   const toggleSpellCheckLanguage = useCallback(
     (code: string) => {
-      const latest = getBrowserSettingsStoreState().settings;
-      const currentSpellCheck = latest.spellCheck ?? createDefaultSpellCheck();
-      const configured = Array.isArray(currentSpellCheck.configuredLanguages)
-        ? currentSpellCheck.configuredLanguages
-        : currentSpellCheck.languages;
-      if (!configured.includes(code)) return;
-      const currentLanguages = currentSpellCheck.languages || [];
-      const nextLanguages = currentLanguages.includes(code)
-        ? currentLanguages.filter((c) => c !== code)
-        : [...currentLanguages, code];
-      const nextSpellCheck: SpellCheckSettings = { ...currentSpellCheck, languages: nextLanguages };
-      persistBrowserPreferencePatch(
-        { ...latest, spellCheck: nextSpellCheck },
-        { spellCheck: { languages: nextLanguages } },
-        appSettings,
-      );
+      void commitBrowserPreferenceMutation((base) => {
+        const currentSpellCheck = base.spellCheck ?? createDefaultSpellCheck();
+        const configured = Array.isArray(currentSpellCheck.configuredLanguages)
+          ? currentSpellCheck.configuredLanguages
+          : currentSpellCheck.languages;
+        if (!configured.includes(code)) return null;
+        const currentLanguages = currentSpellCheck.languages || [];
+        const nextLanguages = currentLanguages.includes(code)
+          ? currentLanguages.filter((c) => c !== code)
+          : [...currentLanguages, code];
+        const nextSpellCheck: SpellCheckSettings = { ...currentSpellCheck, languages: nextLanguages };
+        return {
+          nextSettings: { ...base, spellCheck: nextSpellCheck },
+          patch: { spellCheck: { languages: nextLanguages } },
+        };
+      }, appSettings);
     },
     [appSettings],
   );
 
   const addSpellCheckLanguage = useCallback(
     (code: string) => {
-      const latest = getBrowserSettingsStoreState().settings;
-      const currentSpellCheck = latest.spellCheck ?? createDefaultSpellCheck();
-      const configured = Array.isArray(currentSpellCheck.configuredLanguages)
-        ? currentSpellCheck.configuredLanguages
-        : currentSpellCheck.languages;
-      if (configured.includes(code)) return;
-      const nextConfigured = [...configured, code];
-      const nextLanguages = [...(currentSpellCheck.languages || []), code];
-      const nextSpellCheck: SpellCheckSettings = {
-        ...currentSpellCheck,
-        configuredLanguages: nextConfigured,
-        languages: nextLanguages,
-      };
-      persistBrowserPreferencePatch(
-        { ...latest, spellCheck: nextSpellCheck },
-        { spellCheck: { configuredLanguages: nextConfigured, languages: nextLanguages } },
-        appSettings,
-      );
+      void commitBrowserPreferenceMutation((base) => {
+        const currentSpellCheck = base.spellCheck ?? createDefaultSpellCheck();
+        const configured = Array.isArray(currentSpellCheck.configuredLanguages)
+          ? currentSpellCheck.configuredLanguages
+          : currentSpellCheck.languages;
+        if (configured.includes(code)) return null;
+        const nextConfigured = [...configured, code];
+        const nextLanguages = [...(currentSpellCheck.languages || []), code];
+        const nextSpellCheck: SpellCheckSettings = {
+          ...currentSpellCheck,
+          configuredLanguages: nextConfigured,
+          languages: nextLanguages,
+        };
+        return {
+          nextSettings: { ...base, spellCheck: nextSpellCheck },
+          patch: { spellCheck: { configuredLanguages: nextConfigured, languages: nextLanguages } },
+        };
+      }, appSettings);
     },
     [appSettings],
   );
 
   const removeSpellCheckLanguage = useCallback(
     (code: string) => {
-      const latest = getBrowserSettingsStoreState().settings;
-      const currentSpellCheck = latest.spellCheck ?? createDefaultSpellCheck();
-      const configured = Array.isArray(currentSpellCheck.configuredLanguages)
-        ? currentSpellCheck.configuredLanguages
-        : currentSpellCheck.languages;
-      const nextConfigured = configured.filter((c) => c !== code);
-      const nextLanguages = (currentSpellCheck.languages || []).filter((c) => c !== code);
-      const nextSpellCheck: SpellCheckSettings = {
-        ...currentSpellCheck,
-        configuredLanguages: nextConfigured,
-        languages: nextLanguages,
-      };
-      persistBrowserPreferencePatch(
-        { ...latest, spellCheck: nextSpellCheck },
-        { spellCheck: { configuredLanguages: nextConfigured, languages: nextLanguages } },
-        appSettings,
-      );
+      void commitBrowserPreferenceMutation((base) => {
+        const currentSpellCheck = base.spellCheck ?? createDefaultSpellCheck();
+        const configured = Array.isArray(currentSpellCheck.configuredLanguages)
+          ? currentSpellCheck.configuredLanguages
+          : currentSpellCheck.languages;
+        const nextConfigured = configured.filter((c) => c !== code);
+        const nextLanguages = (currentSpellCheck.languages || []).filter((c) => c !== code);
+        const nextSpellCheck: SpellCheckSettings = {
+          ...currentSpellCheck,
+          configuredLanguages: nextConfigured,
+          languages: nextLanguages,
+        };
+        return {
+          nextSettings: { ...base, spellCheck: nextSpellCheck },
+          patch: { spellCheck: { configuredLanguages: nextConfigured, languages: nextLanguages } },
+        };
+      }, appSettings);
     },
     [appSettings],
   );
@@ -395,8 +426,10 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
   );
 
   const resetToDefaults = useCallback(() => {
-    const next = createDefaultBrowserSettings();
-    persistBrowserPreferencePatch(next, next, appSettings);
+    void commitBrowserPreferenceMutation(() => {
+      const next = createDefaultBrowserSettings();
+      return { nextSettings: next, patch: next };
+    }, appSettings);
   }, [appSettings]);
 
   const currentSearchEngines = settings.searchEngines ?? DEFAULT_SEARCH_ENGINES;
@@ -408,6 +441,8 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
     searchEngine: getSearchEngine(settings.defaultSearchEngine, currentSearchEngines),
     spellCheck,
     nativeDictionarySync: snapshot.nativeDictionarySync,
+    preferenceError: snapshot.preferenceError,
+    dismissPreferenceError,
     retryNativeDictionarySync,
     setSpellCheckEnabled,
     toggleSpellCheckLanguage,

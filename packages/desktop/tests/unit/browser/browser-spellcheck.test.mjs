@@ -426,3 +426,79 @@ test('Scenario 10: profile deletion awaits in-flight reconcile deterministically
   assert.deepEqual((await h.sessions.listCustomDictionaryWords('main')).words, ['mainkeep']);
   assert.deepEqual(await h.defaultSession.listWordsInSpellCheckerDictionary(), []);
 });
+
+test('F3: lazy partition reconciliation failures emit custom-dictionary-sync-status and clear on retry or deletion', async () => {
+  const h = harness({
+    'persist:maw-profile-lazysync-perplexity': () => createMockSession({ failAdd: true }),
+  });
+  h.sessions.ensurePartitionSession('lazysync', 'chatgpt');
+
+  // Initial reconcile across configured partition(s) succeeds
+  const initRec = await h.sessions.reconcileCustomDictionary({ lazysync: ['lazyterm'] });
+  assert.equal(initRec.ok, true);
+  assert.deepEqual(initRec.failedPartitions, []);
+
+  // Lazily create perplexity partition whose dictionary write fails
+  const beforeCount = h.sentEvents.length;
+  h.sessions.ensurePartitionSession('lazysync', 'perplexity');
+  await new Promise((r) => setTimeout(r, 20));
+
+  const failureEvents = h.sentEvents
+    .slice(beforeCount)
+    .filter((e) => e.type === 'custom-dictionary-sync-status');
+  assert.equal(failureEvents.length, 1);
+  assert.equal(failureEvents[0].ok, false);
+  assert.deepEqual(failureEvents[0].failedPartitions, ['persist:maw-profile-lazysync-perplexity']);
+
+  // Repair partition and retry reconcile with the EXACT same dictionary map -> recovers cleanly
+  const pxSess = h.partitions.get('persist:maw-profile-lazysync-perplexity');
+  pxSess.addWordToSpellCheckerDictionary = (w) => {
+    if (pxSess.customDictionary.has(w)) return false;
+    pxSess.customDictionary.add(w);
+    return true;
+  };
+  const retryRec = await h.sessions.reconcileCustomDictionary({ lazysync: ['lazyterm'] });
+  assert.equal(retryRec.ok, true);
+  assert.deepEqual(retryRec.failedPartitions, []);
+  const listed = await h.sessions.listCustomDictionaryWords('lazysync');
+  assert.equal(listed.consistent, true);
+  assert.deepEqual(listed.words, ['lazyterm']);
+});
+
+test('F4: applySpellCheckSettings returns honest per-partition failure results and preserves status reporting', () => {
+  let throwSetLangs = true;
+  const h = harness({
+    'persist:maw-github': () => {
+      const s = createMockSession();
+      const origSetLangs = s.setSpellCheckerLanguages;
+      s.setSpellCheckerLanguages = (langs) => {
+        if (throwSetLangs) {
+          throw new Error('setSpellCheckerLanguages native failure');
+        }
+        origSetLangs(langs);
+      };
+      return s;
+    },
+  });
+
+  const failRes = h.sessions.applySpellCheckSettings({
+    enabled: true,
+    languages: ['en-US', 'zz-UNSUPPORTED'],
+  });
+  assert.equal(failRes.ok, false);
+  assert.deepEqual(failRes.failedPartitions, ['persist:maw-github']);
+  assert.match(failRes.error ?? '', /native failure/);
+
+  // Unsupported language status reporting must still be preserved
+  const statusAfterFail = h.sessions.getSpellCheckStatus();
+  assert.equal(statusAfterFail.statuses['zz-UNSUPPORTED']?.status, 'unsupported');
+
+  // Recover on subsequent apply of identical config
+  throwSetLangs = false;
+  const okRes = h.sessions.applySpellCheckSettings({
+    enabled: true,
+    languages: ['en-US', 'zz-UNSUPPORTED'],
+  });
+  assert.equal(okRes.ok, true);
+  assert.deepEqual(okRes.failedPartitions, []);
+});

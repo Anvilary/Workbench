@@ -42,12 +42,24 @@ export interface DictionaryMutationResult {
   nativeSyncPending?: boolean;
 }
 
-interface StoreSnapshot {
+export interface StoreSnapshot {
   settings: BrowserSettings;
   nativeDictionarySync: NativeDictionarySyncState;
+  preferenceError: string | null;
 }
 
 type StoreListener = (snapshot: StoreSnapshot) => void;
+
+function cloneBrowserSettings(settings: BrowserSettings): BrowserSettings {
+  return {
+    defaultSearchEngine: settings.defaultSearchEngine,
+    favorites: Array.isArray(settings.favorites) ? settings.favorites.map((f) => ({ ...f })) : [],
+    ...(settings.searchEngines
+      ? { searchEngines: settings.searchEngines.map((e) => ({ ...e })) }
+      : {}),
+    spellCheck: cloneSpellCheck(settings.spellCheck),
+  };
+}
 
 function cloneSpellCheck(sc?: SpellCheckSettings): SpellCheckSettings {
   const source = sc ?? DEFAULT_SPELLCHECK_SETTINGS;
@@ -115,10 +127,13 @@ function saveCachedBrowserSettings(settings: BrowserSettings): void {
   }
 }
 
+let authoritativeSettings: BrowserSettings | null = null;
 let currentSettings: BrowserSettings | null = null;
 let hasAuthoritativeServerState = false;
 let activeAppSettings: AppSettingsApi | null = null;
 let lastServerStatusObject: BrowserSettings | undefined;
+let preferenceError: string | null = null;
+let preferenceMutationChain: Promise<void> = Promise.resolve();
 
 let desiredConfig: { enabled: boolean; languages: string[] } | null = null;
 let desiredConfigKey = '';
@@ -131,6 +146,7 @@ let appliedDictKey = '';
 let dictInFlightPromise: Promise<{ ok: boolean; failedPartitions?: string[]; error?: string }> | null = null;
 
 let lastBridgeRef: DesktopBridge | undefined;
+let bridgeUnsubscribe: (() => void) | null = null;
 let nativeSyncState: NativeDictionarySyncState = {
   status: 'idle',
   failedPartitions: [],
@@ -155,6 +171,7 @@ function getSnapshot(): StoreSnapshot {
   return {
     settings: getLatestSettings(),
     nativeDictionarySync: nativeSyncState,
+    preferenceError,
   };
 }
 
@@ -167,12 +184,38 @@ function notifyListeners(): void {
 
 function resetBridgeTrackingIfChanged(bridge: DesktopBridge | undefined): void {
   if (lastBridgeRef !== bridge) {
+    bridgeUnsubscribe?.();
+    bridgeUnsubscribe = null;
     lastBridgeRef = bridge;
     appliedConfigKey = '';
     appliedDictKey = '';
     configInFlightPromise = null;
     dictInFlightPromise = null;
     nativeSyncState = { status: 'idle', failedPartitions: [], error: null };
+    if (bridge && typeof bridge.subscribe === 'function') {
+      bridgeUnsubscribe = bridge.subscribe((state) => {
+        if (state.type !== 'custom-dictionary-sync-status') return;
+        if (state.ok === false) {
+          const failedPartitions = Array.isArray(state.failedPartitions) ? [...state.failedPartitions] : [];
+          appliedDictKey = '';
+          nativeSyncState = {
+            status: 'failed',
+            failedPartitions,
+            error: 'Failed to synchronize custom dictionary across browser partitions',
+          };
+          notifyListeners();
+        } else if (
+          state.ok === true &&
+          nativeSyncState.status === 'failed' &&
+          hasAuthoritativeServerState &&
+          !dictInFlightPromise
+        ) {
+          appliedDictKey = desiredDictKey;
+          nativeSyncState = { status: 'synced', failedPartitions: [], error: null };
+          notifyListeners();
+        }
+      });
+    }
   }
 }
 
@@ -332,9 +375,10 @@ export function subscribeBrowserSettingsStore(
   deferInitialConfigSync = false,
 ): () => void {
   ensureRecoveryListeners();
+  const bridge = getBridge();
+  resetBridgeTrackingIfChanged(bridge);
   listeners.add(listener);
   listener(getSnapshot());
-  const bridge = getBridge();
   const latest = getLatestSettings();
   if (!deferInitialConfigSync) {
     if (!desiredConfig && latest.spellCheck) {
@@ -359,10 +403,13 @@ export function syncAuthoritativeBrowserSettings(
   if (!serverBrowser || serverBrowser === lastServerStatusObject) return;
   lastServerStatusObject = serverBrowser;
   hasAuthoritativeServerState = true;
-  currentSettings = serverBrowser;
-  saveCachedBrowserSettings(serverBrowser);
-  setDesiredConfig(serverBrowser.spellCheck);
-  setDesiredDict(serverBrowser.spellCheck);
+  const cloned = cloneBrowserSettings(serverBrowser);
+  authoritativeSettings = cloned;
+  currentSettings = cloneBrowserSettings(cloned);
+  preferenceError = null;
+  saveCachedBrowserSettings(currentSettings);
+  setDesiredConfig(currentSettings.spellCheck);
+  setDesiredDict(currentSettings.spellCheck);
   notifyListeners();
 
   const bridge = getBridge();
@@ -372,33 +419,76 @@ export function syncAuthoritativeBrowserSettings(
   }
 }
 
+export interface BrowserPreferenceMutationPlan {
+  nextSettings: BrowserSettings;
+  patch: BrowserSettingsPatch;
+}
+
+export function dismissPreferenceError(): void {
+  if (preferenceError === null) return;
+  preferenceError = null;
+  notifyListeners();
+}
+
+export function commitBrowserPreferenceMutation(
+  compute: (base: BrowserSettings) => BrowserPreferenceMutationPlan | null,
+  appSettings?: AppSettingsApi,
+): Promise<{ ok: boolean; error?: string }> {
+  const targetApi = appSettings ?? activeAppSettings;
+  if (targetApi && typeof targetApi.updateBrowserSettings === 'function') {
+    // Authoritative-first and serialized: compute against the latest confirmed
+    // state after prior in-flight edits settle; never commit to localStorage or
+    // native spellcheck before backend acknowledgement.
+    const runTask = async (): Promise<{ ok: boolean; error?: string }> => {
+      const base = authoritativeSettings ? cloneBrowserSettings(authoritativeSettings) : getLatestSettings();
+      const plan = compute(base);
+      if (!plan) return { ok: true };
+      const res = await targetApi.updateBrowserSettings!({ browser: plan.patch });
+      if (res.ok && res.settings.browser) {
+        syncAuthoritativeBrowserSettings(res.settings.browser);
+        return { ok: true };
+      }
+      if (authoritativeSettings) {
+        const rollback = cloneBrowserSettings(authoritativeSettings);
+        currentSettings = rollback;
+        setDesiredConfig(rollback.spellCheck);
+      }
+      preferenceError = !res.ok ? res.error : 'Failed to save browser settings';
+      notifyListeners();
+      return { ok: false, error: preferenceError };
+    };
+    const chained = preferenceMutationChain.then(runTask, runTask);
+    preferenceMutationChain = chained.then(() => undefined, () => undefined);
+    return chained;
+  }
+
+  // Standalone harness without AppSettingsApi, or legacy setBrowserSettings-only test double
+  const base = cloneBrowserSettings(getLatestSettings());
+  const plan = compute(base);
+  if (!plan) return Promise.resolve({ ok: true });
+  currentSettings = plan.nextSettings;
+  preferenceError = null;
+  saveCachedBrowserSettings(currentSettings);
+  if (plan.patch.spellCheck) {
+    setDesiredConfig(currentSettings.spellCheck);
+    void ensureNativeConfigSynced(getBridge());
+  }
+  notifyListeners();
+  targetApi?.setBrowserSettings(plan.patch);
+  return Promise.resolve({ ok: true });
+}
+
 export async function commitBrowserPatch(
   nextLocal: BrowserSettings,
   patch: { browser?: BrowserSettingsPatch; customDictionary?: CustomDictionaryMutation },
   appSettings?: AppSettingsApi,
 ): Promise<boolean> {
-  currentSettings = nextLocal;
-  saveCachedBrowserSettings(nextLocal);
-  if (patch.browser?.spellCheck) {
-    setDesiredConfig(nextLocal.spellCheck);
-    void ensureNativeConfigSynced(getBridge());
-  }
-  notifyListeners();
-
-  const targetApi = appSettings ?? activeAppSettings;
-  if (!targetApi) return true;
-
-  if (typeof targetApi.updateBrowserSettings === 'function') {
-    const res = await targetApi.updateBrowserSettings(patch);
-    if (res.ok && res.settings.browser) {
-      syncAuthoritativeBrowserSettings(res.settings.browser);
-      return true;
-    }
-    return false;
-  }
-
   if (patch.browser) {
-    targetApi.setBrowserSettings(patch.browser);
+    const res = await commitBrowserPreferenceMutation(
+      () => ({ nextSettings: nextLocal, patch: patch.browser! }),
+      appSettings,
+    );
+    return res.ok;
   }
   return true;
 }
@@ -522,8 +612,11 @@ export async function mutateAuthoritativeCustomDictionary(
     : { success: true, nativeSyncPending: true, error: syncRes.error };
 }
 
-export async function retryNativeDictionarySync(): Promise<{ ok: boolean; failedPartitions?: string[]; error?: string }> {
-  return ensureNativeDictionarySynced(getBridge());
+export async function retryNativeDictionarySync(
+  bridge: DesktopBridge | undefined = getBridge(),
+): Promise<{ ok: boolean; failedPartitions?: string[]; error?: string }> {
+  appliedDictKey = '';
+  return ensureNativeDictionarySynced(bridge);
 }
 
 export function getBrowserSettingsStoreState(): StoreSnapshot {
@@ -532,10 +625,15 @@ export function getBrowserSettingsStoreState(): StoreSnapshot {
 
 /** Resets module-level browser-settings coordination state (for unit/E2E test isolation). */
 export function resetBrowserSettingsStoreForTests(): void {
+  bridgeUnsubscribe?.();
+  bridgeUnsubscribe = null;
+  authoritativeSettings = null;
   currentSettings = null;
   hasAuthoritativeServerState = false;
   activeAppSettings = null;
   lastServerStatusObject = undefined;
+  preferenceError = null;
+  preferenceMutationChain = Promise.resolve();
   desiredConfig = null;
   desiredConfigKey = '';
   appliedConfigKey = '';

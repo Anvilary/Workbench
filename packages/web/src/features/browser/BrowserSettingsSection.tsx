@@ -165,6 +165,13 @@ export interface BrowserSettingsSectionProps {
     profileId: BrowserProfileId,
     sites: readonly BrowserProfileSite[],
   ) => void | Promise<unknown>;
+  pendingBrowserProfileCleanups?: readonly {
+    profileId: BrowserProfileId;
+    profileName: string;
+    failedPartitions?: readonly string[];
+    error?: string;
+  }[];
+  onRetryBrowserProfileCleanup?: (profileId: BrowserProfileId, profileName: string) => void | Promise<unknown>;
 }
 
 export function BrowserSettingsSection({
@@ -177,6 +184,8 @@ export function BrowserSettingsSection({
   onRenameBrowserProfile,
   onDeleteBrowserProfile,
   onClearBrowserProfileSiteAuth,
+  pendingBrowserProfileCleanups,
+  onRetryBrowserProfileCleanup,
 }: BrowserSettingsSectionProps): JSX.Element {
   // Favorites Form State
   const [editingFavoriteId, setEditingFavoriteId] = useState<string | null>(null);
@@ -208,6 +217,7 @@ export function BrowserSettingsSection({
   const [clearingProfileId, setClearingProfileId] = useState<BrowserProfileId | null>(null);
   const [clearSelectedSites, setClearSelectedSites] = useState<BrowserProfileSite[]>([]);
   const [deletingProfile, setDeletingProfile] = useState<BrowserProfile | null>(null);
+  const [retryingCleanupId, setRetryingCleanupId] = useState<BrowserProfileId | null>(null);
   const [sectionExpandSignal, setSectionExpandSignal] = useState(0);
 
   // Drag & drop active state
@@ -337,6 +347,19 @@ export function BrowserSettingsSection({
 
   return (
     <div className="maw-settings-groups">
+      {browserSettings.preferenceError && (
+        <div role="alert" className="agency-error maw-settings-fav-error" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <span>{browserSettings.preferenceError}</span>
+          <button
+            type="button"
+            className="maw-settings-link-btn"
+            aria-label={t('agency.ui.dismissError')}
+            onClick={() => browserSettings.dismissPreferenceError()}
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {/* Search Engine Selection Card */}
       <CollapsibleSubsection
         id="setting-card-search-engine"
@@ -557,7 +580,7 @@ export function BrowserSettingsSection({
         id="setting-card-browser-profiles"
         title={t('settings.browser.profiles')}
         highlighted={highlightedCardId === 'setting-card-browser-profiles'}
-        forceExpanded={highlightedCardId === 'setting-card-browser-profiles' || isAddingProfile}
+        forceExpanded={highlightedCardId === 'setting-card-browser-profiles' || isAddingProfile || (pendingBrowserProfileCleanups?.length ?? 0) > 0}
         expandSignal={(expandSignal ?? 0) + sectionExpandSignal}
         headerActions={
           !isAddingProfile ? (
@@ -675,6 +698,39 @@ export function BrowserSettingsSection({
           <p role="alert" className="agency-error maw-settings-fav-error">
             {profileError}
           </p>
+        )}
+
+        {pendingBrowserProfileCleanups && pendingBrowserProfileCleanups.length > 0 && (
+          <div className="maw-settings-warning-list">
+            {pendingBrowserProfileCleanups.map((cleanup) => (
+              <div
+                key={cleanup.profileId}
+                role="alert"
+                className="maw-settings-warning-text"
+                data-cleanup-profile-id={cleanup.profileId}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}
+              >
+                <span>{t('settings.browser.profileCleanupPending', { name: cleanup.profileName })}</span>
+                {onRetryBrowserProfileCleanup && (
+                  <button
+                    type="button"
+                    className="maw-settings-btn-secondary maw-settings-btn-sm"
+                    disabled={retryingCleanupId === cleanup.profileId}
+                    onClick={() => {
+                      setRetryingCleanupId(cleanup.profileId);
+                      void Promise.resolve(
+                        onRetryBrowserProfileCleanup(cleanup.profileId, cleanup.profileName),
+                      ).finally(() => {
+                        setRetryingCleanupId((current) => (current === cleanup.profileId ? null : current));
+                      });
+                    }}
+                  >
+                    {t('settings.browser.retryProfileCleanup')}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
         )}
 
         <ul className="maw-settings-profiles-list">

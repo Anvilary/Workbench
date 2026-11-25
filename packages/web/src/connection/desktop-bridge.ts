@@ -34,6 +34,8 @@ export interface DesktopBridgeEvent {
   enabled?: boolean;
   languages?: string[];
   statuses?: Record<string, SpellCheckDictionaryStatusEntry>;
+  ok?: boolean;
+  failedPartitions?: string[];
   matches?: number;
   activeMatchOrdinal?: number;
   requestId?: number;

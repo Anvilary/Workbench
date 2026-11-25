@@ -426,3 +426,238 @@ test('Profile deletion owns authoritative customWordsByProfile cleanup and recov
     await h.cleanup();
   }
 });
+
+test('F1: rejects customDictionary and customWordsByProfile mutations targeting nonexistent or deleted profiles', async () => {
+  const h = await createSettingsHarness();
+  try {
+    const profile = await h.agencyBrowserProfileStore.createProfile('Transient Profile');
+    const client = await openClient(h.port);
+    try {
+      // Seed main and existing custom profile words
+      const seedMain = client.waitFor((m) => m.type === 'settings.status' && m.requestId === 'f1-seed-main', 'f1-seed-main');
+      client.ws.send(JSON.stringify({
+        type: 'settings.update',
+        requestId: 'f1-seed-main',
+        customDictionary: { action: 'add', profileId: DEFAULT_BROWSER_PROFILE_ID, word: 'mainword' },
+      }));
+      await seedMain;
+
+      const seedProf = client.waitFor((m) => m.type === 'settings.status' && m.requestId === 'f1-seed-prof', 'f1-seed-prof');
+      client.ws.send(JSON.stringify({
+        type: 'settings.update',
+        requestId: 'f1-seed-prof',
+        customDictionary: { action: 'add', profileId: profile.id, word: 'tempword' },
+      }));
+      await seedProf;
+
+      // 1. Nonexistent profile add & remove reject with requestId-correlated settings-failed
+      const missingAddP = client.waitFor(
+        (m) => m.type === 'error' && m.code === 'settings-failed' && m.requestId === 'f1-missing-add',
+        'f1-missing-add',
+      );
+      client.ws.send(JSON.stringify({
+        type: 'settings.update',
+        requestId: 'f1-missing-add',
+        customDictionary: { action: 'add', profileId: 'nonexistent-profile-id', word: 'ghost' },
+      }));
+      const missingAddErr = await missingAddP;
+      assert.equal(missingAddErr.type, 'error');
+
+      const missingRemP = client.waitFor(
+        (m) => m.type === 'error' && m.code === 'settings-failed' && m.requestId === 'f1-missing-rem',
+        'f1-missing-rem',
+      );
+      client.ws.send(JSON.stringify({
+        type: 'settings.update',
+        requestId: 'f1-missing-rem',
+        customDictionary: { action: 'remove', profileId: 'nonexistent-profile-id', word: 'ghost' },
+      }));
+      await missingRemP;
+
+      // 2. Delete the custom profile, then attempt add and full map update targeting deleted profile
+      const delP = client.waitFor(
+        (m) => m.type === 'agency.browserProfile.deleted' && m.requestId === 'f1-del',
+        'f1-del',
+      );
+      client.ws.send(JSON.stringify({
+        type: 'agency.browserProfile.delete',
+        requestId: 'f1-del',
+        profileId: profile.id,
+      }));
+      await delP;
+
+      const deletedAddP = client.waitFor(
+        (m) => m.type === 'error' && m.code === 'settings-failed' && m.requestId === 'f1-deleted-add',
+        'f1-deleted-add',
+      );
+      client.ws.send(JSON.stringify({
+        type: 'settings.update',
+        requestId: 'f1-deleted-add',
+        customDictionary: { action: 'add', profileId: profile.id, word: 'recreated' },
+      }));
+      await deletedAddP;
+
+      const fullMapP = client.waitFor(
+        (m) => m.type === 'error' && m.code === 'settings-failed' && m.requestId === 'f1-full-map',
+        'f1-full-map',
+      );
+      client.ws.send(JSON.stringify({
+        type: 'settings.update',
+        requestId: 'f1-full-map',
+        browser: {
+          spellCheck: {
+            customWordsByProfile: {
+              [DEFAULT_BROWSER_PROFILE_ID]: ['mainword'],
+              [profile.id]: ['bypassed'],
+            },
+          },
+        },
+      }));
+      await fullMapP;
+
+      assert.equal(h.settings.get().browser.spellCheck?.customWordsByProfile?.[profile.id], undefined);
+      assert.equal(h.settings.get().browser.spellCheck?.customWordsByProfile?.['nonexistent-profile-id'], undefined);
+      assert.deepEqual(h.settings.get().browser.spellCheck?.customWordsByProfile?.[DEFAULT_BROWSER_PROFILE_ID], ['mainword']);
+
+      // 3. Subsequent main profile mutation remains fully operational
+      const mainAfterP = client.waitFor(
+        (m) => m.type === 'settings.status' && m.requestId === 'f1-main-after',
+        'f1-main-after',
+      );
+      client.ws.send(JSON.stringify({
+        type: 'settings.update',
+        requestId: 'f1-main-after',
+        customDictionary: { action: 'add', profileId: DEFAULT_BROWSER_PROFILE_ID, word: 'stillworks' },
+      }));
+      await mainAfterP;
+      assert.deepEqual(
+        h.settings.get().browser.spellCheck?.customWordsByProfile?.[DEFAULT_BROWSER_PROFILE_ID],
+        ['mainword', 'stillworks'],
+      );
+    } finally {
+      client.ws.close();
+    }
+  } finally {
+    await h.cleanup();
+  }
+});
+
+test('F1 concurrency: dictionary mutations serialize against profile deletion and cannot resurrect entries', async () => {
+  const h = await createSettingsHarness();
+  try {
+    const profileA = await h.agencyBrowserProfileStore.createProfile('Race Profile A');
+    const profileB = await h.agencyBrowserProfileStore.createProfile('Race Profile B');
+    const client = await openClient(h.port);
+    try {
+      // Case A: delete holds lock first -> concurrent add & full map update must wait and reject
+      let enteredClear!: () => void;
+      let releaseClear!: () => void;
+      const enteredClearPromise = new Promise<void>((r) => { enteredClear = r; });
+      const clearGatePromise = new Promise<void>((r) => { releaseClear = r; });
+      const origClear = h.appSettings.clearProfileCustomDictionary.bind(h.appSettings);
+      let interceptOnce = true;
+      h.appSettings.clearProfileCustomDictionary = async (pid: string) => {
+        if (interceptOnce && pid === profileA.id) {
+          interceptOnce = false;
+          enteredClear();
+          await clearGatePromise;
+        }
+        return origClear(pid);
+      };
+
+      const delAP = client.waitFor(
+        (m) => m.type === 'agency.browserProfile.deleted' && m.requestId === 'race-del-a',
+        'race-del-a',
+      );
+      client.ws.send(JSON.stringify({
+        type: 'agency.browserProfile.delete',
+        requestId: 'race-del-a',
+        profileId: profileA.id,
+      }));
+      await enteredClearPromise;
+
+      let settledEarly = false;
+      const raceAddP = client.waitFor(
+        (m) => m.type === 'error' && m.code === 'settings-failed' && m.requestId === 'race-add-a',
+        'race-add-a',
+      ).then((m) => { settledEarly = true; return m; });
+      const raceMapP = client.waitFor(
+        (m) => m.type === 'error' && m.code === 'settings-failed' && m.requestId === 'race-map-a',
+        'race-map-a',
+      );
+
+      client.ws.send(JSON.stringify({
+        type: 'settings.update',
+        requestId: 'race-add-a',
+        customDictionary: { action: 'add', profileId: profileA.id, word: 'resurrected' },
+      }));
+      client.ws.send(JSON.stringify({
+        type: 'settings.update',
+        requestId: 'race-map-a',
+        browser: { spellCheck: { customWordsByProfile: { [profileA.id]: ['resurrected-map'] } } },
+      }));
+
+      await new Promise((r) => setTimeout(r, 30));
+      assert.equal(settledEarly, false, 'Dictionary add must wait for in-flight profile deletion lock');
+
+      releaseClear();
+      await Promise.all([delAP, raceAddP, raceMapP]);
+      assert.equal(h.agencyBrowserProfileStore.getProfile(profileA.id), null);
+      assert.equal(h.settings.get().browser.spellCheck?.customWordsByProfile?.[profileA.id], undefined);
+
+      // Case B: add holds lock first -> concurrent delete waits, then removes added entry cleanly
+      let enteredAdd!: () => void;
+      let releaseAdd!: () => void;
+      const enteredAddPromise = new Promise<void>((r) => { enteredAdd = r; });
+      const addGatePromise = new Promise<void>((r) => { releaseAdd = r; });
+      const origAppUpdate = h.appSettings.update.bind(h.appSettings);
+      let interceptAddOnce = true;
+      h.appSettings.update = async (change) => {
+        if (
+          interceptAddOnce &&
+          change.customDictionary?.action === 'add' &&
+          change.customDictionary.profileId === profileB.id
+        ) {
+          interceptAddOnce = false;
+          enteredAdd();
+          await addGatePromise;
+        }
+        return origAppUpdate(change);
+      };
+
+      const addBP = client.waitFor(
+        (m) => m.type === 'settings.status' && m.requestId === 'race-add-b',
+        'race-add-b',
+      );
+      client.ws.send(JSON.stringify({
+        type: 'settings.update',
+        requestId: 'race-add-b',
+        customDictionary: { action: 'add', profileId: profileB.id, word: 'inFlightWord' },
+      }));
+      await enteredAddPromise;
+
+      let delBSettledEarly = false;
+      const delBP = client.waitFor(
+        (m) => m.type === 'agency.browserProfile.deleted' && m.requestId === 'race-del-b',
+        'race-del-b',
+      ).then((m) => { delBSettledEarly = true; return m; });
+      client.ws.send(JSON.stringify({
+        type: 'agency.browserProfile.delete',
+        requestId: 'race-del-b',
+        profileId: profileB.id,
+      }));
+
+      await new Promise((r) => setTimeout(r, 30));
+      assert.equal(delBSettledEarly, false, 'Profile deletion must wait for in-flight dictionary mutation lock');
+
+      releaseAdd();
+      await Promise.all([addBP, delBP]);
+      assert.equal(h.agencyBrowserProfileStore.getProfile(profileB.id), null);
+      assert.equal(h.settings.get().browser.spellCheck?.customWordsByProfile?.[profileB.id], undefined);
+    } finally {
+      client.ws.close();
+    }
+  } finally {
+    await h.cleanup();
+  }
+});

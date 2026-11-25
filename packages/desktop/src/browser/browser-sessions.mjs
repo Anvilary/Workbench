@@ -24,6 +24,7 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
   const deletingProfiles = new Set(); // profileId currently deleting
   const profileGenerations = new Map(); // profileId -> monotonically increasing lifecycle generation
   const inFlightProfileOps = new Map(); // profileId -> Set<Promise<unknown>>
+  const failedDictionaryPartitions = new Set(); // partitionName -> last reconcile failed
   let hasAuthoritativeDictionarySync = false;
   const PROFILE_PROVIDERS = ['chatgpt', 'github', 'perplexity', 'other'];
   const spellCheckConfig = {
@@ -131,13 +132,20 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
     }
   }
 
-  function applySpellCheckToSession(targetSession) {
-    if (!targetSession) return;
+  function applySpellCheckToSession(targetSession, partitionName = '') {
+    if (!targetSession) {
+      return { ok: false, partition: partitionName, error: 'Missing browser session' };
+    }
+    const canToggle = typeof targetSession.setSpellCheckerEnabled === 'function';
+    const canSetLangs = typeof targetSession.setSpellCheckerLanguages === 'function';
+    if (!canToggle && !canSetLangs) {
+      return { ok: false, partition: partitionName, error: 'Spellcheck API unavailable on session' };
+    }
     try {
-      if (typeof targetSession.setSpellCheckerEnabled === 'function') {
+      if (canToggle) {
         targetSession.setSpellCheckerEnabled(spellCheckConfig.enabled);
       }
-      if (typeof targetSession.setSpellCheckerLanguages === 'function') {
+      if (canSetLangs) {
         const available = Array.isArray(targetSession.availableSpellCheckerLanguages)
           ? targetSession.availableSpellCheckerLanguages
           : [];
@@ -146,7 +154,14 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
         );
         targetSession.setSpellCheckerLanguages(toEnable);
       }
-    } catch {}
+      return { ok: true, partition: partitionName };
+    } catch (err) {
+      return {
+        ok: false,
+        partition: partitionName,
+        error: err instanceof Error ? err.message : 'Failed to apply native spellcheck configuration',
+      };
+    }
   }
 
   function getKnownAvailableLanguagesSet() {
@@ -234,7 +249,9 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
   }
 
   function applySpellCheckSettings(config) {
-    if (!config) return;
+    if (!config) {
+      return { ok: false, failedPartitions: [], error: 'Invalid spellcheck configuration' };
+    }
     if (typeof config.enabled === 'boolean') {
       spellCheckConfig.enabled = config.enabled;
     }
@@ -242,10 +259,23 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
       spellCheckConfig.languages = [...config.languages];
     }
     pruneRetainedDictionaryStatuses();
-    for (const targetSession of configuredPartitions.values()) {
-      applySpellCheckToSession(targetSession);
+    const failedPartitions = [];
+    let firstError = null;
+    for (const [partitionName, targetSession] of configuredPartitions.entries()) {
+      const res = applySpellCheckToSession(targetSession, partitionName);
+      if (!res.ok) {
+        failedPartitions.push(partitionName);
+        if (!firstError && res.error) {
+          firstError = res.error;
+        }
+      }
     }
     emitSpellCheckStatus();
+    return {
+      ok: failedPartitions.length === 0,
+      failedPartitions,
+      ...(firstError ? { error: firstError } : {}),
+    };
   }
 
   function getAvailableSpellCheckerLanguages() {
@@ -472,6 +502,35 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
     return next;
   }
 
+  function emitCustomDictionarySyncStatus() {
+    try {
+      const failedPartitions = [...failedDictionaryPartitions]
+        .filter((partitionName) => configuredPartitions.has(partitionName))
+        .sort();
+      send({
+        type: 'custom-dictionary-sync-status',
+        ok: failedPartitions.length === 0,
+        failedPartitions,
+      });
+    } catch {}
+  }
+
+  function recordPartitionReconcileOutcome(partitionName, result, emitOnChange = false) {
+    if (result?.aborted) return;
+    const hadFailed = failedDictionaryPartitions.has(partitionName);
+    if (result?.ok) {
+      failedDictionaryPartitions.delete(partitionName);
+      if (emitOnChange && hadFailed) {
+        emitCustomDictionarySyncStatus();
+      }
+    } else {
+      failedDictionaryPartitions.add(partitionName);
+      if (emitOnChange) {
+        emitCustomDictionarySyncStatus();
+      }
+    }
+  }
+
   async function reconcileCustomDictionary(customWordsByProfile) {
     if (!customWordsByProfile || typeof customWordsByProfile !== 'object' || Array.isArray(customWordsByProfile)) {
       return { ok: false, error: 'Invalid customWordsByProfile map' };
@@ -492,6 +551,12 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
     }
     hasAuthoritativeDictionarySync = true;
 
+    for (const partitionName of [...failedDictionaryPartitions]) {
+      if (!configuredPartitions.has(partitionName)) {
+        failedDictionaryPartitions.delete(partitionName);
+      }
+    }
+
     const results = [];
     for (const [partitionName, targetSession] of configuredPartitions.entries()) {
       const profileId = partitionProfileIds.get(partitionName) ?? DEFAULT_BROWSER_PROFILE_ID;
@@ -501,7 +566,9 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
       }
       const generation = getProfileGeneration(profileId);
       const expectedSet = authoritativeCustomWords.get(profileId) ?? new Set();
-      results.push(await schedulePartitionReconcile(partitionName, targetSession, expectedSet, profileId, generation));
+      const res = await schedulePartitionReconcile(partitionName, targetSession, expectedSet, profileId, generation);
+      recordPartitionReconcileOutcome(partitionName, res, false);
+      results.push(res);
     }
     const failedPartitions = results.filter((r) => !r.ok && !r.aborted).map((r) => r.partition);
     const abortedPartitions = results.filter((r) => r.aborted).map((r) => r.partition);
@@ -527,9 +594,13 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
     deletingProfiles.delete(profileId);
     authoritativeCustomWords.delete(profileId);
     let statusChanged = false;
+    let dictFailureCleared = false;
     for (const partitionName of partitionNames) {
       partitionProfileIds.delete(partitionName);
       reconcilePromises.delete(partitionName);
+      if (failedDictionaryPartitions.delete(partitionName)) {
+        dictFailureCleared = true;
+      }
       for (const partMap of dictionaryStatusesByLanguage.values()) {
         if (partMap.delete(partitionName)) {
           statusChanged = true;
@@ -538,6 +609,9 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
     }
     if (statusChanged) {
       emitSpellCheckStatus();
+    }
+    if (dictFailureCleared) {
+      emitCustomDictionarySyncStatus();
     }
   }
 
@@ -573,7 +647,7 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
     // Attach listeners before initiating dictionary loading so synchronous or early
     // spellcheck-dictionary-* events are never missed.
     attachSpellCheckListeners(targetSession, partitionName);
-    applySpellCheckToSession(targetSession);
+    applySpellCheckToSession(targetSession, partitionName);
     if (!deletingProfiles.has(effectiveProfileId) &&
         (hasAuthoritativeDictionarySync || authoritativeCustomWords.has(effectiveProfileId))) {
       const expectedSet = authoritativeCustomWords.get(effectiveProfileId) ?? new Set();
@@ -583,6 +657,12 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
         expectedSet,
         effectiveProfileId,
         getProfileGeneration(effectiveProfileId),
+      ).then(
+        (result) => recordPartitionReconcileOutcome(partitionName, result, true),
+        () => {
+          failedDictionaryPartitions.add(partitionName);
+          emitCustomDictionarySyncStatus();
+        },
       );
     }
     targetSession.on('will-download', browserDownloadHandler({

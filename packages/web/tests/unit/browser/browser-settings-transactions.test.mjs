@@ -3,7 +3,9 @@ import test from 'node:test';
 import { createAppSettingsCoordinator } from '../../../src/features/settings/useAppSettings.ts';
 import {
   BROWSER_SETTINGS_STORAGE_KEY,
+  commitBrowserPreferenceMutation,
   createDefaultBrowserSettings,
+  dismissPreferenceError,
   getBrowserSettingsStoreState,
   mutateAuthoritativeCustomDictionary,
   resetBrowserSettingsStoreForTests,
@@ -322,6 +324,239 @@ test('Scenario 8: failed native reconciliation leaves applied revision unmarked 
   failReconcile = false;
   for (const fn of focusHandlers) fn();
   await new Promise((r) => setTimeout(r, 20));
+  assert.equal(getBrowserSettingsStoreState().nativeDictionarySync.status, 'synced');
+
+  unsub();
+  coord.dispose();
+  delete globalThis.window;
+});
+
+test('F2: preference mutations are authoritative-first, restore on rejection/disconnect, and serialize overlapping edits', async () => {
+  resetBrowserSettingsStoreForTests();
+  const storage = new Map();
+  const { bridge, commands } = makeBridge(async () => ({ ok: true }));
+  globalThis.window = {
+    mawChatGpt: bridge,
+    addEventListener: () => {},
+    localStorage: {
+      getItem: (k) => storage.get(k) ?? null,
+      setItem: (k, v) => storage.set(k, v),
+    },
+  };
+
+  const conn = createMockConnection();
+  const coord = createAppSettingsCoordinator(conn, { timeoutMs: 200 });
+  const api = coordinatorToApi(coord);
+  setActiveAppSettings(api);
+  const unsub = subscribeBrowserSettingsStore(() => {}, true);
+
+  const initial = makeAppStatus({
+    defaultSearchEngine: 'duckduckgo',
+    favorites: [{ id: 'f0', title: 'Initial', url: 'https://initial.example.com/' }],
+    spellCheck: { enabled: true, languages: ['en-US'], configuredLanguages: ['en-US'], customWordsByProfile: {} },
+  });
+  conn.emitMessage({ type: 'settings.status', settings: initial });
+  syncAuthoritativeBrowserSettings(initial.browser);
+  await new Promise((r) => setTimeout(r, 10));
+  const initialSpellCmds = commands.filter((c) => c.type === 'update-spellcheck-settings').length;
+  const cachedAfterInit = storage.get(BROWSER_SETTINGS_STORAGE_KEY);
+
+  // 1. Server rejection must NOT write to state, localStorage, or native spellcheck
+  const rejectPromise = commitBrowserPreferenceMutation(
+    (base) => ({
+      nextSettings: { ...base, spellCheck: { ...base.spellCheck, enabled: false } },
+      patch: { spellCheck: { enabled: false } },
+    }),
+    api,
+  );
+  await Promise.resolve();
+  const reqReject = conn.sentImmediate.at(-1);
+  assert.ok(reqReject?.requestId);
+  assert.equal(getBrowserSettingsStoreState().settings.spellCheck?.enabled, true);
+  assert.equal(storage.get(BROWSER_SETTINGS_STORAGE_KEY), cachedAfterInit);
+  assert.equal(commands.filter((c) => c.type === 'update-spellcheck-settings').length, initialSpellCmds);
+
+  conn.emitMessage({
+    type: 'error',
+    code: 'settings-failed',
+    text: { key: 'settingsFailed' },
+    requestId: reqReject.requestId,
+  });
+  const rejectRes = await rejectPromise;
+  assert.equal(rejectRes.ok, false);
+  assert.equal(getBrowserSettingsStoreState().settings.spellCheck?.enabled, true);
+  assert.equal(storage.get(BROWSER_SETTINGS_STORAGE_KEY), cachedAfterInit);
+  assert.ok(getBrowserSettingsStoreState().preferenceError);
+  assert.equal(commands.filter((c) => c.type === 'update-spellcheck-settings').length, initialSpellCmds);
+
+  dismissPreferenceError();
+  assert.equal(getBrowserSettingsStoreState().preferenceError, null);
+
+  // 2. Overlapping edits to favorites + languages serialize cleanly without clobbering each other
+  const favPromiseA = commitBrowserPreferenceMutation(
+    (base) => {
+      const favorites = [...base.favorites, { id: 'fA', title: 'Fav A', url: 'https://a.example.com/' }];
+      return { nextSettings: { ...base, favorites }, patch: { favorites } };
+    },
+    api,
+  );
+  const favPromiseB = commitBrowserPreferenceMutation(
+    (base) => {
+      const favorites = [...base.favorites, { id: 'fB', title: 'Fav B', url: 'https://b.example.com/' }];
+      return { nextSettings: { ...base, favorites }, patch: { favorites } };
+    },
+    api,
+  );
+  const langPromiseFr = commitBrowserPreferenceMutation(
+    (base) => {
+      const sc = base.spellCheck;
+      const configuredLanguages = [...sc.configuredLanguages, 'fr'];
+      const languages = [...sc.languages, 'fr'];
+      return {
+        nextSettings: { ...base, spellCheck: { ...sc, configuredLanguages, languages } },
+        patch: { spellCheck: { configuredLanguages, languages } },
+      };
+    },
+    api,
+  );
+
+  // Only first mutation has been sent while in flight
+  await new Promise((r) => setTimeout(r, 10));
+  const reqFavA = conn.sentImmediate.at(-1);
+  assert.equal(reqFavA.browser.favorites.length, 2);
+
+  const afterFavA = makeAppStatus({
+    ...initial.browser,
+    favorites: reqFavA.browser.favorites,
+  });
+  conn.emitMessage({ type: 'settings.status', requestId: reqFavA.requestId, settings: afterFavA });
+  await favPromiseA;
+
+  // Second mutation computes from afterFavA (includes fA)
+  await new Promise((r) => setTimeout(r, 10));
+  const reqFavB = conn.sentImmediate.at(-1);
+  assert.equal(reqFavB.browser.favorites.length, 3);
+  const afterFavB = makeAppStatus({
+    ...afterFavA.browser,
+    favorites: reqFavB.browser.favorites,
+  });
+  conn.emitMessage({ type: 'settings.status', requestId: reqFavB.requestId, settings: afterFavB });
+  await favPromiseB;
+
+  await new Promise((r) => setTimeout(r, 10));
+  const reqFr = conn.sentImmediate.at(-1);
+  const afterFr = makeAppStatus({
+    ...afterFavB.browser,
+    spellCheck: {
+      ...afterFavB.browser.spellCheck,
+      ...reqFr.browser.spellCheck,
+      customWordsByProfile: {},
+    },
+  });
+  conn.emitMessage({ type: 'settings.status', requestId: reqFr.requestId, settings: afterFr });
+  await langPromiseFr;
+  await new Promise((r) => setTimeout(r, 10));
+
+  const finalState = getBrowserSettingsStoreState().settings;
+  assert.deepEqual(finalState.favorites.map((f) => f.id), ['f0', 'fA', 'fB']);
+  assert.deepEqual(finalState.spellCheck?.languages, ['en-US', 'fr']);
+  assert.equal(
+    commands.filter((c) => c.type === 'update-spellcheck-settings').at(-1)?.languages?.includes('fr'),
+    true,
+  );
+
+  // 3. Disconnected mutation fails without mutating authoritative state or localStorage
+  conn.setConnected(false);
+  const storageBeforeDisconnect = storage.get(BROWSER_SETTINGS_STORAGE_KEY);
+  const discRes = await commitBrowserPreferenceMutation(
+    (base) => ({
+      nextSettings: { ...base, defaultSearchEngine: 'google' },
+      patch: { defaultSearchEngine: 'google' },
+    }),
+    api,
+  );
+  assert.equal(discRes.ok, false);
+  assert.equal(getBrowserSettingsStoreState().settings.defaultSearchEngine, 'duckduckgo');
+  assert.equal(storage.get(BROWSER_SETTINGS_STORAGE_KEY), storageBeforeDisconnect);
+
+  unsub();
+  coord.dispose();
+  delete globalThis.window;
+});
+
+test('F3 & F4: lazy partition failure event marks sync failed and retry recovers; failed native config does not mark applied', async () => {
+  resetBrowserSettingsStoreForTests();
+  const focusHandlers = new Set();
+  const subscribers = new Set();
+  let failConfigCmd = true;
+  const commands = [];
+  const bridge = {
+    command: async (cmd) => {
+      commands.push(cmd);
+      if (cmd.type === 'update-spellcheck-settings' && failConfigCmd) {
+        return { ok: false, failedPartitions: ['persist:maw-chatgpt'], error: 'Native apply failed' };
+      }
+      return { ok: true };
+    },
+    subscribe: (fn) => {
+      subscribers.add(fn);
+      return () => subscribers.delete(fn);
+    },
+  };
+  globalThis.window = {
+    mawChatGpt: bridge,
+    addEventListener: (ev, fn) => {
+      if (ev === 'focus') focusHandlers.add(fn);
+    },
+    localStorage: { getItem: () => null, setItem: () => {} },
+  };
+
+  const conn = createMockConnection();
+  const coord = createAppSettingsCoordinator(conn);
+  const api = coordinatorToApi(coord);
+  setActiveAppSettings(api);
+  const unsub = subscribeBrowserSettingsStore(() => {}, true);
+
+  const init = makeAppStatus({
+    spellCheck: {
+      enabled: true,
+      languages: ['en-US'],
+      configuredLanguages: ['en-US'],
+      customWordsByProfile: { work: ['lazyword'] },
+    },
+  });
+  conn.emitMessage({ type: 'settings.status', settings: init });
+  syncAuthoritativeBrowserSettings(init.browser);
+  await new Promise((r) => setTimeout(r, 20));
+
+  // F4: update-spellcheck-settings failed -> focus retries the exact same config
+  const failedCfgCount = commands.filter((c) => c.type === 'update-spellcheck-settings').length;
+  assert.equal(failedCfgCount, 1);
+  failConfigCmd = false;
+  for (const fn of focusHandlers) fn();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(commands.filter((c) => c.type === 'update-spellcheck-settings').length, 2);
+
+  // F3: initial dict reconcile succeeded, then lazy partition emits failure event
+  assert.equal(getBrowserSettingsStoreState().nativeDictionarySync.status, 'synced');
+  for (const fn of subscribers) {
+    fn({
+      type: 'custom-dictionary-sync-status',
+      ok: false,
+      failedPartitions: ['persist:maw-profile-work-perplexity'],
+    });
+  }
+  assert.equal(getBrowserSettingsStoreState().nativeDictionarySync.status, 'failed');
+  assert.deepEqual(
+    getBrowserSettingsStoreState().nativeDictionarySync.failedPartitions,
+    ['persist:maw-profile-work-perplexity'],
+  );
+
+  // Explicit retry triggers reconcile even though desired dictionary map did not change
+  const recBefore = commands.filter((c) => c.type === 'reconcile-custom-dictionary').length;
+  const retryRes = await retryNativeDictionarySync();
+  assert.equal(retryRes.ok, true);
+  assert.equal(commands.filter((c) => c.type === 'reconcile-custom-dictionary').length, recBefore + 1);
   assert.equal(getBrowserSettingsStoreState().nativeDictionarySync.status, 'synced');
 
   unsub();

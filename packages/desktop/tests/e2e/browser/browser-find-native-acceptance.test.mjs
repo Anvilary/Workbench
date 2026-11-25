@@ -92,6 +92,9 @@ test('native browser search scrolling, Next/Prev navigation, tab switching and c
       HOME: dataDir,
       MAW_DESKTOP_DATA_DIR: dataDir,
       MAW_DESKTOP_URL: shellUrl,
+      // Keep both test tabs resident across tab switches regardless of host swap pressure;
+      // memory-pressure eviction is tested independently in resource-budget and resource-tab-pool tests.
+      MAW_MAX_RESIDENT_VIEWS: '4',
     },
   });
 

@@ -212,18 +212,21 @@ export function buildBrowserContextMenuItems(params: {
 export function BrowserContextMenu({
   tabs,
   appSettings,
+  onError,
   onCloseTab: _onCloseTab,
   onMoveNext: _onMoveNext,
   onDuplicate: _onDuplicate,
 }: {
   tabs?: readonly WebTab[];
   appSettings?: AppSettingsApi;
+  onError?: (message: string) => void;
   request?: ReturnType<typeof useWorkbenchStore>['request'];
   onCloseTab?: (tab: WebTab) => void;
   onMoveNext?: (tabId: string) => void;
   onDuplicate?: (tab: WebTab) => void;
 } = {}): JSX.Element | null {
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [fallbackAlert, setFallbackAlert] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [measuredSize, setMeasuredSize] = useState<{ width: number; height: number }>({ width: 190, height: 220 });
   const { spellCheck, addCustomDictionaryWord } = useBrowserSettings(appSettings);
@@ -306,7 +309,25 @@ export function BrowserContextMenu({
     };
   }, [menu]);
 
-  if (!menu) return null;
+  if (!menu) {
+    if (!fallbackAlert) return null;
+    return (
+      <div
+        role="alert"
+        className="agency-error-bar maw-context-menu-alert"
+        style={{ position: 'fixed', top: 12, right: 12, zIndex: 10000 }}
+      >
+        <span>{fallbackAlert}</span>
+        <button
+          type="button"
+          aria-label={t('agency.ui.dismissError')}
+          onClick={() => setFallbackAlert(null)}
+        >
+          ×
+        </button>
+      </div>
+    );
+  }
   const send = (action: string, url?: string) => {
     const command = url ? { type: 'browser-action', id: menu.id, action, url } : { type: 'browser-action', id: menu.id, action };
     void window.mawChatGpt?.command(command);
@@ -334,10 +355,26 @@ export function BrowserContextMenu({
   const enabledLanguages = Array.isArray(spellCheck.languages) ? spellCheck.languages : [];
   const currentLocale = getLocale();
 
-  const handleAddToDictionary = () => {
+  const reportDictionaryError = (message: string) => {
+    if (onError) {
+      onError(message);
+    } else {
+      setFallbackAlert(message);
+    }
+  };
+
+  const handleAddToDictionary = async () => {
     if (!menu.misspelledWord) return;
-    void addCustomDictionaryWord(menu.misspelledWord, menu.profileId);
+    const word = menu.misspelledWord;
+    const profileId = menu.profileId;
     setMenu(null);
+    setFallbackAlert(null);
+    const res = await addCustomDictionaryWord(word, profileId);
+    if (!res.success) {
+      reportDictionaryError(res.error || t('settings.browser.customDictionaryAddFailed'));
+    } else if (res.nativeSyncPending) {
+      reportDictionaryError(t('settings.browser.customDictionarySyncPending'));
+    }
   };
 
   const handleManageSpellCheck = () => {
