@@ -193,7 +193,9 @@ export function createFixture(t, opts = {}) {
     return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
   };
 
-  fixture.systemctlCalls = () => (fs.existsSync(fixture.systemctlLog) ? fs.readFileSync(fixture.systemctlLog, 'utf8').trim().split('\n').filter((line) => line !== '') : []);
+  fixture.systemctlCalls = () => (fs.existsSync(fixture.systemctlLog)
+    ? fs.readFileSync(fixture.systemctlLog, 'utf8').trim().split('\n').filter((line) => line !== '').map((line) => line.replace(/^--user /, ''))
+    : []);
   fixture.unitState = (unit, kind) => {
     const file = path.join(fixture.systemdState, `${unit}.${kind}`);
     return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
