@@ -20,12 +20,13 @@ function fakeView(name, log) {
   };
 }
 
-function setup() {
+function setup(windowState = {}) {
   const log = [];
   const children = new Set();
   const win = {
     isDestroyed: () => false,
-    isMinimized: () => false,
+    isMinimized: () => windowState.minimized === true,
+    isVisible: () => windowState.hidden !== true,
     getContentSize: () => [1000, 800],
     webContents: { getZoomFactor: () => 1 },
     contentView: { addChildView: (v) => children.add(v), removeChildView: (v) => children.delete(v) },
@@ -33,11 +34,12 @@ function setup() {
   const state = createBrowserViewState();
   const sent = [];
   const layout = createViewLayout({ win, send: (m) => sent.push(m), state });
+  const windowFlags = windowState;
   const a = fakeView('a', log);
   const b = fakeView('b', log);
   state.views.set('a', a);
   state.views.set('b', b);
-  return { layout, state, children, log, sent, a, b };
+  return { layout, state, children, log, sent, a, b, windowFlags };
 }
 const rect = (x) => ({ x, y: 0, width: 400, height: 300 });
 const viewport = { width: 1000, height: 800 };
@@ -82,4 +84,41 @@ test('invalidate hides everything and asks the shell for a new layout', () => {
   assert.equal(state.attachedViews.size, 0);
   assert.equal(children.size, 0);
   assert.deepEqual(sent, [{ type: 'layout-needed' }]);
+});
+
+test('a minimized or hidden window detaches and throttles every attached view, and a restore reattaches them', () => {
+  for (const flag of ['minimized', 'hidden']) {
+    const { layout, state, children, log, a, b, windowFlags } = setup();
+    const full = { type: 'layout', focusedId: 'a', viewport, views: [{ id: 'a', bounds: rect(0) }, { id: 'b', bounds: rect(500) }] };
+    layout.applyLayout(full);
+    assert.equal(state.attachedViews.size, 2, `attached before ${flag}`);
+    assert.ok(log.includes('a.throttle=false'));
+
+    windowFlags[flag] = true;
+    log.length = 0;
+    // The window event invalidates the layout, and the shell's next layout arrives while
+    // the window is still away.
+    layout.invalidate();
+    layout.applyLayout(full);
+    assert.equal(state.attachedViews.size, 0, `detached while ${flag}`);
+    assert.equal(children.size, 0);
+    assert.ok(log.includes('a.throttle=true') && log.includes('b.throttle=true'), `throttled while ${flag}`);
+    assert.ok(!a.visible && !b.visible);
+    assert.equal(layout.windowPresenting(), false);
+
+    windowFlags[flag] = false;
+    log.length = 0;
+    layout.applyLayout(full);
+    assert.equal(state.attachedViews.size, 2, `reattached after ${flag}`);
+    assert.ok(log.includes('a.throttle=false') && log.includes('b.throttle=false'), `unthrottled after ${flag}`);
+    assert.ok(a.visible && b.visible);
+    assert.equal(layout.windowPresenting(), true);
+  }
+});
+
+test('a window object without isVisible is treated as presenting', () => {
+  const { layout, state } = setup();
+  assert.equal(layout.windowPresenting(), true);
+  layout.applyLayout({ type: 'layout', focusedId: 'a', viewport, views: [{ id: 'a', bounds: rect(0) }] });
+  assert.equal(state.attachedViews.size, 1);
 });

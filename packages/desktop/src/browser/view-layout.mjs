@@ -12,6 +12,12 @@ import { nativeBoundsForRect } from '../../policy.mjs';
 export function createViewLayout({ win, send, state }) {
   const { views, attachedViews, lastAccessedAt } = state;
 
+  /** False while the window is minimized or hidden, so its views must stay throttled. */
+  function windowPresenting() {
+    if (win.isMinimized()) return false;
+    return typeof win.isVisible !== 'function' || win.isVisible();
+  }
+
   function hideAll() {
     for (const [id, view] of attachedViews) {
       if (!win.isDestroyed() && !view.webContents.isDestroyed()) {
@@ -57,7 +63,10 @@ export function createViewLayout({ win, send, state }) {
       lastAccessedAt.set(item.id, Date.now());
     }
 
-    if (win.isMinimized() || targetViews.length === 0) {
+    // A minimized or hidden window must not keep attached renderers unthrottled:
+    // hideAll detaches them and turns background throttling back on. The shell gets a
+    // fresh layout on restore or show, which reattaches and unthrottles them.
+    if (!windowPresenting() || targetViews.length === 0) {
       hideAll();
       return;
     }
@@ -112,5 +121,5 @@ export function createViewLayout({ win, send, state }) {
     }
   }
 
-  return { hide, hideAll, invalidate, applyLayout };
+  return { hide, hideAll, invalidate, applyLayout, windowPresenting };
 }

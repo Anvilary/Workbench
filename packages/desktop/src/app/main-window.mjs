@@ -58,7 +58,11 @@ export function wireShellWindowEvents({ win, send, backend, controller, performa
     performance.reset();
     controller.destroyAllPopups();
   });
-  for (const event of ['minimize', 'restore', 'enter-full-screen', 'leave-full-screen']) win.on(event, controller.invalidate);
+  // minimize and hide detach and throttle the attached views; restore and show make the
+  // shell send a fresh layout, which reattaches and unthrottles them.
+  for (const event of ['minimize', 'restore', 'hide', 'show', 'enter-full-screen', 'leave-full-screen']) {
+    win.on(event, controller.invalidate);
+  }
   win.on('resize', () => send({ type: 'layout-needed' }));
   win.webContents.on('before-input-event', desktopShortcut);
 }
