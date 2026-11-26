@@ -100,7 +100,7 @@ test('Authoritative-first commit: rejects on server rejection, disconnected befo
   resetBrowserSettingsStoreForTests();
   const { bridge, commands } = makeBridge(async () => ({ ok: true }));
   globalThis.window = {
-    mawChatGpt: bridge,
+    workbench: bridge,
     addEventListener: () => {},
     localStorage: {
       getItem: () => null,
@@ -174,7 +174,7 @@ test('localStorage cache never runs native dictionary reconciliation; reconnect 
     ),
   );
   globalThis.window = {
-    mawChatGpt: bridge,
+    workbench: bridge,
     addEventListener: () => {},
     localStorage: {
       getItem: (k) => storage.get(k) ?? null,
@@ -248,12 +248,12 @@ test('Scenario 8: failed native reconciliation leaves applied revision unmarked 
   const focusHandlers = new Set();
   const { bridge, commands } = makeBridge(async (cmd) => {
     if (cmd.type === 'reconcile-custom-dictionary' && failReconcile) {
-      return { ok: false, failedPartitions: ['persist:maw-github'], error: 'Partition write failed' };
+      return { ok: false, failedPartitions: ['persist:workbench-github'], error: 'Partition write failed' };
     }
     return { ok: true };
   });
   globalThis.window = {
-    mawChatGpt: bridge,
+    workbench: bridge,
     addEventListener: (ev, fn) => {
       if (ev === 'focus') focusHandlers.add(fn);
     },
@@ -290,7 +290,7 @@ test('Scenario 8: failed native reconciliation leaves applied revision unmarked 
   assert.equal(addRes.success, true);
   assert.equal(addRes.nativeSyncPending, true);
   assert.equal(getBrowserSettingsStoreState().nativeDictionarySync.status, 'failed');
-  assert.deepEqual(getBrowserSettingsStoreState().nativeDictionarySync.failedPartitions, ['persist:maw-github']);
+  assert.deepEqual(getBrowserSettingsStoreState().nativeDictionarySync.failedPartitions, ['persist:workbench-github']);
 
   // Recover via explicit retry on the same desired revision
   failReconcile = false;
@@ -336,7 +336,7 @@ test('F2: preference mutations are authoritative-first, restore on rejection/dis
   const storage = new Map();
   const { bridge, commands } = makeBridge(async () => ({ ok: true }));
   globalThis.window = {
-    mawChatGpt: bridge,
+    workbench: bridge,
     addEventListener: () => {},
     localStorage: {
       getItem: (k) => storage.get(k) ?? null,
@@ -494,7 +494,7 @@ test('F3 & F4: lazy partition failure event marks sync failed and retry recovers
     command: async (cmd) => {
       commands.push(cmd);
       if (cmd.type === 'update-spellcheck-settings' && failConfigCmd) {
-        return { ok: false, failedPartitions: ['persist:maw-chatgpt'], error: 'Native apply failed' };
+        return { ok: false, failedPartitions: ['persist:workbench-chatgpt'], error: 'Native apply failed' };
       }
       return { ok: true };
     },
@@ -504,7 +504,7 @@ test('F3 & F4: lazy partition failure event marks sync failed and retry recovers
     },
   };
   globalThis.window = {
-    mawChatGpt: bridge,
+    workbench: bridge,
     addEventListener: (ev, fn) => {
       if (ev === 'focus') focusHandlers.add(fn);
     },
@@ -543,13 +543,13 @@ test('F3 & F4: lazy partition failure event marks sync failed and retry recovers
     fn({
       type: 'custom-dictionary-sync-status',
       ok: false,
-      failedPartitions: ['persist:maw-profile-work-perplexity'],
+      failedPartitions: ['persist:workbench-profile-work-perplexity'],
     });
   }
   assert.equal(getBrowserSettingsStoreState().nativeDictionarySync.status, 'failed');
   assert.deepEqual(
     getBrowserSettingsStoreState().nativeDictionarySync.failedPartitions,
-    ['persist:maw-profile-work-perplexity'],
+    ['persist:workbench-profile-work-perplexity'],
   );
 
   // Explicit retry triggers reconcile even though desired dictionary map did not change

@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
-import type { MawActivityState } from '@agent-workbench/shared';
+import type { MawActivityState } from '@anvilary/workbench-shared';
 
 export type BrowserSignalType =
   | 'none'
@@ -106,7 +106,7 @@ export class ChatGPTActivityProvider extends EventEmitter implements BrowserActi
     return [
       'ChatGPT Web Activity & Completion Detection Limitations:',
       '1. No Public Webhook / Completion API: OpenAI does not publish an external, versioned JavaScript SDK or postMessage protocol for web chat completion.',
-      '2. Private APIs Forbidden: Using reverse-engineered internal endpoints or auth tokens is strictly prohibited by MAW security policies.',
+      '2. Private APIs Forbidden: Using reverse-engineered internal endpoints or auth tokens is strictly prohibited by Workbench security policies.',
       '3. Content Scraping Forbidden: Reading assistant message bubbles, extracting text deltas, or inspecting transcript tokens is prohibited for privacy.',
       '4. Network-Idle / Page-Load Insufficient: Generation can stall, perform keep-alives, or telemetry without completing. Network-idle heuristics do not constitute reliable evidence.',
       '5. Cross-Origin DOM Boundary: Standard iframe embedding subjects ChatGPT to Same-Origin Policy (SOP), preventing external DOM inspection without a browser extension.',

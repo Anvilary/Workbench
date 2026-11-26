@@ -10,7 +10,7 @@
  * y lo hace la web al dibujar.
  */
 
-import type { AgentId, PlanLimits } from '@agent-workbench/shared';
+import type { AgentId, PlanLimits } from '@anvilary/workbench-shared';
 import type { PlanLimitsSource } from '../../agents/adapter.js';
 
 export interface PlanLimitsEntry {

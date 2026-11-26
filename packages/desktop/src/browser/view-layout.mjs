@@ -109,7 +109,7 @@ export function createViewLayout({ win, send, state }) {
       }
     }
 
-    // Geometry updates and overlay restoration must preserve focus in MAW controls.
+    // Geometry updates and overlay restoration must preserve focus in Workbench controls.
     if (focusedId && attachedViews.has(focusedId)) {
       const focusedView = attachedViews.get(focusedId);
       if (focusedView && !focusedView.webContents.isDestroyed()) {

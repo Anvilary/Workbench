@@ -21,7 +21,7 @@
 
 import { EventEmitter } from 'node:events';
 import chokidar, { type FSWatcher } from 'chokidar';
-import type { GitStatus, TerminalId } from '@agent-workbench/shared';
+import type { GitStatus, TerminalId } from '@anvilary/workbench-shared';
 import { debugLog } from '../../shared/debug.js';
 import { findGitDir, readStatus } from './git-repo.js';
 import type { TerminalRegistry } from '../terminals/terminal-registry.js';

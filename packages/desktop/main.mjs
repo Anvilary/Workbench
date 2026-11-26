@@ -1,3 +1,4 @@
+import { workbenchEnv } from '../../scripts/workbench/env.mjs';
 import { app, BrowserWindow, WebContentsView, Menu, ipcMain, session, shell, dialog, clipboard, ClipboardItem } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,7 +38,7 @@ async function start() {
   await mkdir(app.getPath('userData'), { recursive: true, mode: 0o700 });
   await app.whenReady();
   Menu.setApplicationMenu(null);
-  const isWebAuthnEnabled = process.env.MAW_WEBAUTHN_ENABLED !== '0';
+  const isWebAuthnEnabled = workbenchEnv('WEBAUTHN_ENABLED') !== '0';
   const webauthnPreload = path.join(here, 'src/security/webauthn/preload.cjs');
   const secure = { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, webviewTag: false, allowRunningInsecureContent: false };
 
@@ -65,4 +66,4 @@ async function start() {
   installLifecycle({ app, win, backend, controller, performance, webauthn, watchdog, appState });
   await win.loadURL(backend.current().href);
 }
-void start().catch((error) => { logger.error('desktop start failed', error); console.error('MAW desktop could not start. Check service readiness and the desktop runtime installation.'); app.exit(1); });
+void start().catch((error) => { logger.error('desktop start failed', error); console.error('Workbench desktop could not start. Check service readiness and the desktop runtime installation.'); app.exit(1); });

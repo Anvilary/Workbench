@@ -15,7 +15,7 @@ import { DESKTOP_ROOT, REPO_ROOT } from '../../helpers/paths.mjs';
 const here = DESKTOP_ROOT;
 const repo = REPO_ROOT;
 const require = createRequire(import.meta.url);
-const electronExecutable = process.env.MAW_ELECTRON_EXECUTABLE || (existsSync('/opt/maw-electron/45.2.0/electron') ? '/opt/maw-electron/45.2.0/electron' : require('electron'));
+const electronExecutable = process.env.WORKBENCH_ELECTRON_EXECUTABLE || (existsSync('/opt/workbench-electron/45.2.0/electron') ? '/opt/workbench-electron/45.2.0/electron' : require('electron'));
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function eventually(check, description, timeout = 20000) {
@@ -31,7 +31,7 @@ async function eventually(check, description, timeout = 20000) {
 function isolatedEnv(root) {
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
-    if (/^MAW_|^AGENT_WORKBENCH_PORT$|(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN|SECRET|PASSWORD)/i.test(key)) delete env[key];
+    if (/^(?:WORKBENCH_|MAW_|AGENT_WORKBENCH_)|(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN|SECRET|PASSWORD)/i.test(key)) delete env[key];
   }
   Object.assign(env, {
     HOME: path.join(root, 'home'),
@@ -40,12 +40,12 @@ function isolatedEnv(root) {
     XDG_DATA_HOME: path.join(root, 'data'),
     XDG_CACHE_HOME: path.join(root, 'cache'),
     XDG_STATE_HOME: path.join(root, 'state'),
-    MAW_RUNTIME_DIR: path.join(root, 'runtime'),
-    MAW_PERSISTENT_PTY: '0',
-    MAW_DESKTOP_DATA_DIR: path.join(root, 'electron-profile'),
-    MAW_DESKTOP_PRODUCTION: '1',
-    AGENT_WORKBENCH_NO_OPEN: '1',
-    AGENT_WORKBENCH_NO_RESTORE: '1',
+    WORKBENCH_RUNTIME_DIR: path.join(root, 'runtime'),
+    WORKBENCH_PERSISTENT_PTY: '0',
+    WORKBENCH_DESKTOP_DATA_DIR: path.join(root, 'electron-profile'),
+    WORKBENCH_DESKTOP_PRODUCTION: '1',
+    WORKBENCH_NO_OPEN: '1',
+    WORKBENCH_NO_RESTORE: '1',
     SHELL: '/bin/bash',
     LANG: 'en_US.UTF-8',
     LC_ALL: 'en_US.UTF-8',
@@ -67,7 +67,7 @@ test('staging release creates and restores a general Browser tab through the rea
   const env = isolatedEnv(root);
   await Promise.all([
     mkdir(env.HOME, { recursive: true }), mkdir(env.CODEX_HOME, { recursive: true }),
-    mkdir(env.XDG_CONFIG_HOME, { recursive: true }), mkdir(env.MAW_RUNTIME_DIR, { recursive: true }),
+    mkdir(env.XDG_CONFIG_HOME, { recursive: true }), mkdir(env.WORKBENCH_RUNTIME_DIR, { recursive: true }),
   ]);
   const sourceMarker = path.join(env.HOME, 'user-source.txt');
   await writeFile(sourceMarker, 'source directory survives workspace and project removal');
@@ -80,7 +80,7 @@ test('staging release creates and restores a general Browser tab through the rea
     server = spawn(process.execPath, [path.join(repo, 'packages/server/dist/index.mjs'), '--prod'], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
     server.stdout.on('data', chunk => { serverLog.value = (serverLog.value + chunk).slice(-32768); });
     server.stderr.on('data', chunk => { serverLog.value = (serverLog.value + chunk).slice(-32768); });
-    const readyFile = path.join(env.MAW_RUNTIME_DIR, 'maw-ready.json');
+    const readyFile = path.join(env.WORKBENCH_RUNTIME_DIR, 'workbench-ready.json');
     return eventually(async () => {
       if (server.exitCode !== null) throw new Error(`Built server exited: ${redact(serverLog.value)}`);
       try {
@@ -106,15 +106,15 @@ test('staging release creates and restores a general Browser tab through the rea
       chromiumSandbox: true,
       executablePath: electronExecutable,
       args: [here, '--ozone-platform=x11'],
-      env: { ...env, MAW_DESKTOP_URL: ready.url },
+      env: { ...env, WORKBENCH_DESKTOP_URL: ready.url },
     });
     const page = await desktop.firstWindow();
     assert.deepEqual(await desktop.evaluate(({ app }) => ({
       userData: app.getPath('userData'),
       sessionData: app.getPath('sessionData'),
-    })), { userData: env.MAW_DESKTOP_DATA_DIR, sessionData: env.MAW_DESKTOP_DATA_DIR });
+    })), { userData: env.WORKBENCH_DESKTOP_DATA_DIR, sessionData: env.WORKBENCH_DESKTOP_DATA_DIR });
     const screenshot = async (filename) => {
-      const directory = process.env.MAW_TEST_ARTIFACTS_DIR;
+      const directory = process.env.WORKBENCH_TEST_ARTIFACTS_DIR;
       if (!directory) return;
       await mkdir(directory, { recursive: true });
       await page.screenshot({ path: path.join(directory, filename) });
@@ -124,7 +124,7 @@ test('staging release creates and restores a general Browser tab through the rea
 
     // The public fixture hostname is intercepted inside the isolated Other partition.
     await desktop.evaluate(({ session }) => {
-      session.fromPartition('persist:maw-browser').protocol.handle('https', request => {
+      session.fromPartition('persist:workbench-browser').protocol.handle('https', request => {
         const url = new URL(request.url);
         if (url.hostname !== 'docs.maw-audit.com') return new Response('fixture host only', { status: 404 });
         const page = url.pathname === '/two' ? 'two' : 'one';
@@ -147,28 +147,28 @@ test('staging release creates and restores a general Browser tab through the rea
     await eventually(async () => await page.locator('.agency-workspace-nav-button').filter({ hasText: 'Staging Browser Workspace' }).count() === 1, 'workspace creation through the UI');
     await screenshot('electron-sidebar.png');
 
-    await page.locator('.maw-pane-add-tab').first().click();
+    await page.locator('.wb-pane-add-tab').first().click();
     await page.getByRole('menuitem', { name: /^Web Page$/i }).click();
     const browserDialog = page.getByRole('dialog');
-    const destinationInput = browserDialog.locator('input.maw-browser-dest-input');
+    const destinationInput = browserDialog.locator('input.wb-browser-dest-input');
     await destinationInput.fill('https://docs.maw-audit.com/one');
     await screenshot('electron-browser-picker.png');
     await destinationInput.press('Enter');
 
     const browserState = () => desktop.evaluate(async ({ session, webContents }) => {
-      const contents = webContents.getAllWebContents().find(item => item.session === session.fromPartition('persist:maw-browser'));
+      const contents = webContents.getAllWebContents().find(item => item.session === session.fromPartition('persist:workbench-browser'));
       return contents && { id: contents.id, url: contents.getURL(), loading: contents.isLoading(), title: contents.getTitle(), back: contents.navigationHistory.canGoBack(), forward: contents.navigationHistory.canGoForward(), draft: await contents.executeJavaScript('document.querySelector("#draft")?.value ?? null') };
     });
     await eventually(async () => (await browserState())?.url.endsWith('/one') && !(await browserState()).loading, 'Other native page load');
 
-    const storeFile = path.join(env.XDG_CONFIG_HOME, 'agent-workbench', 'agency-web-tabs.json');
+    const storeFile = path.join(env.XDG_CONFIG_HOME, 'workbench', 'agency-web-tabs.json');
     const savedTabs = async () => JSON.parse(await readFile(storeFile, 'utf8')).tabs;
     await eventually(async () => (await savedTabs()).some(tab => tab.provider === 'other' && tab.url.endsWith('/one')), 'Browser metadata checkpoint');
     const created = (await savedTabs()).find(tab => tab.provider === 'other');
     assert.ok(created?.id, 'server assigned a durable Browser tab ID');
 
-    const address = page.locator('.maw-browser-toolbar input');
-    await page.locator('.maw-browser-toolbar-toggle').click();
+    const address = page.locator('.wb-browser-toolbar input');
+    await page.locator('.wb-browser-toolbar-toggle').click();
     await address.fill('https://docs.maw-audit.com/two');
     await address.press('Enter');
     await eventually(async () => (await browserState())?.url.endsWith('/two') && !(await browserState()).loading, 'address-bar navigation');
@@ -177,12 +177,12 @@ test('staging release creates and restores a general Browser tab through the rea
     await eventually(async () => (await browserState())?.url.endsWith('/one') && !(await browserState()).loading && (await browserState()).forward, 'native browser back action');
     await eventually(async () => (await savedTabs()).find(tab => tab.id === created.id)?.url.endsWith('/one'), 'back navigation persistence');
 
-    await desktop.evaluate(async ({ session }) => session.fromPartition('persist:maw-browser').cookies.set({
+    await desktop.evaluate(async ({ session }) => session.fromPartition('persist:workbench-browser').cookies.set({
       url: 'https://docs.maw-audit.com/', name: 'staging-fixture', value: 'isolated-cookie', expirationDate: Date.now() / 1000 + 3600,
     }));
-    const nativeContents = await desktop.evaluate(({ session, webContents }) => webContents.getAllWebContents().find(item => item.session === session.fromPartition('persist:maw-browser'))?.id);
+    const nativeContents = await desktop.evaluate(({ session, webContents }) => webContents.getAllWebContents().find(item => item.session === session.fromPartition('persist:workbench-browser'))?.id);
     await desktop.evaluate(({ session, webContents }) => {
-      const contents = webContents.getAllWebContents().find(item => item.session === session.fromPartition('persist:maw-browser'));
+      const contents = webContents.getAllWebContents().find(item => item.session === session.fromPartition('persist:workbench-browser'));
       if (contents) return contents.executeJavaScript('document.querySelector("#draft").value = "unsaved fixture draft"');
     });
     await page.evaluate(() => {
@@ -195,7 +195,7 @@ test('staging release creates and restores a general Browser tab through the rea
     // Restart only the isolated backend process; the Electron app and its temp profile remain running.
     await stopServer();
     await desktop.evaluate(({ session, webContents }) => {
-      const contents = webContents.getAllWebContents().find(item => item.session === session.fromPartition('persist:maw-browser'));
+      const contents = webContents.getAllWebContents().find(item => item.session === session.fromPartition('persist:workbench-browser'));
       if (contents) return contents.executeJavaScript("history.pushState({}, '', '/offline-checkpoint')");
     });
     await eventually(async () => (await browserState())?.url.endsWith('/offline-checkpoint'), 'native navigation while backend is offline');
@@ -205,7 +205,7 @@ test('staging release creates and restores a general Browser tab through the rea
     assert.equal(new URL(readyAgain.url).hostname, '127.0.0.1', 'backend restart remains loopback-only');
     // The desktop bridge must move the shell to the new one-boot token URL itself.
     await eventually(async () => page.url() === readyAgain.url, 'automatic shell origin/token refresh');
-    await page.waitForFunction(() => window.mawChatGpt && document.readyState === 'complete');
+    await page.waitForFunction(() => window.workbench && document.readyState === 'complete');
     await eventually(async () => await page.locator('.agency-workspace-nav-button').filter({ hasText: 'Staging Browser Workspace' }).count() === 1, 'workspace reconnection');
     assert.equal(await page.evaluate(() => localStorage.getItem('maw-staging-local')), 'preserve-local');
     assert.equal(await page.evaluate(() => sessionStorage.getItem('maw-staging-session')), 'preserve-session');
@@ -216,12 +216,12 @@ test('staging release creates and restores a general Browser tab through the rea
     const restored = await eventually(async () => (await savedTabs()).find(tab => tab.id === created.id && tab.url.endsWith('/offline-checkpoint')), 'durable offline navigation checkpoint');
     assert.equal(restored?.url, 'https://docs.maw-audit.com/offline-checkpoint');
     assert.equal(restored?.provider, 'other');
-    assert.equal(await desktop.evaluate(async ({ session }) => (await session.fromPartition('persist:maw-browser').cookies.get({ name: 'staging-fixture' }))[0]?.value), 'isolated-cookie');
-    assert.equal(await desktop.evaluate(({ session, webContents }) => webContents.getAllWebContents().find(item => item.session === session.fromPartition('persist:maw-browser'))?.id), nativeContents, 'backend restart preserves the native WebContents');
+    assert.equal(await desktop.evaluate(async ({ session }) => (await session.fromPartition('persist:workbench-browser').cookies.get({ name: 'staging-fixture' }))[0]?.value), 'isolated-cookie');
+    assert.equal(await desktop.evaluate(({ session, webContents }) => webContents.getAllWebContents().find(item => item.session === session.fromPartition('persist:workbench-browser'))?.id), nativeContents, 'backend restart preserves the native WebContents');
     assert.equal(await (await browserState()).draft, 'unsaved fixture draft', 'backend restart preserves unsaved page input');
 
     const openBrowserSettings = async () => {
-      await page.locator('.maw-menu-button').click();
+      await page.locator('.wb-menu-button').click();
       await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
       await page.locator('#settings-tab-browser').click();
       return page.getByRole('dialog', { name: 'Settings' });
@@ -242,16 +242,16 @@ test('staging release creates and restores a general Browser tab through the rea
     assert.equal(await profilesCard.getByRole('button', { name: 'Browser Profiles', exact: true }).getAttribute('aria-expanded'), 'false');
     await settings.getByRole('searchbox', { name: 'Search settings...' }).fill('Browser Profiles');
     await settings.getByRole('option').filter({
-      has: page.locator('.maw-settings-search-item-title').filter({ hasText: /^Browser Profiles$/ }),
+      has: page.locator('.wb-settings-search-item-title').filter({ hasText: /^Browser Profiles$/ }),
     }).click();
-    await profilesCard.locator('.maw-subsection-toggle[aria-expanded="true"]').waitFor();
+    await profilesCard.locator('.wb-subsection-toggle[aria-expanded="true"]').waitFor();
 
     const addProfile = async (name, mode) => {
       await settings.getByRole('button', { name: /add profile/i }).click();
       await settings.getByLabel('Profile Name', { exact: true }).fill(name);
       await settings.getByLabel('Initialization').selectOption(mode);
       await settings.getByRole('button', { name: 'Save', exact: true }).click();
-      await settings.locator('.maw-settings-profile-form').waitFor({ state: 'detached' });
+      await settings.locator('.wb-settings-profile-form').waitFor({ state: 'detached' });
       return await settings.locator('[data-profile-id]').filter({ hasText: name }).getAttribute('data-profile-id');
     };
     const projectProfile = await addProfile('Project identity', 'clone');
@@ -262,7 +262,7 @@ test('staging release creates and restores a general Browser tab through the rea
     await settings.waitFor({ state: 'detached' });
 
     const sessions = await desktop.evaluate(async ({ session }, ids) => {
-      const names = ['persist:maw-browser', ...ids.map(id => `persist:maw-profile-${id}-browser`)];
+      const names = ['persist:workbench-browser', ...ids.map(id => `persist:workbench-profile-${id}-browser`)];
       return await Promise.all(names.map(async (name, index) => {
         const current = session.fromPartition(name);
         if (index > 0) current.protocol.handle('https', () => new Response('<title>Profile fixture</title>', { headers: { 'content-type': 'text/html' } }));
@@ -289,9 +289,9 @@ test('staging release creates and restores a general Browser tab through the rea
     await cloneRow.getByRole('button', { name: 'Clear Site Auth', exact: true }).click();
     await cloneRow.getByRole('checkbox', { name: /other/i }).check();
     await cloneRow.getByRole('button', { name: 'Clear Selected', exact: true }).click();
-    await cloneRow.locator('.maw-settings-profile-clear-panel').waitFor({ state: 'detached' });
+    await cloneRow.locator('.wb-settings-profile-clear-panel').waitFor({ state: 'detached' });
     assert.deepEqual(await desktop.evaluate(async ({ session }, id) => {
-      return (await session.fromPartition(`persist:maw-profile-${id}-browser`).cookies.get({ name: 'staging-fixture' }))
+      return (await session.fromPartition(`persist:workbench-profile-${id}-browser`).cookies.get({ name: 'staging-fixture' }))
         .map(cookie => cookie.value);
     }, projectProfile), []);
     const deleteProfileButton = profileSettings.getByRole('button', { name: 'Delete profile: Project identity', exact: true });
@@ -308,19 +308,19 @@ test('staging release creates and restores a general Browser tab through the rea
     await page.keyboard.press('Escape');
     await profileSettings.waitFor({ state: 'detached' });
     await eventually(async () => await activeSessionPath() === sessions[0].path, 'Main fallback after deleting an assigned profile');
-    assert.equal(await desktop.evaluate(async ({ session }) => (await session.fromPartition('persist:maw-browser').cookies.get({ name: 'staging-fixture' }))[0]?.value), 'isolated-cookie');
+    assert.equal(await desktop.evaluate(async ({ session }) => (await session.fromPartition('persist:workbench-browser').cookies.get({ name: 'staging-fixture' }))[0]?.value), 'isolated-cookie');
 
-    await page.locator('.maw-pane-menu-toggle').click();
+    await page.locator('.wb-pane-menu-toggle').click();
     await page.getByRole('menuitem', { name: 'Split vertically', exact: true }).click();
-    const extraPane = page.locator('.maw-split-pane').nth(1);
-    await extraPane.locator('.maw-pane-add-tab').click();
+    const extraPane = page.locator('.wb-split-pane').nth(1);
+    await extraPane.locator('.wb-pane-add-tab').click();
     await page.getByRole('menuitem', { name: 'New Terminal', exact: true }).click();
     await extraPane.getByRole('tab').waitFor();
     const paneClose = extraPane.locator('[data-pane-close]');
-    assert.equal(await paneClose.evaluate(button => button.previousElementSibling?.classList.contains('maw-pane-menu-toggle')), true);
+    assert.equal(await paneClose.evaluate(button => button.previousElementSibling?.classList.contains('wb-pane-menu-toggle')), true);
     await paneClose.click();
     const paneConfirmation = page.getByRole('dialog', { name: 'Close pane?', exact: true });
-    const targetBounds = await extraPane.locator('.maw-pane-body').boundingBox();
+    const targetBounds = await extraPane.locator('.wb-pane-body').boundingBox();
     const paneConfirmationBounds = await paneConfirmation.boundingBox();
     assert.ok(targetBounds && paneConfirmationBounds);
     assert.ok(Math.abs(targetBounds.x + targetBounds.width / 2 - paneConfirmationBounds.x - paneConfirmationBounds.width / 2) < 2);
@@ -372,7 +372,7 @@ test('staging release creates and restores a general Browser tab through the rea
       await page.mouse.up();
       await sidebarGhost.waitFor({ state: 'detached' });
     };
-    const dataFile = path.join(env.XDG_CONFIG_HOME, 'agent-workbench', 'agency-state.json');
+    const dataFile = path.join(env.XDG_CONFIG_HOME, 'workbench', 'agency-state.json');
     const savedAgency = async () => JSON.parse(await readFile(dataFile, 'utf8'));
     const scroller = page.locator('.agency-side-section');
     await scroller.evaluate(element => { element.style.maxHeight = '145px'; element.scrollTop = 0; });

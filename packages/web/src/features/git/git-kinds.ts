@@ -4,7 +4,7 @@
  * el hito 49, "Ver cambios" de una rama aparte. Sin JSX.
  */
 
-import type { GitChangeKind } from '@agent-workbench/shared';
+import type { GitChangeKind } from '@anvilary/workbench-shared';
 import type { MessageKey } from '../../i18n/index.js';
 
 /** Letra que se muestra en el cuadradito de cada archivo. */

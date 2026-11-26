@@ -29,7 +29,7 @@ import {
   MAX_SUBMIT_FILE_BYTES,
   MAX_SUBMIT_IMAGES,
   MAX_SUBMIT_IMAGE_BYTES,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { imagesRefusedMessage } from '../agents/agent-ui.js';
 import { nextPasteNumber, pastedLineCount } from './composer-paste.js';
 import { t } from '../../i18n/index.js';

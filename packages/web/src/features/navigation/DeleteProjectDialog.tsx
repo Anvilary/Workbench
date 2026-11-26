@@ -5,7 +5,7 @@ import type {
   AgencyWorkspace,
   EditorTab,
   WebTab,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 import { ModalDialog, type AnchorRect } from '../../shared/ui/ModalDialog.js';
 import { editorDraftStore } from '../editor/editorDraftStore.js';

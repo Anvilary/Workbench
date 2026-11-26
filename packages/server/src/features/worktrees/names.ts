@@ -8,7 +8,7 @@
  */
 
 import path from 'node:path';
-import { worktreeFolderName, worktreesDirName } from '@agent-workbench/shared';
+import { worktreeFolderName, worktreesDirName } from '@anvilary/workbench-shared';
 
 /**
  * La carpeta de una rama nueva: al lado del proyecto, en `<proyecto>.worktrees`

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AgencyClientMessage, AgencyProject, AgencyRuntimeSession, AgencyServerMessage, AgencyWorkspace,
   BrowserProfileId, BrowserProfileSite, WorkspacePaneLayout, WorkspaceId, WebTab,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 import {
   EMPTY_AGENCY_SNAPSHOT, retainUnconfirmedCreations, applySessionActivity, applySessionsSnapshot, replaceById, transitionNotice,

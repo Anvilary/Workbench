@@ -2,7 +2,7 @@
  * Session history: reindexing, archiving, continuing a session in another agent and global search.
  */
 
-import { serverText, type ClientMessage } from '@agent-workbench/shared';
+import { serverText, type ClientMessage } from '@anvilary/workbench-shared';
 import { deliverWhenReady, prefillReasonFor } from '../../../features/composer/deliver-when-ready.js';
 import { HANDOFF_DELIVERY_TIMEOUT_MS, continueSession } from '../../../features/history/handoff.js';
 import { VaultError } from '../../../features/vault/service.js';

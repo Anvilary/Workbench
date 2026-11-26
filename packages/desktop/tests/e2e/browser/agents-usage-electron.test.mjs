@@ -22,11 +22,11 @@ import { DESKTOP_ROOT, REPO_ROOT } from '../../helpers/paths.mjs';
 
 const require = createRequire(path.join(REPO_ROOT, 'package.json'));
 const { build } = require('esbuild');
-const electronExecutable = existsSync('/opt/maw-electron/45.2.0/electron')
-  ? '/opt/maw-electron/45.2.0/electron'
+const electronExecutable = existsSync('/opt/workbench-electron/45.2.0/electron')
+  ? '/opt/workbench-electron/45.2.0/electron'
   : require('electron');
 
-const evidenceDir = process.env.MAW_USAGE_ELECTRON_EVIDENCE_DIR;
+const evidenceDir = process.env.WORKBENCH_USAGE_ELECTRON_EVIDENCE_DIR;
 
 const appFixture = `
 import React, { useEffect, useState } from 'react';
@@ -129,7 +129,7 @@ function ElectronAcceptanceShell() {
         <div>Terminal 1 (alive)</div>
         <div id="terminal-heartbeat">ticks:{ticks}</div>
       </div>
-      <div className="maw-settings-content" style={{ flex: 1 }}>
+      <div className="wb-settings-content" style={{ flex: 1 }}>
         <AgentsUsageView connection={connection} />
       </div>
     </div>
@@ -185,8 +185,8 @@ test('Electron real-runtime acceptance: Agents Usage renders visible quota bars,
       args: [DESKTOP_ROOT, '--ozone-platform=x11'],
       env: {
         ...process.env,
-        MAW_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
-        MAW_DESKTOP_DATA_DIR: dataDir,
+        WORKBENCH_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
+        WORKBENCH_DESKTOP_DATA_DIR: dataDir,
       },
     });
 

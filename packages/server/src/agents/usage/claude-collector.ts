@@ -6,7 +6,7 @@ import type {
   CostMetrics,
   TokenUsageMetrics,
   WindowUtilization,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { DiscoveredProfile } from './discovery.js';
 import { agentStatusDir } from '../../shared/app-paths.js';
 

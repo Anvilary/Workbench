@@ -11,7 +11,7 @@
  */
 
 import { readFile, stat } from 'node:fs/promises';
-import type { StatusLineState } from '@agent-workbench/shared';
+import type { StatusLineState } from '@anvilary/workbench-shared';
 import { STATUS_LINE_SCRIPT_NAME } from './constants.js';
 import { settingsPath } from './paths.js';
 

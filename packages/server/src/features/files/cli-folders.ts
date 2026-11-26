@@ -15,7 +15,7 @@
 
 import { realpath } from 'node:fs/promises';
 import path from 'node:path';
-import { normalizeCwdKey } from '@agent-workbench/shared';
+import { normalizeCwdKey } from '@anvilary/workbench-shared';
 
 export interface CliFolders {
   /** Pura: true si esta ruta, ya resuelta, es la carpeta de una CLI o cae adentro. */

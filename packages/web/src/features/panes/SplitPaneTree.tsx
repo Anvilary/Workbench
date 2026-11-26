@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { AgencyCliProfile, MawActivityState, SplitDirection, BrowserFavorite, SearchEngine } from '@agent-workbench/shared';
-import { countLeaves, getPaneNodes, MAX_LEAVES, type LayoutPaneNode, type LayoutNode, type WorkspacePaneLayout } from '@agent-workbench/shared';
+import type { AgencyCliProfile, MawActivityState, SplitDirection, BrowserFavorite, SearchEngine } from '@anvilary/workbench-shared';
+import { countLeaves, getPaneNodes, MAX_LEAVES, type LayoutPaneNode, type LayoutNode, type WorkspacePaneLayout } from '@anvilary/workbench-shared';
 import { createPortal } from 'react-dom';
 import { useDroppable, useDragOperation } from '@dnd-kit/react';
 import { pointerIntersection } from '@dnd-kit/collision';
@@ -16,7 +16,7 @@ import { EmptyPaneChooser } from './EmptyPaneChooser.js';
 import { BrowserDestinationPicker } from '../browser/BrowserDestinationPicker.js';
 import { useTabDragPreview } from './tab-drag-store.js';
 import { ModalDialog } from '../../shared/ui/ModalDialog.js';
-import { DEFAULT_BROWSER_FAVORITES, getSearchEngine, type WebTabProvider } from '@agent-workbench/shared';
+import { DEFAULT_BROWSER_FAVORITES, getSearchEngine, type WebTabProvider } from '@anvilary/workbench-shared';
 
 function PaneBody({
   paneId,
@@ -33,7 +33,7 @@ function PaneBody({
     onPaneHostRef.current(paneId, element);
   }, [paneId]);
   return (
-    <div className="maw-pane-body" ref={ref}>
+    <div className="wb-pane-body" ref={ref}>
       {children}
     </div>
   );
@@ -50,7 +50,7 @@ interface Props {
   connection: AgentConnection;
   request: ReturnType<typeof useWorkbenchStore>['request'];
   reportError: (err: string) => void;
-  getTabActivity?: (workspaceId: import('@agent-workbench/shared').WorkspaceId, tabId: string) => MawActivityState;
+  getTabActivity?: (workspaceId: import('@anvilary/workbench-shared').WorkspaceId, tabId: string) => MawActivityState;
   onSelectTab: (paneId: string, tabId: string) => void;
   onCloseTab: (tab: WorkspaceTab) => void;
   onSplit: (targetPaneId: string, direction: SplitDirection, tabIdToMove?: string) => void;
@@ -173,7 +173,7 @@ function PaneLeaf(props: Props & {
     if (paneTabs.length === 0) {
       void onClosePane(node.id, false);
     } else {
-      setConfirmingClosePane({ centerOn: containerRef.current?.querySelector('.maw-pane-body') ?? null });
+      setConfirmingClosePane({ centerOn: containerRef.current?.querySelector('.wb-pane-body') ?? null });
     }
   }, [canClose, node.id, onClosePane, paneTabs.length]);
 
@@ -196,12 +196,12 @@ function PaneLeaf(props: Props & {
   return (
     <div
       ref={setContainerRef}
-      className={`maw-split-pane${isFocused ? ' is-focused' : ''}${drop.isDropTarget && !isDragSource ? ' is-pane-drop-target' : ''}${isDragSource ? ' is-pane-drag-source' : ''}`}
+      className={`wb-split-pane${isFocused ? ' is-focused' : ''}${drop.isDropTarget && !isDragSource ? ' is-pane-drop-target' : ''}${isDragSource ? ' is-pane-drag-source' : ''}`}
       id={`pane-container-${node.id}`}
       tabIndex={-1}
-      onFocus={(event) => { if ((event.target as Element).closest('.maw-pane-grip, .maw-add-tab, [role=menu]')) return; if (!pointerFocus.current) onFocusPane(node.id); }}
+      onFocus={(event) => { if ((event.target as Element).closest('.wb-pane-grip, .wb-add-tab, [role=menu]')) return; if (!pointerFocus.current) onFocusPane(node.id); }}
       onPointerDown={(event) => {
-        if ((event.target as Element).closest('.maw-pane-grip, .maw-add-tab, [role=menu]')) return;
+        if ((event.target as Element).closest('.wb-pane-grip, .wb-add-tab, [role=menu]')) return;
         pointerFocus.current = true;
         onFocusPane(node.id);
       }}
@@ -300,7 +300,7 @@ function PaneLeaf(props: Props & {
           <ModalDialog
             title={`${t('agency.splits.closePane')}?`}
             titleId={`pane-close-title-${node.id}`}
-            className="maw-pane-close-dialog"
+            className="wb-pane-close-dialog"
             centerOn={confirmingClosePane.centerOn}
             closeLabel={t('common.close')}
             onClose={() => setConfirmingClosePane(null)}
@@ -329,7 +329,7 @@ function PaneLeaf(props: Props & {
             <p className="agency-muted">
               {t('agency.splits.closePaneWarning')}
             </p>
-            <div className="agency-resource-summary maw-pane-close-summary">
+            <div className="agency-resource-summary wb-pane-close-summary">
               <ul>
                 <li>
                   {t('agency.splits.closePaneOpenTabs', { count: paneTabs.length })}
@@ -363,7 +363,7 @@ function PaneLeaf(props: Props & {
 
         {props.browserPickerOpen && (
           <div
-            className="maw-pane-browser-picker-overlay maw-browser-picker-overlay"
+            className="wb-pane-browser-picker-overlay wb-browser-picker-overlay"
             role="dialog"
             aria-modal="true"
             aria-label={t('agency.browser.pickerTitle')}
@@ -373,7 +373,7 @@ function PaneLeaf(props: Props & {
               }
             }}
           >
-            <div className="maw-pane-browser-picker-card" onClick={(e) => e.stopPropagation()}>
+            <div className="wb-pane-browser-picker-card" onClick={(e) => e.stopPropagation()}>
               <BrowserDestinationPicker
                 favorites={props.browserFavorites ?? DEFAULT_BROWSER_FAVORITES}
                 searchEngine={props.searchEngine ?? getSearchEngine()}
@@ -399,11 +399,11 @@ function PaneLeaf(props: Props & {
       {canSplit && (
         <>
           <div
-            className={`maw-pane-drop-edge maw-pane-drop-edge-right${activeSplitTarget === 'row' ? ' is-active' : ''}`}
+            className={`wb-pane-drop-edge wb-pane-drop-edge-right${activeSplitTarget === 'row' ? ' is-active' : ''}`}
             aria-hidden="true"
           />
           <div
-            className={`maw-pane-drop-edge maw-pane-drop-edge-bottom${activeSplitTarget === 'column' ? ' is-active' : ''}`}
+            className={`wb-pane-drop-edge wb-pane-drop-edge-bottom${activeSplitTarget === 'column' ? ' is-active' : ''}`}
             aria-hidden="true"
           />
         </>
@@ -417,7 +417,7 @@ function PaneSlot({ holder }: { holder: HTMLDivElement }): JSX.Element {
   const ref = useCallback((element: HTMLDivElement | null) => {
     if (element && holder.parentElement !== element) element.appendChild(holder);
   }, [holder]);
-  return <div className="maw-pane-slot" ref={ref} style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0 }} />;
+  return <div className="wb-pane-slot" ref={ref} style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0 }} />;
 }
 
 function SplitStructure(props: Props & { holders: Map<string, HTMLDivElement> }): JSX.Element {
@@ -426,7 +426,7 @@ function SplitStructure(props: Props & { holders: Map<string, HTMLDivElement> })
     const isRow = node.direction === 'row';
     return (
       <div
-        className={`maw-split-container maw-split-${node.direction}`}
+        className={`wb-split-container wb-split-${node.direction}`}
         data-split-id={node.id}
         style={{
           display: 'flex',
@@ -439,7 +439,7 @@ function SplitStructure(props: Props & { holders: Map<string, HTMLDivElement> })
         }}
       >
         <div
-          className="maw-split-child"
+          className="wb-split-child"
           style={{
             flex: `var(--split-ratio-first, ${node.ratio}) 1 0px`,
             display: 'flex',
@@ -459,7 +459,7 @@ function SplitStructure(props: Props & { holders: Map<string, HTMLDivElement> })
         />
 
         <div
-          className="maw-split-child"
+          className="wb-split-child"
           style={{
             flex: `var(--split-ratio-second, ${1 - node.ratio}) 1 0px`,
             display: 'flex',
@@ -486,7 +486,7 @@ export function SplitPaneTree(props: Props): JSX.Element {
   for (const pane of panes) {
     if (!holders.current.has(pane.id)) {
       const holder = document.createElement('div');
-      holder.className = 'maw-pane-mount';
+      holder.className = 'wb-pane-mount';
       Object.assign(holder.style, { display: 'flex', flex: '1', minWidth: '0', minHeight: '0' });
       holders.current.set(pane.id, holder);
     }

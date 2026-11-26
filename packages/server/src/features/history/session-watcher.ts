@@ -35,7 +35,7 @@
 
 import { stat } from 'node:fs/promises';
 import chokidar, { type ChokidarOptions, type FSWatcher } from 'chokidar';
-import type { AgentId } from '@agent-workbench/shared';
+import type { AgentId } from '@anvilary/workbench-shared';
 import type { HistoryRoot } from '../../agents/adapter.js';
 import type { AgentRegistry } from '../../agents/registry.js';
 import type { ConversationHub } from '../conversations/conversation-hub.js';

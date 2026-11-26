@@ -5,7 +5,7 @@ interface Props {
 
 export function PaneFeedback({ message, type }: Props): JSX.Element {
   return (
-    <div className={`maw-pane-feedback maw-pane-feedback-${type}`} role="status">
+    <div className={`wb-pane-feedback wb-pane-feedback-${type}`} role="status">
       {message}
     </div>
   );

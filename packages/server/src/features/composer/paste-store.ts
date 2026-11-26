@@ -30,7 +30,7 @@ import {
   MAX_SUBMIT_IMAGE_BYTES,
   ServerTextError,
   serverText,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';

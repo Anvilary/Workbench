@@ -17,7 +17,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { sameQuestionItem, type ConversationQuestionItem, type ConversationQuestionPart } from '@agent-workbench/shared';
+import { sameQuestionItem, type ConversationQuestionItem, type ConversationQuestionPart } from '@anvilary/workbench-shared';
 import type { ScreenQuestion, ScreenQuestionReader } from '../../agents/adapter.js';
 import type { PtyScreen } from '../terminals/pty-screen.js';
 

@@ -32,7 +32,7 @@
  * mas.
  */
 
-import type { ConversationEvent, ConversationState } from '@agent-workbench/shared';
+import type { ConversationEvent, ConversationState } from '@anvilary/workbench-shared';
 import { DISK_FILES, parseJsonlLine, type JsonlFileAccess } from '../shared/jsonl-reader.js';
 import type { EventPage } from './adapter.js';
 

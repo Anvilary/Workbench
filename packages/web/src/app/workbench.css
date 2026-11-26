@@ -1,5 +1,5 @@
 :root {
-  --maw-topbar-h: 53px;
+  --wb-topbar-h: 53px;
   --agency-bg: var(--bg, #0e0e10);
   --agency-sidebar-bg: var(--bg-2, #141417);
   --agency-raised: var(--panel, #16161a);
@@ -15,7 +15,7 @@
 }
 
 .agency-app {
-  --maw-topbar-h: 53px;
+  --wb-topbar-h: 53px;
   --agency-bg: var(--bg, #0e0e10);
   --agency-sidebar-bg: var(--bg-2, #141417);
   --agency-raised: var(--panel, #16161a);
@@ -123,9 +123,9 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  height: var(--maw-topbar-h);
-  min-height: var(--maw-topbar-h);
-  flex: 0 0 var(--maw-topbar-h);
+  height: var(--wb-topbar-h);
+  min-height: var(--wb-topbar-h);
+  flex: 0 0 var(--wb-topbar-h);
   box-sizing: border-box;
   padding: 0 12px;
   border-bottom: 1px solid var(--agency-line);
@@ -327,7 +327,7 @@
 .agency-row-action { padding: 5px 7px; border: 0; background: transparent; color: var(--agency-dim); border-radius: 6px; }
 .agency-status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
   flex: 0 0 7px; background: #707784; }
-@keyframes maw-pulse-orange {
+@keyframes wb-pulse-orange {
   0% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.6); opacity: 0.9; }
   50% { box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.25); opacity: 1; }
   100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); opacity: 0.9; }
@@ -335,7 +335,7 @@
 .agency-status-dot.working {
   background: #f97316;
   box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.25);
-  animation: maw-pulse-orange 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: wb-pulse-orange 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 @media (prefers-reduced-motion: reduce) {
   .agency-status-dot.working {
@@ -400,8 +400,8 @@
 
 /* Main Area */
 .agency-main { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; position: relative; z-index: 1; }
-.agency-topbar { height: var(--maw-topbar-h); padding: 0 14px; border-bottom: 1px solid var(--agency-line); display: flex;
-  gap: 12px; align-items: center; flex: 0 0 var(--maw-topbar-h); background: color-mix(in srgb, var(--agency-bg) 85%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); position: relative; z-index: 100; }
+.agency-topbar { height: var(--wb-topbar-h); padding: 0 14px; border-bottom: 1px solid var(--agency-line); display: flex;
+  gap: 12px; align-items: center; flex: 0 0 var(--wb-topbar-h); background: color-mix(in srgb, var(--agency-bg) 85%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); position: relative; z-index: 100; }
 .agency-topbar-title { font-size: 13px; font-weight: 650; }
 .agency-topbar-count { font-size: 11px; }
 .agency-connection-state { display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--agency-dim); }
@@ -658,7 +658,7 @@
 }
 
 @media (max-width: 680px) {
-  .agency-sidebar { position: fixed; left: 0; top: var(--maw-topbar-h); bottom: 0; z-index: 40; width: 240px; box-shadow: 12px 0 32px #0006; }
+  .agency-sidebar { position: fixed; left: 0; top: var(--wb-topbar-h); bottom: 0; z-index: 40; width: 240px; box-shadow: 12px 0 32px #0006; }
   .agency-sidebar-collapsed { display: none !important; }
   .agency-topbar { padding: 0 9px; gap: 8px; }
   .agency-topbar-count, .agency-connection-state { display: none; }
@@ -693,16 +693,16 @@
 @media (max-width: 600px) { .agency-topbar > .agency-secondary-button { display: none; } }
 
 /* One row of logical tabs; exactly one pane is visible, all live PTYs stay attached. */
-.maw-tabs-header { display:flex; align-items:center; gap:4px; min-width:0; height:42px; flex-shrink:0; border-bottom:1px solid var(--border); background: color-mix(in srgb, var(--panel) 85%, transparent); padding:0 6px; }
-.maw-tabs-strip { display:flex; overflow-x:auto; overflow-y:hidden; flex:1; min-width:0; height:100%; scrollbar-width:none; touch-action:pan-x; user-select:none; }
-.maw-tabs-strip::-webkit-scrollbar { display:none; }
-.maw-session-tab { display:flex; flex:0 0 auto; min-width:100px; max-width:220px; align-items:center; border-right:1px solid var(--border-faint); position:relative; }
-.maw-session-tab.active { background: var(--bg-3); box-shadow: inset 0 -2px var(--ember); }
-.maw-session-tab { transition: transform 140ms ease; }
-.maw-session-tab.dragging { opacity: 0; pointer-events: none; cursor: grabbing; }
-.maw-session-tab.dragging * { cursor: grabbing !important; }
-.maw-session-tab.maw-drop-target-before::before,
-.maw-session-tab.maw-drop-target-after::after {
+.wb-tabs-header { display:flex; align-items:center; gap:4px; min-width:0; height:42px; flex-shrink:0; border-bottom:1px solid var(--border); background: color-mix(in srgb, var(--panel) 85%, transparent); padding:0 6px; }
+.wb-tabs-strip { display:flex; overflow-x:auto; overflow-y:hidden; flex:1; min-width:0; height:100%; scrollbar-width:none; touch-action:pan-x; user-select:none; }
+.wb-tabs-strip::-webkit-scrollbar { display:none; }
+.wb-session-tab { display:flex; flex:0 0 auto; min-width:100px; max-width:220px; align-items:center; border-right:1px solid var(--border-faint); position:relative; }
+.wb-session-tab.active { background: var(--bg-3); box-shadow: inset 0 -2px var(--ember); }
+.wb-session-tab { transition: transform 140ms ease; }
+.wb-session-tab.dragging { opacity: 0; pointer-events: none; cursor: grabbing; }
+.wb-session-tab.dragging * { cursor: grabbing !important; }
+.wb-session-tab.wb-drop-target-before::before,
+.wb-session-tab.wb-drop-target-after::after {
   content: '';
   position: absolute;
   top: 4px;
@@ -712,10 +712,10 @@
   border-radius: 1px;
   z-index: 2;
 }
-.maw-session-tab.maw-drop-target-before::before { left: 0; }
-.maw-session-tab.maw-drop-target-after::after { right: 0; }
-.maw-tabs-strip.is-dragging { cursor: grabbing; }
-.maw-tab-drag-ghost {
+.wb-session-tab.wb-drop-target-before::before { left: 0; }
+.wb-session-tab.wb-drop-target-after::after { right: 0; }
+.wb-tabs-strip.is-dragging { cursor: grabbing; }
+.wb-tab-drag-ghost {
   position: fixed;
   top: 0;
   left: 0;
@@ -736,17 +736,17 @@
   transform-origin: 0 0;
   user-select: none;
 }
-.maw-tab-drag-ghost .agency-truncate {
+.wb-tab-drag-ghost .agency-truncate {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.maw-session-tab button { border:0; background:transparent; color: var(--ink-3); cursor:pointer; }
-.maw-session-tab [role=tab] { display:flex; gap:8px; align-items:center; flex:1; min-width:0; height:100%; padding:8px; }
-.maw-session-tab [role=tab]:focus-visible { outline: 1px solid var(--ember); outline-offset: -2px; border-radius: var(--radius-sm, 3px); }
-.maw-session-tab [data-close] { padding:8px; }
-.maw-session-tab.active [role=tab] { color: var(--ink); }
-.maw-tab-rename-row {
+.wb-session-tab button { border:0; background:transparent; color: var(--ink-3); cursor:pointer; }
+.wb-session-tab [role=tab] { display:flex; gap:8px; align-items:center; flex:1; min-width:0; height:100%; padding:8px; }
+.wb-session-tab [role=tab]:focus-visible { outline: 1px solid var(--ember); outline-offset: -2px; border-radius: var(--radius-sm, 3px); }
+.wb-session-tab [data-close] { padding:8px; }
+.wb-session-tab.active [role=tab] { color: var(--ink); }
+.wb-tab-rename-row {
   display: flex;
   gap: 8px;
   align-items: center;
@@ -756,7 +756,7 @@
   padding: 8px;
   box-sizing: border-box;
 }
-.maw-tab-icon {
+.wb-tab-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -766,30 +766,30 @@
   font-size: 13px;
   line-height: 1;
 }
-.maw-tab-icon-wrapper {
+.wb-tab-icon-wrapper {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 16px;
   height: 16px;
 }
-.maw-tab-favicon {
+.wb-tab-favicon {
   width: 14px;
   height: 14px;
   object-fit: contain;
   border-radius: 2px;
   display: block;
 }
-.maw-tab-icon-fallback {
+.wb-tab-icon-fallback {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--ink-3);
 }
-.maw-globe-icon {
+.wb-globe-icon {
   display: block;
 }
-.maw-tab-name-input {
+.wb-tab-name-input {
   width: auto;
   min-width: 0;
   max-width: 100%;
@@ -810,27 +810,27 @@
   user-select: text;
   box-sizing: border-box;
 }
-.agency-app .maw-tab-name-input:focus,
-.agency-app .maw-tab-name-input:focus-visible {
+.agency-app .wb-tab-name-input:focus,
+.agency-app .wb-tab-name-input:focus-visible {
   outline: none;
   border-color: transparent;
   border-bottom: 1px solid var(--ink-2, #a1a1aa);
   box-shadow: none;
 }
-.maw-tab-name-input[aria-invalid=true] {
+.wb-tab-name-input[aria-invalid=true] {
   border-bottom: 1px solid var(--danger, #ef4444);
 }
-.maw-add-tab { flex:none; }
-.maw-session-content { flex:1; min-height:0; position:relative; display:flex; }
-.maw-session-pane { display:flex; flex:1; min-width:0; min-height:0; flex-direction:column; }
-.maw-session-pane[hidden] { display:none; }
-.maw-session-pane .agency-agent-body { flex:1; position:relative; min-height:0; }
-.maw-session-pane .agency-pane-bar { min-height:28px; padding:2px 10px; }
-.maw-session-pane .agency-dropdown-menu button, .maw-add-tab .agency-dropdown-menu button { display:block; width:100%; padding:8px 12px; text-align:left; background:transparent; border:0; color:inherit; cursor:pointer; }
-.maw-session-pane .agency-dropdown-menu button:hover, .maw-add-tab .agency-dropdown-menu button:hover { background: var(--hover); }
+.wb-add-tab { flex:none; }
+.wb-session-content { flex:1; min-height:0; position:relative; display:flex; }
+.wb-session-pane { display:flex; flex:1; min-width:0; min-height:0; flex-direction:column; }
+.wb-session-pane[hidden] { display:none; }
+.wb-session-pane .agency-agent-body { flex:1; position:relative; min-height:0; }
+.wb-session-pane .agency-pane-bar { min-height:28px; padding:2px 10px; }
+.wb-session-pane .agency-dropdown-menu button, .wb-add-tab .agency-dropdown-menu button { display:block; width:100%; padding:8px 12px; text-align:left; background:transparent; border:0; color:inherit; cursor:pointer; }
+.wb-session-pane .agency-dropdown-menu button:hover, .wb-add-tab .agency-dropdown-menu button:hover { background: var(--hover); }
 
 /* Notification subsystem UX styles */
-.maw-toast-container {
+.wb-toast-container {
   position: fixed;
   top: 16px;
   right: 16px;
@@ -843,7 +843,7 @@
   pointer-events: none;
 }
 
-.maw-toast-item {
+.wb-toast-item {
   pointer-events: auto;
   background: var(--panel);
   border: 1px solid var(--border-strong);
@@ -858,50 +858,50 @@
   user-select: none;
 }
 
-.maw-toast-item:hover {
+.wb-toast-item:hover {
   background: var(--bg-3);
   border-color: var(--accent-border-soft);
 }
 
-.maw-toast-item.state-finished {
+.wb-toast-item.state-finished {
   border-left: 4px solid var(--sage);
 }
 
-.maw-toast-item.state-failed {
+.wb-toast-item.state-failed {
   border-left: 4px solid var(--danger);
 }
 
-.maw-toast-item.state-working {
+.wb-toast-item.state-working {
   border-left: 4px solid var(--ember);
 }
 
-.maw-toast-item.state-needs-input {
+.wb-toast-item.state-needs-input {
   border-left: 4px solid var(--molten);
 }
 
-.maw-toast-item.state-unknown {
+.wb-toast-item.state-unknown {
   border-left: 4px solid var(--ink-4);
 }
 
-.maw-toast-icon {
+.wb-toast-icon {
   font-size: 14px;
   font-weight: 700;
   line-height: 1;
   padding-top: 2px;
 }
 
-.maw-toast-item.state-finished .maw-toast-icon { color: var(--sage); }
-.maw-toast-item.state-failed .maw-toast-icon { color: var(--danger); }
-.maw-toast-item.state-working .maw-toast-icon { color: var(--ember); }
-.maw-toast-item.state-needs-input .maw-toast-icon { color: var(--molten); }
-.maw-toast-item.state-unknown .maw-toast-icon { color: var(--ink-4); }
+.wb-toast-item.state-finished .wb-toast-icon { color: var(--sage); }
+.wb-toast-item.state-failed .wb-toast-icon { color: var(--danger); }
+.wb-toast-item.state-working .wb-toast-icon { color: var(--ember); }
+.wb-toast-item.state-needs-input .wb-toast-icon { color: var(--molten); }
+.wb-toast-item.state-unknown .wb-toast-icon { color: var(--ink-4); }
 
-.maw-toast-content {
+.wb-toast-content {
   flex: 1;
   min-width: 0;
 }
 
-.maw-toast-title {
+.wb-toast-title {
   font-size: 13px;
   font-weight: 600;
   color: var(--ink);
@@ -910,14 +910,14 @@
   text-overflow: ellipsis;
 }
 
-.maw-toast-body {
+.wb-toast-body {
   font-size: 12px;
   color: var(--ink-3);
   margin-top: 2px;
   line-height: 1.35;
 }
 
-.maw-toast-dismiss {
+.wb-toast-dismiss {
   background: transparent;
   border: 0;
   color: #64748b;
@@ -927,43 +927,43 @@
   padding: 0 2px;
 }
 
-.maw-toast-dismiss:hover {
+.wb-toast-dismiss:hover {
   color: #f1f5f9;
 }
 
-.maw-bell-button {
+.wb-bell-button {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
-.maw-bell-icon {
+.wb-bell-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: #94a3b8;
 }
 
-.maw-bell-button:hover .maw-bell-icon,
-.maw-bell-button.active .maw-bell-icon {
+.wb-bell-button:hover .wb-bell-icon,
+.wb-bell-button.active .wb-bell-icon {
   color: #f1f5f9;
 }
 
-.maw-menu-button {
+.wb-menu-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: #94a3b8;
 }
 
-.maw-menu-button:hover,
-.maw-menu-button.active {
+.wb-menu-button:hover,
+.wb-menu-button.active {
   color: #f1f5f9;
   background: var(--agency-hover);
 }
 
-.maw-shell-menu {
+.wb-shell-menu {
   min-width: 160px;
   right: 0;
   top: 100%;
@@ -974,7 +974,7 @@
   gap: 2px;
 }
 
-.maw-menu-item {
+.wb-menu-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -991,24 +991,24 @@
   transition: background-color 120ms ease, color 120ms ease;
 }
 
-.maw-menu-item:hover:not(:disabled),
-.maw-menu-item:focus-visible {
+.wb-menu-item:hover:not(:disabled),
+.wb-menu-item:focus-visible {
   background: var(--agency-hover);
   color: var(--ink);
   outline: none;
 }
 
-.maw-menu-item.selected {
+.wb-menu-item.selected {
   color: var(--ember);
   font-weight: 600;
 }
 
-.maw-menu-item-text {
+.wb-menu-item-text {
   flex: 1;
   text-align: left;
 }
 
-.maw-inbox-footer {
+.wb-inbox-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1018,13 +1018,13 @@
   background: var(--bg-2);
 }
 
-.maw-inbox-footer-desktop {
+.wb-inbox-footer-desktop {
   display: flex;
   align-items: center;
   min-width: 0;
 }
 
-.maw-desktop-perm-button {
+.workbench-desktop-perm-button {
   background: transparent;
   border: 1px solid var(--accent-border-strong);
   border-radius: var(--radius-sm);
@@ -1036,34 +1036,34 @@
   white-space: nowrap;
 }
 
-.maw-desktop-perm-button:hover:not(:disabled) {
+.workbench-desktop-perm-button:hover:not(:disabled) {
   background: var(--molten-dim);
   color: var(--molten);
   border-color: var(--ember);
 }
 
-.maw-desktop-perm-button:disabled {
+.workbench-desktop-perm-button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
   border-color: var(--border);
   color: var(--ink-4);
 }
 
-.maw-desktop-perm-status {
+.workbench-desktop-perm-status {
   font-size: 11px;
   color: #64748b;
   white-space: nowrap;
 }
 
-.maw-desktop-perm-status.granted {
+.workbench-desktop-perm-status.granted {
   color: #76b899;
 }
 
-.maw-desktop-perm-status.denied {
+.workbench-desktop-perm-status.denied {
   color: #f87171;
 }
 
-.maw-notification-toggle-button {
+.wb-notification-toggle-button {
   background: transparent;
   border: 1px solid #333a4d;
   border-radius: 6px;
@@ -1075,13 +1075,13 @@
   white-space: nowrap;
 }
 
-.maw-notification-toggle-button:hover {
+.wb-notification-toggle-button:hover {
   background: #ffffff0a;
   color: #f1f5f9;
   border-color: #4b5563;
 }
 
-.maw-unread-badge {
+.wb-unread-badge {
   position: absolute;
   top: -2px;
   right: -2px;
@@ -1099,7 +1099,7 @@
   box-shadow: 0 0 0 2px #161821;
 }
 
-.maw-notification-inbox {
+.wb-notification-inbox {
   position: absolute;
   top: 54px;
   right: 16px;
@@ -1117,7 +1117,7 @@
   overflow: hidden;
 }
 
-.maw-inbox-header {
+.wb-inbox-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1126,20 +1126,20 @@
   background: var(--bg-2);
 }
 
-.maw-inbox-header-title {
+.wb-inbox-header-title {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.maw-inbox-header-title h3 {
+.wb-inbox-header-title h3 {
   font-size: 13px;
   font-weight: 600;
   color: var(--ink);
   margin: 0;
 }
 
-.maw-inbox-count-pill {
+.wb-inbox-count-pill {
   background: var(--bg-3);
   color: var(--ink-2);
   font-size: 11px;
@@ -1148,13 +1148,13 @@
   border-radius: 10px;
 }
 
-.maw-inbox-header-actions {
+.wb-inbox-header-actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.maw-inbox-list {
+.wb-inbox-list {
   flex: 1;
   overflow-y: auto;
   max-height: 420px;
@@ -1162,7 +1162,7 @@
   flex-direction: column;
 }
 
-.maw-inbox-empty {
+.wb-inbox-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1172,11 +1172,11 @@
   gap: 8px;
 }
 
-.maw-empty-icon {
+.wb-empty-icon {
   font-size: 28px;
 }
 
-.maw-inbox-item {
+.wb-inbox-item {
   display: flex;
   align-items: flex-start;
   gap: 10px;
@@ -1187,24 +1187,24 @@
   transition: background 0.12s ease;
 }
 
-.maw-inbox-item:hover {
+.wb-inbox-item:hover {
   background: var(--bg-2);
 }
 
-.maw-inbox-item.unread {
+.wb-inbox-item.unread {
   background: var(--bg-3);
 }
 
-.maw-inbox-item.unread:hover {
+.wb-inbox-item.unread:hover {
   background: var(--agency-hover);
 }
 
-.maw-inbox-item-indicator {
+.wb-inbox-item-indicator {
   width: 8px;
   padding-top: 4px;
 }
 
-.maw-unread-dot {
+.wb-unread-dot {
   display: block;
   width: 8px;
   height: 8px;
@@ -1213,19 +1213,19 @@
   box-shadow: 0 0 6px var(--ember);
 }
 
-.maw-inbox-item-body {
+.wb-inbox-item-body {
   flex: 1;
   min-width: 0;
 }
 
-.maw-inbox-item-top {
+.wb-inbox-item-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 4px;
 }
 
-.maw-state-badge {
+.wb-state-badge {
   font-size: 10px;
   font-weight: 600;
   padding: 1px 6px;
@@ -1233,60 +1233,60 @@
   text-transform: uppercase;
 }
 
-.maw-state-badge.state-finished {
+.wb-state-badge.state-finished {
   background: var(--sage-dim);
   color: var(--sage);
 }
 
-.maw-state-badge.state-failed {
+.wb-state-badge.state-failed {
   background: rgba(177, 51, 24, 0.18);
   color: var(--danger);
 }
 
-.maw-state-badge.state-working {
+.wb-state-badge.state-working {
   background: var(--molten-dim);
   color: var(--ember);
 }
 
-.maw-state-badge.state-needs-input {
+.wb-state-badge.state-needs-input {
   background: rgba(236, 138, 74, 0.18);
   color: var(--molten);
 }
 
-.maw-state-badge.state-unknown, .maw-state-badge.state-idle {
+.wb-state-badge.state-unknown, .wb-state-badge.state-idle {
   background: rgba(138, 135, 127, 0.15);
   color: var(--ink-3);
 }
 
-.maw-inbox-item-time {
+.wb-inbox-item-time {
   font-size: 11px;
   color: var(--ink-4);
 }
 
-.maw-inbox-item-title {
+.wb-inbox-item-title {
   font-size: 13px;
   font-weight: 600;
   color: var(--ink-2);
   margin-bottom: 2px;
 }
 
-.maw-inbox-item.unread .maw-inbox-item-title {
+.wb-inbox-item.unread .wb-inbox-item-title {
   color: var(--ink);
 }
 
-.maw-inbox-item-desc {
+.wb-inbox-item-desc {
   font-size: 12px;
   color: var(--ink-3);
   line-height: 1.35;
 }
 
-.maw-inbox-item-actions {
+.wb-inbox-item-actions {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.maw-done-button {
+.wb-done-button {
   background: transparent;
   border: 1px solid var(--sage);
   color: var(--sage);
@@ -1303,12 +1303,12 @@
   transition: all 0.15s ease;
 }
 
-.maw-done-button:hover {
+.wb-done-button:hover {
   background: var(--sage);
   color: #ffffff;
 }
 
-.maw-mark-read-button {
+.wb-mark-read-button {
   background: transparent;
   border: 1px solid var(--ember);
   color: var(--ember);
@@ -1325,21 +1325,21 @@
   transition: all 0.15s ease;
 }
 
-.maw-mark-read-button:hover {
+.wb-mark-read-button:hover {
   background: var(--ember);
   color: #ffffff;
 }
 
-.maw-read-check {
+.wb-read-check {
   color: #475569;
   font-size: 12px;
 }
 
-.maw-browser-pane { display:flex; flex:1; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
-.maw-browser-viewer { display:flex; flex:1; flex-direction:column; min-width:0; min-height:0; position:relative; }
+.wb-browser-pane { display:flex; flex:1; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
+.wb-browser-viewer { display:flex; flex:1; flex-direction:column; min-width:0; min-height:0; position:relative; }
 
 /* Minimalist Browser Loading Logo */
-.maw-browser-loading-container {
+.wb-browser-loading-container {
   position: absolute;
   inset: 0;
   display: flex;
@@ -1350,14 +1350,14 @@
   pointer-events: none;
 }
 
-.maw-browser-loading-logo {
+.wb-browser-loading-logo {
   width: 32px;
   height: 32px;
   opacity: 0.85;
-  animation: maw-pulse 1.8s ease-in-out infinite;
+  animation: wb-pulse 1.8s ease-in-out infinite;
 }
 
-@keyframes maw-pulse {
+@keyframes wb-pulse {
   0%, 100% {
     opacity: 0.45;
     transform: scale(0.95);
@@ -1369,19 +1369,19 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .maw-browser-loading-logo {
+  .wb-browser-loading-logo {
     animation: none;
     opacity: 0.75;
     transform: none;
   }
 }
-.maw-browser-toolbar { position:relative; flex:none; margin:6px 8px; display:flex; gap:4px; align-items:center; height:30px; padding:3px; border:1px solid var(--border); border-radius:7px; background:var(--panel); }
-.maw-browser-toolbar button { flex:none; min-width:26px; height:24px; }
-.maw-browser-toolbar form { flex:1; min-width:0; }
-.maw-browser-toolbar input { width:100%; height:24px; box-sizing:border-box; }
+.wb-browser-toolbar { position:relative; flex:none; margin:6px 8px; display:flex; gap:4px; align-items:center; height:30px; padding:3px; border:1px solid var(--border); border-radius:7px; background:var(--panel); }
+.wb-browser-toolbar button { flex:none; min-width:26px; height:24px; }
+.wb-browser-toolbar form { flex:1; min-width:0; }
+.wb-browser-toolbar input { width:100%; height:24px; box-sizing:border-box; }
 
 /* In-Page Search Bar */
-.maw-browser-find-bar {
+.wb-browser-find-bar {
   position: relative;
   flex: none;
   margin: 4px 8px;
@@ -1397,9 +1397,9 @@
   box-shadow: var(--shadow-sm);
   font-size: 12px;
   z-index: 10;
-  animation: maw-fade-in 0.12s ease-out;
+  animation: wb-fade-in 0.12s ease-out;
 }
-.maw-browser-find-input {
+.wb-browser-find-input {
   flex: 1;
   min-width: 140px;
   max-width: 320px;
@@ -1413,16 +1413,16 @@
   outline: none;
   transition: border-color 120ms ease;
 }
-.agency-app .maw-browser-find-input:focus,
-.agency-app .maw-browser-find-input:focus-visible,
-.agency-app .maw-terminal-search-input:focus,
-.agency-app .maw-terminal-search-input:focus-visible {
+.agency-app .wb-browser-find-input:focus,
+.agency-app .wb-browser-find-input:focus-visible,
+.agency-app .wb-terminal-search-input:focus,
+.agency-app .wb-terminal-search-input:focus-visible {
   outline: none !important;
   outline-offset: 0 !important;
   border-color: var(--accent) !important;
   box-shadow: none !important;
 }
-.maw-browser-find-counter {
+.wb-browser-find-counter {
   flex: none;
   font-size: 11px;
   color: var(--ink-dim);
@@ -1432,7 +1432,7 @@
   padding: 0 4px;
   white-space: nowrap;
 }
-.maw-browser-find-btn {
+.wb-browser-find-btn {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -1449,22 +1449,22 @@
   transition: all 120ms ease;
   line-height: 1;
 }
-.maw-browser-find-btn:hover:not(:disabled) {
+.wb-browser-find-btn:hover:not(:disabled) {
   background: var(--agency-hover);
   color: var(--ink);
   border-color: var(--border);
 }
-.maw-browser-find-btn:disabled {
+.wb-browser-find-btn:disabled {
   opacity: 0.35;
   cursor: default;
 }
-.maw-browser-find-close {
+.wb-browser-find-close {
   font-size: 14px;
   margin-left: 2px;
 }
 
 /* Split Workspace Layout */
-.maw-split-workspace-content {
+.wb-split-workspace-content {
   flex: 1;
   min-height: 0;
   position: relative;
@@ -1473,7 +1473,7 @@
   overflow: hidden;
 }
 
-.maw-split-pane {
+.wb-split-pane {
   display: flex;
   flex: 1;
   min-width: 0;
@@ -1483,14 +1483,14 @@
   background: var(--bg);
   outline: none;
 }
-.maw-split-pane {
+.wb-split-pane {
   box-shadow: inset 0 0 0 1px var(--border);
 }
-.maw-split-pane.is-focused {
+.wb-split-pane.is-focused {
   box-shadow: inset 0 0 0 1px var(--border);
 }
 
-.maw-pane-header {
+.wb-pane-header {
   position: relative;
   display: flex;
   align-items: center;
@@ -1501,11 +1501,11 @@
   user-select: none;
   padding: 0 4px;
 }
-.maw-pane-header.is-tab-drop {
+.wb-pane-header.is-tab-drop {
   box-shadow: inset 0 -2px 0 var(--ember);
 }
 
-.maw-zoom-indicator {
+.wb-zoom-indicator {
   position: absolute;
   right: 96px;
   top: 50%;
@@ -1528,7 +1528,7 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .maw-zoom-indicator {
+  .wb-zoom-indicator {
     animation: mawZoomFade 140ms ease-out;
   }
 }
@@ -1542,7 +1542,7 @@
   }
 }
 
-.maw-pane-tabs {
+.wb-pane-tabs {
   display: flex;
   flex: 0 1 auto;
   min-width: 0;
@@ -1551,11 +1551,11 @@
   overflow-y: hidden;
   scrollbar-width: none;
 }
-.maw-pane-tabs::-webkit-scrollbar {
+.wb-pane-tabs::-webkit-scrollbar {
   display: none;
 }
 
-.maw-pane-add-tab {
+.wb-pane-add-tab {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1570,12 +1570,12 @@
   font-size: 14px;
   transition: all 140ms ease;
 }
-.maw-pane-add-tab:hover {
+.wb-pane-add-tab:hover {
   background: var(--hover);
   color: var(--ink);
 }
 
-.maw-pane-actions {
+.wb-pane-actions {
   display: flex;
   align-items: center;
   gap: 2px;
@@ -1583,7 +1583,7 @@
   padding-right: 4px;
   flex-shrink: 0;
 }
-.maw-pane-action-button {
+.wb-pane-action-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1599,28 +1599,28 @@
   line-height: 1;
   transition: all 140ms ease;
 }
-.maw-pane-action-button svg { display: block; }
-.maw-pane-action-button:hover:not(:disabled) {
+.wb-pane-action-button svg { display: block; }
+.wb-pane-action-button:hover:not(:disabled) {
   background: var(--hover);
   color: var(--ink);
 }
-.maw-pane-action-button:disabled {
+.wb-pane-action-button:disabled {
   opacity: 0.35;
   cursor: default;
 }
-.maw-pane-action-button:focus-visible {
+.wb-pane-action-button:focus-visible {
   outline: 1px solid var(--agency-ember);
   outline-offset: -2px;
 }
-.maw-browser-toolbar-toggle.active,
-.maw-browser-toolbar-toggle[aria-expanded="true"],
-.maw-pane-expand-button.active,
-.maw-pane-expand-button[aria-pressed="true"] {
+.wb-browser-toolbar-toggle.active,
+.wb-browser-toolbar-toggle[aria-expanded="true"],
+.wb-pane-expand-button.active,
+.wb-pane-expand-button[aria-pressed="true"] {
   background: var(--hover);
   color: var(--ink);
 }
 
-.maw-pane-body {
+.wb-pane-body {
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -1629,7 +1629,7 @@
 }
 
 /* Empty Pane Chooser */
-.maw-empty-pane-chooser {
+.wb-empty-pane-chooser {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -1644,7 +1644,7 @@
   user-select: none;
 }
 
-.maw-empty-pane-card {
+.wb-empty-pane-card {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1653,14 +1653,14 @@
   gap: 20px;
 }
 
-.maw-empty-pane-header {
+.wb-empty-pane-header {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
 }
 
-.maw-empty-pane-title {
+.wb-empty-pane-title {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
@@ -1668,13 +1668,13 @@
   letter-spacing: -0.01em;
 }
 
-.maw-empty-pane-subtitle {
+.wb-empty-pane-subtitle {
   margin: 0;
   font-size: 12px;
   color: var(--agency-dim);
 }
 
-.maw-empty-pane-actions {
+.wb-empty-pane-actions {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 12px;
@@ -1682,7 +1682,7 @@
   max-width: 480px;
 }
 
-.maw-empty-pane-action {
+.wb-empty-pane-action {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1698,28 +1698,28 @@
   min-height: 84px;
 }
 
-.maw-empty-pane-action:hover:not(:disabled) {
+.wb-empty-pane-action:hover:not(:disabled) {
   background: var(--agency-hover, #1a1a1e);
   border-color: var(--agency-line-strong, #2f2f36);
   transform: translateY(-1px);
   color: var(--agency-highlight, #d97442);
 }
 
-.maw-empty-pane-action:focus-visible {
+.wb-empty-pane-action:focus-visible {
   outline: 2px solid var(--agency-highlight);
   outline-offset: 2px;
 }
 
-.maw-empty-pane-action:disabled {
+.wb-empty-pane-action:disabled {
   opacity: 0.42;
   cursor: not-allowed;
 }
 
-.maw-empty-pane-action-disabled {
+.wb-empty-pane-action-disabled {
   cursor: not-allowed !important;
 }
 
-.maw-empty-pane-badge {
+.wb-empty-pane-badge {
   display: block;
   font-size: 10px;
   font-weight: 500;
@@ -1728,7 +1728,7 @@
   opacity: 0.85;
 }
 
-.maw-empty-pane-icon {
+.wb-empty-pane-icon {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1737,7 +1737,7 @@
   color: inherit;
 }
 
-.maw-empty-pane-label {
+.wb-empty-pane-label {
   font-size: 12px;
   font-weight: 500;
   line-height: 1.2;
@@ -1745,7 +1745,7 @@
   color: inherit;
 }
 
-.maw-empty-pane-close {
+.wb-empty-pane-close {
   background: transparent;
   border: 0;
   color: var(--agency-dim);
@@ -1756,12 +1756,12 @@
   transition: color 150ms ease;
 }
 
-.maw-empty-pane-close:hover {
+.wb-empty-pane-close:hover {
   color: var(--agency-text);
   text-decoration: underline;
 }
 
-.maw-empty-pane-profiles-view {
+.wb-empty-pane-profiles-view {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1769,7 +1769,7 @@
   width: 100%;
 }
 
-.maw-empty-pane-profile-list {
+.wb-empty-pane-profile-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1777,7 +1777,7 @@
   max-width: 320px;
 }
 
-.maw-empty-pane-profile-item {
+.wb-empty-pane-profile-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1791,23 +1791,23 @@
   transition: all 150ms ease;
 }
 
-.maw-empty-pane-profile-item:hover:not(:disabled) {
+.wb-empty-pane-profile-item:hover:not(:disabled) {
   background: var(--agency-hover, #1a1a1e);
   border-color: var(--agency-highlight, #d97442);
   color: var(--agency-highlight, #d97442);
 }
 
-.maw-profile-label {
+.wb-profile-label {
   font-weight: 500;
 }
 
-.maw-profile-provider {
+.wb-profile-provider {
   font-size: 11px;
   color: var(--agency-dim);
   text-transform: capitalize;
 }
 
-.maw-empty-pane-back-button {
+.wb-empty-pane-back-button {
   background: transparent;
   border: 1px solid var(--agency-line, #25252b);
   border-radius: 6px;
@@ -1818,28 +1818,28 @@
   transition: all 150ms ease;
 }
 
-.maw-empty-pane-back-button:hover {
+.wb-empty-pane-back-button:hover {
   color: var(--agency-text);
   border-color: var(--agency-line-strong, #2f2f36);
 }
 
 /* Stable terminal holders. Hidden ones stay mounted so xterm is not disposed. */
-.maw-session-holder {
+.wb-session-holder {
   display: flex;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
 }
-.maw-session-holder[hidden] {
+.wb-session-holder[hidden] {
   display: none !important;
 }
-.maw-terminal-park {
+.wb-terminal-park {
   display: none !important;
 }
 
 /* Editor Pane View */
-.maw-editor-pane {
+.wb-editor-pane {
   display: flex;
   flex: 1 1 auto;
   min-width: 0;
@@ -1847,7 +1847,7 @@
   height: 100%;
   flex-direction: column;
 }
-.maw-editor-pane .panel-body.doc-viewer {
+.wb-editor-pane .panel-body.doc-viewer {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -1856,55 +1856,55 @@
   min-width: 0;
   overflow: hidden;
 }
-.maw-editor-pane .panel-scroll {
+.wb-editor-pane .panel-scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
 }
 
 /* Split Dividers */
-.maw-split-divider {
+.wb-split-divider {
   position: relative;
   flex: 0 0 4px;
   background: var(--border);
   transition: background-color 0.15s ease, box-shadow 0.15s ease;
   z-index: 5;
 }
-.maw-split-divider-row {
+.wb-split-divider-row {
   cursor: col-resize;
   width: 4px;
 }
-.maw-split-divider-column {
+.wb-split-divider-column {
   cursor: row-resize;
   height: 4px;
 }
 /* Hit area expansion */
-.maw-split-divider::before {
+.wb-split-divider::before {
   content: '';
   position: absolute;
   inset: -4px;
   z-index: 1;
 }
-.maw-split-divider:hover,
-.maw-split-divider.is-dragging {
+.wb-split-divider:hover,
+.wb-split-divider.is-dragging {
   background: var(--ember);
   box-shadow: 0 0 6px var(--ember);
 }
 
 /* Snap Alignment Guide */
-.maw-snap-guide {
+.wb-snap-guide {
   position: fixed;
   pointer-events: none;
   z-index: 9999;
 }
-.maw-snap-guide-row {
+.wb-snap-guide-row {
   top: 0;
   bottom: 0;
   width: 2px;
   background: var(--ember);
   box-shadow: 0 0 8px var(--ember);
 }
-.maw-snap-guide-column {
+.wb-snap-guide-column {
   left: 0;
   right: 0;
   height: 2px;
@@ -1913,35 +1913,35 @@
 }
 
 /* Pane Edge Drop Zones for Drag-to-Split */
-.maw-pane-drop-edge {
+.wb-pane-drop-edge {
   position: absolute;
   z-index: 10;
   /* The 36px drop strip overlaps xterm's scrollbar and last rows. It must
      receive pointer events only while a tab/pane is actually being dragged. */
   pointer-events: none;
 }
-.maw-pane-dragging .maw-pane-drop-edge {
+.wb-pane-dragging .wb-pane-drop-edge {
   pointer-events: auto;
 }
-.maw-pane-drop-edge-right {
+.wb-pane-drop-edge-right {
   top: 32px;
   right: 0;
   bottom: 0;
   width: 36px;
 }
-.maw-pane-drop-edge-bottom {
+.wb-pane-drop-edge-bottom {
   bottom: 0;
   left: 0;
   right: 0;
   height: 36px;
 }
-.maw-pane-drop-edge:hover {
+.wb-pane-drop-edge:hover {
   background: var(--molten-dim);
   border: 1px dashed var(--ember);
 }
 
 /* Right Click Context Menu */
-.maw-context-menu {
+.wb-context-menu {
   position: fixed;
   z-index: 99999;
   background: radial-gradient(400px 180px at 80% 0%, var(--forge-glow-1), transparent 70%), var(--panel);
@@ -1952,7 +1952,7 @@
   padding: 4px 0;
   min-width: 170px;
 }
-.maw-context-menu button {
+.wb-context-menu button {
   display: block;
   width: 100%;
   text-align: left;
@@ -1964,37 +1964,37 @@
   cursor: pointer;
   transition: all 120ms ease;
 }
-.maw-context-menu button:hover:not(:disabled) {
+.wb-context-menu button:hover:not(:disabled) {
   background: var(--agency-hover);
   color: var(--ink);
 }
-.maw-context-menu button:disabled {
+.wb-context-menu button:disabled {
   opacity: 0.4;
   cursor: default;
 }
-.maw-context-menu-divider {
+.wb-context-menu-divider {
   height: 1px;
   background: var(--border);
   margin: 4px 0;
 }
-.maw-context-menu-spelling {
+.wb-context-menu-spelling {
   display: flex;
   flex-direction: column;
 }
-.maw-context-menu-suggestion {
+.wb-context-menu-suggestion {
   font-weight: 500;
   color: var(--ink, #fafafa);
 }
-.maw-context-menu-suggestion:hover:not(:disabled) {
+.wb-context-menu-suggestion:hover:not(:disabled) {
   background: var(--molten-dim, rgba(255, 107, 53, 0.15)) !important;
   color: var(--ember, #ff8c42) !important;
 }
-.maw-context-menu-disabled-item {
+.wb-context-menu-disabled-item {
   font-style: italic;
   opacity: 0.5;
   cursor: default;
 }
-.maw-context-menu-header {
+.wb-context-menu-header {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
@@ -2003,33 +2003,33 @@
   padding: 4px 14px 2px;
   user-select: none;
 }
-.maw-context-menu-category-btn {
+.wb-context-menu-category-btn {
   display: flex !important;
   align-items: center;
   gap: 6px;
   font-weight: 500;
   color: var(--ink-secondary, #ccc) !important;
 }
-.maw-context-menu-chevron {
+.wb-context-menu-chevron {
   font-size: 10px;
   width: 12px;
   display: inline-block;
   color: var(--ink-dim, #888);
 }
-.maw-context-menu-category-content {
+.wb-context-menu-category-content {
   padding-left: 12px;
   display: flex;
   flex-direction: column;
 }
-.maw-context-menu-action-item {
+.wb-context-menu-action-item {
   color: var(--ink-secondary, #aaa) !important;
   font-size: 11px !important;
   padding: 4px 14px !important;
 }
-.maw-context-menu-action-item:hover {
+.wb-context-menu-action-item:hover {
   color: var(--ink, #fff) !important;
 }
-.maw-context-menu-lang-indicator {
+.wb-context-menu-lang-indicator {
   font-size: 11px;
   color: var(--ink-dim, #8a877f);
   padding: 3px 14px;
@@ -2037,35 +2037,35 @@
 }
 
 /* Spellcheck Settings */
-.maw-settings-group {
+.wb-settings-group {
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
 }
-.maw-settings-group-header {
+.wb-settings-group-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 10px;
 }
-.maw-settings-group-title {
+.wb-settings-group-title {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
   color: var(--ink);
 }
-.maw-settings-group-hint {
+.wb-settings-group-hint {
   margin: 2px 0 0;
   font-size: 11px;
   color: var(--ink-dim);
 }
-.maw-settings-lang-list {
+.wb-settings-lang-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
   margin-top: 8px;
 }
-.maw-settings-lang-item {
+.wb-settings-lang-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2074,18 +2074,18 @@
   border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
   border-radius: var(--radius-sm, 4px);
 }
-.maw-settings-lang-toggle-label {
+.wb-settings-lang-toggle-label {
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
   user-select: none;
 }
-.maw-settings-lang-name {
+.wb-settings-lang-name {
   font-size: 12px;
   color: var(--ink);
 }
-.maw-settings-lang-badge {
+.wb-settings-lang-badge {
   font-size: 10px;
   font-family: var(--font-mono, monospace);
   padding: 1px 5px;
@@ -2093,7 +2093,7 @@
   border-radius: 3px;
   color: var(--ink-dim);
 }
-.maw-settings-lang-picker-list {
+.wb-settings-lang-picker-list {
   max-height: 180px;
   overflow-y: auto;
   display: flex;
@@ -2105,22 +2105,22 @@
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
 }
-.maw-settings-lang-picker-item {
+.wb-settings-lang-picker-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 4px 8px;
   border-radius: 3px;
 }
-.maw-settings-lang-picker-item:hover {
+.wb-settings-lang-picker-item:hover {
   background: var(--surface-secondary, rgba(255, 255, 255, 0.05));
 }
-.maw-settings-dict-add-form {
+.wb-settings-dict-add-form {
   display: flex;
   gap: 8px;
   margin-top: 8px;
 }
-.maw-settings-dict-list {
+.wb-settings-dict-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -2128,7 +2128,7 @@
   max-height: 160px;
   overflow-y: auto;
 }
-.maw-settings-dict-item {
+.wb-settings-dict-item {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2138,26 +2138,26 @@
   border-radius: var(--radius-sm, 4px);
   font-size: 12px;
 }
-.maw-settings-dict-word {
+.wb-settings-dict-word {
   color: var(--ink);
 }
-.maw-settings-error-text {
+.wb-settings-error-text {
   color: var(--danger, #ff4d4f);
   font-size: 11px;
   margin-top: 4px;
 }
-.maw-settings-warning-text {
+.wb-settings-warning-text {
   color: var(--ember, #d97442);
   font-size: 11px;
   margin-top: 6px;
 }
-.maw-settings-dict-profile-row {
+.wb-settings-dict-profile-row {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
 }
-.maw-settings-select {
+.wb-settings-select {
   background: var(--bg-2, #141417);
   color: var(--ink, #ededea);
   border: 1px solid var(--border, #25252b);
@@ -2165,7 +2165,7 @@
   font-size: 12px;
   padding: 4px 8px;
 }
-.maw-settings-empty-hint {
+.wb-settings-empty-hint {
   font-size: 12px;
   color: var(--ink-dim);
   font-style: italic;
@@ -2173,7 +2173,7 @@
 }
 
 /* Ephemeral Toast Pill */
-.maw-pane-feedback {
+.wb-pane-feedback {
   position: absolute;
   top: 10px;
   right: 14px;
@@ -2183,26 +2183,26 @@
   font-size: 11px;
   font-weight: 500;
   pointer-events: none;
-  animation: maw-fade-in 0.15s ease-out;
+  animation: wb-fade-in 0.15s ease-out;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
-.maw-pane-feedback-success {
+.wb-pane-feedback-success {
   background: #166534;
   color: #f0fdf4;
   border: 1px solid #22c55e;
 }
-.maw-pane-feedback-error {
+.wb-pane-feedback-error {
   background: #991b1b;
   color: #fef2f2;
   border: 1px solid #ef4444;
 }
-@keyframes maw-fade-in {
+@keyframes wb-fade-in {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 /* In-Memory Visual Fallback for Overlaid ChatGPT Views */
-.maw-capture-backdrop {
+.wb-capture-backdrop {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -2212,9 +2212,9 @@
   z-index: 1;
 }
 
-.maw-pane-slot, .maw-pane-mount { display:flex; flex:1; min-width:0; min-height:0; }
-.maw-add-tab { flex-shrink:0; }
-.maw-pane-menu {
+.wb-pane-slot, .wb-pane-mount { display:flex; flex:1; min-width:0; min-height:0; }
+.wb-add-tab { flex-shrink:0; }
+.wb-pane-menu {
   background: radial-gradient(400px 180px at 80% 0%, var(--forge-glow-1), transparent 70%), var(--panel);
   color: var(--ink);
   border: 1px solid var(--border-strong);
@@ -2225,40 +2225,40 @@
   min-width: 150px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px);
   overflow: auto;
 }
-.maw-pane-menu button {
+.wb-pane-menu button {
   display: block; width: 100%; padding: 8px 12px; text-align: left;
   background: transparent; border: 0; color: inherit; cursor: pointer;
   transition: all 120ms ease;
 }
-.maw-pane-menu button:hover, .maw-pane-menu button:focus-visible { background: var(--agency-hover); outline: 1px solid var(--ember); outline-offset: -2px; }
-.maw-pane-grip { flex-shrink: 0; cursor: grab; touch-action: none; }
-.maw-pane-grip.is-dragging { cursor: grabbing; opacity: .5; }
-.maw-pane-header { transition: opacity 180ms ease-out; }
-.maw-pane-header:has(.maw-pane-grip.is-dragging), .is-pane-drag-source .maw-pane-header { opacity: .55; }
-.maw-pane-dragging, .maw-pane-dragging * { cursor: grabbing!important; user-select: none!important; }
-.maw-pane-drag-shield,
+.wb-pane-menu button:hover, .wb-pane-menu button:focus-visible { background: var(--agency-hover); outline: 1px solid var(--ember); outline-offset: -2px; }
+.wb-pane-grip { flex-shrink: 0; cursor: grab; touch-action: none; }
+.wb-pane-grip.is-dragging { cursor: grabbing; opacity: .5; }
+.wb-pane-header { transition: opacity 180ms ease-out; }
+.wb-pane-header:has(.wb-pane-grip.is-dragging), .is-pane-drag-source .wb-pane-header { opacity: .55; }
+.wb-pane-dragging, .wb-pane-dragging * { cursor: grabbing!important; user-select: none!important; }
+.wb-pane-drag-shield,
 .agency-sidebar-drag-shield { position: fixed; inset: 0; z-index: 125; }
-.maw-pane-drag-overlay { z-index: 160; pointer-events: none; }
-.maw-pane-drag-preview {
+.wb-pane-drag-overlay { z-index: 160; pointer-events: none; }
+.wb-pane-drag-preview {
   display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; width: 220px;
   border: 1px solid var(--accent-border-strong); border-radius: var(--radius-sm); background: var(--panel); color: var(--ink);
   box-shadow: var(--shadow-lg); font-size: 12px;
 }
-.maw-pane-drag-preview span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); }
-.maw-split-pane::after {
+.wb-pane-drag-preview span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); }
+.wb-split-pane::after {
   content: ''; position: absolute; inset: 2px; border: 2px solid transparent; border-radius: 3px;
   pointer-events: none; z-index: 126; transition: border-color 180ms ease-out, background-color 180ms ease-out;
 }
-.maw-pane-dragging .maw-split-pane.is-pane-drop-target::after { border-color: var(--ember); background: var(--molten-dim); }
+.wb-pane-dragging .wb-split-pane.is-pane-drop-target::after { border-color: var(--ember); background: var(--molten-dim); }
 @media (prefers-reduced-motion:reduce) {
-  .maw-pane-header, .maw-split-pane::after, .maw-session-tab, .agency-chevron { transition:none; }
+  .wb-pane-header, .wb-split-pane::after, .wb-session-tab, .agency-chevron { transition:none; }
 }
 
 /* ========================================================================= */
 /* Native Resource Performance Monitor Panel                                */
 /* ========================================================================= */
 
-.maw-performance-panel {
+.wb-performance-panel {
   position: absolute;
   top: 54px;
   right: 16px;
@@ -2278,7 +2278,7 @@
   color: var(--ink);
 }
 
-.maw-perf-header {
+.wb-perf-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2287,18 +2287,18 @@
   background: var(--bg-2);
 }
 
-.maw-perf-title-row {
+.wb-perf-title-row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.maw-perf-header-icon {
+.wb-perf-header-icon {
   color: var(--ember);
   flex-shrink: 0;
 }
 
-.maw-perf-title {
+.wb-perf-title {
   font-size: 13px;
   font-weight: 600;
   color: var(--ink);
@@ -2306,38 +2306,38 @@
   margin: 0;
 }
 
-.maw-perf-status-badge {
+.wb-perf-status-badge {
   font-size: 10px;
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 10px;
 }
 
-.maw-perf-status-badge.active {
+.wb-perf-status-badge.active {
   background: var(--sage-dim);
   color: var(--sage);
   border: 1px solid rgba(61, 158, 107, 0.3);
 }
 
-.maw-perf-status-badge.paused {
+.wb-perf-status-badge.paused {
   background: var(--molten-dim);
   color: var(--molten);
   border: 1px solid rgba(236, 138, 74, 0.3);
 }
 
-.maw-perf-latency-badge {
+.wb-perf-latency-badge {
   font-size: 10px;
   color: var(--ink-4);
   font-family: var(--font-mono);
 }
 
-.maw-perf-controls {
+.wb-perf-controls {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.maw-perf-btn {
+.wb-perf-btn {
   background: var(--bg-3);
   border: 1px solid var(--border);
   color: var(--ink-2);
@@ -2351,28 +2351,28 @@
   transition: all 0.15s ease;
 }
 
-.maw-perf-btn:hover {
+.wb-perf-btn:hover {
   background: var(--hover);
   color: var(--ink);
   border-color: var(--border-strong);
 }
 
-.maw-perf-close-btn {
+.wb-perf-close-btn {
   font-size: 15px;
   line-height: 1;
   padding: 2px 7px;
 }
 
-.maw-perf-btn.spinning svg {
-  animation: maw-spin 1s linear infinite;
+.wb-perf-btn.spinning svg {
+  animation: wb-spin 1s linear infinite;
 }
 
-@keyframes maw-spin {
+@keyframes wb-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
 
-.maw-perf-content {
+.wb-perf-content {
   padding: 12px 14px;
   overflow-y: auto;
   flex: 1;
@@ -2381,14 +2381,14 @@
   gap: 12px;
 }
 
-.maw-perf-error {
+.wb-perf-error {
   padding: 16px;
   text-align: center;
   color: var(--danger);
   font-size: 12px;
 }
 
-.maw-perf-loading {
+.wb-perf-loading {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2399,22 +2399,22 @@
   font-size: 12px;
 }
 
-.maw-perf-spinner {
+.wb-perf-spinner {
   width: 20px;
   height: 20px;
   border: 2px solid rgba(255, 255, 255, 0.1);
   border-top-color: var(--ember);
   border-radius: 50%;
-  animation: maw-spin 0.8s linear infinite;
+  animation: wb-spin 0.8s linear infinite;
 }
 
-.maw-perf-grid {
+.wb-perf-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 8px;
 }
 
-.maw-perf-card {
+.wb-perf-card {
   background: var(--bg-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -2424,74 +2424,74 @@
   gap: 4px;
 }
 
-.maw-perf-card-header {
+.wb-perf-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.maw-perf-card-label {
+.wb-perf-card-label {
   font-size: 11px;
   font-weight: 500;
   color: var(--ink-3);
 }
 
-.maw-perf-card-sub {
+.wb-perf-card-sub {
   font-size: 10px;
   color: var(--ink-4);
 }
 
-.maw-perf-card-body {
+.wb-perf-card-body {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.maw-perf-card-val-row {
+.wb-perf-card-val-row {
   display: flex;
   flex-direction: column;
 }
 
-.maw-perf-card-val {
+.wb-perf-card-val {
   font-size: 15px;
   font-weight: 600;
   color: var(--ink);
   font-family: var(--font-mono);
 }
 
-.maw-perf-card-note {
+.wb-perf-card-note {
   font-size: 10px;
   color: var(--ink-4);
 }
 
-.maw-perf-pressure-badge {
+.wb-perf-pressure-badge {
   font-size: 9px;
   font-weight: 700;
   padding: 1px 5px;
   border-radius: 4px;
 }
 
-.maw-perf-pressure-badge.tier-normal {
+.wb-perf-pressure-badge.tier-normal {
   background: var(--sage-dim);
   color: var(--sage);
 }
 
-.maw-perf-pressure-badge.tier-moderate {
+.wb-perf-pressure-badge.tier-moderate {
   background: var(--molten-dim);
   color: var(--ember);
 }
 
-.maw-perf-pressure-badge.tier-high {
+.wb-perf-pressure-badge.tier-high {
   background: rgba(236, 138, 74, 0.2);
   color: var(--molten);
 }
 
-.maw-perf-pressure-badge.tier-critical {
+.wb-perf-pressure-badge.tier-critical {
   background: rgba(177, 51, 24, 0.25);
   color: var(--danger);
 }
 
-.maw-perf-unavailable-badge {
+.wb-perf-unavailable-badge {
   font-size: 9px;
   color: var(--ink-4);
   background: var(--bg-3);
@@ -2499,7 +2499,7 @@
   border-radius: 3px;
 }
 
-.maw-perf-accounting-note {
+.wb-perf-accounting-note {
   font-size: 10px;
   color: var(--ink-4);
   line-height: 1.4;
@@ -2509,7 +2509,7 @@
   border: 1px dashed var(--border);
 }
 
-.maw-perf-health-row {
+.wb-perf-health-row {
   display: flex;
   gap: 8px;
   padding: 6px 10px;
@@ -2521,56 +2521,56 @@
   justify-content: space-between;
 }
 
-.maw-perf-health-item {
+.wb-perf-health-item {
   display: flex;
   align-items: center;
   gap: 5px;
 }
 
-.maw-perf-health-dot {
+.wb-perf-health-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
 }
 
-.maw-perf-health-dot.healthy {
+.wb-perf-health-dot.healthy {
   background: var(--sage);
   box-shadow: 0 0 4px var(--sage);
 }
 
-.maw-perf-health-dot.disabled,
-.maw-perf-health-dot.degraded {
+.wb-perf-health-dot.disabled,
+.wb-perf-health-dot.degraded {
   background: var(--molten);
 }
 
-.maw-perf-health-dot.unreachable {
+.wb-perf-health-dot.unreachable {
   background: var(--danger);
 }
 
-.maw-perf-health-name {
+.wb-perf-health-name {
   color: var(--ink-2);
 }
 
-.maw-perf-health-pid {
+.wb-perf-health-pid {
   color: var(--ink-4);
   font-size: 10px;
   font-family: var(--font-mono);
 }
 
-.maw-perf-groups {
+.wb-perf-groups {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.maw-perf-section {
+.wb-perf-section {
   background: var(--bg-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
-.maw-perf-section-toggle {
+.wb-perf-section-toggle {
   width: 100%;
   display: flex;
   align-items: center;
@@ -2585,56 +2585,56 @@
   transition: background 0.12s ease;
 }
 
-.maw-perf-section-toggle:hover {
+.wb-perf-section-toggle:hover {
   background: var(--agency-hover);
 }
 
-.maw-perf-chevron {
+.wb-perf-chevron {
   display: inline-block;
   font-size: 10px;
   color: var(--ink-4);
   transition: transform 0.15s ease;
 }
 
-.maw-perf-chevron.expanded {
+.wb-perf-chevron.expanded {
   transform: rotate(90deg);
 }
 
-.maw-perf-chevron-sm {
+.wb-perf-chevron-sm {
   display: inline-block;
   font-size: 9px;
   color: var(--ink-4);
   transition: transform 0.15s ease;
 }
 
-.maw-perf-chevron-sm.expanded {
+.wb-perf-chevron-sm.expanded {
   transform: rotate(90deg);
 }
 
-.maw-perf-section-title {
+.wb-perf-section-title {
   font-weight: 600;
   color: var(--ink);
   flex: 1;
 }
 
-.maw-perf-section-meta {
+.wb-perf-section-meta {
   color: var(--ink-3);
   font-size: 10px;
   font-family: var(--font-mono);
 }
 
-.maw-perf-table-wrapper {
+.wb-perf-table-wrapper {
   overflow-x: auto;
   padding: 4px 6px 6px;
 }
 
-.maw-perf-table {
+.wb-perf-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 11px;
 }
 
-.maw-perf-table th {
+.wb-perf-table th {
   text-align: left;
   font-weight: 500;
   color: var(--ink-4);
@@ -2643,24 +2643,24 @@
   font-size: 10px;
 }
 
-.maw-perf-table td {
+.wb-perf-table td {
   padding: 4px 6px;
   border-bottom: 1px solid var(--border-faint);
   color: var(--ink-2);
 }
 
-.maw-perf-td-mono {
+.wb-perf-td-mono {
   font-family: var(--font-mono);
   font-size: 10.5px;
 }
 
-.maw-perf-td-name {
+.wb-perf-td-name {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.maw-perf-role-pill {
+.wb-perf-role-pill {
   font-size: 9px;
   background: var(--bg-3);
   color: var(--ink-3);
@@ -2668,21 +2668,21 @@
   border-radius: 3px;
 }
 
-.maw-perf-subgroups {
+.wb-perf-subgroups {
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 6px;
 }
 
-.maw-perf-subgroup {
+.wb-perf-subgroup {
   background: var(--bg-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
-.maw-perf-subgroup-header {
+.wb-perf-subgroup-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2690,28 +2690,28 @@
   background: var(--bg-3);
 }
 
-.maw-perf-provider-tag {
+.wb-perf-provider-tag {
   font-weight: 600;
   font-size: 11px;
   color: var(--ember);
 }
 
-.maw-perf-subgroup-meta {
+.wb-perf-subgroup-meta {
   font-size: 10px;
   color: var(--ink-3);
   font-family: var(--font-mono);
 }
 
-.maw-perf-instances-list {
+.wb-perf-instances-list {
   display: flex;
   flex-direction: column;
 }
 
-.maw-perf-instance-card {
+.wb-perf-instance-card {
   border-top: 1px solid var(--border);
 }
 
-.maw-perf-instance-row {
+.wb-perf-instance-row {
   display: flex;
   align-items: center;
   padding: 5px 8px;
@@ -2720,44 +2720,44 @@
   cursor: pointer;
 }
 
-.maw-perf-instance-row:hover {
+.wb-perf-instance-row:hover {
   background: var(--hover);
 }
 
-.maw-perf-instance-title {
+.wb-perf-instance-title {
   color: var(--ink);
   font-weight: 500;
   flex: 1;
 }
 
-.maw-perf-instance-pids {
+.wb-perf-instance-pids {
   color: var(--ink-4);
   font-size: 10px;
   font-family: var(--font-mono);
 }
 
-.maw-perf-instance-metrics {
+.wb-perf-instance-metrics {
   color: var(--ink-3);
   font-family: var(--font-mono);
   font-size: 10px;
 }
 
-.maw-perf-instance-details {
+.wb-perf-instance-details {
   padding: 4px 8px 6px;
   background: var(--bg);
 }
 
-.maw-perf-subtable th {
+.wb-perf-subtable th {
   font-size: 9px;
   padding: 2px 4px;
 }
 
-.maw-perf-subtable td {
+.wb-perf-subtable td {
   font-size: 9.5px;
   padding: 2px 4px;
 }
 
-.maw-perf-browser-badge {
+.wb-perf-browser-badge {
   font-size: 9.5px;
   font-weight: 600;
   background: var(--bg-3);
@@ -2766,34 +2766,34 @@
   border-radius: 3px;
 }
 
-.maw-perf-tab-url {
+.wb-perf-tab-url {
   font-size: 10px;
   color: var(--ink-3);
 }
 
-.maw-perf-lifecycle-badge {
+.wb-perf-lifecycle-badge {
   font-size: 9px;
   font-weight: 600;
   padding: 1px 4px;
   border-radius: 3px;
 }
 
-.maw-perf-lifecycle-badge.active {
+.wb-perf-lifecycle-badge.active {
   background: var(--sage-dim);
   color: var(--sage);
 }
 
-.maw-perf-lifecycle-badge.background {
+.wb-perf-lifecycle-badge.background {
   background: var(--molten-dim);
   color: var(--ember);
 }
 
-.maw-perf-lifecycle-badge.suspended {
+.wb-perf-lifecycle-badge.suspended {
   background: rgba(168, 85, 247, 0.15);
   color: #c084fc;
 }
 
-.maw-perf-shared-badge {
+.wb-perf-shared-badge {
   font-size: 9px;
   background: var(--border-strong);
   color: var(--ink-2);
@@ -2802,7 +2802,7 @@
   margin-left: 4px;
 }
 
-.maw-perf-empty {
+.wb-perf-empty {
   font-size: 11px;
   color: var(--ink-4);
   font-style: italic;
@@ -2811,17 +2811,17 @@
   margin: 0;
 }
 
-.maw-sparkline {
+.wb-sparkline {
   display: block;
 }
 
-.maw-sparkline-placeholder {
+.wb-sparkline-placeholder {
   display: block;
   background: rgba(255, 255, 255, 0.02);
   border-radius: 3px;
 }
 
-.maw-perf-shared-notice {
+.wb-perf-shared-notice {
   padding: 6px 10px;
   background: var(--bg-2);
   border-top: 1px solid var(--border);
@@ -2849,7 +2849,7 @@
 }
 
 /* Modern Desktop Settings Dialog */
-.modal.settings-dialog.maw-settings-window {
+.modal.settings-dialog.wb-settings-window {
   width: min(880px, calc(100vw - 32px));
   height: min(650px, calc(100vh - 60px));
   max-height: calc(100vh - 40px);
@@ -2866,12 +2866,12 @@
   overflow: hidden;
 }
 
-.modal.settings-dialog.maw-settings-wide {
+.modal.settings-dialog.wb-settings-wide {
   width: min(880px, calc(100vw - 32px));
   height: min(650px, calc(100vh - 60px));
 }
 
-.maw-settings-header {
+.wb-settings-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2881,13 +2881,13 @@
   flex-shrink: 0;
 }
 
-.maw-settings-header-title-group {
+.wb-settings-header-title-group {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.maw-settings-header-icon {
+.wb-settings-header-icon {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2897,13 +2897,13 @@
   flex-shrink: 0;
 }
 
-.maw-settings-header-icon svg {
+.wb-settings-header-icon svg {
   display: block;
   width: 20px;
   height: 20px;
 }
 
-.maw-settings-title {
+.wb-settings-title {
   font-size: 20px;
   font-weight: 700;
   line-height: 1.2;
@@ -2913,7 +2913,7 @@
   margin: 0;
 }
 
-.maw-settings-close-btn {
+.wb-settings-close-btn {
   background: transparent;
   border: none;
   color: var(--ink-3);
@@ -2925,19 +2925,19 @@
   line-height: 1;
 }
 
-.maw-settings-close-btn:hover {
+.wb-settings-close-btn:hover {
   background: var(--agency-hover);
   color: var(--ink);
 }
 
-.maw-settings-layout {
+.wb-settings-layout {
   display: flex;
   flex: 1;
   min-height: 0;
   overflow: hidden;
 }
 
-.maw-settings-nav {
+.wb-settings-nav {
   width: 210px;
   flex-shrink: 0;
   background: rgba(18, 18, 21, 0.75);
@@ -2949,7 +2949,7 @@
   overflow-y: auto;
 }
 
-.maw-settings-search-box {
+.wb-settings-search-box {
   position: relative;
   display: flex;
   align-items: center;
@@ -2958,7 +2958,7 @@
   flex-shrink: 0;
 }
 
-.maw-settings-search-icon {
+.wb-settings-search-icon {
   position: absolute;
   left: 10px;
   display: flex;
@@ -2970,7 +2970,7 @@
   height: 14px;
 }
 
-.maw-settings-search-input {
+.wb-settings-search-input {
   width: 100%;
   height: 32px;
   background: rgba(255, 255, 255, 0.04);
@@ -2984,14 +2984,14 @@
   transition: border-color 140ms ease, background 140ms ease;
 }
 
-.maw-settings-search-input:focus,
-.maw-settings-search-input:focus-visible {
+.wb-settings-search-input:focus,
+.wb-settings-search-input:focus-visible {
   outline: none;
   border-color: var(--ember, #d97442);
   background: rgba(255, 255, 255, 0.07);
 }
 
-.maw-settings-search-clear {
+.wb-settings-search-clear {
   position: absolute;
   right: 8px;
   background: transparent;
@@ -3007,19 +3007,19 @@
   justify-content: center;
 }
 
-.maw-settings-search-clear:hover {
+.wb-settings-search-clear:hover {
   color: var(--ink);
   background: rgba(255, 255, 255, 0.08);
 }
 
-.maw-settings-nav-list {
+.wb-settings-nav-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
   flex: 1;
 }
 
-.maw-settings-search-results {
+.wb-settings-search-results {
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -3027,7 +3027,7 @@
   overflow-y: auto;
 }
 
-.maw-settings-search-count {
+.wb-settings-search-count {
   font-size: 11px;
   color: var(--ink-3);
   padding: 2px 8px 6px;
@@ -3036,7 +3036,7 @@
   margin-bottom: 2px;
 }
 
-.maw-settings-search-item {
+.wb-settings-search-item {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -3052,25 +3052,25 @@
   box-sizing: border-box;
 }
 
-.maw-settings-search-item:hover,
-.maw-settings-search-item.active {
+.wb-settings-search-item:hover,
+.wb-settings-search-item.active {
   background: var(--agency-hover);
   color: var(--ink);
 }
 
-.maw-settings-search-item.active {
+.wb-settings-search-item.active {
   border-color: rgba(249, 115, 22, 0.28);
   background: rgba(249, 115, 22, 0.08);
 }
 
-.maw-settings-search-item-header {
+.wb-settings-search-item-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
 }
 
-.maw-settings-search-item-title {
+.wb-settings-search-item-title {
   font-size: 12.5px;
   font-weight: 500;
   color: var(--ink);
@@ -3079,7 +3079,7 @@
   white-space: nowrap;
 }
 
-.maw-settings-search-item-category {
+.wb-settings-search-item-category {
   font-size: 10px;
   padding: 1px 5px;
   border-radius: 4px;
@@ -3090,7 +3090,7 @@
   flex-shrink: 0;
 }
 
-.maw-settings-search-item-desc {
+.wb-settings-search-item-desc {
   font-size: 11px;
   color: var(--ink-3);
   overflow: hidden;
@@ -3098,19 +3098,19 @@
   white-space: nowrap;
 }
 
-.maw-settings-search-empty {
+.wb-settings-search-empty {
   padding: 24px 12px;
   text-align: center;
 }
 
-.maw-settings-search-empty-text {
+.wb-settings-search-empty-text {
   font-size: 12px;
   color: var(--ink-3);
   margin: 0;
   line-height: 1.4;
 }
 
-.maw-settings-sidebar-footer {
+.wb-settings-sidebar-footer {
   margin-top: auto;
   padding: 12px 8px 4px;
   border-top: 1px solid var(--border-faint);
@@ -3120,7 +3120,7 @@
   flex-shrink: 0;
 }
 
-.maw-settings-version {
+.wb-settings-version {
   font-size: 11px;
   color: var(--ink-3);
   font-family: var(--font-mono, monospace);
@@ -3131,13 +3131,13 @@
   text-overflow: ellipsis;
 }
 
-.maw-settings-card.maw-settings-card-highlighted {
+.wb-settings-card.wb-settings-card-highlighted {
   border-color: rgba(249, 115, 22, 0.5);
   box-shadow: 0 0 16px rgba(249, 115, 22, 0.15);
   transition: border-color 300ms ease, box-shadow 300ms ease;
 }
 
-.maw-settings-nav-item {
+.wb-settings-nav-item {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -3154,19 +3154,19 @@
   transition: all 120ms ease;
 }
 
-.maw-settings-nav-item:hover {
+.wb-settings-nav-item:hover {
   background: var(--agency-hover);
   color: var(--ink);
 }
 
-.maw-settings-nav-item.active {
+.wb-settings-nav-item.active {
   background: rgba(249, 115, 22, 0.12);
   border-color: rgba(249, 115, 22, 0.28);
   color: #fb923c;
   font-weight: 600;
 }
 
-.maw-settings-nav-icon {
+.wb-settings-nav-icon {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3176,20 +3176,20 @@
   opacity: 0.85;
 }
 
-.maw-settings-nav-icon svg {
+.wb-settings-nav-icon svg {
   display: block;
   width: 15px;
   height: 15px;
 }
 
-.maw-settings-nav-label {
+.wb-settings-nav-label {
   flex: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.maw-settings-content {
+.wb-settings-content {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
@@ -3198,39 +3198,39 @@
   background: var(--panel);
 }
 
-.maw-settings-panel-inner {
+.wb-settings-panel-inner {
   padding: 20px 24px 28px;
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.maw-settings-content .agents-usage-view {
+.wb-settings-content .agents-usage-view {
   padding: 20px 24px 28px;
   gap: 14px;
   overflow: visible;
   box-sizing: border-box;
 }
 
-.maw-settings-content .agents-usage-title {
+.wb-settings-content .agents-usage-title {
   font-size: 16px;
   font-weight: 600;
   color: var(--ink);
   margin: 0 0 4px 0;
 }
 
-.maw-settings-content .agents-usage-subtitle {
+.wb-settings-content .agents-usage-subtitle {
   font-size: 12px;
   color: var(--ink-3);
   margin: 0;
   line-height: 1.45;
 }
 
-.maw-settings-section-header {
+.wb-settings-section-header {
   margin-bottom: 4px;
 }
 
-.maw-settings-section-title {
+.wb-settings-section-title {
   font-size: 16px;
   font-weight: 600;
   color: var(--ink);
@@ -3238,33 +3238,33 @@
   letter-spacing: -0.01em;
 }
 
-.maw-settings-section-desc {
+.wb-settings-section-desc {
   font-size: 12.5px;
   color: var(--ink-3);
   margin: 0;
   line-height: 1.45;
 }
 
-.maw-settings-groups {
+.wb-settings-groups {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
-.maw-settings-card {
+.wb-settings-card {
   background: var(--bg-2);
   border: 1px solid var(--border-faint);
   border-radius: 8px;
   overflow: hidden;
 }
 
-.maw-settings-card-header {
+.wb-settings-card-header {
   padding: 10px 16px;
   background: rgba(255, 255, 255, 0.02);
   border-bottom: 1px solid var(--border-faint);
 }
 
-.maw-settings-card-title {
+.wb-settings-card-title {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -3272,45 +3272,45 @@
   color: var(--ember);
 }
 
-.maw-settings-card-body {
+.wb-settings-card-body {
   padding: 14px 16px;
 }
 
-.maw-settings-row {
+.wb-settings-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
 }
 
-.maw-settings-row-text {
+.wb-settings-row-text {
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
 
-.maw-settings-label {
+.wb-settings-label {
   font-size: 13px;
   font-weight: 500;
   color: var(--ink);
 }
 
-.maw-settings-subtext {
+.wb-settings-subtext {
   font-size: 11.5px;
   color: var(--ink-3);
 }
 
-.maw-settings-control {
+.wb-settings-control {
   flex-shrink: 0;
 }
 
-.maw-settings-choices {
+.wb-settings-choices {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.maw-settings-choice {
+.wb-settings-choice {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -3319,28 +3319,28 @@
   cursor: pointer;
 }
 
-.maw-settings-choice input[type="radio"],
-.maw-settings-choice input[type="checkbox"] {
+.wb-settings-choice input[type="radio"],
+.wb-settings-choice input[type="checkbox"] {
   accent-color: var(--ember);
   cursor: pointer;
 }
 
-.maw-settings-choice-label {
+.wb-settings-choice-label {
   font-size: 13px;
 }
 
-.maw-settings-hint {
+.wb-settings-hint {
   color: var(--ink-3);
   font-size: 11.5px;
   line-height: 1.5;
   margin: 8px 0 0 0;
 }
 
-.maw-settings-warning {
+.wb-settings-warning {
   color: #fbbf24;
 }
 
-.maw-settings-clis {
+.wb-settings-clis {
   list-style: none;
   padding: 0;
   margin: 0;
@@ -3349,7 +3349,7 @@
   gap: 6px;
 }
 
-.maw-settings-cli-row {
+.wb-settings-cli-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3360,21 +3360,21 @@
   border: 1px solid var(--border-faint);
 }
 
-.maw-settings-cli-name {
+.wb-settings-cli-name {
   font-weight: 500;
 }
 
-.maw-settings-cli-missing {
+.wb-settings-cli-missing {
   color: var(--ink-3);
 }
 
-.maw-settings-cli-actions {
+.wb-settings-cli-actions {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.maw-settings-badge {
+.wb-settings-badge {
   padding: 3px 8px;
   border-radius: 12px;
   font-size: 11px;
@@ -3382,35 +3382,35 @@
   font-family: var(--font-mono, monospace);
 }
 
-.maw-settings-badge.badge-available {
+.wb-settings-badge.badge-available {
   background: rgba(34, 197, 94, 0.12);
   color: #4ade80;
   border: 1px solid rgba(34, 197, 94, 0.25);
 }
 
-.maw-settings-badge.badge-disabled {
+.wb-settings-badge.badge-disabled {
   background: rgba(161, 161, 170, 0.1);
   color: #a1a1aa;
   border: 1px solid rgba(161, 161, 170, 0.2);
 }
 
-.maw-settings-badge.badge-missing {
+.wb-settings-badge.badge-missing {
   background: rgba(245, 158, 11, 0.12);
   color: #fbbf24;
   border: 1px solid rgba(245, 158, 11, 0.25);
 }
 
-.maw-settings-install-link {
+.wb-settings-install-link {
   font-size: 11.5px;
   color: var(--ember);
   text-decoration: underline;
 }
 
-.maw-settings-install-link:hover {
+.wb-settings-install-link:hover {
   color: var(--molten);
 }
 
-.maw-settings-banner {
+.wb-settings-banner {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -3420,24 +3420,24 @@
   margin-top: 10px;
 }
 
-.maw-settings-banner-warning {
+.wb-settings-banner-warning {
   background: rgba(245, 158, 11, 0.1);
   border: 1px solid rgba(245, 158, 11, 0.3);
   color: #fbbf24;
 }
 
-.maw-settings-banner-error {
+.wb-settings-banner-error {
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);
   color: #f87171;
   justify-content: space-between;
 }
 
-.maw-settings-banner-icon {
+.wb-settings-banner-icon {
   font-size: 13px;
 }
 
-.maw-settings-about-hero {
+.wb-settings-about-hero {
   display: flex;
   align-items: center;
   gap: 14px;
@@ -3445,7 +3445,7 @@
   border-bottom: 1px solid var(--border-faint);
 }
 
-.maw-settings-about-logo {
+.wb-settings-about-logo {
   width: 44px;
   height: 44px;
   flex: none;
@@ -3453,27 +3453,27 @@
   filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.35));
 }
 
-.maw-settings-about-name {
+.wb-settings-about-name {
   font-size: 15px;
   font-weight: 600;
   color: var(--ink);
   margin: 0 0 2px 0;
 }
 
-.maw-settings-about-tagline {
+.wb-settings-about-tagline {
   font-size: 12px;
   color: var(--ink-3);
   margin: 0;
 }
 
-.maw-settings-spec-table {
+.wb-settings-spec-table {
   margin-top: 14px;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.maw-settings-spec-row {
+.wb-settings-spec-row {
   display: flex;
   justify-content: space-between;
   font-size: 12.5px;
@@ -3481,29 +3481,29 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
 }
 
-.maw-settings-spec-label {
+.wb-settings-spec-label {
   color: var(--ink-3);
 }
 
-.maw-settings-spec-val {
+.wb-settings-spec-val {
   color: var(--ink);
   font-family: var(--font-mono, monospace);
   font-size: 12px;
 }
 
-.maw-settings-about-links {
+.wb-settings-about-links {
   margin-top: 16px;
   display: flex;
   gap: 12px;
 }
 
-.maw-settings-panels-grid {
+.wb-settings-panels-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 10px;
 }
 
-.maw-settings-confirm {
+.wb-settings-confirm {
   margin-top: 12px;
   padding: 10px 12px;
   border-radius: 6px;
@@ -3513,23 +3513,23 @@
   font-size: 12px;
 }
 
-.maw-settings-confirm-actions {
+.wb-settings-confirm-actions {
   margin-top: 8px;
   display: flex;
   gap: 10px;
 }
 
-.maw-settings-action-row {
+.wb-settings-action-row {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
 }
 
 @media (max-width: 680px) {
-  .maw-settings-layout {
+  .wb-settings-layout {
     flex-direction: column;
   }
-  .maw-settings-nav {
+  .wb-settings-nav {
     width: 100%;
     flex-direction: row;
     border-right: none;
@@ -3537,16 +3537,16 @@
     overflow-x: auto;
     padding: 8px 12px;
   }
-  .maw-settings-nav-item {
+  .wb-settings-nav-item {
     flex: 0 0 auto;
     padding: 6px 10px;
   }
-  .maw-settings-panel-inner {
+  .wb-settings-panel-inner {
     padding: 16px;
   }
 }
 
-@keyframes maw-terminal-search-fade-in {
+@keyframes wb-terminal-search-fade-in {
   from {
     opacity: 0;
     transform: translate(-50%, -4px);
@@ -3558,7 +3558,7 @@
 }
 
 /* Floating Terminal Search Bar */
-.maw-terminal-search-bar {
+.wb-terminal-search-bar {
   position: absolute;
   top: 8px;
   left: 50%;
@@ -3574,10 +3574,10 @@
   box-shadow: var(--shadow-lg);
   padding: 4px 8px;
   font-size: 12px;
-  animation: maw-terminal-search-fade-in 0.12s ease-out;
+  animation: wb-terminal-search-fade-in 0.12s ease-out;
 }
 
-.maw-terminal-search-input {
+.wb-terminal-search-input {
   background: var(--bg-1, #141417);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -3589,11 +3589,11 @@
   transition: border-color 120ms ease;
 }
 
-.maw-terminal-search-input:focus {
+.wb-terminal-search-input:focus {
   border-color: var(--accent);
 }
 
-.maw-terminal-search-counter {
+.wb-terminal-search-counter {
   font-size: 11px;
   color: var(--ink-dim);
   min-width: 32px;
@@ -3601,7 +3601,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.maw-terminal-search-btn {
+.wb-terminal-search-btn {
   background: transparent;
   border: 1px solid transparent;
   color: var(--ink-dim);
@@ -3616,33 +3616,33 @@
   transition: all 120ms ease;
 }
 
-.maw-terminal-search-btn:hover:not(:disabled) {
+.wb-terminal-search-btn:hover:not(:disabled) {
   background: var(--agency-hover);
   color: var(--ink);
   border-color: var(--border);
 }
 
-.maw-terminal-search-btn:disabled {
+.wb-terminal-search-btn:disabled {
   opacity: 0.35;
   cursor: default;
 }
 
-.maw-terminal-search-close {
+.wb-terminal-search-close {
   font-size: 14px;
   margin-left: 2px;
 }
 
 /* ==========================================================================
-   MAW BROWSER SETTINGS & DESTINATION PICKER
+   Workbench BROWSER SETTINGS & DESTINATION PICKER
    ========================================================================== */
 
-.maw-settings-card-header-flex {
+.wb-settings-card-header-flex {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.maw-settings-action-btn {
+.wb-settings-action-btn {
   background: var(--bg-3);
   border: 1px solid var(--border-subtle);
   color: var(--ink);
@@ -3654,13 +3654,13 @@
   transition: all 120ms ease;
 }
 
-.maw-settings-action-btn:hover {
+.wb-settings-action-btn:hover {
   background: var(--bg-hover);
   border-color: var(--ember);
   color: var(--ember);
 }
 
-.maw-settings-choice-meta {
+.wb-settings-choice-meta {
   font-size: 11px;
   color: var(--ink-3);
   margin-left: 8px;
@@ -3668,7 +3668,7 @@
   opacity: 0.85;
 }
 
-.maw-settings-favorite-form {
+.wb-settings-favorite-form {
   margin-top: 10px;
   margin-bottom: 14px;
   padding: 12px;
@@ -3680,12 +3680,12 @@
   gap: 10px;
 }
 
-.maw-settings-form-row {
+.wb-settings-form-row {
   display: flex;
   gap: 12px;
 }
 
-.maw-settings-form-field {
+.wb-settings-form-field {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -3694,7 +3694,7 @@
   color: var(--ink-2);
 }
 
-.maw-settings-form-field input {
+.wb-settings-form-field input {
   background: var(--bg-1);
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
@@ -3703,29 +3703,29 @@
   color: var(--ink);
 }
 
-.maw-settings-form-field input:focus,
-.maw-settings-form-field input:focus-visible,
-.maw-settings-form-field select:focus,
-.maw-settings-form-field select:focus-visible,
-.maw-settings-form-field textarea:focus,
-.maw-settings-form-field textarea:focus-visible {
+.wb-settings-form-field input:focus,
+.wb-settings-form-field input:focus-visible,
+.wb-settings-form-field select:focus,
+.wb-settings-form-field select:focus-visible,
+.wb-settings-form-field textarea:focus,
+.wb-settings-form-field textarea:focus-visible {
   outline: none;
   border-color: var(--ember);
 }
 
-.maw-settings-fav-error {
+.wb-settings-fav-error {
   margin: 0;
   font-size: 11.5px;
   color: #ff6b6b;
 }
 
-.maw-settings-form-actions {
+.wb-settings-form-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
 }
 
-.maw-settings-favorites-list {
+.wb-settings-favorites-list {
   list-style: none;
   margin: 10px 0 0;
   padding: 0;
@@ -3735,7 +3735,7 @@
   overflow: hidden;
 }
 
-.maw-settings-favorite-row {
+.wb-settings-favorite-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3744,15 +3744,15 @@
   transition: background 100ms ease;
 }
 
-.maw-settings-favorite-row:last-child {
+.wb-settings-favorite-row:last-child {
   border-bottom: none;
 }
 
-.maw-settings-favorite-row:hover {
+.wb-settings-favorite-row:hover {
   background: var(--bg-hover);
 }
 
-.maw-settings-fav-info {
+.wb-settings-fav-info {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -3760,13 +3760,13 @@
   flex: 1;
 }
 
-.maw-settings-fav-title {
+.wb-settings-fav-title {
   font-size: 12.5px;
   font-weight: 500;
   color: var(--ink);
 }
 
-.maw-settings-fav-url {
+.wb-settings-fav-url {
   font-size: 11px;
   color: var(--ink-3);
   white-space: nowrap;
@@ -3775,14 +3775,14 @@
   font-family: var(--font-mono, monospace);
 }
 
-.maw-settings-fav-actions {
+.wb-settings-fav-actions {
   display: flex;
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
 }
 
-.maw-settings-fav-btn {
+.wb-settings-fav-btn {
   width: 24px;
   height: 24px;
   display: flex;
@@ -3797,28 +3797,28 @@
   transition: all 100ms ease;
 }
 
-.maw-settings-fav-btn:hover:not(:disabled) {
+.wb-settings-fav-btn:hover:not(:disabled) {
   background: var(--agency-hover);
   color: var(--ink);
 }
 
-.maw-settings-fav-btn:disabled {
+.wb-settings-fav-btn:disabled {
   opacity: 0.3;
   cursor: default;
 }
 
-.maw-settings-fav-delete:hover:not(:disabled) {
+.wb-settings-fav-delete:hover:not(:disabled) {
   color: #ff6b6b;
   background: rgba(255, 107, 107, 0.12);
 }
 
-.maw-settings-favorites-footer {
+.wb-settings-favorites-footer {
   margin-top: 12px;
   display: flex;
   justify-content: flex-end;
 }
 
-.maw-settings-link-btn {
+.wb-settings-link-btn {
   background: transparent;
   border: none;
   color: var(--ink-3);
@@ -3829,11 +3829,11 @@
   text-underline-offset: 3px;
 }
 
-.maw-settings-link-btn:hover {
+.wb-settings-link-btn:hover {
   color: var(--ink);
 }
 
-.maw-settings-empty-favorites {
+.wb-settings-empty-favorites {
   padding: 16px;
   text-align: center;
   border: 1px dashed var(--border-subtle);
@@ -3843,7 +3843,7 @@
 
 /* Browser Destination Picker in Add Tab & Centered Panes */
 
-.maw-pane-browser-picker-overlay {
+.wb-pane-browser-picker-overlay {
   position: absolute;
   inset: 0;
   z-index: 50;
@@ -3857,7 +3857,7 @@
   box-sizing: border-box;
 }
 
-.maw-pane-browser-picker-card {
+.wb-pane-browser-picker-card {
   width: 100%;
   max-width: 440px;
   min-width: 300px;
@@ -3871,7 +3871,7 @@
   box-sizing: border-box;
 }
 
-.maw-browser-dest-picker {
+.wb-browser-dest-picker {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -3879,7 +3879,7 @@
   box-sizing: border-box;
 }
 
-.maw-browser-dest-header {
+.wb-browser-dest-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3888,14 +3888,14 @@
   margin-bottom: 8px;
 }
 
-.maw-browser-dest-header-title {
+.wb-browser-dest-header-title {
   font-size: 13px;
   font-weight: 600;
   color: var(--ink, #ededea);
   letter-spacing: -0.01em;
 }
 
-.maw-browser-dest-close {
+.wb-browser-dest-close {
   background: transparent;
   border: none;
   color: var(--ink-3, #8a877f);
@@ -3907,12 +3907,12 @@
   transition: all 120ms ease;
 }
 
-.maw-browser-dest-close:hover {
+.wb-browser-dest-close:hover {
   background: var(--bg-3, #1a1a1e);
   color: var(--ink, #ededea);
 }
 
-.maw-browser-dest-back {
+.wb-browser-dest-back {
   background: transparent;
   border: none;
   color: var(--ember, #d97442);
@@ -3927,11 +3927,11 @@
   transition: background 120ms ease;
 }
 
-.maw-browser-dest-back:hover {
+.wb-browser-dest-back:hover {
   background: var(--agency-hover, #1a1a1e);
 }
 
-.maw-browser-dest-item {
+.wb-browser-dest-item {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -3948,13 +3948,13 @@
   box-sizing: border-box;
 }
 
-.maw-browser-dest-item:hover,
-.maw-browser-dest-item:focus-visible {
+.wb-browser-dest-item:hover,
+.wb-browser-dest-item:focus-visible {
   background: var(--agency-hover, #1a1a1e);
   outline: none;
 }
 
-.maw-browser-dest-icon-wrap {
+.wb-browser-dest-icon-wrap {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3964,18 +3964,18 @@
   color: var(--ink-dim, #b8b6b0);
 }
 
-.maw-browser-dest-favicon {
+.wb-browser-dest-favicon {
   width: 16px;
   height: 16px;
   border-radius: 3px;
   object-fit: contain;
 }
 
-.maw-browser-dest-icon {
+.wb-browser-dest-icon {
   flex-shrink: 0;
 }
 
-.maw-browser-dest-name {
+.wb-browser-dest-name {
   font-size: 13px;
   font-weight: 500;
   color: var(--ink, #ededea);
@@ -3985,7 +3985,7 @@
   white-space: nowrap;
 }
 
-.maw-browser-dest-url {
+.wb-browser-dest-url {
   font-size: 11px;
   color: var(--ink-dim, #8a877f);
   white-space: nowrap;
@@ -3994,7 +3994,7 @@
   max-width: 180px;
 }
 
-.maw-browser-dest-engine {
+.wb-browser-dest-engine {
   font-size: 11px;
   color: var(--ink-3, #8a877f);
   padding: 1px 6px;
@@ -4003,13 +4003,13 @@
   border: 1px solid var(--border-faint, #1d1d22);
 }
 
-.maw-browser-dest-divider {
+.wb-browser-dest-divider {
   height: 1px;
   background: var(--border-subtle, #25252b);
   margin: 6px 4px;
 }
 
-.maw-browser-dest-empty {
+.wb-browser-dest-empty {
   padding: 12px 10px;
   font-size: 12px;
   color: var(--ink-3, #8a877f);
@@ -4019,14 +4019,14 @@
 
 /* Inline Preview & Other Destination Views */
 
-.maw-browser-preview-header {
+.wb-browser-preview-header {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 4px 6px 12px 6px;
 }
 
-.maw-browser-preview-title {
+.wb-browser-preview-title {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
@@ -4036,7 +4036,7 @@
   white-space: nowrap;
 }
 
-.maw-browser-preview-row {
+.wb-browser-preview-row {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -4047,7 +4047,7 @@
   margin-bottom: 12px;
 }
 
-.maw-browser-preview-label {
+.wb-browser-preview-label {
   font-size: 11px;
   font-weight: 500;
   color: var(--ink-3, #8a877f);
@@ -4055,7 +4055,7 @@
   letter-spacing: 0.04em;
 }
 
-.maw-browser-preview-configured-url {
+.wb-browser-preview-configured-url {
   font-size: 12px;
   color: var(--ink-2, #b8b6b0);
   font-family: var(--font-mono, monospace);
@@ -4064,14 +4064,14 @@
   white-space: nowrap;
 }
 
-.maw-browser-preview-field {
+.wb-browser-preview-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
   margin-bottom: 14px;
 }
 
-.maw-browser-dest-input {
+.wb-browser-dest-input {
   width: 100%;
   box-sizing: border-box;
   padding: 8px 10px;
@@ -4084,26 +4084,26 @@
   transition: border-color 120ms ease;
 }
 
-.maw-browser-dest-input:focus,
-.maw-browser-dest-input:focus-visible {
+.wb-browser-dest-input:focus,
+.wb-browser-dest-input:focus-visible {
   border-color: var(--ember, #d97442);
   outline: none;
 }
 
-.maw-browser-preview-hint {
+.wb-browser-preview-hint {
   margin: 0;
   font-size: 11px;
   color: var(--ink-3, #8a877f);
   line-height: 1.4;
 }
 
-.maw-browser-dest-error {
+.wb-browser-dest-error {
   font-size: 11px;
   color: #ef4444;
   margin-top: 4px;
 }
 
-.maw-browser-preview-actions {
+.wb-browser-preview-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -4111,7 +4111,7 @@
   margin-top: 4px;
 }
 
-.maw-browser-dest-btn-secondary {
+.wb-browser-dest-btn-secondary {
   padding: 6px 14px;
   font-size: 12px;
   font-weight: 500;
@@ -4123,12 +4123,12 @@
   transition: background 120ms ease, color 120ms ease;
 }
 
-.maw-browser-dest-btn-secondary:hover {
+.wb-browser-dest-btn-secondary:hover {
   background: var(--border, #25252b);
   color: var(--ink, #ededea);
 }
 
-.maw-browser-dest-btn-primary {
+.wb-browser-dest-btn-primary {
   padding: 6px 16px;
   font-size: 12px;
   font-weight: 600;
@@ -4140,22 +4140,22 @@
   transition: opacity 120ms ease;
 }
 
-.maw-browser-dest-btn-primary:hover {
+.wb-browser-dest-btn-primary:hover {
   opacity: 0.9;
 }
 
 
 /* ==========================================================================
-   MAW CUSTOM SEARCH ENGINES & FAVORITES DRAG AND DROP
+   Workbench CUSTOM SEARCH ENGINES & FAVORITES DRAG AND DROP
    ========================================================================== */
 
-.maw-settings-card-header-actions {
+.wb-settings-card-header-actions {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.maw-settings-engine-action-btn {
+.wb-settings-engine-action-btn {
   background: var(--bg-3);
   border: 1px solid var(--border-subtle);
   color: var(--ink);
@@ -4167,35 +4167,35 @@
   transition: all 120ms ease;
 }
 
-.maw-settings-engine-action-btn:hover {
+.wb-settings-engine-action-btn:hover {
   background: var(--bg-hover);
   border-color: var(--ember);
   color: var(--ember);
 }
 
-.maw-settings-engine-form {
+.wb-settings-engine-form {
   margin-top: 10px;
   margin-bottom: 12px;
 }
 
-.maw-settings-form-field-full {
+.wb-settings-form-field-full {
   flex: 1 1 100%;
 }
 
-.maw-settings-form-hint {
+.wb-settings-form-hint {
   font-size: 11px;
   color: var(--ink-3);
   margin-top: 3px;
 }
 
-.maw-settings-engines-list {
+.wb-settings-engines-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
   margin-top: 8px;
 }
 
-.maw-settings-engine-row {
+.wb-settings-engine-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4206,11 +4206,11 @@
   transition: background 100ms ease;
 }
 
-.maw-settings-engine-row:hover {
+.wb-settings-engine-row:hover {
   background: var(--bg-hover);
 }
 
-.maw-settings-engine-choice {
+.wb-settings-engine-choice {
   flex: 1;
   display: flex;
   align-items: flex-start;
@@ -4219,20 +4219,20 @@
   min-width: 0;
 }
 
-.maw-settings-engine-labels {
+.wb-settings-engine-labels {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
-.maw-settings-engine-title-line {
+.wb-settings-engine-title-line {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.maw-settings-engine-badge {
+.wb-settings-engine-badge {
   font-size: 10px;
   font-weight: 500;
   padding: 1px 6px;
@@ -4241,19 +4241,19 @@
   letter-spacing: 0.04em;
 }
 
-.maw-settings-engine-badge.builtin {
+.wb-settings-engine-badge.builtin {
   background: var(--bg-3);
   color: var(--ink-3);
   border: 1px solid var(--border-subtle);
 }
 
-.maw-settings-engine-badge.custom {
+.wb-settings-engine-badge.custom {
   background: color-mix(in srgb, var(--ember) 15%, transparent);
   color: var(--ember);
   border: 1px solid color-mix(in srgb, var(--ember) 35%, transparent);
 }
 
-.maw-settings-engine-actions {
+.wb-settings-engine-actions {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -4261,7 +4261,7 @@
 }
 
 /* Favorites Drag and Drop Styling */
-.maw-fav-grip {
+.wb-fav-grip {
   width: 20px;
   height: 24px;
   display: flex;
@@ -4277,33 +4277,33 @@
   transition: all 100ms ease;
 }
 
-.maw-fav-grip:hover {
+.wb-fav-grip:hover {
   color: var(--ink-2);
   background: var(--bg-hover);
 }
 
-.maw-fav-grip:active,
-.maw-fav-grip.is-dragging {
+.wb-fav-grip:active,
+.wb-fav-grip.is-dragging {
   cursor: grabbing;
   color: var(--ember);
 }
 
-.maw-fav-grip:focus-visible {
+.wb-fav-grip:focus-visible {
   outline: 2px solid var(--ember);
   outline-offset: 1px;
 }
 
-.maw-settings-favorite-row.is-dragging {
+.wb-settings-favorite-row.is-dragging {
   opacity: 0.35;
 }
 
-.maw-settings-favorite-row.is-drop-target {
+.wb-settings-favorite-row.is-drop-target {
   background: color-mix(in srgb, var(--ember) 12%, var(--bg-1));
   outline: 1px dashed var(--ember);
   border-color: var(--ember);
 }
 
-.maw-fav-drag-overlay {
+.wb-fav-drag-overlay {
   background: var(--panel);
   border: 1px solid var(--ember);
   border-radius: 6px;
@@ -4326,18 +4326,18 @@
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
-.maw-pane-close-button {
+.wb-pane-close-button {
   font-size: 15px;
   font-weight: 500;
   line-height: 1;
 }
 
-.maw-pane-close-button:hover:not(:disabled) {
+.wb-pane-close-button:hover:not(:disabled) {
   color: var(--danger, #e5534b);
   background: rgba(229, 83, 75, 0.14);
 }
 
-.maw-pane-close-overlay {
+.wb-pane-close-overlay {
   position: absolute;
   inset: 0;
   z-index: 60;
@@ -4349,14 +4349,14 @@
   backdrop-filter: blur(4px);
 }
 
-.maw-pane-close-dialog {
+.wb-pane-close-dialog {
   width: min(380px, 100%);
   max-height: 100%;
   overflow-y: auto;
   margin: 0;
 }
 
-.maw-pane-close-summary {
+.wb-pane-close-summary {
   margin: 12px 0;
   padding: 10px 14px;
   background: rgba(255, 255, 255, 0.04);
@@ -4364,7 +4364,7 @@
   font-size: 13px;
 }
 
-.maw-pane-close-summary ul {
+.wb-pane-close-summary ul {
   margin: 0;
   padding-left: 18px;
   display: flex;
@@ -4501,7 +4501,7 @@ body.agency-sidebar-dragging * {
 
 /* Track E: Pointer Tab Drag Split Edge Active Highlight */
 
-.maw-pane-drop-edge.is-active {
+.wb-pane-drop-edge.is-active {
   pointer-events: none;
   background: color-mix(in srgb, var(--ember, #d97442) 24%, transparent);
   border: 2px dashed var(--ember, #d97442);
@@ -4510,18 +4510,18 @@ body.agency-sidebar-dragging * {
 
 /* Track F & G: Collapsible Settings Subsections, Browser Profiles UI, Provider Icons, and Destination Picker Inline Other */
 
-.maw-collapsible-subsection {
+.wb-collapsible-subsection {
   overflow: visible;
 }
 
-.maw-subsection-header {
+.wb-subsection-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 
-.maw-subsection-toggle {
+.wb-subsection-toggle {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -4538,16 +4538,16 @@ body.agency-sidebar-dragging * {
   transition: background 120ms ease;
 }
 
-.maw-subsection-toggle:hover {
+.wb-subsection-toggle:hover {
   background: var(--bg-hover, rgba(255, 255, 255, 0.04));
 }
 
-.maw-subsection-toggle:focus-visible {
+.wb-subsection-toggle:focus-visible {
   outline: 2px solid var(--ember, #d97442);
   outline-offset: 2px;
 }
 
-.maw-subsection-chevron {
+.wb-subsection-chevron {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4558,55 +4558,55 @@ body.agency-sidebar-dragging * {
   transition: transform 160ms ease, color 120ms ease;
 }
 
-.maw-subsection-toggle:hover .maw-subsection-chevron {
+.wb-subsection-toggle:hover .wb-subsection-chevron {
   color: var(--ink, #ededea);
 }
 
-.maw-collapsible-subsection.is-collapsed .maw-subsection-chevron {
+.wb-collapsible-subsection.is-collapsed .wb-subsection-chevron {
   transform: rotate(-90deg);
 }
 
-.maw-subsection-heading {
+.wb-subsection-heading {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
-.maw-subsection-desc {
+.wb-subsection-desc {
   margin: 0;
   font-size: 12px;
   line-height: 1.35;
 }
 
-.maw-subsection-actions {
+.wb-subsection-actions {
   flex-shrink: 0;
 }
 
-.maw-subsection-collapse {
+.wb-subsection-collapse {
   display: grid;
   grid-template-rows: 1fr;
   opacity: 1;
   transition: grid-template-rows 180ms ease, opacity 150ms ease;
 }
 
-.maw-subsection-collapse.is-collapsed {
+.wb-subsection-collapse.is-collapsed {
   grid-template-rows: 0fr;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
 }
 
-.maw-subsection-collapse-inner {
+.wb-subsection-collapse-inner {
   overflow: hidden;
   min-height: 0;
 }
 
-.maw-subsection-body {
+.wb-subsection-body {
   padding-top: 8px;
 }
 
-.maw-provider-icon {
+.wb-provider-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4616,19 +4616,19 @@ body.agency-sidebar-dragging * {
   color: var(--ink-2, #b8b6b0);
 }
 
-.maw-settings-cli-main {
+.wb-settings-cli-main {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.maw-settings-cli-choice {
+.wb-settings-cli-choice {
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
 
-.maw-settings-profiles-list {
+.wb-settings-profiles-list {
   list-style: none;
   margin: 10px 0 0 0;
   padding: 0;
@@ -4637,7 +4637,7 @@ body.agency-sidebar-dragging * {
   gap: 6px;
 }
 
-.maw-settings-profile-row {
+.wb-settings-profile-row {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -4647,21 +4647,21 @@ body.agency-sidebar-dragging * {
   background: var(--bg-1, #0e0e10);
 }
 
-.maw-settings-profile-top {
+.wb-settings-profile-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 
-.maw-settings-profile-info {
+.wb-settings-profile-info {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
 
-.maw-settings-profile-name {
+.wb-settings-profile-name {
   font-size: 13px;
   font-weight: 500;
   color: var(--ink, #ededea);
@@ -4670,7 +4670,7 @@ body.agency-sidebar-dragging * {
   white-space: nowrap;
 }
 
-.maw-settings-profile-default-badge {
+.wb-settings-profile-default-badge {
   font-size: 10px;
   font-weight: 500;
   padding: 1px 6px;
@@ -4682,14 +4682,14 @@ body.agency-sidebar-dragging * {
   border: 1px solid var(--border-subtle, #25252b);
 }
 
-.maw-settings-profile-actions {
+.wb-settings-profile-actions {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
 }
 
-.maw-settings-profile-clear-panel {
+.wb-settings-profile-clear-panel {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -4697,13 +4697,13 @@ body.agency-sidebar-dragging * {
   border-top: 1px solid var(--border-faint, #1d1d22);
 }
 
-.maw-settings-profile-sites {
+.wb-settings-profile-sites {
   display: flex;
   flex-wrap: wrap;
   gap: 10px 16px;
 }
 
-.maw-settings-profile-site-check {
+.wb-settings-profile-site-check {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -4712,7 +4712,7 @@ body.agency-sidebar-dragging * {
   cursor: pointer;
 }
 
-.maw-settings-profile-rename-form {
+.wb-settings-profile-rename-form {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -4720,7 +4720,7 @@ body.agency-sidebar-dragging * {
   min-width: 0;
 }
 
-.maw-settings-profile-rename-input {
+.wb-settings-profile-rename-input {
   flex: 1;
   min-width: 120px;
   padding: 4px 8px;
@@ -4731,34 +4731,34 @@ body.agency-sidebar-dragging * {
   border-radius: 4px;
 }
 
-.maw-settings-profile-rename-input:focus,
-.maw-settings-profile-rename-input:focus-visible {
+.wb-settings-profile-rename-input:focus,
+.wb-settings-profile-rename-input:focus-visible {
   outline: none;
   border-color: var(--ember, #d97442);
 }
 
-.maw-browser-dest-other-inline {
+.wb-browser-dest-other-inline {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 6px 6px 4px 6px;
 }
 
-.maw-browser-dest-other-top {
+.wb-browser-dest-other-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.maw-browser-dest-other-label-group {
+.wb-browser-dest-other-label-group {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
 
-.maw-browser-dest-engine-btn {
+.wb-browser-dest-engine-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -4773,21 +4773,21 @@ body.agency-sidebar-dragging * {
   transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
 }
 
-.maw-browser-dest-engine-btn:hover,
-.maw-browser-dest-engine-btn:focus-visible {
+.wb-browser-dest-engine-btn:hover,
+.wb-browser-dest-engine-btn:focus-visible {
   color: var(--ink, #ededea);
   border-color: var(--ember, #d97442);
   background: var(--agency-hover, #1a1a1e);
   outline: none;
 }
 
-.maw-browser-dest-section {
+.wb-browser-dest-section {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.maw-browser-dest-section-title {
+.wb-browser-dest-section-title {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -4796,19 +4796,19 @@ body.agency-sidebar-dragging * {
   padding: 2px 2px;
 }
 
-.maw-browser-dest-favorites-list {
+.wb-browser-dest-favorites-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.maw-browser-dest-engine-row {
+.wb-browser-dest-engine-row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.maw-browser-dest-engine-select {
+.wb-browser-dest-engine-select {
   flex: 1;
   min-width: 0;
   height: 32px;
@@ -4822,19 +4822,19 @@ body.agency-sidebar-dragging * {
   box-sizing: border-box;
 }
 
-.maw-browser-dest-engine-select:focus,
-.maw-browser-dest-engine-select:focus-visible {
+.wb-browser-dest-engine-select:focus,
+.wb-browser-dest-engine-select:focus-visible {
   outline: none;
   border-color: var(--ember, #d97442);
 }
 
-.maw-browser-dest-other-form {
+.wb-browser-dest-other-form {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.maw-browser-dest-inline-input {
+.wb-browser-dest-inline-input {
   flex: 1;
   min-width: 0;
   height: 32px;
@@ -4843,7 +4843,7 @@ body.agency-sidebar-dragging * {
   box-sizing: border-box;
 }
 
-.maw-browser-dest-go-btn {
+.wb-browser-dest-go-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4860,32 +4860,32 @@ body.agency-sidebar-dragging * {
   flex-shrink: 0;
 }
 
-.maw-browser-dest-go-btn:hover {
+.wb-browser-dest-go-btn:hover {
   background: #b45309;
   border-color: #92400e;
 }
 
-.maw-browser-dest-go-btn:active {
+.wb-browser-dest-go-btn:active {
   background: #92400e;
 }
 
-.maw-browser-dest-go-btn:focus-visible {
+.wb-browser-dest-go-btn:focus-visible {
   outline: 2px solid var(--focus-ring, #d97706);
   outline-offset: 1px;
 }
 
-.agency-dropdown-item.maw-menu-item-disabled {
+.agency-dropdown-item.wb-menu-item-disabled {
   opacity: 0.45;
   cursor: not-allowed;
   pointer-events: auto;
 }
 
-.agency-dropdown-item.maw-menu-item-disabled:hover {
+.agency-dropdown-item.wb-menu-item-disabled:hover {
   background: transparent;
   color: var(--ink-dim, #8a877f);
 }
 
-.maw-close-web-page-title {
+.wb-close-web-page-title {
   margin-top: 8px;
   font-size: 13px;
   font-weight: 500;
@@ -4894,22 +4894,22 @@ body.agency-sidebar-dragging * {
 }
 
 /* Archived Items Dialog */
-.maw-archived-dialog {
+.wb-archived-dialog {
   width: min(520px, 94vw);
   max-width: 520px;
 }
 
-.maw-archived-container {
+.wb-archived-container {
   display: flex;
   flex-direction: column;
 }
 
-.maw-archived-tabs {
+.wb-archived-tabs {
   display: flex;
   gap: 8px;
 }
 
-.maw-archived-tab {
+.wb-archived-tab {
   font-size: 12px;
   padding: 6px 14px;
   border-radius: var(--radius-sm, 6px);
@@ -4920,19 +4920,19 @@ body.agency-sidebar-dragging * {
   transition: all 120ms ease;
 }
 
-.maw-archived-tab:hover {
+.wb-archived-tab:hover {
   background: var(--bg-3, #1e1e23);
   color: var(--ink, #ededea);
 }
 
-.maw-archived-tab.selected {
+.wb-archived-tab.selected {
   background: var(--agency-hover, #232228);
   border-color: var(--ember, #d97442);
   color: var(--ink, #ededea);
   font-weight: 600;
 }
 
-.maw-archived-list {
+.wb-archived-list {
   max-height: 360px;
   overflow-y: auto;
   border: 1px solid var(--border-subtle, #1e1e24);
@@ -4940,7 +4940,7 @@ body.agency-sidebar-dragging * {
   background: var(--bg-1, #0e0e10);
 }
 
-.maw-archived-row {
+.wb-archived-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4950,15 +4950,15 @@ body.agency-sidebar-dragging * {
   transition: background 120ms ease;
 }
 
-.maw-archived-row:last-child {
+.wb-archived-row:last-child {
   border-bottom: none;
 }
 
-.maw-archived-row:hover {
+.wb-archived-row:hover {
   background: rgba(255, 255, 255, 0.02);
 }
 
-.maw-archived-row-info {
+.wb-archived-row-info {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -4966,7 +4966,7 @@ body.agency-sidebar-dragging * {
   flex: 1;
 }
 
-.maw-archived-row-title {
+.wb-archived-row-title {
   font-size: 13px;
   font-weight: 600;
   color: var(--ink, #ededea);
@@ -4975,14 +4975,14 @@ body.agency-sidebar-dragging * {
   white-space: nowrap;
 }
 
-.maw-archived-row-meta {
+.wb-archived-row-meta {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 11px;
 }
 
-.maw-archived-parent-tag {
+.wb-archived-parent-tag {
   background: var(--bg-3, #1e1e24);
   color: var(--ink-2, #b8b6b0);
   border-radius: 4px;
@@ -4990,26 +4990,26 @@ body.agency-sidebar-dragging * {
   font-size: 11px;
 }
 
-.maw-archived-row-date {
+.wb-archived-row-date {
   font-size: 11px;
   color: var(--ink-3, #8a877f);
 }
 
-.maw-archived-restore-btn {
+.wb-archived-restore-btn {
   flex-shrink: 0;
   padding: 5px 12px;
   font-size: 12px;
   font-weight: 500;
 }
 
-.maw-archived-parent-prompt {
+.wb-archived-parent-prompt {
   background: var(--bg-2, #141417);
   border: 1px solid var(--border, #25252b);
   border-radius: var(--radius-sm, 6px);
   padding: 16px;
 }
 
-.maw-archived-prompt-text {
+.wb-archived-prompt-text {
   margin: 0;
   font-size: 13px;
   color: var(--ink, #ededea);

@@ -14,7 +14,7 @@ import {
   type SearchEngineCandidate,
   type SearchEngineId,
   type SpellCheckSettings,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { AppSettingsApi } from '../settings/useAppSettings.js';
 import {
   commitBrowserPreferenceMutation,

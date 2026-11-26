@@ -6,7 +6,7 @@
  * argumento `--mode` al lanzar y el `cycle_mode` que publica la status line—.
  */
 
-import type { PermissionMode } from '@agent-workbench/shared';
+import type { PermissionMode } from '@anvilary/workbench-shared';
 
 /**
  * El valor de `--mode` para un modo, o null si no hay que pasar ninguno.

@@ -1,5 +1,5 @@
 /**
- * The bridge the desktop shell exposes to the page as `window.mawChatGpt` (see
+ * The bridge the desktop shell exposes to the page as `window.workbench` (see
  * `packages/desktop/preload.cjs`). The global keeps its historical name.
  */
 
@@ -54,6 +54,6 @@ export interface DesktopBridge {
 
 declare global {
   interface Window {
-    mawChatGpt?: DesktopBridge;
+    workbench?: DesktopBridge;
   }
 }

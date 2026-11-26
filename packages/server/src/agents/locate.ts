@@ -17,7 +17,7 @@ import { access, stat } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { serverText, type ServerText } from '@agent-workbench/shared';
+import { serverText, type ServerText } from '@anvilary/workbench-shared';
 
 const execFileAsync = promisify(execFile);
 

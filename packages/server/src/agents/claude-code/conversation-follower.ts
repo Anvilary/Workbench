@@ -25,7 +25,7 @@ import {
   type ConversationSubagent,
   type PermissionMode,
   type QueuedPrompt,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import {
   isCompactBoundary,
   stripFileReference,

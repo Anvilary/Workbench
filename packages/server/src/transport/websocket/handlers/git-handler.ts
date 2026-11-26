@@ -2,7 +2,7 @@
  * Repository status and diffs, addressed by terminal.
  */
 
-import { serverText, type ClientMessage } from '@agent-workbench/shared';
+import { serverText, type ClientMessage } from '@anvilary/workbench-shared';
 import { resolveInside } from '../../../features/files/path-guard.js';
 import { readDiff } from '../../../features/git/git-repo.js';
 import type { HandlerContext } from '../handler-context.js';

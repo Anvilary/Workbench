@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import type { WorkspaceId } from '@agent-workbench/shared';
+import type { WorkspaceId } from '@anvilary/workbench-shared';
 import { AgencyNotificationStore } from '../../../src/features/notifications/notification-store.js';
 import {
   generateBashIntegrationScript,

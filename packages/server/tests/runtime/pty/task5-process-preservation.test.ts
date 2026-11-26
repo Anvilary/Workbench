@@ -13,9 +13,9 @@ import { OpenTabsStore } from '../../../src/features/terminals/open-tabs-store.j
 import { createAgentRegistry } from '../../../src/agents/registry.js';
 import { PtyHostClient } from '../../../src/pty-host/pty-host-client.js';
 // @ts-expect-error - standalone pure-ESM supervisor script
-import { PtySupervisor } from '../../../src/pty-host/maw-ptyd.mjs';
+import { PtySupervisor } from '../../../src/pty-host/ptyd.mjs';
 import { attachWorkbenchSocket } from '../../../src/transport/websocket/socket-server.js';
-import { publishReadiness } from '../../../src/maw-host.js';
+import { publishReadiness } from '../../../src/workbench-host.js';
 import { SettingsStore } from '../../../src/features/settings/settings-store.js';
 import { ArchivedSessions } from '../../../src/features/history/archived-sessions.js';
 import { WorktreeStore } from '../../../src/features/worktrees/store.js';
@@ -47,11 +47,11 @@ import { EditorTabStore } from '../../../src/features/editor/editor-tab-store.js
 import { PasteStore } from '../../../src/features/composer/paste-store.js';
 import { TerminalHistoryStore } from '../../../src/features/terminals/terminal-history-store.js';
 import { WorkspaceMutex } from '../../../src/features/workspaces/workspace-lock.js';
-import { encodeClientMessage, parseServerMessage, type ServerMessage } from '@agent-workbench/shared';
+import { encodeClientMessage, parseServerMessage, type ServerMessage } from '@anvilary/workbench-shared';
 import { SERVER_SRC } from '../../helpers/paths.js';
 
 const PTY_HOST_DIR = path.join(SERVER_SRC, 'pty-host');
-const SUPERVISOR_SCRIPT = path.join(PTY_HOST_DIR, 'maw-ptyd.mjs');
+const SUPERVISOR_SCRIPT = path.join(PTY_HOST_DIR, 'ptyd.mjs');
 const SYNTHETIC_AGENT_PATH = path.join(PTY_HOST_DIR, 'fixtures', 'synthetic-agent.mjs');
 
 interface DisposableBackend {

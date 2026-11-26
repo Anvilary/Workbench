@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { TerminalId } from '@agent-workbench/shared';
+import type { TerminalId } from '@anvilary/workbench-shared';
 import { OutputBackpressure } from '../../../src/transport/websocket/output-backpressure.js';
 
 const T1 = 't1' as TerminalId, T2 = 't2' as TerminalId;

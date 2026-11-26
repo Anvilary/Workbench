@@ -18,7 +18,7 @@ import {
 // Test harness simulating the main process WebAuthn request handler
 async function simulateWebAuthnGet({
   enabled = true,
-  senderSessionName = 'persist:maw-chatgpt',
+  senderSessionName = 'persist:workbench-chatgpt',
   frameOrigin = 'https://auth.openai.com',
   options = { rpId: 'auth.openai.com', challenge: 'dGVzdA' },
   mockDevices = [{ path: '/dev/hidraw3', vendor: '0x1050', product: '0x0406', description: 'YubiKey' }],
@@ -32,7 +32,7 @@ async function simulateWebAuthnGet({
   }
 
   // 2. Session isolation
-  if (senderSessionName !== 'persist:maw-chatgpt') {
+  if (senderSessionName !== 'persist:workbench-chatgpt') {
     return { success: false, error: { name: 'SecurityError', message: 'WebAuthn is only permitted within the ChatGPT session' } };
   }
 
@@ -80,11 +80,11 @@ test('security boundary: fails closed when WebAuthn is disabled by default', asy
 });
 
 test('security boundary: rejects requests from non-ChatGPT browser sessions', async () => {
-  const otherSession = await simulateWebAuthnGet({ senderSessionName: 'persist:maw-browser' });
+  const otherSession = await simulateWebAuthnGet({ senderSessionName: 'persist:workbench-browser' });
   assert.equal(otherSession.success, false);
   assert.equal(otherSession.error.name, 'SecurityError');
 
-  const githubSession = await simulateWebAuthnGet({ senderSessionName: 'persist:maw-github' });
+  const githubSession = await simulateWebAuthnGet({ senderSessionName: 'persist:workbench-github' });
   assert.equal(githubSession.success, false);
   assert.equal(githubSession.error.name, 'SecurityError');
 });

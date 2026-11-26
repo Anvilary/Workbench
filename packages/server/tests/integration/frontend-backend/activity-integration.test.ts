@@ -4,7 +4,7 @@ import { access, appendFile, mkdir, mkdtemp, readFile, rename, rm, symlink, writ
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import type { AgencyRuntimeSession, AgencyWorkspace, RuntimeSessionId, TerminalId, WorkspaceId } from '@agent-workbench/shared';
+import type { AgencyRuntimeSession, AgencyWorkspace, RuntimeSessionId, TerminalId, WorkspaceId } from '@anvilary/workbench-shared';
 import type { AgentAdapter } from '../../../src/agents/adapter.js';
 import { AgentRegistry } from '../../../src/agents/registry.js';
 import { CodexTurnWatcher, type CodexNativeTurn } from '../../../src/agents/codex/turn-watcher.js';
@@ -178,7 +178,7 @@ for (const shell of ['bash', 'zsh']) test(`real ${shell} PTY through Agency runt
     await writeFile(path.join(home, '.zshenv'), 'ZDOTDIR="$HOME/custom-zdotdir"\n');
   }
   const configPath = path.join(configDir, shell === 'bash' ? '.bashrc' : '.zshrc');
-  const config = 'export MAW_FIXTURE_CONFIG=preserved\n' + (shell === 'bash' ? 'PROMPT_COMMAND=(\'printf "user_prompt_hook\\n"\')\n' : 'precmd() { print -r -- user_prompt_hook; }\n');
+  const config = 'export WORKBENCH_FIXTURE_CONFIG=preserved\n' + (shell === 'bash' ? 'PROMPT_COMMAND=(\'printf "user_prompt_hook\\n"\')\n' : 'precmd() { print -r -- user_prompt_hook; }\n');
   await writeFile(configPath, config);
   const adapter = { id: 'codex', environment: () => ({ env: { HOME: home, XDG_CONFIG_HOME: app, PATH: '/usr/bin:/bin', TERM: 'xterm-256color' }, notice: null }) } as unknown as AgentAdapter;
   const agents = new AgentRegistry([adapter]);
@@ -198,7 +198,7 @@ for (const shell of ['bash', 'zsh']) test(`real ${shell} PTY through Agency runt
     output += attached?.replay ?? ''; parser.feed(attached?.replay ?? '');
     await until(() => parser.hasIntegration());
     assert.equal(notifications.list().length, 0, 'startup prompt is not a completion');
-    assert.equal(registry.write(terminal, 'printf "config:%s\\n" "$MAW_FIXTURE_CONFIG"\r'), true);
+    assert.equal(registry.write(terminal, 'printf "config:%s\\n" "$WORKBENCH_FIXTURE_CONFIG"\r'), true);
     await until(() => parser.getState() === 'finished');
     assert.match(output, /config:preserved/);
     assert.match(output, /user_prompt_hook/);

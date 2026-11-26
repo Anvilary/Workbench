@@ -23,7 +23,7 @@ Sustained pressure can only raise the tier, never above high:
 
 A raised tier is held for two minutes after its signal last justified it (hysteresis), so readings near a threshold do not make the budget flap. Escalation is immediate.
 
-`WORKBENCH_MAX_RESIDENT_VIEWS` (legacy `MAW_MAX_RESIDENT_VIEWS`) overrides the standby budget, clamped to at least the visible views. It never overrides the memory tier.
+`WORKBENCH_MAX_RESIDENT_VIEWS` (legacy `WORKBENCH_MAX_RESIDENT_VIEWS`) overrides the standby budget, clamped to at least the visible views. It never overrides the memory tier.
 
 ## Eviction rules
 

@@ -16,11 +16,11 @@ import { DESKTOP_ROOT, REPO_ROOT } from '../../helpers/paths.mjs';
 import { guardHomeProcessesOnExit, pidsWithHome, reapProcessesWithHome } from '../../helpers/owned-processes.mjs';
 
 const here = DESKTOP_ROOT;
-const repo = process.env.MAW_RENDERING_REPO || REPO_ROOT;
-const evidence = path.resolve(process.env.MAW_RENDERING_EVIDENCE || path.join(repo, 'docs/maw/terminal-rendering/evidence'));
-const baseline = process.env.MAW_RENDERING_BASELINE === '1';
+const repo = process.env.WORKBENCH_RENDERING_REPO || REPO_ROOT;
+const evidence = path.resolve(process.env.WORKBENCH_RENDERING_EVIDENCE || path.join(tmpdir(), 'workbench-evidence', 'terminal-rendering'));
+const baseline = process.env.WORKBENCH_RENDERING_BASELINE === '1';
 const require = createRequire(import.meta.url);
-const electronExecutable = process.env.MAW_ELECTRON_EXECUTABLE || (existsSync('/opt/maw-electron/45.2.0/electron') ? '/opt/maw-electron/45.2.0/electron' : require('electron'));
+const electronExecutable = process.env.WORKBENCH_ELECTRON_EXECUTABLE || (existsSync('/opt/workbench-electron/45.2.0/electron') ? '/opt/workbench-electron/45.2.0/electron' : require('electron'));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, label, timeout = 15000) {
   const end = Date.now() + timeout;
@@ -30,7 +30,7 @@ async function until(check, label, timeout = 15000) {
 
 test('terminal rendering, recovery, scrollbars and isolated Codex soak in Electron', { timeout: 240000 }, async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'maw-rendering-electron-'));
-  const home = path.join(root, 'home'), config = path.join(root, 'config/agent-workbench');
+  const home = path.join(root, 'home'), config = path.join(root, 'config/workbench');
   // The Codex soak starts a managed `codex app-server` daemon that detaches
   // (setsid) from the PTY; it is owned by this fixture through its unique HOME.
   const releaseExitGuard = guardHomeProcessesOnExit(home);
@@ -42,10 +42,10 @@ test('terminal rendering, recovery, scrollbars and isolated Codex soak in Electr
   await writeFile(path.join(home, '.bashrc'), 'PS1="fixture$ "\n');
   const env = { ...process.env, HOME: home, SHELL: '/bin/bash', CODEX_HOME: path.join(home, '.codex'),
     XDG_CONFIG_HOME: path.dirname(config), XDG_DATA_HOME: path.join(root, 'data'), XDG_CACHE_HOME: path.join(root, 'cache'),
-    XDG_STATE_HOME: path.join(root, 'state'), AGENT_WORKBENCH_NO_OPEN: '1', AGENT_WORKBENCH_NO_RESTORE: '1' };
-  for (const key of Object.keys(env)) if (/^(MAW_|AGENT_WORKBENCH_PORT)|(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN|SECRET)/.test(key)) delete env[key];
-  env.MAW_PERSISTENT_PTY = '0';
-  env.MAW_RUNTIME_DIR = path.join(root, 'runtime');
+    XDG_STATE_HOME: path.join(root, 'state'), WORKBENCH_NO_OPEN: '1', WORKBENCH_NO_RESTORE: '1' };
+  for (const key of Object.keys(env)) if (/^(WORKBENCH_|MAW_|WORKBENCH_PORT)|(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN|SECRET)/.test(key)) delete env[key];
+  env.WORKBENCH_PERSISTENT_PTY = '0';
+  env.WORKBENCH_RUNTIME_DIR = path.join(root, 'runtime');
   let serverLog = '', desktop, originalIndex, testFailed = false;
   const child = spawn(process.execPath, ['--import', path.join(repo, 'packages/server/node_modules/tsx/dist/loader.mjs'),
     path.join(repo, 'packages/server/src/index.ts'), '--prod'], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -55,7 +55,7 @@ test('terminal rendering, recovery, scrollbars and isolated Codex soak in Electr
   try {
     const address = await until(async () => {
       if (child.exitCode !== null) throw Error('Fixture backend exited: ' + serverLog);
-      try { return JSON.parse(await readFile(path.join(env.MAW_RUNTIME_DIR, 'maw-ready.json'), 'utf8')).url; }
+      try { return JSON.parse(await readFile(path.join(env.WORKBENCH_RUNTIME_DIR, 'workbench-ready.json'), 'utf8')).url; }
       catch { return null; }
     }, 'backend startup');
     const fixture = `
@@ -122,7 +122,7 @@ window.ready = async () => {
     await writeFile(path.join(outdir, 'index.html'), '<!doctype html><html><link rel="stylesheet" href="/rendering-fixture.css"><style>html,body,#root{height:100%;margin:0}#root{display:flex;flex-direction:column}</style><div id="root"></div><script type="module" src="/rendering-fixture.js"></script></html>');
     const url = address;
     desktop = await electron.launch({ executablePath: electronExecutable, chromiumSandbox: true,
-      args: [here, '--ozone-platform=x11'], env: { ...env, MAW_DESKTOP_URL: url, MAW_DESKTOP_DATA_DIR: path.join(root, 'desktop') } });
+      args: [here, '--ozone-platform=x11'], env: { ...env, WORKBENCH_DESKTOP_URL: url, WORKBENCH_DESKTOP_DATA_DIR: path.join(root, 'desktop') } });
     const page = await desktop.firstWindow();
     page.on('pageerror', error => result.errors.push(error.message));
     await page.waitForFunction(() => window.connection?.getStatus() === 'open');
@@ -161,7 +161,7 @@ window.ready = async () => {
     assert.ok(normal.viewport.scrollHeight > normal.viewport.height);
     assert.ok(normal.viewport.width >= 8 && !normal.viewport.clipped);
     await page.evaluate(() => window.term(0).blur());
-    const viewport = page.locator('.maw-session-holder:not([hidden]) .xterm-viewport');
+    const viewport = page.locator('.wb-session-holder:not([hidden]) .xterm-viewport');
     const wheelBox = await viewport.boundingBox();
     await page.mouse.move(wheelBox.x + wheelBox.width / 2, wheelBox.y + wheelBox.height / 2);
     await page.mouse.wheel(0, -600);
@@ -176,11 +176,11 @@ window.ready = async () => {
     result.scenarios.scrollbarTrackNavigated = (await read(0)).viewportY < afterWheel.viewportY;
     result.scenarios.scrollbar = (await read(0)).viewport;
     result.scenarios.dropStrip = await page.evaluate(({x,y}) => {
-      const hit = () => !!document.elementFromPoint(x,y)?.closest('.maw-pane-drop-edge');
+      const hit = () => !!document.elementFromPoint(x,y)?.closest('.wb-pane-drop-edge');
       const idleIntercepts = hit();
-      document.body.classList.add('maw-pane-dragging');
+      document.body.classList.add('wb-pane-dragging');
       const dragIntercepts = hit();
-      document.body.classList.remove('maw-pane-dragging');
+      document.body.classList.remove('wb-pane-dragging');
       return {idleIntercepts,dragIntercepts};
     }, {x:box.x+box.width-5,y:box.y+20});
     assert.equal(result.scenarios.dropStrip.idleIntercepts, baseline);
@@ -254,8 +254,8 @@ process.stdin.on('data',d=>{if(d.includes(113)){out('\\x1b[?1049l');process.exit
 
     // Disposable Codex onboarding TUI, without copied credentials or model calls.
     // Repeat resize/focus/tab changes throughout a configurable real-time soak.
-    const codexSeconds = Number(process.env.MAW_CODEX_SOAK_SECONDS || 60);
-    const codexPath = process.env.MAW_CODEX_EXECUTABLE || execFileSync('which', ['codex'], { encoding:'utf8' }).trim();
+    const codexSeconds = Number(process.env.WORKBENCH_CODEX_SOAK_SECONDS || 60);
+    const codexPath = process.env.WORKBENCH_CODEX_EXECUTABLE || execFileSync('which', ['codex'], { encoding:'utf8' }).trim();
     await command(0, `'${codexPath}'\r`);
     await until(async () => {
       const startup = await read(0);

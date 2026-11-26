@@ -26,7 +26,7 @@ import {
   type ConversationSubagent,
   type PermissionMode,
   type QueuedPrompt,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { EventPage, FollowOptions, LoadedImage, PollResult, SessionFollower } from '../adapter.js';
 import { readAgentDefaults } from './agent-defaults.js';
 import { ConversationFollower } from './conversation-follower.js';

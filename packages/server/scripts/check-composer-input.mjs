@@ -52,7 +52,7 @@ import {
 } from '../src/features/composer/attachments.ts';
 import { buildSubmissionWrites } from '../src/features/composer/pty-input.ts';
 import { toTitle } from '../src/agents/session-title.ts';
-import { parseClientMessage } from '@agent-workbench/shared';
+import { parseClientMessage } from '@anvilary/workbench-shared';
 import {
   DEFAULT_NOTES_FONT_SIZE,
   DEFAULT_THREAD_FONT_SIZE,
@@ -263,7 +263,7 @@ check('y deja lo de ahora', afterPurge.includes('reciente'), afterPurge.join(', 
 // ---------------------------------------------------------------------------
 
 const { modelOptionFor, modelCommand, effortCommand, MODEL_OPTIONS, modelOptionLabel, contextWindowFor } =
-  await import('@agent-workbench/shared');
+  await import('@anvilary/workbench-shared');
 
 check(
   'claude-opus-5 -> Opus (200k)',
@@ -593,7 +593,7 @@ check('de lo guardado solo valen los tres', parseThreadFontSize('s') === 's' && 
 check('el titulo dice que hay y que pone el clic', threadFontTitle('m') === 'Tamaño de letra: normal (clic: grande)', threadFontTitle('m'));
 // Las notas (25-09-2026): los mismos tres pasos, con su propia preferencia.
 check('las notas guardan su letra aparte de la del hilo',
-  NOTES_FONT_STORAGE_KEY === 'agent-workbench.notes-font' && NOTES_FONT_STORAGE_KEY !== THREAD_FONT_STORAGE_KEY);
+  NOTES_FONT_STORAGE_KEY === 'workbench.notes-font' && NOTES_FONT_STORAGE_KEY !== THREAD_FONT_STORAGE_KEY);
 check('y arrancan en chica: sin tocar el boton se ven como siempre', DEFAULT_NOTES_FONT_SIZE === 's');
 
 // ---------------------------------------------------------------------------
@@ -754,15 +754,15 @@ check('y arrancan en chica: sin tocar el boton se ven como siempre', DEFAULT_NOT
   const same = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
   const show = (map) => JSON.stringify([...map]);
   const today = new Map([
-    ['agent-workbench.locale', 'es'],
-    ['agent-workbench.sound-volume', '0.35'],
-    ['agent-workbench.sound', 'on'],
-    ['agent-workbench.theme', 'dark'],
-    ['agent-workbench.thread-font', 'l'],
-    ['agent-workbench.notes-font', 'm'],
-    ['agent-workbench.panel-width', '640'],
-    ['agent-workbench.files.hidden', 'true'],
-    ['agent-workbench.notes-active', '3f2a9c1b-6519-41de-ac8e-2a2e6a94c4ce'],
+    ['workbench.locale', 'es'],
+    ['workbench.sound-volume', '0.35'],
+    ['workbench.sound', 'on'],
+    ['workbench.theme', 'dark'],
+    ['workbench.thread-font', 'l'],
+    ['workbench.notes-font', 'm'],
+    ['workbench.panel-width', '640'],
+    ['workbench.files.hidden', 'true'],
+    ['workbench.notes-active', '3f2a9c1b-6519-41de-ac8e-2a2e6a94c4ce'],
   ]);
   const encoded = encodePrefsCookie(today);
   const header = `otra=1; ${PREFS_COOKIE}=${encoded}; ${TOKEN_COOKIE}=abc`;
@@ -770,8 +770,8 @@ check('y arrancan en chica: sin tocar el boton se ven como siempre', DEFAULT_NOT
     encoded !== null && same(readPrefsCookie(header), today), show(readPrefsCookie(header)));
   check('el valor no trae nada que corte una cookie', encoded !== null && !/[;,\s]/.test(encoded));
   check('solo entran las claves de la app',
-    same(readPrefsCookie(`${PREFS_COOKIE}=${encodePrefsCookie(new Map([['otra.clave', 'x'], ['agent-workbench.locale', 'es']]))}`),
-      new Map([['agent-workbench.locale', 'es']])));
+    same(readPrefsCookie(`${PREFS_COOKIE}=${encodePrefsCookie(new Map([['otra.clave', 'x'], ['workbench.locale', 'es']]))}`),
+      new Map([['workbench.locale', 'es']])));
   check('sin la cookie, ninguna', readPrefsCookie('otra=1; y=2').size === 0 && readPrefsCookie('').size === 0);
   // La sugerencia de apoyar el proyecto (§6.28): una vez por version, guardada con las preferencias.
   check('apoyo: sin nada guardado se muestra; con la misma version no; con otra, si',
@@ -791,8 +791,8 @@ check('y arrancan en chica: sin tocar el boton se ven como siempre', DEFAULT_NOT
   const hostile = readPrefsCookie(`${PREFS_COOKIE}=${encodeURIComponent(JSON.stringify({
     locale: 'es', __proto__x: 'a', 'Mayus': 'b', 'con espacio': 'c', volumen: 3, largo: 'x'.repeat(201),
   }))}`);
-  check('de una cookie ajena, solo lo que tiene forma de preferencia', same(hostile, new Map([['agent-workbench.locale', 'es']])), show(hostile));
-  const huge = new Map(Array.from({ length: 40 }, (_, i) => [`agent-workbench.clave-${i}`, 'x'.repeat(150)]));
+  check('de una cookie ajena, solo lo que tiene forma de preferencia', same(hostile, new Map([['workbench.locale', 'es']])), show(hostile));
+  const huge = new Map(Array.from({ length: 40 }, (_, i) => [`workbench.clave-${i}`, 'x'.repeat(150)]));
   check('pasado el tope no se escribe: quedan en localStorage', encodePrefsCookie(huge) === null);
   const line = prefsCookieLine('abc');
   check('la línea: todo el equipo y cualquier puerto, 400 días, SameSite=Strict, legible desde la página',

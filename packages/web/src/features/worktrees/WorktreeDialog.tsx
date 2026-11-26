@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import type { AgentId, AgentInfo, WorktreeCreateMode } from '@agent-workbench/shared';
+import type { AgentId, AgentInfo, WorktreeCreateMode } from '@anvilary/workbench-shared';
 import { formatList } from '../../i18n/format.js';
 import { t } from '../../i18n/index.js';
 import type { CreateDialog, WorktreeCreateChoice } from './useWorktrees.js';

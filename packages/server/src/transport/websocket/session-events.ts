@@ -100,7 +100,7 @@ export function wireSessionEvents(deps: SessionEventDeps): () => void {
     }
   };
 
-  const onNativeTurn = (event: { sessionId: import('@agent-workbench/shared').RuntimeSessionId; workspaceId: import('@agent-workbench/shared').WorkspaceId; provider: string; taskId: string; phase: 'working' | 'finished' | 'failed' | 'unknown' }): void => {
+  const onNativeTurn = (event: { sessionId: import('@anvilary/workbench-shared').RuntimeSessionId; workspaceId: import('@anvilary/workbench-shared').WorkspaceId; provider: string; taskId: string; phase: 'working' | 'finished' | 'failed' | 'unknown' }): void => {
     const session = agencyRuntime.get(event.sessionId);
     const workspace = agencyWorkspaceStore.getWorkspace(event.workspaceId);
     if (!workspace || !session || session.workspaceId !== event.workspaceId || !session.tab?.current || session.tab.closedAt) return;

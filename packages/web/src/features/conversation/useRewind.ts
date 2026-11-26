@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { RewindRestore, TerminalId } from '@agent-workbench/shared';
+import type { RewindRestore, TerminalId } from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 import { serverTextMessage } from '../../i18n/server-text.js';
 

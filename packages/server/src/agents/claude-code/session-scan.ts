@@ -13,7 +13,7 @@
  */
 
 import { stat } from 'node:fs/promises';
-import type { SessionSummary, SessionTitleSource } from '@agent-workbench/shared';
+import type { SessionSummary, SessionTitleSource } from '@anvilary/workbench-shared';
 import { parseJsonlLine, readHeadLines, readTailLines } from '../../shared/jsonl-reader.js';
 import { toTitle, UNTITLED_SESSION_TITLE } from '../session-title.js';
 

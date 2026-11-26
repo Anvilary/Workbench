@@ -7,7 +7,7 @@ import os from 'node:os';
 import { _electron as electron } from 'playwright';
 import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 
-const electronExecutable = '/opt/maw-electron/45.2.0/electron';
+const electronExecutable = '/opt/workbench-electron/45.2.0/electron';
 
 async function eventually(check, message = 'condition', timeoutMs = 15000) {
   const start = Date.now();
@@ -67,7 +67,7 @@ test('native browser search scrolling, Next/Prev navigation, tab switching and c
   // Server for shell UI
   const server = createServer((_req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end('<!doctype html><html><head><title>Workbench Test Shell</title></head><body><script>window.events=[];if(window.mawChatGpt)window.mawChatGpt.subscribe(s=>window.events.push(s));</script></body></html>');
+    res.end('<!doctype html><html><head><title>Workbench Test Shell</title></head><body><script>window.events=[];if(window.workbench)window.workbench.subscribe(s=>window.events.push(s));</script></body></html>');
   });
 
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -90,22 +90,22 @@ test('native browser search scrolling, Next/Prev navigation, tab switching and c
     env: {
       ...process.env,
       HOME: dataDir,
-      MAW_DESKTOP_DATA_DIR: dataDir,
-      MAW_DESKTOP_URL: shellUrl,
+      WORKBENCH_DESKTOP_DATA_DIR: dataDir,
+      WORKBENCH_DESKTOP_URL: shellUrl,
       // Keep both test tabs resident across tab switches regardless of host swap pressure;
       // memory-pressure eviction is tested independently in resource-budget and resource-tab-pool tests.
-      MAW_MAX_RESIDENT_VIEWS: '4',
+      WORKBENCH_MAX_RESIDENT_VIEWS: '4',
     },
   });
 
   const page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
 
-  await page.waitForFunction(() => typeof window.mawChatGpt !== 'undefined' && Array.isArray(window.events));
+  await page.waitForFunction(() => typeof window.workbench !== 'undefined' && Array.isArray(window.events));
 
-  // Intercept https requests in persist:maw-browser to serve our test fixtures
+  // Intercept https requests in persist:workbench-browser to serve our test fixtures
   await app.evaluate(({ session }, { d1, d2 }) => {
-    const sess = session.fromPartition('persist:maw-browser');
+    const sess = session.fromPartition('persist:workbench-browser');
     sess.protocol.handle('https', (req) => {
       const u = new URL(req.url);
       if (u.pathname === '/doc1') {
@@ -118,12 +118,12 @@ test('native browser search scrolling, Next/Prev navigation, tab switching and c
     });
   }, { d1: doc1Html, d2: doc2Html });
 
-  const command = (cmd) => page.evaluate((c) => window.mawChatGpt.command(c), cmd);
+  const command = (cmd) => page.evaluate((c) => window.workbench.command(c), cmd);
 
   // Helper to query element bounds and visibility in the native WebContentsView
   const getTabElementMetrics = (tabId, elementId) => {
     return app.evaluate(async ({ session, webContents }, { id, elId }) => {
-      const sess = session.fromPartition('persist:maw-browser');
+      const sess = session.fromPartition('persist:workbench-browser');
       const all = webContents.getAllWebContents().filter((c) => c.session === sess);
       const tabWeb = all.find((c) => c.getURL().includes(id === 'tab2' ? '/doc2' : '/doc1'));
       if (!tabWeb || tabWeb.isDestroyed()) return null;

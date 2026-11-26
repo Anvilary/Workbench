@@ -140,7 +140,7 @@ check('idle → busy no suena', chimeFor('idle', 'busy') === null);
     parsePhoneChimeSource('page') === 'page' && parsePhoneChimeSource('system') === 'system' &&
     parsePhoneChimeSource('web') === null && parsePhoneChimeSource('') === null);
   check('el contrato con la app: la clave y la dirección que intercepta',
-    PHONE_CHIME_STORAGE_KEY === 'agent-workbench.phone-chime' &&
+    PHONE_CHIME_STORAGE_KEY === 'workbench.phone-chime' &&
     phoneChimeUrl('page') === 'agentworkbench://chime?source=page' &&
     phoneChimeUrl('system') === 'agentworkbench://chime?source=system');
 }

@@ -50,7 +50,7 @@ import {
   type TerminalId,
   type TerminalKind,
   type TerminalOfflineReason,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { t, type MessageKey } from '../../i18n/index.js';
 
 export interface Shortcut {

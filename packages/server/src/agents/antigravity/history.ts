@@ -35,7 +35,7 @@
 import { unavailableFollower } from '../unavailable-follower.js';
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
-import type { SessionTitleSource } from '@agent-workbench/shared';
+import type { SessionTitleSource } from '@anvilary/workbench-shared';
 import { parseJsonlLine, readHeadLines } from '../../shared/jsonl-reader.js';
 import type {
   FollowOptions,

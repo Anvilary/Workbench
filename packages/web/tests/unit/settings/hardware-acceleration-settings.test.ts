@@ -111,7 +111,7 @@ test('an environment override is reported instead of a restart prompt', async ()
   const status = await saveHardwareAcceleration(bridge, true);
   assert.equal(status.pendingRestart, true);
   const html = render({ available: true, status, onToggle: () => {} });
-  assert.match(html, /MAW_SAFE_GRAPHICS/);
+  assert.match(html, /WORKBENCH_SAFE_GRAPHICS/);
   assert.doesNotMatch(html, /Restart required/);
   assert.match(html, /started with hardware acceleration disabled/);
 });

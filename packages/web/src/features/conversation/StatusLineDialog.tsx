@@ -31,7 +31,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import type { StatusLineSetupInfo } from '@agent-workbench/shared';
+import type { StatusLineSetupInfo } from '@anvilary/workbench-shared';
 import { statusLineNoFragmentText, statusLineStateText } from '../agents/agent-ui.js';
 import { t } from '../../i18n/index.js';
 import { tRich } from '../../i18n/rich.js';

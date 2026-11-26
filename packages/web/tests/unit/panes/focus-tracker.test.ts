@@ -21,7 +21,7 @@ test('FocusTracker: window focus, visibility, and native view focus modeling', (
     (globalThis as any).window = {
       addEventListener: () => {},
       removeEventListener: () => {},
-      mawChatGpt: {
+      workbench: {
         subscribe: (fn: any) => {
           bridgeHandler = fn;
           return () => { bridgeHandler = null; };

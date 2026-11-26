@@ -40,9 +40,9 @@ mkdirSync(testWorkspaces, { recursive: true });
 
 writeFileSync(path.join(testHome, '.zshrc'), '# shots\n');
 writeFileSync(path.join(testHome, '.bashrc'), '# shots\n');
-mkdirSync(path.join(testXdg, 'agent-workbench'), { recursive: true });
+mkdirSync(path.join(testXdg, 'workbench'), { recursive: true });
 // An existing installation's profile store: synthetic accounts per provider.
-writeFileSync(path.join(testXdg, 'agent-workbench', 'agency-profiles.json'), JSON.stringify({ schemaVersion: 1, profiles: [['codex-a', 'codex', 'Codex A'], ['codex-b', 'codex', 'Codex B'], ['codex-d', 'codex', 'Codex D'], ['agy-d', 'antigravity', 'AGY D'], ['claude-code', 'claude-code', 'Claude Code']]
+writeFileSync(path.join(testXdg, 'workbench', 'agency-profiles.json'), JSON.stringify({ schemaVersion: 1, profiles: [['codex-a', 'codex', 'Codex A'], ['codex-b', 'codex', 'Codex B'], ['codex-d', 'codex', 'Codex D'], ['agy-d', 'antigravity', 'AGY D'], ['claude-code', 'claude-code', 'Claude Code']]
   .map(([id, provider, label]) => ({ id, provider, label, executable: '', args: [], environmentOverrides: {}, disabled: false })) }), { mode: 0o600 });
 const fixture = path.join(temp, 'agency-test-cli');
 writeFileSync(fixture, '#!/bin/sh\nprintf "AGENCY TEST FIXTURE (no provider or inference)\\n"\nwhile IFS= read -r line; do printf "fixture input received\\n"; done\n', { mode: 0o755 });
@@ -60,8 +60,8 @@ mkdirSync(wsDirDone, { recursive: true });
 
 const commonEnv = {
   ...process.env,
-  AGENT_WORKBENCH_NO_OPEN: '1',
-  AGENT_WORKBENCH_NO_RESTORE: '1',
+  WORKBENCH_NO_OPEN: '1',
+  WORKBENCH_NO_RESTORE: '1',
   // A deterministic real interactive shell, independent of host zsh setup.
   SHELL: '/bin/bash',
   HOME: testHome,
@@ -416,7 +416,7 @@ await shot('08-overflow-and-order');
 for(const width of [390,768,1024,1440,1920]) {
   await page.setViewportSize({width,height:900});
   if(width===390)await page.getByRole('button',{name:'Collapse sidebar',exact:true}).click();
-  const metrics=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,panes:[...document.querySelectorAll('.maw-session-pane')].filter(el=>!el.hidden).length,strip:document.querySelector('.maw-tabs-strip').getBoundingClientRect().height}));
+  const metrics=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,panes:[...document.querySelectorAll('.maw-session-pane')].filter(el=>!el.hidden).length,strip:document.querySelector('.wb-tabs-strip').getBoundingClientRect().height}));
   assert.ok(metrics.scroll<=metrics.width,JSON.stringify(metrics));assert.equal(metrics.panes,1);assert.ok(metrics.strip<55);
   await until(async()=>await strip.evaluate(el=>{const tab=el.querySelector('[aria-selected="true"]');if(!tab)return false;const a=tab.parentElement.getBoundingClientRect(),b=el.getBoundingClientRect();return a.left>=b.left-1 && a.right<=b.right+1;}));
   await shot('responsive-'+width);

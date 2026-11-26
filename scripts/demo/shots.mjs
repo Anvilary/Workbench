@@ -116,9 +116,9 @@ try {
   const appVersion = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')).version;
   await context.addInitScript((version) => {
     try {
-      window.localStorage.setItem('agent-workbench.support-notice', version);
+      window.localStorage.setItem('workbench.support-notice', version);
       // La solapa Memoria viene escondida (`panel-visibility.ts`): la captura 5 la necesita.
-      window.localStorage.setItem('agent-workbench.hiddenPanels', 'none');
+      window.localStorage.setItem('workbench.hiddenPanels', 'none');
     } catch {
       // Sin localStorage el cartel aparece, y se veria en la captura.
     }

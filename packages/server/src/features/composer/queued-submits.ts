@@ -27,7 +27,7 @@
  * Puro, con el reloj inyectado: lo prueba `check-pi-adapter.mjs` sin pty.
  */
 
-import type { TerminalId } from '@agent-workbench/shared';
+import type { TerminalId } from '@anvilary/workbench-shared';
 import type { QueuedSubmission, QueuedSubmitSource } from '../../agents/adapter.js';
 
 /** Cuantos mensajes se recuerdan por pestana, y hasta cuando. */

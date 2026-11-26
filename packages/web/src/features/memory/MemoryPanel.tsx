@@ -32,7 +32,7 @@ import {
   type MemoryInstructionFile,
   type MemoryNote,
   type MemoryStatus,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { CopyPathButton } from '../files/FilesPanel.js';
 import { formatBytes, formatList, formatWhen } from '../../i18n/format.js';
 import { t, type MessageKey } from '../../i18n/index.js';

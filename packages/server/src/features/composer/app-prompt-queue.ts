@@ -28,7 +28,7 @@ import {
   type ConversationEvent,
   type QueuedPrompt,
   type TerminalId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 
 /**
  * Cuanto antes del envio puede estar fechado su mensaje en el hilo: la hora de

@@ -7,7 +7,7 @@ import {
   layoutOwnershipError,
   type WorkspaceId,
   type WorkspacePaneLayout,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 
 /**
  * Accept a layout only when it belongs to the requested workspace and only

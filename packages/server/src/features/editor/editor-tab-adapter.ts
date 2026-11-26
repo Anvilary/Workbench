@@ -7,8 +7,8 @@
 
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { CreateEditorTabInput, EditorTab, WorkspaceId } from '@agent-workbench/shared';
-import { validateEditorTabTitle, validateRelativeFilePath } from '@agent-workbench/shared';
+import type { CreateEditorTabInput, EditorTab, WorkspaceId } from '@anvilary/workbench-shared';
+import { validateEditorTabTitle, validateRelativeFilePath } from '@anvilary/workbench-shared';
 import { EditorTabStore, EditorTabStoreError } from './editor-tab-store.js';
 import type { AgencyWorkspaceStore } from '../workspaces/workspace-store.js';
 import { WorkspaceMutex } from '../workspaces/workspace-lock.js';

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { _electron as electron } from 'playwright';
-import { runtimeFor } from '../../../scripts/maw/desktop-runtime.mjs';
+import { runtimeFor } from '../../../scripts/workbench/desktop-runtime.mjs';
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -14,7 +14,7 @@ const desktopDir = path.resolve(here, '..');
 const repoRoot = path.resolve(desktopDir, '../..');
 const { directory: installedRuntimeDir } = await runtimeFor(repoRoot);
 const installedElectron = path.join(installedRuntimeDir, 'electron');
-const electronExecutable = process.env.MAW_ELECTRON_EXECUTABLE
+const electronExecutable = process.env.WORKBENCH_ELECTRON_EXECUTABLE
   || (existsSync(installedElectron) ? installedElectron : require('electron'));
 
 const VALID_SUITES = new Set([
@@ -104,9 +104,9 @@ async function runBenchmarkSuite(targetSuite = 'all') {
       args: [desktopDir, '--ozone-platform=x11'],
       env: {
         ...cleanEnv,
-        MAW_DESKTOP_URL: `http://127.0.0.1:${serverPort}/`,
-        MAW_DESKTOP_DATA_DIR: dataDir,
-        MAW_MAX_RESIDENT_VIEWS: '10',
+        WORKBENCH_DESKTOP_URL: `http://127.0.0.1:${serverPort}/`,
+        WORKBENCH_DESKTOP_DATA_DIR: dataDir,
+        WORKBENCH_MAX_RESIDENT_VIEWS: '10',
       },
     });
 
@@ -315,13 +315,13 @@ async function runBenchmarkSuite(targetSuite = 'all') {
 
     if (targetSuite === 'all' || targetSuite === 'browser-profiles') {
       await desktop.evaluate(({ session }) => {
-        for (const partition of ['persist:maw-browser', 'persist:maw-profile-bench-browser']) {
+        for (const partition of ['persist:workbench-browser', 'persist:workbench-profile-bench-browser']) {
           session.fromPartition(partition).protocol.handle('https', () =>
             new Response('<title>Browser profile benchmark</title>', { headers: { 'Content-Type': 'text/html' } }));
         }
       });
       const samples = await win.evaluate(async () => {
-        const bridge = window.mawChatGpt;
+        const bridge = window.workbench;
         const timings = { main: [], bench: [] };
         for (let run = 0; run < 9; run++) {
           for (const profileId of (run % 2 === 0 ? ['main', 'bench'] : ['bench', 'main'])) {
@@ -450,8 +450,8 @@ async function runBenchmarkSuite(targetSuite = 'all') {
     }
 
     // Save output evidence file (avoid dirtying tracked docs unless explicitly requested)
-    const evidenceDir = process.env.MAW_WEBVIEW_EVIDENCE_DIR
-      ? path.resolve(process.env.MAW_WEBVIEW_EVIDENCE_DIR)
+    const evidenceDir = process.env.WORKBENCH_WEBVIEW_EVIDENCE_DIR
+      ? path.resolve(process.env.WORKBENCH_WEBVIEW_EVIDENCE_DIR)
       : path.join(tmpdir(), 'maw-webview-bench-evidence');
     await mkdir(evidenceDir, { recursive: true });
     const evidencePath = path.resolve(evidenceDir, 'latest-benchmark.json');

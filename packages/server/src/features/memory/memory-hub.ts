@@ -23,7 +23,7 @@ import type {
   MemoryNoteContent,
   MemoryStatus,
   TerminalId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { debugLog } from '../../shared/debug.js';
 import {
   importNativeMemory,

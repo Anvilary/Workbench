@@ -271,7 +271,7 @@ test('Notifications default enabled behavior and persisted preference semantics'
   function readNotificationsEnabled() {
     const saved = mockStorage.get(STORAGE_KEY);
     if (saved !== undefined && saved !== null) return saved === 'true';
-    const legacy = mockStorage.get('agent-workbench.notify');
+    const legacy = mockStorage.get('workbench.notify');
     if (legacy === 'off') return false;
     if (legacy === 'on') return true;
     return true; // Default to enabled when preference is missing!
@@ -291,12 +291,12 @@ test('Notifications default enabled behavior and persisted preference semantics'
 
   // 4. Legacy 'off' setting -> respected as false
   mockStorage.clear();
-  mockStorage.set('agent-workbench.notify', 'off');
+  mockStorage.set('workbench.notify', 'off');
   assert.equal(readNotificationsEnabled(), false);
 
   // 5. Legacy 'on' setting -> respected as true
   mockStorage.clear();
-  mockStorage.set('agent-workbench.notify', 'on');
+  mockStorage.set('workbench.notify', 'on');
   assert.equal(readNotificationsEnabled(), true);
 });
 

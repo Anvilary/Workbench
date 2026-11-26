@@ -2,7 +2,7 @@
  * Separate branches created and reviewed from the app.
  */
 
-import { serverText, type ClientMessage, type TerminalId } from '@agent-workbench/shared';
+import { serverText, type ClientMessage, type TerminalId } from '@anvilary/workbench-shared';
 import { deliverWhenReady, prefillReasonFor } from '../../../features/composer/deliver-when-ready.js';
 import { HANDOFF_DELIVERY_TIMEOUT_MS } from '../../../features/history/handoff.js';
 import { WorktreeInUseError } from '../../../features/worktrees/service.js';

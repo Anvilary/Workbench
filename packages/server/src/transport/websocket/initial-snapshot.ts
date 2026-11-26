@@ -7,7 +7,7 @@
  * as events.
  */
 
-import { PROTOCOL_VERSION } from '@agent-workbench/shared';
+import { PROTOCOL_VERSION } from '@anvilary/workbench-shared';
 import type { WebSocket } from 'ws';
 import { draftEntriesOf } from '../../features/composer/draft-store.js';
 import { listAgencyProfiles } from '../../features/profiles/profile-capabilities.js';

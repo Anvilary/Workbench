@@ -18,7 +18,7 @@
 
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
-import type { SessionWorktree, TabWorktree } from '@agent-workbench/shared';
+import type { SessionWorktree, TabWorktree } from '@anvilary/workbench-shared';
 import { mainCwdFor, readCheckout } from './checkout.js';
 import { branchCommit, commitExists } from './git.js';
 import { mainRootFromShape } from './names.js';

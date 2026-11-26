@@ -19,7 +19,7 @@
  * Un fallo al mandar lanza: lo traduce quien llama.
  */
 
-import type { AnswerSelection } from '@agent-workbench/shared';
+import type { AnswerSelection } from '@anvilary/workbench-shared';
 import type { QuestionAnswerOutcome, QuestionChannel } from '../adapter.js';
 import { sanitizeForPaste } from '../../features/composer/pty-input.js';
 import type { ReadOnlyDatabase } from '../sqlite.js';

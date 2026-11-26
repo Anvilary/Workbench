@@ -9,7 +9,7 @@
 import type { DocContent, DocEdit } from '../files/useDocuments.js';
 import type { DocMode } from '../files/doc-tabs.js';
 import type { AgentConnection } from '../../connection/connection.js';
-import type { FilePreview, ServerMessage, ServerText, WorkspaceId, EditorTab } from '@agent-workbench/shared';
+import type { FilePreview, ServerMessage, ServerText, WorkspaceId, EditorTab } from '@anvilary/workbench-shared';
 
 export interface EditorDraft {
   edit: DocEdit | null;

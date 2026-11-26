@@ -14,7 +14,7 @@
  * solo aparece en filas de la barra.
  */
 
-import type { AgentInfo, SessionAgentId } from '@agent-workbench/shared';
+import type { AgentInfo, SessionAgentId } from '@anvilary/workbench-shared';
 import { agentShortLabel, sessionAgentLabel } from './agent-ui.js';
 
 interface AgentBadgeProps {

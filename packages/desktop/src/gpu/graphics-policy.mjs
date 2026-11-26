@@ -6,7 +6,7 @@ import path from 'node:path';
  *
  * On Linux hybrid laptops (AMD iGPU + NVIDIA dGPU) Chromium renders on the iGPU, but
  * libglvnd still loads the NVIDIA EGL/GLX vendor libraries inside the Electron GPU process.
- * That opens /dev/nvidia* and creates NVIDIA RM clients that do no useful work for MAW, and
+ * That opens /dev/nvidia* and creates NVIDIA RM clients that do no useful work for Workbench, and
  * whose teardown (for example when the process is killed under memory pressure) has been
  * observed to fault inside nvidia.ko. Restricting the vendor libraries to Mesa keeps the iGPU
  * fully hardware accelerated while giving the NVIDIA driver nothing to tear down.
@@ -16,7 +16,7 @@ import path from 'node:path';
  *     process. Chromium forks the GPU process from a zygote that exists before any JavaScript
  *     runs, so assigning process.env inside main.mjs does NOT reach it (verified on Electron
  *     45.2.0). It must be in the environment of the Electron process at spawn time, i.e. it is
- *     applied by the launcher (scripts/maw/desktop-launch.mjs).
+ *     applied by the launcher (scripts/workbench/desktop-launch.mjs).
  *   - Safe graphics (`applyGraphicsPolicy`) uses app.disableHardwareAcceleration(), which is an
  *     in-process API that is valid before app.whenReady().
  *
@@ -60,12 +60,12 @@ export function detectRenderNodes({
  * Decides the graphics configuration before Electron is ready.
  *
  * Hardware acceleration precedence:
- *   1. MAW_SAFE_GRAPHICS=1   forces it off (software compositing, no WebGL). Diagnostic override.
- *   2. MAW_SAFE_GRAPHICS=0   forces it on, whatever the saved preference says.
+ *   1. WORKBENCH_SAFE_GRAPHICS=1   forces it off (software compositing, no WebGL). Diagnostic override.
+ *   2. WORKBENCH_SAFE_GRAPHICS=0   forces it on, whatever the saved preference says.
  *   3. the saved desktop preference (`hardwareAccelerationPreference`, boolean).
  *   4. otherwise on (missing, invalid or unreadable preference).
  * Other operator controls (environment):
- *   MAW_GPU_ISOLATION=0   keep the historical behaviour even on an AMD+NVIDIA hybrid.
+ *   WORKBENCH_GPU_ISOLATION=0   keep the historical behaviour even on an AMD+NVIDIA hybrid.
  *
  * `hardwareAcceleration.source` says which rule decided: 'env', 'preference' or 'default'.
  *
@@ -79,10 +79,10 @@ export function resolveGraphicsPolicy({
   exists = fs.existsSync,
   hardwareAccelerationPreference,
 } = {}) {
-  const forced = env.MAW_SAFE_GRAPHICS === '1' || env.MAW_SAFE_GRAPHICS === '0';
+  const forced = env.WORKBENCH_SAFE_GRAPHICS === '1' || env.WORKBENCH_SAFE_GRAPHICS === '0';
   const source = forced ? 'env' : typeof hardwareAccelerationPreference === 'boolean' ? 'preference' : 'default';
-  if (env.MAW_SAFE_GRAPHICS === '1') {
-    return { mode: GraphicsMode.SAFE, disableHardwareAcceleration: true, env: {}, reason: 'MAW_SAFE_GRAPHICS=1', hardwareAcceleration: { effective: false, source } };
+  if (env.WORKBENCH_SAFE_GRAPHICS === '1') {
+    return { mode: GraphicsMode.SAFE, disableHardwareAcceleration: true, env: {}, reason: 'WORKBENCH_SAFE_GRAPHICS=1', hardwareAcceleration: { effective: false, source } };
   }
   if (source === 'preference' && hardwareAccelerationPreference === false) {
     return { mode: GraphicsMode.SAFE, disableHardwareAcceleration: true, env: {}, reason: 'hardware acceleration disabled in desktop preferences', hardwareAcceleration: { effective: false, source } };
@@ -93,7 +93,7 @@ export function resolveGraphicsPolicy({
 function resolveAcceleratedPolicy({ platform, env, renderNodes, exists }) {
   const base = { mode: GraphicsMode.DEFAULT, disableHardwareAcceleration: false, env: {} };
   if (platform !== 'linux') return { ...base, reason: 'not linux' };
-  if (env.MAW_GPU_ISOLATION === '0') return { ...base, reason: 'MAW_GPU_ISOLATION=0' };
+  if (env.WORKBENCH_GPU_ISOLATION === '0') return { ...base, reason: 'WORKBENCH_GPU_ISOLATION=0' };
 
   const drivers = new Set(renderNodes.map((n) => n.driver));
   if (!(drivers.has('nvidia') && drivers.has('amdgpu'))) return { ...base, reason: 'not an AMD+NVIDIA hybrid' };
@@ -134,11 +134,11 @@ export function applyGraphicsPolicy(policy, { app }) {
  * core for 1080p H.264, 0 dropped frames. It had been disabled (commit ac580cf) as a mitigation for NVIDIA
  * driver trouble, so it is only enabled when the NVIDIA stack is demonstrably out of the picture: the policy is
  * `amd-isolated` AND the EGL, GLX and Vulkan restrictions are actually present in this process's environment
- * (they are set by the launcher; assigning them inside main.mjs has no effect). MAW_HW_VIDEO_DECODE=0 forces
+ * (they are set by the launcher; assigning them inside main.mjs has no effect). WORKBENCH_HW_VIDEO_DECODE=0 forces
  * software decode.
  */
 export function shouldDisableHardwareVideoDecode({ policy, env = process.env }) {
-  if (env.MAW_HW_VIDEO_DECODE === '0') return true;
+  if (env.WORKBENCH_HW_VIDEO_DECODE === '0') return true;
   if (policy.mode !== GraphicsMode.AMD_ISOLATED) return true;
   const restricted = Boolean(
     (env.__EGL_VENDOR_LIBRARY_FILENAMES || env.__EGL_VENDOR_LIBRARY_DIRS)

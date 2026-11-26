@@ -1,3 +1,4 @@
+import { workbenchEnv } from '../../../scripts/workbench/env.mjs';
 /**
  * Arranque de Agent Workbench.
  *
@@ -7,7 +8,7 @@
  * de sacar.
  */
 
-import { TOKEN_QUERY_PARAM, type TerminalId } from '@agent-workbench/shared';
+import { TOKEN_QUERY_PARAM, type TerminalId } from '@anvilary/workbench-shared';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -61,7 +62,7 @@ import { AgencyWorkspaceStore } from './features/workspaces/workspace-store.js';
 import { WorktreeLinks } from './features/worktrees/links.js';
 import { WorktreeService } from './features/worktrees/service.js';
 import { WorktreeStore } from './features/worktrees/store.js';
-import { acquireStoreOwnership, publishReadiness, readReleaseIdentity } from './maw-host.js';
+import { acquireStoreOwnership, publishReadiness, readReleaseIdentity } from './workbench-host.js';
 import { createNoAuthMiddleware } from './security/no-auth-middleware.js';
 import {
   LOOPBACK_HOST,
@@ -113,7 +114,7 @@ const isProduction = isPackaged || process.argv.includes('--prod');
 
 /** Sugerencia de directorio para la primera pestana. */
 function resolveDefaultCwd(): string {
-  const override = process.env['AGENT_WORKBENCH_CWD'];
+  const override = workbenchEnv('CWD');
   if (override !== undefined && override.length > 0) return path.resolve(override);
   // Instalado desde npm, el comando se corre parado en el proyecto donde se va
   // a trabajar, y eso es exactamente `process.cwd()`. Desde el repositorio no
@@ -274,7 +275,7 @@ async function main(): Promise<void> {
   let fixedPortBusy = false;
   if (noAuth && remoteSettings.enabled) {
     throw new Error(
-      'MAW_UNSAFE_LOCAL_NO_AUTH=1 cannot be used with remote access enabled.\n' +
+      'WORKBENCH_UNSAFE_LOCAL_NO_AUTH=1 cannot be used with remote access enabled.\n' +
       'Disable remote access in settings before starting in token-free mode.',
     );
   }
@@ -296,7 +297,7 @@ async function main(): Promise<void> {
   const { port } = address;
   if (noAuth && address.address !== LOOPBACK_HOST) {
     throw new Error(
-      `MAW_UNSAFE_LOCAL_NO_AUTH=1 requires binding exclusively to ${LOOPBACK_HOST}, got ${address.address}`,
+      `WORKBENCH_UNSAFE_LOCAL_NO_AUTH=1 requires binding exclusively to ${LOOPBACK_HOST}, got ${address.address}`,
     );
   }
 
@@ -369,7 +370,7 @@ async function main(): Promise<void> {
   await agencyActivityManager.initialize();
   await agencyLayoutStore.initialize();
 
-  // Administrative performance endpoint for local MAW Resource Monitor
+  // Administrative performance endpoint for local Workbench Resource Monitor
   app.get('/api/performance/terminals', (request: Request, response: Response) => {
     const clientIp = request.socket.remoteAddress;
     const isLoopback = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === '::ffff:127.0.0.1';
@@ -456,7 +457,7 @@ async function main(): Promise<void> {
   */
   void pasteStore.purgeStale();
 
-  if (process.env['MAW_EAGER_CLASSIC'] === '1') {
+  if (workbenchEnv('EAGER_CLASSIC') === '1') {
     void classicLifecycle.ensureStarted();
   }
 
@@ -468,7 +469,7 @@ async function main(): Promise<void> {
     guarda aparte las pestanas que no puede mostrar, y sin ella el primer cambio
     —abrir una consola— reescribiria el archivo sin ninguna.
   */
-  if (process.env['AGENT_WORKBENCH_NO_RESTORE'] !== '1') {
+  if (workbenchEnv('NO_RESTORE') !== '1') {
     void store.load().then((state) => {
       /*
         Un borrador sin pestana en el archivo no lo va a pedir nadie: la cerro
@@ -491,7 +492,7 @@ async function main(): Promise<void> {
   const remoteStatus = remote.status();
   describeStartup(
     isProduction,
-    process.env['MAW_RUNTIME_DIR'] ? `http://${LOOPBACK_HOST}:${port}/ (use maw open)` : url,
+    workbenchEnv('RUNTIME_DIR') ? `http://${LOOPBACK_HOST}:${port}/ (use anvi-bench open)` : url,
     defaultCwd,
     agents,
     shell,
@@ -499,18 +500,18 @@ async function main(): Promise<void> {
   );
   if (noAuth) {
     console.warn(
-      '\n  ⚠  TOKEN-FREE LOCAL MODE (MAW_UNSAFE_LOCAL_NO_AUTH=1)\n' +
+      '\n  ⚠  TOKEN-FREE LOCAL MODE (WORKBENCH_UNSAFE_LOCAL_NO_AUTH=1)\n' +
       '  Any process on this machine that can reach 127.0.0.1 can access Anvilary Workbench.\n' +
       '  Anvilary Workbench executes shell commands. Loopback-only binding does not eliminate all risks.\n'
     );
   }
-  const runtimeDir = process.env['MAW_RUNTIME_DIR']
-    ?? (process.env['XDG_RUNTIME_DIR'] ? path.join(process.env['XDG_RUNTIME_DIR'], 'maw') : null)
-    ?? (typeof process.getuid === 'function' && existsSync(`/run/user/${process.getuid()}`) ? path.join(`/run/user/${process.getuid()}`, 'maw') : null)
-    ?? path.join(os.tmpdir(), 'maw');
+  const runtimeDir = workbenchEnv('RUNTIME_DIR')
+    ?? (process.env['XDG_RUNTIME_DIR'] ? path.join(process.env['XDG_RUNTIME_DIR'], 'workbench') : null)
+    ?? (typeof process.getuid === 'function' && existsSync(`/run/user/${process.getuid()}`) ? path.join(`/run/user/${process.getuid()}`, 'workbench') : null)
+    ?? path.join(os.tmpdir(), 'workbench');
   const clearReadiness = await publishReadiness(runtimeDir, url, await readReleaseIdentity(repoRoot));
   // Escape para desarrollo y pruebas automatizadas: arrancar sin abrir nada.
-  if (process.env['AGENT_WORKBENCH_NO_OPEN'] !== '1') openBrowser(url);
+  if (workbenchEnv('NO_OPEN') !== '1') openBrowser(url);
 
   let shuttingDown = false;
   const shutdown = (): void => {

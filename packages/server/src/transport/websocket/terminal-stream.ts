@@ -1,3 +1,4 @@
+import { workbenchEnv } from '../../../../../scripts/workbench/env.mjs';
 /**
  * One socket's view of terminal output.
  *
@@ -8,7 +9,7 @@
  * connection revokes every lease and the terminals keep running.
  */
 
-import type { TerminalId } from '@agent-workbench/shared';
+import type { TerminalId } from '@anvilary/workbench-shared';
 import type { WebSocket } from 'ws';
 import type { OutputListener, TerminalRegistry } from '../../features/terminals/terminal-registry.js';
 import { OutputBackpressure } from './output-backpressure.js';
@@ -128,7 +129,7 @@ export function createTerminalStream(deps: TerminalStreamDeps): TerminalStream {
     }
     if (replaying.has(terminalId) || backpressure.shouldSend(terminalId)) {
       outputBatcher.push(terminalId, chunk, offset);
-      if (process.env.MAW_OUTPUT_BATCHING === '0') outputBatcher.flush(terminalId);
+      if (workbenchEnv('OUTPUT_BATCHING') === '0') outputBatcher.flush(terminalId);
     }
   };
 

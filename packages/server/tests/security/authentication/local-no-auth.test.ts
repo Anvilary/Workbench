@@ -1,5 +1,5 @@
 /**
- * Tests for MAW_UNSAFE_LOCAL_NO_AUTH=1 token-free local mode.
+ * Tests for WORKBENCH_UNSAFE_LOCAL_NO_AUTH=1 token-free local mode.
  *
  * Verifies:
  *  1. Token-free mode accepts requests without any session cookie or token.
@@ -50,31 +50,31 @@ const LOOPBACK_HOST_HEADER = `127.0.0.1:${PORT}`;
 // ---------------------------------------------------------------------------
 
 test('isLocalNoAuthEnabled returns false when env var is absent', () => {
-  const saved = process.env['MAW_UNSAFE_LOCAL_NO_AUTH'];
-  delete process.env['MAW_UNSAFE_LOCAL_NO_AUTH'];
+  const saved = process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'];
+  delete process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'];
   assert.equal(isLocalNoAuthEnabled(), false);
-  if (saved !== undefined) process.env['MAW_UNSAFE_LOCAL_NO_AUTH'] = saved;
+  if (saved !== undefined) process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'] = saved;
 });
 
 test('isLocalNoAuthEnabled returns false when env var is 0', () => {
-  const saved = process.env['MAW_UNSAFE_LOCAL_NO_AUTH'];
-  process.env['MAW_UNSAFE_LOCAL_NO_AUTH'] = '0';
+  const saved = process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'];
+  process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'] = '0';
   assert.equal(isLocalNoAuthEnabled(), false);
   if (saved !== undefined) {
-    process.env['MAW_UNSAFE_LOCAL_NO_AUTH'] = saved;
+    process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'] = saved;
   } else {
-    delete process.env['MAW_UNSAFE_LOCAL_NO_AUTH'];
+    delete process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'];
   }
 });
 
 test('isLocalNoAuthEnabled returns true only when env var is exactly "1"', () => {
-  const saved = process.env['MAW_UNSAFE_LOCAL_NO_AUTH'];
-  process.env['MAW_UNSAFE_LOCAL_NO_AUTH'] = '1';
+  const saved = process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'];
+  process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'] = '1';
   assert.equal(isLocalNoAuthEnabled(), true);
   if (saved !== undefined) {
-    process.env['MAW_UNSAFE_LOCAL_NO_AUTH'] = saved;
+    process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'] = saved;
   } else {
-    delete process.env['MAW_UNSAFE_LOCAL_NO_AUTH'];
+    delete process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'];
   }
 });
 
@@ -230,8 +230,8 @@ test('remote access service rejects configure({ enabled: true }) when no-auth is
   const { tmpdir } = await import('node:os');
   const path = await import('node:path');
 
-  const prevEnv = process.env['MAW_UNSAFE_LOCAL_NO_AUTH'];
-  process.env['MAW_UNSAFE_LOCAL_NO_AUTH'] = '1';
+  const prevEnv = process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'];
+  process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'] = '1';
   const tempDir = await mkdtemp(path.join(tmpdir(), 'maw-remote-test-'));
 
   try {
@@ -262,9 +262,9 @@ test('remote access service rejects configure({ enabled: true }) when no-auth is
     );
   } finally {
     if (prevEnv !== undefined) {
-      process.env['MAW_UNSAFE_LOCAL_NO_AUTH'] = prevEnv;
+      process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'] = prevEnv;
     } else {
-      delete process.env['MAW_UNSAFE_LOCAL_NO_AUTH'];
+      delete process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'];
     }
     await rm(tempDir, { recursive: true, force: true });
   }
@@ -282,13 +282,13 @@ test('readiness and control script work with token-free localhost URL', async ()
   const { tmpdir } = await import('node:os');
   const { fileURLToPath } = await import('node:url');
   const path = await import('node:path');
-  const { publishReadiness } = await import('../../../src/maw-host.js');
+  const { publishReadiness } = await import('../../../src/workbench-host.js');
 
   const run = promisify(execFile);
   const temp = await mkdtemp(path.join(tmpdir(), 'maw-ctrl-noauth-'));
   const bin = path.join(temp, 'bin');
   await mkdir(bin);
-  await writeFile(path.join(bin, 'systemctl'), '#!/bin/sh\nprintf "%s\\n" "$MAW_TEST_PID"\n', { mode: 0o700 });
+  await writeFile(path.join(bin, 'systemctl'), '#!/bin/sh\nprintf "%s\\n" "$WORKBENCH_TEST_PID"\n', { mode: 0o700 });
 
   // Mock server accepts loopback requests without requiring token
   const server = createServer((_request, response) => {
@@ -299,16 +299,16 @@ test('readiness and control script work with token-free localhost URL', async ()
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
 
-  const control = fileURLToPath(new URL('../../../../../scripts/maw/control.mjs', import.meta.url));
+  const control = fileURLToPath(new URL('../../../../../scripts/workbench/control.mjs', import.meta.url));
   const runtime = path.join(temp, 'maw');
   const tokenFreeUrl = `http://127.0.0.1:${address.port}/`;
   const clear = await publishReadiness(runtime, tokenFreeUrl);
   const env = {
     ...process.env,
-    MAW_RUNTIME_DIR: runtime,
+    WORKBENCH_RUNTIME_DIR: runtime,
     XDG_RUNTIME_DIR: temp,
     PATH: bin + ':' + process.env.PATH,
-    MAW_TEST_PID: String(process.pid),
+    WORKBENCH_TEST_PID: String(process.pid),
   };
 
   try {
@@ -498,8 +498,8 @@ test('WebSocket upgrade: connects without token in no-auth mode, rejects foreign
 // ---------------------------------------------------------------------------
 
 test('startup rejects in token-free mode if remote access is enabled in settings', async () => {
-  const prevEnv = process.env['MAW_UNSAFE_LOCAL_NO_AUTH'];
-  process.env['MAW_UNSAFE_LOCAL_NO_AUTH'] = '1';
+  const prevEnv = process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'];
+  process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'] = '1';
   const { SettingsStore } = await import('../../../src/features/settings/settings-store.js');
   const { mkdtemp, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
@@ -519,7 +519,7 @@ test('startup rejects in token-free mode if remote access is enabled in settings
     const checkStartup = () => {
       if (noAuth && remoteSettings.enabled) {
         throw new Error(
-          'MAW_UNSAFE_LOCAL_NO_AUTH=1 cannot be used with remote access enabled.\n' +
+          'WORKBENCH_UNSAFE_LOCAL_NO_AUTH=1 cannot be used with remote access enabled.\n' +
           'Disable remote access in settings before starting in token-free mode.',
         );
       }
@@ -527,9 +527,9 @@ test('startup rejects in token-free mode if remote access is enabled in settings
     assert.throws(checkStartup, /cannot be used with remote access enabled/);
   } finally {
     if (prevEnv !== undefined) {
-      process.env['MAW_UNSAFE_LOCAL_NO_AUTH'] = prevEnv;
+      process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'] = prevEnv;
     } else {
-      delete process.env['MAW_UNSAFE_LOCAL_NO_AUTH'];
+      delete process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'];
     }
     await rm(tempDir, { recursive: true, force: true });
   }

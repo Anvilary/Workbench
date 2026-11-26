@@ -16,7 +16,7 @@ export function createMainWindow({ electron, secure, backend, here }) {
   const win = new BrowserWindow({ width: 1280, height: 860, title: 'Anvilary Workbench', autoHideMenuBar: true,
     backgroundColor: '#0e0e10',
     icon: iconPath,
-    webPreferences: { ...secure, partition: 'persist:maw-shell-prototype', preload: path.join(here, 'preload.cjs') } });
+    webPreferences: { ...secure, partition: 'persist:workbench-shell-prototype', preload: path.join(here, 'preload.cjs') } });
   configureShellSessionSecurity({
     session: win.webContents.session,
     getLocalOrigin: () => backend.current().origin,

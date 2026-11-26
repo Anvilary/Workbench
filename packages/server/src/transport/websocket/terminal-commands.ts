@@ -14,7 +14,7 @@ import {
   type ServerMessage,
   type ServerText,
   type TerminalId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { WebSocket } from 'ws';
 import type { AgentAdapter, AgentInput } from '../../agents/adapter.js';
 import type { DeliverDeps } from '../../features/composer/deliver-when-ready.js';

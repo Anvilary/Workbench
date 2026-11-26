@@ -1,7 +1,7 @@
 import {
   CLI_PROVIDERS, PROFILE_ENV_RULES,
   type CliProfileId, type CliProvider,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { accessSync, constants, statSync } from 'node:fs';
 import path from 'node:path';
 import { resolveConfiguredExecutable } from './executable.js';

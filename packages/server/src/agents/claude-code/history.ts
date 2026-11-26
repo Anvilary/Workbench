@@ -13,7 +13,7 @@
 import { unavailableFollower } from '../unavailable-follower.js';
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { asStringArray } from '@agent-workbench/shared';
+import { asStringArray } from '@anvilary/workbench-shared';
 import type {
   FollowOptions,
   HistoryExtra,

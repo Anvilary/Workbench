@@ -11,7 +11,7 @@
  * mismo: una recarga no tiene por que volver a esa pestaña.
  */
 
-import { TOKEN_QUERY_PARAM } from '@agent-workbench/shared';
+import { TOKEN_QUERY_PARAM } from '@anvilary/workbench-shared';
 import { TAB_QUERY_PARAM, readTabParam, withoutParams } from '../shared/lib/narrow-layout.js';
 
 function readAndScrub(): { token: string | null; tab: string | null } {

@@ -2,7 +2,7 @@
  * Shared agent memory of a terminal's project.
  */
 
-import { serverText, type ClientMessage } from '@agent-workbench/shared';
+import { serverText, type ClientMessage } from '@anvilary/workbench-shared';
 import { UnknownTerminalError } from '../../../features/memory/memory-hub.js';
 import type { HandlerContext } from '../handler-context.js';
 

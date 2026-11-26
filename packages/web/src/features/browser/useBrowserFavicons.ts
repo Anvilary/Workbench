@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { validateFaviconUrl } from '@agent-workbench/shared';
+import { validateFaviconUrl } from '@anvilary/workbench-shared';
 
 const STORAGE_KEY = 'agency-ui.browser-favicons.v1';
 
@@ -39,7 +39,7 @@ export function useBrowserFavicons() {
 
   // Sync with Electron main process
   useEffect(() => {
-    const bridge = window.mawChatGpt;
+    const bridge = window.workbench;
     if (!bridge) return;
 
     // Fetch already-discovered favicons

@@ -55,7 +55,7 @@ import {
   type VaultHeader,
   type VaultImageRef,
   type VaultMeasurement,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { HistoryItem, HistorySource } from '../../agents/adapter.js';
 import type { AgentRegistry } from '../../agents/registry.js';
 import type { EventLimits } from '../../agents/transport-limits.js';

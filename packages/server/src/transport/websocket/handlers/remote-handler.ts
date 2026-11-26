@@ -2,7 +2,7 @@
  * Remote access: pairing and paired devices.
  */
 
-import { ServerTextError, serverText, type ClientMessage } from '@agent-workbench/shared';
+import { ServerTextError, serverText, type ClientMessage } from '@anvilary/workbench-shared';
 import type { HandlerContext } from '../handler-context.js';
 
 export const remoteMessageTypes = [

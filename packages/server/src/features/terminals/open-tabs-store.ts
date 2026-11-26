@@ -35,7 +35,7 @@
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { AGENT_IDS, asLiteral, type AgentId, type TerminalDescriptor } from '@agent-workbench/shared';
+import { AGENT_IDS, asLiteral, type AgentId, type TerminalDescriptor } from '@anvilary/workbench-shared';
 import { appConfigDir, workspaceStatePath } from '../../shared/app-paths.js';
 
 const STATE_VERSION = 1;

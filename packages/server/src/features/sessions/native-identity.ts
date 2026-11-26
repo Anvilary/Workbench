@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { resolveConfiguredExecutable } from '../../agents/profiles/executable.js';
-import type { CliProvider } from '@agent-workbench/shared';
+import type { CliProvider } from '@anvilary/workbench-shared';
 import type { ProfileDefinition } from '../../agents/profiles/definition.js';
 
 export interface NativeIdentity {

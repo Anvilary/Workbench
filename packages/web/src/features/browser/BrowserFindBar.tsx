@@ -20,7 +20,7 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
     return createFindCorrelationController({
       tabId: id,
       dispatchCommand: (cmd) => {
-        const bridge = window.mawChatGpt;
+        const bridge = window.workbench;
         if (!bridge) return Promise.resolve();
         return bridge.command(cmd as any);
       },
@@ -47,7 +47,7 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
 
   // Subscribe to bridge events
   useEffect(() => {
-    const bridge = window.mawChatGpt;
+    const bridge = window.workbench;
     if (!bridge) return;
     const unsubscribe = bridge.subscribe((state) => {
       controller.handleEvent(state);
@@ -101,11 +101,11 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
   };
 
   return (
-    <div className="maw-browser-find-bar" role="search" aria-label={t('agency.browser.findInPage')}>
+    <div className="wb-browser-find-bar" role="search" aria-label={t('agency.browser.findInPage')}>
       <input
         ref={inputRef}
         type="text"
-        className="maw-browser-find-input"
+        className="wb-browser-find-input"
         placeholder={t('agency.browser.findPlaceholder')}
         aria-label={t('agency.browser.findInPage')}
         value={query}
@@ -113,13 +113,13 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
         onKeyDown={handleKeyDown}
       />
       {findState.counterText && (
-        <span className="maw-browser-find-counter" role="status" aria-live="polite">
+        <span className="wb-browser-find-counter" role="status" aria-live="polite">
           {findState.counterText}
         </span>
       )}
       <button
         type="button"
-        className="maw-browser-find-btn"
+        className="wb-browser-find-btn"
         aria-label={t('agency.browser.previousMatch')}
         title={t('agency.browser.previousMatch')}
         onClick={handlePrevious}
@@ -129,7 +129,7 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
       </button>
       <button
         type="button"
-        className="maw-browser-find-btn"
+        className="wb-browser-find-btn"
         aria-label={t('agency.browser.nextMatch')}
         title={t('agency.browser.nextMatch')}
         onClick={handleNext}
@@ -139,7 +139,7 @@ export function BrowserFindBar({ id, onClose }: BrowserFindBarProps): JSX.Elemen
       </button>
       <button
         type="button"
-        className="maw-browser-find-btn maw-browser-find-close"
+        className="wb-browser-find-btn wb-browser-find-close"
         aria-label={t('agency.browser.closeFind')}
         title={t('agency.browser.closeFind')}
         onClick={handleClose}

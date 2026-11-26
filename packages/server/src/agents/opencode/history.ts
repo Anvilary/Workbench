@@ -32,7 +32,7 @@
  */
 
 import { stat } from 'node:fs/promises';
-import type { SessionTitleSource } from '@agent-workbench/shared';
+import type { SessionTitleSource } from '@anvilary/workbench-shared';
 import type {
   FollowOptions,
   HistoryItem,

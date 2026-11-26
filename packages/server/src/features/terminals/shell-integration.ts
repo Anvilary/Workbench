@@ -1,5 +1,5 @@
 /**
- * MAW Lane C - Shell Terminal Integration & Activity Detection.
+ * Workbench Lane C - Shell Terminal Integration & Activity Detection.
  *
  * Implements OSC 133 semantic prompt/command sequences:
  *   - OSC 133 ; A ST : Prompt start
@@ -18,7 +18,7 @@
 import { EventEmitter } from 'node:events';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { MawActivityState } from '@agent-workbench/shared';
+import type { MawActivityState } from '@anvilary/workbench-shared';
 
 export interface ShellCommandStartEvent {
   timestamp: number;
@@ -213,17 +213,17 @@ export const ShellSequences = {
  */
 export function generateBashIntegrationScript(): string {
   return `#!/usr/bin/env bash
-# MAW Safe Bash Shell Integration (OSC 133)
+# Workbench Safe Bash Shell Integration (OSC 133)
 # Safely hooks command start and exit without overwriting user configuration.
 
-if [[ -n "\${MAW_TERMINAL_HISTFILE:-}" ]]; then
-  export HISTFILE="\$MAW_TERMINAL_HISTFILE"
+if [[ -n "\${WORKBENCH_TERMINAL_HISTFILE:-}" ]]; then
+  export HISTFILE="\$WORKBENCH_TERMINAL_HISTFILE"
 fi
 
 __maw_osc133_precmd() {
   local last_status="$?"
-  if [[ -n "\${MAW_TERMINAL_HISTFILE:-}" ]]; then
-    history -a "\$MAW_TERMINAL_HISTFILE" 2>/dev/null || history -a 2>/dev/null || true
+  if [[ -n "\${WORKBENCH_TERMINAL_HISTFILE:-}" ]]; then
+    history -a "\$WORKBENCH_TERMINAL_HISTFILE" 2>/dev/null || history -a 2>/dev/null || true
   fi
   printf "\\033]133;D;%d\\007\\033]133;A\\007" "$last_status"
   return "$last_status"
@@ -267,11 +267,11 @@ fi
  */
 export function generateZshIntegrationScript(): string {
   return `#!/usr/bin/env zsh
-# MAW Safe Zsh Shell Integration (OSC 133)
+# Workbench Safe Zsh Shell Integration (OSC 133)
 # Safely hooks precmd and preexec without mutating user dotfiles.
 
-if [[ -n "\${MAW_TERMINAL_HISTFILE:-}" ]]; then
-  export HISTFILE="\$MAW_TERMINAL_HISTFILE"
+if [[ -n "\${WORKBENCH_TERMINAL_HISTFILE:-}" ]]; then
+  export HISTFILE="\$WORKBENCH_TERMINAL_HISTFILE"
   export HISTSIZE=10000
   export SAVEHIST=10000
   setopt INC_APPEND_HISTORY 2>/dev/null || true
@@ -279,7 +279,7 @@ fi
 
 __maw_osc133_zsh_precmd() {
   local last_status="$?"
-  if [[ -n "\${MAW_TERMINAL_HISTFILE:-}" ]]; then
+  if [[ -n "\${WORKBENCH_TERMINAL_HISTFILE:-}" ]]; then
     fc -W 2>/dev/null || true
   fi
   print -n "\\e]133;D;\${last_status}\\a"
@@ -346,14 +346,14 @@ export async function prepareIntegratedShell(
   const zdotdir = env['ZDOTDIR'] ?? env['HOME'] ?? '';
   // A private ZDOTDIR forwards startup to the original directory. Restore it before
   // user commands so nested shells retain their normal configuration.
-  const restoreZdotdir = 'if [[ "$MAW_SHELL_ZDOTDIR_SET" = 1 ]]; then ZDOTDIR="$MAW_SHELL_ZDOTDIR"; else unset ZDOTDIR; fi\n';
+  const restoreZdotdir = 'if [[ "$WORKBENCH_SHELL_ZDOTDIR_SET" = 1 ]]; then ZDOTDIR="$WORKBENCH_SHELL_ZDOTDIR"; else unset ZDOTDIR; fi\n';
   await writeFile(path.join(targetDir, '.zshenv'), restoreZdotdir +
-    '[ ! -f "$MAW_SHELL_ZDOTDIR/.zshenv" ] || source "$MAW_SHELL_ZDOTDIR/.zshenv"\n' +
-    'MAW_SHELL_ZDOTDIR_SET=${+ZDOTDIR}\nMAW_SHELL_ZDOTDIR="${ZDOTDIR:-$HOME}"\nZDOTDIR="$MAW_SHELL_INTEGRATION_DIR"\n', { mode: 0o600 });
+    '[ ! -f "$WORKBENCH_SHELL_ZDOTDIR/.zshenv" ] || source "$WORKBENCH_SHELL_ZDOTDIR/.zshenv"\n' +
+    'WORKBENCH_SHELL_ZDOTDIR_SET=${+ZDOTDIR}\nWORKBENCH_SHELL_ZDOTDIR="${ZDOTDIR:-$HOME}"\nZDOTDIR="$WORKBENCH_SHELL_INTEGRATION_DIR"\n', { mode: 0o600 });
   await writeFile(path.join(targetDir, '.zshrc'),
-    restoreZdotdir + '[ ! -f "$MAW_SHELL_ZDOTDIR/.zshrc" ] || source "$MAW_SHELL_ZDOTDIR/.zshrc"\nsource ' + quote(scripts.zshScriptPath) + '\n' +
-    'unset MAW_SHELL_ZDOTDIR MAW_SHELL_INTEGRATION_DIR MAW_SHELL_ZDOTDIR_SET\n', { mode: 0o600 });
+    restoreZdotdir + '[ ! -f "$WORKBENCH_SHELL_ZDOTDIR/.zshrc" ] || source "$WORKBENCH_SHELL_ZDOTDIR/.zshrc"\nsource ' + quote(scripts.zshScriptPath) + '\n' +
+    'unset WORKBENCH_SHELL_ZDOTDIR WORKBENCH_SHELL_INTEGRATION_DIR WORKBENCH_SHELL_ZDOTDIR_SET\n', { mode: 0o600 });
   return { launch: { file: launch.file, args: [...launch.args, '-i'] },
-    env: { ...env, ZDOTDIR: targetDir, MAW_SHELL_ZDOTDIR: zdotdir, MAW_SHELL_INTEGRATION_DIR: targetDir,
-      MAW_SHELL_ZDOTDIR_SET: env['ZDOTDIR'] === undefined ? '0' : '1' } };
+    env: { ...env, ZDOTDIR: targetDir, WORKBENCH_SHELL_ZDOTDIR: zdotdir, WORKBENCH_SHELL_INTEGRATION_DIR: targetDir,
+      WORKBENCH_SHELL_ZDOTDIR_SET: env['ZDOTDIR'] === undefined ? '0' : '1' } };
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { MawNotificationItem } from '@agent-workbench/shared';
+import type { MawNotificationItem } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 import { notificationText } from './notification-labels.js';
 import { formatWhen } from '../../i18n/format.js';
@@ -85,20 +85,20 @@ export function NotificationInbox({
   return (
     <div
       ref={panelRef}
-      className="maw-notification-inbox"
+      className="wb-notification-inbox"
       role="dialog"
       aria-modal="false"
       aria-label={t('agency.notifications.title')}
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="maw-inbox-header">
-        <div className="maw-inbox-header-title">
+      <div className="wb-inbox-header">
+        <div className="wb-inbox-header-title">
           <h3>{t('agency.notifications.title')}</h3>
           {unreadCount > 0 && (
-            <span className="maw-inbox-count-pill">{unreadCount}</span>
+            <span className="wb-inbox-count-pill">{unreadCount}</span>
           )}
         </div>
-        <div className="maw-inbox-header-actions">
+        <div className="wb-inbox-header-actions">
           {unreadCount > 0 && (
             <button
               type="button"
@@ -119,17 +119,17 @@ export function NotificationInbox({
         </div>
       </div>
 
-      <div className="maw-inbox-list" role="feed">
+      <div className="wb-inbox-list" role="feed">
         {notifications.length === 0 ? (
-          <div className="maw-inbox-empty">
-            <span className="maw-empty-icon" aria-hidden="true">📭</span>
+          <div className="wb-inbox-empty">
+            <span className="wb-empty-icon" aria-hidden="true">📭</span>
             <p>{t('agency.notifications.empty')}</p>
           </div>
         ) : (
           notifications.map((item) => (
             <div
               key={item.id}
-              className={`maw-inbox-item ${item.read ? 'read' : 'unread'} state-${item.state}`}
+              className={`wb-inbox-item ${item.read ? 'read' : 'unread'} state-${item.state}`}
               role="article"
               tabIndex={0}
               onClick={() => onSelect(item)}
@@ -140,25 +140,25 @@ export function NotificationInbox({
                 }
               }}
             >
-              <div className="maw-inbox-item-indicator" aria-hidden="true">
-                {!item.read && <span className="maw-unread-dot" />}
+              <div className="wb-inbox-item-indicator" aria-hidden="true">
+                {!item.read && <span className="wb-unread-dot" />}
               </div>
 
-              <div className="maw-inbox-item-body">
-                <div className="maw-inbox-item-top">
-                  <span className={`maw-state-badge state-${item.state}`}>
+              <div className="wb-inbox-item-body">
+                <div className="wb-inbox-item-top">
+                  <span className={`wb-state-badge state-${item.state}`}>
                     {getStatusLabel(item.state)}
                   </span>
-                  <span className="maw-inbox-item-time">{formatTime(item.createdAt)}</span>
+                  <span className="wb-inbox-item-time">{formatTime(item.createdAt)}</span>
                 </div>
-                <div className="maw-inbox-item-title">{notificationText(item).title}</div>
-                <div className="maw-inbox-item-desc">{notificationText(item).body}</div>
+                <div className="wb-inbox-item-title">{notificationText(item).title}</div>
+                <div className="wb-inbox-item-desc">{notificationText(item).body}</div>
               </div>
 
-              <div className="maw-inbox-item-actions">
+              <div className="wb-inbox-item-actions">
                 <button
                   type="button"
-                  className="maw-done-button"
+                  className="wb-done-button"
                   title={t('agency.notifications.done')}
                   aria-label={t('agency.notifications.done')}
                   onClick={(e) => {
@@ -171,7 +171,7 @@ export function NotificationInbox({
                 {!item.read && (
                   <button
                     type="button"
-                    className="maw-mark-read-button"
+                    className="wb-mark-read-button"
                     title={t('agency.notifications.markRead')}
                     aria-label={t('agency.notifications.markRead')}
                     onClick={(e) => {
@@ -188,19 +188,19 @@ export function NotificationInbox({
         )}
       </div>
 
-      <div className="maw-inbox-footer">
-        <div className="maw-inbox-footer-desktop">
+      <div className="wb-inbox-footer">
+        <div className="wb-inbox-footer-desktop">
           {desktopPermission === 'default' ? (
             <button
               type="button"
-              className="maw-desktop-perm-button"
+              className="workbench-desktop-perm-button"
               onClick={onRequestDesktopPermission}
               disabled={!notificationsEnabled}
             >
               {t('agency.notifications.enableDesktop')}
             </button>
           ) : (
-            <span className={`maw-desktop-perm-status ${desktopPermission}`}>
+            <span className={`workbench-desktop-perm-status ${desktopPermission}`}>
               {desktopPermission === 'granted'
                 ? t('agency.notifications.desktopAllowed')
                 : desktopPermission === 'denied'
@@ -211,7 +211,7 @@ export function NotificationInbox({
         </div>
         <button
           type="button"
-          className="maw-notification-toggle-button"
+          className="wb-notification-toggle-button"
           onClick={onToggleNotifications}
         >
           {notificationsEnabled

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { WebTab, WorkspaceId } from '@agent-workbench/shared';
+import type { WebTab, WorkspaceId } from '@anvilary/workbench-shared';
 import {
   BROWSER_TAB_STORE_VERSION,
   BrowserTabStore,

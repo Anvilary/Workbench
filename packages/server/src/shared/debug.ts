@@ -1,7 +1,8 @@
+import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
 /**
  * Traza opcional del servidor.
  *
- * Se activa con `AGENT_WORKBENCH_DEBUG=1`. Apagada no cuesta nada: la
+ * Se activa con `WORKBENCH_DEBUG=1`. Apagada no cuesta nada: la
  * comprobacion es una constante evaluada al cargar el modulo.
  *
  * Existe porque los problemas de este servidor son de flujo —un mensaje que no
@@ -9,7 +10,7 @@
  * adivinar.
  */
 
-const enabled = process.env['AGENT_WORKBENCH_DEBUG'] === '1';
+const enabled = workbenchEnv('DEBUG') === '1';
 
 export function debugLog(scope: string, message: string): void {
   if (!enabled) return;

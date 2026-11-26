@@ -42,7 +42,7 @@ import { WorkspaceMutex } from '../src/features/workspaces/workspace-lock.js';
 import { AgentsUsageCollector } from '../src/agents/usage/collector.js';
 
 const CHROMIUM_BIN = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined;
-const ARTIFACT_DIR = process.env.MAW_ARTIFACT_DIR || path.join(tmpdir(), 'maw-agents-usage-artifacts');
+const ARTIFACT_DIR = process.env.WORKBENCH_ARTIFACT_DIR || path.join(tmpdir(), 'maw-agents-usage-artifacts');
 const TOKEN = 'maw-runtime-validation-token-2026';
 
 async function run() {

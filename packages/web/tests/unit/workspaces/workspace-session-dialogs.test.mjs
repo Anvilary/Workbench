@@ -40,13 +40,13 @@ test('WorkspaceSessionDialogs renders web page close confirmation correctly', ()
   );
 
   // Dialog container and title
-  assert.ok(html.includes('maw-session-dialog'), 'Session dialog id is present');
+  assert.ok(html.includes('wb-session-dialog'), 'Session dialog id is present');
   assert.ok(html.includes('Close web page?'), 'Renders Close web page title');
 
   // Confirmation message and web page title
   assert.ok(html.includes('Are you sure you want to close this page?'), 'Renders confirmation question');
   assert.ok(html.includes('Documentation Portal - Internal'), 'Displays the specific web tab title');
-  assert.ok(html.includes('maw-close-web-page-title'), 'Uses dedicated web title class');
+  assert.ok(html.includes('wb-close-web-page-title'), 'Uses dedicated web title class');
 
   // Action button: Close Page (not Close Session)
   assert.ok(html.includes('Close Page'), 'Primary action button says Close Page');

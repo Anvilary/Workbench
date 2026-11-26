@@ -7,7 +7,7 @@ import path from 'node:path';
 import express from 'express';
 import { WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
-import type { TerminalId } from '@agent-workbench/shared';
+import type { TerminalId } from '@anvilary/workbench-shared';
 import { SettingsStore } from '../../../src/features/settings/settings-store.js';
 import { createAgentRegistry } from '../../../src/agents/registry.js';
 import { OpenTabsStore } from '../../../src/features/terminals/open-tabs-store.js';

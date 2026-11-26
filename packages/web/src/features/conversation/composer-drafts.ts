@@ -49,7 +49,7 @@ import {
   type ComposerDraft,
   type ComposerDraftEntry,
   type TerminalId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { mergePrefill } from '../agents/agent-ui.js';
 import { nextPasteNumber, pasteReference, pastedLineCount, referencedPasteNumbers } from './composer-paste.js';
 import type { Attachment } from './useComposerAttachments.js';

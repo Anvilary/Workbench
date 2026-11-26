@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { TabActivityManager } from '../../../src/features/notifications/tab-activity-manager.js';
 import { AgencyNotificationStore } from '../../../src/features/notifications/notification-store.js';
-import type { WorkspaceId, RuntimeSessionId } from '@agent-workbench/shared';
+import type { WorkspaceId, RuntimeSessionId } from '@anvilary/workbench-shared';
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

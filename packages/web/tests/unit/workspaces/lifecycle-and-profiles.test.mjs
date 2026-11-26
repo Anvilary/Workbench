@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import {
   DEFAULT_BROWSER_PROFILE_ID,
   resolveEffectiveBrowserProfileId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import {
   EMPTY_AGENCY_SNAPSHOT,
   activeByProject,

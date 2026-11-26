@@ -1,3 +1,4 @@
+import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
 /**
  * Chromium sessions of the browser partitions.
  *
@@ -673,8 +674,8 @@ export function createBrowserSessions({ electron, state, send, backend, trimCapa
       windowForContents: (contents) => BrowserWindow.fromWebContents(contents),
       downloadsDirectory: () => resolveDownloadsDirectory(app),
       rememberDownloadDirectory: (savedPath) => rememberCompletedDownloadPath(savedPath, { app }),
-      // Native Save As is the interactive default; MAW_DOWNLOAD_AUTO_SAVE=1 is an explicit opt-in for automated/headless compatibility.
-      autoSave: () => process.env.MAW_DOWNLOAD_AUTO_SAVE === '1',
+      // Native Save As is the interactive default; WORKBENCH_DOWNLOAD_AUTO_SAVE=1 is an explicit opt-in for automated/headless compatibility.
+      autoSave: () => workbenchEnv('DOWNLOAD_AUTO_SAVE') === '1',
       send,
       ready: (id) => {
         const contents = views.get(id)?.webContents;

@@ -1,4 +1,4 @@
-import type { MawActivityState } from '@agent-workbench/shared';
+import type { MawActivityState } from '@anvilary/workbench-shared';
 import { agencySessionText, agencyTabActivityText } from '../workspaces/workspace-labels.js';
 import { GlobeIcon } from '../../shared/ui/GlobeIcon.js';
 import type { WorkspaceTab } from '../workspaces/workspace-model.js';
@@ -45,9 +45,9 @@ export function PaneTabIcon({ tab, favicon }: { tab: WorkspaceTab; favicon?: str
   if (tab.kind === 'web') {
     if (favicon) {
       return (
-        <span className="maw-tab-icon-wrapper" aria-hidden="true">
+        <span className="wb-tab-icon-wrapper" aria-hidden="true">
           <img
-            className="maw-tab-favicon"
+            className="wb-tab-favicon"
             src={favicon}
             alt=""
             onError={(e) => {
@@ -56,14 +56,14 @@ export function PaneTabIcon({ tab, favicon }: { tab: WorkspaceTab; favicon?: str
               if (fallback) fallback.style.display = 'inline-flex';
             }}
           />
-          <span className="maw-tab-icon-fallback" style={{ display: 'none' }}>
+          <span className="wb-tab-icon-fallback" style={{ display: 'none' }}>
             <GlobeIcon size={14} />
           </span>
         </span>
       );
     }
     return (
-      <span className="maw-tab-icon-fallback" aria-hidden="true">
+      <span className="wb-tab-icon-fallback" aria-hidden="true">
         <GlobeIcon size={14} />
       </span>
     );

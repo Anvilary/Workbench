@@ -12,7 +12,7 @@ import type {
   TerminalDescriptor,
   TerminalId,
   WorkspaceId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { OutputBuffer } from '../../../src/features/terminals/output-buffer.js';
 import { TerminalRegistry } from '../../../src/features/terminals/terminal-registry.js';
 import { AgentRegistry } from '../../../src/agents/registry.js';

@@ -206,14 +206,14 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
 <style>
   html,body,#root{height:100%;margin:0}
   .agency-app{display:flex;height:100%}
-  .agency-main,.agency-workspace-view,.maw-split-workspace-content,.maw-split-pane,.maw-pane-body,.maw-terminal-pane,.maw-terminal-container{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0}
+  .agency-main,.agency-workspace-view,.wb-split-workspace-content,.wb-split-pane,.wb-pane-body,.maw-terminal-pane,.maw-terminal-container{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0}
   .agency-sidebar{width:240px}
-  .maw-pane-header{display:flex;height:42px}
-  .maw-pane-tabs{display:flex;flex:1;min-width:0;overflow-x:auto}
-  .maw-session-tab{display:flex;min-width:120px;height:40px;position:relative}
-  .maw-session-tab.dragging{opacity:0.5}
-  .maw-session-tab.maw-drop-target-before{box-shadow:inset 3px 0 0 blue}
-  .maw-session-tab.maw-drop-target-after{box-shadow:inset -3px 0 0 blue}
+  .wb-pane-header{display:flex;height:42px}
+  .wb-pane-tabs{display:flex;flex:1;min-width:0;overflow-x:auto}
+  .wb-session-tab{display:flex;min-width:120px;height:40px;position:relative}
+  .wb-session-tab.dragging{opacity:0.5}
+  .wb-session-tab.wb-drop-target-before{box-shadow:inset 3px 0 0 blue}
+  .wb-session-tab.wb-drop-target-after{box-shadow:inset -3px 0 0 blue}
   .agency-status-dot{display:inline-block;width:7px;height:7px}
 </style>
 </head>
@@ -251,8 +251,8 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
 
   // Test 3: Pointer dragging of a tab
   // Drag Terminal A to the right of ChatGPT Web
-  const tabA = page.locator('.maw-session-tab').filter({ hasText: 'Terminal A' });
-  const tabWeb = page.locator('.maw-session-tab').filter({ hasText: 'ChatGPT Web' });
+  const tabA = page.locator('.wb-session-tab').filter({ hasText: 'Terminal A' });
+  const tabWeb = page.locator('.wb-session-tab').filter({ hasText: 'ChatGPT Web' });
   const boxA = await tabA.boundingBox();
   const boxWeb = await tabWeb.boundingBox();
   assert.ok(boxA);
@@ -280,7 +280,7 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
 
   // Test 5: Tab completion badge and toast notification rules
   // Agent B has finished completion badge dot from initial snapshot
-  const agentTab = page.locator('.maw-session-tab').filter({ hasText: 'Agent B' });
+  const agentTab = page.locator('.wb-session-tab').filter({ hasText: 'Agent B' });
   await agentTab.locator('.agency-status-dot.finished').waitFor();
 
   // Selecting Agent B acknowledges completion and clears badge dot to idle
@@ -312,7 +312,7 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   // 4. Header does not have Refresh button, Enable notifications button, or removed bell button
   assert.equal(await page.locator('.agency-topbar button').filter({ hasText: 'Refresh' }).count(), 0);
   assert.equal(await page.locator('.agency-topbar button').filter({ hasText: 'Enable notifications' }).count(), 0);
-  assert.equal(await page.locator('.maw-bell-button').count(), 0);
+  assert.equal(await page.locator('.wb-bell-button').count(), 0);
 
   // Decision 2: No toast notification for task started, working, or unknown activity
   await page.evaluate(() => {
@@ -327,7 +327,7 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
       createdAt: new Date().toISOString()
     });
   });
-  assert.equal(await page.locator('.maw-toast-item').count(), 0);
+  assert.equal(await page.locator('.wb-toast-item').count(), 0);
 
   // Decision 2: Completion in the actively viewed tab suppresses toast
   await page.evaluate(() => {
@@ -342,7 +342,7 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
       createdAt: new Date().toISOString()
     });
   });
-  assert.equal(await page.locator('.maw-toast-item').count(), 0);
+  assert.equal(await page.locator('.wb-toast-item').count(), 0);
 
   // Decision 2: Completion in another tab shows toast
   await page.evaluate(() => {
@@ -357,8 +357,8 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
       createdAt: new Date().toISOString()
     });
   });
-  await page.locator('.maw-toast-item').waitFor();
-  assert.ok((await page.locator('.maw-toast-item').textContent() || '').includes('Other Tab Completion'));
+  await page.locator('.wb-toast-item').waitFor();
+  assert.ok((await page.locator('.wb-toast-item').textContent() || '').includes('Other Tab Completion'));
 
   // Decision 2: Completion when the application is unfocused shows toast
   await page.evaluate(() => {
@@ -376,7 +376,7 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
     });
   });
   await page.waitForFunction(() => {
-    const texts = Array.from(document.querySelectorAll('.maw-toast-item')).map(el => el.textContent || '');
+    const texts = Array.from(document.querySelectorAll('.wb-toast-item')).map(el => el.textContent || '');
     return texts.some(t => t.includes('Unfocused Window Completion'));
   });
   await page.evaluate(() => {
@@ -384,7 +384,7 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   });
 
   // Decision 2: Exactly one notification for verified completion (deduplication)
-  const toastCountBefore = await page.locator('.maw-toast-item').count();
+  const toastCountBefore = await page.locator('.wb-toast-item').count();
   await page.evaluate(() => {
     window.agencyTest.emitNotificationCreated({
       id: 'unfocused-completion',
@@ -397,16 +397,16 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
       createdAt: new Date().toISOString()
     });
   });
-  assert.equal(await page.locator('.maw-toast-item').count(), toastCountBefore);
+  assert.equal(await page.locator('.wb-toast-item').count(), toastCountBefore);
 
   // Decision 2: No duplicate notification after reconnect / snapshot replay
   await page.evaluate(() => {
     window.agencyTest.emitSnapshot();
   });
-  assert.equal(await page.locator('.maw-toast-item').count(), toastCountBefore);
+  assert.equal(await page.locator('.wb-toast-item').count(), toastCountBefore);
 
   // 6. Central shell dropdown next to notifications
-  const shellMenuBtn = page.locator('.maw-menu-button');
+  const shellMenuBtn = page.locator('.wb-menu-button');
   assert.equal(await shellMenuBtn.count(), 1);
   assert.equal(await shellMenuBtn.getAttribute('aria-label'), 'Workspace menu');
   assert.equal(await shellMenuBtn.getAttribute('title'), 'Workspace menu');
@@ -414,23 +414,23 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
   const menuIconPath = await shellMenuBtn.locator('svg path').getAttribute('d');
   assert.ok(menuIconPath?.includes('M2.75 4.5h10.5'));
   await shellMenuBtn.click();
-  await page.locator('.maw-shell-menu').waitFor();
+  await page.locator('.wb-shell-menu').waitFor();
 
   // Contains Performance and Settings actions; does not contain removed items
-  const performanceItem = page.locator('.maw-shell-menu .maw-menu-item').filter({ hasText: 'Performance' });
+  const performanceItem = page.locator('.wb-shell-menu .wb-menu-item').filter({ hasText: 'Performance' });
   assert.equal(await performanceItem.count(), 1);
-  const settingsItem = page.locator('.maw-shell-menu .maw-menu-item').filter({ hasText: 'Settings' });
+  const settingsItem = page.locator('.wb-shell-menu .wb-menu-item').filter({ hasText: 'Settings' });
   assert.equal(await settingsItem.count(), 1);
 
-  const doneMenuItem = page.locator('.maw-shell-menu .maw-menu-item').filter({ hasText: 'Done workspaces' });
+  const doneMenuItem = page.locator('.wb-shell-menu .wb-menu-item').filter({ hasText: 'Done workspaces' });
   assert.equal(await doneMenuItem.count(), 0);
-  const refreshMenuItem = page.locator('.maw-shell-menu .maw-menu-item').filter({ hasText: 'Refresh' });
+  const refreshMenuItem = page.locator('.wb-shell-menu .wb-menu-item').filter({ hasText: 'Refresh' });
   assert.equal(await refreshMenuItem.count(), 0);
-  const newWsMenuItem = page.locator('.maw-shell-menu .maw-menu-item').filter({ hasText: 'New workspace' });
+  const newWsMenuItem = page.locator('.wb-shell-menu .wb-menu-item').filter({ hasText: 'New workspace' });
   assert.equal(await newWsMenuItem.count(), 0);
-  const newProjMenuItem = page.locator('.maw-shell-menu .maw-menu-item').filter({ hasText: 'New project' });
+  const newProjMenuItem = page.locator('.wb-shell-menu .wb-menu-item').filter({ hasText: 'New project' });
   assert.equal(await newProjMenuItem.count(), 0);
-  const agentsUsageMenuItem = page.locator('.maw-shell-menu .maw-menu-item').filter({ hasText: 'Agents Usage' });
+  const agentsUsageMenuItem = page.locator('.wb-shell-menu .wb-menu-item').filter({ hasText: 'Agents Usage' });
   assert.equal(await agentsUsageMenuItem.count(), 0);
 
   // 7. Sidebar collapse and expand via logo toggle
@@ -452,13 +452,13 @@ test('Interactive UX: pointer dragging reorders mixed tabs, Done button clears a
 
     // Open workspace menu and verify it fits on screen without clipping
     await shellMenuBtn.click();
-    await page.locator('.maw-shell-menu').waitFor();
-    const menuBox = await page.locator('.maw-shell-menu').boundingBox();
+    await page.locator('.wb-shell-menu').waitFor();
+    const menuBox = await page.locator('.wb-shell-menu').boundingBox();
     assert.ok(menuBox);
     assert.ok(menuBox.x >= 0, `menu left edge ${menuBox.x} should be >= 0 at ${w}x${h}`);
     assert.ok(menuBox.x + menuBox.width <= w, `menu right edge ${menuBox.x + menuBox.width} should fit within width ${w}`);
     await shellMenuBtn.click();
-    await page.waitForFunction(() => document.querySelectorAll('.maw-shell-menu').length === 0);
+    await page.waitForFunction(() => document.querySelectorAll('.wb-shell-menu').length === 0);
   }
 
   assert.deepEqual(errors, []);

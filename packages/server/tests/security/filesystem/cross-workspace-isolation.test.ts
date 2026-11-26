@@ -10,7 +10,7 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
-import type { AgencyServerMessage, TerminalId, WorkspaceId } from '@agent-workbench/shared';
+import type { AgencyServerMessage, TerminalId, WorkspaceId } from '@anvilary/workbench-shared';
 import { AgencySessionRuntime } from '../../../src/features/sessions/session-runtime.js';
 import { SplitAgencySessionStore } from '../../../src/features/sessions/session-store.js';
 import { AgencyWorkspaceStore } from '../../../src/features/workspaces/workspace-store.js';

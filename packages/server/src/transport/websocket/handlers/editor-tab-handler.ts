@@ -2,7 +2,7 @@
  * Editor tabs of a workspace.
  */
 
-import type { ClientMessage } from '@agent-workbench/shared';
+import type { ClientMessage } from '@anvilary/workbench-shared';
 import type { HandlerContext } from '../handler-context.js';
 
 export const editorTabMessageTypes = [
@@ -28,7 +28,7 @@ export async function handleEditorTabMessage(
     case 'agency.editorTab.order':
     case 'agency.editorTab.close':
     case 'agency.editorTabs.list': {
-      const response = await tabCoordinator.editorRequest(message as import('@agent-workbench/shared').EditorTabClientMessage);
+      const response = await tabCoordinator.editorRequest(message as import('@anvilary/workbench-shared').EditorTabClientMessage);
       if (response) send(socket, response);
       break;
     }

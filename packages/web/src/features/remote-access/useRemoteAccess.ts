@@ -20,7 +20,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import type { RemoteAccessStatus, RemotePairingCode, RemotePhonePairing, ServerMessage } from '@agent-workbench/shared';
+import type { RemoteAccessStatus, RemotePairingCode, RemotePhonePairing, ServerMessage } from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 import { serverTextMessage } from '../../i18n/server-text.js';
 

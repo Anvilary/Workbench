@@ -34,7 +34,7 @@ import {
   type RemoteAccessState,
   type RemotePairingCode,
   type ServerText,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 
 // ---- El código para emparejar --------------------------------------------------
 

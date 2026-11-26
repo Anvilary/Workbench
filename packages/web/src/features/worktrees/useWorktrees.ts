@@ -28,7 +28,7 @@ import type {
   WorktreeReviewPlan,
   WorktreeRow,
   WorktreeSource,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 import { serverTextMessage } from '../../i18n/server-text.js';
 import { filesAccepted, removeAction } from './worktree-ui.js';

@@ -19,7 +19,7 @@
  */
 
 import { useEffect } from 'react';
-import type { AgentInfo } from '@agent-workbench/shared';
+import type { AgentInfo } from '@anvilary/workbench-shared';
 import { AGENT_UI, composerShortcuts, type Shortcut } from '../agents/agent-ui.js';
 import { t } from '../../i18n/index.js';
 import { tRich } from '../../i18n/rich.js';

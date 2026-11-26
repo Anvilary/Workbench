@@ -27,14 +27,14 @@
  * sabe en que idioma esta nadie, y el ingles es el idioma por defecto.
  */
 
-import type { AgentInfo } from '@agent-workbench/shared';
+import type { AgentInfo } from '@anvilary/workbench-shared';
 import {
   SUPPORT_URL,
   type AgentId,
   type RemoteAccessState,
   type ServerText,
   type StatusLineState,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 
 export interface StartupAgent {
   id: AgentId;

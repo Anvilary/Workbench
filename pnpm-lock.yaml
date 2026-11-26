@@ -193,7 +193,7 @@ importers:
 
   packages/server:
     dependencies:
-      '@agent-workbench/shared':
+      '@anvilary/workbench-shared':
         specifier: workspace:*
         version: link:../shared
       '@xterm/addon-serialize':
@@ -245,7 +245,7 @@ importers:
 
   packages/web:
     dependencies:
-      '@agent-workbench/shared':
+      '@anvilary/workbench-shared':
         specifier: workspace:*
         version: link:../shared
       '@dnd-kit/collision':

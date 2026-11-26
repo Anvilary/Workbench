@@ -2,7 +2,7 @@
  * Project files and the directory picker. Every path is resolved inside the terminal's cwd or a picker owned by this socket.
  */
 
-import { serverText, type ClientMessage } from '@agent-workbench/shared';
+import { serverText, type ClientMessage } from '@anvilary/workbench-shared';
 import { DirectoryPickerError } from '../../../features/files/directory-picker.js';
 import {
   existingPaths,

@@ -9,7 +9,7 @@
 
 import { LOCALES, defaultFormatTag, isLocale, type Locale } from './index.js';
 
-export const LOCALE_STORAGE_KEY = 'agent-workbench.locale';
+export const LOCALE_STORAGE_KEY = 'workbench.locale';
 
 /** `auto` sigue al navegador; un idioma es una elección del usuario. */
 export type LocalePreference = 'auto' | Locale;

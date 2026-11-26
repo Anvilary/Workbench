@@ -1,5 +1,5 @@
 import { useEffect, type MutableRefObject } from 'react';
-import { findPaneNode, type WorkspacePaneLayout } from '@agent-workbench/shared';
+import { findPaneNode, type WorkspacePaneLayout } from '@anvilary/workbench-shared';
 import type { WorkspaceTab } from '../workspaces/workspace-model.js';
 
 export interface UseBrowserZoomShortcutsOptions {
@@ -54,7 +54,7 @@ export function useBrowserZoomShortcuts({
       if (activeTab?.kind !== 'web') return;
 
       event.preventDefault();
-      void window.mawChatGpt?.command({ type: 'browser-action', id: activeTabId, action });
+      void window.workbench?.command({ type: 'browser-action', id: activeTabId, action });
     };
 
     window.addEventListener('keydown', onZoomKeyDown);

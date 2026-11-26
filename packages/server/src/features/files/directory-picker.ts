@@ -28,13 +28,13 @@
  * lo nuevo es de donde sale esa ruta.
  */
 
-import { ServerTextError, serverText } from '@agent-workbench/shared';
+import { ServerTextError, serverText } from '@anvilary/workbench-shared';
 import { randomUUID } from 'node:crypto';
 import type { Dirent, Stats } from 'node:fs';
 import { lstat, mkdir, readdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import type { DirectoryPickerListing } from '@agent-workbench/shared';
+import type { DirectoryPickerListing } from '@anvilary/workbench-shared';
 
 /** Tope por nivel. Un directorio con miles de carpetas no se elige leyendolo. */
 const MAX_ENTRIES = 500;

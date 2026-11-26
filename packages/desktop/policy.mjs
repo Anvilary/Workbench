@@ -1,13 +1,13 @@
 import { isIP } from 'node:net';
 
-export const PARTITION = 'persist:maw-chatgpt';
-export const GITHUB_PARTITION = 'persist:maw-github';
-export const PERPLEXITY_PARTITION = 'persist:maw-perplexity';
-export const BROWSER_PARTITION = 'persist:maw-browser';
+export const PARTITION = 'persist:workbench-chatgpt';
+export const GITHUB_PARTITION = 'persist:workbench-github';
+export const PERPLEXITY_PARTITION = 'persist:workbench-perplexity';
+export const BROWSER_PARTITION = 'persist:workbench-browser';
 export const DEFAULT_BROWSER_PROFILE_ID = 'main';
 const BROWSER_PROFILE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const BROWSER_PROFILE_SITES = new Set(['chatgpt', 'github', 'perplexity', 'browser']);
-export const CHANNEL = 'maw:chatgpt';
+export const CHANNEL = 'workbench:chatgpt';
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const authHosts = new Set([
   'auth.openai.com',
@@ -503,7 +503,7 @@ export function otherUrl(value, maxLength = 2048, options = {}) {
 
 export function serviceUrl(value) {
   const url = new URL(value);
-  if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port || url.pathname !== '/' || url.username || url.password || url.hash) throw new Error('MAW_DESKTOP_URL must be the local MAW http://127.0.0.1:PORT/ URL');
+  if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port || url.pathname !== '/' || url.username || url.password || url.hash) throw new Error('WORKBENCH_DESKTOP_URL must be the local MAW http://127.0.0.1:PORT/ URL');
   return url;
 }
 
@@ -573,9 +573,9 @@ export function partitionForBrowserProfile(profileId, provider = 'chatgpt') {
   const effective = isValidBrowserProfileId(profileId) ? profileId : DEFAULT_BROWSER_PROFILE_ID;
   const suffix = provider === 'github' || provider === 'perplexity' ? provider : provider === 'other' ? 'browser' : 'chatgpt';
   if (effective === DEFAULT_BROWSER_PROFILE_ID) {
-    return `persist:maw-${suffix}`;
+    return `persist:workbench-${suffix}`;
   }
-  return `persist:maw-profile-${effective}-${suffix}`;
+  return `persist:workbench-profile-${effective}-${suffix}`;
 }
 
 export function validCommand(value, options = {}) {

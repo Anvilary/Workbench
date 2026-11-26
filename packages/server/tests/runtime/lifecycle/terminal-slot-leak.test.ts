@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
-import type { AgencyWorkspace, ProjectId, WorkspaceId } from '@agent-workbench/shared';
+import type { AgencyWorkspace, ProjectId, WorkspaceId } from '@anvilary/workbench-shared';
 import { TerminalRegistry } from '../../../src/features/terminals/terminal-registry.js';
 import { AgencySessionRuntime, type AgencyWorkspaceSource } from '../../../src/features/sessions/session-runtime.js';
 import { PtyHostClient, PtyHostRequestError } from '../../../src/pty-host/pty-host-client.js';
@@ -631,10 +631,10 @@ test('closing an unconfirmed supervisor terminal immediately reclaims terminal c
 });
 
 test('PtyHostClient.connectOrSpawn rejects connecting to production supervisor socket in test environment without isolated path', async () => {
-  const savedSocket = process.env.MAW_PTYD_SOCKET;
-  const savedRuntimeDir = process.env.MAW_PTYD_RUNTIME_DIR;
-  delete process.env.MAW_PTYD_SOCKET;
-  delete process.env.MAW_PTYD_RUNTIME_DIR;
+  const savedSocket = process.env.WORKBENCH_PTYD_SOCKET;
+  const savedRuntimeDir = process.env.WORKBENCH_PTYD_RUNTIME_DIR;
+  delete process.env.WORKBENCH_PTYD_SOCKET;
+  delete process.env.WORKBENCH_PTYD_RUNTIME_DIR;
 
   try {
     await assert.rejects(
@@ -645,14 +645,14 @@ test('PtyHostClient.connectOrSpawn rejects connecting to production supervisor s
       },
     );
   } finally {
-    if (savedSocket !== undefined) process.env.MAW_PTYD_SOCKET = savedSocket;
-    if (savedRuntimeDir !== undefined) process.env.MAW_PTYD_RUNTIME_DIR = savedRuntimeDir;
+    if (savedSocket !== undefined) process.env.WORKBENCH_PTYD_SOCKET = savedSocket;
+    if (savedRuntimeDir !== undefined) process.env.WORKBENCH_PTYD_RUNTIME_DIR = savedRuntimeDir;
   }
 });
 
-test('TerminalRegistry constructor defaults persistentPty to false in test runner even if MAW_PERSISTENT_PTY is set', () => {
-  const savedPersistent = process.env.MAW_PERSISTENT_PTY;
-  process.env.MAW_PERSISTENT_PTY = '1';
+test('TerminalRegistry constructor defaults persistentPty to false in test runner even if WORKBENCH_PERSISTENT_PTY is set', () => {
+  const savedPersistent = process.env.WORKBENCH_PERSISTENT_PTY;
+  process.env.WORKBENCH_PERSISTENT_PTY = '1';
 
   try {
     const registry = new TerminalRegistry(
@@ -667,9 +667,9 @@ test('TerminalRegistry constructor defaults persistentPty to false in test runne
     registry.disposeAll();
   } finally {
     if (savedPersistent !== undefined) {
-      process.env.MAW_PERSISTENT_PTY = savedPersistent;
+      process.env.WORKBENCH_PERSISTENT_PTY = savedPersistent;
     } else {
-      delete process.env.MAW_PERSISTENT_PTY;
+      delete process.env.WORKBENCH_PERSISTENT_PTY;
     }
   }
 });

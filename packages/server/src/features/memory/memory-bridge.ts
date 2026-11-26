@@ -56,7 +56,7 @@ import {
   type MemoryNoteContent,
   type MemoryStatus,
   type ServerText,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { writeAtomically } from '../../shared/persistence/atomic-write.js';
 import { InvalidPathError, resolveInside } from '../files/path-guard.js';
 import { projectSlugFor } from '../../agents/claude-code/paths.js';

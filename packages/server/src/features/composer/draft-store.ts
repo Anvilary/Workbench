@@ -40,7 +40,7 @@ import {
   type ComposerDraft,
   type ComposerDraftEntry,
   type TerminalDescriptor,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { composerDraftsPath } from '../../shared/app-paths.js';
 import type { WorkspaceState } from '../terminals/open-tabs-store.js';
 

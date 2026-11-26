@@ -2,8 +2,8 @@
  * Live agent and shell sessions, their tabs and model selection.
  */
 
-import type { AgencyErrorCode } from '@agent-workbench/shared';
-import type { ClientMessage } from '@agent-workbench/shared';
+import type { AgencyErrorCode } from '@anvilary/workbench-shared';
+import type { ClientMessage } from '@anvilary/workbench-shared';
 import { AgencyRuntimeError } from '../../../features/sessions/session-runtime.js';
 import type { HandlerContext } from '../handler-context.js';
 

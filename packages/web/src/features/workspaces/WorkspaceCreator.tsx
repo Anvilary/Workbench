@@ -1,6 +1,6 @@
 import { t } from '../../i18n/index.js';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { AgencyProject, CliProfileId, ProjectId } from '@agent-workbench/shared';
+import type { AgencyProject, CliProfileId, ProjectId } from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 import { FolderPicker } from '../files/FolderPicker.js';
 

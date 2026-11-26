@@ -47,7 +47,7 @@
  * pregunta. Lo peor que pasa es lo de antes, la barra de "esperando".
  */
 
-import type { ConversationQuestionOption } from '@agent-workbench/shared';
+import type { ConversationQuestionOption } from '@anvilary/workbench-shared';
 import type { ScreenQuestion, ScreenQuestionReader } from '../adapter.js';
 
 /** La etiqueta de `waitingFor` con la que la CLI espera la respuesta a una pregunta (ver `cli-status.ts`). */

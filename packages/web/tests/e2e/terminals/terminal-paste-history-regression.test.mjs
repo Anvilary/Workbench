@@ -32,7 +32,7 @@ window.clipboardCalls = [];
 window.sent = [];
 
 // Mock desktop Electron clipboard bridge
-window.mawChatGpt = {
+window.workbench = {
   command: async (cmd) => {
     window.clipboardCalls.push(cmd);
     if (cmd.type === 'write-clipboard-text') {

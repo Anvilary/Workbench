@@ -28,7 +28,7 @@ import {
   memoryBlock,
   parseClientMessage,
   parseServerMessage,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import {
   MemoryBridgeError,
   importNativeMemory,

@@ -22,7 +22,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FILES_CHECK_MAX_PATHS, type ConversationEvent, type TerminalId } from '@agent-workbench/shared';
+import { FILES_CHECK_MAX_PATHS, type ConversationEvent, type TerminalId } from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 import type { CodeLink, CodeLinkResolver, LocalLinkResolver } from '../conversation/Markdown.js';
 import {

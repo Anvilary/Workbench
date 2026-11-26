@@ -9,7 +9,7 @@
  * Puro y sin DOM, para que `pnpm check` lo importe (`check-composer-input.mjs`).
  */
 
-import { SUPPORT_URL } from '@agent-workbench/shared';
+import { SUPPORT_URL } from '@anvilary/workbench-shared';
 
 export { SUPPORT_URL };
 
@@ -20,7 +20,7 @@ export { SUPPORT_URL };
  */
 export const APP_VERSION: string = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
 
-export const SUPPORT_NOTICE_STORAGE_KEY = 'agent-workbench.support-notice';
+export const SUPPORT_NOTICE_STORAGE_KEY = 'workbench.support-notice';
 
 /** Cuánto queda a la vista si nadie la toca: un momento, no una pestaña más. */
 export const SUPPORT_NOTICE_HIDE_MS = 30_000;

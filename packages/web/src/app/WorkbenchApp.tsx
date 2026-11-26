@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId, AgentInfo, ServerMessage } from '@agent-workbench/shared';
-import { DEFAULT_BROWSER_PROFILE_ID, resolveEffectiveBrowserProfileId } from '@agent-workbench/shared';
+import type { AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId, AgentInfo, ServerMessage } from '@anvilary/workbench-shared';
+import { DEFAULT_BROWSER_PROFILE_ID, resolveEffectiveBrowserProfileId } from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../connection/connection.js';
 import { WorkbenchSidebar, WorkspaceDoneView, AgencyBrand } from '../features/navigation/WorkbenchSidebar.js';
 import { WorkspaceCreator, AgencyProjectCreator } from '../features/workspaces/WorkspaceCreator.js';
@@ -31,7 +31,7 @@ function readNotificationsEnabled(): boolean {
   try {
     const saved = localStorage.getItem(NOTIFICATIONS_STORAGE_KEY);
     if (saved !== null) return saved === 'true';
-    const legacy = localStorage.getItem('agent-workbench.notify');
+    const legacy = localStorage.getItem('workbench.notify');
     if (legacy === 'off') return false;
     if (legacy === 'on') return true;
   } catch {}
@@ -419,8 +419,8 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
       const custom = event as CustomEvent<{ workspaceId: WorkspaceId; tabId?: string; notificationId?: string }>;
       if (custom.detail) void handleNotificationNavigate(custom.detail);
     };
-    window.addEventListener('maw:select-tab', onSelectTab);
-    return () => window.removeEventListener('maw:select-tab', onSelectTab);
+    window.addEventListener('workbench:select-tab', onSelectTab);
+    return () => window.removeEventListener('workbench:select-tab', onSelectTab);
   }, [handleNotificationNavigate]);
 
   const updateDraft = useCallback((workspaceId: string, value: string) => {
@@ -764,12 +764,12 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
             <button
               ref={menuTriggerRef}
               type="button"
-              id="maw-shell-menu-trigger"
-              className={`agency-icon-button maw-menu-button ${menuOpen ? 'active' : ''}`}
+              id="wb-shell-menu-trigger"
+              className={`agency-icon-button wb-menu-button ${menuOpen ? 'active' : ''}`}
               aria-label={t('agency.ui.workspaceMenu')}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
-              aria-controls="maw-shell-menu-dropdown"
+              aria-controls="wb-shell-menu-dropdown"
               title={t('agency.ui.workspaceMenu')}
               onClick={() => {
                 setMenuOpen(!menuOpen);
@@ -786,7 +786,7 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
               <SettingsMenuIcon />
               {notificationStore.unreadCount > 0 && (
                 <span
-                  className="maw-unread-badge"
+                  className="wb-unread-badge"
                   aria-label={t('agency.notifications.unreadCount', { count: notificationStore.unreadCount })}
                 >
                   {notificationStore.unreadCount > 99 ? '99+' : notificationStore.unreadCount}
@@ -796,8 +796,8 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
             {menuOpen && (
               <div
                 ref={menuDropdownRef}
-                id="maw-shell-menu-dropdown"
-                className="agency-dropdown-menu maw-shell-menu"
+                id="wb-shell-menu-dropdown"
+                className="agency-dropdown-menu wb-shell-menu"
                 role="menu"
                 aria-label={t('agency.ui.workspaceMenu')}
                 onKeyDown={handleMenuKeyDown}
@@ -806,15 +806,15 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
                   type="button"
                   role="menuitem"
                   id="menu-open-notifications"
-                  className="agency-dropdown-item maw-menu-item"
+                  className="agency-dropdown-item wb-menu-item"
                   onClick={() => {
                     setMenuOpen(false);
                     setInboxOpen(true);
                   }}
                 >
-                  <span className="maw-menu-item-text">{t('agency.notifications.title')}</span>
+                  <span className="wb-menu-item-text">{t('agency.notifications.title')}</span>
                   {notificationStore.unreadCount > 0 && (
-                    <span className="maw-inbox-count-pill" style={{ marginLeft: 'auto' }}>
+                    <span className="wb-inbox-count-pill" style={{ marginLeft: 'auto' }}>
                       {notificationStore.unreadCount}
                     </span>
                   )}
@@ -823,38 +823,38 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
                   type="button"
                   role="menuitem"
                   id="menu-open-performance"
-                  className="agency-dropdown-item maw-menu-item"
+                  className="agency-dropdown-item wb-menu-item"
                   onClick={() => {
                     setMenuOpen(false);
                     setPerformanceOpen(true);
                   }}
                 >
-                  <span className="maw-menu-item-text">{t('performance.menuItem')}</span>
+                  <span className="wb-menu-item-text">{t('performance.menuItem')}</span>
                 </button>
                 <button
                   type="button"
                   role="menuitem"
                   id="menu-open-archived"
-                  className="agency-dropdown-item maw-menu-item"
+                  className="agency-dropdown-item wb-menu-item"
                   onClick={() => {
                     setMenuOpen(false);
                     setArchivedOpen(true);
                   }}
                 >
-                  <span className="maw-menu-item-text">{t('agency.archive.menuItem')}</span>
+                  <span className="wb-menu-item-text">{t('agency.archive.menuItem')}</span>
                 </button>
                 <button
                   type="button"
                   role="menuitem"
                   id="menu-open-settings"
-                  className="agency-dropdown-item maw-menu-item"
+                  className="agency-dropdown-item wb-menu-item"
                   onClick={() => {
                     setMenuOpen(false);
                     setSettingsInitialTab('general');
                     setSettingsOpen(true);
                   }}
                 >
-                  <span className="maw-menu-item-text">{t('settings.open')}</span>
+                  <span className="wb-menu-item-text">{t('settings.open')}</span>
                 </button>
               </div>
             )}
@@ -992,7 +992,7 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
           initialTab={settingsInitialTab}
           browserProfiles={data.browserProfiles}
           onCreateBrowserProfile={async ({ name, sourceProfileId, clearSites }) => {
-            const bridge = window.mawChatGpt;
+            const bridge = window.workbench;
             if (sourceProfileId && !bridge) throw new Error(t('agency.web.disconnected'));
             const answer = await store.createBrowserProfile(name, { sourceProfileId, clearSites });
             if (answer.type === 'agency.browserProfile.created' && sourceProfileId && bridge) {
@@ -1016,7 +1016,7 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
           onDeleteBrowserProfile={async (profileId) => {
             const profileName = data.browserProfiles?.find((p) => p.id === profileId)?.name ?? profileId;
             await store.deleteBrowserProfile(profileId);
-            const bridge = window.mawChatGpt;
+            const bridge = window.workbench;
             if (bridge && profileId !== DEFAULT_BROWSER_PROFILE_ID) {
               try {
                 const cleanupRes = (await bridge.command({ type: 'delete-profile', profileId })) as
@@ -1036,7 +1036,7 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
                   setPendingBrowserProfileCleanups((prev) => prev.filter((item) => item.profileId !== profileId));
                 }
               } catch (err) {
-                console.warn('[maw-browser-profile] delete-profile cleanup failed:', err);
+                console.warn('[wb-browser-profile] delete-profile cleanup failed:', err);
                 setPendingBrowserProfileCleanups((prev) => [
                   ...prev.filter((item) => item.profileId !== profileId),
                   {
@@ -1050,7 +1050,7 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
           }}
           pendingBrowserProfileCleanups={pendingBrowserProfileCleanups}
           onRetryBrowserProfileCleanup={async (profileId, profileName) => {
-            const bridge = window.mawChatGpt;
+            const bridge = window.workbench;
             if (!bridge || profileId === DEFAULT_BROWSER_PROFILE_ID) return;
             try {
               const cleanupRes = (await bridge.command({ type: 'delete-profile', profileId })) as
@@ -1080,9 +1080,9 @@ export function WorkbenchApp({ connection, theme: _themeProp }: { connection: Ag
               ]);
             }
           }}
-          onClearBrowserProfileSiteAuth={window.mawChatGpt && (async (profileId, sites) => {
+          onClearBrowserProfileSiteAuth={window.workbench && (async (profileId, sites) => {
             for (const site of sites) {
-              await window.mawChatGpt!.command({
+              await window.workbench!.command({
                 type: 'clear-profile-site-auth',
                 profileId,
                 site,

@@ -200,15 +200,15 @@ test('Browser Acceptance: Playwright headless Chromium notification bell, inbox,
   await page.goto(serverUrl);
 
   // 1. Initial State: Notification Bell displays unread badge count "2"
-  const bell = page.locator('.maw-bell-button');
+  const bell = page.locator('.wb-bell-button');
   await bell.waitFor({ state: 'visible', timeout: 5000 });
-  const badge = page.locator('.maw-unread-badge');
+  const badge = page.locator('.wb-unread-badge');
   assert.equal(await badge.textContent(), '2');
 
   // 2. In-app Toast is visible with state-finished styling and title "Claude Agent"
-  const toast = page.locator('.maw-toast-item.state-finished');
+  const toast = page.locator('.wb-toast-item.state-finished');
   await toast.waitFor({ state: 'visible' });
-  assert.ok(await toast.locator('.maw-toast-title').textContent());
+  assert.ok(await toast.locator('.wb-toast-title').textContent());
 
   // 3. Click Toast navigates to session
   await toast.click();
@@ -217,21 +217,21 @@ test('Browser Acceptance: Playwright headless Chromium notification bell, inbox,
 
   // 4. Click Notification Bell opens Inbox dialog
   await bell.click();
-  const inbox = page.locator('.maw-notification-inbox[role="dialog"]');
+  const inbox = page.locator('.wb-notification-inbox[role="dialog"]');
   await inbox.waitFor({ state: 'visible' });
 
   // Two inbox items present
-  const items = page.locator('.maw-inbox-item');
+  const items = page.locator('.wb-inbox-item');
   assert.equal(await items.count(), 2);
 
   // 5. Click Done on first item removes it and updates badge to "1"
-  const doneButtons = page.locator('.maw-done-button');
+  const doneButtons = page.locator('.wb-done-button');
   await doneButtons.first().click();
-  assert.equal(await page.locator('.maw-inbox-item').count(), 1);
-  assert.equal(await page.locator('.maw-unread-badge').textContent(), '1');
+  assert.equal(await page.locator('.wb-inbox-item').count(), 1);
+  assert.equal(await page.locator('.wb-unread-badge').textContent(), '1');
 
   // 6. Keyboard Escape key closes Inbox dialog
   await page.keyboard.press('Escape');
   await inbox.waitFor({ state: 'hidden' });
-  assert.equal(await page.locator('.maw-notification-inbox').count(), 0);
+  assert.equal(await page.locator('.wb-notification-inbox').count(), 0);
 });

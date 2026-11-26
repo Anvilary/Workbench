@@ -21,7 +21,7 @@
 
 import { constants } from 'node:fs';
 import { access, readFile, realpath, stat } from 'node:fs/promises';
-import { ServerTextError, serverText, type FilePreview, type FileSaveOutcome } from '@agent-workbench/shared';
+import { ServerTextError, serverText, type FilePreview, type FileSaveOutcome } from '@anvilary/workbench-shared';
 import { writeAtomically } from '../../shared/persistence/atomic-write.js';
 import type { CliFolders } from './cli-folders.js';
 import { MAX_PREVIEW_BYTES, contentHash, isEditableText, readPreview } from './file-browser.js';

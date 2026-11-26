@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { defaultReviewer, type AgentId, type AgentInfo } from '@agent-workbench/shared';
+import { defaultReviewer, type AgentId, type AgentInfo } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 import type { ReviewDialog } from './useWorktrees.js';
 import { reviewCandidates, reviewGuardText } from './worktree-ui.js';

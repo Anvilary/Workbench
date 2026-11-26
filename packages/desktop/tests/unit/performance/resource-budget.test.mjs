@@ -99,7 +99,7 @@ test('calculateResourceBudget: critical memory pressure', () => {
   assert.equal(resAttached.budget, 4, 'Budget must never be less than attached count');
 });
 
-test('calculateResourceBudget: environment override MAW_MAX_RESIDENT_VIEWS', () => {
+test('calculateResourceBudget: environment override WORKBENCH_MAX_RESIDENT_VIEWS', () => {
   const res = calculateResourceBudget({
     freeBytes: 10 * GB,
     totalBytes: 16 * GB,
@@ -508,7 +508,7 @@ test('data safety: Standby quota changes do not evict protected content merely t
   ]);
   const canEvict = createMockCanEvict({ providers });
 
-  // Standby quota MAW_MAX_RESIDENT_VIEWS = 1
+  // Standby quota WORKBENCH_MAX_RESIDENT_VIEWS = 1
   const budgetInfo = calculateResourceBudget({
     freeBytes: 8 * GB,
     totalBytes: 16 * GB,

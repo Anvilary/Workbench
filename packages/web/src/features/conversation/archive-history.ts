@@ -10,7 +10,7 @@
  * Sin JSX, para que lo pruebe el chequeo.
  */
 
-import type { AgentId, ProjectSummary, SessionAgentId } from '@agent-workbench/shared';
+import type { AgentId, ProjectSummary, SessionAgentId } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 
 /**

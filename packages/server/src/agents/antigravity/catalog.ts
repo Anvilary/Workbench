@@ -31,7 +31,7 @@
 import { randomUUID } from 'node:crypto';
 import { copyFile, mkdir, open, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { asRecord } from '@agent-workbench/shared';
+import { asRecord } from '@anvilary/workbench-shared';
 import { parseJsonlLine } from '../../shared/jsonl-reader.js';
 import { catalogTempDir } from '../../shared/app-paths.js';
 import { loadSqlite, type SqliteLoad } from '../sqlite.js';

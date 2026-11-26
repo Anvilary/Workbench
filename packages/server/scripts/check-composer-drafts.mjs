@@ -34,7 +34,7 @@ import {
   parseClientMessage,
   parseComposerDraft,
   parseServerMessage,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { DraftStore, DraftTabs, MAX_STORED_DRAFTS, draftEntriesOf, draftOwnerOf, submitClearsDraft, workspaceDraftOwners } from '../src/features/composer/draft-store.ts';
 import { ComposerDrafts, draftOf, draftTooLong, localDraftOf, mergePrefillDraft, viewToRestore } from '../../web/src/features/conversation/composer-drafts.ts';
 

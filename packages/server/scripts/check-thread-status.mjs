@@ -30,7 +30,7 @@ const root = await mkdtemp(path.join(tmpdir(), 'agent-workbench-check-thread-'))
 process.env.HOME = root;
 process.env.USERPROFILE = root;
 
-const shared = await import('@agent-workbench/shared');
+const shared = await import('@anvilary/workbench-shared');
 const { SubagentTracker, notifiedToolUseIds } = await import('../src/agents/claude-code/subagent-tracker.ts');
 const { ConversationFollower } = await import('../src/agents/claude-code/conversation-follower.ts');
 const { ClaudeCodeSessionFollower } = await import('../src/agents/claude-code/session-follower.ts');
@@ -854,7 +854,7 @@ const humanQueued = (uuid, prompt, seconds) => ({
   old.observe(queueOp('dequeue', undefined, 90));
   check('10.13 y se olvida: el dequeue de ahora entrega el de ahora, no el viejo', old.pending(LAUNCHED_AT).length === 0, json(old.pending(LAUNCHED_AT)));
 
-  const pasted = path.join(root, 'temporal', 'agent-workbench', 'pasted', 't1', 'pegada-1-0a1b2c3d.png');
+  const pasted = path.join(root, 'temporal', 'workbench', 'pasted', 't1', 'pegada-1-0a1b2c3d.png');
   const withImage = new PromptQueueTracker();
   withImage.observe(queueOp('enqueue', `@"${pasted}" mira esto`, 81));
   const [image] = withImage.pending(LAUNCHED_AT);
@@ -1185,7 +1185,7 @@ const clearPairs = (data) => (data.length > 0 && data.replaceAll(CLEAR_LINE, '')
     const lines = [
       popAll('de antes, sacado a mano en la solapa CLI', since - 60_000),
       popAll('<task-notification>\n<status>completed</status>\n</task-notification>', since + 100),
-      popAll(`mira esto @"${path.join(root, 'temporal', 'agent-workbench', 'pasted', 't1', 'pegada-1-0a1b2c3d.png')}"`, since + 100),
+      popAll(`mira esto @"${path.join(root, 'temporal', 'workbench', 'pasted', 't1', 'pegada-1-0a1b2c3d.png')}"`, since + 100),
       '{"type":"queue-operation","operation":"enqueue","timestamp":"2026-10-23T15:36:05.200Z","content":"otro"}',
       'no es json',
     ];

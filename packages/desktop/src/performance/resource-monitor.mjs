@@ -1,9 +1,10 @@
+import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
 /**
- * Native Resource Performance Monitor for MAW Desktop
+ * Native Resource Performance Monitor for Workbench Desktop
  *
  * Lightweight, accurate Linux process accounting and resource telemetry.
  * Attributions:
- *   - MAW Infrastructure (Electron Main, GPU, Utilities, UI Renderer, Backend, PTY Supervisor)
+ *   - Workbench Infrastructure (Electron Main, GPU, Utilities, UI Renderer, Backend, PTY Supervisor)
  *   - AI Coding Agents (Codex CLI, Claude Code, Gemini CLI, OpenCode, Antigravity CLI, Pi)
  *   - Embedded Browser Views (ChatGPT, Perplexity, GitHub WebContentsViews: active, background, suspended)
  *   - Other Terminals (plain shells, scripts, tests)
@@ -366,7 +367,7 @@ export function classifyProcessProvider(pid, procRoot = '/proc') {
   // 5. Antigravity CLI (verifiable executable identity)
   if (
     comm === 'agy' ||
-    /^agy(?:0[0-5])?$/.test(comm) ||
+    /^agy(?:[0-9]+)?$/.test(comm) ||
     comm === 'antigravity' ||
     exeBase === 'agy' ||
     exeBase === 'antigravity' ||
@@ -436,7 +437,7 @@ export function calculateProcessCpuDelta({
 }
 
 /**
- * Primary Resource Collector for MAW Native Performance Monitor
+ * Primary Resource Collector for Workbench Native Performance Monitor
  */
 export class ResourceCollector {
   /**
@@ -568,7 +569,7 @@ export class ResourceCollector {
   }
 
   /**
-   * Performs an atomic resource accounting sample across all MAW processes.
+   * Performs an atomic resource accounting sample across all Workbench processes.
    *
    * @returns {Promise<object>} Complete PerformanceSnapshot
    */
@@ -956,7 +957,7 @@ export class ResourceCollector {
       const agentGroups = [...agentGroupsMap.values()].filter((g) => g.instanceCount > 0);
 
       // -------------------------------------------------------------
-      // Group 3: MAW Infrastructure
+      // Group 3: Workbench Infrastructure
       // -------------------------------------------------------------
       const infraProcesses = [];
 
@@ -969,7 +970,7 @@ export class ResourceCollector {
       // Electron UI Window Renderer
       if (electronWindowPid && !claimedPids.has(electronWindowPid)) {
         claimedPids.add(electronWindowPid);
-        infraProcesses.push(measureProcess(electronWindowPid, 'MAW UI Renderer', 'electron-renderer'));
+        infraProcesses.push(measureProcess(electronWindowPid, 'Workbench UI Renderer', 'electron-renderer'));
       }
 
       // Electron GPU Process
@@ -1000,7 +1001,7 @@ export class ResourceCollector {
         for (const p of backendSubtree) {
           claimedPids.add(p);
           const stat = readProcessStat(p, this.procRoot);
-          const pName = p === backendPid ? 'MAW Backend Server' : stat?.comm || 'Backend Worker';
+          const pName = p === backendPid ? 'Workbench Backend Server' : stat?.comm || 'Backend Worker';
           infraProcesses.push(measureProcess(p, pName, 'backend-process'));
         }
       }
@@ -1008,7 +1009,7 @@ export class ResourceCollector {
       // PTY Supervisor Daemon
       if (supervisorPid && !claimedPids.has(supervisorPid)) {
         claimedPids.add(supervisorPid);
-        infraProcesses.push(measureProcess(supervisorPid, 'PTY Supervisor (maw-ptyd)', 'pty-supervisor'));
+        infraProcesses.push(measureProcess(supervisorPid, 'PTY Supervisor (workbench-ptyd)', 'pty-supervisor'));
       }
 
       // Group rollups
@@ -1024,7 +1025,7 @@ export class ResourceCollector {
         processes: procs,
       });
 
-      const infraGroup = sumGroup(infraProcesses, 'infrastructure', 'MAW Infrastructure');
+      const infraGroup = sumGroup(infraProcesses, 'infrastructure', 'Workbench Infrastructure');
 
       // -------------------------------------------------------------
       // Global Overview & Memory Pressure Tier
@@ -1055,8 +1056,8 @@ export class ResourceCollector {
           totalBytes,
           tabWorkingSetBytes,
           attachedCount: this.attachedViews.size,
-          envOverride: process.env.MAW_MAX_RESIDENT_VIEWS,
-          tierOverride: process.env.MAW_MEMORY_PRESSURE_TIER,
+          envOverride: workbenchEnv('MAX_RESIDENT_VIEWS'),
+          tierOverride: workbenchEnv('MEMORY_PRESSURE_TIER'),
         });
 
       const browserLifecycle = {
@@ -1067,12 +1068,12 @@ export class ResourceCollector {
       };
 
       // -------------------------------------------------------------
-      // Resource Separation: MaW Application vs Managed Workloads
+      // Resource Separation: Workbench Application vs Managed Workloads
       // -------------------------------------------------------------
       // Browser renderers (attached tabs)
       const browserRendererProcesses = [...measuredRenderers.values()];
 
-      // MaW Application processes: infrastructure + browser renderers
+      // Workbench Application processes: infrastructure + browser renderers
       const appProcesses = [
         ...infraProcesses,
         ...browserRendererProcesses,
@@ -1089,7 +1090,7 @@ export class ResourceCollector {
         ...workloadProcesses,
       ];
 
-      // MaW Application Overhead
+      // Workbench Application Overhead
       const appMawPss = appProcesses.reduce((acc, p) => acc + p.pssBytes, 0);
       const appMawRss = appProcesses.reduce((acc, p) => acc + p.rssBytes, 0);
       const appMawPrivate = appProcesses.reduce((acc, p) => acc + p.privateBytes, 0);
@@ -1158,7 +1159,7 @@ export class ResourceCollector {
           supervisorHealth: {
             status: supervisorPid ? 'healthy' : 'disabled',
             pid: supervisorPid,
-            type: supervisorPid ? 'Persistent PTY Supervisor (maw-ptyd)' : 'In-Process node-pty Fallback',
+            type: supervisorPid ? 'Persistent PTY Supervisor (workbench-ptyd)' : 'In-Process node-pty Fallback',
           },
           desktopHealth: {
             status: electronMainPid ? 'healthy' : 'unreachable',

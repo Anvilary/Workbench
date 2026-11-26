@@ -42,7 +42,7 @@ process.env.GIT_CONFIG_GLOBAL = gitConfig;
 process.env.GIT_CONFIG_NOSYSTEM = '1';
 process.env.GIT_CEILING_DIRECTORIES = root;
 
-const shared = await import('@agent-workbench/shared');
+const shared = await import('@anvilary/workbench-shared');
 const { cliFolders, NO_CLI_FOLDERS } = await import('../src/features/files/cli-folders.ts');
 const { existingPaths, listDirectory, readPreview, searchFiles, MAX_PREVIEW_BYTES } = await import('../src/features/files/file-browser.ts');
 const { FileWriteError, saveProjectFile, withLineEndings } = await import('../src/features/files/file-write.ts');

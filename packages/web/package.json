@@ -1,5 +1,5 @@
 {
-  "name": "@agent-workbench/web",
+  "name": "@anvilary/workbench-web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@agent-workbench/shared": "workspace:*",
+    "@anvilary/workbench-shared": "workspace:*",
     "@dnd-kit/collision": "0.5.1",
     "@dnd-kit/dom": "0.5.1",
     "@dnd-kit/react": "0.5.1",

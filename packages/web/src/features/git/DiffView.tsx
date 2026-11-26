@@ -10,7 +10,7 @@
  *    una linea para pegarla en otro lado.
  */
 
-import type { DiffLine, GitDiff } from '@agent-workbench/shared';
+import type { DiffLine, GitDiff } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 import { serverTextMessage } from '../../i18n/server-text.js';
 

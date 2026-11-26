@@ -56,8 +56,8 @@ jobs:
           node scripts/check-doc-links.mjs
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      - run: pnpm --filter @agent-workbench/shared run test:unit
-      - run: env -u MAW_UNSAFE_LOCAL_NO_AUTH pnpm check
+      - run: pnpm --filter @anvilary/workbench-shared run test:unit
+      - run: env -u WORKBENCH_UNSAFE_LOCAL_NO_AUTH pnpm check
 
   test-server-unit:
     name: Server Unit & Security Tests
@@ -71,8 +71,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: env -u MAW_UNSAFE_LOCAL_NO_AUTH pnpm --filter @agent-workbench/server run test:unit
-      - run: env -u MAW_UNSAFE_LOCAL_NO_AUTH pnpm --filter @agent-workbench/server run test:security
+      - run: env -u WORKBENCH_UNSAFE_LOCAL_NO_AUTH pnpm --filter @anvilary/workbench-server run test:unit
+      - run: env -u WORKBENCH_UNSAFE_LOCAL_NO_AUTH pnpm --filter @anvilary/workbench-server run test:security
 
   test-web-unit:
     name: Web Unit Tests
@@ -86,7 +86,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @agent-workbench/web run test:unit
+      - run: pnpm --filter @anvilary/workbench-web run test:unit
 
   test-desktop-unit:
     name: Desktop Unit Tests
@@ -100,7 +100,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @agent-workbench/desktop run test:unit
+      - run: pnpm --filter @anvilary/workbench-desktop run test:unit
 
   package-smoke:
     name: NPM Tarball & CLI Smoke Test
@@ -122,9 +122,9 @@ jobs:
         continue-on-error: true
         with:
           name: tarball
-          path: agent-workbench-*.tgz
+          path: anvilary-workbench-*.tgz
           if-no-files-found: warn
-      - run: node .github/scripts/smoke.mjs agent-workbench-*.tgz
+      - run: node .github/scripts/smoke.mjs anvilary-workbench-*.tgz
 
   # Tier 2 and Tier 3 run on protected branch pushes and authorized dispatch.
   test-server-integration:
@@ -140,7 +140,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: env -u MAW_UNSAFE_LOCAL_NO_AUTH pnpm --filter @agent-workbench/server run test:integration
+      - run: env -u WORKBENCH_UNSAFE_LOCAL_NO_AUTH pnpm --filter @anvilary/workbench-server run test:integration
 
   test-web-e2e:
     name: Web Browser E2E Suite
@@ -156,9 +156,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install chromium --with-deps
-      - run: pnpm --filter @agent-workbench/web build
-      - run: pnpm --filter @agent-workbench/web run test:integration
-      - run: pnpm --filter @agent-workbench/web run test:e2e
+      - run: pnpm --filter @anvilary/workbench-web build
+      - run: pnpm --filter @anvilary/workbench-web run test:integration
+      - run: pnpm --filter @anvilary/workbench-web run test:e2e
 
   test-server-runtime:
     name: Server Runtime & PTY Lifecycle Tests
@@ -174,7 +174,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: env -u MAW_UNSAFE_LOCAL_NO_AUTH pnpm --filter @agent-workbench/server run test:runtime
+      - run: env -u WORKBENCH_UNSAFE_LOCAL_NO_AUTH pnpm --filter @anvilary/workbench-server run test:runtime
       - run: pnpm test:staging:shell
 
   test-desktop-integration:
@@ -193,8 +193,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb xauth xclip nautilus xdotool x11-utils adwaita-icon-theme dbus-x11
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: node scripts/maw/build-desktop-deb.mjs
-      - run: xvfb-run -a pnpm --filter @agent-workbench/desktop run test:production
+      - run: node scripts/workbench/build-desktop-deb.mjs
+      - run: xvfb-run -a pnpm --filter @anvilary/workbench-desktop run test:production
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         continue-on-error: true
         with:
@@ -208,7 +208,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/workbench-codex" --no-save --ignore-scripts @openai/codex@0.169.0
           codex="$RUNNER_TEMP/workbench-codex/node_modules/.bin/codex"
           "$codex" --version
-          echo "MAW_CODEX_EXECUTABLE=$codex" >> "$GITHUB_ENV"
+          echo "WORKBENCH_CODEX_EXECUTABLE=$codex" >> "$GITHUB_ENV"
       - name: Sandboxed Electron integration and security
         working-directory: packages/desktop
         env:
@@ -222,7 +222,7 @@ jobs:
         env:
           GSK_RENDERER: cairo
           LIBGL_ALWAYS_SOFTWARE: '1'
-          MAW_NAUTILUS_TEST_ISOLATED: '1'
+          WORKBENCH_NAUTILUS_TEST_ISOLATED: '1'
         run: timeout -k 10s 10m xvfb-run -a dbus-run-session pnpm test:e2e
       - name: Sandboxed Electron runtime and staging
         working-directory: packages/desktop
@@ -250,7 +250,7 @@ jobs:
         working-directory: packages/server
         run: pnpm exec tsx --test tests/unit/workspaces/domain.test.ts
       - name: Frontend workspace model unit tests
-        run: pnpm --filter @agent-workbench/web exec tsx --test tests/unit/workspaces/model.test.mjs
+        run: pnpm --filter @anvilary/workbench-web exec tsx --test tests/unit/workspaces/model.test.mjs
       # The server check scripts include Windows path fixtures; keep running them here.
       - run: pnpm check
 
@@ -282,8 +282,8 @@ jobs:
       - name: Install the tarball and start the app
         shell: bash
         run: |
-          if ls agent-workbench-*.tgz 1> /dev/null 2>&1; then
-            node .github/scripts/smoke.mjs agent-workbench-*.tgz
+          if ls anvilary-workbench-*.tgz 1> /dev/null 2>&1; then
+            node .github/scripts/smoke.mjs anvilary-workbench-*.tgz
           else
             echo "Tarball artifact not found (skipped due to artifact quota); smoke test verified in package-smoke."
           fi

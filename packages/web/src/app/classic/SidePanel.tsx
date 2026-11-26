@@ -17,7 +17,7 @@
  */
 
 import type { PanelTab } from '../../shared/lib/narrow-layout.js';
-import type { GitStatus } from '@agent-workbench/shared';
+import type { GitStatus } from '@anvilary/workbench-shared';
 import { visiblePanelTabs } from '../../features/agents/agent-ui.js';
 import { FilesPanel } from '../../features/files/FilesPanel.js';
 import { GitPanel, type GitPanelWorktrees } from '../../features/git/GitPanel.js';

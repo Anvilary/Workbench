@@ -50,27 +50,27 @@ export function CollapsibleSubsection({
   return (
     <div
       id={id}
-      className={`maw-settings-card maw-collapsible-subsection${highlighted ? ' maw-settings-card-highlighted' : ''}${expanded ? ' is-expanded' : ' is-collapsed'}${className ? ` ${className}` : ''}`}
+      className={`wb-settings-card wb-collapsible-subsection${highlighted ? ' wb-settings-card-highlighted' : ''}${expanded ? ' is-expanded' : ' is-collapsed'}${className ? ` ${className}` : ''}`}
     >
-      <div className="maw-settings-card-header maw-settings-card-header-flex maw-subsection-header">
+      <div className="wb-settings-card-header wb-settings-card-header-flex wb-subsection-header">
         <button
           type="button"
           id={buttonId}
-          className="maw-subsection-toggle"
+          className="wb-subsection-toggle"
           aria-expanded={expanded}
           aria-controls={bodyId}
           onClick={() => setExpanded((prev) => !prev)}
         >
-          <span className="maw-subsection-chevron" aria-hidden="true">
+          <span className="wb-subsection-chevron" aria-hidden="true">
             <ChevronIcon size={14} />
           </span>
-          <span className="maw-subsection-heading">
-            <span className="maw-settings-card-title">{title}</span>
-            {description && <span className="maw-settings-hint maw-subsection-desc">{description}</span>}
+          <span className="wb-subsection-heading">
+            <span className="wb-settings-card-title">{title}</span>
+            {description && <span className="wb-settings-hint wb-subsection-desc">{description}</span>}
           </span>
         </button>
         {headerActions && (
-          <div className="maw-settings-card-header-actions maw-subsection-actions">
+          <div className="wb-settings-card-header-actions wb-subsection-actions">
             {headerActions}
           </div>
         )}
@@ -81,10 +81,10 @@ export function CollapsibleSubsection({
         role="region"
         aria-labelledby={buttonId}
         aria-hidden={!expanded}
-        className={`maw-subsection-collapse${expanded ? ' is-expanded' : ' is-collapsed'}`}
+        className={`wb-subsection-collapse${expanded ? ' is-expanded' : ' is-collapsed'}`}
       >
-        <div className="maw-subsection-collapse-inner">
-          <div className={`maw-settings-card-body maw-subsection-body${bodyClassName ? ` ${bodyClassName}` : ''}`}>
+        <div className="wb-subsection-collapse-inner">
+          <div className={`wb-settings-card-body wb-subsection-body${bodyClassName ? ` ${bodyClassName}` : ''}`}>
             {children}
           </div>
         </div>

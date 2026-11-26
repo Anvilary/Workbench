@@ -1,7 +1,7 @@
 export function GlobeIcon({ className = '', size = 14 }: { className?: string; size?: number }): JSX.Element {
   return (
     <svg
-      className={`maw-globe-icon ${className}`.trim()}
+      className={`wb-globe-icon ${className}`.trim()}
       width={size}
       height={size}
       viewBox="0 0 16 16"

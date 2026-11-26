@@ -15,7 +15,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import type { StatusLineState } from '@agent-workbench/shared';
+import type { StatusLineState } from '@anvilary/workbench-shared';
 import { CLAUDE_STATUS_LINE_SCRIPT_NAME } from './statusline-script.js';
 
 /** Mas que esto no es una configuracion: no se lee. */

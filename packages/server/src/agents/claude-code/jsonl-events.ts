@@ -22,7 +22,7 @@ import type {
   ConversationQuestionOption,
   ConversationRole,
   MessageUsage,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { pastedImageMediaType } from '../../features/composer/paste-paths.js';
 import { TRANSPORT_LIMITS, cut, type EventLimits } from '../transport-limits.js';
 import { scratchRoot } from './paths.js';

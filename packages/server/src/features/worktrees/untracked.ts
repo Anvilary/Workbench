@@ -34,7 +34,7 @@
 import { createHash, type Hash } from 'node:crypto';
 import { lstat, readdir, realpath, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { WORKTREE_UNTRACKED_MAX_FILES, type WorktreeUntrackedBlock } from '@agent-workbench/shared';
+import { WORKTREE_UNTRACKED_MAX_FILES, type WorktreeUntrackedBlock } from '@anvilary/workbench-shared';
 import { resolveInside } from '../files/path-guard.js';
 
 /** Lo que se muestra y, si se puede perder, lo que se va a borrar: cada entrada de git, absoluta y dentro de la rama. */

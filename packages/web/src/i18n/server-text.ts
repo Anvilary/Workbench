@@ -10,7 +10,7 @@
  * español y la comparan con la de siempre.
  */
 
-import { isServerTextKey, type ServerText } from '@agent-workbench/shared';
+import { isServerTextKey, type ServerText } from '@anvilary/workbench-shared';
 import { t, type MessageKey, type MessageParams } from './index.js';
 
 /**

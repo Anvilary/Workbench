@@ -1,4 +1,4 @@
-import type { ConsoleShellId } from '@agent-workbench/shared';
+import type { ConsoleShellId } from '@anvilary/workbench-shared';
 import { t } from '../../../i18n/index.js';
 import type { AppSettingsApi } from '../useAppSettings.js';
 import { CollapsibleSubsection } from '../CollapsibleSubsection.js';
@@ -25,7 +25,7 @@ export function TerminalSettingsSection({
   onSelectShell,
 }: TerminalSettingsSectionProps): JSX.Element {
   return (
-    <div className="maw-settings-groups">
+    <div className="wb-settings-groups">
       <CollapsibleSubsection
         id="setting-card-console"
         title={t('settings.section.console')}
@@ -34,18 +34,18 @@ export function TerminalSettingsSection({
         expandSignal={expandSignal}
       >
         {status === null ? (
-          <p className="maw-settings-hint">{t('settings.oldServer')}</p>
+          <p className="wb-settings-hint">{t('settings.oldServer')}</p>
         ) : status.consoleShells.length === 0 ? (
-          <p className="maw-settings-hint">{t('console.noShell')}</p>
+          <p className="wb-settings-hint">{t('console.noShell')}</p>
         ) : (
           <>
             <div
-              className="maw-settings-choices"
+              className="wb-settings-choices"
               role="radiogroup"
               aria-label={t('settings.section.console')}
             >
               {shellChoices.map((choice) => (
-                <label key={choice.id} className="maw-settings-choice">
+                <label key={choice.id} className="wb-settings-choice">
                   <input
                     type="radio"
                     name="console-shell"
@@ -53,13 +53,13 @@ export function TerminalSettingsSection({
                     disabled={!serverEditable}
                     onChange={() => onSelectShell(choice.id)}
                   />
-                  <span className="maw-settings-choice-label">{choice.label}</span>
+                  <span className="wb-settings-choice-label">{choice.label}</span>
                 </label>
               ))}
             </div>
-            <p className="maw-settings-hint">{t('settings.console.hint')}</p>
+            <p className="wb-settings-hint">{t('settings.console.hint')}</p>
             {remoteClient && (
-              <p className="maw-settings-hint maw-settings-warning">{t('settings.hostOnly')}</p>
+              <p className="wb-settings-hint wb-settings-warning">{t('settings.hostOnly')}</p>
             )}
           </>
         )}

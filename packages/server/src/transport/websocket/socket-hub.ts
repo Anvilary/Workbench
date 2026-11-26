@@ -13,7 +13,7 @@ import {
   type ServerErrorMessage,
   type ServerMessage,
   type ServerText,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { WebSocket } from 'ws';
 
 export interface SocketHub {

@@ -237,19 +237,19 @@ test('Brand Identity Acceptance: canonical logo rendering across sidebar, topbar
   saveEvidence(topbarPath, 'brand-collapsed-sidebar.png');
 
   // 4. Open Settings and verify About section logo
-  await page.click('#maw-shell-menu-trigger');
+  await page.click('#wb-shell-menu-trigger');
   await page.waitForSelector('#menu-open-settings');
   await page.click('#menu-open-settings');
   await page.waitForSelector('.settings-dialog');
   await page.click('#settings-tab-about');
-  await page.waitForSelector('.maw-settings-about-hero');
+  await page.waitForSelector('.wb-settings-about-hero');
 
-  const aboutLogo = page.locator('.maw-settings-about-logo');
+  const aboutLogo = page.locator('.wb-settings-about-logo');
   await aboutLogo.waitFor({ state: 'visible' });
   const aboutNaturalWidth = await aboutLogo.evaluate((img) => img.naturalWidth);
   assert.ok(aboutNaturalWidth > 0, 'About settings section logo must load successfully with positive naturalWidth');
   const aboutPath = path.join(evidenceDir, 'brand-about-section.png');
-  await page.locator('.maw-settings-about-hero').screenshot({ path: aboutPath });
+  await page.locator('.wb-settings-about-hero').screenshot({ path: aboutPath });
   saveEvidence(aboutPath, 'brand-about-section.png');
 
   // 5. Verify direct favicon fetch

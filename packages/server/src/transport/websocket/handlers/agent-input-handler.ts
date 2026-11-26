@@ -8,7 +8,7 @@ import {
   type ClientMessage,
   type ServerErrorCode,
   type ServerText,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { QueueEditFailure, QueueEditOutcome, RewindOutcome } from '../../../agents/adapter.js';
 import {
   attachmentLine,

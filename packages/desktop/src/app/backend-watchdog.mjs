@@ -30,7 +30,7 @@ export function startBackendWatchdog({ win, send, backend, controller, appState 
         if (discovered.url.href !== backend.current().href) {
           const originChanged = discovered.url.origin !== backend.current().origin;
           if (originChanged) {
-            // Only MAW's own renderer storage crosses a loopback-port change.
+            // Only Workbench's own renderer storage crosses a loopback-port change.
             // Website sessions and live views stay in their existing partitions.
             backend.setPendingShellStorage(await win.webContents.executeJavaScript('({ local: Object.entries(localStorage), session: Object.entries(sessionStorage) })'));
           }

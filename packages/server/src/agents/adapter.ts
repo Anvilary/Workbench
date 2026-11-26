@@ -42,7 +42,7 @@ import type {
   SessionSummary,
   StatusLineSetupInfo,
   TerminalOfflineReason,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { CliLocation } from './locate.js';
 import type { EventLimits } from './transport-limits.js';
 

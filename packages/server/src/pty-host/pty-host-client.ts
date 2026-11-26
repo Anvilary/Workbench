@@ -1,5 +1,6 @@
+import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
 /**
- * Cliente IPC para conectarse a `maw-ptyd` (Persistent PTY Supervisor).
+ * Cliente IPC para conectarse a `workbench-ptyd` (Persistent PTY Supervisor).
  *
  * Lane A & B - Client Adapter & Reconnection Protocol
  */
@@ -125,34 +126,34 @@ export class PtyHostClient {
   }
 
   /**
-   * Conecta a un demonio `maw-ptyd` existente o lanza uno en segundo plano si no existe.
+   * Conecta a un demonio `workbench-ptyd` existente o lanza uno en segundo plano si no existe.
    */
   static async connectOrSpawn(options: PtyHostClientOptions = {}): Promise<PtyHostClient> {
     if (
       isTestExecution() &&
       !options.socketPath &&
-      !process.env.MAW_PTYD_SOCKET &&
-      !process.env.MAW_PTYD_RUNTIME_DIR
+      !workbenchEnv('PTYD_SOCKET') &&
+      !workbenchEnv('PTYD_RUNTIME_DIR')
     ) {
       throw new Error(
-        'Refusing to connect to production PTY supervisor socket in test environment without explicit socketPath or MAW_PTYD_RUNTIME_DIR',
+        'Refusing to connect to production PTY supervisor socket in test environment without explicit socketPath or WORKBENCH_PTYD_RUNTIME_DIR',
       );
     }
 
     const baseRuntime = process.env.XDG_RUNTIME_DIR ||
       (typeof process.getuid === 'function' ? `/run/user/${process.getuid()}` : os.tmpdir());
 
-    const runtimeDir = process.env.MAW_PTYD_RUNTIME_DIR ||
-      path.join(baseRuntime, 'maw-ptyd');
+    const runtimeDir = workbenchEnv('PTYD_RUNTIME_DIR') ||
+      path.join(baseRuntime, 'workbench-ptyd');
 
     const socketPath = options.socketPath ||
-      process.env.MAW_PTYD_SOCKET ||
-      // Default: independent runtime dir owned by maw-ptyd.service (not the maw.service runtime dir).
-      // This ensures the backend finds the socket after a maw.service restart.
+      workbenchEnv('PTYD_SOCKET') ||
+      // Default: independent runtime dir owned by workbench-ptyd.service (not the workbench.service runtime dir).
+      // This ensures the backend finds the socket after a workbench.service restart.
       path.join(runtimeDir, 'ptyd.sock');
 
     const authPath = options.authPath ||
-      process.env.MAW_PTYD_AUTH_FILE ||
+      workbenchEnv('PTYD_AUTH_FILE') ||
       `${socketPath}.auth`;
 
     const autoSpawn = options.autoSpawn ?? true;
@@ -204,14 +205,14 @@ export class PtyHostClient {
         }
       }
 
-      throw new Error(`Failed to connect to maw-ptyd within ${timeoutMs}ms: ${(lastErr as Error).message}`);
+      throw new Error(`Failed to connect to workbench-ptyd within ${timeoutMs}ms: ${(lastErr as Error).message}`);
     }
   }
 
   private async _spawnDaemon(scriptPath?: string): Promise<void> {
     const targetScript = scriptPath ||
-      process.env.MAW_PTYD_SCRIPT ||
-      path.join(path.dirname(fileURLToPath(import.meta.url)), 'maw-ptyd.mjs');
+      workbenchEnv('PTYD_SCRIPT') ||
+      path.join(path.dirname(fileURLToPath(import.meta.url)), 'ptyd.mjs');
 
     const child = spawn(process.execPath, [
       targetScript,
@@ -222,8 +223,8 @@ export class PtyHostClient {
       stdio: 'ignore',
       env: {
         ...process.env,
-        MAW_PTYD_SOCKET: this.socketPath,
-        MAW_PTYD_AUTH_FILE: this.authPath,
+        WORKBENCH_PTYD_SOCKET: this.socketPath,
+        WORKBENCH_PTYD_AUTH_FILE: this.authPath,
       },
     });
     // A spawn failure is reported by the connect timeout; without a listener it would crash the server.
@@ -551,7 +552,7 @@ export class PtyHostClient {
   }
 
   /**
-   * Cierra la conexion del cliente con maw-ptyd SIN matar ninguna sesion PTY hija.
+   * Cierra la conexion del cliente con workbench-ptyd SIN matar ninguna sesion PTY hija.
    */
   detach(): void {
     if (this.closed) return;

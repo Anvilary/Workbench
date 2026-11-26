@@ -919,14 +919,14 @@ check('y sus bytes se encuentran por el otro camino',
 // vez de la miniatura. Medido en la instalacion: 14 de 123 mensajes encolados
 // traen imagenes pegadas, 18 imagenes, y 17 tienen el `Read` con sus bytes.
 
-const pastedDir = path.join(dir, 'temporal', 'agent-workbench', 'pasted');
+const pastedDir = path.join(dir, 'temporal', 'workbench', 'pasted');
 const pastedOf = (name) => path.join(pastedDir, 't1', name);
 await mkdir(path.join(pastedDir, 't1'), { recursive: true });
 await writeFile(pastedOf('pegada-1-0a1b2c3d.png'), Buffer.from(PNG_1PX, 'base64'));
 // Con la forma de una imagen pegada, pero sin ser una: gana la firma.
 await writeFile(pastedOf('pegada-6-0f0f0f0f.png'), 'no soy una imagen');
 // La misma forma, fuera de la carpeta de lo pegado: no se lee nunca.
-const outsideDir = path.join(dir, 'fuera', 'agent-workbench', 'pasted', 't1');
+const outsideDir = path.join(dir, 'fuera', 'workbench', 'pasted', 't1');
 await mkdir(outsideDir, { recursive: true });
 const outsidePath = path.join(outsideDir, 'pegada-5-0e0e0e0e.png');
 await writeFile(outsidePath, Buffer.from(PNG_1PX, 'base64'));
@@ -959,7 +959,7 @@ await writeFile(pastedFile,
   queuedWith('qp3', 'mira @"C:\\fotos\\captura.png" y @notas.png') +
   queuedWith('qp4', '@"' + outsidePath + '" @"' + pastedOf('pegada-6-0f0f0f0f.png') + '" ' +
     // Armada a mano: `path.join` resolveria los `..`.
-    '@"' + [pastedDir, 't1', '..', '..', '..', '..', 'fuera', 'agent-workbench', 'pasted', 't1', 'pegada-5-0e0e0e0e.png'].join(path.sep) + '"'));
+    '@"' + [pastedDir, 't1', '..', '..', '..', '..', 'fuera', 'workbench', 'pasted', 't1', 'pegada-5-0e0e0e0e.png'].join(path.sep) + '"'));
 const pastedFollower = new ConversationFollower(pastedFile);
 const pastedPoll = await pastedFollower.poll();
 const byId = (id) => pastedPoll.added.find((event) => event.eventId === id);

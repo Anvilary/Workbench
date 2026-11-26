@@ -1,4 +1,4 @@
-import type { TerminalId } from '@agent-workbench/shared';
+import type { TerminalId } from '@anvilary/workbench-shared';
 
 /** Un texto que llego para el cuadro de una pestana y todavia no se aplico. */
 export interface ComposerPrefill {

@@ -1,4 +1,4 @@
-import { EMPTY_CONTEXT_USAGE } from '@agent-workbench/shared';
+import { EMPTY_CONTEXT_USAGE } from '@anvilary/workbench-shared';
 import type { SessionFollower } from './adapter.js';
 /** Live native PTY stays usable when its historical account namespace is unverified. */
 export function unavailableFollower(): SessionFollower {

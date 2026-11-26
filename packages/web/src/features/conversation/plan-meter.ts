@@ -20,7 +20,7 @@ import {
   livePlanWindows,
   type PlanLimitWindow,
   type StatusLineState,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { formatDate, formatPercent, formatTime, formatTimeLeft, formatWeekdayTime, formatWhen } from '../../i18n/format.js';
 import { t, type MessageKey } from '../../i18n/index.js';
 

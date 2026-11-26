@@ -24,7 +24,7 @@ import {
   type BrowserSettingsPatch,
   type CustomDictionaryMutation,
   type SpellCheckSettings,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { DesktopBridge } from '../../connection/desktop-bridge.js';
 import type { AppSettingsApi } from '../settings/useAppSettings.js';
 
@@ -161,7 +161,7 @@ let attachedWindowRef: unknown = null;
 const listeners = new Set<StoreListener>();
 
 function getBridge(): DesktopBridge | undefined {
-  return typeof window !== 'undefined' ? window.mawChatGpt : undefined;
+  return typeof window !== 'undefined' ? window.workbench : undefined;
 }
 
 function getLatestSettings(): BrowserSettings {

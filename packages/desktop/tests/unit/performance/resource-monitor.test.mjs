@@ -414,7 +414,7 @@ test('Performance snapshot preserves strict single ownership across all groups',
   // 1001: Backend
   await makeMockProc(1001, 'node');
   // 1002: PTY Supervisor
-  await makeMockProc(1002, 'maw-ptyd');
+  await makeMockProc(1002, 'workbench-ptyd');
   // 1003: Terminal Shell (bash)
   await makeMockProc(1003, 'bash');
   // 1004: Terminal Shell (zsh running codex)
@@ -465,7 +465,7 @@ test('Accounting separation: MaW application overhead is separated from managed 
 
   // Infrastructure: Backend (PID 2001, 15MB PSS), PTY Supervisor (PID 2002, 5MB PSS)
   await makeMockProc(2001, 'node', 15000, 30000);
-  await makeMockProc(2002, 'maw-ptyd', 5000, 10000);
+  await makeMockProc(2002, 'workbench-ptyd', 5000, 10000);
 
   // Managed workload: Terminal 1 running shell (PID 2003, 8MB PSS)
   await makeMockProc(2003, 'bash', 8000, 12000);

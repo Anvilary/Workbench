@@ -85,7 +85,7 @@ test('Browser compatibility preserves CLI input, mixed tabs and external ChatGPT
     const url = new URL(req.url, 'http://localhost');
     res.setHeader('Cache-Control', 'no-store');
     if (url.pathname === '/bundle.js') { res.setHeader('Content-Type', 'text/javascript'); res.end(bundle.outputFiles[0].text); }
-    else { res.setHeader('Content-Type', 'text/html'); res.end('<html lang="en"><style>html,body,#root{height:100%;margin:0}.agency-app{display:flex;height:100%}.agency-main{flex:1;min-width:0}.agency-sidebar{width:240px}.maw-session-content{height:600px}.maw-session-pane{height:100%}.maw-session-pane[hidden]{display:none}.agency-agent-body,.agency-xterm-host,.terminal{height:500px}.maw-browser-viewer{height:450px}</style><div id="root"></div><script type="module" src="/bundle.js"></script></html>'); }
+    else { res.setHeader('Content-Type', 'text/html'); res.end('<html lang="en"><style>html,body,#root{height:100%;margin:0}.agency-app{display:flex;height:100%}.agency-main{flex:1;min-width:0}.agency-sidebar{width:240px}.wb-session-content{height:600px}.wb-session-pane{height:100%}.wb-session-pane[hidden]{display:none}.agency-agent-body,.agency-xterm-host,.terminal{height:500px}.wb-browser-viewer{height:450px}</style><div id="root"></div><script type="module" src="/bundle.js"></script></html>'); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ headless:true, executablePath });

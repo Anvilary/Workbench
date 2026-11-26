@@ -1,5 +1,5 @@
 import type { Terminal } from '@xterm/xterm';
-import type { ServerTerminalReplayMessage } from '@agent-workbench/shared';
+import type { ServerTerminalReplayMessage } from '@anvilary/workbench-shared';
 
 function decodeUtf8Safe(bytes: Uint8Array): string {
   try {

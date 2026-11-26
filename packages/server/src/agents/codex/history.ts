@@ -13,7 +13,7 @@
 
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
-import type { PlanLimitWindow } from '@agent-workbench/shared';
+import type { PlanLimitWindow } from '@anvilary/workbench-shared';
 import type {
   FollowOptions,
   HistoryItem,

@@ -105,7 +105,7 @@ import { changedFilesAfter, rewindPreview } from '../../features/conversation/re
 import { useRewind } from '../../features/conversation/useRewind.js';
 import type { ConnectionStatus } from '../../connection/connection.js';
 import { WorkbenchApp } from '../WorkbenchApp.js';
-import { blindToApprovals, normalizeCwdKey, type AgentId, type GlobalSearchHit, type TerminalId } from '@agent-workbench/shared';
+import { blindToApprovals, normalizeCwdKey, type AgentId, type GlobalSearchHit, type TerminalId } from '@anvilary/workbench-shared';
 
 const STATUS_LABEL_KEYS: Record<ConnectionStatus, MessageKey> = {
   connecting: 'app.status.connecting',
@@ -155,17 +155,17 @@ const CONSOLE_MIN_HEIGHT = 120;
 const CONSOLE_MAX_HEIGHT = 720;
 const CONSOLE_DEFAULT_HEIGHT = 260;
 
-const PANEL_WIDTH_KEY = 'agent-workbench.panel-width';
-const PANEL_VISIBLE_KEY = 'agent-workbench.panel-visible';
-const PANEL_TAB_KEY = 'agent-workbench.panel-tab';
-const PANEL_EXPANDED_KEY = 'agent-workbench.panel-expanded';
-const SIDEBAR_VISIBLE_KEY = 'agent-workbench.sidebar-visible';
-const SIDEBAR_WIDTH_KEY = 'agent-workbench.sidebar-width';
-const CONSOLE_VISIBLE_KEY = 'agent-workbench.console-visible';
-const CONSOLE_HEIGHT_KEY = 'agent-workbench.console-height';
-const MARKER_NOTICE_KEY = 'agent-workbench.marker-notice-dismissed';
+const PANEL_WIDTH_KEY = 'workbench.panel-width';
+const PANEL_VISIBLE_KEY = 'workbench.panel-visible';
+const PANEL_TAB_KEY = 'workbench.panel-tab';
+const PANEL_EXPANDED_KEY = 'workbench.panel-expanded';
+const SIDEBAR_VISIBLE_KEY = 'workbench.sidebar-visible';
+const SIDEBAR_WIDTH_KEY = 'workbench.sidebar-width';
+const CONSOLE_VISIBLE_KEY = 'workbench.console-visible';
+const CONSOLE_HEIGHT_KEY = 'workbench.console-height';
+const MARKER_NOTICE_KEY = 'workbench.marker-notice-dismissed';
 /** Ya se dijo una vez que lo escondido desde su barra vuelve desde Ajustes (Hito 41). */
-const HIDDEN_HINT_KEY = 'agent-workbench.hidden-hint-shown';
+const HIDDEN_HINT_KEY = 'workbench.hidden-hint-shown';
 
 
 export function ClassicApp(): JSX.Element {

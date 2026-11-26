@@ -37,7 +37,7 @@ Electron, web integration and web e2e baselines are recorded in the final report
 
 * `shared`: 33 flat files, 13.9k lines. `protocol.ts` is 4,016 lines and mixes about 150 message interfaces, two unions, two 650-line parse switches and the encoders. `index.ts` re-exports everything with `export *`.
 * `server`: 233 source files. `src/` has about 70 flat files next to `agency/`, `agents/`, `agents-usage/`, `handoff/`, `vault/`, `worktrees/`, `pty-host/`, `shared/`, `features/`.
-* `web`: two UIs share one tree. `src/agency/` is the primary interface (`MawRoot` mounts `AgencyApp`). The classic Workbench (`App.tsx` plus about 100 flat files) is loaded lazily for `?view=workbench`. `features/` holds only some extracted pieces.
+* `web`: two UIs share one tree. `src/agency/` is the primary interface (`WorkbenchRoot` mounts `AgencyApp`). The classic Workbench (`App.tsx` plus about 100 flat files) is loaded lazily for `?view=workbench`. `features/` holds only some extracted pieces.
 * `desktop`: `main.mjs` (1,380 lines) holds one `start()` closure that owns the window, all native views, the IPC command handler, navigation guards, eviction and the backend watchdog. Roughly 20 loose files sit at the package root.
 
 ### Large or multipurpose modules (confirmed by reading)
@@ -69,7 +69,7 @@ Electron, web integration and web e2e baselines are recorded in the final report
 ### Runtime and persistence boundaries
 
 * The PTY supervisor `ptyd.mjs` is a separate long-lived process. It survives backend and desktop restarts. Its wire contract with `pty-host-client.ts` and `terminal-state.mjs` must not change.
-* Persisted state lives under `$XDG_CONFIG_HOME/workbench` (workspace, layouts, tabs, notes, drafts, profiles). File names, schema versions and the `mawCompatibility` markers in the root `package.json` are compatibility contracts.
+* Persisted state lives under `$XDG_CONFIG_HOME/workbench` (workspace, layouts, tabs, notes, drafts, profiles). File names, schema versions and the `workbenchCompatibility` markers in the root `package.json` are compatibility contracts.
 * Browser partitions are `persist:` partitions derived by `partitionForBrowserProfile` in `desktop/policy.mjs`. Names must not change.
 * Protocol: `PROTOCOL_VERSION = 8`, message types are strings such as `agency.workspace.create`. They stay as they are.
 
@@ -84,7 +84,7 @@ These paths and names are read by live launchers, updaters, packaging or old ins
 | Contract | Reason |
 | --- | --- |
 | `packages/{shared,server,web,desktop}` locations | `scripts/workbench/*`, install, packaging |
-| `packages/server/src/index.ts`, `packages/server/src/workbench-host.ts` | `maw_valid_release` in `scripts/workbench/lib.sh`, `install.sh`, staging tests |
+| `packages/server/src/index.ts`, `packages/server/src/workbench-host.ts` | `wb_valid_release` in `scripts/workbench/lib.sh`, `install.sh`, staging tests |
 | `packages/server/src/pty-host/ptyd.mjs`, `terminal-state.mjs` | bundled as `dist/ptyd.mjs` and `dist/terminal-state.mjs`; release validators require them |
 | `packages/server/scripts/build-bundle.mjs` entry `src/index.ts` | production bundle |
 | `packages/desktop/main.mjs`, `preload.cjs`, `policy.mjs` | Electron entry and shell preload; `scripts/workbench/desktop-launch.mjs` launches `packages/desktop` as the app dir. The WebAuthn preload and dialog assets are loaded only by `main.mjs` and moved to `src/security/webauthn/` |
@@ -94,7 +94,7 @@ These paths and names are read by live launchers, updaters, packaging or old ins
 | `packages/desktop/tests/integration/desktop/production.test.mjs` and the web test files listed in `scripts/workbench/validate-release.mjs` | release validation |
 | pnpm script names in every `package.json` | CI, updater, runbooks |
 | Protocol message type strings, `PROTOCOL_VERSION`, `WS_PATH`, `TOKEN_QUERY_PARAM` | wire contract with the web client and the Android companion |
-| Persisted file names and schema versions, `mawCompatibility` | on-disk compatibility |
+| Persisted file names and schema versions, `workbenchCompatibility` | on-disk compatibility |
 | `WORKBENCH_*` environment variables, `CHANNEL` IPC name, `persist:` partition names, systemd unit names | runtime compatibility |
 | `window.workbench` bridge name in `preload.cjs` | preload to renderer contract; the TypeScript type is renamed, the exposed global is not |
 

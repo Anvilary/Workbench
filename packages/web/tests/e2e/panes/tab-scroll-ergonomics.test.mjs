@@ -96,12 +96,12 @@ test('natural horizontal scrolling: touchpad passthrough, mousewheel line scalin
     res.end(`<!doctype html><html><head><style>
       html,body,#root{height:100%;margin:0}
       .agency-workspace-view{display:flex;flex-direction:column;height:100%}
-      .maw-split-workspace-content{flex:1;display:flex;min-height:0}
-      .maw-split-container{display:flex;flex:1;min-width:0;min-height:0}
-      .maw-split-pane{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0}
-      .maw-pane-header{display:flex;align-items:center;height:40px;background:#181b24}
-      .maw-pane-tabs{display:flex;flex:1;min-width:0;overflow-x:auto;white-space:nowrap}
-      .maw-session-tab{display:inline-flex;min-width:120px;height:36px;padding:0 8px}
+      .wb-split-workspace-content{flex:1;display:flex;min-height:0}
+      .wb-split-container{display:flex;flex:1;min-width:0;min-height:0}
+      .wb-split-pane{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0}
+      .wb-pane-header{display:flex;align-items:center;height:40px;background:#181b24}
+      .wb-pane-tabs{display:flex;flex:1;min-width:0;overflow-x:auto;white-space:nowrap}
+      .wb-session-tab{display:inline-flex;min-width:120px;height:36px;padding:0 8px}
     </style></head><body><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>`);
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -112,11 +112,11 @@ test('natural horizontal scrolling: touchpad passthrough, mousewheel line scalin
   });
   const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
   await page.goto('http://127.0.0.1:' + server.address().port);
-  await page.waitForSelector('.maw-pane-tabs');
+  await page.waitForSelector('.wb-pane-tabs');
 
   // Verify tab strip overflows horizontally
   const overflow = await page.evaluate(() => {
-    const strip = document.querySelector('.maw-pane-tabs');
+    const strip = document.querySelector('.wb-pane-tabs');
     return {
       scrollWidth: strip.scrollWidth,
       clientWidth: strip.clientWidth,
@@ -129,7 +129,7 @@ test('natural horizontal scrolling: touchpad passthrough, mousewheel line scalin
 
   // 1. Touchpad horizontal gesture (deltaX > deltaY) must NOT be preventDefault'd
   const touchpadEvent = await page.evaluate(() => {
-    const strip = document.querySelector('.maw-pane-tabs');
+    const strip = document.querySelector('.wb-pane-tabs');
     const evt = new WheelEvent('wheel', { deltaX: 40, deltaY: 0, deltaMode: 0, cancelable: true, bubbles: true });
     strip.dispatchEvent(evt);
     return { defaultPrevented: evt.defaultPrevented };
@@ -138,7 +138,7 @@ test('natural horizontal scrolling: touchpad passthrough, mousewheel line scalin
 
   // 2. Left boundary bubbling: scrolling further left when at scrollLeft === 0 must NOT preventDefault
   const leftBoundaryEvent = await page.evaluate(() => {
-    const strip = document.querySelector('.maw-pane-tabs');
+    const strip = document.querySelector('.wb-pane-tabs');
     strip.scrollLeft = 0;
     const evt = new WheelEvent('wheel', { deltaX: 0, deltaY: -2, deltaMode: 1, cancelable: true, bubbles: true });
     strip.dispatchEvent(evt);
@@ -148,7 +148,7 @@ test('natural horizontal scrolling: touchpad passthrough, mousewheel line scalin
 
   // 3. Vertical mouse wheel in line mode (deltaMode 1) translates delta to horizontal scroll
   const scrollForward = await page.evaluate(() => {
-    const strip = document.querySelector('.maw-pane-tabs');
+    const strip = document.querySelector('.wb-pane-tabs');
     const before = strip.scrollLeft;
     const evt = new WheelEvent('wheel', { deltaX: 0, deltaY: 3, deltaMode: 1, cancelable: true, bubbles: true });
     strip.dispatchEvent(evt);
@@ -164,7 +164,7 @@ test('natural horizontal scrolling: touchpad passthrough, mousewheel line scalin
 
   // 4. Right boundary bubbling: scrolling further right when at end must NOT preventDefault
   const rightBoundaryEvent = await page.evaluate(() => {
-    const strip = document.querySelector('.maw-pane-tabs');
+    const strip = document.querySelector('.wb-pane-tabs');
     strip.scrollLeft = strip.scrollWidth - strip.clientWidth;
     const evt = new WheelEvent('wheel', { deltaX: 0, deltaY: 5, deltaMode: 1, cancelable: true, bubbles: true });
     strip.dispatchEvent(evt);
@@ -174,16 +174,16 @@ test('natural horizontal scrolling: touchpad passthrough, mousewheel line scalin
 
   // 5. Active tab visibility: selecting a tab scrolled out of view ensures it becomes visible
   await page.evaluate(() => {
-    const strip = document.querySelector('.maw-pane-tabs');
+    const strip = document.querySelector('.wb-pane-tabs');
     strip.scrollLeft = 0;
   });
   // Tab 15 is at the far right
-  const tab15 = page.locator('.maw-session-tab').filter({ hasText: 'Tab 15' });
+  const tab15 = page.locator('.wb-session-tab').filter({ hasText: 'Tab 15' });
   await tab15.click({ force: true });
   await page.waitForFunction(() => {
-    const strip = document.querySelector('.maw-pane-tabs');
+    const strip = document.querySelector('.wb-pane-tabs');
     return strip.scrollLeft > 200;
   });
-  const finalScrollLeft = await page.evaluate(() => document.querySelector('.maw-pane-tabs').scrollLeft);
+  const finalScrollLeft = await page.evaluate(() => document.querySelector('.wb-pane-tabs').scrollLeft);
   assert.ok(finalScrollLeft > 0, 'Selecting out-of-view tab must scroll it into view');
 });

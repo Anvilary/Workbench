@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AgencyCliProfile, MawActivityState, WorkspaceId, BrowserFavorite, SearchEngine } from '@agent-workbench/shared';
+import type { AgencyCliProfile, MawActivityState, WorkspaceId, BrowserFavorite, SearchEngine } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 import type { WorkspaceTab } from '../workspaces/workspace-model.js';
 import { PaneMenu } from './PaneMenu.js';
@@ -113,7 +113,7 @@ export function PaneHeader({
   const zoomTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const bridge = window.mawChatGpt;
+    const bridge = window.workbench;
     if (!bridge || !selectedTabId || !isWebTab) return;
     return bridge.subscribe((state) => {
       if (state.type === 'browser-zoom' && state.id === selectedTabId && typeof state.percentage === 'number') {
@@ -172,7 +172,7 @@ export function PaneHeader({
   useEffect(() => {
     if (dragPreview) return;
     const node = strip.current;
-    const selected = node?.querySelector<HTMLElement>('.maw-session-tab.active');
+    const selected = node?.querySelector<HTMLElement>('.wb-session-tab.active');
     if (!node || !selected) return;
     const left = selected.offsetLeft;
     const right = left + selected.offsetWidth;
@@ -220,17 +220,17 @@ export function PaneHeader({
   }
 
   function beginRename(tabId: string, element: HTMLElement | null) {
-    const host = element?.closest<HTMLElement>('.maw-session-tab');
+    const host = element?.closest<HTMLElement>('.wb-session-tab');
     setRenameWidth(host?.getBoundingClientRect().width ?? null);
     setRenamingTabId(tabId);
   }
 
   return (
     <div
-      className={`maw-pane-header${isFocused ? ' is-focused' : ''}${dragPreview?.overPaneId === paneId && dragPreview.sourcePaneId !== paneId ? ' is-tab-drop' : ''}`}
+      className={`wb-pane-header${isFocused ? ' is-focused' : ''}${dragPreview?.overPaneId === paneId && dragPreview.sourcePaneId !== paneId ? ' is-tab-drop' : ''}`}
     >
       <div
-        className={'maw-pane-tabs' + (dragState ? ' is-dragging' : '')}
+        className={'wb-pane-tabs' + (dragState ? ' is-dragging' : '')}
         ref={strip}
         role="tablist"
         aria-label={t('agency.tabs.tabList')}
@@ -260,12 +260,12 @@ export function PaneHeader({
           const isRenaming = renamingTabId === tab.id;
           const tabFavicon = favicons?.[tab.id];
           const tabClassName = [
-            'maw-session-tab',
+            'wb-session-tab',
             isSelected ? 'active' : '',
             isRenaming ? 'renaming' : '',
             isBeingDragged ? 'dragging' : '',
-            isTargetBefore ? 'maw-drop-target-before' : '',
-            isTargetAfter ? 'maw-drop-target-after' : '',
+            isTargetBefore ? 'wb-drop-target-before' : '',
+            isTargetAfter ? 'wb-drop-target-after' : '',
           ].filter(Boolean).join(' ');
 
           return (
@@ -276,8 +276,8 @@ export function PaneHeader({
               style={isRenaming && renameWidth ? { width: renameWidth, flexBasis: renameWidth } : shift ? { transform: `translateX(${shift}px)` } : undefined}
             >
               {isRenaming ? (
-                <div className="maw-tab-rename-row">
-                  <span className="maw-tab-icon" aria-hidden="true">
+                <div className="wb-tab-rename-row">
+                  <span className="wb-tab-icon" aria-hidden="true">
                     <PaneTabIcon tab={tab} favicon={tabFavicon} />
                   </span>
                   <TabNameInput
@@ -323,7 +323,7 @@ export function PaneHeader({
                     }
                   }}
                 >
-                  <span className="maw-tab-icon" aria-hidden="true">
+                  <span className="wb-tab-icon" aria-hidden="true">
                     <PaneTabIcon tab={tab} favicon={tabFavicon} />
                   </span>
                   <span
@@ -352,11 +352,11 @@ export function PaneHeader({
           );
         })}
       </div>
-        <div className="agency-dropdown maw-add-tab" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+        <div className="agency-dropdown wb-add-tab" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
             ref={addButton}
-            className="maw-pane-add-tab"
+            className="wb-pane-add-tab"
             aria-label={t('agency.tabs.add')}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
@@ -390,7 +390,7 @@ export function PaneHeader({
               <button
                 type="button"
                 role="menuitem"
-                className="maw-menu-item-disabled"
+                className="wb-menu-item-disabled"
                 disabled
                 aria-disabled="true"
                 title={t('agency.tabs.comingSoon')}
@@ -402,15 +402,15 @@ export function PaneHeader({
         </div>
 
         {isWebTab && zoomPercentage !== null && (
-          <div className="maw-zoom-indicator" role="status" aria-live="polite">
+          <div className="wb-zoom-indicator" role="status" aria-live="polite">
             {zoomPercentage}%
           </div>
         )}
 
-      <div className="maw-pane-actions">
+      <div className="wb-pane-actions">
         <button
           type="button"
-          className={`maw-pane-action-button maw-pane-expand-button${isMaximized ? ' active' : ''}`}
+          className={`wb-pane-action-button wb-pane-expand-button${isMaximized ? ' active' : ''}`}
           data-pane-expand
           title={isMaximized ? t('agency.splits.collapsePane') : t('agency.splits.expandPane')}
           aria-label={isMaximized ? t('agency.splits.collapsePane') : t('agency.splits.expandPane')}
@@ -438,7 +438,7 @@ export function PaneHeader({
         {isWebTab && (
           <button
             type="button"
-            className={`maw-pane-action-button maw-browser-toolbar-toggle ${browserToolbarOpen ? 'active' : ''}`}
+            className={`wb-pane-action-button wb-browser-toolbar-toggle ${browserToolbarOpen ? 'active' : ''}`}
             title={browserToolbarOpen ? t('agency.browser.hideToolbar') : t('agency.browser.showToolbar')}
             aria-label={browserToolbarOpen ? t('agency.browser.hideToolbar') : t('agency.browser.showToolbar')}
             aria-expanded={browserToolbarOpen}
@@ -455,7 +455,7 @@ export function PaneHeader({
         <button
           ref={paneActionBtn}
           type="button"
-          className="maw-pane-action-button maw-pane-menu-toggle"
+          className="wb-pane-action-button wb-pane-menu-toggle"
           title={t('agency.splits.paneActions')}
           aria-label={t('agency.splits.paneActions')}
           aria-haspopup="menu"
@@ -529,7 +529,7 @@ export function PaneHeader({
         )}
         <button
           type="button"
-          className="maw-pane-action-button maw-pane-close-button"
+          className="wb-pane-action-button wb-pane-close-button"
           data-pane-close
           title={t('agency.splits.closePane')}
           aria-label={t('agency.splits.closePane')}

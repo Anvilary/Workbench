@@ -6,7 +6,7 @@
  * usa a su manera. Puro: lo prueba `check-prompt-editing.mjs`.
  */
 
-import type { ConversationEvent } from '@agent-workbench/shared';
+import type { ConversationEvent } from '@anvilary/workbench-shared';
 
 export interface RewindTarget {
   /** El texto del mensaje, para el cuadro. */

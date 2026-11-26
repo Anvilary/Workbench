@@ -36,7 +36,7 @@ window.clipboardCalls = [];
 window.sent = [];
 
 // Mock desktop bridge
-window.mawChatGpt = {
+window.workbench = {
   command: async (cmd) => {
     window.clipboardCalls.push(cmd);
     if (cmd.type === 'write-clipboard-text') {
@@ -136,19 +136,19 @@ test('terminal selection and clipboard acceptance: selection, copy all, copy las
     res.end(`<!doctype html><html><head><style>
       html,body,#root{height:100%;margin:0}
       .agency-workspace-view{display:flex;flex-direction:column;height:100%}
-      .maw-split-workspace-content{flex:1;display:flex;min-height:0}
-      .maw-split-container{display:flex;flex:1;min-width:0;min-height:0}
-      .maw-split-pane{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0}
-      .maw-pane-body{flex:1;display:flex;min-height:0;min-width:0;position:relative}
-      .maw-session-holder{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
-      .maw-session-holder[hidden],.maw-session-pane[hidden],.maw-terminal-park{display:none !important}
-      .maw-session-pane{display:flex;flex:1;flex-direction:column;min-height:0;position:relative}
+      .wb-split-workspace-content{flex:1;display:flex;min-height:0}
+      .wb-split-container{display:flex;flex:1;min-width:0;min-height:0}
+      .wb-split-pane{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0}
+      .wb-pane-body{flex:1;display:flex;min-height:0;min-width:0;position:relative}
+      .wb-session-holder{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
+      .wb-session-holder[hidden],.wb-session-pane[hidden],.wb-terminal-park{display:none !important}
+      .wb-session-pane{display:flex;flex:1;flex-direction:column;min-height:0;position:relative}
       .agency-agent-body{flex:1;position:relative;min-height:0}
       .agency-xterm-host,.terminal-surface{position:absolute;inset:0}
-      .maw-context-menu{position:fixed;z-index:9999;background:#1e1e1e;border:1px solid #444;padding:4px}
-      .maw-context-menu button{display:block;width:100%;text-align:left;background:none;border:none;color:white;padding:4px 8px;cursor:pointer}
-      .maw-context-menu button:disabled{color:#666;cursor:default}
-      .maw-pane-feedback{position:absolute;bottom:20px;right:20px;background:#333;color:white;padding:6px 12px;border-radius:4px;z-index:1000}
+      .wb-context-menu{position:fixed;z-index:9999;background:#1e1e1e;border:1px solid #444;padding:4px}
+      .wb-context-menu button{display:block;width:100%;text-align:left;background:none;border:none;color:white;padding:4px 8px;cursor:pointer}
+      .wb-context-menu button:disabled{color:#666;cursor:default}
+      .wb-pane-feedback{position:absolute;bottom:20px;right:20px;background:#333;color:white;padding:6px 12px;border-radius:4px;z-index:1000}
     </style></head><body><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>`);
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -176,8 +176,8 @@ test('terminal selection and clipboard acceptance: selection, copy all, copy las
   });
 
   // Open context menu via right-click
-  await page.locator('.maw-session-pane:not([hidden])').click({ button: 'right', position: { x: 200, y: 200 } });
-  await page.waitForSelector('.maw-context-menu');
+  await page.locator('.wb-session-pane:not([hidden])').click({ button: 'right', position: { x: 200, y: 200 } });
+  await page.waitForSelector('.wb-context-menu');
 
   // Verify 'Copy selection' button is enabled
   const copySelBtn = page.getByRole('menuitem', { name: 'Copy selection' });
@@ -192,12 +192,12 @@ test('terminal selection and clipboard acceptance: selection, copy all, copy las
   assert.ok(clipStore1.includes('On branch fix/maw-terminal-clipboard'), 'Clipboard bridge received selected text');
 
   // Verify success feedback toast is shown in active pane
-  const feedbackToast = await page.locator('.maw-session-pane:not([hidden]) .maw-pane-feedback').textContent();
+  const feedbackToast = await page.locator('.wb-session-pane:not([hidden]) .wb-pane-feedback').textContent();
   assert.equal(feedbackToast, 'Copied', 'Success toast displays "Copied"');
 
   // 3. Test Select All via context menu
-  await page.locator('.maw-session-pane:not([hidden])').click({ button: 'right', position: { x: 200, y: 200 } });
-  await page.waitForSelector('.maw-context-menu');
+  await page.locator('.wb-session-pane:not([hidden])').click({ button: 'right', position: { x: 200, y: 200 } });
+  await page.waitForSelector('.wb-context-menu');
   await page.getByRole('menuitem', { name: 'Select all' }).click();
 
   const selAllText = await page.evaluate(() => window.terminals[0].getSelection());
@@ -205,16 +205,16 @@ test('terminal selection and clipboard acceptance: selection, copy all, copy las
   assert.ok(selAllText.includes('nothing to commit'), 'Select all includes entire output');
 
   // 4. Test Copy All via context menu
-  await page.locator('.maw-session-pane:not([hidden])').click({ button: 'right', position: { x: 200, y: 200 } });
-  await page.waitForSelector('.maw-context-menu');
+  await page.locator('.wb-session-pane:not([hidden])').click({ button: 'right', position: { x: 200, y: 200 } });
+  await page.waitForSelector('.wb-context-menu');
   await page.getByRole('menuitem', { name: 'Copy all' }).click();
 
   const clipStore2 = await page.evaluate(() => window.clipboardStore);
   assert.ok(clipStore2.includes('On branch fix/maw-terminal-clipboard'), 'Copy all wrote full buffer to clipboard');
 
   // 5. Test Copy Last Output via context menu
-  await page.locator('.maw-session-pane:not([hidden])').click({ button: 'right', position: { x: 200, y: 200 } });
-  await page.waitForSelector('.maw-context-menu');
+  await page.locator('.wb-session-pane:not([hidden])').click({ button: 'right', position: { x: 200, y: 200 } });
+  await page.waitForSelector('.wb-context-menu');
   await page.getByRole('menuitem', { name: 'Copy last output' }).click();
 
   const clipStore3 = await page.evaluate(() => window.clipboardStore);
@@ -238,14 +238,14 @@ test('terminal selection and clipboard acceptance: selection, copy all, copy las
   await page.waitForTimeout(100);
 
   // Trigger Copy All on Codex alternate screen
-  await page.locator('.maw-session-pane:not([hidden])').click({ button: 'right', position: { x: 200, y: 200 } });
-  await page.waitForSelector('.maw-context-menu');
+  await page.locator('.wb-session-pane:not([hidden])').click({ button: 'right', position: { x: 200, y: 200 } });
+  await page.waitForSelector('.wb-context-menu');
   await page.getByRole('menuitem', { name: 'Copy all' }).click();
 
   const altClip = await page.evaluate(() => window.clipboardStore);
   assert.ok(altClip.includes('Codex CLI v0.8.1'), 'Copy all in alternate screen copied the active TUI content');
 
-  const altToast = await page.locator('.maw-session-pane:not([hidden]) .maw-pane-feedback').textContent();
+  const altToast = await page.locator('.wb-session-pane:not([hidden]) .wb-pane-feedback').textContent();
   assert.equal(altToast, 'Available buffer copied', 'Alternate screen copy displays accurate limitation toast: "Available buffer copied"');
 
   // 7. Test Keyboard Shortcut Ctrl+Shift+V (Terminal Paste)
@@ -348,8 +348,8 @@ test('terminal selection and clipboard acceptance: selection, copy all, copy las
   });
   await page.waitForTimeout(50);
 
-  await page.locator('.maw-session-pane:not([hidden])').click({ button: 'right', position: { x: 250, y: 250 } });
-  await page.waitForSelector('.maw-context-menu');
+  await page.locator('.wb-session-pane:not([hidden])').click({ button: 'right', position: { x: 250, y: 250 } });
+  await page.waitForSelector('.wb-context-menu');
   await page.getByRole('menuitem', { name: 'Copy selection' }).click();
   await page.waitForTimeout(50);
 

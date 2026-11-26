@@ -217,7 +217,7 @@ Com o backup ativado:
 <img src="assets/captura-buscador.png" width="40%" alt="Busca nas conversas: uma ocorrência em uma sessão de cada CLI, com o trecho dela">
 
 Por padrão, ele fica na pasta de configuração do app
-(`%APPDATA%\agent-workbench\vault` no Windows). **Alterar pasta…** o copia para
+(`%APPDATA%\workbench\vault` no Windows). **Alterar pasta…** o copia para
 outra — uma pasta sincronizada, outro disco — sem sobrescrever nada, e deixa a
 antiga como estava. Se você colocá-lo em uma pasta sincronizada ou em um
 repositório, as suas conversas vão junto.

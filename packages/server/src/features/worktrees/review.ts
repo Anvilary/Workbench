@@ -12,7 +12,7 @@
  * app no adivina qué quiso decir.
  */
 
-import type { ConversationEvent, WorktreeVerdict } from '@agent-workbench/shared';
+import type { ConversationEvent, WorktreeVerdict } from '@anvilary/workbench-shared';
 
 export const VERDICT_READY = 'Verdict: ready to integrate';
 export const VERDICT_CHANGES = 'Verdict: needs changes';

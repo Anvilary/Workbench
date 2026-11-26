@@ -25,7 +25,7 @@ export function PanelsSettingsSection({
   onCancelHideConsole,
 }: PanelsSettingsSectionProps): JSX.Element {
   return (
-    <div className="maw-settings-groups">
+    <div className="wb-settings-groups">
       <CollapsibleSubsection
         id="setting-card-panels"
         title={t('settings.section.panels')}
@@ -33,22 +33,22 @@ export function PanelsSettingsSection({
         forceExpanded={highlightedCardId === 'setting-card-panels'}
         expandSignal={expandSignal}
       >
-        <div className="maw-settings-panels-grid">
+        <div className="wb-settings-panels-grid">
           {HIDEABLE_PANELS.map((panel) => (
-            <label key={panel} className="maw-settings-choice">
+            <label key={panel} className="wb-settings-choice">
               <input
                 type="checkbox"
                 checked={panels.isVisible(panel)}
                 onChange={(event) => onTogglePanel(panel, event.target.checked)}
               />
-              <span className="maw-settings-choice-label">{t(PANEL_NAMES[panel])}</span>
+              <span className="wb-settings-choice-label">{t(PANEL_NAMES[panel])}</span>
             </label>
           ))}
         </div>
         {confirmingConsole && (
-          <div className="maw-settings-confirm" role="alert">
+          <div className="wb-settings-confirm" role="alert">
             <span>{t('settings.panels.consoleConfirm', { count: consoleCount })}</span>
-            <div className="maw-settings-confirm-actions">
+            <div className="wb-settings-confirm-actions">
               <button
                 type="button"
                 className="link-button"

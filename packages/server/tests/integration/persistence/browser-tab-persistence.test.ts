@@ -3,7 +3,7 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import type { WebTab, WorkspaceId } from '@agent-workbench/shared';
+import type { WebTab, WorkspaceId } from '@anvilary/workbench-shared';
 import {
   BrowserTabStore,
   parseBrowserTabSnapshot,

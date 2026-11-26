@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { TerminalActivity, TerminalId } from '@agent-workbench/shared';
+import type { TerminalActivity, TerminalId } from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 import {
   applySubmitAck,

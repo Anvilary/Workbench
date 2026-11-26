@@ -26,11 +26,11 @@ test('modern browser capabilities: video playback, MSE, canvas, WebGL, fullscree
   const server = createServer((_req, res) => res.end(`<!doctype html><script>
 window.events = [];
 window.tabId = '${tabId}';
-window.mawChatGpt.subscribe(s => {
+window.workbench.subscribe(s => {
   window.events.push(s);
   if (s.type === 'layout-needed' && window.tabId) {
     const v = { width: 1280, height: 860 };
-    window.mawChatGpt.command({
+    window.workbench.command({
       type: 'layout',
       views: [{ id: window.tabId, bounds: { x: 0, y: 0, width: 1280, height: 860 } }],
       viewport: v
@@ -44,15 +44,15 @@ window.mawChatGpt.subscribe(s => {
   let app;
   const launch = () => electron.launch({
     chromiumSandbox: true,
-    executablePath: '/opt/maw-electron/45.2.0/electron',
+    executablePath: '/opt/workbench-electron/45.2.0/electron',
     args: [desktopDir, '--ozone-platform=x11'],
     env: {
       ...process.env,
       HOME: data,
-      MAW_DESKTOP_DATA_DIR: data,
-      MAW_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
-      MAW_MAX_RESIDENT_VIEWS: '4',
-      MAW_MEMORY_PRESSURE_TIER: 'normal',
+      WORKBENCH_DESKTOP_DATA_DIR: data,
+      WORKBENCH_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
+      WORKBENCH_MAX_RESIDENT_VIEWS: '4',
+      WORKBENCH_MEMORY_PRESSURE_TIER: 'normal',
     },
   });
 
@@ -71,7 +71,7 @@ window.mawChatGpt.subscribe(s => {
 
     // Register protocol interceptor for the general browser partition
     await app.evaluate(({ session, net }, { mp4Url, webmUrl }) => {
-      const browserSess = session.fromPartition('persist:maw-browser');
+      const browserSess = session.fromPartition('persist:workbench-browser');
 
       browserSess.protocol.handle('https', async (request) => {
         const url = new URL(request.url);
@@ -135,7 +135,7 @@ window.mawChatGpt.subscribe(s => {
       });
     }, { mp4Url: fixtureMp4Url, webmUrl: fixtureWebmUrl });
 
-    const command = payload => page.evaluate(cmd => window.mawChatGpt.command(cmd), payload);
+    const command = payload => page.evaluate(cmd => window.workbench.command(cmd), payload);
 
     // Open capabilities test page
     await command({ type: 'open', id: tabId, provider: 'other', url: 'https://capabilities.maw-audit.com/media-test' });
@@ -148,7 +148,7 @@ window.mawChatGpt.subscribe(s => {
     // Layout the view so it is attached to the window, made visible, and given bounds matching viewport
     await page.evaluate(async ({ id, w, h }) => {
       const v = { width: w, height: h };
-      await window.mawChatGpt.command({
+      await window.workbench.command({
         type: 'layout',
         views: [{ id, bounds: { x: 0, y: 0, width: w, height: h } }],
         viewport: v,
@@ -159,7 +159,7 @@ window.mawChatGpt.subscribe(s => {
     await eventually(async () => {
       return app.evaluate(({ webContents, session }) => {
         const contents = webContents.getAllWebContents().find(c =>
-          c.session === session.fromPartition('persist:maw-browser') &&
+          c.session === session.fromPartition('persist:workbench-browser') &&
           c.getURL().includes('/media-test')
         );
         return contents && !contents.isLoading();
@@ -169,7 +169,7 @@ window.mawChatGpt.subscribe(s => {
     // 1. Verify Video Playback and MediaSource Extensions
     const mediaResults = await app.evaluate(async ({ webContents, session }) => {
       const contents = webContents.getAllWebContents().find(c =>
-        c.session === session.fromPartition('persist:maw-browser') &&
+        c.session === session.fromPartition('persist:workbench-browser') &&
         c.getURL().includes('/media-test')
       );
       return contents.executeJavaScript(`(async () => {
@@ -220,7 +220,7 @@ window.mawChatGpt.subscribe(s => {
     // 2. Verify Canvas 2D, WebGL 1, WebGL 2, and OffscreenCanvas contexts
     const canvasResults = await app.evaluate(async ({ webContents, session }) => {
       const contents = webContents.getAllWebContents().find(c =>
-        c.session === session.fromPartition('persist:maw-browser') &&
+        c.session === session.fromPartition('persist:workbench-browser') &&
         c.getURL().includes('/media-test')
       );
       return contents.executeJavaScript(`(() => {
@@ -283,7 +283,7 @@ window.mawChatGpt.subscribe(s => {
     // 2b. Verify Web Audio API, SVG animation, and CSS animation
     const richMediaResults = await app.evaluate(async ({ webContents, session }) => {
       const contents = webContents.getAllWebContents().find(c =>
-        c.session === session.fromPartition('persist:maw-browser') &&
+        c.session === session.fromPartition('persist:workbench-browser') &&
         c.getURL().includes('/media-test')
       );
       return contents.executeJavaScript(`(() => {
@@ -319,7 +319,7 @@ window.mawChatGpt.subscribe(s => {
     // 3. Verify Fullscreen permission and execution
     const fullscreenResults = await app.evaluate(async ({ webContents, session }) => {
       const contents = webContents.getAllWebContents().find(c =>
-        c.session === session.fromPartition('persist:maw-browser') &&
+        c.session === session.fromPartition('persist:workbench-browser') &&
         c.getURL().includes('/media-test')
       );
       return contents.executeJavaScript(`(async () => {
@@ -352,7 +352,7 @@ window.mawChatGpt.subscribe(s => {
       const win = BrowserWindow.getAllWindows().find(w => w.getTitle().includes('Workbench'));
       const childrenCount = win ? win.contentView.children.length : -1;
       const contents = webContents.getAllWebContents().find(c =>
-        c.session === session.fromPartition('persist:maw-browser') &&
+        c.session === session.fromPartition('persist:workbench-browser') &&
         c.getURL().includes('/media-test')
       );
       const isVisible = contents ? !!contents.getOwnerBrowserWindow() : false;
@@ -387,7 +387,7 @@ window.mawChatGpt.subscribe(s => {
     await page.waitForTimeout(500);
     const subframeResults = await app.evaluate(async ({ webContents, session }) => {
       const contents = webContents.getAllWebContents().find(c =>
-        c.session === session.fromPartition('persist:maw-browser') &&
+        c.session === session.fromPartition('persist:workbench-browser') &&
         c.getURL().includes('/media-test')
       );
       return contents.executeJavaScript(`(() => {
@@ -407,7 +407,7 @@ window.mawChatGpt.subscribe(s => {
     // 6. Verify long signed URL allowance in onBeforeRequest (up to 8192 chars)
     const longUrlResults = await app.evaluate(async ({ webContents, session }) => {
       const contents = webContents.getAllWebContents().find(c =>
-        c.session === session.fromPartition('persist:maw-browser') &&
+        c.session === session.fromPartition('persist:workbench-browser') &&
         c.getURL().includes('/media-test')
       );
       return contents.executeJavaScript(`(async () => {
@@ -429,7 +429,7 @@ window.mawChatGpt.subscribe(s => {
     // 7. Verify sanitized clipboard write permission
     const clipboardResults = await app.evaluate(async ({ webContents, session }) => {
       const contents = webContents.getAllWebContents().find(c =>
-        c.session === session.fromPartition('persist:maw-browser') &&
+        c.session === session.fromPartition('persist:workbench-browser') &&
         c.getURL().includes('/media-test')
       );
       return contents.executeJavaScript(`(async () => {
@@ -443,7 +443,7 @@ window.mawChatGpt.subscribe(s => {
     // 8. Verify speaker-selection and pointer-lock permissions
     const permResults = await app.evaluate(async ({ webContents, session }) => {
       const contents = webContents.getAllWebContents().find(c =>
-        c.session === session.fromPartition('persist:maw-browser') &&
+        c.session === session.fromPartition('persist:workbench-browser') &&
         c.getURL().includes('/media-test')
       );
       return contents.executeJavaScript(`(async () => {

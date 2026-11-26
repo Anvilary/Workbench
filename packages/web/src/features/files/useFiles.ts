@@ -16,7 +16,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { DirectoryListing, FileSearchResult, TerminalId } from '@agent-workbench/shared';
+import type { DirectoryListing, FileSearchResult, TerminalId } from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 import { readStored, writeStored } from '../../shared/lib/window-prefs.js';
 
@@ -29,7 +29,7 @@ import { readStored, writeStored } from '../../shared/lib/window-prefs.js';
  */
 const SEARCH_DEBOUNCE_MS = 200;
 
-const HIDDEN_KEY = 'agent-workbench.files.hidden';
+const HIDDEN_KEY = 'workbench.files.hidden';
 
 export interface FilesView {
   /** Nivel cargado, por ruta relativa. La raiz es ''. */

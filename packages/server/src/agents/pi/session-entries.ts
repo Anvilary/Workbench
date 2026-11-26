@@ -25,7 +25,7 @@ import {
   asRecord,
   type ConversationPart,
   type ConversationToolResultPart,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { pastedImageMediaType } from '../../features/composer/paste-paths.js';
 import { cut, type EventLimits } from '../transport-limits.js';
 

@@ -18,7 +18,7 @@
  * pedir una revision y los pedidos que quedan en el cuadro de su agente.
  */
 
-import type { AgentId, GitFileChange, GitStatus, TerminalId, WorktreeKeptBranch, WorktreeRow } from '@agent-workbench/shared';
+import type { AgentId, GitFileChange, GitStatus, TerminalId, WorktreeKeptBranch, WorktreeRow } from '@anvilary/workbench-shared';
 import { BranchIcon } from '../../shared/ui/BranchIcon.js';
 import { DiffView } from './DiffView.js';
 import { KIND_BADGE, KIND_TITLE, splitPath } from './git-kinds.js';

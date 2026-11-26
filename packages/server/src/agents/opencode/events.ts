@@ -35,7 +35,7 @@ import {
   type ConversationPart,
   type ConversationQuestionItem,
   type MessageUsage,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { cut, TRANSPORT_LIMITS, type EventLimits } from '../transport-limits.js';
 import type { MessageRow, PartRow } from './sql.js';
 

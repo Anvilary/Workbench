@@ -43,7 +43,7 @@ process.env['XDG_CACHE_HOME'] = path.join(root, 'xdg-cache');
 process.env['XDG_STATE_HOME'] = path.join(root, 'xdg-state');
 process.env['CODEX_HOME'] = path.join(root, 'codex');
 
-const shared = await import('@agent-workbench/shared');
+const shared = await import('@anvilary/workbench-shared');
 const { setLocale } = await import('../../web/src/i18n/index.ts');
 const planLimitsModule = await import('../src/agents/plan-limits.ts');
 const { PlanLimitsBook, PlanLimitsRecordDir, planWindowsOfRecord, removeStalePlanRecords, PLAN_LIMITS_RECORD_MAX_BYTES } = planLimitsModule;
@@ -425,7 +425,7 @@ const limits = (fiveHour, sevenDay) => ({
   check('4.7 no quedan temporales del rename', !(await readdir(records)).some((name) => name.endsWith('.tmp')));
 
   // El comando del fragmento.
-  const winScript = 'C:\\Users\\Jane Doe\\AppData\\Roaming\\agent-workbench\\integrations\\claude-code-statusline.mjs';
+  const winScript = 'C:\\Users\\Jane Doe\\AppData\\Roaming\\workbench\\integrations\\claude-code-statusline.mjs';
   check('4.8 Windows: barras normales y entre comillas, aunque haya espacios',
     claudeStatusLineCommand(winScript, 'win32') === 'node "C:/Users/Jane Doe/AppData/Roaming/agent-workbench/integrations/claude-code-statusline.mjs"');
   for (const bad of ['$', '`', '"']) {

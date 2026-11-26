@@ -11,9 +11,9 @@ import type {
   RuntimeSessionId,
   SessionActivity,
   WorkspaceId,
-} from '@agent-workbench/shared';
-import { CLI_PROVIDERS, validateWebTabTitle } from '@agent-workbench/shared';
-import type { AgentId, TerminalActivity, TerminalId } from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
+import { CLI_PROVIDERS, validateWebTabTitle } from '@anvilary/workbench-shared';
+import type { AgentId, TerminalActivity, TerminalId } from '@anvilary/workbench-shared';
 import type { OpenTerminalOptions, TerminalRegistry } from '../terminals/terminal-registry.js';
 import { TerminalOpenError } from '../terminals/terminal-open-error.js';
 import { MAX_SESSIONS } from '../../pty-host/pty-host-types.js';

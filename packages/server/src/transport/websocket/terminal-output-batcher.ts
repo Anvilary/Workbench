@@ -14,7 +14,7 @@
  * - Escape sequences spanning chunk boundaries are preserved or repaired upon concatenation.
  */
 
-import type { TerminalId } from '@agent-workbench/shared';
+import type { TerminalId } from '@anvilary/workbench-shared';
 
 export interface OutputBatcherOptions {
   /** Maximum delay before flushing buffered chunks in milliseconds. Default: 2 ms. */

@@ -1,8 +1,8 @@
 /**
- * MAW Lane C - Server-Side Durable Notification Store.
+ * Workbench Lane C - Server-Side Durable Notification Store.
  *
  * Requirements:
- *   - Preserves notifications across MAW browser refresh and server restart.
+ *   - Preserves notifications across Workbench browser refresh and server restart.
  *   - Atomic write and .bak backup resilience (matching AgencySessionStore).
  *   - In-memory fast access with serialized disk persistence queue.
  *   - Deduplication of repeated completion events via deduplicationKey.
@@ -20,8 +20,8 @@ import type {
   ProjectId,
   RuntimeSessionId,
   WorkspaceId,
-} from '@agent-workbench/shared';
-import { isMawNotificationItem } from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
+import { isMawNotificationItem } from '@anvilary/workbench-shared';
 import { writeAtomically } from '../../shared/persistence/atomic-write.js';
 import { appConfigDir } from '../../shared/app-paths.js';
 

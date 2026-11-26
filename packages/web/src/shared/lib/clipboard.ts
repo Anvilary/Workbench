@@ -1,8 +1,8 @@
 /**
- * Unified clipboard bridge for MAW.
+ * Unified clipboard bridge for Workbench.
  *
  * In local Electron desktop runtime, delegates text operations to Electron's
- * native clipboard via `mawChatGpt.command`, bypassing Chromium document focus
+ * native clipboard via `workbench.command`, bypassing Chromium document focus
  * restrictions and sandbox permission hurdles.
  *
  * In browser-only or remote client environments, transparently falls back to
@@ -16,10 +16,10 @@ export async function writeClipboard(text: string, isRemoteClient = false): Prom
   if (
     !isRemoteClient &&
     typeof window !== 'undefined' &&
-    window.mawChatGpt?.command
+    window.workbench?.command
   ) {
     try {
-      const res = (await window.mawChatGpt.command({
+      const res = (await window.workbench.command({
         type: 'write-clipboard-text',
         text,
       })) as { ok?: boolean; error?: string } | undefined;
@@ -49,10 +49,10 @@ export async function readClipboard(isRemoteClient = false): Promise<string | nu
   if (
     !isRemoteClient &&
     typeof window !== 'undefined' &&
-    window.mawChatGpt?.command
+    window.workbench?.command
   ) {
     try {
-      const res = (await window.mawChatGpt.command({
+      const res = (await window.workbench.command({
         type: 'read-clipboard-text',
       })) as { ok?: boolean; text?: string; error?: string } | undefined;
       if (res && res.ok && typeof res.text === 'string') {

@@ -1,3 +1,4 @@
+import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
 /**
  * IPC handlers of the WebAuthn bridge.
  *
@@ -13,17 +14,17 @@ import { performWebAuthnAssertion, resolveWebAuthnPaneBounds } from './webauthn/
 export function registerWebAuthnIpc({ ipcMain, BrowserWindow, win, sessionProviderOf, attachedViews }) {
   let activeWebAuthnAbort = null;
   let assertionInProgress = false;
-  const extraOrigins = (process.env.MAW_WEBAUTHN_EXTRA_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const extraOrigins = (workbenchEnv('WEBAUTHN_EXTRA_ORIGINS') || '').split(',').map(s => s.trim()).filter(Boolean);
   const allowedFrame = ({ sender, senderFrame }) => sender && !sender.isDestroyed() &&
     senderFrame && senderFrame === sender.mainFrame &&
     sessionProviderOf(sender.session) === 'chatgpt' &&
     isAllowedWebAuthnOrigin(senderFrame.origin, extraOrigins);
 
-  ipcMain.handle('maw:webauthn:is-available', async (event) => {
+  ipcMain.handle('workbench:webauthn:is-available', async (event) => {
     return { available: allowedFrame(event) && await isFido2ToolsAvailable() };
   });
 
-  ipcMain.handle('maw:webauthn:get', async (event, options) => {
+  ipcMain.handle('workbench:webauthn:get', async (event, options) => {
     const senderWebContents = event.sender;
     if (!allowedFrame(event)) {
       return { success: false, error: { name: 'SecurityError', message: 'WebAuthn is only permitted within the ChatGPT session' } };

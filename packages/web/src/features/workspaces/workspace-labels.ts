@@ -1,4 +1,4 @@
-import type { AgencyRuntimeSession, MawActivityState, SessionActivity, SessionLifecycle } from '@agent-workbench/shared';
+import type { AgencyRuntimeSession, MawActivityState, SessionActivity, SessionLifecycle } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 
 /** Workbench keeps transport lifecycle enums independent of translated UI copy. */
@@ -27,7 +27,7 @@ export function agencySessionText(session: AgencyRuntimeSession): string {
   return agencyActivityText(session.activity, session.lifecycle);
 }
 
-export function agencyErrorText(code: import('@agent-workbench/shared').AgencyErrorCode): string {
+export function agencyErrorText(code: import('@anvilary/workbench-shared').AgencyErrorCode): string {
   switch (code) {
     case 'invalid-request': return t('agency.errors.invalidRequest');
     case 'not-found': return t('agency.errors.notFound');

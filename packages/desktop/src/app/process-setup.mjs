@@ -1,3 +1,4 @@
+import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
 /**
  * Process level setup that must run before the app is ready: data directory,
  * application name, sandboxing, GPU switches, graphics policy and the single
@@ -19,11 +20,11 @@ function readAccelerationPreference(userDataDir, logger) {
 }
 
 export function configureProcess({ app, logger }) {
-// Deliberately distinct from both production MAW and any Brave/Neko profile.
-app.setPath('userData', path.resolve(process.env.MAW_DESKTOP_DATA_DIR || path.join(app.getPath('appData'), 'maw-desktop-prototype')));
-app.setName(process.env.MAW_DESKTOP_PRODUCTION === '1' ? 'Anvilary Workbench' : 'Anvilary Workbench Prototype');
-if (process.platform === 'linux') app.setDesktopName('maw.desktop');
-if (app.commandLine.hasSwitch('no-sandbox')) throw new Error('MAW desktop requires Chromium sandboxing');
+// Deliberately distinct from both production Workbench and any Brave/Neko profile.
+app.setPath('userData', path.resolve(workbenchEnv('DESKTOP_DATA_DIR') || path.join(app.getPath('appData'), 'workbench-desktop-dev')));
+app.setName(workbenchEnv('DESKTOP_PRODUCTION') === '1' ? 'Anvilary Workbench' : 'Anvilary Workbench Prototype');
+if (process.platform === 'linux') app.setDesktopName('workbench.desktop');
+if (app.commandLine.hasSwitch('no-sandbox')) throw new Error('Workbench desktop requires Chromium sandboxing');
 app.enableSandbox();
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-webgl');
@@ -35,9 +36,10 @@ const userDataDir = app.getPath('userData');
 const graphicsPolicy = applyGraphicsPolicy(resolveGraphicsPolicy({ hardwareAccelerationPreference: readAccelerationPreference(userDataDir, logger) }), { app });
 const softwareVideoDecode = shouldDisableHardwareVideoDecode({ policy: graphicsPolicy, env: process.env });
 if (softwareVideoDecode) app.commandLine.appendSwitch('disable-accelerated-video-decode');
-console.error(`[maw-desktop] graphics mode=${graphicsPolicy.mode} (${graphicsPolicy.reason}); hardware acceleration=${graphicsPolicy.hardwareAcceleration.effective ? 'on' : 'off'} (source ${graphicsPolicy.hardwareAcceleration.source}); video decode=${softwareVideoDecode ? 'software' : 'hardware'}`);
+console.error(`[workbench-desktop] graphics mode=${graphicsPolicy.mode} (${graphicsPolicy.reason}); hardware acceleration=${graphicsPolicy.hardwareAcceleration.effective ? 'on' : 'off'} (source ${graphicsPolicy.hardwareAcceleration.source}); video decode=${softwareVideoDecode ? 'software' : 'hardware'}`);
 const hardwareAcceleration = createHardwareAccelerationSettings({ app, userDataDir, startup: graphicsPolicy.hardwareAcceleration, logger });
-let local = serviceUrl(process.env.MAW_DESKTOP_URL || '');
+let local = serviceUrl(workbenchEnv('DESKTOP_URL') || '');
+delete process.env.WORKBENCH_DESKTOP_URL;
 delete process.env.MAW_DESKTOP_URL;
 if (!app.requestSingleInstanceLock({ serviceUrl: local.href })) app.exit(0);
 

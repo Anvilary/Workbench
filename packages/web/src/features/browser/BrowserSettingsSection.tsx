@@ -16,7 +16,7 @@ import {
   type BrowserProfile,
   type BrowserProfileId,
   type BrowserProfileSite,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { t, type MessageKey } from '../../i18n/index.js';
 import type { UseBrowserSettingsResult } from './useBrowserSettings.js';
 import { CollapsibleSubsection } from '../settings/CollapsibleSubsection.js';
@@ -84,7 +84,7 @@ function FavoriteRowItem({
   return (
     <li
       ref={rowRef}
-      className={`maw-settings-favorite-row${drop.isDropTarget ? ' is-drop-target' : ''}${
+      className={`wb-settings-favorite-row${drop.isDropTarget ? ' is-drop-target' : ''}${
         drag.isDragging ? ' is-dragging' : ''
       }`}
       data-id={fav.id}
@@ -92,7 +92,7 @@ function FavoriteRowItem({
       <button
         ref={gripRef}
         type="button"
-        className={`icon-button maw-fav-grip${drag.isDragging ? ' is-dragging' : ''}`}
+        className={`icon-button wb-fav-grip${drag.isDragging ? ' is-dragging' : ''}`}
         title={t('settings.browser.reorderFavorite', { name: fav.title })}
         aria-label={t('settings.browser.reorderFavorite', { name: fav.title })}
         aria-roledescription="sortable"
@@ -117,17 +117,17 @@ function FavoriteRowItem({
         </svg>
       </button>
 
-      <div className="maw-settings-fav-info">
-        <span className="maw-settings-fav-title">{fav.title}</span>
-        <span className="maw-settings-fav-url" title={fav.url}>
+      <div className="wb-settings-fav-info">
+        <span className="wb-settings-fav-title">{fav.title}</span>
+        <span className="wb-settings-fav-url" title={fav.url}>
           {fav.url}
         </span>
       </div>
 
-      <div className="maw-settings-fav-actions">
+      <div className="wb-settings-fav-actions">
         <button
           type="button"
-          className="icon-button maw-settings-fav-btn"
+          className="icon-button wb-settings-fav-btn"
           title={t('settings.browser.editFavorite')}
           aria-label={t('settings.browser.editFavorite')}
           onClick={onEdit}
@@ -136,7 +136,7 @@ function FavoriteRowItem({
         </button>
         <button
           type="button"
-          className="icon-button maw-settings-fav-btn maw-settings-fav-delete"
+          className="icon-button wb-settings-fav-btn wb-settings-fav-delete"
           title={t('settings.browser.deleteFavorite')}
           aria-label={t('settings.browser.deleteFavorite')}
           onClick={onRemove}
@@ -346,13 +346,13 @@ export function BrowserSettingsSection({
   };
 
   return (
-    <div className="maw-settings-groups">
+    <div className="wb-settings-groups">
       {browserSettings.preferenceError && (
-        <div role="alert" className="agency-error maw-settings-fav-error" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <div role="alert" className="agency-error wb-settings-fav-error" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <span>{browserSettings.preferenceError}</span>
           <button
             type="button"
-            className="maw-settings-link-btn"
+            className="wb-settings-link-btn"
             aria-label={t('agency.ui.dismissError')}
             onClick={() => browserSettings.dismissPreferenceError()}
           >
@@ -372,7 +372,7 @@ export function BrowserSettingsSection({
             <>
               <button
                 type="button"
-                className="maw-settings-engine-action-btn"
+                className="wb-settings-engine-action-btn"
                 onClick={() => {
                   setIsAddingEngine(true);
                   setEditingEngineId(null);
@@ -387,7 +387,7 @@ export function BrowserSettingsSection({
               </button>
               <button
                 type="button"
-                className="maw-settings-link-btn"
+                className="wb-settings-link-btn"
                 onClick={() => browserSettings.restoreBuiltinSearchEngines()}
                 title={t('settings.browser.restoreEngines')}
               >
@@ -397,12 +397,12 @@ export function BrowserSettingsSection({
           ) : undefined
         }
       >
-        <p className="maw-settings-hint">{t('settings.browser.searchEngineDesc')}</p>
+        <p className="wb-settings-hint">{t('settings.browser.searchEngineDesc')}</p>
 
         {/* Form for Adding / Editing Search Engine */}
         {(isAddingEngine || editingEngineId) && (
           <form
-            className="maw-settings-favorite-form maw-settings-engine-form"
+            className="wb-settings-favorite-form wb-settings-engine-form"
             noValidate
             onSubmit={(e) => {
               e.preventDefault();
@@ -439,8 +439,8 @@ export function BrowserSettingsSection({
               }
             }}
           >
-            <div className="maw-settings-form-row">
-              <label className="maw-settings-form-field">
+            <div className="wb-settings-form-row">
+              <label className="wb-settings-form-field">
                 <span>{t('settings.browser.engineName')}</span>
                 <input
                   autoFocus
@@ -455,7 +455,7 @@ export function BrowserSettingsSection({
                   placeholder={t('settings.browser.engineNamePlaceholder')}
                 />
               </label>
-              <label className="maw-settings-form-field">
+              <label className="wb-settings-form-field">
                 <span>{t('settings.browser.homeUrl')}</span>
                 <input
                   type="url"
@@ -470,8 +470,8 @@ export function BrowserSettingsSection({
                 />
               </label>
             </div>
-            <div className="maw-settings-form-row">
-              <label className="maw-settings-form-field maw-settings-form-field-full">
+            <div className="wb-settings-form-row">
+              <label className="wb-settings-form-field wb-settings-form-field-full">
                 <span>{t('settings.browser.searchUrl')}</span>
                 <input
                   type="text"
@@ -484,15 +484,15 @@ export function BrowserSettingsSection({
                   }}
                   placeholder={t('settings.browser.searchUrlPlaceholder')}
                 />
-                <span className="maw-settings-form-hint">{t('settings.browser.searchUrlHint')}</span>
+                <span className="wb-settings-form-hint">{t('settings.browser.searchUrlHint')}</span>
               </label>
             </div>
             {engineError && (
-              <p role="alert" className="agency-error maw-settings-fav-error">
+              <p role="alert" className="agency-error wb-settings-fav-error">
                 {engineError}
               </p>
             )}
-            <div className="maw-settings-form-actions">
+            <div className="wb-settings-form-actions">
               <button type="submit" className="agency-button-primary">
                 {t('common.save')}
               </button>
@@ -513,35 +513,35 @@ export function BrowserSettingsSection({
 
         {/* Search Engines List */}
         {browserSettings.searchEngines.length === 0 ? (
-          <div className="maw-settings-empty-favorites">
-            <p className="maw-settings-hint">{t('settings.browser.noSearchEngines')}</p>
+          <div className="wb-settings-empty-favorites">
+            <p className="wb-settings-hint">{t('settings.browser.noSearchEngines')}</p>
           </div>
         ) : (
           <div
-            className="maw-settings-choices maw-settings-engines-list"
+            className="wb-settings-choices wb-settings-engines-list"
             role="radiogroup"
             aria-label={t('settings.browser.searchEngine')}
           >
             {browserSettings.searchEngines.map((engine) => (
-              <div key={engine.id} className="maw-settings-engine-row">
-                <label className="maw-settings-choice maw-settings-engine-choice">
+              <div key={engine.id} className="wb-settings-engine-row">
+                <label className="wb-settings-choice wb-settings-engine-choice">
                   <input
                     type="radio"
                     name="default-search-engine"
                     checked={browserSettings.defaultSearchEngine === engine.id}
                     onChange={() => browserSettings.setDefaultSearchEngine(engine.id)}
                   />
-                  <div className="maw-settings-engine-labels">
-                    <div className="maw-settings-engine-title-line">
-                      <span className="maw-settings-choice-label">{engine.name}</span>
+                  <div className="wb-settings-engine-labels">
+                    <div className="wb-settings-engine-title-line">
+                      <span className="wb-settings-choice-label">{engine.name}</span>
                     </div>
-                    <span className="maw-settings-choice-meta">{engine.searchUrl}</span>
+                    <span className="wb-settings-choice-meta">{engine.searchUrl}</span>
                   </div>
                 </label>
-                <div className="maw-settings-engine-actions">
+                <div className="wb-settings-engine-actions">
                   <button
                     type="button"
-                    className="icon-button maw-settings-fav-btn maw-settings-engine-edit-btn"
+                    className="icon-button wb-settings-fav-btn wb-settings-engine-edit-btn"
                     title={t('settings.browser.editEngine')}
                     aria-label={`${t('settings.browser.editEngine')}: ${engine.name}`}
                     onClick={() => {
@@ -557,7 +557,7 @@ export function BrowserSettingsSection({
                   </button>
                   <button
                     type="button"
-                    className="icon-button maw-settings-fav-btn maw-settings-fav-delete maw-settings-engine-delete-btn"
+                    className="icon-button wb-settings-fav-btn wb-settings-fav-delete wb-settings-engine-delete-btn"
                     title={t('settings.browser.deleteEngine')}
                     aria-label={`${t('settings.browser.deleteEngine')}: ${engine.name}`}
                     disabled={browserSettings.searchEngines.length <= 1}
@@ -586,7 +586,7 @@ export function BrowserSettingsSection({
           !isAddingProfile ? (
             <button
               type="button"
-              className="maw-settings-engine-action-btn maw-settings-add-browser-profile-btn"
+              className="wb-settings-engine-action-btn wb-settings-add-browser-profile-btn"
               onClick={() => {
                 setIsAddingProfile(true);
                 setProfileNameInput('');
@@ -602,12 +602,12 @@ export function BrowserSettingsSection({
           ) : undefined
         }
       >
-        <p className="maw-settings-hint">{t('settings.browser.profilesDesc')}</p>
+        <p className="wb-settings-hint">{t('settings.browser.profilesDesc')}</p>
 
         {isAddingProfile && (
-          <form className="maw-settings-favorite-form maw-settings-profile-form" onSubmit={handleCreateProfileSubmit} noValidate>
-            <div className="maw-settings-form-row">
-              <label className="maw-settings-form-field">
+          <form className="wb-settings-favorite-form wb-settings-profile-form" onSubmit={handleCreateProfileSubmit} noValidate>
+            <div className="wb-settings-form-row">
+              <label className="wb-settings-form-field">
                 <span>{t('settings.browser.profileName')}</span>
                 <input
                   autoFocus
@@ -622,7 +622,7 @@ export function BrowserSettingsSection({
                   placeholder={t('settings.browser.profileNamePlaceholder')}
                 />
               </label>
-              <label className="maw-settings-form-field">
+              <label className="wb-settings-form-field">
                 <span>{t('settings.browser.profileMode')}</span>
                 <select
                   value={profileMode}
@@ -639,8 +639,8 @@ export function BrowserSettingsSection({
 
             {profileMode === 'clone' && (
               <>
-                <div className="maw-settings-form-row">
-                  <label className="maw-settings-form-field maw-settings-form-field-full">
+                <div className="wb-settings-form-row">
+                  <label className="wb-settings-form-field wb-settings-form-field-full">
                     <span>{t('settings.browser.sourceProfile')}</span>
                     <select
                       value={cloneSourceId}
@@ -655,12 +655,12 @@ export function BrowserSettingsSection({
                   </label>
                 </div>
 
-                <div className="maw-settings-form-row">
-                  <div className="maw-settings-form-field maw-settings-form-field-full">
+                <div className="wb-settings-form-row">
+                  <div className="wb-settings-form-field wb-settings-form-field-full">
                     <span>{t('settings.browser.clearAuthOnClone')}</span>
-                    <div className="maw-settings-profile-sites">
+                    <div className="wb-settings-profile-sites">
                       {SITE_AUTH_OPTIONS.map((opt) => (
-                        <label key={opt.site} className="maw-settings-profile-site-check">
+                        <label key={opt.site} className="wb-settings-profile-site-check">
                           <input
                             type="checkbox"
                             checked={cloneClearSites.includes(opt.site)}
@@ -675,7 +675,7 @@ export function BrowserSettingsSection({
               </>
             )}
 
-            <div className="maw-settings-form-actions">
+            <div className="wb-settings-form-actions">
               <button type="submit" className="agency-button-primary" disabled={profileBusy}>
                 {t('common.save')}
               </button>
@@ -695,18 +695,18 @@ export function BrowserSettingsSection({
         )}
 
         {profileError && (
-          <p role="alert" className="agency-error maw-settings-fav-error">
+          <p role="alert" className="agency-error wb-settings-fav-error">
             {profileError}
           </p>
         )}
 
         {pendingBrowserProfileCleanups && pendingBrowserProfileCleanups.length > 0 && (
-          <div className="maw-settings-warning-list">
+          <div className="wb-settings-warning-list">
             {pendingBrowserProfileCleanups.map((cleanup) => (
               <div
                 key={cleanup.profileId}
                 role="alert"
-                className="maw-settings-warning-text"
+                className="wb-settings-warning-text"
                 data-cleanup-profile-id={cleanup.profileId}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}
               >
@@ -714,7 +714,7 @@ export function BrowserSettingsSection({
                 {onRetryBrowserProfileCleanup && (
                   <button
                     type="button"
-                    className="maw-settings-btn-secondary maw-settings-btn-sm"
+                    className="wb-settings-btn-secondary wb-settings-btn-sm"
                     disabled={retryingCleanupId === cleanup.profileId}
                     onClick={() => {
                       setRetryingCleanupId(cleanup.profileId);
@@ -733,18 +733,18 @@ export function BrowserSettingsSection({
           </div>
         )}
 
-        <ul className="maw-settings-profiles-list">
+        <ul className="wb-settings-profiles-list">
           {effectiveProfiles.map((profile) => {
             const isMain = profile.id === DEFAULT_BROWSER_PROFILE_ID || Boolean(profile.isDefault);
             const isRenaming = renamingProfileId === profile.id;
             const isClearing = clearingProfileId === profile.id;
 
             return (
-              <li key={profile.id} className="maw-settings-profile-row" data-profile-id={profile.id}>
-                <div className="maw-settings-profile-top">
+              <li key={profile.id} className="wb-settings-profile-row" data-profile-id={profile.id}>
+                <div className="wb-settings-profile-top">
                   {isRenaming ? (
                     <form
-                      className="maw-settings-profile-rename-form"
+                      className="wb-settings-profile-rename-form"
                       onSubmit={(e) => handleRenameSubmit(e, profile.id)}
                       noValidate
                     >
@@ -752,7 +752,7 @@ export function BrowserSettingsSection({
                         autoFocus
                         type="text"
                         maxLength={80}
-                        className="maw-settings-profile-rename-input"
+                        className="wb-settings-profile-rename-input"
                         aria-label={t('settings.browser.profileName')}
                         value={renameProfileInput}
                         onChange={(e) => {
@@ -777,18 +777,18 @@ export function BrowserSettingsSection({
                     </form>
                   ) : (
                     <>
-                      <div className="maw-settings-profile-info">
-                        <span className="maw-settings-profile-name">{profile.name}</span>
+                      <div className="wb-settings-profile-info">
+                        <span className="wb-settings-profile-name">{profile.name}</span>
                         {isMain && (
-                          <span className="maw-settings-profile-default-badge">
+                          <span className="wb-settings-profile-default-badge">
                             {t('settings.browser.defaultBadge')}
                           </span>
                         )}
                       </div>
-                      <div className="maw-settings-profile-actions">
+                      <div className="wb-settings-profile-actions">
                         {onClearBrowserProfileSiteAuth && <button
                           type="button"
-                          className="maw-settings-link-btn maw-settings-profile-clear-btn"
+                          className="wb-settings-link-btn wb-settings-profile-clear-btn"
                           disabled={profileBusy}
                           onClick={() => {
                             if (isClearing) {
@@ -807,7 +807,7 @@ export function BrowserSettingsSection({
                           <>
                             <button
                               type="button"
-                              className="icon-button maw-settings-fav-btn maw-settings-profile-rename-btn"
+                              className="icon-button wb-settings-fav-btn wb-settings-profile-rename-btn"
                               title={t('settings.browser.renameProfile')}
                               aria-label={`${t('settings.browser.renameProfile')}: ${profile.name}`}
                               disabled={profileBusy}
@@ -821,7 +821,7 @@ export function BrowserSettingsSection({
                             </button>
                             <button
                               type="button"
-                              className="icon-button maw-settings-fav-btn maw-settings-fav-delete maw-settings-profile-delete-btn"
+                              className="icon-button wb-settings-fav-btn wb-settings-fav-delete wb-settings-profile-delete-btn"
                               title={t('settings.browser.deleteProfile')}
                               aria-label={`${t('settings.browser.deleteProfile')}: ${profile.name}`}
                               disabled={profileBusy}
@@ -840,13 +840,13 @@ export function BrowserSettingsSection({
                 </div>
 
                 {isClearing && (
-                  <div className="maw-settings-profile-clear-panel">
-                    <span className="maw-settings-hint">
+                  <div className="wb-settings-profile-clear-panel">
+                    <span className="wb-settings-hint">
                       {t('settings.browser.clearSiteAuthDesc', { name: profile.name })}
                     </span>
-                    <div className="maw-settings-profile-sites">
+                    <div className="wb-settings-profile-sites">
                       {SITE_AUTH_OPTIONS.map((opt) => (
-                        <label key={opt.site} className="maw-settings-profile-site-check">
+                        <label key={opt.site} className="wb-settings-profile-site-check">
                           <input
                             type="checkbox"
                             checked={clearSelectedSites.includes(opt.site)}
@@ -856,7 +856,7 @@ export function BrowserSettingsSection({
                         </label>
                       ))}
                     </div>
-                    <div className="maw-settings-form-actions">
+                    <div className="wb-settings-form-actions">
                       <button
                         type="button"
                         className="agency-button-primary"
@@ -897,7 +897,7 @@ export function BrowserSettingsSection({
           !isAddingFavorite && !editingFavoriteId ? (
             <button
               type="button"
-              className="maw-settings-action-btn"
+              className="wb-settings-action-btn"
               onClick={() => {
                 setIsAddingFavorite(true);
                 setEditingFavoriteId(null);
@@ -912,12 +912,12 @@ export function BrowserSettingsSection({
           ) : undefined
         }
       >
-        <p className="maw-settings-hint">{t('settings.browser.favoritesDesc')}</p>
+        <p className="wb-settings-hint">{t('settings.browser.favoritesDesc')}</p>
 
         {/* Form for Adding / Editing Favorite */}
         {(isAddingFavorite || editingFavoriteId) && (
           <form
-            className="maw-settings-favorite-form"
+            className="wb-settings-favorite-form"
             noValidate
             onSubmit={(e) => {
               e.preventDefault();
@@ -950,8 +950,8 @@ export function BrowserSettingsSection({
               }
             }}
           >
-            <div className="maw-settings-form-row">
-              <label className="maw-settings-form-field">
+            <div className="wb-settings-form-row">
+              <label className="wb-settings-form-field">
                 <span>{t('settings.browser.name')}</span>
                 <input
                   autoFocus
@@ -966,7 +966,7 @@ export function BrowserSettingsSection({
                   placeholder={t('settings.browser.favoriteNamePlaceholder')}
                 />
               </label>
-              <label className="maw-settings-form-field">
+              <label className="wb-settings-form-field">
                 <span>{t('settings.browser.url')}</span>
                 <input
                   type="url"
@@ -982,11 +982,11 @@ export function BrowserSettingsSection({
               </label>
             </div>
             {favError && (
-              <p role="alert" className="agency-error maw-settings-fav-error">
+              <p role="alert" className="agency-error wb-settings-fav-error">
                 {favError}
               </p>
             )}
-            <div className="maw-settings-form-actions">
+            <div className="wb-settings-form-actions">
               <button type="submit" className="agency-button-primary">
                 {t('common.save')}
               </button>
@@ -1006,8 +1006,8 @@ export function BrowserSettingsSection({
         )}
 
         {browserSettings.favorites.length === 0 ? (
-          <div className="maw-settings-empty-favorites">
-            <p className="maw-settings-hint">{t('settings.browser.noFavorites')}</p>
+          <div className="wb-settings-empty-favorites">
+            <p className="wb-settings-hint">{t('settings.browser.noFavorites')}</p>
           </div>
         ) : (
           <DragDropProvider
@@ -1033,7 +1033,7 @@ export function BrowserSettingsSection({
               browserSettings.reorderFavorites(newOrder);
             }}
           >
-            <ul className="maw-settings-favorites-list">
+            <ul className="wb-settings-favorites-list">
               {browserSettings.favorites.map((fav, index) => (
                 <FavoriteRowItem
                   key={fav.id}
@@ -1055,8 +1055,8 @@ export function BrowserSettingsSection({
 
             <DragOverlay>
               {activeFav ? (
-                <div className="maw-settings-favorite-row maw-fav-drag-overlay">
-                  <span className="icon-button maw-fav-grip is-dragging" aria-hidden="true">
+                <div className="wb-settings-favorite-row wb-fav-drag-overlay">
+                  <span className="icon-button wb-fav-grip is-dragging" aria-hidden="true">
                     <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
                       <circle cx="3" cy="2.5" r="1.2" />
                       <circle cx="7" cy="2.5" r="1.2" />
@@ -1066,9 +1066,9 @@ export function BrowserSettingsSection({
                       <circle cx="7" cy="11.5" r="1.2" />
                     </svg>
                   </span>
-                  <div className="maw-settings-fav-info">
-                    <span className="maw-settings-fav-title">{activeFav.title}</span>
-                    <span className="maw-settings-fav-url">{activeFav.url}</span>
+                  <div className="wb-settings-fav-info">
+                    <span className="wb-settings-fav-title">{activeFav.title}</span>
+                    <span className="wb-settings-fav-url">{activeFav.url}</span>
                   </div>
                 </div>
               ) : null}
@@ -1076,10 +1076,10 @@ export function BrowserSettingsSection({
           </DragDropProvider>
         )}
 
-        <div className="maw-settings-favorites-footer">
+        <div className="wb-settings-favorites-footer">
           <button
             type="button"
-            className="maw-settings-link-btn"
+            className="wb-settings-link-btn"
             onClick={() => browserSettings.resetFavoritesToDefaults()}
           >
             {t('settings.browser.resetDefaults')}
@@ -1093,18 +1093,18 @@ export function BrowserSettingsSection({
         highlighted={highlightedCardId === 'setting-card-tab-memory'}
         expandSignal={(expandSignal ?? 0) + sectionExpandSignal}
         headerActions={
-          <label className="maw-settings-toggle-label" onClick={(e) => e.stopPropagation()}>
+          <label className="wb-settings-toggle-label" onClick={(e) => e.stopPropagation()}>
             <input
               type="checkbox"
-              className="maw-settings-checkbox"
+              className="wb-settings-checkbox"
               checked={browserSettings.unloadInactiveAiTabsUnderPressure}
               onChange={(e) => browserSettings.setUnloadInactiveAiTabsUnderPressure(e.target.checked)}
             />
-            <span className="maw-settings-toggle-text">{t('settings.browser.unloadInactiveAiTabs')}</span>
+            <span className="wb-settings-toggle-text">{t('settings.browser.unloadInactiveAiTabs')}</span>
           </label>
         }
       >
-        <p className="maw-settings-hint">{t('settings.browser.unloadInactiveAiTabsDescription')}</p>
+        <p className="wb-settings-hint">{t('settings.browser.unloadInactiveAiTabsDescription')}</p>
       </CollapsibleSubsection>
 
       <SpellCheckSettingsSection

@@ -15,7 +15,7 @@ import {
   validateBrowserFavoriteUrl,
   validateWebTabTitle,
   webTabProviderFor,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 
 globalThis.React = React;
 
@@ -36,16 +36,16 @@ test('1. Favorite list displays names ONLY, never raw URLs (fixes concatenated U
     assert.ok(html.includes(fav.title), `Favorite title "${fav.title}" must be displayed`);
   }
 
-  // Favorite buttons must NOT contain the raw URL in the list view (no maw-browser-dest-url for favorites)
-  // Check that the favorite items only have .maw-browser-dest-name and not .maw-browser-dest-url with fav.url
+  // Favorite buttons must NOT contain the raw URL in the list view (no wb-browser-dest-url for favorites)
+  // Check that the favorite items only have .wb-browser-dest-name and not .wb-browser-dest-url with fav.url
   assert.ok(!html.includes('https://chatgpt.com/</span>'), 'Raw URL must not be in favorite button text');
   assert.ok(!html.includes('https://www.perplexity.ai/</span>'), 'Raw URL must not be in favorite button text');
   assert.ok(!html.includes('https://github.com/</span>'), 'Raw URL must not be in favorite button text');
 
   // "Other" item must be present with search engine name
-  assert.ok(html.includes('maw-browser-dest-item-other'), 'Other item must have dedicated class');
+  assert.ok(html.includes('wb-browser-dest-item-other'), 'Other item must have dedicated class');
   assert.ok(html.includes('DuckDuckGo'), 'Other item must show default search engine name');
-  assert.ok(html.includes('maw-browser-dest-divider'), 'Subtle divider must separate favorites and Other');
+  assert.ok(html.includes('wb-browser-dest-divider'), 'Subtle divider must separate favorites and Other');
 });
 
 test('2. Favorite list uses safe favicons when provided, and neutral icon fallback', () => {
@@ -65,8 +65,8 @@ test('2. Favorite list uses safe favicons when provided, and neutral icon fallba
     })
   );
 
-  assert.ok(html.includes('maw-browser-dest-favicon'), 'Valid favicon renders image');
-  assert.ok(html.includes('maw-globe-icon'), 'Neutral GlobeIcon renders when favicon is absent');
+  assert.ok(html.includes('wb-browser-dest-favicon'), 'Valid favicon renders image');
+  assert.ok(html.includes('wb-globe-icon'), 'Neutral GlobeIcon renders when favicon is absent');
 });
 
 test('3. Inline Preview renders favorite name, configured URL, editable destination URL, Open button, and Back button', () => {
@@ -83,19 +83,19 @@ test('3. Inline Preview renders favorite name, configured URL, editable destinat
   );
 
   // Region and mode class
-  assert.ok(html.includes('maw-browser-dest-preview'), 'Renders in preview mode');
+  assert.ok(html.includes('wb-browser-dest-preview'), 'Renders in preview mode');
   // Title
   assert.ok(html.includes(targetFav.title), 'Displays favorite title in preview');
   // Duplicate static Configured URL row is omitted in favor of the single editable Destination URL input
-  assert.ok(!html.includes('maw-browser-preview-configured-url'), 'Omits duplicate static configured URL row');
+  assert.ok(!html.includes('wb-browser-preview-configured-url'), 'Omits duplicate static configured URL row');
   // Destination URL editable input
   assert.ok(html.includes('id="maw-preview-dest-input"'), 'Includes editable destination URL input');
   assert.ok(html.includes(`value="${targetFav.url}"`), 'Destination input defaults to configured URL');
   // Hint indicating one-off navigation
-  assert.ok(html.includes('maw-browser-preview-hint'), 'Includes hint explaining one-off navigation');
+  assert.ok(html.includes('wb-browser-preview-hint'), 'Includes hint explaining one-off navigation');
   // Buttons
-  assert.ok(html.includes('maw-browser-dest-btn-secondary'), 'Includes Back / choose different button');
-  assert.ok(html.includes('maw-browser-dest-btn-primary'), 'Includes Open primary button');
+  assert.ok(html.includes('wb-browser-dest-btn-secondary'), 'Includes Back / choose different button');
+  assert.ok(html.includes('wb-browser-dest-btn-primary'), 'Includes Open primary button');
 });
 
 test('4. Other mode renders clean search/URL input with search engine hint and Open button', () => {
@@ -109,11 +109,11 @@ test('4. Other mode renders clean search/URL input with search engine hint and O
     })
   );
 
-  assert.ok(html.includes('maw-browser-dest-other'), 'Renders in other mode');
+  assert.ok(html.includes('wb-browser-dest-other'), 'Renders in other mode');
   assert.ok(html.includes('id="maw-other-query-input"'), 'Includes query input');
   assert.ok(html.includes('DuckDuckGo'), 'Includes search engine reference in placeholder or hint');
-  assert.ok(html.includes('maw-browser-dest-btn-secondary'), 'Includes Back button');
-  assert.ok(html.includes('maw-browser-dest-btn-primary'), 'Includes Open primary button');
+  assert.ok(html.includes('wb-browser-dest-btn-secondary'), 'Includes Back button');
+  assert.ok(html.includes('wb-browser-dest-btn-primary'), 'Includes Open primary button');
 });
 
 test('5. Editing destination URL performs one-off navigation without mutating saved favorites', () => {
@@ -157,9 +157,9 @@ test('6. Other destination resolution: empty opens homepage, query uses default 
 
 test('7. Picker overlay includes dialog role and overlay classes for WebContentsView detachment', () => {
   // Verify that the overlay container classes match those observed by collectActiveOverlayRects
-  const overlayClass = 'maw-pane-browser-picker-overlay maw-browser-picker-overlay';
-  assert.ok(overlayClass.includes('maw-browser-picker-overlay'), 'Contains maw-browser-picker-overlay class');
-  assert.ok(overlayClass.includes('maw-pane-browser-picker-overlay'), 'Contains maw-pane-browser-picker-overlay class');
+  const overlayClass = 'wb-pane-browser-picker-overlay wb-browser-picker-overlay';
+  assert.ok(overlayClass.includes('wb-browser-picker-overlay'), 'Contains wb-browser-picker-overlay class');
+  assert.ok(overlayClass.includes('wb-pane-browser-picker-overlay'), 'Contains wb-pane-browser-picker-overlay class');
 });
 
 test('8. Picker header renders close button and title when cancel callback provided', () => {
@@ -173,8 +173,8 @@ test('8. Picker header renders close button and title when cancel callback provi
     })
   );
 
-  assert.ok(html.includes('maw-browser-dest-close'), 'Close button rendered in header');
-  assert.ok(html.includes('maw-browser-dest-header-title'), 'Header title rendered');
+  assert.ok(html.includes('wb-browser-dest-close'), 'Close button rendered in header');
+  assert.ok(html.includes('wb-browser-dest-header-title'), 'Header title rendered');
 });
 
 test('9. C-05: inline Other URL > 120 chars normalizes title to pass webTab wire validation', () => {
@@ -232,28 +232,28 @@ test('11. Redesigned picker renders window title, close button, and three distin
 
   // 1. Title and close button
   assert.ok(html.includes('New Web Page'), 'Window title "New Web Page" is rendered');
-  assert.ok(html.includes('maw-browser-dest-close'), 'Close button is rendered');
+  assert.ok(html.includes('wb-browser-dest-close'), 'Close button is rendered');
 
   // 2. Favorites section
-  assert.ok(html.includes('maw-browser-dest-section-favorites'), 'Favorites section container is rendered');
+  assert.ok(html.includes('wb-browser-dest-section-favorites'), 'Favorites section container is rendered');
   assert.ok(html.includes('Favorites'), 'Favorites section header is rendered');
-  assert.ok(html.includes('maw-browser-dest-favorites-list'), 'Favorites list is rendered');
+  assert.ok(html.includes('wb-browser-dest-favorites-list'), 'Favorites list is rendered');
 
   // 3. Search Engine section
-  assert.ok(html.includes('maw-browser-dest-section-engine'), 'Search engine section container is rendered');
+  assert.ok(html.includes('wb-browser-dest-section-engine'), 'Search engine section container is rendered');
   assert.ok(html.includes('Search Engine'), 'Search engine section header is rendered');
-  assert.ok(html.includes('maw-browser-dest-engine-select'), 'Search engine select dropdown is rendered');
+  assert.ok(html.includes('wb-browser-dest-engine-select'), 'Search engine select dropdown is rendered');
   assert.ok(html.includes('DuckDuckGo'), 'Default search engine option is present');
   assert.ok(html.includes('Google'), 'Alternative search engine option is present');
 
   // 4. Other section
-  assert.ok(html.includes('maw-browser-dest-section-other'), 'Other section container is rendered');
+  assert.ok(html.includes('wb-browser-dest-section-other'), 'Other section container is rendered');
   assert.ok(html.includes('Other'), 'Other section header is rendered');
   assert.ok(html.includes('id="maw-other-inline-input"'), 'Independent URL input is rendered');
   assert.ok(html.includes('Enter website URL...'), 'Input has "Enter website URL..." placeholder');
 
   // 5. Go buttons with dark orange styling
-  assert.ok(html.includes('maw-browser-dest-go-btn'), 'Orange Go buttons are rendered');
+  assert.ok(html.includes('wb-browser-dest-go-btn'), 'Orange Go buttons are rendered');
 });
 
 test('12. Search engine dropdown selection affects picker only without altering global settings', () => {

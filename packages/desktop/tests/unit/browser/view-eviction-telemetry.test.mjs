@@ -20,10 +20,10 @@ function fakeView({ url = 'https://chatgpt.com/', loading = false, devTools = fa
 function setup({ maxResident, tier, aiUnload = false } = {}) {
   const state = createBrowserViewState();
   const evicted = [];
-  const previousMax = process.env.MAW_MAX_RESIDENT_VIEWS;
-  const previousTier = process.env.MAW_MEMORY_PRESSURE_TIER;
-  if (maxResident !== undefined) process.env.MAW_MAX_RESIDENT_VIEWS = String(maxResident);
-  if (tier !== undefined) process.env.MAW_MEMORY_PRESSURE_TIER = tier;
+  const previousMax = process.env.WORKBENCH_MAX_RESIDENT_VIEWS;
+  const previousTier = process.env.WORKBENCH_MEMORY_PRESSURE_TIER;
+  if (maxResident !== undefined) process.env.WORKBENCH_MAX_RESIDENT_VIEWS = String(maxResident);
+  if (tier !== undefined) process.env.WORKBENCH_MEMORY_PRESSURE_TIER = tier;
   const aiUnloadRef = { enabled: aiUnload };
   const eviction = createViewEviction({
     app: { getAppMetrics: () => [] },
@@ -37,10 +37,10 @@ function setup({ maxResident, tier, aiUnload = false } = {}) {
     },
   });
   const restoreEnv = () => {
-    if (previousMax === undefined) delete process.env.MAW_MAX_RESIDENT_VIEWS;
-    else process.env.MAW_MAX_RESIDENT_VIEWS = previousMax;
-    if (previousTier === undefined) delete process.env.MAW_MEMORY_PRESSURE_TIER;
-    else process.env.MAW_MEMORY_PRESSURE_TIER = previousTier;
+    if (previousMax === undefined) delete process.env.WORKBENCH_MAX_RESIDENT_VIEWS;
+    else process.env.WORKBENCH_MAX_RESIDENT_VIEWS = previousMax;
+    if (previousTier === undefined) delete process.env.WORKBENCH_MEMORY_PRESSURE_TIER;
+    else process.env.WORKBENCH_MEMORY_PRESSURE_TIER = previousTier;
   };
   return { state, eviction, evicted, restoreEnv, aiUnloadRef };
 }

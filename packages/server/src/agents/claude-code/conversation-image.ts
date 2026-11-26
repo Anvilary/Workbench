@@ -16,7 +16,7 @@
  * pegado (`findPastedImage`).
  */
 
-import { MAX_SUBMIT_IMAGE_BYTES, type ConversationImageSource } from '@agent-workbench/shared';
+import { MAX_SUBMIT_IMAGE_BYTES, type ConversationImageSource } from '@anvilary/workbench-shared';
 import { open, readFile, stat, type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 import { detectImageFormat } from '../../features/composer/image-signature.js';

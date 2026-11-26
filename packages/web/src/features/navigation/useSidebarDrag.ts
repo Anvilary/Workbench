@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ProjectId, WorkspaceId } from '@agent-workbench/shared';
-import type { AgencyProject, AgencyWorkspace } from '@agent-workbench/shared';
+import type { ProjectId, WorkspaceId } from '@anvilary/workbench-shared';
+import type { AgencyProject, AgencyWorkspace } from '@anvilary/workbench-shared';
 
 /**
  * Pointer drag and drop for the sidebar's projects and workspaces.

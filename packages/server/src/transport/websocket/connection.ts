@@ -17,7 +17,7 @@ import {
   serverText,
   type ServerText,
   type TerminalId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { WebSocket } from 'ws';
 import { BrowserTabStoreError } from '../../features/browser/browser-tab-store.js';
 import { cliFolders } from '../../features/files/cli-folders.js';
@@ -109,7 +109,7 @@ export function acceptConnection(socket: WebSocket, credential: Credential, deps
   const cwdOf = (terminalId: TerminalId): string | null => {
     const descriptor = registry.get(terminalId);
     if (descriptor !== null && descriptor.cwd.length > 0) return descriptor.cwd;
-    const ws = agencyWorkspaceStore.getWorkspace(terminalId as import('@agent-workbench/shared').WorkspaceId);
+    const ws = agencyWorkspaceStore.getWorkspace(terminalId as import('@anvilary/workbench-shared').WorkspaceId);
     if (ws && ws.status === 'active') return ws.cwd;
     return null;
   };

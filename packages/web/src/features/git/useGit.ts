@@ -17,7 +17,7 @@ import {
   type GitDiff,
   type GitStatus,
   type TerminalId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 
 export interface GitView {

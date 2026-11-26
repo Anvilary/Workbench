@@ -33,7 +33,7 @@ import {
   familyHasLongVariant,
   modelFamilyOf,
   modelVariantBase,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 
 /** true si el id trae sufijo de variante (`claude-opus-5[1m]`). */
 function declaresVariant(fullId: string): boolean {

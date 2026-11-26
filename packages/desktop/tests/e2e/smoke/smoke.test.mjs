@@ -14,8 +14,8 @@ import { PARTITION } from '../../../policy.mjs';
 import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 const require = createRequire(import.meta.url);
 const here = DESKTOP_ROOT;
-const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
-  ? '/opt/maw-electron/45.2.0/electron'
+const electronExecutable = fs.existsSync('/opt/workbench-electron/45.2.0/electron')
+  ? '/opt/workbench-electron/45.2.0/electron'
   : require('electron');
 const browserCss = fs.readFileSync(path.join(here, '../web/src/app/workbench.css'), 'utf8');
 const ids = ['8e4fefc1-e565-40cc-b85b-f7d43a16b1df', 'f52e047f-d947-426c-a0fa-c349d035d338'];
@@ -47,20 +47,20 @@ test('native attachment, retention, overlay safety, security and cold cookie sto
   const bundle = await build({ stdin: { contents: fixture, resolveDir: path.join(here, '../web'), loader: 'tsx' }, bundle: true, write: false, format: 'esm', jsx: 'automatic', logLevel: 'silent' });
   const server = createServer((request, response) => {
     if (request.url === '/bundle.js') { response.setHeader('Content-Type', 'text/javascript'); response.end(bundle.outputFiles[0].text); }
-    else response.end('<!doctype html><html><style>' + browserCss + 'body{margin:0}nav{height:60px}aside{position:absolute;top:60px;left:0;width:200px;bottom:0}.agency-dropdown-menu{position:absolute;z-index:2;top:30px;left:10px;width:150px;background:white}main{position:absolute;top:60px;left:210px;right:0;bottom:0}.maw-browser-pane{height:100%}.maw-browser-viewer{width:100%}[role=menu]:not(.agency-dropdown-menu){position:absolute;z-index:2;top:160px;left:220px;background:white}</style><div id="root"></div><script type="module" src="/bundle.js"></script></html>');
+    else response.end('<!doctype html><html><style>' + browserCss + 'body{margin:0}nav{height:60px}aside{position:absolute;top:60px;left:0;width:200px;bottom:0}.agency-dropdown-menu{position:absolute;z-index:2;top:30px;left:10px;width:150px;background:white}main{position:absolute;top:60px;left:210px;right:0;bottom:0}.wb-browser-pane{height:100%}.wb-browser-viewer{width:100%}[role=menu]:not(.agency-dropdown-menu){position:absolute;z-index:2;top:160px;left:220px;background:white}</style><div id="root"></div><script type="module" src="/bundle.js"></script></html>');
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const data = await mkdtemp(path.join(tmpdir(), 'maw-electron-smoke-'));
+  const data = await mkdtemp(path.join(tmpdir(), 'workbench-electron-smoke-'));
   let desktop;
-  const launch = () => electron.launch({chromiumSandbox: true,  executablePath: electronExecutable, args: [here, '--ozone-platform=x11'], env: { ...process.env, MAW_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`, MAW_DESKTOP_DATA_DIR: data } });
+  const launch = () => electron.launch({chromiumSandbox: true,  executablePath: electronExecutable, args: [here, '--ozone-platform=x11'], env: { ...process.env, WORKBENCH_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`, WORKBENCH_DESKTOP_DATA_DIR: data } });
   const attached = () => desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.filter(view => view.webContents).length);
-  const chatIds = () => desktop.evaluate(({ webContents, session }) => webContents.getAllWebContents().filter(contents => contents.session === session.fromPartition('persist:maw-chatgpt')).map(contents => contents.id).sort((a,b) => a-b));
+  const chatIds = () => desktop.evaluate(({ webContents, session }) => webContents.getAllWebContents().filter(contents => contents.session === session.fromPartition('persist:workbench-chatgpt')).map(contents => contents.id).sort((a,b) => a-b));
   try {
     desktop = await launch();
     // Entirely synthetic native page: keep lifecycle/security regressions
     // independent of provider/network availability. This is not a login test.
     await desktop.evaluate(({ session }) => {
-      session.fromPartition('persist:maw-chatgpt').protocol.handle('https', () => new Response('<!doctype html><title>Native fixture</title><input aria-label="fixture input">', { headers: { 'Content-Type': 'text/html' } }));
+      session.fromPartition('persist:workbench-chatgpt').protocol.handle('https', () => new Response('<!doctype html><title>Native fixture</title><input aria-label="fixture input">', { headers: { 'Content-Type': 'text/html' } }));
     });
     const page = await desktop.firstWindow();
     await page.getByText('ChatGPT 1', { exact: true }).click();
@@ -95,8 +95,8 @@ test('native attachment, retention, overlay safety, security and cold cookie sto
       return { size: win.getContentSize(), bounds: win.contentView.children.find(view => view.webContents).getBounds() };
     });
     assert.deepEqual(geometry.size, [1010, 720]);
-    const content = await page.locator('.maw-browser-viewer').boundingBox();
-    const toolbar = await page.locator('.maw-browser-toolbar').boundingBox();
+    const content = await page.locator('.wb-browser-viewer').boundingBox();
+    const toolbar = await page.locator('.wb-browser-toolbar').boundingBox();
     assert.equal(geometry.bounds.x, Math.ceil(content.x));
     assert.equal(geometry.bounds.y, Math.ceil(content.y));
     assert.equal(geometry.bounds.width, 800);
@@ -107,14 +107,14 @@ test('native attachment, retention, overlay safety, security and cold cookie sto
     await address.press('Enter');
     await eventually(async () => desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.find(v => v.webContents)?.webContents.getURL().includes('/toolbar-test')));
 
-    const prefs = await desktop.evaluate(({ webContents, session }) => webContents.getAllWebContents().filter(w => w.session === session.fromPartition('persist:maw-chatgpt')).map(w => {
+    const prefs = await desktop.evaluate(({ webContents, session }) => webContents.getAllWebContents().filter(w => w.session === session.fromPartition('persist:workbench-chatgpt')).map(w => {
       const p = w.getLastWebPreferences();
       return { node: p.nodeIntegration, isolated: p.contextIsolation, sandbox: p.sandbox, security: p.webSecurity, preload: p.preload, partition: w.session.getStoragePath() };
     }));
     assert.equal(prefs.length, 2);
     for (const p of prefs) { assert.equal(p.node, false); assert.equal(p.isolated, true); assert.equal(p.sandbox, true); assert.equal(p.security, true); assert.ok(!p.preload); }
     assert.equal(prefs[0].partition, prefs[1].partition);
-    await page.evaluate(id => window.mawChatGpt.command({ type: 'retain', ids: [id] }), ids[0]);
+    await page.evaluate(id => window.workbench.command({ type: 'retain', ids: [id] }), ids[0]);
     await eventually(async () => (await chatIds()).length === 1);
     assert.deepEqual(await chatIds(), first, 'a removed background tab is destroyed without changing the selected view');
     await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setFullScreen(true));
@@ -124,16 +124,16 @@ test('native attachment, retention, overlay safety, security and cold cookie sto
         return win.isFullScreen() && !!view && view.getBounds().width === win.getContentSize()[0] - 210;
       });
     });
-    await assert.rejects(page.evaluate(() => window.mawChatGpt.command({ type: 'exec', command: 'id' })));
+    await assert.rejects(page.evaluate(() => window.workbench.command({ type: 'exec', command: 'id' })));
     // No real credentials: proves Chromium storage durability only.
     await desktop.evaluate(async ({ session }, partition) => {
       const ses = session.fromPartition(partition);
-      await ses.cookies.set({ url: 'https://chatgpt.com/', name: 'maw_synthetic_persistence_probe', value: 'not-a-credential', secure: true, expirationDate: Date.now() / 1000 + 3600 });
+      await ses.cookies.set({ url: 'https://chatgpt.com/', name: 'wb_synthetic_persistence_probe', value: 'not-a-credential', secure: true, expirationDate: Date.now() / 1000 + 3600 });
       ses.flushStorageData(); await ses.cookies.flushStore();
     }, PARTITION);
     await desktop.close();
     desktop = await launch();
-    const persisted = await desktop.evaluate(async ({ session }, partition) => (await session.fromPartition(partition).cookies.get({ name: 'maw_synthetic_persistence_probe' })).map(cookie => cookie.value), PARTITION);
+    const persisted = await desktop.evaluate(async ({ session }, partition) => (await session.fromPartition(partition).cookies.get({ name: 'wb_synthetic_persistence_probe' })).map(cookie => cookie.value), PARTITION);
     assert.deepEqual(persisted, ['not-a-credential']);
   } finally {
     if (desktop) await desktop.close();

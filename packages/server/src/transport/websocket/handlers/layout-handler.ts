@@ -2,7 +2,7 @@
  * Workspace pane layouts.
  */
 
-import type { ClientMessage } from '@agent-workbench/shared';
+import type { ClientMessage } from '@anvilary/workbench-shared';
 import { evaluateLayoutSave } from '../../../features/workspaces/layout-validation.js';
 import type { HandlerContext } from '../handler-context.js';
 

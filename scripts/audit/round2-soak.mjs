@@ -12,10 +12,10 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const require = createRequire(path.join(repo, 'packages/server/package.json'));
 const WebSocket = require('ws');
 const root = await mkdtemp(path.join(tmpdir(), 'maw-round2-soak-'));
-const out = path.resolve(process.env.MAW_ROUND2_OUT || path.join(root, 'evidence'));
-const duration = Number(process.env.MAW_ROUND2_SECONDS || 60);
+const out = path.resolve(process.env.WORKBENCH_ROUND2_OUT || path.join(root, 'evidence'));
+const duration = Number(process.env.WORKBENCH_ROUND2_SECONDS || 60);
 assert.ok(Number.isFinite(duration) && duration >= 0 && duration <= 3600);
-const home = path.join(root, 'home'), config = path.join(root, 'config/agent-workbench'), runtime = path.join(root, 'runtime');
+const home = path.join(root, 'home'), config = path.join(root, 'config/workbench'), runtime = path.join(root, 'runtime');
 await Promise.all([mkdir(home), mkdir(config, { recursive: true }), mkdir(out, { recursive: true }), mkdir(runtime, { recursive: true, mode: 0o700 })]);
 const now = new Date().toISOString();
 const projects = ['One', 'Two'].map(name => ({ id: randomUUID(), name, status: 'active', createdAt: now, updatedAt: now, archivedAt: null }));
@@ -24,7 +24,7 @@ await writeFile(path.join(config, 'agency-state.json'), JSON.stringify({ version
 await writeFile(path.join(home, '.bashrc'), '# isolated shell\n');
 const baseEnv = { ...process.env };
 for (const key of Object.keys(baseEnv)) {
-  if (/^(MAW_|AGENT_WORKBENCH_|ELECTRON_RUN_AS_NODE$)/.test(key)) delete baseEnv[key];
+  if (/^(WORKBENCH_|MAW_|AGENT_WORKBENCH_|ELECTRON_RUN_AS_NODE$)/.test(key)) delete baseEnv[key];
 }
 const env = {
   ...baseEnv,
@@ -40,13 +40,13 @@ const env = {
   APPDATA: path.join(root, 'appdata'),
   PI_CODING_AGENT_DIR: path.join(home, '.pi/agent'),
   PI_CODING_AGENT_SESSION_DIR: path.join(home, '.pi/sessions'),
-  AGENT_WORKBENCH_NO_OPEN: '1',
-  AGENT_WORKBENCH_NO_RESTORE: '1',
-  MAW_DISABLE_PTYD: '1',
-  MAW_PERSISTENT_PTY: '0',
-  MAW_AUTO_SPAWN_PTYD: '0',
-  MAW_PTYD_SOCKET: path.join(runtime, 'ptyd.sock'),
-  MAW_PTYD_AUTH_FILE: path.join(runtime, 'ptyd.sock.auth'),
+  WORKBENCH_NO_OPEN: '1',
+  WORKBENCH_NO_RESTORE: '1',
+  WORKBENCH_DISABLE_PTYD: '1',
+  WORKBENCH_PERSISTENT_PTY: '0',
+  WORKBENCH_AUTO_SPAWN_PTYD: '0',
+  WORKBENCH_PTYD_SOCKET: path.join(runtime, 'ptyd.sock'),
+  WORKBENCH_PTYD_AUTH_FILE: path.join(runtime, 'ptyd.sock.auth'),
 };
 let child, socket, browser, address, log = '', messages = 0, bytes = 0, reconnects = 0;
 const pending = new Map(), samples = [], errors = [];
@@ -173,7 +173,7 @@ try {
   }
   results.cycles = cycle; results.reconnects = reconnects;
   results.ui = await page.evaluate(() => ({ longTasksMs: window.auditLongTasks, layoutShift: window.auditShifts.reduce((a,b)=>a+b,0) }));
-  const reloads = Number(process.env.MAW_ROUND2_RELOADS || 0);
+  const reloads = Number(process.env.WORKBENCH_ROUND2_RELOADS || 0);
   assert.ok(Number.isInteger(reloads) && reloads >= 0 && reloads <= 100);
   if (reloads) {
     for (let i = 0; i < reloads; i++) { await page.reload(); await page.locator('.agency-app').waitFor(); }

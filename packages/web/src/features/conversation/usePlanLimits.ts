@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import type { PlanLimits, ServerMessage } from '@agent-workbench/shared';
+import type { PlanLimits, ServerMessage } from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 
 export function usePlanLimits(connection: AgentConnection): readonly PlanLimits[] {

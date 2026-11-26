@@ -21,7 +21,7 @@
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
-import { PAIR_QUERY_PARAM, TOKEN_QUERY_PARAM } from '@agent-workbench/shared';
+import { PAIR_QUERY_PARAM, TOKEN_QUERY_PARAM } from '@anvilary/workbench-shared';
 import type { DeviceVerifier } from '../features/remote-access/remote-access.js';
 
 /** Solo estas interfaces son validas. Nunca 0.0.0.0. */
@@ -256,7 +256,7 @@ export function authorizeRequest(
 }
 
 /**
- * Token-free authorization for MAW_UNSAFE_LOCAL_NO_AUTH=1 mode.
+ * Token-free authorization for WORKBENCH_UNSAFE_LOCAL_NO_AUTH=1 mode.
  *
  * Host and Origin checks are still mandatory — they block DNS-rebinding attacks
  * and cross-origin requests from malicious pages running in the browser.
@@ -273,9 +273,9 @@ export function authorizeRequestNoAuth(
   return { ok: true, credential: { kind: 'local' } };
 }
 
-/** True when MAW_UNSAFE_LOCAL_NO_AUTH=1 is set in the environment. */
+/** True when WORKBENCH_UNSAFE_LOCAL_NO_AUTH=1 is set in the environment. */
 export function isLocalNoAuthEnabled(): boolean {
-  return process.env['MAW_UNSAFE_LOCAL_NO_AUTH'] === '1';
+  return process.env['WORKBENCH_UNSAFE_LOCAL_NO_AUTH'] === '1';
 }
 
 /**

@@ -50,7 +50,7 @@ import {
   type ConversationPart,
   type MessageUsage,
   type SessionTitleSource,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { toTitle, UNTITLED_SESSION_TITLE } from '../../../agents/session-title.js';
 import { cut } from '../../../agents/transport-limits.js';
 import { InvalidPathError, resolveInside } from '../../files/path-guard.js';

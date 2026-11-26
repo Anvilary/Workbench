@@ -18,7 +18,7 @@
 export const PREFS_COOKIE = 'agent_workbench_prefs';
 
 /** El prefijo de las claves de `localStorage`. En la cookie van sin el: pesa menos. */
-const KEY_PREFIX = 'agent-workbench.';
+const KEY_PREFIX = 'workbench.';
 
 /** Una clave como las de la app, sin el prefijo. Lo demas no se lee. */
 const SHORT_KEY = /^[a-z0-9][a-z0-9.-]{0,59}$/;
@@ -67,7 +67,7 @@ export function readPrefsCookie(cookieHeader: string): Map<string, string> {
 
 /**
  * El valor de la cookie con estas preferencias, o null si pasaria el tope. Solo
- * entran las claves de la app (`agent-workbench.*`).
+ * entran las claves de la app (`workbench.*`).
  */
 export function encodePrefsCookie(prefs: ReadonlyMap<string, string>): string | null {
   const compact: Record<string, string> = {};

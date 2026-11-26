@@ -2,7 +2,7 @@
  * Loose notes, their images and sending a note to a terminal.
  */
 
-import { serverText, type ClientMessage } from '@agent-workbench/shared';
+import { serverText, type ClientMessage } from '@anvilary/workbench-shared';
 import { deliverWhenReady } from '../../../features/composer/deliver-when-ready.js';
 import type { HandlerContext } from '../handler-context.js';
 

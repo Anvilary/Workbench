@@ -25,7 +25,7 @@
 
 import { mkdir, readdir, readFile, stat, utimes } from 'node:fs/promises';
 import path from 'node:path';
-import { MEMORY_DIR } from '@agent-workbench/shared';
+import { MEMORY_DIR } from '@anvilary/workbench-shared';
 import { isNoteName } from '../memory/memory-bridge.js';
 import { InvalidPathError, resolveInside } from '../files/path-guard.js';
 import { memoryDir } from './paths.js';

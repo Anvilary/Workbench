@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom';
 import { handleMenuArrowNavigation } from '../../shared/hooks/useMenuKeyboardNav.js';
 import { calculateViewportMenuPosition } from '../../shared/lib/overlay-position.js';
 
-const opened = 'maw:pane-menu-opened';
-export const dismissPaneMenus = () => window.dispatchEvent(new Event('maw:dismiss-pane-menus'));
+const opened = 'workbench:pane-menu-opened';
+export const dismissPaneMenus = () => window.dispatchEvent(new Event('workbench:dismiss-pane-menus'));
 
 /** A viewport anchored menu: never participates in tab-strip or terminal overflow. */
 export function PaneMenu({ anchor, label, onClose, children }: {
@@ -55,13 +55,13 @@ export function PaneMenu({ anchor, label, onClose, children }: {
       } else if (event.key === 'Tab') close.current();
     };
     window.addEventListener(opened, another);
-    window.addEventListener('maw:dismiss-pane-menus', dismiss);
+    window.addEventListener('workbench:dismiss-pane-menus', dismiss);
     window.addEventListener('blur', dismiss);
     document.addEventListener('pointerdown', outside, true);
     document.addEventListener('keydown', keyboard, true);
     return () => {
       window.removeEventListener(opened, another);
-      window.removeEventListener('maw:dismiss-pane-menus', dismiss);
+      window.removeEventListener('workbench:dismiss-pane-menus', dismiss);
       window.removeEventListener('blur', dismiss);
       document.removeEventListener('pointerdown', outside, true);
       document.removeEventListener('keydown', keyboard, true);
@@ -74,7 +74,7 @@ export function PaneMenu({ anchor, label, onClose, children }: {
       id={id}
       role="menu"
       aria-label={label}
-      className="agency-dropdown-menu maw-pane-menu"
+      className="agency-dropdown-menu wb-pane-menu"
       style={{ ...position, position: 'fixed', zIndex: 150 }}
       onKeyDown={(event) => handleMenuArrowNavigation(event, event.currentTarget)}
     >

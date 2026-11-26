@@ -8,7 +8,7 @@ import * as shared from '../../src/index.ts';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const expected: string[] = JSON.parse(readFileSync(path.join(here, 'fixtures/public-runtime-exports.json'), 'utf8'));
 
-test('the runtime export surface of @agent-workbench/shared is stable', () => {
+test('the runtime export surface of @anvilary/workbench-shared is stable', () => {
   const actual = Object.keys(shared).sort();
   const missing = expected.filter((name) => !actual.includes(name));
   const added = actual.filter((name) => !expected.includes(name));

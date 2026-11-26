@@ -11,7 +11,7 @@
  * de la 0.154.
  */
 
-import { asRecord, type PlanLimitWindow } from '@agent-workbench/shared';
+import { asRecord, type PlanLimitWindow } from '@anvilary/workbench-shared';
 import { cut, TOOL_RESULT_MAX_CHARS } from '../transport-limits.js';
 
 /** Un numero finito, o null. */

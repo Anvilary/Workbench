@@ -9,11 +9,11 @@ const GITHUB_URL = 'https://github.com/org/repo';
 
 function setup({ maxResident, tier } = {}) {
   const previous = {
-    max: process.env.MAW_MAX_RESIDENT_VIEWS,
-    tier: process.env.MAW_MEMORY_PRESSURE_TIER,
+    max: process.env.WORKBENCH_MAX_RESIDENT_VIEWS,
+    tier: process.env.WORKBENCH_MEMORY_PRESSURE_TIER,
   };
-  if (maxResident !== undefined) process.env.MAW_MAX_RESIDENT_VIEWS = String(maxResident);
-  if (tier !== undefined) process.env.MAW_MEMORY_PRESSURE_TIER = tier;
+  if (maxResident !== undefined) process.env.WORKBENCH_MAX_RESIDENT_VIEWS = String(maxResident);
+  if (tier !== undefined) process.env.WORKBENCH_MEMORY_PRESSURE_TIER = tier;
 
   const { electron, createdViews } = createFakeElectron();
   const win = createFakeWindow();
@@ -30,10 +30,10 @@ function setup({ maxResident, tier } = {}) {
   });
 
   const restore = () => {
-    if (previous.max === undefined) delete process.env.MAW_MAX_RESIDENT_VIEWS;
-    else process.env.MAW_MAX_RESIDENT_VIEWS = previous.max;
-    if (previous.tier === undefined) delete process.env.MAW_MEMORY_PRESSURE_TIER;
-    else process.env.MAW_MEMORY_PRESSURE_TIER = previous.tier;
+    if (previous.max === undefined) delete process.env.WORKBENCH_MAX_RESIDENT_VIEWS;
+    else process.env.WORKBENCH_MAX_RESIDENT_VIEWS = previous.max;
+    if (previous.tier === undefined) delete process.env.WORKBENCH_MEMORY_PRESSURE_TIER;
+    else process.env.WORKBENCH_MEMORY_PRESSURE_TIER = previous.tier;
   };
   return { controller, createdViews, sent, restore, win };
 }

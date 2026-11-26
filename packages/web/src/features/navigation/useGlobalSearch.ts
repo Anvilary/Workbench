@@ -16,7 +16,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { GlobalSearchResult, ServerMessage } from '@agent-workbench/shared';
+import type { GlobalSearchResult, ServerMessage } from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 import { mergeSearchProgress } from './global-search-ui.js';
 import { t } from '../../i18n/index.js';

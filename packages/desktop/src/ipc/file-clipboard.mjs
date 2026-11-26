@@ -1,3 +1,4 @@
+import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -37,14 +38,14 @@ export async function getAuthoritativeRoots(options = {}) {
     }
   }
 
-  const envSingle = process.env.MAW_WORKSPACE_ROOT;
+  const envSingle = workbenchEnv('WORKSPACE_ROOT');
   if (envSingle) {
     try {
       roots.add(await realpath(envSingle));
     } catch {}
   }
 
-  const envMulti = process.env.MAW_WORKSPACE_ROOTS;
+  const envMulti = workbenchEnv('WORKSPACE_ROOTS');
   if (envMulti) {
     const delimiter = process.platform === 'win32' ? ';' : /[:;,]/;
     for (const part of envMulti.split(delimiter)) {
@@ -58,10 +59,10 @@ export async function getAuthoritativeRoots(options = {}) {
   }
 
   const statePath = options.statePath ?? (
-    process.env.MAW_STATE_PATH ?? (
+    workbenchEnv('STATE_PATH') ?? (
       process.env.XDG_CONFIG_HOME
-        ? path.join(process.env.XDG_CONFIG_HOME, 'agent-workbench', 'agency-state.json')
-        : path.join(process.env.HOME ?? '', '.config', 'agent-workbench', 'agency-state.json')
+        ? path.join(process.env.XDG_CONFIG_HOME, 'workbench', 'agency-state.json')
+        : path.join(process.env.HOME ?? '', '.config', 'workbench', 'agency-state.json')
     )
   );
   try {

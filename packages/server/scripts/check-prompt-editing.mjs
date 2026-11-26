@@ -33,7 +33,7 @@ const root = await mkdtemp(path.join(tmpdir(), 'agent-workbench-check-prompt-'))
 process.env.HOME = root;
 process.env.USERPROFILE = root;
 
-const shared = await import('@agent-workbench/shared');
+const shared = await import('@anvilary/workbench-shared');
 const { BranchTracker } = await import('../src/agents/claude-code/branch-tracker.ts');
 const { ConversationFollower } = await import('../src/agents/claude-code/conversation-follower.ts');
 const { ClaudeCodeSessionFollower } = await import('../src/agents/claude-code/session-follower.ts');

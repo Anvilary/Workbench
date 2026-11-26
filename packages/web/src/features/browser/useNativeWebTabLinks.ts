@@ -6,7 +6,7 @@ import {
   type WebTabProvider,
   type WorkspaceId,
   type WorkspacePaneLayout,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { WorkspaceTab } from '../workspaces/workspace-model.js';
 import type { useWorkbenchStore } from '../workspaces/useWorkbenchStore.js';
 import { t } from '../../i18n/index.js';
@@ -36,7 +36,7 @@ export function useNativeWebTabLinks({
   onError,
 }: UseNativeWebTabLinksOptions): void {
   useEffect(() => {
-    const bridge = window.mawChatGpt;
+    const bridge = window.workbench;
     if (!bridge) return;
     return bridge.subscribe((state) => {
       if (state.type !== 'open-web-tab' || !state.url || !state.sourceTabId) return;

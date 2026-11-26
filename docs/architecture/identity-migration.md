@@ -11,19 +11,19 @@ This document defines the canonical identity of Anvilary Workbench and how an in
 | Workspace packages | `@agent-workbench/{shared,server,web,desktop}` | `@anvilary/workbench-{shared,server,web,desktop}` |
 | CLI | `maw`, `anvil-bench` | `anvi-bench`. `anvil-bench`, `maw` and `workbench` are compatibility shims that exec `anvi-bench`; help text names the invoked command |
 | Environment variables | `MAW_*`, `AGENT_WORKBENCH_*` | `WORKBENCH_*` (see below) |
-| Desktop bridge and IPC | `window.mawChatGpt`, `maw:*` | `window.workbench`, `workbench:*` (no alias: desktop and web ship together) |
-| systemd units | `maw.service`, `maw-ptyd.service`, `maw-restart-helper` | `workbench.service`, `workbench-ptyd.service`, `workbench-restart-helper` |
-| Runtime directories | `$XDG_RUNTIME_DIR/maw`, `$XDG_RUNTIME_DIR/maw-ptyd` | `$XDG_RUNTIME_DIR/workbench`, `$XDG_RUNTIME_DIR/workbench-ptyd` (socket and auth file names unchanged) |
-| Release state | `~/.local/share/maw` | `$XDG_DATA_HOME/workbench` (`releases/`, pointers, `update-log.jsonl`, `source_path`, `node_path`) |
-| Release metadata | `.maw-release-meta.json`, `.maw-candidate` | `.workbench-release-meta.json`, `.workbench-candidate` |
-| App config and state | `~/.config/agent-workbench` | `$XDG_CONFIG_HOME/workbench` (Windows: `%APPDATA%/workbench`) |
-| Environment file | `~/.config/maw/environment` | `$XDG_CONFIG_HOME/workbench/environment` |
-| Desktop userData | `~/.local/share/maw-desktop` | `$XDG_DATA_HOME/workbench-desktop` (development prototype: `workbench-desktop-dev`) |
-| Browser partitions | `persist:maw-<x>`, `persist:maw-profile-<id>-<provider>` | `persist:workbench-<x>`, `persist:workbench-profile-<id>-<provider>` |
-| Logs | `~/.local/state/maw/logs` | `$XDG_STATE_HOME/workbench/logs` |
-| Helpers | `~/.local/lib/maw` | `~/.local/lib/workbench` |
-| Desktop entry and icon | `maw.desktop`, icon `maw-workspace` | `workbench.desktop`, `StartupWMClass=workbench`, icon `workbench` |
-| Electron runtime | `/opt/maw-electron/<ver>`, package `maw-electron` | `/opt/workbench-electron/<ver>`, package `workbench-electron` |
+| Desktop bridge and IPC | `window.workbench`, `workbench:*` | `window.workbench`, `workbench:*` (no alias: desktop and web ship together) |
+| systemd units | `workbench.service`, `workbench-ptyd.service`, `restart-helper` | `workbench.service`, `workbench-ptyd.service`, `workbench-restart-helper` |
+| Runtime directories | `$XDG_RUNTIME_DIR/maw`, `$XDG_RUNTIME_DIR/workbench-ptyd` | `$XDG_RUNTIME_DIR/workbench`, `$XDG_RUNTIME_DIR/workbench-ptyd` (socket and auth file names unchanged) |
+| Release state | `~/.local/share/workbench` | `$XDG_DATA_HOME/workbench` (`releases/`, pointers, `update-log.jsonl`, `source_path`, `node_path`) |
+| Release metadata | `.workbench-release-meta.json`, `.workbench-candidate` | `.workbench-release-meta.json`, `.workbench-candidate` |
+| App config and state | `~/.config/workbench` | `$XDG_CONFIG_HOME/workbench` (Windows: `%APPDATA%/workbench`) |
+| Environment file | `~/.config/workbench/environment` | `$XDG_CONFIG_HOME/workbench/environment` |
+| Desktop userData | `~/.local/share/workbench-desktop` | `$XDG_DATA_HOME/workbench-desktop` (development prototype: `workbench-desktop-dev`) |
+| Browser partitions | `persist:workbench-<x>`, `persist:workbench-profile-<id>-<provider>` | `persist:workbench-<x>`, `persist:workbench-profile-<id>-<provider>` |
+| Logs | `~/.local/state/workbench/logs` | `$XDG_STATE_HOME/workbench/logs` |
+| Helpers | `~/.local/lib/workbench` | `~/.local/lib/workbench` |
+| Desktop entry and icon | `workbench.desktop`, icon `workbench` | `workbench.desktop`, `StartupWMClass=workbench`, icon `workbench` |
+| Electron runtime | `/opt/workbench-electron/<ver>`, package `workbench-electron` | `/opt/workbench-electron/<ver>`, package `workbench-electron` |
 | Temporary directories | `<tmp>/agent-workbench/*` | `<tmp>/workbench/*` (ephemeral, not migrated) |
 
 Unchanged on purpose:
@@ -36,7 +36,7 @@ Browser `localStorage` keys are migrated once inside the app (read old, write ne
 
 ### Environment variables
 
-Each runtime resolves configuration through one resolver with one rule: `WORKBENCH_X` wins, else the legacy `MAW_X` (or `AGENT_WORKBENCH_X`), else the default. When both names are set with different values, a single warning names both variables (never the values). Legacy names are accepted for a deprecation period and then removed.
+Each runtime resolves configuration through one resolver with one rule: `WORKBENCH_X` wins, else the legacy `WORKBENCH_X` (or `WORKBENCH_X`), else the default. When both names are set with different values, a single warning names both variables (never the values). Legacy names are accepted for a deprecation period and then removed.
 
 Exceptions:
 
@@ -71,7 +71,7 @@ Each step is idempotent:
 
 1. **Backup.** Archive of the legacy config, environment file, userData without HTTP and GPU caches, release metadata (pointer targets, update log), units and desktop entry, under `$XDG_DATA_HOME/workbench-migration-backup/` (directory 0700, file 0600), with a verified checksum.
 2. **Config.** Copy to `$XDG_CONFIG_HOME/workbench` preserving modes and timestamps; verify the manifest.
-3. **Environment file.** Rename `MAW_X` and `AGENT_WORKBENCH_X` keys to `WORKBENCH_X`. Drop `MAW_UNSAFE_LOCAL_NO_AUTH` (recorded by name only). Unknown keys are kept and listed by name. Values are never printed. Written with mode 0600.
+3. **Environment file.** Rename `WORKBENCH_X` and `WORKBENCH_X` keys to `WORKBENCH_X`. Drop `WORKBENCH_UNSAFE_LOCAL_NO_AUTH` (recorded by name only). Unknown keys are kept and listed by name. Values are never printed. Written with mode 0600.
 4. **Desktop userData.** Copy to `$XDG_DATA_HOME/workbench-desktop`, excluding only Chromium caches (`Cache`, `Code Cache`, `GPUCache`, `DawnGraphiteCache`, `DawnWebGPUCache`, `GPUPersistentCache`, `ShaderCache`), `Crashpad` and `Singleton*` lock files. Cookies, Local Storage, IndexedDB, Service Worker data, dictionaries and preferences are copied. Inside the copy, `Partitions/maw-*` become `Partitions/workbench-*`, and absolute legacy paths in `Preferences` and `Local State` are rewritten. Cookies are stored without OS keyring encryption, so the directory rename does not affect their readability.
 5. **Release state.** Build the first canonical release from the verified source with the normal updater in initial mode. It becomes `healthy` only after the normal readiness probe. Legacy releases are not copied.
 6. **Helpers and CLI.** Install `~/.local/lib/workbench` and `anvi-bench`; replace `maw`, `anvil-bench` and `workbench` with shims. The legacy scripts are saved for rollback.

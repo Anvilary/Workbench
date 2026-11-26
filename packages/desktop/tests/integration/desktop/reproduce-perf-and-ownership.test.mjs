@@ -358,8 +358,8 @@ test('overhead: reproduces monitoring overhead and measures latency distribution
     }
 
     // Infrastructure processes
-    writePid(9001, 1, 'electron', 'maw-desktop', '/opt/maw/electron', 100, 50, 1000, 80000, 120000);
-    writePid(9002, 9001, 'electron-gpu', 'maw-desktop --type=gpu-process', '/opt/maw/electron', 50, 20, 1000, 40000, 70000);
+    writePid(9001, 1, 'electron', 'workbench-desktop', '/opt/maw/electron', 100, 50, 1000, 80000, 120000);
+    writePid(9002, 9001, 'electron-gpu', 'workbench-desktop --type=gpu-process', '/opt/maw/electron', 50, 20, 1000, 40000, 70000);
 
     const collector = new ResourceCollector({
       procRoot: tmpProc,
@@ -530,7 +530,7 @@ test('lifecycle: PTY supervisor restart updates supervisor PID and cleans up old
     const { writePid } = createMockProc(tmpProc);
 
     writePid(9999, 1, 'node', 'node backend.js', '/usr/bin/node', 10, 5, 1000, 20000, 40000);
-    writePid(500, 1, 'maw-ptyd', 'maw-ptyd', '/usr/bin/node', 10, 5, 1000, 15000, 30000);
+    writePid(500, 1, 'workbench-ptyd', 'workbench-ptyd', '/usr/bin/node', 10, 5, 1000, 15000, 30000);
 
     let currentSupervisorPid = 500;
     const collector = new ResourceCollector({ procRoot: tmpProc });
@@ -554,7 +554,7 @@ test('lifecycle: PTY supervisor restart updates supervisor PID and cleans up old
 
       // Simulate supervisor crash/restart: old supervisor PID 500 dies, new supervisor PID 600 starts
       fs.rmSync(path.join(tmpProc, '500'), { recursive: true, force: true });
-      writePid(600, 1, 'maw-ptyd', 'maw-ptyd', '/usr/bin/node', 12, 6, 2000, 16000, 32000);
+      writePid(600, 1, 'workbench-ptyd', 'workbench-ptyd', '/usr/bin/node', 12, 6, 2000, 16000, 32000);
       currentSupervisorPid = 600;
 
       const snap2 = await collector.sample();

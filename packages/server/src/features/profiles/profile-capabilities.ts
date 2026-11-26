@@ -7,7 +7,7 @@ import path from 'node:path';
 import type {
   AgencyCliProfile, AgencyModelOption, AgencyProfileCapabilities,
   CliProfileId, CliProvider, AgentId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { LaunchSession } from '../../agents/adapter.js';
 import type { AgentRegistry } from '../../agents/registry.js';
 import {

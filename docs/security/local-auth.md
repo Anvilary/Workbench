@@ -23,7 +23,7 @@ Safeguards that remain:
 - `Host` and `Origin` checks remain mandatory.
 - The server prints a prominent warning at startup.
 
-The legacy `MAW_UNSAFE_LOCAL_NO_AUTH` name is not honored, and the [identity migration](../architecture/identity-migration.md) drops it from the environment file, so token-free mode is never carried forward by an upgrade. CI runs with the variable unset.
+The legacy `WORKBENCH_UNSAFE_LOCAL_NO_AUTH` name is not honored, and the [identity migration](../architecture/identity-migration.md) drops it from the environment file, so token-free mode is never carried forward by an upgrade. CI runs with the variable unset.
 
 ## Related
 

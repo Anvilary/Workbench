@@ -35,7 +35,7 @@ import {
   WORKTREE_COPY_MAX_FILES,
   WORKTREE_COPY_SAMPLE,
   type WorktreeCopySummary,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { writeAtomically } from '../../shared/persistence/atomic-write.js';
 import { resolveInside } from '../files/path-guard.js';
 import { ignoredAmong, ignoredSelection } from './git.js';

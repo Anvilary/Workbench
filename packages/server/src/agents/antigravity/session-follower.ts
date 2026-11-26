@@ -35,7 +35,7 @@ import {
   type ContextUsage,
   type ConversationState,
   type PermissionMode,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { EventPage, LoadedImage, PollResult, SessionFollower } from '../adapter.js';
 import { JsonlFollower } from '../jsonl-follower.js';
 import { withinNativeScope } from '../native-scope.js';

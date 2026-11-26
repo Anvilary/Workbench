@@ -1,3 +1,4 @@
+import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
 /**
  * Resource aware eviction of native browser views.
  *
@@ -132,8 +133,8 @@ export function createViewEviction({ app, state, evictTab, isAiUnloadUnderPressu
       pressure: readSystemPressure(),
       pressureGovernor,
       attachedCount: attachedViews.size,
-      envOverride: process.env.MAW_MAX_RESIDENT_VIEWS,
-      tierOverride: process.env.MAW_MEMORY_PRESSURE_TIER,
+      envOverride: workbenchEnv('MAX_RESIDENT_VIEWS'),
+      tierOverride: workbenchEnv('MEMORY_PRESSURE_TIER'),
     });
     lastBudgetInfo = { ...info, computedAt: Date.now() };
     return info;

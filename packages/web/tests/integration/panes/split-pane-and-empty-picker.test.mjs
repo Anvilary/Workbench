@@ -12,7 +12,7 @@ import {
   isWorkspacePaneLayout,
   layoutOwnershipError,
   MAX_LEAVES,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 
 const ws = '11111111-1111-4111-8111-111111111111';
 

@@ -9,7 +9,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import type { RuntimeSessionId, WorkspaceId } from '@agent-workbench/shared';
+import type { RuntimeSessionId, WorkspaceId } from '@anvilary/workbench-shared';
 import { AgencyNotificationStore } from '../../../src/features/notifications/notification-store.js';
 import { TabActivityManager } from '../../../src/features/notifications/tab-activity-manager.js';
 

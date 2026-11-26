@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createDefaultLayout, type WorkspaceId } from '@agent-workbench/shared';
+import { createDefaultLayout, type WorkspaceId } from '@anvilary/workbench-shared';
 import { evaluateLayoutSave } from '../../../src/features/workspaces/layout-validation.js';
 
 const ws = '11111111-1111-4111-8111-111111111111' as WorkspaceId;

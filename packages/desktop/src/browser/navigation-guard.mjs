@@ -1,3 +1,4 @@
+import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
 /**
  * Navigation, popup and sign-in security for every native browser view.
  *
@@ -99,7 +100,7 @@ export function createNavigationGuard({
 
   async function openExternal(url, reason) {
     if (!(externalUrl(url) || authenticationUrl(url)) || win.isDestroyed()) return;
-    if (process.env.MAW_EXTERNAL_POLICY === 'deny') {
+    if (workbenchEnv('EXTERNAL_POLICY') === 'deny') {
       send({ type: 'error', message: reason || 'External browser opening was cancelled.' });
       return;
     }
@@ -131,7 +132,7 @@ export function createNavigationGuard({
 
   function tryOpenOAuthLoopback(url, sourceKey = 'global') {
     if (!isOAuthLoopbackCallback(url, { excludePort: backend.current().port })) return false;
-    if (process.env.MAW_EXTERNAL_POLICY === 'deny') {
+    if (workbenchEnv('EXTERNAL_POLICY') === 'deny') {
       send({ type: 'error', message: 'External browser opening was cancelled.' });
       return true;
     }
@@ -350,7 +351,7 @@ export function createNavigationGuard({
         if (authLoadFailed || !isMainFrame || code === -3 || !authenticationUrl(failedUrl)) return;
         authLoadFailed = true;
         if (!popup.isDestroyed()) popup.close();
-        void openExternal(failedUrl, 'This sign-in could not be opened inside MAW. Open it in your system browser?').catch(() => {});
+        void openExternal(failedUrl, 'This sign-in could not be opened inside Workbench. Open it in your system browser?').catch(() => {});
       });
       popup.on('closed', () => {
         popupOwners.delete(popupContents);

@@ -24,7 +24,7 @@
  */
 
 // Test isolation: remote access test invariants require standard authentication mode
-delete process.env.MAW_UNSAFE_LOCAL_NO_AUTH;
+delete process.env.WORKBENCH_UNSAFE_LOCAL_NO_AUTH;
 
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -37,7 +37,7 @@ import {
   TOKEN_QUERY_PARAM,
   parseClientMessage,
   parseServerMessage,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import {
   DeviceBook,
   PAIRING_ALPHABET,

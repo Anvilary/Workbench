@@ -8,8 +8,8 @@
 import type {
   AgencyServerMessage,
   WebTabServerMessage,
-} from '@agent-workbench/shared';
-import { parseWebTabClientMessage } from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
+import { parseWebTabClientMessage } from '@anvilary/workbench-shared';
 import type { BrowserTabAdapter } from './browser-tab-adapter.js';
 import { BrowserTabStoreError } from './browser-tab-store.js';
 
@@ -56,7 +56,7 @@ export async function handleWebTabMessage(
       }
 
       case 'agency.webTab.select': {
-        let tab: import('@agent-workbench/shared').WebTab;
+        let tab: import('@anvilary/workbench-shared').WebTab;
         try {
           tab = await context.adapter.selectTab(message.workspaceId, message.tabId);
         } catch (error) {

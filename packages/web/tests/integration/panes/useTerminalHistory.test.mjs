@@ -134,7 +134,7 @@ test('useTerminalHistory and TerminalView history pagination', { timeout: 60000 
   t.after(async () => {
     await new Promise((resolve) => server.close(resolve));
   });
-  const browser = await chromium.launch({ headless: true, executablePath, chromiumSandbox: process.env.MAW_TEST_NO_CHROMIUM_SANDBOX !== '1' });
+  const browser = await chromium.launch({ headless: true, executablePath, chromiumSandbox: process.env.WORKBENCH_TEST_NO_CHROMIUM_SANDBOX !== '1' });
   t.after(async () => { await browser.close(); });
 
   const page = await browser.newPage({ viewport: { width: 1000, height: 600 } });

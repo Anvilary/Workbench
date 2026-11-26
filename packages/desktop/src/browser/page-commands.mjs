@@ -1,3 +1,4 @@
+import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
 /**
  * Commands that act on the page inside one native view: back, forward, reload,
  * copy, zoom, spellcheck replacement, opening links, find in page and capture.
@@ -44,7 +45,7 @@ export function createPageCommands({ electron, clipboard, state, guard, send }) 
     if (command.action === 'open-page') {
       const pageUrl = contents.getURL();
       if ((externalUrl(pageUrl) || otherUrl(pageUrl, 8192)) && !contents.isDestroyed()) {
-        if (process.env.MAW_EXTERNAL_POLICY === 'deny') {
+        if (workbenchEnv('EXTERNAL_POLICY') === 'deny') {
           send({ type: 'error', message: 'External browser opening was cancelled.' });
         } else if (shell) {
           void shell.openExternal(pageUrl).catch(() => send({ type: 'error', message: 'Could not open external browser.' }));
@@ -53,7 +54,7 @@ export function createPageCommands({ electron, clipboard, state, guard, send }) 
     }
     if (command.action === 'open-link-external' && typeof command.url === 'string') {
       if ((externalUrl(command.url) || otherUrl(command.url, 8192)) && !contents.isDestroyed()) {
-        if (process.env.MAW_EXTERNAL_POLICY === 'deny') {
+        if (workbenchEnv('EXTERNAL_POLICY') === 'deny') {
           send({ type: 'error', message: 'External browser opening was cancelled.' });
         } else if (shell) {
           void shell.openExternal(command.url).catch(() => send({ type: 'error', message: 'Could not open external browser.' }));

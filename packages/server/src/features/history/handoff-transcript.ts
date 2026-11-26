@@ -39,7 +39,7 @@ import {
   type ConversationState,
   type ConversationToolCallPart,
   type ConversationToolResultPart,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { TranscriptReferenceStyle } from '../../agents/adapter.js';
 import { UNTITLED_SESSION_TITLE } from '../../agents/session-title.js';
 import { fileReference, sanitizeForPaste } from '../composer/pty-input.js';

@@ -15,8 +15,8 @@ import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 
 const require = createRequire(import.meta.url);
 const here = DESKTOP_ROOT;
-const electronExecutable = process.env.MAW_ELECTRON_EXECUTABLE ||
-  (existsSync('/opt/maw-electron/45.2.0/electron') ? '/opt/maw-electron/45.2.0/electron' : require('electron'));
+const electronExecutable = process.env.WORKBENCH_ELECTRON_EXECUTABLE ||
+  (existsSync('/opt/workbench-electron/45.2.0/electron') ? '/opt/workbench-electron/45.2.0/electron' : require('electron'));
 
 test('policy: write-clipboard-text and read-clipboard-text commands fail closed on invalid payloads', () => {
   // Valid write
@@ -64,8 +64,8 @@ test('electron: real OS clipboard write, IPC bridge roundtrip, and independent x
     env: {
       ...process.env,
       HOME: dataDir,
-      MAW_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
-      MAW_DESKTOP_DATA_DIR: dataDir,
+      WORKBENCH_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
+      WORKBENCH_DESKTOP_DATA_DIR: dataDir,
     },
   });
 
@@ -75,14 +75,14 @@ test('electron: real OS clipboard write, IPC bridge roundtrip, and independent x
   // 1. Write text via the trusted desktop IPC bridge
   const testString = 'MAW Terminal Selection Test · 🚀 2026-11-05\nWrapped logical line test';
   const writeRes = await page.evaluate(
-    (text) => window.mawChatGpt.command({ type: 'write-clipboard-text', text }),
+    (text) => window.workbench.command({ type: 'write-clipboard-text', text }),
     testString,
   );
   assert.equal(writeRes?.ok, true, 'IPC write-clipboard-text must succeed');
 
   // 2. Read back via both IPC bridge and Electron main clipboard API
   const ipcReadBack = await page.evaluate(
-    () => window.mawChatGpt.command({ type: 'read-clipboard-text' }),
+    () => window.workbench.command({ type: 'read-clipboard-text' }),
   );
   assert.equal(ipcReadBack?.ok, true, 'IPC read-clipboard-text must succeed');
   assert.equal(ipcReadBack?.text, testString, 'IPC read-back text matches written text exactly');
@@ -105,7 +105,7 @@ test('electron: real OS clipboard write, IPC bridge roundtrip, and independent x
 
   // 4. Overwrite with empty string
   const clearRes = await page.evaluate(
-    () => window.mawChatGpt.command({ type: 'write-clipboard-text', text: '' }),
+    () => window.workbench.command({ type: 'write-clipboard-text', text: '' }),
   );
   assert.equal(clearRes?.ok, true, 'IPC clear clipboard must succeed');
   const emptyRead = await desktop.evaluate(async ({ clipboard }) => {

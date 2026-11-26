@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useId } from 'react';
-import type { PerformanceBrowserLifecycle, PerformanceSnapshot } from '@agent-workbench/shared';
+import type { PerformanceBrowserLifecycle, PerformanceSnapshot } from '@anvilary/workbench-shared';
 import { formatBytes } from '../../i18n/format.js';
 import { t } from '../../i18n/index.js';
 import { PerformanceSparkline } from './PerformanceSparkline.js';
@@ -30,13 +30,13 @@ function formatReasonCounts(counts: Record<string, number | null | undefined> | 
  */
 function BrowserLifecycleSummary({ browser }: { browser?: PerformanceBrowserLifecycle }): JSX.Element {
   if (!browser) {
-    return <div className="maw-perf-shared-notice">Lifecycle telemetry {UNAVAILABLE}</div>;
+    return <div className="wb-perf-shared-notice">Lifecycle telemetry {UNAVAILABLE}</div>;
   }
   const protectionAges = Object.entries(browser.protectionAgeMs ?? {})
     .filter(([, value]) => typeof value === 'number')
     .map(([reason, value]) => `${reason} ${formatSeconds(value as number)}`);
   return (
-    <div className="maw-perf-shared-notice">
+    <div className="wb-perf-shared-notice">
       <div>
         Resident {browser.residentViews} &bull; attached {browser.attachedViews} &bull; detached{' '}
         {browser.detachedViews} &bull; suspended {browser.suspendedViews} &bull; renderer processes{' '}
@@ -95,7 +95,7 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
 
   // Subscribe to performance monitor via desktop IPC
   useEffect(() => {
-    const bridge = (window as unknown as { mawChatGpt?: { command: (cmd: any) => Promise<any>; subscribe: (fn: (state: any) => void) => () => void } }).mawChatGpt;
+    const bridge = (window as unknown as { workbench?: { command: (cmd: any) => Promise<any>; subscribe: (fn: (state: any) => void) => () => void } }).workbench;
     if (!bridge || typeof bridge.command !== 'function') {
       setError(t('performance.desktopRequired'));
       return;
@@ -137,7 +137,7 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
   }, []);
 
   const handleTogglePause = useCallback(async () => {
-    const bridge = (window as unknown as { mawChatGpt?: { command: (cmd: any) => Promise<any> } }).mawChatGpt;
+    const bridge = (window as unknown as { workbench?: { command: (cmd: any) => Promise<any> } }).workbench;
     if (!bridge) return;
     try {
       if (isPaused) {
@@ -151,7 +151,7 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
   }, [isPaused]);
 
   const handleRefresh = useCallback(async () => {
-    const bridge = (window as unknown as { mawChatGpt?: { command: (cmd: any) => Promise<any> } }).mawChatGpt;
+    const bridge = (window as unknown as { workbench?: { command: (cmd: any) => Promise<any> } }).workbench;
     if (!bridge) return;
     try {
       setIsRefreshing(true);
@@ -179,35 +179,35 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
 
   return (
     <div
-      className="maw-performance-panel"
+      className="wb-performance-panel"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
     >
-      <div className="maw-perf-header">
-        <div className="maw-perf-title-row">
-          <svg className="maw-perf-header-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+      <div className="wb-perf-header">
+        <div className="wb-perf-title-row">
+          <svg className="wb-perf-header-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
             <path fill="currentColor" d="M1 11.5a.5.5 0 0 1 .5-.5h2.793l1.853-3.707a.5.5 0 0 1 .894 0L8.5 10.207l1.646-1.646a.5.5 0 0 1 .708 0L12 9.707V2.5a.5.5 0 0 1 1 0v8a.5.5 0 0 1-.5.5H1.5a.5.5 0 0 1-.5-.5z"/>
           </svg>
-          <h2 id={titleId} className="maw-perf-title">
+          <h2 id={titleId} className="wb-perf-title">
             {t('performance.title')}
           </h2>
           {snapshot && (
-            <span className={`maw-perf-status-badge ${isPaused ? 'paused' : 'active'}`}>
+            <span className={`wb-perf-status-badge ${isPaused ? 'paused' : 'active'}`}>
               {isPaused ? t('performance.paused') : t('performance.sampling2s')}
             </span>
           )}
           {snapshot?.sampleDurationMs !== undefined && (
-            <span className="maw-perf-latency-badge" title={t('performance.collectionLatency')}>
+            <span className="wb-perf-latency-badge" title={t('performance.collectionLatency')}>
               {snapshot.sampleDurationMs} ms
             </span>
           )}
         </div>
 
-        <div className="maw-perf-controls">
+        <div className="wb-perf-controls">
           <button
             type="button"
-            className="maw-perf-btn"
+            className="wb-perf-btn"
             onClick={handleTogglePause}
             title={isPaused ? t('performance.resume') : t('performance.pause')}
             aria-label={isPaused ? t('performance.resume') : t('performance.pause')}
@@ -226,7 +226,7 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
 
           <button
             type="button"
-            className={`maw-perf-btn ${isRefreshing ? 'spinning' : ''}`}
+            className={`wb-perf-btn ${isRefreshing ? 'spinning' : ''}`}
             onClick={handleRefresh}
             title={t('performance.refresh')}
             aria-label={t('performance.refresh')}
@@ -239,7 +239,7 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
 
           <button
             type="button"
-            className="maw-perf-btn maw-perf-close-btn"
+            className="wb-perf-btn wb-perf-close-btn"
             onClick={onClose}
             title={t('performance.close')}
             aria-label={t('performance.close')}
@@ -249,32 +249,32 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
         </div>
       </div>
 
-      <div className="maw-perf-content">
+      <div className="wb-perf-content">
         {error ? (
-          <div className="maw-perf-error" role="alert">
+          <div className="wb-perf-error" role="alert">
             <p>{error}</p>
           </div>
         ) : !snapshot ? (
-          <div className="maw-perf-loading">
-            <div className="maw-perf-spinner" aria-hidden="true" />
+          <div className="wb-perf-loading">
+            <div className="wb-perf-spinner" aria-hidden="true" />
             <p>{t('performance.connecting')}</p>
           </div>
         ) : (
           <>
             {/* Global Overview Grid */}
-            <div className="maw-perf-grid">
-              {/* Card 1: MaW App CPU */}
-              <div className="maw-perf-card">
-                <div className="maw-perf-card-header">
-                  <span className="maw-perf-card-label">{t('performance.mawAppCpu')}</span>
-                  <span className="maw-perf-card-sub">
+            <div className="wb-perf-grid">
+              {/* Card 1: Workbench App CPU */}
+              <div className="wb-perf-card">
+                <div className="wb-perf-card-header">
+                  <span className="wb-perf-card-label">{t('performance.mawAppCpu')}</span>
+                  <span className="wb-perf-card-sub">
                     {snapshot.global.cpuCoreCount} {t('performance.cores')}
                   </span>
                 </div>
-                <div className="maw-perf-card-body">
-                  <div className="maw-perf-card-val-row">
-                    <span className="maw-perf-card-val">{snapshot.global.appMawCpuPercent ?? snapshot.global.mawCpuPercent}%</span>
-                    <span className="maw-perf-card-note">
+                <div className="wb-perf-card-body">
+                  <div className="wb-perf-card-val-row">
+                    <span className="wb-perf-card-val">{snapshot.global.appMawCpuPercent ?? snapshot.global.mawCpuPercent}%</span>
+                    <span className="wb-perf-card-note">
                       System: {snapshot.global.cpuUsagePercent}% · Workloads: {snapshot.global.workloadCpuPercent ?? Number(snapshot.aiAgents.totalCpuPercent + snapshot.otherTerminals.totalCpuPercent).toFixed(1)}%
                     </span>
                   </div>
@@ -289,21 +289,21 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                 </div>
               </div>
 
-              {/* Card 2: MaW App RAM */}
-              <div className="maw-perf-card">
-                <div className="maw-perf-card-header">
-                  <span className="maw-perf-card-label">{t('performance.mawAppRam')}</span>
+              {/* Card 2: Workbench App RAM */}
+              <div className="wb-perf-card">
+                <div className="wb-perf-card-header">
+                  <span className="wb-perf-card-label">{t('performance.mawAppRam')}</span>
                   <span
-                    className={`maw-perf-pressure-badge tier-${snapshot.global.systemMemoryPressure}`}
+                    className={`wb-perf-pressure-badge tier-${snapshot.global.systemMemoryPressure}`}
                     title={`System memory pressure: ${snapshot.global.systemMemoryPressure.toUpperCase()}`}
                   >
                     {snapshot.global.systemMemoryPressure.toUpperCase()}
                   </span>
                 </div>
-                <div className="maw-perf-card-body">
-                  <div className="maw-perf-card-val-row">
-                    <span className="maw-perf-card-val">{formatBytes(snapshot.global.appMawPssBytes ?? snapshot.global.mawPssBytes)}</span>
-                    <span className="maw-perf-card-note">
+                <div className="wb-perf-card-body">
+                  <div className="wb-perf-card-val-row">
+                    <span className="wb-perf-card-val">{formatBytes(snapshot.global.appMawPssBytes ?? snapshot.global.mawPssBytes)}</span>
+                    <span className="wb-perf-card-note">
                       Workloads: {formatBytes(snapshot.global.workloadPssBytes ?? (snapshot.aiAgents.totalPssBytes + snapshot.otherTerminals.totalPssBytes))} · Available: {formatBytes(snapshot.global.systemAvailableBytes)}
                     </span>
                   </div>
@@ -317,17 +317,17 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
               </div>
 
               {/* Card 3: Embedded Browsers */}
-              <div className="maw-perf-card">
-                <div className="maw-perf-card-header">
-                  <span className="maw-perf-card-label">{t('performance.embeddedBrowsers')}</span>
-                  <span className="maw-perf-card-sub">
+              <div className="wb-perf-card">
+                <div className="wb-perf-card-header">
+                  <span className="wb-perf-card-label">{t('performance.embeddedBrowsers')}</span>
+                  <span className="wb-perf-card-sub">
                     {snapshot.browserViews.activeCount} active · {snapshot.browserViews.suspendedCount} hibernated
                   </span>
                 </div>
-                <div className="maw-perf-card-body">
-                  <div className="maw-perf-card-val-row">
-                    <span className="maw-perf-card-val">{snapshot.browserViews.totalCount} {t('performance.tabs')}</span>
-                    <span className="maw-perf-card-note">
+                <div className="wb-perf-card-body">
+                  <div className="wb-perf-card-val-row">
+                    <span className="wb-perf-card-val">{snapshot.browserViews.totalCount} {t('performance.tabs')}</span>
+                    <span className="wb-perf-card-note">
                       {formatBytes(snapshot.browserViews.totalPssBytes)} PSS · {snapshot.browserViews.totalCpuPercent}% CPU
                     </span>
                   </div>
@@ -335,19 +335,19 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
               </div>
 
               {/* Card 4: Managed Workloads */}
-              <div className="maw-perf-card">
-                <div className="maw-perf-card-header">
-                  <span className="maw-perf-card-label">{t('performance.managedWorkloads')}</span>
-                  <span className="maw-perf-card-sub">
+              <div className="wb-perf-card">
+                <div className="wb-perf-card-header">
+                  <span className="wb-perf-card-label">{t('performance.managedWorkloads')}</span>
+                  <span className="wb-perf-card-sub">
                     {snapshot.aiAgents.activeCount} agents · {snapshot.otherTerminals.count} shells
                   </span>
                 </div>
-                <div className="maw-perf-card-body">
-                  <div className="maw-perf-card-val-row">
-                    <span className="maw-perf-card-val">
+                <div className="wb-perf-card-body">
+                  <div className="wb-perf-card-val-row">
+                    <span className="wb-perf-card-val">
                       {formatBytes(snapshot.global.workloadPssBytes ?? (snapshot.aiAgents.totalPssBytes + snapshot.otherTerminals.totalPssBytes))}
                     </span>
-                    <span className="maw-perf-card-note">
+                    <span className="wb-perf-card-note">
                       {snapshot.global.workloadCpuPercent ?? Number(snapshot.aiAgents.totalCpuPercent + snapshot.otherTerminals.totalCpuPercent).toFixed(1)}% CPU · {snapshot.global.totalWorkloadProcesses ?? (snapshot.aiAgents.groups.reduce((a, g) => a + g.instances.reduce((b, i) => b + i.pids.length, 0), 0) + snapshot.otherTerminals.terminals.reduce((a, t) => a + t.pids.length, 0))} procs
                     </span>
                   </div>
@@ -362,48 +362,48 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
             </div>
 
             {/* Accounting Note */}
-            <div className="maw-perf-accounting-note">
+            <div className="wb-perf-accounting-note">
               <span>{t('performance.accountingNote')}</span>
             </div>
 
             {/* Service Health Line */}
-            <div className="maw-perf-health-row">
-              <div className="maw-perf-health-item" title={snapshot.global.backendHealth.type}>
-                <span className={`maw-perf-health-dot ${snapshot.global.backendHealth.status}`} />
-                <span className="maw-perf-health-name">Backend</span>
-                <span className="maw-perf-health-pid">
+            <div className="wb-perf-health-row">
+              <div className="wb-perf-health-item" title={snapshot.global.backendHealth.type}>
+                <span className={`wb-perf-health-dot ${snapshot.global.backendHealth.status}`} />
+                <span className="wb-perf-health-name">Backend</span>
+                <span className="wb-perf-health-pid">
                   {snapshot.global.backendHealth.pid ? `PID ${snapshot.global.backendHealth.pid}` : t('performance.offline')}
                 </span>
               </div>
-              <div className="maw-perf-health-item" title={snapshot.global.supervisorHealth.type}>
-                <span className={`maw-perf-health-dot ${snapshot.global.supervisorHealth.status}`} />
-                <span className="maw-perf-health-name">PTY Supervisor</span>
-                <span className="maw-perf-health-pid">
+              <div className="wb-perf-health-item" title={snapshot.global.supervisorHealth.type}>
+                <span className={`wb-perf-health-dot ${snapshot.global.supervisorHealth.status}`} />
+                <span className="wb-perf-health-name">PTY Supervisor</span>
+                <span className="wb-perf-health-pid">
                   {snapshot.global.supervisorHealth.pid ? `PID ${snapshot.global.supervisorHealth.pid}` : t('performance.fallbackInProcess')}
                 </span>
               </div>
-              <div className="maw-perf-health-item" title={snapshot.global.desktopHealth.type}>
-                <span className={`maw-perf-health-dot ${snapshot.global.desktopHealth.status}`} />
-                <span className="maw-perf-health-name">Electron Desktop</span>
-                <span className="maw-perf-health-pid">
+              <div className="wb-perf-health-item" title={snapshot.global.desktopHealth.type}>
+                <span className={`wb-perf-health-dot ${snapshot.global.desktopHealth.status}`} />
+                <span className="wb-perf-health-name">Electron Desktop</span>
+                <span className="wb-perf-health-pid">
                   {snapshot.global.desktopHealth.pid ? `PID ${snapshot.global.desktopHealth.pid}` : t('performance.offline')}
                 </span>
               </div>
             </div>
 
             {/* Resource Groups */}
-            <div className="maw-perf-groups">
-              {/* Group 1: MAW Infrastructure */}
-              <section className="maw-perf-section">
+            <div className="wb-perf-groups">
+              {/* Group 1: Workbench Infrastructure */}
+              <section className="wb-perf-section">
                 <button
                   type="button"
-                  className="maw-perf-section-toggle"
+                  className="wb-perf-section-toggle"
                   onClick={() => setExpandInfra(!expandInfra)}
                   aria-expanded={expandInfra}
                 >
-                  <span className={`maw-perf-chevron ${expandInfra ? 'expanded' : ''}`}>&#9656;</span>
-                  <span className="maw-perf-section-title">{t('performance.groupInfrastructure')}</span>
-                  <span className="maw-perf-section-meta">
+                  <span className={`wb-perf-chevron ${expandInfra ? 'expanded' : ''}`}>&#9656;</span>
+                  <span className="wb-perf-section-title">{t('performance.groupInfrastructure')}</span>
+                  <span className="wb-perf-section-meta">
                     {snapshot.infrastructure.processCount} {t('performance.procs')} &bull;{' '}
                     {snapshot.infrastructure.totalCpuPercent}% CPU &bull;{' '}
                     {formatBytes(snapshot.infrastructure.totalPssBytes)} PSS
@@ -411,8 +411,8 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                 </button>
 
                 {expandInfra && (
-                  <div className="maw-perf-table-wrapper">
-                    <table className="maw-perf-table">
+                  <div className="wb-perf-table-wrapper">
+                    <table className="wb-perf-table">
                       <thead>
                         <tr>
                           <th>{t('performance.process')}</th>
@@ -426,15 +426,15 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                       <tbody>
                         {snapshot.infrastructure.processes.map((proc) => (
                           <tr key={`infra-${proc.pid}`}>
-                            <td className="maw-perf-td-name">
-                              <span className="maw-perf-role-pill">{proc.role}</span>
+                            <td className="wb-perf-td-name">
+                              <span className="wb-perf-role-pill">{proc.role}</span>
                               {proc.name}
                             </td>
-                            <td className="maw-perf-td-mono">{proc.pid}</td>
-                            <td className="maw-perf-td-mono">{proc.cpuPercent}%</td>
-                            <td className="maw-perf-td-mono">{formatBytes(proc.pssBytes)}</td>
-                            <td className="maw-perf-td-mono">{formatBytes(proc.privateBytes)}</td>
-                            <td className="maw-perf-td-mono">{formatBytes(proc.sharedBytes)}</td>
+                            <td className="wb-perf-td-mono">{proc.pid}</td>
+                            <td className="wb-perf-td-mono">{proc.cpuPercent}%</td>
+                            <td className="wb-perf-td-mono">{formatBytes(proc.pssBytes)}</td>
+                            <td className="wb-perf-td-mono">{formatBytes(proc.privateBytes)}</td>
+                            <td className="wb-perf-td-mono">{formatBytes(proc.sharedBytes)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -444,16 +444,16 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
               </section>
 
               {/* Group 2: AI Coding Agents */}
-              <section className="maw-perf-section">
+              <section className="wb-perf-section">
                 <button
                   type="button"
-                  className="maw-perf-section-toggle"
+                  className="wb-perf-section-toggle"
                   onClick={() => setExpandAgents(!expandAgents)}
                   aria-expanded={expandAgents}
                 >
-                  <span className={`maw-perf-chevron ${expandAgents ? 'expanded' : ''}`}>&#9656;</span>
-                  <span className="maw-perf-section-title">{t('performance.groupAiAgents')}</span>
-                  <span className="maw-perf-section-meta">
+                  <span className={`wb-perf-chevron ${expandAgents ? 'expanded' : ''}`}>&#9656;</span>
+                  <span className="wb-perf-section-title">{t('performance.groupAiAgents')}</span>
+                  <span className="wb-perf-section-meta">
                     {snapshot.aiAgents.activeCount} {t('performance.instances')} &bull;{' '}
                     {snapshot.aiAgents.totalCpuPercent}% CPU &bull;{' '}
                     {formatBytes(snapshot.aiAgents.totalPssBytes)} PSS
@@ -461,28 +461,28 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                 </button>
 
                 {expandAgents && (
-                  <div className="maw-perf-subgroups">
+                  <div className="wb-perf-subgroups">
                     {snapshot.aiAgents.groups.length === 0 ? (
-                      <p className="maw-perf-empty">{t('performance.noAgentsRunning')}</p>
+                      <p className="wb-perf-empty">{t('performance.noAgentsRunning')}</p>
                     ) : (
                       snapshot.aiAgents.groups.map((group) => (
-                        <div key={`agent-grp-${group.provider}`} className="maw-perf-subgroup">
-                          <div className="maw-perf-subgroup-header">
-                            <span className="maw-perf-provider-tag">{group.providerLabel}</span>
-                            <span className="maw-perf-subgroup-meta">
+                        <div key={`agent-grp-${group.provider}`} className="wb-perf-subgroup">
+                          <div className="wb-perf-subgroup-header">
+                            <span className="wb-perf-provider-tag">{group.providerLabel}</span>
+                            <span className="wb-perf-subgroup-meta">
                               {group.instanceCount} {t('performance.active')} &bull;{' '}
                               {group.totalCpuPercent}% CPU &bull;{' '}
                               {formatBytes(group.totalPssBytes)} PSS
                             </span>
                           </div>
 
-                          <div className="maw-perf-instances-list">
+                          <div className="wb-perf-instances-list">
                             {group.instances.map((inst) => {
                               const isExpanded = !!expandedAgentTerminals[inst.terminalId];
                               return (
-                                <div key={`agent-inst-${inst.terminalId}`} className="maw-perf-instance-card">
+                                <div key={`agent-inst-${inst.terminalId}`} className="wb-perf-instance-card">
                                   <div
-                                    className="maw-perf-instance-row"
+                                    className="wb-perf-instance-row"
                                     onClick={() => toggleAgentTerminal(inst.terminalId)}
                                     role="button"
                                     tabIndex={0}
@@ -493,19 +493,19 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                                       }
                                     }}
                                   >
-                                    <span className={`maw-perf-chevron-sm ${isExpanded ? 'expanded' : ''}`}>&#9656;</span>
-                                    <span className="maw-perf-instance-title">{inst.title}</span>
-                                    <span className="maw-perf-instance-pids">
+                                    <span className={`wb-perf-chevron-sm ${isExpanded ? 'expanded' : ''}`}>&#9656;</span>
+                                    <span className="wb-perf-instance-title">{inst.title}</span>
+                                    <span className="wb-perf-instance-pids">
                                       Root PID {inst.rootPid} ({inst.pids.length} procs)
                                     </span>
-                                    <span className="maw-perf-instance-metrics">
+                                    <span className="wb-perf-instance-metrics">
                                       {inst.cpuPercent}% CPU &bull; {formatBytes(inst.pssBytes)} PSS
                                     </span>
                                   </div>
 
                                   {isExpanded && (
-                                    <div className="maw-perf-instance-details">
-                                      <table className="maw-perf-table maw-perf-subtable">
+                                    <div className="wb-perf-instance-details">
+                                      <table className="wb-perf-table wb-perf-subtable">
                                         <thead>
                                           <tr>
                                             <th>Subprocess</th>
@@ -518,11 +518,11 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                                         <tbody>
                                           {inst.processes.map((p) => (
                                             <tr key={`agent-proc-${p.pid}`}>
-                                              <td className="maw-perf-td-name">{p.name}</td>
-                                              <td className="maw-perf-td-mono">{p.pid}</td>
-                                              <td className="maw-perf-td-mono">{p.cpuPercent}%</td>
-                                              <td className="maw-perf-td-mono">{formatBytes(p.pssBytes)}</td>
-                                              <td className="maw-perf-td-mono">{formatBytes(p.privateBytes)}</td>
+                                              <td className="wb-perf-td-name">{p.name}</td>
+                                              <td className="wb-perf-td-mono">{p.pid}</td>
+                                              <td className="wb-perf-td-mono">{p.cpuPercent}%</td>
+                                              <td className="wb-perf-td-mono">{formatBytes(p.pssBytes)}</td>
+                                              <td className="wb-perf-td-mono">{formatBytes(p.privateBytes)}</td>
                                             </tr>
                                           ))}
                                         </tbody>
@@ -541,16 +541,16 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
               </section>
 
               {/* Group 3: Embedded Browser Views */}
-              <section className="maw-perf-section">
+              <section className="wb-perf-section">
                 <button
                   type="button"
-                  className="maw-perf-section-toggle"
+                  className="wb-perf-section-toggle"
                   onClick={() => setExpandBrowsers(!expandBrowsers)}
                   aria-expanded={expandBrowsers}
                 >
-                  <span className={`maw-perf-chevron ${expandBrowsers ? 'expanded' : ''}`}>&#9656;</span>
-                  <span className="maw-perf-section-title">{t('performance.groupBrowsers')}</span>
-                  <span className="maw-perf-section-meta">
+                  <span className={`wb-perf-chevron ${expandBrowsers ? 'expanded' : ''}`}>&#9656;</span>
+                  <span className="wb-perf-section-title">{t('performance.groupBrowsers')}</span>
+                  <span className="wb-perf-section-meta">
                     {snapshot.browserViews.totalCount} {t('performance.tabs')} ({snapshot.browserViews.activeCount} {t('performance.active')}, {snapshot.browserViews.suspendedCount} {t('performance.hibernated')}) &bull;{' '}
                     {snapshot.browserViews.totalCpuPercent}% CPU &bull;{' '}
                     {formatBytes(snapshot.browserViews.totalPssBytes)} PSS
@@ -558,12 +558,12 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                 </button>
 
                 {expandBrowsers && (
-                  <div className="maw-perf-table-wrapper">
+                  <div className="wb-perf-table-wrapper">
                     <BrowserLifecycleSummary browser={snapshot.browser} />
                     {snapshot.browserViews.views.length === 0 ? (
-                      <p className="maw-perf-empty">{t('performance.noBrowsersOpen')}</p>
+                      <p className="wb-perf-empty">{t('performance.noBrowsersOpen')}</p>
                     ) : (
-                      <table className="maw-perf-table">
+                      <table className="wb-perf-table">
                         <thead>
                           <tr>
                             <th>Tab</th>
@@ -576,34 +576,34 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                         <tbody>
                           {snapshot.browserViews.views.map((view) => (
                             <tr key={`view-${view.id}`}>
-                              <td className="maw-perf-td-name">
-                                <span className="maw-perf-browser-badge">{view.providerLabel}</span>
-                                <span className="maw-perf-tab-url" title={view.url}>
+                              <td className="wb-perf-td-name">
+                                <span className="wb-perf-browser-badge">{view.providerLabel}</span>
+                                <span className="wb-perf-tab-url" title={view.url}>
                                   {view.url ? view.url.replace(/^https?:\/\//, '').slice(0, 32) : 'Untitled'}
                                 </span>
                               </td>
                               <td>
-                                <span className={`maw-perf-lifecycle-badge ${view.lifecycle}`}>
+                                <span className={`wb-perf-lifecycle-badge ${view.lifecycle}`}>
                                   {view.lifecycle === 'active' ? t('performance.active') : view.lifecycle === 'background' ? t('performance.background') : t('performance.hibernated')}
                                 </span>
                                 {view.isSharedRenderer && (
                                   <span
-                                    className="maw-perf-shared-badge"
+                                    className="wb-perf-shared-badge"
                                     title={t('performance.sharedAllocationTooltip', { count: view.sharedTabCount, pid: view.rendererPid ?? '-' })}
                                   >
                                     {t('performance.sharedAllocation')} ({view.sharedTabCount})
                                   </span>
                                 )}
                               </td>
-                              <td className="maw-perf-td-mono">{view.rendererPid ?? '-'}</td>
+                              <td className="wb-perf-td-mono">{view.rendererPid ?? '-'}</td>
                               <td
-                                className="maw-perf-td-mono"
+                                className="wb-perf-td-mono"
                                 title={view.isSharedRenderer ? t('performance.sharedAllocationTooltip', { count: view.sharedTabCount, pid: view.rendererPid ?? '-' }) : undefined}
                               >
                                 {view.isSharedRenderer ? `~${view.cpuPercent}%` : `${view.cpuPercent}%`}
                               </td>
                               <td
-                                className="maw-perf-td-mono"
+                                className="wb-perf-td-mono"
                                 title={view.isSharedRenderer ? t('performance.sharedAllocationTooltip', { count: view.sharedTabCount, pid: view.rendererPid ?? '-' }) : undefined}
                               >
                                 {view.isSharedRenderer ? `~${formatBytes(view.pssBytes)}` : formatBytes(view.pssBytes)}
@@ -614,7 +614,7 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                       </table>
                     )}
                     {snapshot.browserViews.views.some((v) => v.isSharedRenderer) && (
-                      <div className="maw-perf-shared-notice">
+                      <div className="wb-perf-shared-notice">
                         {t('performance.sharedRendererNote')}
                       </div>
                     )}
@@ -623,16 +623,16 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
               </section>
 
               {/* Group 4: Other Terminals */}
-              <section className="maw-perf-section">
+              <section className="wb-perf-section">
                 <button
                   type="button"
-                  className="maw-perf-section-toggle"
+                  className="wb-perf-section-toggle"
                   onClick={() => setExpandTerminals(!expandTerminals)}
                   aria-expanded={expandTerminals}
                 >
-                  <span className={`maw-perf-chevron ${expandTerminals ? 'expanded' : ''}`}>&#9656;</span>
-                  <span className="maw-perf-section-title">{t('performance.groupTerminals')}</span>
-                  <span className="maw-perf-section-meta">
+                  <span className={`wb-perf-chevron ${expandTerminals ? 'expanded' : ''}`}>&#9656;</span>
+                  <span className="wb-perf-section-title">{t('performance.groupTerminals')}</span>
+                  <span className="wb-perf-section-meta">
                     {snapshot.otherTerminals.count} {t('performance.shells')} &bull;{' '}
                     {snapshot.otherTerminals.totalCpuPercent}% CPU &bull;{' '}
                     {formatBytes(snapshot.otherTerminals.totalPssBytes)} PSS
@@ -640,11 +640,11 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                 </button>
 
                 {expandTerminals && (
-                  <div className="maw-perf-table-wrapper">
+                  <div className="wb-perf-table-wrapper">
                     {snapshot.otherTerminals.terminals.length === 0 ? (
-                      <p className="maw-perf-empty">{t('performance.noOtherTerminals')}</p>
+                      <p className="wb-perf-empty">{t('performance.noOtherTerminals')}</p>
                     ) : (
-                      <table className="maw-perf-table">
+                      <table className="wb-perf-table">
                         <thead>
                           <tr>
                             <th>Terminal</th>
@@ -657,11 +657,11 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                         <tbody>
                           {snapshot.otherTerminals.terminals.map((term) => (
                             <tr key={`term-${term.terminalId}`}>
-                              <td className="maw-perf-td-name">{term.title}</td>
-                              <td className="maw-perf-td-mono">{term.shell}</td>
-                              <td className="maw-perf-td-mono">{term.rootPid}</td>
-                              <td className="maw-perf-td-mono">{term.cpuPercent}%</td>
-                              <td className="maw-perf-td-mono">{formatBytes(term.pssBytes)}</td>
+                              <td className="wb-perf-td-name">{term.title}</td>
+                              <td className="wb-perf-td-mono">{term.shell}</td>
+                              <td className="wb-perf-td-mono">{term.rootPid}</td>
+                              <td className="wb-perf-td-mono">{term.cpuPercent}%</td>
+                              <td className="wb-perf-td-mono">{formatBytes(term.pssBytes)}</td>
                             </tr>
                           ))}
                         </tbody>

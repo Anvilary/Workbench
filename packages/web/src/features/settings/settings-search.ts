@@ -1,4 +1,4 @@
-import type { AgentInfo, BrowserFavorite, BrowserProfile, ConsoleShellId, SearchEngine } from '@agent-workbench/shared';
+import type { AgentInfo, BrowserFavorite, BrowserProfile, ConsoleShellId, SearchEngine } from '@anvilary/workbench-shared';
 import { t, type MessageKey } from '../../i18n/index.js';
 import { HIDEABLE_PANELS, type HideablePanel, type PanelVisibility } from '../../shared/lib/panel-visibility.js';
 import type { TerminalThemePreference } from '../terminals/useTerminalTheme.js';

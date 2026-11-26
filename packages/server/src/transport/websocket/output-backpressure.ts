@@ -1,4 +1,4 @@
-import type { TerminalId } from '@agent-workbench/shared';
+import type { TerminalId } from '@anvilary/workbench-shared';
 
 /**
  * Per-socket backpressure for PTY output (audit N-3).

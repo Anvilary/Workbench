@@ -19,7 +19,7 @@ import { createReadStream } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
-import { MAX_SUBMIT_IMAGE_BYTES, asRecord, type ConversationImageSource } from '@agent-workbench/shared';
+import { MAX_SUBMIT_IMAGE_BYTES, asRecord, type ConversationImageSource } from '@anvilary/workbench-shared';
 import { detectImageFormat } from '../../features/composer/image-signature.js';
 import { parseJsonlLine } from '../../shared/jsonl-reader.js';
 import { pasteRoot } from '../../features/composer/paste-paths.js';

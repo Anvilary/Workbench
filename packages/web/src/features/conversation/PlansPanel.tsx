@@ -22,7 +22,7 @@
  */
 
 import { useEffect } from 'react';
-import type { SessionPlan } from '@agent-workbench/shared';
+import type { SessionPlan } from '@anvilary/workbench-shared';
 import { DocTabStrip } from '../files/DocTabStrip.js';
 import type { OpenDoc } from '../files/doc-tabs.js';
 import { DocumentViewer } from '../files/DocumentViewer.js';

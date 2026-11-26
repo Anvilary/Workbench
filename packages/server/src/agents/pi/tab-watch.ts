@@ -22,7 +22,7 @@
 
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { normalizeCwdKey } from '@agent-workbench/shared';
+import { normalizeCwdKey } from '@anvilary/workbench-shared';
 import type { LaunchHook, SpawnedContext } from '../adapter.js';
 import { parseJsonlLine, readTailLines } from '../../shared/jsonl-reader.js';
 import { debugLog } from '../../shared/debug.js';

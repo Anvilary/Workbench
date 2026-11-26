@@ -22,7 +22,7 @@
 
 import { readFile as readFileFromDisk, stat as statFromDisk } from 'node:fs/promises';
 import path from 'node:path';
-import { asRecord, type ModelOption } from '@agent-workbench/shared';
+import { asRecord, type ModelOption } from '@anvilary/workbench-shared';
 
 /** Cada cuanto, como mucho, se mira si `models-store.json` cambio al pedir una ventana. */
 export const PI_CATALOG_RECHECK_MS = 30_000;

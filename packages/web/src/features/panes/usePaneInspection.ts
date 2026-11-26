@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { MawActivityState, WorkspaceId } from '@agent-workbench/shared';
+import type { MawActivityState, WorkspaceId } from '@anvilary/workbench-shared';
 import type { WorkspaceTab } from '../workspaces/workspace-model.js';
 import type { useWorkbenchStore } from '../workspaces/useWorkbenchStore.js';
 

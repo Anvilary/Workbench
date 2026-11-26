@@ -6,13 +6,13 @@ import { useTheme } from '../shared/hooks/useTheme.js';
 import { useTerminalTheme } from '../features/terminals/useTerminalTheme.js';
 import { useThreadFont } from '../shared/hooks/useThreadFont.js';
 
-/** `?view=workbench` opens the classic Workbench; everything else is the MAW interface. */
+/** `?view=workbench` opens the classic Workbench; everything else is the Workbench interface. */
 export function isClassicView(search: string): boolean {
   return new URLSearchParams(search).get('view') === 'workbench';
 }
 
 /**
- * The MAW interface without the classic Workbench. Keeps what the classic root did for it: document theme,
+ * The Workbench interface without the classic Workbench. Keeps what the classic root did for it: document theme,
  * terminal theme and font-size attributes, and the socket lifecycle (connect on mount, close on unmount).
  */
 export function WorkbenchRoot(): JSX.Element {

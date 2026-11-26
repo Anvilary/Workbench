@@ -1,7 +1,7 @@
 /**
  * Smoke test of the published package, the way a user gets it:
  *
- *   node .github/scripts/smoke.mjs <path to agent-workbench-X.Y.Z.tgz>
+ *   node .github/scripts/smoke.mjs <path to anvilary-workbench-X.Y.Z.tgz>
  *
  * It installs the tarball in an empty folder (so `node-pty` is downloaded or
  * compiled for this OS and this Node), and then checks the two things that
@@ -60,15 +60,17 @@ try {
   execFileSync('npm', ['install', '--no-audit', '--no-fund', '--foreground-scripts', './package.tgz'], { cwd: appDir, stdio: 'inherit', shell: process.platform === 'win32' });
 }
 
-const packageDir = path.join(appDir, 'node_modules', 'agent-workbench');
+const packageDir = path.join(appDir, 'node_modules', '@anvilary', 'workbench');
 const serverFile = path.join(packageDir, 'dist', 'server.js');
-const ptydFile = path.join(packageDir, 'dist', 'maw-ptyd.mjs');
+const ptydFile = path.join(packageDir, 'dist', 'ptyd.mjs');
 const ptydStateFile = path.join(packageDir, 'dist', 'terminal-state.mjs');
-const anvilBin = path.join(appDir, 'node_modules', '.bin', isWindows ? 'anvil-bench.cmd' : 'anvil-bench');
+const anvilBin = path.join(appDir, 'node_modules', '.bin', isWindows ? 'anvi-bench.cmd' : 'anvi-bench');
 check('the package installs its server', existsSync(serverFile));
 check('the package installs its PTY supervisor', existsSync(ptydFile) && existsSync(ptydStateFile));
-check('the anvil-bench bin shim exists', existsSync(anvilBin));
-check('the legacy bin shim exists', existsSync(path.join(appDir, 'node_modules', '.bin', isWindows ? 'agent-workbench.cmd' : 'agent-workbench')));
+check('the anvi-bench bin shim exists', existsSync(anvilBin));
+for (const name of ['anvil-bench', 'maw', 'workbench']) {
+  check(`the ${name} shim exists`, existsSync(path.join(appDir, 'node_modules', '.bin', isWindows ? `${name}.cmd` : name)));
+}
 
 // ---- 1. the server ----------------------------------------------------------
 
@@ -78,10 +80,10 @@ for (const key of Object.keys(baseEnv)) {
 }
 const env = {
   ...baseEnv,
-  AGENT_WORKBENCH_NO_OPEN: '1',
-  AGENT_WORKBENCH_NO_RESTORE: '1',
-  MAW_DISABLE_PTYD: '1',
-  MAW_AUTO_SPAWN_PTYD: '0',
+  WORKBENCH_NO_OPEN: '1',
+  WORKBENCH_NO_RESTORE: '1',
+  WORKBENCH_DISABLE_PTYD: '1',
+  WORKBENCH_AUTO_SPAWN_PTYD: '0',
   // Its own home and runtime dir: nothing leaks from or into the caller's environment.
   HOME: homeDir,
   USERPROFILE: homeDir,

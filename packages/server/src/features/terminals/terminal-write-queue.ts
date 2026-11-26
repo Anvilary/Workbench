@@ -20,7 +20,7 @@
  * interrumpible cuando cortarlo a mitad deja las cosas peor que terminarlo.
  */
 
-import type { TerminalId } from '@agent-workbench/shared';
+import type { TerminalId } from '@anvilary/workbench-shared';
 
 /** Escribe una pieza. false si la terminal no la acepto. */
 export type PieceWriter = (piece: string) => boolean;

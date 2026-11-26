@@ -1,0 +1,192 @@
+#!/bin/sh
+set -eu
+
+: "${HOME:?HOME is required}"
+lib_dir="${WORKBENCH_LIB_DIR-${MAW_LIB_DIR:-$HOME/.local/lib/workbench}}"
+self_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+# Scripts live next to this launcher in the repository, or in the installed library directory.
+script_dir="$self_dir"
+[ -f "$script_dir/lib.sh" ] || script_dir="$lib_dir"
+# shellcheck source=lib.sh
+. "$script_dir/lib.sh"
+wb_init_paths
+
+control_script="${WORKBENCH_CONTROL_SCRIPT:-$script_dir/control.mjs}"
+update_script="${WORKBENCH_UPDATE_SCRIPT:-$script_dir/update.sh}"
+restart_helper="${WORKBENCH_RESTART_HELPER:-$script_dir/restart-helper.sh}"
+
+cli_name="${WORKBENCH_CLI_NAME:-$(basename -- "$0")}"
+case "$cli_name" in
+  anvi-bench|anvil-bench|workbench|maw) ;;
+  *) cli_name="anvi-bench" ;;
+esac
+
+usage() { printf '%s\n' "Usage: $cli_name {desktop|start [--force]|stop|restart [--force]|rollback|status|logs [--follow]|url|open [browser]|update [--no-restart|--restart] [--ref <ref> --allow-unapproved-ref]|help}"; }
+
+# True when this command runs inside the Workbench service (its PTYs inherit the unit's cgroup), or descends
+# from the service's main process (e.g. a PTY moved into another scope). Exact cgroup path component.
+is_inside_maw() {
+  cgroup_file="${WORKBENCH_CGROUP_FILE:-/proc/self/cgroup}"
+  if [ -r "$cgroup_file" ] && awk -F: -v u="$unit" '
+      { n = split($3, parts, "/"); for (i = 1; i <= n; i++) if (parts[i] == u) found = 1 }
+      END { exit found ? 0 : 1 }' "$cgroup_file"; then
+    return 0
+  fi
+  wb_pid=$(wb_sctl show "$unit" --property=MainPID --value 2>/dev/null || true)
+  if [ -n "$wb_pid" ] && [ "$wb_pid" -gt 0 ] 2>/dev/null; then
+    check_pid=$$
+    while [ -n "$check_pid" ] && [ "$check_pid" -gt 1 ] 2>/dev/null; do
+      check_pid=$(ps -o ppid= -p "$check_pid" 2>/dev/null | tr -d ' ') || break
+      case "$check_pid" in ''|*[!0-9]*) break ;; esac
+      [ "$check_pid" = "$wb_pid" ] && return 0
+    done
+  fi
+  return 1
+}
+
+run_activation() {   # extra helper args...
+  printf '%s\n' 'Warning: Active server-owned live PTYs will terminate. Original PTY will not survive.' >&2
+  printf '%s\n' 'Metadata and native history remain. Eligible verified native conversations use replacement PTYs during recovery.' >&2
+  if is_inside_maw; then
+    if wb_restart_locked; then
+      printf '%s\n' 'A restart is already in progress or scheduled. Duplicate restart avoided.' >&2
+      exit 1
+    fi
+    printf '%s\n' 'Restarting Workbench from inside Workbench. Delegating restart outside service control group...' >&2
+    # Fixed unit name: systemd itself rejects a second scheduled restart. --collect frees the name even
+    # when the helper exits non-zero. The helper's environment is passed explicitly (systemd-run does not
+    # inherit the caller's).
+    _extra_setenv=""
+    [ -z "${WORKBENCH_SYSTEMD_RUNTIME_DIR:-}" ] || _extra_setenv="--setenv=WORKBENCH_SYSTEMD_RUNTIME_DIR=$WORKBENCH_SYSTEMD_RUNTIME_DIR"
+    _extra_bus_setenv=""
+    [ -z "${WORKBENCH_SYSTEMD_BUS_ADDRESS:-}" ] || _extra_bus_setenv="--setenv=WORKBENCH_SYSTEMD_BUS_ADDRESS=$WORKBENCH_SYSTEMD_BUS_ADDRESS"
+    _extra_bin_setenv=""
+    [ -z "${WORKBENCH_BIN_DIR:-}" ] || _extra_bin_setenv="--setenv=WORKBENCH_BIN_DIR=$WORKBENCH_BIN_DIR"
+    if wb_systemd_run \
+        --unit="${WORKBENCH_HELPER_UNIT:-restart-helper}" \
+        --collect \
+        --no-block \
+        --description="Workbench safe restart helper" \
+        --on-active=1 \
+        --setenv=HOME="$HOME" \
+        --setenv=PATH="$PATH" \
+        --setenv=WORKBENCH_STATE_DIR="$state_dir" \
+        --setenv=WORKBENCH_RELEASES_DIR="$releases_dir" \
+        --setenv=WORKBENCH_LOG_FILE="$log_file" \
+        --setenv=WORKBENCH_UPDATE_LOCK="$update_lock" \
+        --setenv=WORKBENCH_RUNTIME_DIR="$runtime_dir" \
+        --setenv=WORKBENCH_PTYD_UNIT="$ptyd_unit" \
+        --setenv=XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
+        --setenv=XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}" \
+        --setenv=WORKBENCH_RESTART_LOCK="$restart_lock" \
+        --setenv=WORKBENCH_NODE_BIN="$node_bin" \
+        --setenv=WORKBENCH_CONTROL_SCRIPT="$control_script" \
+        --setenv=WORKBENCH_CLI_NAME="$cli_name" \
+        ${_extra_bin_setenv:+"$_extra_bin_setenv"} \
+        ${_extra_setenv:+"$_extra_setenv"} \
+        ${_extra_bus_setenv:+"$_extra_bus_setenv"} \
+        /bin/sh "$restart_helper" --unit "$unit" "$@"; then
+      printf '%s\n' "Safe restart scheduled (transient unit: ${WORKBENCH_HELPER_UNIT:-restart-helper})."
+      printf '%s\n' "Your terminal session will be interrupted shortly. The outcome is recorded in $log_file; check it with: $cli_name status"
+      exit 0
+    fi
+    printf '%s\n' 'Error: Failed to schedule safe restart (another restart may already be scheduled).' >&2
+    exit 1
+  fi
+  exec env WORKBENCH_CLI_NAME="$cli_name" /bin/sh "$restart_helper" --unit "$unit" "$@"
+}
+
+command_name=${1:-help}
+case "$command_name" in
+  desktop)
+    [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+    desktop_version=$(cat "$script_dir/desktop-runtime-version" 2>/dev/null || true)
+    case "$desktop_version" in ''|*[!0-9.]*) printf '%s\n' 'Install desktop support with scripts/workbench/install.sh --desktop.' >&2; exit 1 ;; esac
+    desktop_runtime="/opt/workbench-electron/$desktop_version/electron"
+    [ -x "$desktop_runtime" ] || { printf '%s\n' 'Workbench desktop runtime is not installed.' >&2; exit 1; }
+    exec env ELECTRON_RUN_AS_NODE=1 "$desktop_runtime" "$script_dir/desktop-launch.mjs"
+    ;;
+  start)
+    shift
+    _start_force=""
+    case "$#" in
+      0) ;;
+      1) [ "$1" = "--force" ] || { usage >&2; exit 2; }; _start_force="--force" ;;
+      *) usage >&2; exit 2 ;;
+    esac
+    if [ "$(wb_sctl show "$unit" --property=ActiveState --value 2>/dev/null || true)" = active ]; then
+      exec env WORKBENCH_CLI_NAME="$cli_name" /bin/sh "$restart_helper" --unit "$unit" --start ${_start_force:+"$_start_force"}
+    fi
+    run_activation --start ${_start_force:+"$_start_force"}
+    ;;
+  stop)
+    [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+    printf '%s\n' 'Server-owned live PTYs will terminate. Metadata and native history remain.' >&2
+    wb_sctl stop "$unit"
+    exit $?
+    ;;
+  restart)
+    shift
+    run_activation "$@"
+    ;;
+  rollback)
+    [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+    previous=$(wb_pointer previous)
+    [ -n "$previous" ] || { printf '%s\n' 'No verified previous release is available.' >&2; exit 1; }
+    printf '%s\n' 'Executable rollback does not guarantee historical-data compatibility; older releases cannot display split session history.' >&2
+    if ! "$node_bin" "$control_script" check-data "$previous"; then
+      printf '%s\n' 'Rollback refused to protect browser data. No release pointer was changed.' >&2
+      exit 1
+    fi
+    wb_lock_update 0 || { printf '%s\n' 'An update or activation is in progress.' >&2; exit 1; }
+    wb_set_pointer staged "$previous"
+    exec 9>&-
+    wb_log rollback-requested release "$(basename "$previous")"
+    printf '%s\n' "Activating previous verified release $(basename "$previous")..."
+    run_activation
+    ;;
+  status)
+    wb_sctl show "$unit" --property=ActiveState,SubState,MainPID,ExecMainStatus || true
+    if wb_sctl cat "$ptyd_unit" >/dev/null 2>&1; then
+      printf 'supervisor (%s):\n' "$ptyd_unit"
+      wb_sctl show "$ptyd_unit" --property=ActiveState,SubState,MainPID,ExecMainStatus || true
+    fi
+    for p in current staged healthy previous; do
+      t=$(wb_pointer_raw "$p")
+      printf '%-9s%s\n' "$p:" "${t:+$(basename "$t")}"
+    done
+    if [ -n "$(wb_pointer_raw current)" ] && [ "$(wb_pointer_raw current)" != "$(wb_pointer_raw healthy)" ]; then
+      printf '%s\n' 'Note: current is not the verified healthy release (unverified activation or legacy layout).'
+    fi
+    if [ -f "$log_file" ]; then printf 'last:    %s\n' "$(tail -n 1 "$log_file")"; fi
+    exec "$node_bin" "$control_script" status
+    ;;
+  logs)
+    case "${2:-}" in
+      '') wb_journalctl -u "$unit" -n 80 --no-pager; exit $? ;;
+      --follow|-f) wb_journalctl -u "$unit" -n 80 --follow; exit $? ;;
+      *) usage >&2; exit 2 ;;
+    esac
+    ;;
+  url)
+    [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+    exec "$node_bin" "$control_script" url
+    ;;
+  open)
+    case "$#" in
+      1) exec "$node_bin" "$control_script" open ;;
+      2) exec "$node_bin" "$control_script" open "$2" ;;
+      *) usage >&2; exit 2 ;;
+    esac
+    ;;
+  update)
+    exec env WORKBENCH_CLI_NAME="$cli_name" /bin/sh "$update_script" "$@"
+    ;;
+  help|--help|-h)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

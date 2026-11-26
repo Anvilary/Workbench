@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseClientMessage } from '@agent-workbench/shared';
+import { parseClientMessage } from '@anvilary/workbench-shared';
 
 const valid = { type: 'terminal.history.page', terminalId: 'test-terminal', requestId: 'request', page: 0 };
 test('history protocol accepts bounded requests and rejects malformed or oversized requests', () => {

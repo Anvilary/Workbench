@@ -34,7 +34,7 @@ import {
   type ConversationEvent,
   type ConversationPart,
   type ConversationRole,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { PartsUpdate } from '../adapter.js';
 import type { EventLookup, JsonlLineSink } from '../jsonl-follower.js';
 import { cut, TRANSPORT_LIMITS, type EventLimits } from '../transport-limits.js';

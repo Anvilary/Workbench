@@ -2,8 +2,8 @@
  * Composer drafts.
  */
 
-import type { ServerMessage } from '@agent-workbench/shared';
-import type { ClientMessage } from '@agent-workbench/shared';
+import type { ServerMessage } from '@anvilary/workbench-shared';
+import type { ClientMessage } from '@anvilary/workbench-shared';
 import { draftEntriesOf, draftOwnerOf } from '../../../features/composer/draft-store.js';
 import { debugLog } from '../../../shared/debug.js';
 import type { HandlerContext } from '../handler-context.js';

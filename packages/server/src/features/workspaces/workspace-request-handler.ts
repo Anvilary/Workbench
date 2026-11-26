@@ -7,8 +7,8 @@
  */
 import type {
   AgencyClientMessage, AgencyServerMessage, AgencyErrorCode, ProjectId, WorkspaceId,
-} from '@agent-workbench/shared';
-import { isValidBrowserProfileId } from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
+import { isValidBrowserProfileId } from '@anvilary/workbench-shared';
 import { DirectoryPickers, DirectoryPickerError } from '../files/directory-picker.js';
 import { AgencyWorkspaceStore, AgencyStoreError, type HasBlockingWorkspaceSessions } from './workspace-store.js';
 import type { BrowserProfileStore } from '../browser/browser-profile-store.js';

@@ -8,8 +8,8 @@
 import type {
   AgencyServerMessage,
   EditorTabServerMessage,
-} from '@agent-workbench/shared';
-import { parseEditorTabClientMessage } from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
+import { parseEditorTabClientMessage } from '@anvilary/workbench-shared';
 import type { EditorTabAdapter } from './editor-tab-adapter.js';
 import { EditorTabStoreError } from './editor-tab-store.js';
 

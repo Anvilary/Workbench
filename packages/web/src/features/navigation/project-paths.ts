@@ -26,7 +26,7 @@
  * el explorador del sistema (23-10-2026).
  */
 
-import { FILES_CHECK_MAX_PATH_CHARS } from '@agent-workbench/shared';
+import { FILES_CHECK_MAX_PATH_CHARS } from '@anvilary/workbench-shared';
 
 /** Donde corre el servidor: decide como se lee una ruta absoluta. */
 export interface ProjectRoot {

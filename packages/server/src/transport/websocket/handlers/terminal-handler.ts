@@ -2,7 +2,7 @@
  * Terminal lifecycle, attachment, history paging, raw input and tab order.
  */
 
-import { serverText, type ClientMessage } from '@agent-workbench/shared';
+import { serverText, type ClientMessage } from '@anvilary/workbench-shared';
 import { CLEAR_EDITOR } from '../../../features/composer/pty-input.js';
 import { TerminalOpenError } from '../../../features/terminals/terminal-registry.js';
 import type { HandlerContext } from '../handler-context.js';

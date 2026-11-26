@@ -1,7 +1,7 @@
 import { open, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
-import { asRecord } from '@agent-workbench/shared';
+import { asRecord } from '@anvilary/workbench-shared';
 import { withinNativeScope } from '../native-scope.js';
 import { findRollout } from './find-rollout.js';
 

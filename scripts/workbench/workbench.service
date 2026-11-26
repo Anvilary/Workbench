@@ -1,0 +1,39 @@
+# Template rendered by install.sh (@NODE_BIN@, @STATE_DIR@, @PATH@, @RUNTIME_NAME@).
+# The service always boots `current`; only the restart helper changes `current` (see lib.sh).
+[Unit]
+Description=Anvilary Workbench
+# Start workbench-ptyd.service if not already running so the persistent supervisor is available.
+# Restarting workbench.service does NOT stop workbench-ptyd.service (no PartOf=).
+Wants=workbench-ptyd.service
+After=network.target workbench-ptyd.service
+StartLimitIntervalSec=120
+StartLimitBurst=3
+
+[Service]
+Type=exec
+WorkingDirectory=@STATE_DIR@/current
+ExecStartPre=/usr/bin/test -f @STATE_DIR@/current/.workbench-release-meta.json
+ExecStartPre=/usr/bin/test -f @STATE_DIR@/current/packages/server/dist/index.mjs
+ExecStart=@NODE_BIN@ @STATE_DIR@/current/packages/server/dist/index.mjs --prod
+Environment=PATH=@PATH@
+Environment=WORKBENCH_NO_OPEN=1
+Environment=WORKBENCH_RUNTIME_DIR=%t/@RUNTIME_NAME@
+Environment=WORKBENCH_PERSISTENT_PTY=1
+Environment=WORKBENCH_AUTO_SPAWN_PTYD=0
+# Optional persistent connection settings; secrets never belong in a release.
+EnvironmentFile=-@ENV_FILE@
+RuntimeDirectory=@RUNTIME_NAME@
+RuntimeDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=maw
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=200
+
+[Install]
+WantedBy=default.target

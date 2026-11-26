@@ -18,7 +18,7 @@ export const THREAD_FONT_SIZES: readonly ThreadFontSize[] = ['s', 'm', 'l'];
 
 export const DEFAULT_THREAD_FONT_SIZE: ThreadFontSize = 'm';
 
-export const THREAD_FONT_STORAGE_KEY = 'agent-workbench.thread-font';
+export const THREAD_FONT_STORAGE_KEY = 'workbench.thread-font';
 
 /*
   Las notas (25-09-2026) usan los mismos tres pasos y el mismo boton, con su
@@ -26,7 +26,7 @@ export const THREAD_FONT_STORAGE_KEY = 'agent-workbench.thread-font';
   en "chica", que es lo que midieron siempre (12,5 px): sin tocar el boton se
   ven como antes.
 */
-export const NOTES_FONT_STORAGE_KEY = 'agent-workbench.notes-font';
+export const NOTES_FONT_STORAGE_KEY = 'workbench.notes-font';
 
 export const DEFAULT_NOTES_FONT_SIZE: ThreadFontSize = 's';
 

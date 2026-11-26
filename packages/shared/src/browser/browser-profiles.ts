@@ -44,9 +44,9 @@ export function partitionForBrowserProfile(profileId: string | undefined | null,
   const effective = isValidBrowserProfileId(profileId) ? profileId : DEFAULT_BROWSER_PROFILE_ID;
   const suffix = provider === 'github' || provider === 'perplexity' ? provider : provider === 'other' ? 'browser' : 'chatgpt';
   if (effective === DEFAULT_BROWSER_PROFILE_ID) {
-    return `persist:maw-${suffix}`;
+    return `persist:workbench-${suffix}`;
   }
-  return `persist:maw-profile-${effective}-${suffix}`;
+  return `persist:workbench-profile-${effective}-${suffix}`;
 }
 
 export type BrowserProfileClientMessage =

@@ -16,7 +16,7 @@ test('Prebuilt production server bundle: exists and starts cleanly under raw nod
     execSync('node scripts/build-bundle.mjs', { cwd: serverRoot, stdio: 'inherit' });
   }
   if (!existsSync(webIndexPath)) {
-    execSync('pnpm --filter @agent-workbench/web build', { cwd: REPO_ROOT, stdio: 'inherit' });
+    execSync('pnpm --filter @anvilary/workbench-web build', { cwd: REPO_ROOT, stdio: 'inherit' });
   }
   assert.ok(existsSync(bundlePath), 'dist/index.mjs should exist');
   assert.ok(existsSync(webIndexPath), 'packages/web/dist/index.html should exist');
@@ -31,12 +31,12 @@ test('Prebuilt production server bundle: exists and starts cleanly under raw nod
       XDG_CONFIG_HOME: path.join(tempHome, '.config'),
       XDG_DATA_HOME: path.join(tempHome, '.local/share'),
       XDG_RUNTIME_DIR: path.join(tempHome, 'runtime'),
-      AGENT_WORKBENCH_NO_OPEN: '1',
-      AGENT_WORKBENCH_NO_RESTORE: '1',
-      MAW_EAGER_CLASSIC: '0',
+      WORKBENCH_NO_OPEN: '1',
+      WORKBENCH_NO_RESTORE: '1',
+      WORKBENCH_EAGER_CLASSIC: '0',
     };
-    delete (env as Record<string, string | undefined>).MAW_UNSAFE_LOCAL_NO_AUTH;
-    delete (env as Record<string, string | undefined>).MAW_RUNTIME_DIR;
+    delete (env as Record<string, string | undefined>).WORKBENCH_UNSAFE_LOCAL_NO_AUTH;
+    delete (env as Record<string, string | undefined>).WORKBENCH_RUNTIME_DIR;
 
     const child = spawn(process.execPath, [bundlePath, '--prod'], {
       cwd: serverRoot,

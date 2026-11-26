@@ -1362,7 +1362,7 @@
   "settings.panels.consoleConfirm_other": "隐藏控制台会关闭 {{count}} 个打开的终端。",
   "settings.performance.effectiveOff": "This session started with hardware acceleration disabled.",
   "settings.performance.effectiveOn": "This session started with hardware acceleration enabled.",
-  "settings.performance.envOverride": "This session is controlled by the MAW_SAFE_GRAPHICS environment variable, which takes precedence over this setting.",
+  "settings.performance.envOverride": "This session is controlled by the WORKBENCH_SAFE_GRAPHICS environment variable, which takes precedence over this setting.",
   "settings.performance.gpu.compositing": "compositing",
   "settings.performance.gpu.rasterization": "rasterization",
   "settings.performance.gpu.state.hardware": "hardware",

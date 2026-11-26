@@ -8,8 +8,8 @@
  */
 
 import path from 'node:path';
-import type { AgencyErrorCode, WebTab, WorkspaceId } from '@agent-workbench/shared';
-import { isWebTab } from '@agent-workbench/shared';
+import type { AgencyErrorCode, WebTab, WorkspaceId } from '@anvilary/workbench-shared';
+import { isWebTab } from '@anvilary/workbench-shared';
 import { appConfigDir } from '../../shared/app-paths.js';
 import { SerialQueue } from '../../shared/concurrency/serial-queue.js';
 import {

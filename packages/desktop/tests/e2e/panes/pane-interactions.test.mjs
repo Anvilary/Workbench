@@ -14,9 +14,9 @@ import {serveFixture,start,frames,pane,order,root} from '../../../../web/tests/f
 import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 const require=createRequire(import.meta.url),exec=promisify(execFile);
 const here = DESKTOP_ROOT;
-const artifactDir=process.env.MAW_PANE_EVIDENCE_DIR;
-const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
-  ? '/opt/maw-electron/45.2.0/electron'
+const artifactDir=process.env.WORKBENCH_PANE_EVIDENCE_DIR;
+const electronExecutable = fs.existsSync('/opt/workbench-electron/45.2.0/electron')
+  ? '/opt/workbench-electron/45.2.0/electron'
   : require('electron');
 
 async function eventually(check,message='native pane state'){
@@ -24,8 +24,8 @@ async function eventually(check,message='native pane state'){
  assert.fail('Timed out waiting for '+message);
 }
 async function setup(t,query){
- const url=await serveFixture(t),data=await mkdtemp(path.join(tmpdir(),'maw-pane-interactions-'));
- const env={...process.env,MAW_DESKTOP_URL:url+'/?'+query,MAW_DESKTOP_DATA_DIR:data,MAW_DOWNLOAD_AUTO_SAVE:'1'};
+ const url=await serveFixture(t),data=await mkdtemp(path.join(tmpdir(),'wb-pane-interactions-'));
+ const env={...process.env,WORKBENCH_DESKTOP_URL:url+'/?'+query,WORKBENCH_DESKTOP_DATA_DIR:data,WORKBENCH_DOWNLOAD_AUTO_SAVE:'1'};
  let desktop;
  const closeDesktop = async () => {
   if (!desktop) return;
@@ -53,7 +53,7 @@ async function setup(t,query){
   await desktop.evaluate(({session,app,BrowserWindow},data)=>{
    BrowserWindow.getAllWindows()[0].setPosition(0,0);
    app.setPath('downloads',data);
-   const chat=session.fromPartition('persist:maw-chatgpt');
+   const chat=session.fromPartition('persist:workbench-chatgpt');
    chat.protocol.handle('https',req=>{
     if(new URL(req.url).pathname==='/sample.txt')return new Response('Synthetic download after pane swap',{headers:{'Content-Type':'text/plain','Content-Disposition':'attachment; filename="swap.txt"'}});
     return new Response(`<!doctype html><html><head><meta charset="utf-8"><title>Synthetic ChatGPT</title><style>body{margin:0;background:#202123;color:#ececf1;font:15px system-ui}header{padding:18px;border-bottom:1px solid #444}main{padding:24px}textarea{display:block;width:90%;height:60px;margin:10px 0;background:#303136;color:white;border:1px solid #666;padding:10px}a{color:#81c2b5}p{line-height:1.8}</style></head><body><header>◎ ChatGPT · synthetic acceptance page</header><main><label>Message<textarea>Native page state survives pane swaps</textarea></label><a href="https://chatgpt.com/sample.txt" download>Download fixture</a><p>Existing WebContentsView · isolated temporary profile</p><p>No authenticated owner data is used.</p><div style="height:1400px;background:linear-gradient(#202123,#242934)"></div></main></body></html>`,{headers:{'Content-Type':'text/html'}});
@@ -66,15 +66,15 @@ async function setup(t,query){
   },data);
   const page=await desktop.firstWindow();page.setDefaultTimeout(10000);
   const errors=[];page.on('pageerror',error=>errors.push(error.message));t.after(()=>assert.deepEqual(errors,[]));
-  await page.locator('#start').click();await page.waitForSelector('.maw-split-pane');await frames(page);
+  await page.locator('#start').click();await page.waitForSelector('.wb-split-pane');await frames(page);
   return page;
  };
  const page=await launch();
- const identities=()=>desktop.evaluate(({webContents,session})=>webContents.getAllWebContents().filter(c=>c.session===session.fromPartition('persist:maw-chatgpt')).map(c=>c.id).sort((a,b)=>a-b));
+ const identities=()=>desktop.evaluate(({webContents,session})=>webContents.getAllWebContents().filter(c=>c.session===session.fromPartition('persist:workbench-chatgpt')).map(c=>c.id).sort((a,b)=>a-b));
  const attached=()=>desktop.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].contentView.children.filter(v=>v.webContents).map(v=>v.webContents.id).sort((a,b)=>a-b));
  const nativeCount=query.includes('mode=web')?(query.includes('four')?4:2):query.includes('four')?2:1;
  await eventually(async()=> (await attached()).length===nativeCount);
- await eventually(()=>desktop.evaluate(({webContents,session})=>webContents.getAllWebContents().filter(c=>c.session===session.fromPartition('persist:maw-chatgpt')).every(c=>!c.isLoading())));
+ await eventually(()=>desktop.evaluate(({webContents,session})=>webContents.getAllWebContents().filter(c=>c.session===session.fromPartition('persist:workbench-chatgpt')).every(c=>!c.isLoading())));
  const point=async locator=>{
   const box=await locator.boundingBox(),origin=await desktop.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].getContentBounds());
   return {x:Math.round(origin.x+box.x+box.width/2),y:Math.round(origin.y+box.y+box.height/2)};
@@ -82,19 +82,19 @@ async function setup(t,query){
  const xdo=(args)=>exec('xdotool',args,{timeout:5000,killSignal:'SIGKILL'});
  const mouse=async(x,y,...commands)=>xdo(['mousemove',String(Math.round(x)),String(Math.round(y)),...commands]);
  const osDrag=async(from,to,{cancel=false,outside=false,record=false}={})=>{
-  const source=await point(pane(page,from).locator('.maw-pane-grip')),target=await point(pane(page,to));
+  const source=await point(pane(page,from).locator('.wb-pane-grip')),target=await point(pane(page,to));
   await mouse(source.x,source.y,'mousedown','1');await mouse(source.x+12,source.y);
-  await page.waitForSelector('.maw-pane-drag-shield');
+  await page.waitForSelector('.wb-pane-drag-shield');
   await eventually(async()=> (await attached()).length===0,'temporary shield captures and conceals native surfaces');
-  assert.equal(await page.locator('.maw-capture-backdrop').count(),nativeCount);
-  assert.equal(await page.locator('.maw-pane-drag-preview textarea,.maw-pane-drag-preview canvas').count(),0);
+  assert.equal(await page.locator('.wb-capture-backdrop').count(),nativeCount);
+  assert.equal(await page.locator('.wb-pane-drag-preview textarea,.wb-pane-drag-preview canvas').count(),0);
   for(let n=1;n<=12;n++){await mouse(source.x+(target.x-source.x)*n/12,source.y+(target.y-source.y)*n/12);await new Promise(resolve=>setTimeout(resolve,12))}
   if(!cancel&&!outside&&from!==to){await page.waitForFunction(n=>document.getElementById('pane-container-pane-'+n)?.classList.contains('is-pane-drop-target'),to)}
   if(record&&artifactDir)await screenshot('03-pane-landing.png');
   if(cancel)await xdo(['key','Escape']);
   if(outside)await mouse(5,5);
   await xdo(['mouseup','1']);
-  await page.waitForSelector('.maw-pane-drag-shield',{state:'detached'});
+  await page.waitForSelector('.wb-pane-drag-shield',{state:'detached'});
   await eventually(async()=> (await attached()).length===nativeCount,'native surfaces restored after drag');await frames(page,16);
  };
  const screenshot=async name=>{
@@ -131,11 +131,11 @@ test('native menu, creation, cancellation, clipboard, download and cold restart'
  const app=await setup(t,'mode=web'),{page,osDrag}=app;
  let recording;
  if(artifactDir){await mkdir(artifactDir,{recursive:true});recording=spawn('ffmpeg',['-y','-loglevel','error','-f','x11grab','-framerate','12','-video_size','1280x860','-i',process.env.DISPLAY+'+0,0','-c:v','libvpx-vp9','-crf','38','-b:v','0',path.join(artifactDir,'pane-interactions.webm')],{stdio:['pipe','ignore','pipe']});t.after(async()=>{if(recording?.exitCode===null){recording.stdin.write('q');await new Promise(resolve=>recording.on('exit',resolve))}})}
- await pane(page,2).locator('.maw-pane-add-tab').click();
+ await pane(page,2).locator('.wb-pane-add-tab').click();
  await eventually(async()=> (await app.attached()).length<2);await frames(page);await app.screenshot('01-add-menu.png');
- await page.getByRole('menuitem',{name:/Browser|Web Page/,exact:true}).click();const pickerDialog=page.getByRole('dialog');await pickerDialog.waitFor();await pickerDialog.locator('.maw-browser-dest-close').click();
+ await page.getByRole('menuitem',{name:/Browser|Web Page/,exact:true}).click();const pickerDialog=page.getByRole('dialog');await pickerDialog.waitFor();await pickerDialog.locator('.wb-browser-dest-close').click();
  await eventually(async()=> (await app.attached()).length===2);
- await pane(page,2).locator('.maw-pane-add-tab').click();await page.getByRole('menuitem',{name:'New Terminal',exact:true}).click();
+ await pane(page,2).locator('.wb-pane-add-tab').click();await page.getByRole('menuitem',{name:'New Terminal',exact:true}).click();
  await page.waitForFunction(()=>window.fixture.state.layout.tree.second.tabIds.length===2);await frames(page,16);
  assert.equal(await pane(page,2).getByRole('tab').count(),2);
  await page.evaluate(async()=>{const term=window.terminals[0];await new Promise(resolve=>term.write('MAW isolated acceptance terminal\r\nExisting sessions remain alive during pane swaps.\r\n$ ',resolve))});
@@ -153,7 +153,7 @@ test('native menu, creation, cancellation, clipboard, download and cold restart'
  await eventually(()=>app.desktop().evaluate(async({clipboard})=>(await clipboard.readText())==='Native page state survives pane swaps'),'native clipboard after swap');
  await app.desktop().evaluate(({webContents},id)=>webContents.fromId(id).downloadURL('https://chatgpt.com/sample.txt'),ids[0]);
  await eventually(async()=>{try{return (await readFile(path.join(app.data,'swap.txt'),'utf8')).includes('Synthetic download')}catch{return false}},'native download after swap');
- const divider=await page.locator('.maw-split-divider').boundingBox();await page.mouse.move(divider.x+2,divider.y+40);await page.mouse.down();await page.mouse.move(divider.x+70,divider.y+40,{steps:10});await page.mouse.up();await page.waitForTimeout(250);
+ const divider=await page.locator('.wb-split-divider').boundingBox();await page.mouse.move(divider.x+2,divider.y+40);await page.mouse.down();await page.mouse.move(divider.x+70,divider.y+40,{steps:10});await page.mouse.up();await page.waitForTimeout(250);
  assert.deepEqual(await app.identities(),ids);
  await app.screenshot('05-native-content-restored.png');
  if(recording){recording.stdin.write('q');await new Promise(resolve=>recording.on('exit',resolve));recording=undefined}
@@ -174,13 +174,13 @@ test('real Linux PTY PID, scrollback, selection and viewport survive native pane
  });
  const subscription=terminal.onData(data=>void page.evaluate(data=>window.fixture.emit({type:'terminal.output',terminalId:'term-1',data}),data).catch(()=>{}));
  t.after(()=>subscription.dispose());
- terminal.write("printf 'MAW_PID=%s\\n' $$; seq 1 180 | sed 's/^/PTY-LINE-/'\r");
+ terminal.write("printf 'WORKBENCH_PID=%s\\n' $$; seq 1 180 | sed 's/^/PTY-LINE-/'\r");
  await page.waitForFunction(()=>window.terminals[0]?.buffer.active.getLine(window.terminals[0].buffer.active.length-2)?.translateToString(true).includes('#')||Array.from({length:window.terminals[0]?.buffer.active.length||0},(_,n)=>window.terminals[0].buffer.active.getLine(n)?.translateToString(true)).some(line=>line?.includes('PTY-LINE-180')));
  const initial=await page.evaluate(()=>{
   const term=window.terminals[0];term.scrollToLine(3);term.select(0,4,10);
   return {selection:term.getSelection(),viewport:term.buffer.active.viewportY,buffer:Array.from({length:term.buffer.active.length},(_,n)=>term.buffer.active.getLine(n)?.translateToString(true)).join('\n')};
  });
- assert.match(initial.buffer,new RegExp('MAW_PID='+pid));assert.match(initial.buffer,/PTY-LINE-180/);
+ assert.match(initial.buffer,new RegExp('WORKBENCH_PID='+pid));assert.match(initial.buffer,/PTY-LINE-180/);
  for(let n=0;n<4;n++)await osDrag(1,2);
  assert.equal(terminal.pid,pid);assert.doesNotThrow(()=>process.kill(pid,0));
  const after=await page.evaluate(()=>({selection:window.terminals[0].getSelection(),viewport:window.terminals[0].buffer.active.viewportY,disposed:window.disposed,attaches:window.fixture.requests.filter(m=>m.type==='terminal.attach').length,inputs:window.fixture.requests.filter(m=>m.type==='input')}));
@@ -194,18 +194,18 @@ test('native tab drag accepts the destination pane body and keeps the browser se
   const originalViews = await app.identities();
   const sourceTab = pane(page, 1).getByRole('tab').first();
   const source = await point(sourceTab);
-  const destination = await point(pane(page, 2).locator('.maw-pane-body'));
+  const destination = await point(pane(page, 2).locator('.wb-pane-body'));
   async function startDrag() {
     await mouse(source.x, source.y, 'mousedown', '1');
     await mouse(source.x + 10, source.y);
-    await page.locator('.maw-tab-drag-ghost').waitFor();
+    await page.locator('.wb-tab-drag-ghost').waitFor();
     await eventually(async () => (await app.attached()).length === 0, 'native views concealed for tab drag');
     await mouse(destination.x, destination.y);
   }
   await startDrag();
   await exec('xdotool', ['key', 'Escape'], { timeout: 5000, killSignal: 'SIGKILL' });
   await exec('xdotool', ['mouseup', '1'], { timeout: 5000, killSignal: 'SIGKILL' });
-  await page.locator('.maw-tab-drag-ghost').waitFor({ state: 'detached' });
+  await page.locator('.wb-tab-drag-ghost').waitFor({ state: 'detached' });
   await eventually(async () => (await app.attached()).length === 2, 'native views restored after cancellation');
   assert.deepEqual(await page.evaluate(() => window.fixture.state.layout.tree), initial);
 
@@ -220,7 +220,7 @@ test('native tab drag accepts the destination pane body and keeps the browser se
   assert.equal(await pane(page, 1).getByRole('tab').count(), 0);
   await app.screenshot('07-native-cross-pane-tab-drop.png');
   await pane(page, 1).locator('[data-pane-close]').click();
-  await page.waitForFunction(() => document.querySelectorAll('.maw-split-pane').length === 1);
+  await page.waitForFunction(() => document.querySelectorAll('.wb-split-pane').length === 1);
   assert.equal(await page.getByRole('dialog').count(), 0);
   assert.deepEqual(await app.identities(), originalViews);
 });

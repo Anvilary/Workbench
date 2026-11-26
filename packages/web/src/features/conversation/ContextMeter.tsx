@@ -25,7 +25,7 @@
  *     presentarla como tal es la misma mentira de la regla 2 con otra ropa.
  */
 
-import type { ContextUsage, ContextWindowSource, StatusLineState } from '@agent-workbench/shared';
+import type { ContextUsage, ContextWindowSource, StatusLineState } from '@anvilary/workbench-shared';
 import {
   meterIdleDetail,
   meterIdleWindow,

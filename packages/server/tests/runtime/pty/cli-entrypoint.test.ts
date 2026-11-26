@@ -9,14 +9,14 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 // @ts-expect-error - standalone pure-ESM supervisor script
-import { isMainModule } from '../../../src/pty-host/maw-ptyd.mjs';
+import { isMainModule } from '../../../src/pty-host/ptyd.mjs';
 import { PtyHostClient } from '../../../src/pty-host/pty-host-client.js';
 import { REPO_ROOT, SERVER_SRC } from '../../helpers/paths.js';
 
 const exec = promisify(execFile);
 const PTY_HOST_DIR = path.join(SERVER_SRC, 'pty-host');
-const SUPERVISOR_SRC = path.join(PTY_HOST_DIR, 'maw-ptyd.mjs');
-const RENDER_SCRIPT = path.join(REPO_ROOT, 'scripts/maw/maw-render-ptyd-unit.sh');
+const SUPERVISOR_SRC = path.join(PTY_HOST_DIR, 'ptyd.mjs');
+const RENDER_SCRIPT = path.join(REPO_ROOT, 'scripts/workbench/render-ptyd-unit.sh');
 
 interface SpawnedSupervisor {
   child: ReturnType<typeof spawn>;
@@ -100,7 +100,7 @@ test('CLI ENTRYPOINT 1, 4, 5, 6, 7: Direct execution by canonical absolute path 
     assert.ok(typeof pid === 'number' && pid > 0, 'Supervisor must spawn with valid PID');
 
     // Requirement 1 & 6: Starts and remains alive
-    await sup.waitForOutput('[maw-ptyd] Listening on');
+    await sup.waitForOutput('[workbench-ptyd] Listening on');
     await new Promise((r) => setTimeout(r, 200));
     assert.doesNotThrow(() => process.kill(pid, 0), 'Supervisor must remain alive after startup');
 
@@ -136,7 +136,7 @@ test('CLI ENTRYPOINT 2: Execution through a symbolic link resolves target and ru
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'maw-cli-symlink-'));
   const linkDir = path.join(tmpDir, 'bin');
   await mkdir(linkDir, { recursive: true });
-  const symlinkPath = path.join(linkDir, 'maw-ptyd-link.mjs');
+  const symlinkPath = path.join(linkDir, 'workbench-ptyd-link.mjs');
   await symlink(SUPERVISOR_SRC, symlinkPath);
 
   const socketPath = path.join(tmpDir, 'ptyd.sock');
@@ -145,7 +145,7 @@ test('CLI ENTRYPOINT 2: Execution through a symbolic link resolves target and ru
   try {
     const sup = runSupervisor(symlinkPath, ['--socket', socketPath, '--auth-file', authPath]);
     const pid = sup.child.pid!;
-    await sup.waitForOutput('[maw-ptyd] Listening on');
+    await sup.waitForOutput('[workbench-ptyd] Listening on');
 
     // Verify it stays alive and created artifacts
     await new Promise((r) => setTimeout(r, 200));
@@ -167,20 +167,20 @@ test('CLI ENTRYPOINT 2 (special characters & spaces): Execution through director
   const releaseDir = path.join(complexDir, 'releases/release-1');
   await mkdir(releaseDir, { recursive: true });
 
-  const supervisorTarget = path.join(releaseDir, 'maw-ptyd.mjs');
+  const supervisorTarget = path.join(releaseDir, 'ptyd.mjs');
   await symlink(SUPERVISOR_SRC, supervisorTarget);
 
   const currentLink = path.join(complexDir, 'current');
   await symlink('releases/release-1', currentLink);
 
-  const executableThroughLink = path.join(currentLink, 'maw-ptyd.mjs');
+  const executableThroughLink = path.join(currentLink, 'ptyd.mjs');
   const socketPath = path.join(tmpDir, 'ptyd.sock');
   const authPath = path.join(tmpDir, 'ptyd.auth');
 
   try {
     const sup = runSupervisor(executableThroughLink, ['--socket', socketPath, '--auth-file', authPath]);
     const pid = sup.child.pid!;
-    await sup.waitForOutput('[maw-ptyd] Listening on');
+    await sup.waitForOutput('[workbench-ptyd] Listening on');
 
     await new Promise((r) => setTimeout(r, 200));
     assert.doesNotThrow(() => process.kill(pid, 0), 'Must survive invocation with special characters');
@@ -211,7 +211,7 @@ console.log('IMPORTED_SUCCESSFULLY');
     const { stdout, stderr } = await exec(process.execPath, [testConsumer]);
     assert.ok(stdout.includes('IMPORTED_SUCCESSFULLY'), 'Consumer module must execute');
     assert.ok(stdout.includes('MAIN_CHECK=true'), 'Consumer main module should be true for itself');
-    assert.ok(!stdout.includes('[maw-ptyd] Listening on'), 'Imported supervisor must not auto-start');
+    assert.ok(!stdout.includes('[workbench-ptyd] Listening on'), 'Imported supervisor must not auto-start');
     assert.equal(stderr, '', 'Stderr should be empty on normal import');
   } finally {
     await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
@@ -258,7 +258,7 @@ test('CLI ENTRYPOINT 8: Startup failure exits nonzero', async () => {
     const sup = runSupervisor(SUPERVISOR_SRC, ['--socket', impossibleSocket, '--auth-file', impossibleAuth]);
     const { exitCode } = await sup.waitForExit();
     assert.notEqual(exitCode, 0, 'Supervisor must exit nonzero on listen failure');
-    assert.ok(sup.getStderr().includes('[maw-ptyd] Failed to start'), 'Supervisor must log failure to stderr');
+    assert.ok(sup.getStderr().includes('[workbench-ptyd] Failed to start'), 'Supervisor must log failure to stderr');
   } finally {
     await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
@@ -271,10 +271,10 @@ test('CLI ENTRYPOINT 9: Exact executable path used by rendered systemd unit', as
 
   const env = {
     ...process.env,
-    MAW_NODE_BIN: process.execPath,
-    MAW_STATE_DIR: tmpState,
-    MAW_BIN_DIR: binDir,
-    MAW_PTYD_RUNTIME_NAME: 'maw-ptyd-test',
+    WORKBENCH_NODE_BIN: process.execPath,
+    WORKBENCH_STATE_DIR: tmpState,
+    WORKBENCH_BIN_DIR: binDir,
+    WORKBENCH_PTYD_RUNTIME_NAME: 'workbench-ptyd-test',
   };
 
   try {
@@ -285,7 +285,7 @@ test('CLI ENTRYPOINT 9: Exact executable path used by rendered systemd unit', as
     const execStartLine = renderedUnit.split('\n').find((l) => l.startsWith('ExecStart='));
     assert.ok(execStartLine, 'Rendered unit must contain ExecStart line');
 
-    const expectedCommand = `${process.execPath} ${tmpState}/current/packages/server/dist/maw-ptyd.mjs`;
+    const expectedCommand = `${process.execPath} ${tmpState}/current/packages/server/dist/ptyd.mjs`;
     assert.equal(execStartLine, `ExecStart=${expectedCommand}`, 'ExecStart must match expected rendered command');
 
     // 3. Create simulated release and current symlink
@@ -300,7 +300,7 @@ test('CLI ENTRYPOINT 9: Exact executable path used by rendered systemd unit', as
       path.join(releaseServerDir, 'node_modules'),
     );
 
-    const deployedSupervisor = path.join(releaseDistDir, 'maw-ptyd.mjs');
+    const deployedSupervisor = path.join(releaseDistDir, 'ptyd.mjs');
     await fs.promises.copyFile(SUPERVISOR_SRC, deployedSupervisor);
     await fs.promises.copyFile(path.join(path.dirname(SUPERVISOR_SRC), 'terminal-state.mjs'), path.join(releaseDistDir, 'terminal-state.mjs'));
     await chmod(deployedSupervisor, 0o755);
@@ -309,14 +309,14 @@ test('CLI ENTRYPOINT 9: Exact executable path used by rendered systemd unit', as
     await symlink(path.join(tmpState, 'releases', releaseId), currentSymlink);
 
     // 4. Execute the EXACT path from ExecStart
-    const exactExecStartPath = path.join(tmpState, 'current/packages/server/dist/maw-ptyd.mjs');
+    const exactExecStartPath = path.join(tmpState, 'current/packages/server/dist/ptyd.mjs');
     const socketPath = path.join(tmpState, 'test.sock');
     const authPath = path.join(tmpState, 'test.auth');
 
     const sup = runSupervisor(exactExecStartPath, ['--socket', socketPath, '--auth-file', authPath]);
     const pid = sup.child.pid!;
 
-    await sup.waitForOutput('[maw-ptyd] Listening on');
+    await sup.waitForOutput('[workbench-ptyd] Listening on');
     await new Promise((r) => setTimeout(r, 200));
 
     // Must be running and alive (not exiting in 34ms)
@@ -342,7 +342,7 @@ test('CLI ENTRYPOINT (Test Cleanup Regression): Test harness cleanup does not le
   // Spawn a supervisor daemon in the background as test harnesses do
   const sup = runSupervisor(SUPERVISOR_SRC, ['--socket', socketPath, '--auth-file', authPath]);
   const supervisorPid = sup.child.pid!;
-  await sup.waitForOutput('[maw-ptyd] Listening on');
+  await sup.waitForOutput('[workbench-ptyd] Listening on');
 
   assert.doesNotThrow(() => process.kill(supervisorPid, 0), 'Supervisor process must be alive');
 

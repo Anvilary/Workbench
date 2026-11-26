@@ -66,9 +66,9 @@ const terminalDispose = Terminal.prototype.dispose;
 window.terminals = []; window.disposed = 0;
 Terminal.prototype.open = function(element) { window.terminals.push(this); return terminalOpen.call(this, element); };
 Terminal.prototype.dispose = function() { window.disposed++; return terminalDispose.call(this); };
-if (web && !window.mawChatGpt) {
+if (web && !window.workbench) {
   const gptSubscribers = new Set();
-  window.mawChatGpt = {
+  window.workbench = {
     subscribe(fn) {
       gptSubscribers.add(fn);
       return () => { gptSubscribers.delete(fn); };
@@ -161,19 +161,19 @@ createRoot(document.getElementById('root')).render(<Harness />);
 export const html = `<!doctype html><html><head><style>
 html,body,#root{height:100%;margin:0}
 .agency-workspace-view{display:flex;flex-direction:column;height:90%}
-.maw-split-workspace-content,.maw-split-container,.maw-split-child{display:flex;flex:1;min-height:0;min-width:0}
-.maw-split-pane{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0}
-.maw-pane-body{flex:1;display:flex;min-height:0;min-width:0;position:relative}
-.maw-session-holder,.maw-session-pane{display:flex;flex:1;flex-direction:column;min-height:0}
-.maw-session-holder[hidden],.maw-session-pane[hidden],.maw-terminal-park{display:none!important}
+.wb-split-workspace-content,.wb-split-container,.wb-split-child{display:flex;flex:1;min-height:0;min-width:0}
+.wb-split-pane{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0}
+.wb-pane-body{flex:1;display:flex;min-height:0;min-width:0;position:relative}
+.wb-session-holder,.wb-session-pane{display:flex;flex:1;flex-direction:column;min-height:0}
+.wb-session-holder[hidden],.wb-session-pane[hidden],.wb-terminal-park{display:none!important}
 .agency-agent-body{flex:1;position:relative;min-height:0}
 .agency-xterm-host,.terminal-surface{position:absolute;inset:0}
 .terminal-surface-hidden{visibility:hidden}
-.maw-browser-pane{flex:1;display:flex;min-height:0;min-width:0}
-.maw-browser-viewer{height:100%;width:100%}
-.maw-split-divider-row{width:6px;flex-shrink:0;cursor:col-resize}
-.maw-split-divider-column{height:6px;flex-shrink:0;cursor:row-resize}
+.wb-browser-pane{flex:1;display:flex;min-height:0;min-width:0}
+.wb-browser-viewer{height:100%;width:100%}
+.wb-split-divider-row{width:6px;flex-shrink:0;cursor:col-resize}
+.wb-split-divider-column{height:6px;flex-shrink:0;cursor:row-resize}
 .agency-modal-backdrop{position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;background:#090b10bb}
 .agency-dialog{width:500px;padding:20px;background:white}
-.maw-notification-inbox{position:fixed;z-index:130;top:70px;right:12px;width:340px;padding:16px;background:white}
+.wb-notification-inbox{position:fixed;z-index:130;top:70px;right:12px;width:340px;padding:16px;background:white}
 </style></head><body><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>`;

@@ -8,7 +8,7 @@
  * serialization happen once, in the connection, before a handler runs.
  */
 
-import type { ClientMessage, ClientMessageType } from '@agent-workbench/shared';
+import type { ClientMessage, ClientMessageType } from '@anvilary/workbench-shared';
 import type { FullContext } from './handler-context.js';
 import { agentInputMessageTypes, handleAgentInputMessage } from './handlers/agent-input-handler.js';
 import { agentProfileMessageTypes, handleAgentProfileMessage } from './handlers/agent-profile-handler.js';

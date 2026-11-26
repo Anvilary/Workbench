@@ -1,3 +1,4 @@
+import { workbenchEnv } from '../../../../../scripts/workbench/env.mjs';
 /**
  * Registro de terminales vivas.
  *
@@ -22,7 +23,7 @@ import {
   type TerminalId,
   type TerminalKind,
   type TerminalOfflineReason,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { stat } from 'node:fs/promises';
@@ -283,11 +284,11 @@ export class TerminalRegistry extends EventEmitter {
     super();
     this.autoSpawn = options?.autoSpawn;
     this.persistentPty = options?.persistentPty ?? (
-      process.env.MAW_PERSISTENT_PTY === '1' &&
-      process.env.MAW_DISABLE_PTYD !== '1' &&
+      workbenchEnv('PERSISTENT_PTY') === '1' &&
+      workbenchEnv('DISABLE_PTYD') !== '1' &&
       !isTestExecution()
     );
-    this.supervisorScriptPath = options?.supervisorScriptPath ?? process.env.MAW_PTYD_SCRIPT;
+    this.supervisorScriptPath = options?.supervisorScriptPath ?? workbenchEnv('PTYD_SCRIPT');
     this.socketPath = options?.socketPath;
     this.authPath = options?.authPath;
   }
@@ -334,7 +335,7 @@ export class TerminalRegistry extends EventEmitter {
   async initialize(): Promise<void> {
     if (this.persistentPty && !this.client) {
       try {
-        const autoSpawn = this.autoSpawn ?? (this.socketPath ? true : process.env.MAW_AUTO_SPAWN_PTYD !== '0');
+        const autoSpawn = this.autoSpawn ?? (this.socketPath ? true : workbenchEnv('AUTO_SPAWN_PTYD') !== '0');
         this.client = await PtyHostClient.connectOrSpawn({
           autoSpawn,
           supervisorScriptPath: this.supervisorScriptPath,
@@ -1052,8 +1053,8 @@ export class TerminalRegistry extends EventEmitter {
       env = {
         ...env,
         HISTFILE: histPath,
-        MAW_TERMINAL_HISTFILE: histPath,
-        MAW_HISTORY_ID: entry.historyId,
+        WORKBENCH_TERMINAL_HISTFILE: histPath,
+        WORKBENCH_HISTORY_ID: entry.historyId,
       };
       if (!entry.agencyManaged) {
         const pc = env['PROMPT_COMMAND'];

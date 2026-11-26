@@ -3,7 +3,7 @@
  * §4.16), sin JSX: el chequeo lo importa y lo prueba.
  */
 
-import type { ConversationEvent } from '@agent-workbench/shared';
+import type { ConversationEvent } from '@anvilary/workbench-shared';
 
 /**
  * true si el evento es un mensaje que escribio el usuario: los unicos antes de

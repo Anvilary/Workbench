@@ -24,7 +24,7 @@ export type TerminalThemePreference = 'dark' | 'follow';
 
 export const TERMINAL_THEME_PREFERENCES: readonly TerminalThemePreference[] = ['dark', 'follow'];
 
-const STORAGE_KEY = 'agent-workbench.terminalTheme';
+const STORAGE_KEY = 'workbench.terminalTheme';
 
 export function parseTerminalThemePreference(raw: string): TerminalThemePreference | null {
   return raw === 'dark' || raw === 'follow' ? raw : null;

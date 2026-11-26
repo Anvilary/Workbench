@@ -32,7 +32,7 @@ import {
   modelOptionLabel,
   type EffortOption,
   type ModelOption,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { modelOptionIn } from './agent-ui.js';
 import { t, type MessageKey } from '../../i18n/index.js';
 

@@ -3,11 +3,11 @@ import type {
   AgencyCliProfile, AgencyRuntimeSession, AgencyWorkspace, CliProfileId,
   EditorTab, MawActivityState, SplitDirection, WebTab, WebTabProvider, WorkspaceId, WorkspacePaneLayout,
   BrowserFavorite,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import {
   assignCreatedTab, swapPanes, countLeaves, createDefaultLayout, findPaneNode, getPaneNodes, moveTabBetweenPanes,
   normalizeWebTabTitle, reconcileLayout, splitPane, closePane, updatePaneNode, updateSplitRatio, webTabProviderFor, MAX_LEAVES,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 import type { AppSettingsApi } from '../settings/useAppSettings.js';
 import { useBrowserSettings } from '../browser/useBrowserSettings.js';
@@ -793,7 +793,7 @@ export const WorkspaceView = memo(function WorkspaceView({
       )}
 
       <PaneMovement key={workspace.id} workspaceId={workspace.id} onSwap={handleSwapPane}>
-      <div className="maw-split-workspace-content">
+      <div className="wb-split-workspace-content">
         <SplitPaneTree
           node={visibleTree}
           browserProfileId={browserProfileId}

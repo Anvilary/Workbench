@@ -26,7 +26,7 @@ import {
   type GitStatus,
   type GitWorktree,
   type ServerText,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 
 /** La salida de git tal cual, o que el comando fallo si no dijo nada. Como clave (§6.23). */
 function gitOutputText(output: string, command: string): ServerText {

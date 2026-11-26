@@ -22,7 +22,7 @@ import {
   type AgentCapabilities,
   type StatusLineSetupInfo,
   type StatusLineState,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { agentStatusDir, integrationsDir } from '../../shared/app-paths.js';
 import type {
   AgentAdapter,

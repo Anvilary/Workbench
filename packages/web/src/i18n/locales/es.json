@@ -1391,7 +1391,7 @@
   "settings.panels.consoleConfirm_other": "Esconder la consola cierra {{count}} terminales abiertas.",
   "settings.performance.effectiveOff": "Esta sesión se inició con la aceleración por hardware desactivada.",
   "settings.performance.effectiveOn": "Esta sesión se inició con la aceleración por hardware activada.",
-  "settings.performance.envOverride": "Esta sesión está controlada por la variable de entorno MAW_SAFE_GRAPHICS, que tiene prioridad sobre este ajuste.",
+  "settings.performance.envOverride": "Esta sesión está controlada por la variable de entorno WORKBENCH_SAFE_GRAPHICS, que tiene prioridad sobre este ajuste.",
   "settings.performance.gpu.compositing": "composición",
   "settings.performance.gpu.rasterization": "rasterización",
   "settings.performance.gpu.state.hardware": "hardware",

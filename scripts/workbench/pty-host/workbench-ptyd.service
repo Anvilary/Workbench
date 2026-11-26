@@ -1,0 +1,35 @@
+# Template rendered by render-ptyd-unit.sh (@NODE_BIN@, @STATE_DIR@, @PATH@, @PTYD_RUNTIME_NAME@).
+# The supervisor always runs from the `current` release; restart-helper.sh updates `current`.
+[Unit]
+Description=Anvilary Workbench Persistent PTY Supervisor (workbench-ptyd)
+Documentation=https://github.com/Anvilary/Workbench
+DefaultDependencies=no
+After=basic.target
+ConditionPathExists=@STATE_DIR@/current/packages/server/dist/ptyd.mjs
+
+[Service]
+Type=simple
+WorkingDirectory=@STATE_DIR@/current
+ExecStartPre=/usr/bin/test -f @STATE_DIR@/current/packages/server/dist/ptyd.mjs
+ExecStart=@NODE_BIN@ @STATE_DIR@/current/packages/server/dist/ptyd.mjs
+Restart=on-failure
+RestartSec=1
+KillMode=control-group
+TimeoutStopSec=10
+Environment=NODE_ENV=production
+Environment=HOME=%h
+Environment=XDG_RUNTIME_DIR=%t
+Environment=PATH=@PATH@
+# Independent runtime directory: systemd manages @PTYD_RUNTIME_NAME@ separately from maw.
+# Stopping or restarting workbench.service does NOT clean this directory.
+RuntimeDirectory=@PTYD_RUNTIME_NAME@
+RuntimeDirectoryMode=0700
+# Supervisor socket and auth file live under /run/user/<UID>/@PTYD_RUNTIME_NAME@/
+Environment=WORKBENCH_PTYD_SOCKET=%t/@PTYD_RUNTIME_NAME@/ptyd.sock
+Environment=WORKBENCH_PTYD_AUTH_FILE=%t/@PTYD_RUNTIME_NAME@/ptyd.sock.auth
+StandardOutput=append:%h/.local/state/workbench/logs/workbench-ptyd.stdout.log
+StandardError=append:%h/.local/state/workbench/logs/workbench-ptyd.stderr.log
+UMask=0077
+
+[Install]
+WantedBy=default.target

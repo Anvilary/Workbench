@@ -1,5 +1,5 @@
 import { useState, useMemo, type JSX } from 'react';
-import type { AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId } from '@agent-workbench/shared';
+import type { AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId } from '@anvilary/workbench-shared';
 import { ModalDialog } from '../../shared/ui/ModalDialog.js';
 import { t } from '../../i18n/index.js';
 
@@ -134,9 +134,9 @@ export function ArchivedItemsDialog({
       title={t('agency.archive.title')}
       onClose={onClose}
       closeLabel={t('common.close')}
-      className="maw-archived-dialog"
+      className="wb-archived-dialog"
     >
-      <div className="maw-archived-container">
+      <div className="wb-archived-container">
         {error && (
           <div role="alert" className="agency-error-bar" style={{ marginBottom: '12px' }}>
             <span>{error}</span>
@@ -147,8 +147,8 @@ export function ArchivedItemsDialog({
         )}
 
         {parentPrompt ? (
-          <div className="maw-archived-parent-prompt" role="alertdialog" aria-modal="true">
-            <p className="maw-archived-prompt-text">
+          <div className="wb-archived-parent-prompt" role="alertdialog" aria-modal="true">
+            <p className="wb-archived-prompt-text">
               {t('agency.archive.parentArchivedPrompt', { project: parentPrompt.parentProject.name })}
             </p>
             <div className="agency-dialog-actions" style={{ marginTop: '16px' }}>
@@ -171,14 +171,14 @@ export function ArchivedItemsDialog({
           </div>
         ) : (
           <>
-            <div className="maw-archived-tabs" role="tablist" aria-label={t('agency.archive.title')}>
+            <div className="wb-archived-tabs" role="tablist" aria-label={t('agency.archive.title')}>
               <button
                 type="button"
                 role="tab"
                 id="archived-tab-projects"
                 aria-selected={activeTab === 'projects'}
                 aria-controls="archived-panel-projects"
-                className={`agency-secondary-button maw-archived-tab ${activeTab === 'projects' ? 'selected' : ''}`}
+                className={`agency-secondary-button wb-archived-tab ${activeTab === 'projects' ? 'selected' : ''}`}
                 onClick={() => setActiveTab('projects')}
               >
                 {`${t('agency.archive.projects')} (${archivedProjects.length})`}
@@ -189,7 +189,7 @@ export function ArchivedItemsDialog({
                 id="archived-tab-workspaces"
                 aria-selected={activeTab === 'workspaces'}
                 aria-controls="archived-panel-workspaces"
-                className={`agency-secondary-button maw-archived-tab ${activeTab === 'workspaces' ? 'selected' : ''}`}
+                className={`agency-secondary-button wb-archived-tab ${activeTab === 'workspaces' ? 'selected' : ''}`}
                 onClick={() => setActiveTab('workspaces')}
               >
                 {`${t('agency.archive.workspaces')} (${archivedWorkspaces.length})`}
@@ -200,7 +200,7 @@ export function ArchivedItemsDialog({
               <input
                 id="archived-search-input"
                 type="search"
-                className="maw-settings-search-input maw-archived-search-input"
+                className="wb-settings-search-input maw-archived-search-input"
                 placeholder={t('agency.archive.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -213,7 +213,7 @@ export function ArchivedItemsDialog({
               id={activeTab === 'projects' ? 'archived-panel-projects' : 'archived-panel-workspaces'}
               role="tabpanel"
               aria-labelledby={activeTab === 'projects' ? 'archived-tab-projects' : 'archived-tab-workspaces'}
-              className="maw-archived-list"
+              className="wb-archived-list"
             >
               {activeTab === 'projects' ? (
                 filteredProjects.length === 0 ? (
@@ -227,18 +227,18 @@ export function ArchivedItemsDialog({
                     const isPending = pendingIds.has(p.id);
                     const formattedDate = formatArchiveDate(p.archivedAt ?? p.updatedAt);
                     return (
-                      <article key={p.id} className="maw-archived-row">
-                        <div className="maw-archived-row-info">
-                          <strong className="maw-archived-row-title">{p.name}</strong>
+                      <article key={p.id} className="wb-archived-row">
+                        <div className="wb-archived-row-info">
+                          <strong className="wb-archived-row-title">{p.name}</strong>
                           {formattedDate && (
-                            <span className="agency-muted maw-archived-row-date">
+                            <span className="agency-muted wb-archived-row-date">
                               {t('agency.archive.archivedOn', { date: formattedDate })}
                             </span>
                           )}
                         </div>
                         <button
                           type="button"
-                          className="agency-primary-button maw-archived-restore-btn"
+                          className="agency-primary-button wb-archived-restore-btn"
                           disabled={isPending || !online}
                           onClick={() => handleRestoreProject(p.id)}
                           aria-label={`${t('agency.archive.restore')} ${p.name}`}
@@ -262,13 +262,13 @@ export function ArchivedItemsDialog({
                     const parent = projectMap.get(w.projectId);
                     const formattedDate = formatArchiveDate(w.archivedAt ?? w.updatedAt);
                     return (
-                      <article key={w.id} className="maw-archived-row">
-                        <div className="maw-archived-row-info">
-                          <strong className="maw-archived-row-title">{w.name}</strong>
-                          <div className="maw-archived-row-meta">
-                            {parent && <span className="maw-archived-parent-tag">{parent.name}</span>}
+                      <article key={w.id} className="wb-archived-row">
+                        <div className="wb-archived-row-info">
+                          <strong className="wb-archived-row-title">{w.name}</strong>
+                          <div className="wb-archived-row-meta">
+                            {parent && <span className="wb-archived-parent-tag">{parent.name}</span>}
                             {formattedDate && (
-                              <span className="agency-muted maw-archived-row-date">
+                              <span className="agency-muted wb-archived-row-date">
                                 {t('agency.archive.archivedOn', { date: formattedDate })}
                               </span>
                             )}
@@ -276,7 +276,7 @@ export function ArchivedItemsDialog({
                         </div>
                         <button
                           type="button"
-                          className="agency-primary-button maw-archived-restore-btn"
+                          className="agency-primary-button wb-archived-restore-btn"
                           disabled={isPending || !online}
                           onClick={() => handleRestoreWorkspace(w)}
                           aria-label={`${t('agency.archive.restore')} ${w.name}`}

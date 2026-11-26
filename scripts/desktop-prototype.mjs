@@ -12,13 +12,13 @@ await mkdir(runtime, { recursive: true, mode: 0o700 });
 const lockPath = path.join(data, 'launcher.lock');
 const lock = await open(lockPath, 'wx', 0o600).catch(() => { throw new Error('Prototype launcher is already running. If it crashed, remove .native-chatgpt-local/launcher.lock after checking that its processes have stopped.'); });
 await lock.writeFile(String(process.pid));
-const readiness = path.join(runtime, 'maw-ready.json');
+const readiness = path.join(runtime, 'workbench-ready.json');
 await unlink(readiness).catch(error => { if (error.code !== 'ENOENT') throw error; });
 const log = await open(path.join(data, 'server.log'), 'a', 0o600);
-const backend = spawn('pnpm', ['--filter', '@agent-workbench/server', 'dev'], { cwd: root, detached: true, stdio: ['ignore', log.fd, log.fd], env: {
-  ...process.env, XDG_CONFIG_HOME: path.join(data, 'config'), MAW_RUNTIME_DIR: runtime,
-  AGENT_WORKBENCH_NO_OPEN: '1', AGENT_WORKBENCH_NO_RESTORE: '1',
-  MAW_UNSAFE_LOCAL_NO_AUTH: '',
+const backend = spawn('pnpm', ['--filter', '@anvilary/workbench-server', 'dev'], { cwd: root, detached: true, stdio: ['ignore', log.fd, log.fd], env: {
+  ...process.env, XDG_CONFIG_HOME: path.join(data, 'config'), WORKBENCH_RUNTIME_DIR: runtime,
+  WORKBENCH_NO_OPEN: '1', WORKBENCH_NO_RESTORE: '1',
+  WORKBENCH_UNSAFE_LOCAL_NO_AUTH: '',
 } });
 let desktop;
 function stop() {
@@ -34,8 +34,8 @@ try {
     await delay(250);
   }
   if (!url) throw new Error('Isolated backend did not become ready; see .native-chatgpt-local/server.log');
-  desktop = spawn('pnpm', ['--filter', '@agent-workbench/desktop', 'start'], { cwd: root, detached: true, stdio: 'inherit', env: {
-    ...process.env, MAW_DESKTOP_URL: url, MAW_DESKTOP_DATA_DIR: path.join(data, 'chromium'),
+  desktop = spawn('pnpm', ['--filter', '@anvilary/workbench-desktop', 'start'], { cwd: root, detached: true, stdio: 'inherit', env: {
+    ...process.env, WORKBENCH_DESKTOP_URL: url, WORKBENCH_DESKTOP_DATA_DIR: path.join(data, 'chromium'),
   } });
   console.log('Isolated Anvilary Workbench desktop prototype started. Close its window to stop the isolated backend.');
   const code = await new Promise(resolve => desktop.on('exit', resolve));

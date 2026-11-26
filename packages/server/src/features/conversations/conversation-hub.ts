@@ -38,7 +38,7 @@ import {
   type SessionPlan,
   type TerminalActivity,
   type TerminalId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type {
   AgentAdapter,
   AgentStatus,

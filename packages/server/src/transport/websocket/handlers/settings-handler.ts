@@ -2,7 +2,7 @@
  * App settings, the agent list and agents usage.
  */
 
-import { DEFAULT_BROWSER_PROFILE_ID, serverText, type ClientMessage } from '@agent-workbench/shared';
+import { DEFAULT_BROWSER_PROFILE_ID, serverText, type ClientMessage } from '@anvilary/workbench-shared';
 import { AppSettingsChangeError } from '../../../features/settings/app-settings-service.js';
 import type { HandlerContext } from '../handler-context.js';
 

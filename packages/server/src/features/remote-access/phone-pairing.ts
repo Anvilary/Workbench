@@ -24,7 +24,7 @@
  */
 
 import { createPrivateKey, createPublicKey } from 'node:crypto';
-import type { PhoneAuthorizeShell } from '@agent-workbench/shared';
+import type { PhoneAuthorizeShell } from '@anvilary/workbench-shared';
 
 export const PHONE_PAYLOAD_PREFIX = 'agentworkbench://pair?';
 export const PHONE_PAYLOAD_VERSION = 1;

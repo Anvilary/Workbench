@@ -21,7 +21,7 @@
  */
 
 import type { AgentAdapter } from '../../agents/adapter.js';
-import type { ComposerPrefillReason, TerminalDescriptor, TerminalId } from '@agent-workbench/shared';
+import type { ComposerPrefillReason, TerminalDescriptor, TerminalId } from '@anvilary/workbench-shared';
 import { buildSubmissionWrites } from './pty-input.js';
 import type { EnqueueOptions, PieceWriter, WriteLane } from '../terminals/terminal-write-queue.js';
 

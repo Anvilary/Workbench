@@ -41,7 +41,7 @@ import { copyFile, mkdir, open, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
-import { normalizeCwdKey, type SessionTitleSource } from '@agent-workbench/shared';
+import { normalizeCwdKey, type SessionTitleSource } from '@anvilary/workbench-shared';
 import { parseSummaryTime, parseWorkspaceUris } from '../../../agents/antigravity/catalog.js';
 import { CONVERSATION_ID_PATTERN } from '../../../agents/antigravity/constants.js';
 import { fileUriToPath } from '../../../agents/antigravity/file-uri.js';
@@ -292,7 +292,7 @@ export async function planAntigravityRescue(options: RescueOptions): Promise<Res
   const source = path.join(options.geminiHome, 'antigravity-cli', 'conversation_summaries.db');
   if ((await stampOf(source)) === null) throw new RescueError(`${source} doesn't exist.`);
 
-  const tempRoot = options.tempRoot ?? path.join(tmpdir(), 'agent-workbench');
+  const tempRoot = options.tempRoot ?? path.join(tmpdir(), 'workbench');
   const copyDir = path.join(tempRoot, `rescue-${randomUUID()}`);
   let details: DetailRow[];
   let otherRows: number;

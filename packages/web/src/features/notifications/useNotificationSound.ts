@@ -18,7 +18,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { TerminalActivity, TerminalId } from '@agent-workbench/shared';
+import type { TerminalActivity, TerminalId } from '@anvilary/workbench-shared';
 import {
   ChimePlayer,
   DEFAULT_VOLUME,

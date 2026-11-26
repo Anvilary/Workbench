@@ -22,7 +22,7 @@ export function GeneralSettingsSection({
   onOpenRemote,
 }: GeneralSettingsSectionProps): JSX.Element {
   return (
-    <div className="maw-settings-groups">
+    <div className="wb-settings-groups">
       <CollapsibleSubsection
         id="setting-card-language"
         title={t('settings.language')}
@@ -30,12 +30,12 @@ export function GeneralSettingsSection({
         forceExpanded={highlightedCardId === 'setting-card-language'}
         expandSignal={expandSignal}
       >
-        <div className="maw-settings-row">
-          <div className="maw-settings-row-text">
-            <span className="maw-settings-label">{t('settings.language')}</span>
-            <span className="maw-settings-subtext">{t('settings.desc.general')}</span>
+        <div className="wb-settings-row">
+          <div className="wb-settings-row-text">
+            <span className="wb-settings-label">{t('settings.language')}</span>
+            <span className="wb-settings-subtext">{t('settings.desc.general')}</span>
           </div>
-          <div className="maw-settings-control">
+          <div className="wb-settings-control">
             <LocaleMenu />
           </div>
         </div>
@@ -48,38 +48,38 @@ export function GeneralSettingsSection({
         forceExpanded={highlightedCardId === 'setting-card-theme'}
         expandSignal={expandSignal}
       >
-        <div className="maw-settings-row">
-          <div className="maw-settings-row-text">
-            <span className="maw-settings-label">{t('settings.section.appearance')}</span>
-            <span className="maw-settings-subtext">{t('settings.appearance.themeDark')}</span>
+        <div className="wb-settings-row">
+          <div className="wb-settings-row-text">
+            <span className="wb-settings-label">{t('settings.section.appearance')}</span>
+            <span className="wb-settings-subtext">{t('settings.appearance.themeDark')}</span>
           </div>
-          <div className="maw-settings-control">
-            <span className="maw-settings-badge badge-available">
+          <div className="wb-settings-control">
+            <span className="wb-settings-badge badge-available">
               {t('settings.appearance.darkBadge')}
             </span>
           </div>
         </div>
 
-        <div className="maw-settings-row maw-settings-row-top" style={{ marginTop: '12px' }}>
-          <div className="maw-settings-row-text">
-            <span className="maw-settings-label">{t('settings.terminalTheme')}</span>
-            <span className="maw-settings-subtext">{t('settings.terminalTheme.hint')}</span>
+        <div className="wb-settings-row wb-settings-row-top" style={{ marginTop: '12px' }}>
+          <div className="wb-settings-row-text">
+            <span className="wb-settings-label">{t('settings.terminalTheme')}</span>
+            <span className="wb-settings-subtext">{t('settings.terminalTheme.hint')}</span>
           </div>
-          <div className="maw-settings-control">
+          <div className="wb-settings-control">
             <div
-              className="maw-settings-choices"
+              className="wb-settings-choices"
               role="radiogroup"
               aria-label={t('settings.terminalTheme')}
             >
               {(['dark', 'follow'] as const).map((preference) => (
-                <label key={preference} className="maw-settings-choice">
+                <label key={preference} className="wb-settings-choice">
                   <input
                     type="radio"
                     name="terminal-theme"
                     checked={terminalTheme.preference === preference}
                     onChange={() => terminalTheme.setPreference(preference)}
                   />
-                  <span className="maw-settings-choice-label">
+                  <span className="wb-settings-choice-label">
                     {t(TERMINAL_THEME_NAMES[preference])}
                   </span>
                 </label>
@@ -102,7 +102,7 @@ export function GeneralSettingsSection({
           forceExpanded={highlightedCardId === 'setting-card-more'}
           expandSignal={expandSignal}
         >
-          <div className="maw-settings-action-row">
+          <div className="wb-settings-action-row">
             {onOpenVault !== null && (
               <button
                 type="button"

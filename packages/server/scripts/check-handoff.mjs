@@ -369,7 +369,7 @@ const turns = splitTurns(events);
 // Piezas comunes de H5 a H9: dobles del registro, el indice y las CLIs
 // ---------------------------------------------------------------------------
 
-const shared = await import('@agent-workbench/shared');
+const shared = await import('@anvilary/workbench-shared');
 const handoff = await import('../src/features/history/handoff.ts');
 const { continueSession, chooseDelivery, readSourceEvents, continuationLabel, HANDOFF_DELIVERY_TIMEOUT_MS } = handoff;
 const { deliverWhenReady, prefillReasonFor } = await import('../src/features/composer/deliver-when-ready.ts');

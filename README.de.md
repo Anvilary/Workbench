@@ -225,7 +225,7 @@ Bei eingeschalteter Sicherung:
 <img src="assets/captura-buscador.png" width="40%" alt="Suche in Unterhaltungen: ein Treffer in je einer Sitzung jeder CLI, mit seinem Ausschnitt">
 
 Standardmäßig liegt sie im Konfigurationsordner der App
-(`%APPDATA%\agent-workbench\vault` unter Windows). **Ordner ändern…** kopiert sie
+(`%APPDATA%\workbench\vault` unter Windows). **Ordner ändern…** kopiert sie
 in einen anderen – einen synchronisierten Ordner, ein anderes Laufwerk –, ohne
 etwas zu überschreiben, und lässt den alten unverändert. Wenn Sie sie in einen
 synchronisierten Ordner oder ein Repository legen, wandern Ihre Unterhaltungen

@@ -85,7 +85,7 @@ const check = (label, ok, extra = '') => {
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const show = (value) => JSON.stringify(value);
 
-const shared = await import('@agent-workbench/shared');
+const shared = await import('@anvilary/workbench-shared');
 
 // ---------------------------------------------------------------------------
 // P. Lo que el 26 da por hecho del 25 (paso 0)

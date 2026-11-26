@@ -24,16 +24,16 @@ test('Browser Profile Policy: partition routing preserves Main partitions and is
   assert.equal(isValidBrowserProfileId('../escape'), false);
   assert.equal(isValidBrowserProfileId(''), false);
 
-  assert.equal(partitionForBrowserProfile('main', 'chatgpt'), 'persist:maw-chatgpt');
-  assert.equal(partitionForBrowserProfile('main', 'github'), 'persist:maw-github');
-  assert.equal(partitionForBrowserProfile('main', 'perplexity'), 'persist:maw-perplexity');
-  assert.equal(partitionForBrowserProfile('main', 'other'), 'persist:maw-browser');
-  assert.equal(partitionForBrowserProfile(undefined, 'chatgpt'), 'persist:maw-chatgpt');
+  assert.equal(partitionForBrowserProfile('main', 'chatgpt'), 'persist:workbench-chatgpt');
+  assert.equal(partitionForBrowserProfile('main', 'github'), 'persist:workbench-github');
+  assert.equal(partitionForBrowserProfile('main', 'perplexity'), 'persist:workbench-perplexity');
+  assert.equal(partitionForBrowserProfile('main', 'other'), 'persist:workbench-browser');
+  assert.equal(partitionForBrowserProfile(undefined, 'chatgpt'), 'persist:workbench-chatgpt');
 
-  assert.equal(partitionForBrowserProfile('client-a', 'chatgpt'), 'persist:maw-profile-client-a-chatgpt');
-  assert.equal(partitionForBrowserProfile('client-a', 'github'), 'persist:maw-profile-client-a-github');
-  assert.equal(partitionForBrowserProfile('client-a', 'perplexity'), 'persist:maw-profile-client-a-perplexity');
-  assert.equal(partitionForBrowserProfile('client-a', 'other'), 'persist:maw-profile-client-a-browser');
+  assert.equal(partitionForBrowserProfile('client-a', 'chatgpt'), 'persist:workbench-profile-client-a-chatgpt');
+  assert.equal(partitionForBrowserProfile('client-a', 'github'), 'persist:workbench-profile-client-a-github');
+  assert.equal(partitionForBrowserProfile('client-a', 'perplexity'), 'persist:workbench-profile-client-a-perplexity');
+  assert.equal(partitionForBrowserProfile('client-a', 'other'), 'persist:workbench-profile-client-a-browser');
 });
 
 test('Browser Profile Policy: validCommand validates open, update, clone-profile, and clear-profile-site-auth', () => {
@@ -145,7 +145,7 @@ test('Browser Profile Storage: cloneBrowserProfileStorage copies cookies, honors
     return partitions.get(name);
   }
 
-  getPartition('persist:maw-chatgpt').cookiesList.push({
+  getPartition('persist:workbench-chatgpt').cookiesList.push({
     name: '__Secure-next-auth.session-token',
     value: 'secret-token',
     domain: '.chatgpt.com',
@@ -155,7 +155,7 @@ test('Browser Profile Storage: cloneBrowserProfileStorage copies cookies, honors
     hostOnly: false,
     sameSite: 'lax',
   });
-  getPartition('persist:maw-github').cookiesList.push({
+  getPartition('persist:workbench-github').cookiesList.push({
     name: '__Host-user_session_same_site',
     value: 'gh-secret',
     domain: 'github.com',
@@ -181,13 +181,13 @@ test('Browser Profile Storage: cloneBrowserProfileStorage copies cookies, honors
   assert.equal(res.cookiesCopied, 1);
 
   // Source github cookies remain untouched
-  assert.equal(getPartition('persist:maw-github').cookiesList.length, 1);
+  assert.equal(getPartition('persist:workbench-github').cookiesList.length, 1);
   // The excluded site was left empty.
-  assert.equal(getPartition('persist:maw-profile-work-github').cookiesList.length, 0);
-  assert.equal(getPartition('persist:maw-profile-work-github').cleared, 0);
+  assert.equal(getPartition('persist:workbench-profile-work-github').cookiesList.length, 0);
+  assert.equal(getPartition('persist:workbench-profile-work-github').cleared, 0);
   // Target chatgpt partition received the cloned cookie
-  assert.equal(getPartition('persist:maw-profile-work-chatgpt').cookiesList.length, 1);
-  assert.equal(getPartition('persist:maw-profile-work-chatgpt').cookiesList[0].name, '__Secure-next-auth.session-token');
+  assert.equal(getPartition('persist:workbench-profile-work-chatgpt').cookiesList.length, 1);
+  assert.equal(getPartition('persist:workbench-profile-work-chatgpt').cookiesList[0].name, '__Secure-next-auth.session-token');
   await assert.rejects(cloneBrowserProfileStorage({
     sessionApi, sourceProfileId: 'main', targetProfileId: 'work',
   }), /destination already contains cookies/);
@@ -199,7 +199,7 @@ test('Browser Profile Storage: cloneBrowserProfileStorage copies cookies, honors
     site: 'chatgpt',
   });
   assert.equal(clearRes.ok, true);
-  assert.equal(getPartition('persist:maw-profile-work-chatgpt').cookiesList.length, 0);
+  assert.equal(getPartition('persist:workbench-profile-work-chatgpt').cookiesList.length, 0);
 
   // Check __Host- cookie conversion omits domain attribute and rejects non-root path
   const hostCookie = toCookieSetDetails({
@@ -272,7 +272,7 @@ test('Browser Profile Storage: clone skips individual bad cookies, clearSiteAuth
     return partitions.get(name);
   }
 
-  getPartition('persist:maw-chatgpt').cookiesList.push(
+  getPartition('persist:workbench-chatgpt').cookiesList.push(
     { name: 'good_cookie', value: 'ok', domain: '.chatgpt.com', path: '/', secure: true },
     { name: '', value: 'empty-name', domain: '.chatgpt.com', path: '/' },
     { name: 'expired_cookie', value: 'old', domain: '.chatgpt.com', path: '/', session: false, expirationDate: 10 },
@@ -289,8 +289,8 @@ test('Browser Profile Storage: clone skips individual bad cookies, clearSiteAuth
   assert.equal(cloneRes.ok, true);
   assert.equal(cloneRes.cookiesCopied, 1);
   assert.equal(cloneRes.cookiesSkipped, 3);
-  assert.equal(getPartition('persist:maw-profile-work-partial-chatgpt').cookiesList.length, 1);
-  assert.equal(getPartition('persist:maw-profile-work-partial-chatgpt').cookiesList[0].name, 'good_cookie');
+  assert.equal(getPartition('persist:workbench-profile-work-partial-chatgpt').cookiesList.length, 1);
+  assert.equal(getPartition('persist:workbench-profile-work-partial-chatgpt').cookiesList[0].name, 'good_cookie');
 
   // clearProfileSiteAuth clears storage, HTTP cache, and auth cache
   const clearRes = await clearProfileSiteAuth({
@@ -299,7 +299,7 @@ test('Browser Profile Storage: clone skips individual bad cookies, clearSiteAuth
     site: 'chatgpt',
   });
   assert.equal(clearRes.ok, true);
-  const clearedPart = getPartition('persist:maw-profile-work-partial-chatgpt');
+  const clearedPart = getPartition('persist:workbench-profile-work-partial-chatgpt');
   assert.equal(clearedPart.clearedStorage, 1);
   assert.equal(clearedPart.clearedCache, 1);
   assert.equal(clearedPart.clearedAuthCache, 1);
@@ -472,5 +472,5 @@ test('deleteBrowserProfileStorage verifies custom dictionary cleanup and reports
     },
   });
   assert.equal(res.ok, false);
-  assert.deepEqual(res.failedDictionaryPartitions, ['persist:maw-profile-stuck-profile-github']);
+  assert.deepEqual(res.failedDictionaryPartitions, ['persist:workbench-profile-stuck-profile-github']);
 });

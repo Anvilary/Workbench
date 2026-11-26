@@ -75,7 +75,7 @@ import {
   type WorktreeReviewSummary,
   type WorktreeRow,
   type WorktreeSource,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { HistorySource } from '../../agents/adapter.js';
 import type { EventLimits } from '../../agents/transport-limits.js';
 import type { OpenTerminalOptions } from '../terminals/terminal-registry.js';

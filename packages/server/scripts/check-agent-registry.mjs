@@ -43,7 +43,7 @@ delete process.env['OPENCODE_DB'];
 delete process.env['OPENCODE_MODELS_PATH'];
 delete process.env['OPENCODE_MODELS_URL'];
 
-const shared = await import('@agent-workbench/shared');
+const shared = await import('@anvilary/workbench-shared');
 const {
   AGENT_IDS,
   MEMORY_AGENT_IDS,

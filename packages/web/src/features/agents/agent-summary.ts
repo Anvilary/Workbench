@@ -16,7 +16,7 @@ import {
   PROTOCOL_VERSION,
   type AgentInfo,
   type EnvironmentNoticeId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 import { serverTextMessage } from '../../i18n/server-text.js';
 

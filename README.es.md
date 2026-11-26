@@ -218,7 +218,7 @@ Con el respaldo encendido:
 <img src="assets/captura-buscador.png" width="40%" alt="Búsqueda en conversaciones: un acierto en una sesión de cada CLI, con su fragmento">
 
 Por defecto vive en la carpeta de configuración de la app
-(`%APPDATA%\agent-workbench\vault` en Windows). **Cambiar carpeta…** lo copia a
+(`%APPDATA%\workbench\vault` en Windows). **Cambiar carpeta…** lo copia a
 otra —una carpeta sincronizada, otro disco— sin sobrescribir nada, y deja la
 anterior como estaba. Si lo pones en una carpeta sincronizada o en un
 repositorio, tus conversaciones viajan con él.

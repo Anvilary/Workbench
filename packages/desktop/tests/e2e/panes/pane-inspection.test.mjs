@@ -16,8 +16,8 @@ import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 const require = createRequire(import.meta.url);
 const here = DESKTOP_ROOT;
 const exec = promisify(execFile);
-const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
-  ? '/opt/maw-electron/45.2.0/electron'
+const electronExecutable = fs.existsSync('/opt/workbench-electron/45.2.0/electron')
+  ? '/opt/workbench-electron/45.2.0/electron'
   : require('electron');
 
 async function eventually(check) {
@@ -35,7 +35,7 @@ async function setup(t, query = 'web') {
     res.end(req.url === '/bundle.js' ? bundle.outputFiles[0].text : html);
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const data = await mkdtemp(path.join(tmpdir(), 'maw-pane-inspection-'));
+  const data = await mkdtemp(path.join(tmpdir(), 'wb-pane-inspection-'));
   let desktop;
   t.after(async () => {
     if (desktop) await desktop.close();
@@ -43,10 +43,10 @@ async function setup(t, query = 'web') {
     await rm(data, { recursive: true, force: true });
   });
   desktop = await electron.launch({ chromiumSandbox: true, executablePath: electronExecutable, args: [here, '--ozone-platform=x11'], env: {
-    ...process.env, MAW_DESKTOP_URL: 'http://127.0.0.1:' + server.address().port + '/?' + query, MAW_DESKTOP_DATA_DIR: data,
+    ...process.env, WORKBENCH_DESKTOP_URL: 'http://127.0.0.1:' + server.address().port + '/?' + query, WORKBENCH_DESKTOP_DATA_DIR: data,
   } });
   await desktop.evaluate(({ session, app, BrowserWindow }) => {
-    session.fromPartition('persist:maw-chatgpt').protocol.handle('https', () => new Response('<!doctype html><title>Fixture</title><textarea style="width:90%;height:60px">native selection sample</textarea><div style="height:2000px;background:linear-gradient(red,blue)">Scroll fixture</div>', { headers: { 'Content-Type': 'text/html' } }));
+    session.fromPartition('persist:workbench-chatgpt').protocol.handle('https', () => new Response('<!doctype html><title>Fixture</title><textarea style="width:90%;height:60px">native selection sample</textarea><div style="height:2000px;background:linear-gradient(red,blue)">Scroll fixture</div>', { headers: { 'Content-Type': 'text/html' } }));
     globalThis.inspectionLifecycle = [];
     globalThis.inspectionDetaches = [];
     const host = BrowserWindow.getAllWindows()[0].contentView;
@@ -56,7 +56,7 @@ async function setup(t, query = 'web') {
       return remove(view);
     };
     app.on('web-contents-created', (_event, contents) => {
-      if (contents.session !== session.fromPartition('persist:maw-chatgpt')) return;
+      if (contents.session !== session.fromPartition('persist:workbench-chatgpt')) return;
       for (const event of ['did-start-loading', 'destroyed', 'render-process-gone']) {
         contents.on(event, () => globalThis.inspectionLifecycle.push({ id: contents.id, event }));
       }
@@ -69,14 +69,14 @@ async function setup(t, query = 'web') {
   t.after(() => assert.deepEqual(errors, []));
   await page.evaluate(() => {
     window.nativeFocusEvents = [];
-    window.mawChatGpt.subscribe(state => { if (state.type === 'focused') window.nativeFocusEvents.push(state); });
+    window.workbench.subscribe(state => { if (state.type === 'focused') window.nativeFocusEvents.push(state); });
   });
   await page.locator('#start').click();
   const identities = () => desktop.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()[0].contentView.children.filter(view => view.webContents).map(view => view.webContents.id).sort((a, b) => a - b));
   await eventually(async () => (await identities()).length === 2);
   await eventually(() => desktop.evaluate(({ webContents, session }) => webContents.getAllWebContents()
-    .filter(contents => contents.session === session.fromPartition('persist:maw-chatgpt'))
+    .filter(contents => contents.session === session.fromPartition('persist:workbench-chatgpt'))
     .every(contents => !contents.isLoading())));
   return { desktop, page, identities };
 }
@@ -90,9 +90,9 @@ test('pane inspection selects the correct ChatGPT tab while two native view iden
   assert.deepEqual(await page.evaluate(() => window.inspection.requests.filter(m => m.type === 'agency.tab.acknowledge')), []);
   for (let n = 0; n < 5; n++) {
     for (const side of ['right', 'left']) {
-      await page.locator('#pane-container-' + side + ' .maw-pane-header').click({ position: { x: 30, y: 4 } });
+      await page.locator('#pane-container-' + side + ' .wb-pane-header').click({ position: { x: 30, y: 4 } });
       await eventually(async () => await page.evaluate(({ side, ws, id }) =>
-        document.querySelector('.maw-split-pane.is-focused')?.id === 'pane-container-' + side && window.inspection.state.selected[ws] === id,
+        document.querySelector('.wb-split-pane.is-focused')?.id === 'pane-container-' + side && window.inspection.state.selected[ws] === id,
       { side, ws: workspaceId, id: side === 'right' ? tabB : '33333333-3333-4333-8333-333333333333' }));
       assert.deepEqual(await identities(), before, 'focus retains both attached WebContentsViews');
     }
@@ -113,7 +113,7 @@ test('native webpage pointer focus synchronizes inspection without stealing MAW 
   });
   const selected = async (side, tabId) => {
     await page.waitForFunction(({ side, tabId, ws }) =>
-      document.querySelector('.maw-split-pane.is-focused')?.id === 'pane-container-' + side && window.inspection.state.selected[ws] === tabId,
+      document.querySelector('.wb-split-pane.is-focused')?.id === 'pane-container-' + side && window.inspection.state.selected[ws] === tabId,
     { side, tabId, ws: workspaceId });
   };
   const pointer = async (side, y = 25) => {
@@ -168,14 +168,14 @@ test('native webpage pointer focus synchronizes inspection without stealing MAW 
   await shellClick(page.locator('#start'));
   await page.locator('#start').focus();
   assert.equal(await shellFocused(), true);
-  const divider = page.locator('[data-split-id="split"].maw-split-divider');
+  const divider = page.locator('[data-split-id="split"].wb-split-divider');
   const box = await divider.boundingBox();
   const ratioBefore = await divider.getAttribute('aria-valuenow');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + 80, box.y + box.height / 2, { steps: 6 });
   await page.mouse.up();
-  await page.waitForFunction(value => document.querySelector('[data-split-id="split"].maw-split-divider').getAttribute('aria-valuenow') !== value, ratioBefore);
+  await page.waitForFunction(value => document.querySelector('[data-split-id="split"].wb-split-divider').getAttribute('aria-valuenow') !== value, ratioBefore);
   await page.waitForTimeout(100);
   assert.equal(await shellFocused(), true);
   assert.deepEqual(await identities(), before);
@@ -186,7 +186,7 @@ test('native webpage pointer focus synchronizes inspection without stealing MAW 
   await page.getByRole('menuitem', { name: /Browser|Web Page/, exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.waitFor();
-  const address = dialog.locator('input.maw-browser-dest-input');
+  const address = dialog.locator('input.wb-browser-dest-input');
   await address.focus();
   await page.waitForTimeout(150);
   assert.equal(await shellFocused(), true);
@@ -194,7 +194,7 @@ test('native webpage pointer focus synchronizes inspection without stealing MAW 
   await page.keyboard.press('Escape');
   await dialog.waitFor({ state: 'detached' });
   await page.getByRole('button', { name: 'Notifications', exact: true }).click();
-  const inbox = page.locator('.maw-notification-inbox');
+  const inbox = page.locator('.wb-notification-inbox');
   await inbox.getByRole('button', { name: 'Close', exact: true }).focus();
   await page.waitForTimeout(150);
   assert.equal(await shellFocused(), true);

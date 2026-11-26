@@ -84,13 +84,13 @@ function browserExecutable() {
 const PAGE_CSS = `
   html,body,#root{height:100%;margin:0}
   .agency-workspace-view{display:flex;flex-direction:column;height:100%}
-  .maw-split-workspace-content{flex:1;display:flex;min-height:0}
-  .maw-split-container{display:flex;flex:1;min-width:0;min-height:0}
-  .maw-split-pane{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0}
-  .maw-pane-body{flex:1;display:flex;min-height:0;min-width:0;position:relative}
-  .maw-session-holder{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
-  .maw-session-holder[hidden],.maw-session-pane[hidden],.maw-terminal-park{display:none !important}
-  .maw-session-pane{display:flex;flex:1;flex-direction:column;min-height:0}
+  .wb-split-workspace-content{flex:1;display:flex;min-height:0}
+  .wb-split-container{display:flex;flex:1;min-width:0;min-height:0}
+  .wb-split-pane{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0}
+  .wb-pane-body{flex:1;display:flex;min-height:0;min-width:0;position:relative}
+  .wb-session-holder{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
+  .wb-session-holder[hidden],.wb-session-pane[hidden],.wb-terminal-park{display:none !important}
+  .wb-session-pane{display:flex;flex:1;flex-direction:column;min-height:0}
   .agency-agent-body{flex:1;position:relative;min-height:0}
   .agency-xterm-host,.terminal-surface{position:absolute;inset:0}
   .terminal-surface-hidden{visibility:hidden}

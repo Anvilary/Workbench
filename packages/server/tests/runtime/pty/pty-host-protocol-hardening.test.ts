@@ -5,11 +5,11 @@ import path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // @ts-expect-error - standalone pure-ESM supervisor script
-import { PtySupervisor, SupervisorOutputBuffer } from '../../../src/pty-host/maw-ptyd.mjs';
+import { PtySupervisor, SupervisorOutputBuffer } from '../../../src/pty-host/ptyd.mjs';
 import { PtyHostClient } from '../../../src/pty-host/pty-host-client.js';
 import { MAX_PAYLOAD_SIZE, PTY_PROTOCOL_VERSION } from '../../../src/pty-host/pty-host-types.js';
 
-test('P0 D-01: maw-ptyd chunks oversize replay_data frames and PtyHostClient reassembles cleanly', async (t) => {
+test('P0 D-01: workbench-ptyd chunks oversize replay_data frames and PtyHostClient reassembles cleanly', async (t) => {
   const dir = await mkdtemp(path.join(tmpdir(), 'maw-d01-chunk-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
 

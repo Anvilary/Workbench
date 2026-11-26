@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AgentConnection } from '../../connection/connection.js';
-import type { TerminalId } from '@agent-workbench/shared';
+import type { TerminalId } from '@anvilary/workbench-shared';
 
 export const HISTORY_PAGE_SIZE = 1_000;
 export const MAX_CACHED_PAGES = 20;

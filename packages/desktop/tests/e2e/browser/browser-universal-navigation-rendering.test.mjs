@@ -11,8 +11,8 @@ import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 
 const require = createRequire(import.meta.url);
 const here = DESKTOP_ROOT;
-const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
-  ? '/opt/maw-electron/45.2.0/electron'
+const electronExecutable = fs.existsSync('/opt/workbench-electron/45.2.0/electron')
+  ? '/opt/workbench-electron/45.2.0/electron'
   : require('electron');
 
 async function eventually(check, message = 'condition', maxAttempts = 50, delayMs = 100) {
@@ -28,7 +28,7 @@ test('Electron runtime: universal internal navigation, rendering compatibility, 
   const screenshotDir = path.join(data, 'screenshots');
   await mkdir(screenshotDir, { recursive: true });
 
-  // Minimal UI shell server that subscribes to mawChatGpt events
+  // Minimal UI shell server that subscribes to workbench events
   const server = createServer((_req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(`<!doctype html>
@@ -38,7 +38,7 @@ test('Electron runtime: universal internal navigation, rendering compatibility, 
   <div id="root"></div>
   <script>
     window.events = [];
-    window.mawChatGpt.subscribe(msg => {
+    window.workbench.subscribe(msg => {
       window.events.push(msg);
     });
   </script>
@@ -52,9 +52,9 @@ test('Electron runtime: universal internal navigation, rendering compatibility, 
   const env = {
     ...process.env,
     HOME: data,
-    MAW_DESKTOP_DATA_DIR: data,
-    MAW_DESKTOP_URL: `http://127.0.0.1:${serverPort}/`,
-    MAW_EXTERNAL_POLICY: 'allow',
+    WORKBENCH_DESKTOP_DATA_DIR: data,
+    WORKBENCH_DESKTOP_URL: `http://127.0.0.1:${serverPort}/`,
+    WORKBENCH_EXTERNAL_POLICY: 'allow',
   };
 
   let app;
@@ -80,9 +80,9 @@ test('Electron runtime: universal internal navigation, rendering compatibility, 
   const page = await app.firstWindow();
   await page.waitForFunction(() => Array.isArray(window.events), null, { timeout: 15000 });
 
-  // Setup custom protocol handlers in persist:maw-browser to simulate sites
+  // Setup custom protocol handlers in persist:workbench-browser to simulate sites
   await app.evaluate(({ session }) => {
-    const browser = session.fromPartition('persist:maw-browser');
+    const browser = session.fromPartition('persist:workbench-browser');
     globalThis.__openedExternalUrls = [];
 
     // Protocol handler simulating synthetic Google Ads, multi-domain links, and redirects
@@ -197,7 +197,7 @@ test('Electron runtime: universal internal navigation, rendering compatibility, 
 
   // 1. Open the synthetic Google Ads page in an 'other' browser tab
   await page.evaluate(({ id, url }) => {
-    return window.mawChatGpt.command({ type: 'open', id, provider: 'other', url });
+    return window.workbench.command({ type: 'open', id, provider: 'other', url });
   }, { id: tabId, url: initialUrl });
 
   // Attach and layout the view so it is visible and attached to the main window
@@ -207,7 +207,7 @@ test('Electron runtime: universal internal navigation, rendering compatibility, 
   });
 
   await page.evaluate(({ id, w, h }) => {
-    return window.mawChatGpt.command({
+    return window.workbench.command({
       type: 'layout',
       id,
       bounds: { x: 0, y: 0, width: w, height: h },
@@ -226,7 +226,7 @@ test('Electron runtime: universal internal navigation, rendering compatibility, 
 
   // Find the WebContents of the tab
   const tabWebContentsId = await app.evaluate(({ session, webContents }) => {
-    const s = session.fromPartition('persist:maw-browser');
+    const s = session.fromPartition('persist:workbench-browser');
     const c = webContents.getAllWebContents().find(item => item.session === s);
     return c?.id;
   });
@@ -326,7 +326,7 @@ test('Electron runtime: universal internal navigation, rendering compatibility, 
 
   // Execute Back command
   await page.evaluate(({ id }) => {
-    return window.mawChatGpt.command({ type: 'browser-action', id, action: 'back' });
+    return window.workbench.command({ type: 'browser-action', id, action: 'back' });
   }, { id: tabId });
 
   // Verify URL returned to ads.google.com
@@ -339,7 +339,7 @@ test('Electron runtime: universal internal navigation, rendering compatibility, 
 
   // Execute Forward command
   await page.evaluate(({ id }) => {
-    return window.mawChatGpt.command({ type: 'browser-action', id, action: 'forward' });
+    return window.workbench.command({ type: 'browser-action', id, action: 'forward' });
   }, { id: tabId });
 
   // Verify URL went forward to site-b
@@ -352,7 +352,7 @@ test('Electron runtime: universal internal navigation, rendering compatibility, 
 
   // Navigate back to Google Ads for remaining checks
   await page.evaluate(({ id }) => {
-    return window.mawChatGpt.command({ type: 'browser-action', id, action: 'back' });
+    return window.workbench.command({ type: 'browser-action', id, action: 'back' });
   }, { id: tabId });
   await eventually(async () => {
     return app.evaluate(({ webContents }, id) => {
@@ -377,7 +377,7 @@ test('Electron runtime: universal internal navigation, rendering compatibility, 
 
   // Navigate back to Google Ads
   await page.evaluate(({ id }) => {
-    return window.mawChatGpt.command({ type: 'browser-action', id, action: 'back' });
+    return window.workbench.command({ type: 'browser-action', id, action: 'back' });
   }, { id: tabId });
   await eventually(async () => {
     return app.evaluate(({ webContents }, id) => {
@@ -428,7 +428,7 @@ test('Electron runtime: universal internal navigation, rendering compatibility, 
 
   // Test action: 'open-page'
   await page.evaluate(({ id }) => {
-    return window.mawChatGpt.command({ type: 'browser-action', id, action: 'open-page' });
+    return window.workbench.command({ type: 'browser-action', id, action: 'open-page' });
   }, { id: tabId });
 
   await eventually(async () => {
@@ -440,7 +440,7 @@ test('Electron runtime: universal internal navigation, rendering compatibility, 
 
   // Test action: 'open-link-external'
   await page.evaluate(({ id }) => {
-    return window.mawChatGpt.command({
+    return window.workbench.command({
       type: 'browser-action',
       id,
       action: 'open-link-external',

@@ -35,7 +35,7 @@ for (const file of files) {
   }
 }
 
-/** `features/terminals`, `transport`, `agents`, `(root)` for index.ts and maw-host.ts. */
+/** `features/terminals`, `transport`, `agents`, `(root)` for index.ts and workbench-host.ts. */
 function area(file: string): string {
   const parts = path.relative(SERVER_SRC, file).split(path.sep);
   if (parts.length === 1) return '(root)';
@@ -109,7 +109,7 @@ test('value imports contain no cycles', () => {
 });
 
 test('the frozen entry points still exist where the launcher and updater look for them', () => {
-  for (const relative of ['index.ts', 'maw-host.ts', 'pty-host/maw-ptyd.mjs', 'pty-host/terminal-state.mjs']) {
+  for (const relative of ['index.ts', 'workbench-host.ts', 'pty-host/ptyd.mjs', 'pty-host/terminal-state.mjs']) {
     assert.ok(existsSync(path.join(SERVER_SRC, relative)), relative);
   }
 });

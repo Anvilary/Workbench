@@ -29,7 +29,7 @@
  * corte que los subagentes (§4.15).
  */
 
-import { MAX_QUEUED_PROMPT_CHARS, MAX_QUEUED_PROMPTS, type QueuedPrompt } from '@agent-workbench/shared';
+import { MAX_QUEUED_PROMPT_CHARS, MAX_QUEUED_PROMPTS, type QueuedPrompt } from '@anvilary/workbench-shared';
 import { cleanUserText, readTimestamp, takePastedImages } from './jsonl-events.js';
 
 /**

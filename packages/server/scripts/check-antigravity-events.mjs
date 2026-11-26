@@ -95,7 +95,7 @@ function sorted(value) {
   return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sorted(value[key])]));
 }
 
-const shared = await import('@agent-workbench/shared');
+const shared = await import('@anvilary/workbench-shared');
 
 // ---------------------------------------------------------------------------
 // 15. Parsers de shared
@@ -118,7 +118,7 @@ const shared = await import('@agent-workbench/shared');
   const statusLine = {
     state: 'missing',
     settingsPath: 'C:\\Users\\user\\.gemini\\antigravity-cli\\settings.json',
-    scriptPath: 'C:\\Users\\user\\AppData\\Roaming\\agent-workbench\\integrations\\antigravity-statusline.mjs',
+    scriptPath: 'C:\\Users\\user\\AppData\\Roaming\\workbench\\integrations\\antigravity-statusline.mjs',
     fragment: '{\n  "statusLine": {}\n}',
   };
   check('15 status line valida se lee tal cual', same(parseStatusLineSetupInfo(statusLine), statusLine));
@@ -1458,7 +1458,7 @@ const statusRecord = (id, over = {}) => ({
   const dir = path.join(root, 'settings-10');
   await mkdir(dir, { recursive: true });
   const file = path.join(dir, 'settings.json');
-  const winScript = 'C:\\Users\\Jane Doe\\AppData\\Roaming\\agent-workbench\\integrations\\antigravity-statusline.mjs';
+  const winScript = 'C:\\Users\\Jane Doe\\AppData\\Roaming\\workbench\\integrations\\antigravity-statusline.mjs';
   const ours = JSON.parse(statusLineFragment(winScript, 'win32')).statusLine;
 
   check('10 sin archivo -> missing, sin modelo', same(await readAntigravitySettings(file), { model: null, statusLine: { state: 'missing' } }));
@@ -1495,12 +1495,12 @@ const statusRecord = (id, over = {}) => ({
   // P0-1: el fragmento por plataforma.
   const winCommand = statusLineCommand(winScript, 'win32');
   check('10 (P0-1) Windows: cd /d a la carpeta y node con el nombre, sin comillas aunque haya espacios',
-    winCommand === 'cd /d C:\\Users\\Jane Doe\\AppData\\Roaming\\agent-workbench\\integrations && node antigravity-statusline.mjs' && !winCommand.includes('"'), String(winCommand));
+    winCommand === 'cd /d C:\\Users\\Jane Doe\\AppData\\Roaming\\workbench\\integrations && node antigravity-statusline.mjs' && !winCommand.includes('"'), String(winCommand));
   for (const bad of ['&', '%', '(', '!', '^', '|', '"']) {
     check(`10 (P0-1) Windows: una carpeta con ${bad} no tiene fragmento`,
-      statusLineFragment(`C:\\Users\\a${bad}b\\agent-workbench\\integrations\\antigravity-statusline.mjs`, 'win32') === null);
+      statusLineFragment(`C:\\Users\\a${bad}b\\workbench\\integrations\\antigravity-statusline.mjs`, 'win32') === null);
   }
-  const posix = '/home/user/.config/agent-workbench/integrations/antigravity-statusline.mjs';
+  const posix = '/home/user/.config/workbench/integrations/antigravity-statusline.mjs';
   check('10 (P0-1) POSIX: node con la ruta entre comillas', statusLineCommand(posix, 'linux') === `node "${posix}"`);
   check('10 (P0-1) POSIX: una ruta con $ o comillas no tiene fragmento',
     statusLineCommand('/home/u$x/a.mjs', 'linux') === null && statusLineCommand('/home/"u/a.mjs', 'darwin') === null);
@@ -1917,7 +1917,7 @@ const statusRecord = (id, over = {}) => ({
     shared.AGENT_IDS.indexOf('antigravity') === 3 && shared.MEMORY_AGENT_IDS.includes('antigravity'));
   check('8 el texto de ausencia nombra agy y la guia', es(adapter.missingMessage()).includes('"agy"') && es(adapter.missingMessage()).includes(adapter.installUrl));
   check('8 el log de las pestanas va a la temporal, bajo cli-logs y nunca bajo log (P0-10)',
-    logDir === path.join(os.tmpdir(), 'agent-workbench', 'cli-logs') && path.basename(logDir) !== 'log');
+    logDir === path.join(os.tmpdir(), 'workbench', 'cli-logs') && path.basename(logDir) !== 'log');
 
   const fresh = adapter.launch({ location, cwd: 'C:\\p', resumeSessionId: null, proposedSessionId: 'x', launchToken: token });
   check('8 nueva: --log-file con el token y --mode accept-edits, sesion por descubrir',

@@ -61,7 +61,7 @@ export function PerformanceSparkline({
   if (!pathD) {
     return (
       <div
-        className={`maw-sparkline-placeholder ${className}`}
+        className={`wb-sparkline-placeholder ${className}`}
         style={{ width, height }}
         aria-hidden="true"
       />
@@ -70,7 +70,7 @@ export function PerformanceSparkline({
 
   return (
     <svg
-      className={`maw-sparkline ${className}`}
+      className={`wb-sparkline ${className}`}
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}

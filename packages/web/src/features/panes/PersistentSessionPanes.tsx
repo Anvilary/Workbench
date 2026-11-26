@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import type { AgencyCliProfile, AgencyRuntimeSession, WorkspacePaneLayout } from '@agent-workbench/shared';
-import { getPaneNodes } from '@agent-workbench/shared';
+import type { AgencyCliProfile, AgencyRuntimeSession, WorkspacePaneLayout } from '@anvilary/workbench-shared';
+import { getPaneNodes } from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 import type { AgencyTransport, WorkspaceTab } from '../workspaces/workspace-model.js';
 import type { useWorkbenchStore } from '../workspaces/useWorkbenchStore.js';
@@ -67,7 +67,7 @@ export function PersistentSessionPanes({
       let holder = holders.current.get(tab.id);
       if (!holder) {
         holder = document.createElement('div');
-        holder.className = 'maw-session-holder';
+        holder.className = 'wb-session-holder';
         holder.dataset.tabId = tab.id;
         holders.current.set(tab.id, holder);
       }
@@ -97,12 +97,12 @@ export function PersistentSessionPanes({
 
   return (
     <>
-      <div ref={park} hidden className="maw-terminal-park" />
+      <div ref={park} hidden className="wb-terminal-park" />
       {nativeTabs.map((tab) => {
         let holder = holders.current.get(tab.id);
         if (!holder) {
           holder = document.createElement('div');
-          holder.className = 'maw-session-holder';
+          holder.className = 'wb-session-holder';
           holder.dataset.tabId = tab.id;
           holders.current.set(tab.id, holder);
         }

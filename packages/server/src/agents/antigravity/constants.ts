@@ -8,7 +8,7 @@
  * una medicion, se dice.
  */
 
-import type { EffortOption, ModelOption, PermissionMode } from '@agent-workbench/shared';
+import type { EffortOption, ModelOption, PermissionMode } from '@anvilary/workbench-shared';
 
 /** Nombre del comando en el PATH. En Windows resuelve a un `agy.exe` real. */
 export const ANTIGRAVITY_COMMAND = 'agy';

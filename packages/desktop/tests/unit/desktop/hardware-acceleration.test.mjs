@@ -11,7 +11,7 @@ import { GraphicsMode, resolveGraphicsPolicy } from '../../../src/gpu/graphics-p
 import { registerCommandRouter } from '../../../src/ipc/command-router.mjs';
 
 async function tempDir(t) {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'maw-desktop-prefs-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'workbench-desktop-prefs-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -23,19 +23,19 @@ function startupFor(dir, env) {
   return resolve(env, readDesktopPreferences(dir).prefs.hardwareAcceleration);
 }
 
-test('precedence: MAW_SAFE_GRAPHICS=1 forces acceleration off over a saved true', async t => {
+test('precedence: WORKBENCH_SAFE_GRAPHICS=1 forces acceleration off over a saved true', async t => {
   const dir = await tempDir(t);
   writeDesktopPreferences(dir, { hardwareAcceleration: true });
-  const policy = startupFor(dir, { MAW_SAFE_GRAPHICS: '1' });
+  const policy = startupFor(dir, { WORKBENCH_SAFE_GRAPHICS: '1' });
   assert.equal(policy.disableHardwareAcceleration, true);
   assert.equal(policy.mode, GraphicsMode.SAFE);
   assert.deepEqual(policy.hardwareAcceleration, { effective: false, source: 'env' });
 });
 
-test('precedence: MAW_SAFE_GRAPHICS=0 forces acceleration on over a saved false', async t => {
+test('precedence: WORKBENCH_SAFE_GRAPHICS=0 forces acceleration on over a saved false', async t => {
   const dir = await tempDir(t);
   writeDesktopPreferences(dir, { hardwareAcceleration: false });
-  const policy = startupFor(dir, { MAW_SAFE_GRAPHICS: '0' });
+  const policy = startupFor(dir, { WORKBENCH_SAFE_GRAPHICS: '0' });
   assert.equal(policy.disableHardwareAcceleration, false);
   assert.deepEqual(policy.hardwareAcceleration, { effective: true, source: 'env' });
 });

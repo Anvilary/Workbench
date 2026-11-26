@@ -32,7 +32,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { DirectoryEntry } from '@agent-workbench/shared';
+import type { DirectoryEntry } from '@anvilary/workbench-shared';
 import { ContextMenu, type ContextMenuItem } from '../../shared/ui/ContextMenu.js';
 import { DocTabStrip } from './DocTabStrip.js';
 import type { OpenDoc } from './doc-tabs.js';

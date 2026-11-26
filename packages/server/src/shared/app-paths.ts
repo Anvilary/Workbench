@@ -11,12 +11,12 @@ import path from 'node:path';
 
 /**
  * Directorio de configuracion propio.
- * Windows: %APPDATA%\agent-workbench
- * macOS:   ~/Library/Application Support/agent-workbench
- * Linux:   $XDG_CONFIG_HOME/agent-workbench o ~/.config/agent-workbench
+ * Windows: %APPDATA%\workbench
+ * macOS:   ~/Library/Application Support/workbench
+ * Linux:   $XDG_CONFIG_HOME/workbench o ~/.config/workbench
  */
 export function appConfigDir(): string {
-  return configDirFor('agent-workbench');
+  return configDirFor('workbench');
 }
 
 /**
@@ -128,7 +128,7 @@ export function composerDraftsPath(): string {
  * hermana de la de su `--log-file` (medido en el hito 27).
  */
 export function catalogTempDir(): string {
-  return path.join(tmpdir(), 'agent-workbench', 'agy-catalog');
+  return path.join(tmpdir(), 'workbench', 'agy-catalog');
 }
 
 /**
@@ -142,7 +142,7 @@ export function catalogTempDir(): string {
  * esta es `agent-workbench/log` y la app no usa.
  */
 export function cliLogsTempDir(): string {
-  return path.join(tmpdir(), 'agent-workbench', 'cli-logs');
+  return path.join(tmpdir(), 'workbench', 'cli-logs');
 }
 
 /**

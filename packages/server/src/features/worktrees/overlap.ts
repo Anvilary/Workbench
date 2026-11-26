@@ -7,7 +7,7 @@
  * renombre: renombrar un archivo que otra rama edita también es tocarlo.
  */
 
-import type { WorktreeChangedFile, WorktreeOverlap } from '@agent-workbench/shared';
+import type { WorktreeChangedFile, WorktreeOverlap } from '@anvilary/workbench-shared';
 
 export interface BranchFiles {
   branch: string;

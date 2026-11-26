@@ -6,7 +6,7 @@ import {
   isValidBrowserProfileId,
   type BrowserProfile,
   type BrowserProfileId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { appConfigDir } from '../../shared/app-paths.js';
 import { DomainError, UnsupportedSchemaVersionError } from '../../shared/errors/domain-error.js';
 import { SerialQueue } from '../../shared/concurrency/serial-queue.js';

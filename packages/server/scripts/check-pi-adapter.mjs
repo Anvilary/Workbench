@@ -72,7 +72,7 @@ const warnings = [];
 const realWarn = console.warn;
 console.warn = (...args) => warnings.push(args.map(String).join(' '));
 
-const shared = await import('@agent-workbench/shared');
+const shared = await import('@anvilary/workbench-shared');
 const constants = await import('../src/agents/pi/constants.ts');
 const paths = await import('../src/agents/pi/paths.ts');
 const entries = await import('../src/agents/pi/session-entries.ts');
@@ -213,7 +213,7 @@ const describe = (events) =>
   check('P2 el contenido como string suelto tambien se lee',
     read(node('message', 'u2', 'u1', T0, { message: { role: 'user', content: 'suelto' } }))?.fact.parts[0]?.text === 'suelto');
 
-  const pastedPath = path.join(os.tmpdir(), 'agent-workbench', 'pasted', 'tab-1', 'pegada-1-0a1b2c3d.png');
+  const pastedPath = path.join(os.tmpdir(), 'workbench', 'pasted', 'tab-1', 'pegada-1-0a1b2c3d.png');
   const withImages = read(userMessage('u3', null, T0, [
     { type: 'image', data: 'QUJD', mimeType: 'image/jpeg' },
     { type: 'text', text: `Attached image: "${pastedPath}"\nAttached image: "C:\\fotos\\otra.png"\nque ves` },
@@ -504,7 +504,7 @@ const newCatalog = (extra = {}) => new catalogModule.PiModelCatalog({ storeFile:
   // Un PNG de 1x1.
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==', 'base64');
   // Las rutas tienen que tener la forma de las de `PasteStore`: `…/agent-workbench/pasted/<pestana>/pegada-N-<8 hex>.<ext>`.
-  const realRoot = path.join(root, 'agent-workbench', 'pasted');
+  const realRoot = path.join(root, 'workbench', 'pasted');
   const realTab = path.join(realRoot, 'tab-1');
   await mkdir(realTab, { recursive: true });
   const onDisk = path.join(realTab, 'pegada-1-0a1b2c3d.png');
@@ -561,7 +561,7 @@ const newCatalog = (extra = {}) => new catalogModule.PiModelCatalog({ storeFile:
     line(assistantMessage('a1', 'i1', T0 + 10, { text: 'ok' })) + line(node('session_info', 'i2', 'a1', T0 + 20, { name: 'Refactor del login' })));
   await writeFile(sessionFile(plain),
     line(header(plain)) + line(modelChange('m', null, T0, 'x', 'y')) + line(systemMessage('s', 'm', T0)) +
-    line(userMessage('u1', 's', T0, `Attached image: "${path.join(os.tmpdir(), 'agent-workbench', 'pasted', 't', 'pegada-1-0a1b2c3d.png')}"\n  Arregla el\n  boton  `)));
+    line(userMessage('u1', 's', T0, `Attached image: "${path.join(os.tmpdir(), 'workbench', 'pasted', 't', 'pegada-1-0a1b2c3d.png')}"\n  Arregla el\n  boton  `)));
   await writeFile(sessionFile(empty), line(header(empty)) + line(modelChange('m', null, T0, 'x', 'y')));
   await writeFile(sessionFile(foreign), line(header('otro-id-adentro')) + line(userMessage('u1', null, T0, 'hola')));
   await writeFile(path.join(projectDir, 'no-es-sesion.jsonl'), 'x\n');
@@ -1074,8 +1074,8 @@ const newCatalog = (extra = {}) => new catalogModule.PiModelCatalog({ storeFile:
   const { CLAUDE_CODE_INPUT } = await import('../src/agents/claude-code/index.ts');
   check('P9 sin imagenes: un solo pegado con el Enter al final, como Claude Code',
     same(ptyInput.buildSubmissionWrites('hola\nmundo', [], PI_INPUT), [`${P('hola\nmundo')}\r`]));
-  const a = 'C:\\tmp\\agent-workbench\\pasted\\t\\pegada-1-0a1b2c3d.png';
-  const b = 'C:\\tmp\\agent-workbench\\pasted\\t\\pegada-2-0a1b2c3e.jpg';
+  const a = 'C:\\tmp\\workbench\\pasted\\t\\pegada-1-0a1b2c3d.png';
+  const b = 'C:\\tmp\\workbench\\pasted\\t\\pegada-2-0a1b2c3e.jpg';
   check('P9 con imagenes: una linea por imagen delante del texto, en el mismo pegado',
     same(ptyInput.buildSubmissionWrites('que ves', [a, b], PI_INPUT), [`${P(`Attached image: "${a}"\nAttached image: "${b}"\nque ves`)}\r`]),
     show(ptyInput.buildSubmissionWrites('que ves', [a, b], PI_INPUT)));

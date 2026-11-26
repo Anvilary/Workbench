@@ -1,5 +1,5 @@
 /**
- * Tipos y contratos para la comunicacion IPC con el supervisor de PTYs (maw-ptyd).
+ * Tipos y contratos para la comunicacion IPC con el supervisor de PTYs (workbench-ptyd).
  *
  * Lane A & B - Protocolo Version 1 (Frozen Contract)
  */
@@ -10,7 +10,7 @@ export const DEFAULT_AUTH_FILE_NAME = 'ptyd.auth';
 export const MAX_PAYLOAD_SIZE = 1024 * 1024; // 1 MiB max por mensaje NDJSON
 /**
  * Intended live PTY cap. The backend registry and the session runtime enforce
- * it; the supervisor (maw-ptyd.mjs) keeps its own identical constant because it
+ * it; the supervisor (ptyd.mjs) keeps its own identical constant because it
  * is a standalone script whose bytes gate updates. An older supervisor may run
  * with a lower cap until it restarts (see QUOTA_EXCEEDED handling).
  */

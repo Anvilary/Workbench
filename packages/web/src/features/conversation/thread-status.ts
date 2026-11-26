@@ -28,7 +28,7 @@ import type {
   ConversationSubagent,
   TerminalActivity,
   TerminalId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { formatList, formatRoughDuration } from '../../i18n/format.js';
 import { t } from '../../i18n/index.js';
 

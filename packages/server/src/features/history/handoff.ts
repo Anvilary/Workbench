@@ -41,7 +41,7 @@ import {
   type SessionSummary,
   type TerminalDescriptor,
   type TerminalId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { AgentAdapter, CliLocation, HistorySource } from '../../agents/adapter.js';
 import { TerminalOpenError } from '../terminals/terminal-open-error.js';
 import { drainFollower } from '../vault/read-session.js';

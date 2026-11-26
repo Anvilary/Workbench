@@ -2,7 +2,7 @@
  * The owned copy of sessions on disk.
  */
 
-import type { ClientMessage } from '@agent-workbench/shared';
+import type { ClientMessage } from '@anvilary/workbench-shared';
 import type { HandlerContext } from '../handler-context.js';
 
 export const vaultMessageTypes = [

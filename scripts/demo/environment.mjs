@@ -42,8 +42,8 @@ export function prepareDemo() {
   const homeView = isWindows ? `${DRIVE}\\home` : home;
   const bin = path.join(base, 'bin');
   const configDir = isWindows
-    ? path.join(home, 'AppData', 'Roaming', 'agent-workbench')
-    : path.join(home, '.config', 'agent-workbench');
+    ? path.join(home, 'AppData', 'Roaming', 'workbench')
+    : path.join(home, '.config', 'workbench');
   const projectsRoot = isWindows ? `${DRIVE}\\Projects` : path.join(root, 'Projects');
   // El home de antes, cuando vivia al lado de `root`.
   rmSync(path.join(base, 'home'), { recursive: true, force: true });
@@ -93,7 +93,7 @@ export async function startDemoServer({ mode, openBrowser }) {
   const demo = prepareDemo();
 
   const env = demoEnvironment(process.env, { home: demo.homeView, bin: demo.bin, mainCwd: demo.mainCwd });
-  if (!openBrowser) env['AGENT_WORKBENCH_NO_OPEN'] = '1';
+  if (!openBrowser) env['WORKBENCH_NO_OPEN'] = '1';
   // Antes de montar nada: si la demo ve una CLI de verdad, no se arranca.
   assertDemoPath(demo.bin, env['PATH']);
 

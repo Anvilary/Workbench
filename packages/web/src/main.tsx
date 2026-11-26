@@ -8,7 +8,21 @@ if (container === null) throw new Error('Falta el contenedor #root.');
 const root = createRoot(container);
 
 declare global {
-  interface Window { mawRestoredBrowserTabs?: unknown[]; }
+  interface Window { workbenchRestoredBrowserTabs?: unknown[]; }
+}
+
+// Migrate only the shell's preferences, before consumers read them.
+function migrateStorageKeys(storage: Storage): void {
+  try {
+    const prefix = 'agent-workbench.';
+    const legacyKeys = Object.keys(storage).filter(key => key.startsWith(prefix));
+    for (const key of legacyKeys) {
+      const replacement = 'workbench.' + key.slice(prefix.length);
+      const value = storage.getItem(key);
+      if (value !== null && storage.getItem(replacement) === null) storage.setItem(replacement, value);
+      storage.removeItem(key);
+    }
+  } catch { /* The shell still runs when storage is unavailable. */ }
 }
 
 // El idioma se carga antes de pintar nada (§6.23): una primera pantalla en
@@ -19,15 +33,17 @@ declare global {
 // del terminal abre un proceso de la CLI. Un doble arranque por cada recarga no
 // vale lo que aporta.
 //
-// La interfaz MAW no carga el Workbench clasico: ese codigo (y sus hooks, que escuchan el socket) llega en un
+// La interfaz Workbench no carga el Workbench clasico: ese codigo (y sus hooks, que escuchan el socket) llega en un
 // fragmento aparte solo con `?view=workbench`.
 async function start(): Promise<void> {
-  const storage = await window.mawChatGpt?.command({ type: 'restore-shell-storage' }).catch(() => null) as {
+  const storage = await window.workbench?.command({ type: 'restore-shell-storage' }).catch(() => null) as {
     local?: [string, string][]; session?: [string, string][]; browserTabs?: unknown[];
   } | null | undefined;
   for (const [key, value] of storage?.local ?? []) localStorage.setItem(key, value);
   for (const [key, value] of storage?.session ?? []) sessionStorage.setItem(key, value);
-  window.mawRestoredBrowserTabs = storage?.browserTabs ?? [];
+  migrateStorageKeys(localStorage);
+  migrateStorageKeys(sessionStorage);
+  window.workbenchRestoredBrowserTabs = storage?.browserTabs ?? [];
   // Draft stores initialize during module evaluation, after storage restoration.
   const { ClassicRoot, WorkbenchRoot, isClassicView } = await import('./app/WorkbenchRoot.js');
   await initLocale();

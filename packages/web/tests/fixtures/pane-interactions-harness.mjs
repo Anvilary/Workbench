@@ -31,16 +31,16 @@ export async function setup(t,query='',viewport={width:1280,height:860}){
 }
 export async function start(page,url){
  page.setDefaultTimeout(8000);const errors=[];page.on('pageerror',error=>errors.push(error.message));
- await page.goto(url);await page.locator('#start').click();await page.waitForSelector('.maw-split-pane');await frames(page);return errors;
+ await page.goto(url);await page.locator('#start').click();await page.waitForSelector('.wb-split-pane');await frames(page);return errors;
 }
 export const frames=(page,count=5)=>page.evaluate(async count=>{for(let n=0;n<count;n++)await new Promise(resolve=>requestAnimationFrame(resolve))},count);
 export const pane=(page,n)=>page.locator('#pane-container-pane-'+n);
-export const order=page=>page.locator('.maw-split-pane').evaluateAll(nodes=>nodes.map(node=>node.id.replace('pane-container-','')));
+export const order=page=>page.locator('.wb-split-pane').evaluateAll(nodes=>nodes.map(node=>node.id.replace('pane-container-','')));
 export async function drag(page,from,to,{cancel=false,outside=false}={}){
- const source=await pane(page,from).locator('.maw-pane-grip').boundingBox();const target=await pane(page,to).boundingBox();
+ const source=await pane(page,from).locator('.wb-pane-grip').boundingBox();const target=await pane(page,to).boundingBox();
  await page.mouse.move(source.x+source.width/2,source.y+source.height/2);await page.mouse.down();
  await page.mouse.move(source.x+source.width/2+12,source.y+source.height/2,{steps:4});
- await page.waitForSelector('.maw-pane-drag-shield');
+ await page.waitForSelector('.wb-pane-drag-shield');
  await page.mouse.move(outside?3:target.x+target.width/2,outside?3:target.y+target.height/2,{steps:16});
  await frames(page);if(cancel)await page.keyboard.press('Escape');await page.mouse.up();await frames(page,16);
 }

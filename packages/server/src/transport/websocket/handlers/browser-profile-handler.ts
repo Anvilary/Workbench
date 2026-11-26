@@ -2,8 +2,8 @@
  * Browser profiles.
  */
 
-import type { AgencyErrorCode } from '@agent-workbench/shared';
-import type { ClientMessage } from '@agent-workbench/shared';
+import type { AgencyErrorCode } from '@anvilary/workbench-shared';
+import type { ClientMessage } from '@anvilary/workbench-shared';
 import { DomainError } from '../../../shared/errors/domain-error.js';
 import type { HandlerContext } from '../handler-context.js';
 

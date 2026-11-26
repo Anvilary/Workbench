@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import type { ServerMessage, SessionAgentId, VaultStatus } from '@agent-workbench/shared';
+import type { ServerMessage, SessionAgentId, VaultStatus } from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 import { serverTextMessage } from '../../i18n/server-text.js';
 

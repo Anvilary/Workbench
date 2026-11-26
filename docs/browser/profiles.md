@@ -14,7 +14,7 @@ A browser profile is a set of Chromium partitions, one per provider. The partiti
 | Main | other sites | `persist:workbench-browser` |
 | custom `<id>` | each provider | `persist:workbench-profile-<id>-<provider>` |
 
-Partitions are stored under `Partitions/` inside the desktop userData directory (`$XDG_DATA_HOME/workbench-desktop`). Installations that predate the identity migration use `persist:maw-*` names until they run the [identity migration](../architecture/identity-migration.md); there is no runtime fallback to the legacy names.
+Partitions are stored under `Partitions/` inside the desktop userData directory (`$XDG_DATA_HOME/workbench-desktop`). Installations that predate the identity migration use `persist:workbench-*` names until they run the [identity migration](../architecture/identity-migration.md); there is no runtime fallback to the legacy names.
 
 Cookies are stored by Chromium without OS keyring encryption. Their confidentiality relies on the userData directory being private (mode 0700). Enabling keyring encryption later would itself be a migration.
 

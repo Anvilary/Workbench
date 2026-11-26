@@ -47,7 +47,7 @@ import {
   type VaultMeasurement,
   type VaultState,
   type VaultStatus,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { AgentRegistry } from '../../agents/registry.js';
 import { TRANSPORT_LIMITS, limitEvent } from '../../agents/transport-limits.js';
 import { runGlobalSearch, type GlobalSearchOptions, type SearchableSession } from '../history/global-search.js';

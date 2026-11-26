@@ -32,7 +32,7 @@ import { AgencySessionRuntime } from '../../../src/features/sessions/session-run
 import { SplitAgencySessionStore } from '../../../src/features/sessions/session-store.js';
 import { WorkspaceMutex } from '../../../src/features/workspaces/workspace-lock.js';
 import { AgentsUsageCollector } from '../../../src/agents/usage/collector.js';
-import type { AgentsUsageSnapshot } from '@agent-workbench/shared';
+import type { AgentsUsageSnapshot } from '@anvilary/workbench-shared';
 
 const PORT_TOKEN = 'test-usage-token-xyz';
 

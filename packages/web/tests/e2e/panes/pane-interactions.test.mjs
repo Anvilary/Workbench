@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {setup,frames,pane,order,drag} from '../../fixtures/pane-interactions-harness.mjs';
 
 const layout=page=>page.evaluate(()=>window.fixture.state.layout);
-const menu=(page,n)=>pane(page,n).locator('.maw-pane-add-tab');
-const paneAction=(page,n)=>pane(page,n).locator('.maw-pane-menu-toggle');
+const menu=(page,n)=>pane(page,n).locator('.wb-pane-add-tab');
+const paneAction=(page,n)=>pane(page,n).locator('.wb-pane-menu-toggle');
 const create=async(page,n,kind)=>{
  await menu(page,n).click();
  await page.getByRole('menuitem',{name:kind==='terminal'?'New Terminal':kind==='web'?'Web Page':'Open File...',exact:true}).click();
@@ -87,12 +87,12 @@ for(const shape of ['row','column','three','four-grid','four-asymmetric'])test(`
 test('self, outside and Escape are no-ops; keyboard swap persists across workspace switch and reload',async t=>{
  const page=await setup(t);const before=(await layout(page)).tree;
  for(const options of [{},{cancel:true},{outside:true}]){await drag(page,1,options.cancel||options.outside?2:1,options);assert.deepEqual((await layout(page)).tree,before)}
- await pane(page,1).locator('.maw-pane-grip').focus();await page.keyboard.press('Enter');await page.getByRole('menuitem',{name:/Swap with pane 2/}).click();
+ await pane(page,1).locator('.wb-pane-grip').focus();await page.keyboard.press('Enter');await page.getByRole('menuitem',{name:/Swap with pane 2/}).click();
  assert.deepEqual(await order(page),['pane-2','pane-1']);
  await page.evaluate(()=>window.fixture.switchWorkspace());await page.evaluate(()=>window.fixture.switchWorkspace());await frames(page);assert.deepEqual(await order(page),['pane-2','pane-1']);
  await page.reload();await page.locator('#start').click();await frames(page);assert.deepEqual(await order(page),['pane-2','pane-1']);
- await pane(page,1).locator('.maw-pane-expand-button').click();assert.equal(await pane(page,1).locator('.maw-pane-grip').isDisabled(),true);
- await pane(page,1).locator('.maw-pane-expand-button').click();await frames(page);assert.equal(await pane(page,1).locator('.maw-pane-grip').isDisabled(),false);
+ await pane(page,1).locator('.wb-pane-expand-button').click();assert.equal(await pane(page,1).locator('.wb-pane-grip').isDisabled(),true);
+ await pane(page,1).locator('.wb-pane-expand-button').click();await frames(page);assert.equal(await pane(page,1).locator('.wb-pane-grip').isDisabled(),false);
 });
 
 test('terminal scrollback, selection, viewport and attachments survive repeated swaps; reduced motion and dividers work',async t=>{
@@ -102,7 +102,7 @@ test('terminal scrollback, selection, viewport and attachments survive repeated 
   return {selection:term.getSelection(),viewport:term.buffer.active.viewportY,listeners:window.fixture.listeners()};
  });
  await page.emulateMedia({reducedMotion:'reduce'});
- assert.equal(await pane(page,1).locator('.maw-pane-header').evaluate(el=>getComputedStyle(el).transitionDuration),'0s');
+ assert.equal(await pane(page,1).locator('.wb-pane-header').evaluate(el=>getComputedStyle(el).transitionDuration),'0s');
  const listenerCount=await page.evaluate(()=>window.fixture.listeners());
  const cdp=await page.context().newCDPSession(page);
  const domListeners=async()=>{
@@ -118,19 +118,19 @@ test('terminal scrollback, selection, viewport and attachments survive repeated 
  for(let n=0;n<6;n++)await drag(page,1,2);
  const after=await page.evaluate(()=>({selection:window.terminals[0].getSelection(),viewport:window.terminals[0].buffer.active.viewportY,disposed:window.disposed,attaches:window.fixture.requests.filter(m=>m.type==='terminal.attach').length,inputs:window.fixture.requests.filter(m=>m.type==='input'),listeners:window.fixture.listeners()}));
  assert.equal(after.selection,initial.selection);assert.equal(after.viewport,initial.viewport);assert.equal(after.disposed,0);assert.equal(after.attaches,2);assert.deepEqual(after.inputs,[]);assert.equal(after.listeners,listenerCount);assert.deepEqual(await domListeners(),initialDomListeners,'repeated swaps retain a bounded set of document/window listeners');
- const divider=await page.locator('.maw-split-divider').boundingBox();
+ const divider=await page.locator('.wb-split-divider').boundingBox();
  await page.mouse.move(divider.x+divider.width/2,divider.y+divider.height/2);await page.mouse.down();await page.mouse.move(divider.x+90,divider.y+divider.height/2,{steps:8});await page.mouse.up();await page.waitForTimeout(250);assert.notEqual((await layout(page)).tree.ratio,.5);
 });
 
 test('tab dragging moves only one tab and rejects foreign tab payloads',async t=>{
  const page=await setup(t);await create(page,1,'terminal');await frames(page,12);
  const before=await layout(page),tab=pane(page,1).getByRole('tab').first();
- const a=await tab.boundingBox(),b=await pane(page,2).locator('.maw-pane-tabs').boundingBox();
+ const a=await tab.boundingBox(),b=await pane(page,2).locator('.wb-pane-tabs').boundingBox();
  await page.mouse.move(a.x+a.width/2,a.y+a.height/2);await page.mouse.down();await page.mouse.move(b.x+45,b.y+b.height/2,{steps:20});await page.mouse.up();await frames(page,12);
  const after=await layout(page);assert.deepEqual(await order(page),['pane-1','pane-2']);assert.equal(after.tree.first.tabIds.length,1);assert.equal(after.tree.second.tabIds.length,2);
  assert.equal(after.tree.second.tabIds.includes(before.tree.first.tabIds[0]),true);
- const data=await page.evaluateHandle(()=>{const d=new DataTransfer();d.setData('application/maw-tab-id','foreign-tab');return d});
- await pane(page,2).locator('.maw-pane-header').dispatchEvent('drop',{dataTransfer:data});await frames(page);assert.deepEqual((await layout(page)).tree,after.tree);
+ const data=await page.evaluateHandle(()=>{const d=new DataTransfer();d.setData('application/wb-tab-id','foreign-tab');return d});
+ await pane(page,2).locator('.wb-pane-header').dispatchEvent('drop',{dataTransfer:data});await frames(page);assert.deepEqual((await layout(page)).tree,after.tree);
 });
 
 test('launch errors surface error banner and web validation prevents unwanted launches',async t=>{
@@ -149,12 +149,12 @@ test('launch errors surface error banner and web validation prevents unwanted la
 test('each pane exposes the creation menu in single, two and three-pane layouts',async t=>{
  for(const shape of ['single','row','three']){
   await t.test(shape,async t=>{
-   const page=await setup(t,'shape='+shape);const count=await page.locator('.maw-split-pane').count();
+   const page=await setup(t,'shape='+shape);const count=await page.locator('.wb-split-pane').count();
    for(let n=1;n<=count;n++){
     await menu(page,n).click();assert.equal(await page.getByRole('menuitem',{name:'New Terminal',exact:true}).isVisible(),true);await page.keyboard.press('Escape');
    }
    if(shape==='single'){
-    await create(page,1,'terminal');await frames(page);assert.equal(await page.locator('.maw-split-pane').count(),1);assert.equal((await layout(page)).tree.tabIds.length,2);
+    await create(page,1,'terminal');await frames(page);assert.equal(await page.locator('.wb-split-pane').count(),1);assert.equal((await layout(page)).tree.tabIds.length,2);
    }
   });
  }
@@ -216,7 +216,7 @@ test('Pane action menu: Split vertically and horizontally create terminal immedi
  await page.evaluate(() => { window.fixture.delay(false); window.fixture.fail(); });
  await create(page, 1, 'terminal');
  await page.getByRole('alert').filter({ hasText: 'Fixture launch failed' }).waitFor();
- assert.equal(await page.locator('.maw-split-pane').count(), 1);
+ assert.equal(await page.locator('.wb-split-pane').count(), 1);
  assert.equal((await layout(page)).tree.type, 'pane');
  await page.locator('.agency-error-bar button').click();
  assert.equal(await page.locator('.agency-error-bar').count(), 0);
@@ -227,13 +227,13 @@ test('Pane action menu: Split vertically and horizontally create terminal immedi
  await page.waitForFunction(() => window.fixture.state.layout.tree.type === 'split');
  const splitTree = (await layout(page)).tree;
  assert.equal(splitTree.direction, 'row');
- assert.equal(await page.locator('.maw-split-pane').count(), 2);
+ assert.equal(await page.locator('.wb-split-pane').count(), 2);
 
  // 5. Split horizontally on pane 2 creates vertical split immediately
- await page.locator('.maw-split-pane').nth(1).locator('.maw-pane-menu-toggle').click();
+ await page.locator('.wb-split-pane').nth(1).locator('.wb-pane-menu-toggle').click();
  await page.getByRole('menuitem', { name: 'Split horizontally', exact: true }).click();
- await page.waitForFunction(() => document.querySelectorAll('.maw-split-pane').length === 3);
- assert.equal(await page.locator('.maw-split-pane').count(), 3);
+ await page.waitForFunction(() => document.querySelectorAll('.wb-split-pane').length === 3);
+ assert.equal(await page.locator('.wb-split-pane').count(), 3);
  const layout3 = await layout(page);
  assert.ok(layout3.tree.second.type === 'split');
  assert.equal(layout3.tree.second.direction, 'column');

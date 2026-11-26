@@ -24,7 +24,7 @@ import {
   parsePlanLimitWindows,
   samePlanWindows,
   type PlanLimitWindow,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { PlanLimitsSource } from './adapter.js';
 
 /** Cada cuanto se mira la carpeta de registros mientras alguien escucha. */

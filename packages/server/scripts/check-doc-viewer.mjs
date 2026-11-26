@@ -163,7 +163,7 @@ const keys = (strip) => strip.docs.map((doc) => doc.key).join(',');
 // que una ruta que el servidor no confirmo se vuelva enlace.
 {
   const paths = await import('../../web/src/features/navigation/project-paths.ts');
-  const shared = await import('@agent-workbench/shared');
+  const shared = await import('@anvilary/workbench-shared');
   const { readFileSync } = await import('node:fs');
   const win = { cwd: 'D:\\Mi Proyecto', platform: 'win32' };
   const posix = { cwd: '/home/user/proyecto', platform: 'linux' };

@@ -6,11 +6,11 @@ import {
   type AgencyWorkspace,
   type BrowserProfile,
   type WebTab,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { useWorkbenchStore } from '../workspaces/useWorkbenchStore.js';
 import { nativeWebProvider, nativeWorkspaceUrl } from './NativeBrowserView.js';
 
-/** Logical metadata stays on the existing authenticated MAW transport. */
+/** Logical metadata stays on the existing authenticated Workbench transport. */
 export function useNativeBrowserTabs(
   tabs: readonly WebTab[],
   synchronized: boolean,
@@ -41,8 +41,8 @@ export function useNativeBrowserTabs(
     // The desktop retains native pages across a shell-origin change. Their URLs
     // take precedence over the older backend snapshot until checkpointed.
     try {
-      const restored = window.mawRestoredBrowserTabs;
-      delete window.mawRestoredBrowserTabs;
+      const restored = window.workbenchRestoredBrowserTabs;
+      delete window.workbenchRestoredBrowserTabs;
       if (Array.isArray(restored)) for (const entry of restored) {
         if (!entry || typeof entry !== 'object') continue;
         const tab = entry as Partial<WebTab>;
@@ -61,13 +61,13 @@ export function useNativeBrowserTabs(
     };
   }, []);
 
-  useEffect(() => window.mawChatGpt?.subscribe(state => {
+  useEffect(() => window.workbench?.subscribe(state => {
     if (state.type === 'tab-shortcut' || state.type === 'close-shortcut') {
-      if (document.querySelector('[role="dialog"], [role="menu"], .maw-tab-name-input')) return;
-      const focusedButtons = [...document.querySelectorAll<HTMLButtonElement>('.maw-pane-header.is-focused .maw-pane-tabs [role="tab"]:not(:disabled)')];
+      if (document.querySelector('[role="dialog"], [role="menu"], .wb-tab-name-input')) return;
+      const focusedButtons = [...document.querySelectorAll<HTMLButtonElement>('.wb-pane-header.is-focused .wb-pane-tabs [role="tab"]:not(:disabled)')];
       const buttons = focusedButtons.length > 0
         ? focusedButtons
-        : [...document.querySelectorAll<HTMLButtonElement>('.maw-pane-tabs [role="tab"]:not(:disabled)')];
+        : [...document.querySelectorAll<HTMLButtonElement>('.wb-pane-tabs [role="tab"]:not(:disabled)')];
       const index = buttons.findIndex(button => button.getAttribute('aria-selected') === 'true');
       if (index < 0) return;
       if (state.type === 'close-shortcut') buttons[index]?.parentElement?.querySelector<HTMLButtonElement>('button[data-close]')?.click();
@@ -102,7 +102,7 @@ export function useNativeBrowserTabs(
       lastInputRef.current = { tabs, projects, workspaces, synchronized };
     }
 
-    const bridge = window.mawChatGpt;
+    const bridge = window.workbench;
     if (!bridge || !synchronized) {
       confirmedTabs.current.clear();
       inFlightUpdates.current.clear();

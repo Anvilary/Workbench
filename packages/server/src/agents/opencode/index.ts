@@ -28,7 +28,7 @@
 
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import type { AgentCapabilities } from '@agent-workbench/shared';
+import type { AgentCapabilities } from '@anvilary/workbench-shared';
 import type {
   AgentAdapter,
   AgentInput,

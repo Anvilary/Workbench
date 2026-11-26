@@ -41,7 +41,7 @@ Every test tree uses dedicated root helpers (`tests/helpers/paths.ts` for `@anvi
 ### Environment Notes
 
 - `WORKBENCH_UNSAFE_LOCAL_NO_AUTH`: Security and remote-access pairing tests expect token-auth mode unless explicitly testing no-auth behavior; unset `WORKBENCH_UNSAFE_LOCAL_NO_AUTH` when running `pnpm check` or server test tiers from a local dev shell where it may be exported.
-- `WORKBENCH_REAL_SYSTEMD=1`: Enables the 3 live user-systemd tests in `packages/server/tests/runtime/lifecycle/maw-systemd-acceptance.test.ts` (automatically skipped when unset).
+- `WORKBENCH_REAL_SYSTEMD=1`: Enables the 3 live user-systemd tests in `packages/server/tests/runtime/lifecycle/workbench-systemd-acceptance.test.ts` (automatically skipped when unset).
 - `WORKBENCH_TEST_ARTIFACTS_DIR`: Overrides where acceptance UI screenshots are written (defaults under OS `tmpdir()`).
 
 ## CI tiers

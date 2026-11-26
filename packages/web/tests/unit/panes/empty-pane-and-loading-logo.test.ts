@@ -36,7 +36,7 @@ test('EmptyPaneChooser renders New Terminal, Web Page, and disabled Open File wi
   assert.ok(html.includes('Open File...'), 'Contains Open File label');
   assert.ok(html.includes('Coming soon'), 'Contains Coming soon badge');
   assert.ok(html.includes('disabled=""') || html.includes('disabled'), 'Open File button has disabled attribute');
-  assert.ok(html.includes('maw-empty-pane-action-disabled'), 'Open File button has disabled class');
+  assert.ok(html.includes('wb-empty-pane-action-disabled'), 'Open File button has disabled class');
 
   // 4. NO Coding Agent option in starting panel
   assert.equal(html.includes('Coding Agent'), false, 'Does not contain Coding Agent option');
@@ -60,19 +60,19 @@ test('workbench.css: minimalist loading logo styles and reduced-motion support',
   const css = readFileSync(cssPath, 'utf8');
 
   // 1. Loading container
-  assert.ok(css.includes('.maw-browser-loading-container'), 'Contains .maw-browser-loading-container');
+  assert.ok(css.includes('.wb-browser-loading-container'), 'Contains .wb-browser-loading-container');
 
   // 2. Loading logo with pulse animation
-  assert.ok(css.includes('.maw-browser-loading-logo'), 'Contains .maw-browser-loading-logo');
-  assert.ok(css.includes('maw-pulse'), 'Contains maw-pulse animation');
+  assert.ok(css.includes('.wb-browser-loading-logo'), 'Contains .wb-browser-loading-logo');
+  assert.ok(css.includes('wb-pulse'), 'Contains wb-pulse animation');
 
   // 3. prefers-reduced-motion accessibility
   assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'), 'Contains prefers-reduced-motion media query');
   assert.ok(css.includes('animation: none'), 'Disables animation under prefers-reduced-motion');
 
   // 4. Empty pane badge and disabled styling
-  assert.ok(css.includes('.maw-empty-pane-badge'), 'Contains .maw-empty-pane-badge');
-  assert.ok(css.includes('.maw-empty-pane-action-disabled'), 'Contains .maw-empty-pane-action-disabled');
+  assert.ok(css.includes('.wb-empty-pane-badge'), 'Contains .wb-empty-pane-badge');
+  assert.ok(css.includes('.wb-empty-pane-action-disabled'), 'Contains .wb-empty-pane-action-disabled');
 });
 
 test('i18n completeness: agency.web.loadingPage exists in all 9 supported locales', () => {

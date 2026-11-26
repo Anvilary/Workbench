@@ -36,7 +36,7 @@ import {
   type RemoteAccessStatus,
   type RemotePairingCode,
   type RemotePhonePairing,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import {
   PHONE_SEED_BYTES,
   PHONE_SSH_PORT,

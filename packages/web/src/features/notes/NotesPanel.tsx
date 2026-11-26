@@ -25,7 +25,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { noteTitle, type Note, type NoteImage } from '@agent-workbench/shared';
+import { noteTitle, type Note, type NoteImage } from '@anvilary/workbench-shared';
 import { noteSendTitle } from '../agents/agent-ui.js';
 import { formatBytes, formatWhen } from '../../i18n/format.js';
 import { t } from '../../i18n/index.js';
@@ -36,9 +36,9 @@ import type { NotesApi } from './useNotes.js';
 import { useNotesFont } from '../../shared/hooks/useThreadFont.js';
 import { readStored, writeStored } from '../../shared/lib/window-prefs.js';
 
-const OPEN_KEY = 'agent-workbench.notes-open';
-const ACTIVE_KEY = 'agent-workbench.notes-active';
-const HEIGHT_KEY = 'agent-workbench.notes-height';
+const OPEN_KEY = 'workbench.notes-open';
+const ACTIVE_KEY = 'workbench.notes-active';
+const HEIGHT_KEY = 'workbench.notes-height';
 
 const MIN_HEIGHT = 160;
 const DEFAULT_HEIGHT = 300;

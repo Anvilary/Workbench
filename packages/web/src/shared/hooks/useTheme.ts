@@ -19,7 +19,7 @@ import { writeStored } from '../lib/window-prefs.js';
 export type ThemePreference = 'dark';
 export type ResolvedTheme = 'dark';
 
-const STORAGE_KEY = 'agent-workbench.theme';
+const STORAGE_KEY = 'workbench.theme';
 
 const THEME_KEYS: Readonly<Record<ThemePreference, MessageKey>> = {
   dark: 'theme.dark',
@@ -37,7 +37,7 @@ export const THEME_ICON: Readonly<Record<ThemePreference, string>> = {
 export interface ThemeState {
   preference: ThemePreference;
   resolved: ResolvedTheme;
-  /** Pasa al siguiente estado del ciclo (no-op: MAW is strictly dark theme). */
+  /** Pasa al siguiente estado del ciclo (no-op: Workbench is strictly dark theme). */
   cycle: () => void;
 }
 

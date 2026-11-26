@@ -6,7 +6,7 @@
  * or reset dates.
  */
 
-import type { AgentProfileUsage, WindowUtilization } from '@agent-workbench/shared';
+import type { AgentProfileUsage, WindowUtilization } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 
 export const QUOTA_ELEVATED_THRESHOLD = 70;

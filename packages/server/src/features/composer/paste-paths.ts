@@ -13,11 +13,11 @@ import path from 'node:path';
 
 /** La carpeta de lo pegado, con una subcarpeta por pestana (`PasteStore`). */
 export function pasteRoot(): string {
-  return path.join(tmpdir(), 'agent-workbench', 'pasted');
+  return path.join(tmpdir(), 'workbench', 'pasted');
 }
 
 /**
- * `<...>/agent-workbench/pasted/<pestana>/pegada-<n>-<8 hex>.<ext>`: el nombre
+ * `<...>/workbench/pasted/<pestana>/pegada-<n>-<8 hex>.<ext>`: el nombre
  * que pone `PasteStore.save`, con la extension que decidio la firma. Si cambia
  * alla, cambia aca.
  *
@@ -26,7 +26,7 @@ export function pasteRoot(): string {
  * `resolveInside` contra `pasteRoot()` (`conversation-image.ts`).
  */
 const PASTED_IMAGE =
-  /(?:^|[\\/])agent-workbench[\\/]pasted[\\/][A-Za-z0-9_-]+[\\/]pegada-\d+-[0-9a-f]{8}\.(png|jpg|gif|webp)$/i;
+  /(?:^|[\\/])workbench[\\/]pasted[\\/][A-Za-z0-9_-]+[\\/]pegada-\d+-[0-9a-f]{8}\.(png|jpg|gif|webp)$/i;
 
 const MEDIA_TYPES: Readonly<Record<string, string>> = {
   png: 'image/png',

@@ -25,7 +25,7 @@
 
 import { readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
-import { asRecord } from '@agent-workbench/shared';
+import { asRecord } from '@anvilary/workbench-shared';
 import { findInPath, launcherFor, type CliLocation } from '../locate.js';
 import { PI_COMMAND, PI_PACKAGE_NAME } from './constants.js';
 

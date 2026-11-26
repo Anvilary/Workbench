@@ -20,7 +20,7 @@
 import { constants } from 'node:fs';
 import { copyFile, lstat, mkdir, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { normalizeCwdKey, serverText, type ServerText } from '@agent-workbench/shared';
+import { normalizeCwdKey, serverText, type ServerText } from '@anvilary/workbench-shared';
 import { isInsideProtected } from '../files/directory-picker.js';
 import { isAbsoluteDir } from '../settings/settings-store.js';
 import { temporaryPathFor } from './write.js';

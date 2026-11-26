@@ -13,7 +13,7 @@ import type {
   TerminalId,
   WebTab,
   WorkspacePaneLayout,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import {
   createDefaultLayout,
   splitPane,
@@ -21,7 +21,7 @@ import {
   getPaneNodes,
   swapPanes,
   isWorkspacePaneLayout,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { AgencySessionRuntime } from '../../../src/features/sessions/session-runtime.js';
 import { AgencySessionStore } from '../../../src/features/sessions/session-store.js';
 import { AgencyWorkspaceStore } from '../../../src/features/workspaces/workspace-store.js';

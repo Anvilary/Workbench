@@ -26,7 +26,7 @@ import {
   type ConversationImageSource,
   type ConversationState,
   type PermissionMode,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { EventPage, LoadedImage, PollResult, SessionFollower } from '../adapter.js';
 import { JsonlFollower, type JsonlLineSink } from '../jsonl-follower.js';
 import { TRANSPORT_LIMITS, type EventLimits } from '../transport-limits.js';

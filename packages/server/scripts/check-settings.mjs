@@ -26,7 +26,7 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { parseClientMessage, parseServerMessage, encodeServerMessage } from '@agent-workbench/shared';
+import { parseClientMessage, parseServerMessage, encodeServerMessage } from '@anvilary/workbench-shared';
 import { SettingsStore, parseAppSettings, defaultAppSettings } from '../src/features/settings/settings-store.ts';
 import { gitBashCandidates, locateShells, pickShell } from '../src/features/terminals/shell-locator.ts';
 import { AgentRegistry } from '../src/agents/registry.ts';

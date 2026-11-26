@@ -26,7 +26,7 @@
 import { t } from '../../i18n/index.js';
 import type { Chime } from './notification-sound.js';
 
-export const NOTIFY_STORAGE_KEY = 'agent-workbench.notify';
+export const NOTIFY_STORAGE_KEY = 'workbench.notify';
 
 /** `unsupported`: el navegador no tiene la API acá (no es un contexto seguro, o no existe). */
 export type NotifyPermission = 'granted' | 'denied' | 'default' | 'unsupported';

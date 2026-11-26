@@ -22,7 +22,7 @@ const require = createRequire(path.join(repo, 'packages/server/package.json'));
 const WebSocket = require('ws');
 const N = Number(process.argv[2] || 1_000_000);
 const root = await mkdtemp(path.join(tmpdir(), 'maw-pty-flood-'));
-const home = path.join(root, 'home'), config = path.join(root, 'config/agent-workbench');
+const home = path.join(root, 'home'), config = path.join(root, 'config/workbench');
 await Promise.all([mkdir(home), mkdir(config, { recursive: true })]);
 const now = new Date().toISOString();
 const project = { id: randomUUID(), name: 'Flood', status: 'active', createdAt: now, updatedAt: now, archivedAt: null };
@@ -31,8 +31,8 @@ await writeFile(path.join(config, 'agency-state.json'), JSON.stringify({ version
 await writeFile(path.join(home, '.bashrc'), 'PS1="$ "\n');
 const env = { ...process.env, HOME: home, SHELL: '/bin/bash', XDG_CONFIG_HOME: path.dirname(config), XDG_DATA_HOME: path.join(root, 'data'),
   XDG_CACHE_HOME: path.join(root, 'cache'), XDG_STATE_HOME: path.join(root, 'state'), CODEX_HOME: path.join(home, '.codex'),
-  AGENT_WORKBENCH_NO_OPEN: '1', AGENT_WORKBENCH_NO_RESTORE: '1' };
-for (const key of Object.keys(env)) if (/^(AGENT_WORKBENCH_PORT|MAW_)/.test(key)) delete env[key];
+  WORKBENCH_NO_OPEN: '1', WORKBENCH_NO_RESTORE: '1' };
+for (const key of Object.keys(env)) if (/^(WORKBENCH_|MAW_|AGENT_WORKBENCH_)/.test(key)) delete env[key];
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(work, label, timeout = 30000) { const end = Date.now() + timeout; while (Date.now() < end) { const v = await work(); if (v) return v; await delay(20); } throw Error('Timeout: ' + label); }

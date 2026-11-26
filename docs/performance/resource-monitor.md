@@ -22,7 +22,7 @@ The architecture follows a strict separation of concerns across three primary ex
 |   (en, es, de, fr, pt-BR, ru, ja, ko, zh-CN).                                 |
 +-------------------------------------------------------------------------------+
                                       |
-                         maw:chatgpt Desktop IPC Bridge
+                         workbench:chatgpt Desktop IPC Bridge
                          (Command / State Push via Preload)
                                       v
 +-------------------------------------------------------------------------------+

@@ -18,7 +18,7 @@ import {
   type ConversationEvent,
   type ConversationQuestionItem,
   type TerminalId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 
 /** Lo que se mando en una pregunta leida, hasta que aparece la del historial. */
 export interface LiveAnswerRecord {

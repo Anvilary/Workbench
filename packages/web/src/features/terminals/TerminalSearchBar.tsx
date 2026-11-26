@@ -148,11 +148,11 @@ export function TerminalSearchBar({
   };
 
   return (
-    <div className="maw-terminal-search-bar" role="search" onClick={(e) => e.stopPropagation()}>
+    <div className="wb-terminal-search-bar" role="search" onClick={(e) => e.stopPropagation()}>
       <input
         ref={inputRef}
         type="text"
-        className="maw-terminal-search-input"
+        className="wb-terminal-search-input"
         placeholder={t('agency.terminal.searchPlaceholder')}
         value={query}
         onChange={handleQueryChange}
@@ -160,13 +160,13 @@ export function TerminalSearchBar({
         aria-label={t('agency.terminal.searchPlaceholder')}
       />
       {query && resultInfo !== null && (
-        <span className="maw-terminal-search-counter">
+        <span className="wb-terminal-search-counter">
           {resultInfo.count > 0 ? `${resultInfo.index + 1}/${resultInfo.count}` : t('agency.terminal.noMatches')}
         </span>
       )}
       <button
         type="button"
-        className="maw-terminal-search-btn"
+        className="wb-terminal-search-btn"
         onClick={findPrevious}
         title={t('agency.terminal.searchPrevious')}
         aria-label={t('agency.terminal.searchPrevious')}
@@ -176,7 +176,7 @@ export function TerminalSearchBar({
       </button>
       <button
         type="button"
-        className="maw-terminal-search-btn"
+        className="wb-terminal-search-btn"
         onClick={findNext}
         title={t('agency.terminal.searchNext')}
         aria-label={t('agency.terminal.searchNext')}
@@ -186,7 +186,7 @@ export function TerminalSearchBar({
       </button>
       <button
         type="button"
-        className="maw-terminal-search-btn maw-terminal-search-close"
+        className="wb-terminal-search-btn wb-terminal-search-close"
         onClick={handleClose}
         title={t('agency.terminal.searchClose')}
         aria-label={t('agency.terminal.searchClose')}

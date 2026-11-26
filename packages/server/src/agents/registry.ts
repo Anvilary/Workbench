@@ -14,7 +14,7 @@ import {
   type AgentId,
   type AgentInfo,
   type TerminalKind,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { AgentAdapter, CliLocation } from './adapter.js';
 import { createAntigravityAdapter } from './antigravity/index.js';
 import { createClaudeCodeAdapter } from './claude-code/index.js';

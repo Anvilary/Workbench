@@ -22,7 +22,7 @@ nativeLayoutCoordinator.measure = function() {
   window.measureCount++;
   return origMeasure();
 };
-window.mawChatGpt = {
+window.workbench = {
   command(cmd) {
     window.commands.push(cmd.type);
     if (cmd.type === 'layout') {

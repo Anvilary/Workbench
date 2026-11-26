@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { validateWebTabTitle } from '@agent-workbench/shared';
+import { validateWebTabTitle } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 
 /** Enter saves; Escape and blur cancel. Never commits through tab selection. */
@@ -44,7 +44,7 @@ export function TabNameInput({ name, onSave, onClose, report }: {
 
   return (
     <input
-      className="maw-tab-name-input"
+      className="wb-tab-name-input"
       autoFocus
       aria-label={t('agency.web.title')}
       aria-invalid={invalid}

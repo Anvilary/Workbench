@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { WorkspaceId } from '@agent-workbench/shared';
-import type { EditorTab } from '@agent-workbench/shared';
+import type { WorkspaceId } from '@anvilary/workbench-shared';
+import type { EditorTab } from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 import type { DocMode, OpenDoc } from '../files/doc-tabs.js';
 import { DocumentViewer } from '../files/DocumentViewer.js';
@@ -181,7 +181,7 @@ export function EditorPaneView({
   );
 
   return (
-    <div className="maw-editor-pane">
+    <div className="wb-editor-pane">
       <DocumentViewer
         doc={doc}
         content={content}

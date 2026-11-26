@@ -1490,7 +1490,7 @@ const client = new OpenCodeServeClient(mainEndpoint, undefined, { reconnectDelay
   // Lo puro del registro, el protocolo y la vista.
   {
     const { ActivityBook, wakeActionFor } = await import('../src/features/terminals/terminal-activity.ts');
-    const { parseServerMessage, TERMINAL_OFFLINE_REASONS } = await import('@agent-workbench/shared');
+    const { parseServerMessage, TERMINAL_OFFLINE_REASONS } = await import('@anvilary/workbench-shared');
     const ui = await import('../../web/src/features/agents/agent-ui.ts');
 
     const book = new ActivityBook();

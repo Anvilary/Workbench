@@ -27,7 +27,7 @@
 
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { WORKTREE_HOLDERS_MAX, asRecord, parseJson, parseWorktreeHolder, type WorktreeHolder } from '@agent-workbench/shared';
+import { WORKTREE_HOLDERS_MAX, asRecord, parseJson, parseWorktreeHolder, type WorktreeHolder } from '@anvilary/workbench-shared';
 import { debugLog } from '../../shared/debug.js';
 
 /** Hasta dónde recorre. Con un `node_modules` puede no llegar a los archivos del final: no se nombran. */

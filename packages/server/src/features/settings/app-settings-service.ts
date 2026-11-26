@@ -19,7 +19,7 @@ import {
   type AppSettingsChange,
   type AppSettingsStatus,
   type ConsoleShellId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { AgentRegistry } from '../../agents/registry.js';
 import type { SettingsStore } from './settings-store.js';
 import { pickShell, type ShellCandidate, type ShellLocation } from '../terminals/shell-locator.js';

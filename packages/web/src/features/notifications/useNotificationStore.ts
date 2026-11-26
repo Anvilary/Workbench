@@ -1,5 +1,5 @@
 /**
- * MAW Lane C - Client Notification & Activity State Store.
+ * Workbench Lane C - Client Notification & Activity State Store.
  *
  * Responsibilities:
  *   - Manages notifications inbox, unread counts, and top-right toasts.
@@ -20,8 +20,8 @@ import type {
   MawNotificationItem,
   TabActivityRecord,
   WorkspaceId,
-} from '@agent-workbench/shared';
-import { isMawNotificationItem } from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
+import { isMawNotificationItem } from '@anvilary/workbench-shared';
 import type { AgencyTransport } from '../workspaces/workspace-model.js';
 import type { useWorkbenchStore } from '../workspaces/useWorkbenchStore.js';
 import { focusTracker, type FocusContext } from '../panes/focus-tracker.js';
@@ -150,7 +150,7 @@ export function useNotificationStore(
       // Anti-storm: when 3 or more alerts fire within 2s, coalesce into a grouped alert
       if (recentOsNotifications.current.length >= 2) {
         const count = recentOsNotifications.current.length + 1;
-        const groupNotif = new Notification('MAW', {
+        const groupNotif = new Notification('Workbench', {
           body: `${count} coding agents completed tasks`,
           tag: 'maw-burst-summary',
         });
@@ -158,7 +158,7 @@ export function useNotificationStore(
           if (typeof window !== 'undefined') {
             window.focus();
             window.dispatchEvent(
-              new CustomEvent('maw:select-tab', {
+              new CustomEvent('workbench:select-tab', {
                 detail: { workspaceId: item.workspaceId, tabId: item.tabId, notificationId: item.id },
               }),
             );
@@ -177,7 +177,7 @@ export function useNotificationStore(
         if (typeof window !== 'undefined') {
           window.focus();
           window.dispatchEvent(
-            new CustomEvent('maw:select-tab', {
+            new CustomEvent('workbench:select-tab', {
               detail: { workspaceId: item.workspaceId, tabId: item.tabId, notificationId: item.id },
             }),
           );

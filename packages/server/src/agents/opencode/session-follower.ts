@@ -38,7 +38,7 @@ import {
   type ConversationState,
   type PermissionMode,
   type QueuedPrompt,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { debugLog } from '../../shared/debug.js';
 import type { EventPage, LoadedImage, PartsUpdate, PollResult, SessionFollower, TurnUpdate } from '../adapter.js';
 import type { ReadOnlyDatabase } from '../sqlite.js';

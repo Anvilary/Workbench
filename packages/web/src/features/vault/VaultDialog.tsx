@@ -23,7 +23,7 @@
  */
 
 import { useEffect } from 'react';
-import type { AgentInfo, VaultStatus } from '@agent-workbench/shared';
+import type { AgentInfo, VaultStatus } from '@anvilary/workbench-shared';
 import {
   vaultActivateOffer,
   vaultArchivedText,

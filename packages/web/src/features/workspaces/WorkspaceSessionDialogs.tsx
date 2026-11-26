@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import type { AgencyCliProfile, SplitDirection } from '@agent-workbench/shared';
+import type { AgencyCliProfile, SplitDirection } from '@anvilary/workbench-shared';
 import type { WorkspaceTab } from './workspace-model.js';
 import { t } from '../../i18n/index.js';
 import { useConfirmKeyboard } from '../../shared/hooks/useConfirmKeyboard.js';
@@ -73,9 +73,9 @@ export function WorkspaceSessionDialogs({
         className="agency-dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="maw-session-dialog"
+        aria-labelledby="wb-session-dialog"
       >
-        <h2 id="maw-session-dialog">
+        <h2 id="wb-session-dialog">
           {closing
             ? closing.kind === 'web'
               ? t('agency.web.closeConfirmTitle')
@@ -88,7 +88,7 @@ export function WorkspaceSessionDialogs({
             <div>
               <p>{t('agency.web.closeConfirmMessage')}</p>
               {closing.web.title ? (
-                <p className="maw-close-web-page-title">
+                <p className="wb-close-web-page-title">
                   {closing.web.title}
                 </p>
               ) : null}

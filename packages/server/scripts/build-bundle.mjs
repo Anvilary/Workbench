@@ -13,7 +13,7 @@
  *
  * Bundles:
  * - Local TypeScript server code
- * - Internal workspace packages (@agent-workbench/shared)
+ * - Internal workspace packages (@anvilary/workbench-shared)
  */
 
 import esbuild from 'esbuild';
@@ -61,8 +61,8 @@ try {
 
   console.log(`[build-bundle] Server bundle built in ${durationMs} ms (${sizeKiB} KiB) -> ${outfile}`);
 
-  const supervisorSrc = path.join(serverRoot, 'src/pty-host/maw-ptyd.mjs');
-  const supervisorDest = path.join(outdir, 'maw-ptyd.mjs');
+  const supervisorSrc = path.join(serverRoot, 'src/pty-host/ptyd.mjs');
+  const supervisorDest = path.join(outdir, 'ptyd.mjs');
   if (fs.existsSync(supervisorSrc)) {
     fs.copyFileSync(supervisorSrc, supervisorDest);
     fs.chmodSync(supervisorDest, 0o755);

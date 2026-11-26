@@ -5,7 +5,7 @@
  * socket that made it, so the wording and the error codes stay consistent.
  */
 
-import { ServerTextError, serverText } from '@agent-workbench/shared';
+import { ServerTextError, serverText } from '@anvilary/workbench-shared';
 import type { WebSocket } from 'ws';
 import { GitMissingError } from '../../features/git/git-repo.js';
 import { TerminalOpenError } from '../../features/terminals/terminal-registry.js';

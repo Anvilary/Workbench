@@ -16,7 +16,7 @@ import {
   parseServerMessage,
   type ClientMessage,
   type ServerMessage,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { sessionToken } from './session-token.js';
 import type {} from './desktop-bridge.js';
 
@@ -55,9 +55,9 @@ export class AgentConnection {
   private readonly outbox: ClientMessage[] = [];
 
   constructor() {
-    if (typeof window !== 'undefined' && window.mawChatGpt?.subscribe) {
+    if (typeof window !== 'undefined' && window.workbench?.subscribe) {
       try {
-        this.unsubBridge = window.mawChatGpt.subscribe((state) => {
+        this.unsubBridge = window.workbench.subscribe((state) => {
           if (state && state.type === 'backend-reconnected' && state.url) {
             this.overrideEndpoint = {
               url: state.url,
@@ -220,9 +220,9 @@ export class AgentConnection {
     const delay = Math.min(RECONNECT_BASE_MS * 2 ** (this.attempt - 1), RECONNECT_MAX_MS);
     window.clearTimeout(this.reconnectTimer);
     this.reconnectTimer = window.setTimeout(async () => {
-      if (typeof window !== 'undefined' && window.mawChatGpt?.command) {
+      if (typeof window !== 'undefined' && window.workbench?.command) {
         try {
-          const res = (await window.mawChatGpt.command({ type: 'get-backend-endpoint' })) as { ok?: boolean; url?: string; token?: string; port?: string } | undefined;
+          const res = (await window.workbench.command({ type: 'get-backend-endpoint' })) as { ok?: boolean; url?: string; token?: string; port?: string } | undefined;
           if (res && res.ok && res.url) {
             this.overrideEndpoint = {
               url: res.url,

@@ -3,7 +3,7 @@ import type {
   AgentsUsageSnapshot,
   AggregatedUsageSummary,
   ProviderUsageSummary,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { discoverProfiles, type MonitoredProfileConfig } from './discovery.js';
 import { collectCodexUsage } from './codex-collector.js';
 import { collectClaudeUsage } from './claude-collector.js';

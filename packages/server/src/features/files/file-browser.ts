@@ -25,7 +25,7 @@ import {
   type FilePreview,
   type FileSearchResult,
   type HiddenReason,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { CliFolders } from './cli-folders.js';
 import { filterIgnored, findRepoRoot } from '../git/git-repo.js';
 import { InvalidPathError, resolveInside, toPosixPath } from './path-guard.js';

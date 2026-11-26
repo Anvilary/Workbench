@@ -46,7 +46,7 @@ import type {
   StatusLineState,
   TerminalActivity,
   TerminalId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import {
   continueButtonTitle,
   discoveringHint,

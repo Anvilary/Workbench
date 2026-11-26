@@ -145,7 +145,7 @@ test('real bash PTY writes command to HISTFILE immediately and recovers upon new
     const env = {
       ...process.env,
       HISTFILE: histPath,
-      MAW_TERMINAL_HISTFILE: histPath,
+      WORKBENCH_TERMINAL_HISTFILE: histPath,
       PROMPT_COMMAND: `history -a "${histPath}" 2>/dev/null || true`,
       TERM: 'xterm-256color',
     };
@@ -159,7 +159,7 @@ test('real bash PTY writes command to HISTFILE immediately and recovers upon new
     });
 
     // Write a test command
-    const testCommand = 'echo "MAW_PER_TERMINAL_CLI_READY"';
+    const testCommand = 'echo "WORKBENCH_PER_TERMINAL_CLI_READY"';
     ptyProcess.write(`${testCommand}\r`);
 
     // Wait for command execution and prompt command flush
@@ -170,7 +170,7 @@ test('real bash PTY writes command to HISTFILE immediately and recovers upon new
         try {
           if (existsSync(histPath)) {
             const content = await readFile(histPath, 'utf-8');
-            if (content.includes('MAW_PER_TERMINAL_CLI_READY')) {
+            if (content.includes('WORKBENCH_PER_TERMINAL_CLI_READY')) {
               clearInterval(timer);
               resolve();
               return;
@@ -196,7 +196,7 @@ test('real bash PTY writes command to HISTFILE immediately and recovers upon new
     // Verify file content on disk
     const savedContent = await readFile(histPath, 'utf-8');
     assert.ok(
-      savedContent.includes('MAW_PER_TERMINAL_CLI_READY'),
+      savedContent.includes('WORKBENCH_PER_TERMINAL_CLI_READY'),
       'Command must be flushed to per-terminal history file before shell exit',
     );
 
@@ -220,7 +220,7 @@ test('real bash PTY writes command to HISTFILE immediately and recovers upon new
 
     await new Promise<void>((resolve, reject) => {
       const timer = setInterval(() => {
-        if (recoverOutput.includes('MAW_PER_TERMINAL_CLI_READY')) {
+        if (recoverOutput.includes('WORKBENCH_PER_TERMINAL_CLI_READY')) {
           clearInterval(timer);
           resolve();
         } else if (Date.now() - recoverStarted > 5000) {
@@ -232,7 +232,7 @@ test('real bash PTY writes command to HISTFILE immediately and recovers upon new
 
     recoverPty.kill();
     assert.ok(
-      recoverOutput.includes('MAW_PER_TERMINAL_CLI_READY'),
+      recoverOutput.includes('WORKBENCH_PER_TERMINAL_CLI_READY'),
       'Recovered terminal PTY must load previously executed commands from history',
     );
   });

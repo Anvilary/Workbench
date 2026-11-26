@@ -22,7 +22,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { AgentId, AgentInfo } from '@agent-workbench/shared';
+import type { AgentId, AgentInfo } from '@anvilary/workbench-shared';
 import { menuAgents, menuPlacement, menuStartIndex, menuStep, scrollClosesMenu } from './agent-ui.js';
 import { t } from '../../i18n/index.js';
 

@@ -164,7 +164,7 @@ CLI는 프로젝트에 대해 알게 된 내용을 각자의 위치에 저장하
 
 <img src="assets/captura-buscador.png" width="40%" alt="대화 검색: CLI마다 세션 하나에서 찾은 일치 항목과 발췌">
 
-기본 위치는 앱의 설정 폴더(Windows에서는 `%APPDATA%\agent-workbench\vault`)입니다. **폴더 변경…** 버튼은 백업을 동기화 폴더나 다른 드라이브 같은 다른 폴더로 아무것도 덮어쓰지 않고 복사하며, 기존 폴더는 그대로 둡니다. 동기화 폴더나 저장소에 두면 대화 내용도 함께 전송됩니다.
+기본 위치는 앱의 설정 폴더(Windows에서는 `%APPDATA%\workbench\vault`)입니다. **폴더 변경…** 버튼은 백업을 동기화 폴더나 다른 드라이브 같은 다른 폴더로 아무것도 덮어쓰지 않고 복사하며, 기존 폴더는 그대로 둡니다. 동기화 폴더나 저장소에 두면 대화 내용도 함께 전송됩니다.
 
 <details>
 <summary>Gemini CLI와 Antigravity IDE에서 기록 가져오기</summary>

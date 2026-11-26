@@ -2,7 +2,7 @@
  * Projects and workspaces.
  */
 
-import type { ClientMessage } from '@agent-workbench/shared';
+import type { ClientMessage } from '@anvilary/workbench-shared';
 import {
   handleAgencyDomainRequest,
   type AgencyDomainContext,

@@ -22,21 +22,21 @@ import os from 'node:os';
 import path from 'node:path';
 
 /** Path segments under the XDG state directory. The single place a rebrand changes. */
-export const DESKTOP_LOG_PATH_SEGMENTS = Object.freeze(['maw', 'logs']);
+export const DESKTOP_LOG_PATH_SEGMENTS = Object.freeze(['workbench', 'logs']);
 export const DESKTOP_LOG_FILENAME = 'desktop-main.log';
 export const DESKTOP_LOG_MAX_BYTES = 2 * 1024 * 1024;
 export const DESKTOP_LOG_KEEP = 2;
 const MAX_ENTRY_CHARS = 16 * 1024;
 
 /**
- * MAW_DESKTOP_LOG_DIR wins. A non-production instance with its own data
+ * WORKBENCH_DESKTOP_LOG_DIR wins. A non-production instance with its own data
  * directory (test and dev harnesses) logs inside it, so it never writes into the
- * installed instance's log. Otherwise `${XDG_STATE_HOME:-~/.local/state}/maw/logs`.
+ * installed instance's log. Otherwise `${XDG_STATE_HOME:-~/.local/state}/workbench/logs`.
  */
 export function resolveDesktopLogDir({ env = process.env, homedir = os.homedir } = {}) {
-  if (env.MAW_DESKTOP_LOG_DIR && path.isAbsolute(env.MAW_DESKTOP_LOG_DIR)) return path.resolve(env.MAW_DESKTOP_LOG_DIR);
-  if (env.MAW_DESKTOP_PRODUCTION !== '1' && env.MAW_DESKTOP_DATA_DIR && path.isAbsolute(env.MAW_DESKTOP_DATA_DIR)) {
-    return path.join(path.resolve(env.MAW_DESKTOP_DATA_DIR), 'logs');
+  if (env.WORKBENCH_DESKTOP_LOG_DIR && path.isAbsolute(env.WORKBENCH_DESKTOP_LOG_DIR)) return path.resolve(env.WORKBENCH_DESKTOP_LOG_DIR);
+  if (env.WORKBENCH_DESKTOP_PRODUCTION !== '1' && env.WORKBENCH_DESKTOP_DATA_DIR && path.isAbsolute(env.WORKBENCH_DESKTOP_DATA_DIR)) {
+    return path.join(path.resolve(env.WORKBENCH_DESKTOP_DATA_DIR), 'logs');
   }
   const stateHome = env.XDG_STATE_HOME && path.isAbsolute(env.XDG_STATE_HOME)
     ? env.XDG_STATE_HOME
@@ -154,7 +154,7 @@ export function installConsoleMirror({ logger, consoleRef = console, streams = [
 /** `{ releaseId, commit }` from the release meta file of an installed release, or null. */
 export function readReleaseInfo(appPath, { fs = nodeFs } = {}) {
   if (typeof appPath !== 'string' || !appPath) return null;
-  for (const candidate of [path.join(appPath, '.maw-release-meta.json'), path.resolve(appPath, '..', '..', '.maw-release-meta.json')]) {
+  for (const candidate of [path.join(appPath, '.workbench-release-meta.json'), path.resolve(appPath, '..', '..', '.workbench-release-meta.json')]) {
     try {
       const meta = JSON.parse(fs.readFileSync(candidate, 'utf8'));
       const releaseId = typeof meta?.releaseId === 'string' ? meta.releaseId.slice(0, 128) : null;

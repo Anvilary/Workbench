@@ -8,7 +8,7 @@
  * their attachments immediately.
  */
 
-import type { TerminalId } from '@agent-workbench/shared';
+import type { TerminalId } from '@anvilary/workbench-shared';
 import type { WebSocket } from 'ws';
 import { AgencySessionRuntime } from '../../features/sessions/session-runtime.js';
 import { TerminalHistoryStore } from '../../features/terminals/terminal-history-store.js';
@@ -76,7 +76,7 @@ export function createTerminalHistoryAccess(deps: TerminalHistoryAccessDeps): Te
     void pending.finally(() => historyDisposals.delete(pending));
   };
 
-  // MAW has one authenticated owner, including explicitly paired devices. An
+  // Workbench has one authenticated owner, including explicitly paired devices. An
   // attachment is a socket binding, not a separate user or workspace credential.
   const historyAccessReason = (terminalId: TerminalId): string | null => {
     if (historyStopped || closingTerminals.has(terminalId) || !registry.has(terminalId)) return 'Terminal not found';

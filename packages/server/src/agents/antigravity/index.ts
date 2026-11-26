@@ -27,7 +27,7 @@
 import { mkdirSync } from 'node:fs';
 import { readdir, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
-import type { AgentCapabilities, StatusLineSetupInfo, StatusLineState } from '@agent-workbench/shared';
+import type { AgentCapabilities, StatusLineSetupInfo, StatusLineState } from '@anvilary/workbench-shared';
 import { appConfigDir, agentStatusDir, cliLogsTempDir, integrationsDir } from '../../shared/app-paths.js';
 import type { AgentAdapter, AgentInput, LaunchHook, LaunchInput, LaunchPlan, SpawnedContext } from '../adapter.js';
 import { commandNotFoundMessage, locateCommand } from '../locate.js';

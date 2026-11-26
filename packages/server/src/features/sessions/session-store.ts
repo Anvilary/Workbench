@@ -1,8 +1,8 @@
 import { copyFile, mkdir, readFile, rename } from 'node:fs/promises';
-import { CLI_PROVIDERS, isAgencyTab } from '@agent-workbench/shared';
+import { CLI_PROVIDERS, isAgencyTab } from '@anvilary/workbench-shared';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { AgencyRuntimeSession, CliProvider } from '@agent-workbench/shared';
+import type { AgencyRuntimeSession, CliProvider } from '@anvilary/workbench-shared';
 import { writeAtomically } from '../../shared/persistence/atomic-write.js';
 import { appConfigDir } from '../../shared/app-paths.js';
 

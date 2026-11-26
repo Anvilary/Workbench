@@ -14,7 +14,7 @@
  *     LICENSE
  *
  * **El servidor se empaqueta en un archivo, y eso resuelve `shared`.** El
- * servidor importa `@agent-workbench/shared`, que es un paquete del workspace y
+ * servidor importa `@anvilary/workbench-shared`, que es un paquete del workspace y
  * no existe en npm: publicarlo aparte serian dos paquetes que versionar en
  * lugar de uno, y dejar el import a secas seria un paquete que no arranca.
  * Metido en el bundle, el especificador desaparece.
@@ -73,9 +73,9 @@ console.log('3/4  Copying the interface and the package files...');
 cpSync(path.join(repoRoot, 'packages', 'web', 'dist'), path.join(outDir, 'dist', 'web'), {
   recursive: true,
 });
-const supervisorSrc = path.join(repoRoot, 'packages', 'server', 'src', 'pty-host', 'maw-ptyd.mjs');
+const supervisorSrc = path.join(repoRoot, 'packages', 'server', 'src', 'pty-host', 'ptyd.mjs');
 if (existsSync(supervisorSrc)) {
-  const supervisorOut = path.join(outDir, 'dist', 'maw-ptyd.mjs');
+  const supervisorOut = path.join(outDir, 'dist', 'ptyd.mjs');
   cpSync(supervisorSrc, supervisorOut);
   chmodSync(supervisorOut, 0o755);
   cpSync(
@@ -100,7 +100,8 @@ writeFileSync(
   path.join(outDir, 'package.json'),
   `${JSON.stringify(
     {
-      name: 'agent-workbench',
+      name: rootPkg.name,
+      private: true,
       version: rootPkg.version,
       description: rootPkg.description,
       license: rootPkg.license,
@@ -114,7 +115,7 @@ writeFileSync(
       // listas que se desincronizan cuando se suma una CLI.
       keywords: rootPkg.keywords,
       type: 'module',
-      bin: { 'anvil-bench': 'dist/server.js', 'agent-workbench': 'dist/server.js' },
+      bin: Object.fromEntries(['anvi-bench', 'anvil-bench', 'maw', 'workbench'].map(name => [name, 'dist/server.js'])),
       files: ['dist'],
       engines: rootPkg.engines,
       dependencies,
@@ -127,4 +128,3 @@ writeFileSync(
 console.log('4/4  Done.');
 console.log(`\n  Package in ${outDir}`);
 console.log('  Review it with:  npm pack --dry-run   (from that folder)');
-console.log('  Publish it with: npm publish\n');

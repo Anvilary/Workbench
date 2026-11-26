@@ -39,7 +39,7 @@ import {
   type PermissionMode,
   type ServerText,
   type TerminalActivity,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { ForceSendMethod, QuestionAnswerOutcome } from '../../agents/adapter.js';
 
 /** DECSET 2004. La CLI lo activa sola al arrancar. */

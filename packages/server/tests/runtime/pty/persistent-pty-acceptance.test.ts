@@ -5,14 +5,14 @@ import path from 'node:path';
 import os from 'node:os';
 import net from 'node:net';
 // @ts-expect-error - standalone pure-ESM supervisor script
-import { PtySupervisor } from '../../../src/pty-host/maw-ptyd.mjs';
+import { PtySupervisor } from '../../../src/pty-host/ptyd.mjs';
 import { PtyHostClient } from '../../../src/pty-host/pty-host-client.js';
 import { SERVER_SRC } from '../../helpers/paths.js';
 
 const SYNTHETIC_AGENT_PATH = path.join(SERVER_SRC, 'pty-host', 'fixtures', 'synthetic-agent.mjs');
 
 function createIsolatedEnv() {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maw-ptyd-test-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'workbench-ptyd-test-'));
   const socketPath = path.join(tmpDir, 'ptyd.sock');
   const authPath = path.join(tmpDir, 'ptyd.auth');
   return {
@@ -87,7 +87,7 @@ test('Persistent PTY Acceptance: 14-step lifecycle, disconnection survival, incr
     const offsetBeforeDisconnect = replayBeforeDisconnect.endOffset;
     assert.ok(offsetBeforeDisconnect > 0);
 
-    // 5. Desconectar cliente 1 (simula caida o reinicio de maw.service)
+    // 5. Desconectar cliente 1 (simula caida o reinicio de workbench.service)
     client1.detach();
 
     // 6. Esperar mientras el cliente esta completamente desconectado (el proceso sigue emitiendo STEP k)

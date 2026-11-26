@@ -14,7 +14,7 @@
  * Puro, para que lo pruebe el chequeo sin cargar `node-pty`.
  */
 
-import type { TerminalActivity, TerminalId, TerminalOfflineReason } from '@agent-workbench/shared';
+import type { TerminalActivity, TerminalId, TerminalOfflineReason } from '@anvilary/workbench-shared';
 
 export interface ActivityEntry {
   terminalId: TerminalId;

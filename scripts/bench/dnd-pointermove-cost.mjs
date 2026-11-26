@@ -1,5 +1,5 @@
 // Tab-drag cost on the real built UI + disposable server (shell tabs only; no CLI launched, no network).
-// Prereq: `pnpm --filter @agent-workbench/web build` (packages/web/dist).
+// Prereq: `pnpm --filter @anvilary/workbench-web build` (packages/web/dist).
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
@@ -37,14 +37,14 @@ const home = path.join(root, 'home'); await mkdir(home, { recursive: true });
 const runtime = path.join(root, 'runtime'); await mkdir(runtime, { recursive: true, mode: 0o700 });
 const ptyState = path.join(root, 'ptyd-state'); await mkdir(ptyState, { recursive: true, mode: 0o700 });
 for (const f of ['.zshrc', '.zshenv', '.bashrc']) await writeFile(path.join(home, f), '# bench\n');
-const env = { ...process.env, AGENT_WORKBENCH_NO_OPEN: '1', AGENT_WORKBENCH_NO_RESTORE: '1', MAW_PERSISTENT_PTY: '0', HOME: home, USERPROFILE: home, APPDATA: path.join(root, 'appdata'), XDG_CONFIG_HOME: path.join(root, 'xdg'),
+const env = { ...process.env, WORKBENCH_NO_OPEN: '1', WORKBENCH_NO_RESTORE: '1', WORKBENCH_PERSISTENT_PTY: '0', HOME: home, USERPROFILE: home, APPDATA: path.join(root, 'appdata'), XDG_CONFIG_HOME: path.join(root, 'xdg'),
   XDG_DATA_HOME: path.join(home, '.local/share'), XDG_CACHE_HOME: path.join(home, '.cache'), XDG_STATE_HOME: path.join(home, '.local/state'), XDG_RUNTIME_DIR: runtime,
-  MAW_PTY_HOST_SOCKET_PATH: path.join(runtime, 'ptyd.sock'), MAW_PTY_HOST_STATE_DIR: ptyState,
+  WORKBENCH_PTY_HOST_SOCKET_PATH: path.join(runtime, 'ptyd.sock'), WORKBENCH_PTY_HOST_STATE_DIR: ptyState,
   CODEX_HOME: path.join(home, '.codex'),
   PI_CODING_AGENT_DIR: path.join(home, '.pi/agent'), PI_CODING_AGENT_SESSION_DIR: path.join(home, '.pi/sessions') };
-delete env.MAW_UNSAFE_LOCAL_NO_AUTH;
-delete env.MAW_RUNTIME_DIR;
-delete env.AGENT_WORKBENCH_PORT;
+delete env.WORKBENCH_UNSAFE_LOCAL_NO_AUTH;
+delete env.WORKBENCH_RUNTIME_DIR;
+delete env.WORKBENCH_PORT;
 const child = spawn(process.execPath, ['--import', path.join(repo, 'packages/server/node_modules/tsx/dist/loader.mjs'), path.join(repo, 'packages/server/src/index.ts'), '--prod'], { cwd: path.join(repo, 'packages/server'), env, stdio: ['ignore', 'pipe', 'pipe'] });
 let ws;
 let browser;
@@ -82,10 +82,10 @@ browser = await chromium.launch({ headless: true, executablePath: chromiumExecut
     const page = await ctx.newPage();
     await page.goto(ready.url);
     await page.locator('.agency-app').waitFor({ state: 'visible', timeout: 20000 });
-    if (!(await page.locator('.maw-session-tab').first().isVisible().catch(() => false))) {
+    if (!(await page.locator('.wb-session-tab').first().isVisible().catch(() => false))) {
       await page.getByText('DnD Workspace', { exact: false }).first().click({ timeout: 10000 }).catch(() => {});
     }
-    await page.waitForFunction(n => document.querySelectorAll('.maw-session-tab').length >= n, TABS, { timeout: 20000 });
+    await page.waitForFunction(n => document.querySelectorAll('.wb-session-tab').length >= n, TABS, { timeout: 20000 });
     await sleep(1500);
     const cdp = await ctx.newCDPSession(page); await cdp.send('Performance.enable');
     await page.evaluate(() => {
@@ -96,7 +96,7 @@ browser = await chromium.launch({ headless: true, executablePath: chromiumExecut
       let last = performance.now(); const tick = t => { window.__m.frames.push(t - last); last = t; window.__m.run && requestAnimationFrame(tick); }; window.__m.run = true; requestAnimationFrame(tick);
       new PerformanceObserver(l => { for (const x of l.getEntries()) window.__m.long.push(x.duration); }).observe({ entryTypes: ['longtask'] });
     });
-    const boxes = await page.locator('.maw-session-tab').evaluateAll(els => els.map(el => { const r = el.getBoundingClientRect(); return { id: el.dataset.tabId, x: r.x, y: r.y, w: r.width, h: r.height }; }));
+    const boxes = await page.locator('.wb-session-tab').evaluateAll(els => els.map(el => { const r = el.getBoundingClientRect(); return { id: el.dataset.tabId, x: r.x, y: r.y, w: r.width, h: r.height }; }));
     const a = boxes[1], b = boxes[Math.min(boxes.length - 1, 4)];
     const sx = a.x + a.w / 2, sy = a.y + a.h / 2, ex = b.x + b.w / 2 + 10;
     const before = Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(m => [m.name, m.value]));
@@ -108,7 +108,7 @@ browser = await chromium.launch({ headless: true, executablePath: chromiumExecut
     await page.mouse.up(); await sleep(300);
     const after = Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(m => [m.name, m.value]));
     const m = await page.evaluate(() => { window.__m.run = false; return { gbcr: window.__m.gbcr, efp: window.__m.efp, moves: window.__m.moves, frames: window.__m.frames, long: window.__m.long }; });
-    const newOrder = await page.locator('.maw-session-tab').evaluateAll(tabs => tabs.map(tab => tab.dataset.tabId));
+    const newOrder = await page.locator('.wb-session-tab').evaluateAll(tabs => tabs.map(tab => tab.dataset.tabId));
     assert.ok(m.moves >= MOVES && newOrder.indexOf(a.id) > boxes.indexOf(a), 'The production tab drag must commit a reorder');
     const d = k => +((after[k] - before[k]) * 1000).toFixed(1);
     const fr = m.frames.slice(1).sort((x, y) => x - y); const q = p => fr.length ? +fr[Math.min(fr.length - 1, Math.floor(p * fr.length))].toFixed(1) : 0;

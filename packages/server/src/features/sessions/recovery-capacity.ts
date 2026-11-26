@@ -1,5 +1,5 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
-import type { CliProvider } from '@agent-workbench/shared';
+import type { CliProvider } from '@anvilary/workbench-shared';
 /** Conservative observation of existing same-user AGY processes; never signal them. */
 export async function nativeRecoveryCapacity(provider: CliProvider, procRoot = '/proc'): Promise<boolean> {
   if (provider !== 'antigravity') return true;

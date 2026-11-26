@@ -1449,7 +1449,7 @@
   "settings.panels.consoleConfirm_other": "Если скрыть консоль, закроются {{count}} открытого терминала.",
   "settings.performance.effectiveOff": "This session started with hardware acceleration disabled.",
   "settings.performance.effectiveOn": "This session started with hardware acceleration enabled.",
-  "settings.performance.envOverride": "This session is controlled by the MAW_SAFE_GRAPHICS environment variable, which takes precedence over this setting.",
+  "settings.performance.envOverride": "This session is controlled by the WORKBENCH_SAFE_GRAPHICS environment variable, which takes precedence over this setting.",
   "settings.performance.gpu.compositing": "compositing",
   "settings.performance.gpu.rasterization": "rasterization",
   "settings.performance.gpu.state.hardware": "hardware",

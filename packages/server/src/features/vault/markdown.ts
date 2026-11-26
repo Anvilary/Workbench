@@ -26,7 +26,7 @@ import {
   type VaultDocumentLine,
   type VaultHeader,
   type VaultImageRef,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { UNTITLED_SESSION_TITLE } from '../../agents/session-title.js';
 
 const pad2 = (value: number): string => String(value).padStart(2, '0');

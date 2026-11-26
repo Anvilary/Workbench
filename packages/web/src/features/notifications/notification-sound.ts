@@ -17,7 +17,7 @@
  * que toca el navegador, y está al final.
  */
 
-import type { TerminalActivity, TerminalId } from '@agent-workbench/shared';
+import type { TerminalActivity, TerminalId } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 
 /** `done`: el agente terminó. `attention`: se frenó a esperar un permiso o una respuesta. */
@@ -99,7 +99,7 @@ export function planChimes(
  * cambio se lo cuenta con `phoneChimeUrl`.
  */
 export type PhoneChimeSource = 'system' | 'page';
-export const PHONE_CHIME_STORAGE_KEY = 'agent-workbench.phone-chime';
+export const PHONE_CHIME_STORAGE_KEY = 'workbench.phone-chime';
 
 export function parsePhoneChimeSource(raw: string): PhoneChimeSource | null {
   return raw === 'system' || raw === 'page' ? raw : null;
@@ -124,7 +124,7 @@ export function webChimeVolume(
   return enabled ? clampVolume(volume) : null;
 }
 
-export const SOUND_STORAGE_KEY = 'agent-workbench.sound';
+export const SOUND_STORAGE_KEY = 'workbench.sound';
 
 /** La preferencia guardada, o null si no es una de las dos palabras. */
 export function parseStoredSound(raw: string): boolean | null {
@@ -180,7 +180,7 @@ export const CHIMES: Readonly<Record<Chime, readonly Note[]>> = {
 export const MIN_VOLUME = 0.02;
 export const MAX_VOLUME = 0.8;
 export const DEFAULT_VOLUME = 0.2;
-export const VOLUME_STORAGE_KEY = 'agent-workbench.sound-volume';
+export const VOLUME_STORAGE_KEY = 'workbench.sound-volume';
 
 /** Un volumen dentro del rango, venga de donde venga. */
 export function clampVolume(value: number): number {

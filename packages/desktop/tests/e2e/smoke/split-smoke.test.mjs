@@ -12,8 +12,8 @@ import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 
 const require = createRequire(import.meta.url);
 const here = DESKTOP_ROOT;
-const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
-  ? '/opt/maw-electron/45.2.0/electron'
+const electronExecutable = fs.existsSync('/opt/workbench-electron/45.2.0/electron')
+  ? '/opt/workbench-electron/45.2.0/electron'
   : require('electron');
 
 const testIds = [
@@ -32,7 +32,7 @@ function App() {
   const [overlay, setOverlay] = useState(false);
 
   useEffect(() => {
-    const bridge = window.mawChatGpt;
+    const bridge = window.workbench;
     if (!bridge) return;
 
     for (let i = 0; i < paneCount; i++) {
@@ -106,7 +106,7 @@ test('multi-ChatGPT views: 2 and 4 simultaneous attached views with atomic recon
   });
 
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const data = await mkdtemp(path.join(tmpdir(), 'maw-split-smoke-'));
+  const data = await mkdtemp(path.join(tmpdir(), 'wb-split-smoke-'));
 
   let desktop;
   try {
@@ -116,13 +116,13 @@ test('multi-ChatGPT views: 2 and 4 simultaneous attached views with atomic recon
       args: [here, '--ozone-platform=x11'],
       env: {
         ...process.env,
-        MAW_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
-        MAW_DESKTOP_DATA_DIR: data,
+        WORKBENCH_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
+        WORKBENCH_DESKTOP_DATA_DIR: data,
       },
     });
 
     await desktop.evaluate(({ session }) => {
-      session.fromPartition('persist:maw-chatgpt').protocol.handle('https', () =>
+      session.fromPartition('persist:workbench-chatgpt').protocol.handle('https', () =>
         new Response('<!doctype html><title>ChatGPT Page</title><div>ChatGPT Page</div>', {
           headers: { 'Content-Type': 'text/html' },
         })
@@ -152,7 +152,7 @@ test('multi-ChatGPT views: 2 and 4 simultaneous attached views with atomic recon
     // 4. In-memory capture test. capturePage can reject until the view has painted.
     let captureResult;
     await eventually(async () => {
-      captureResult = await page.evaluate((id) => window.mawChatGpt.command({ type: 'capture', id }), testIds[0]);
+      captureResult = await page.evaluate((id) => window.workbench.command({ type: 'capture', id }), testIds[0]);
       return !!(captureResult && captureResult.ok && typeof captureResult.dataUrl === 'string' && captureResult.dataUrl.startsWith('data:image/'));
     });
     assert.equal(captureResult.ok, true, 'Capture command succeeds in-memory');

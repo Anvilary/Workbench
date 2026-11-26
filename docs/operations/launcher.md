@@ -1,6 +1,6 @@
 # Launcher and CLI (`anvi-bench`)
 
-`anvi-bench` controls, inspects, opens and updates the Workbench systemd user service. `anvil-bench`, `maw` and `workbench` are compatibility aliases: two-line shims that exec `anvi-bench`, so help text names the command you typed.
+`anvi-bench` controls, inspects, opens and updates the Workbench systemd user service. `anvi-bench`, `maw` and `workbench` are compatibility aliases: two-line shims that exec `anvi-bench`, so help text names the command you typed.
 
 | Item | Location |
 |---|---|
@@ -61,7 +61,7 @@ anvi-bench update --ref origin/feature/x --allow-unapproved-ref   # explicit non
 
 ## Token-free mode
 
-`WORKBENCH_UNSAFE_LOCAL_NO_AUTH=1` disables the session token. It is unsafe and diagnostic-only; read [local authentication](../security/local-auth.md) before using it. The legacy `MAW_UNSAFE_LOCAL_NO_AUTH` name is not honored.
+`WORKBENCH_UNSAFE_LOCAL_NO_AUTH=1` disables the session token. It is unsafe and diagnostic-only; read [local authentication](../security/local-auth.md) before using it. The legacy `WORKBENCH_UNSAFE_LOCAL_NO_AUTH` name is not honored.
 
 ## Environment variables
 

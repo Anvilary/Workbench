@@ -1,5 +1,5 @@
 /**
- * MAW Lane C - Unified Tab Activity State Manager.
+ * Workbench Lane C - Unified Tab Activity State Manager.
  *
  * Coordinates the 5-state model across CLI, Terminal, and Browser tabs:
  *   - idle
@@ -34,7 +34,7 @@ import {
   type RuntimeSessionId,
   type TabActivityRecord,
   type WorkspaceId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { appConfigDir } from '../../shared/app-paths.js';
 import { writeAtomically } from '../../shared/persistence/atomic-write.js';
 import type { AgencyNotificationStore, CreateNotificationInput } from './notification-store.js';

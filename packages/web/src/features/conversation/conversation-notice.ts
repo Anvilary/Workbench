@@ -8,7 +8,7 @@
  * de la app; en espanol, exactamente lo mismo, y `check-vault.mjs` lo compara.
  */
 
-import type { ConversationNoticePart } from '@agent-workbench/shared';
+import type { ConversationNoticePart } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 
 export function noticeText(part: Pick<ConversationNoticePart, 'notice' | 'detail'>): string {

@@ -27,7 +27,7 @@ function TestApp() {
   return (
     <div
       id="split-container"
-      className="maw-split-node"
+      className="wb-split-node"
       style={{
         display: 'flex',
         flexDirection: 'row',
@@ -38,7 +38,7 @@ function TestApp() {
     >
       <div
         id="pane-first"
-        className="maw-split-child"
+        className="wb-split-child"
         style={{
           flex: 'var(--split-ratio-first, ' + ratio + ') 1 0px',
           display: 'flex',
@@ -65,7 +65,7 @@ function TestApp() {
 
       <div
         id="pane-second"
-        className="maw-split-child"
+        className="wb-split-child"
         style={{
           flex: 'var(--split-ratio-second, ' + (1 - ratio) + ') 1 0px',
           display: 'flex',
@@ -118,7 +118,7 @@ test('SplitDivider lifecycle: mid-drag re-renders, unmount commit, escape revert
       return;
     }
     res.setHeader('Content-Type', 'text/html');
-    res.end('<!doctype html><html><head><style>body { margin: 0; padding: 0; } .maw-split-divider { width: 10px; cursor: col-resize; }</style></head><body><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>');
+    res.end('<!doctype html><html><head><style>body { margin: 0; padding: 0; } .wb-split-divider { width: 10px; cursor: col-resize; }</style></head><body><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>');
   });
 
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -130,11 +130,11 @@ test('SplitDivider lifecycle: mid-drag re-renders, unmount commit, escape revert
 
   const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
   await page.goto('http://127.0.0.1:' + server.address().port);
-  await page.waitForSelector('.maw-split-divider');
+  await page.waitForSelector('.wb-split-divider');
 
   // Test 1: Active drag followed by mid-drag re-render
   // First pane initially occupies 500px (ratio 0.5)
-  const dividerBox = await page.locator('.maw-split-divider').boundingBox();
+  const dividerBox = await page.locator('.wb-split-divider').boundingBox();
   assert(dividerBox, 'divider exists in layout');
 
   // Start pointer drag at center

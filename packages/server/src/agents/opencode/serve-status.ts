@@ -36,7 +36,7 @@
  * dice "esperando una respuesta tuya" y manda a la solapa CLI.
  */
 
-import type { TerminalOfflineReason } from '@agent-workbench/shared';
+import type { TerminalOfflineReason } from '@anvilary/workbench-shared';
 import { debugLog } from '../../shared/debug.js';
 import type { ReadOnlyDatabase } from '../sqlite.js';
 import type { AgentStatus, StatusSource } from '../adapter.js';

@@ -120,11 +120,11 @@ test('recoverable close lifecycle: immediate visual dismissal, background confir
     res.end(`<!doctype html><html><head><style>
       html,body,#root{height:100%;margin:0}
       .agency-workspace-view{display:flex;flex-direction:column;height:100%}
-      .maw-split-workspace-content{flex:1;display:flex;min-height:0}
-      .maw-split-container{display:flex;flex:1;min-width:0;min-height:0}
-      .maw-split-pane{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0}
-      .maw-pane-body{flex:1;display:flex;min-height:0;min-width:0;position:relative}
-      .maw-session-holder{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
+      .wb-split-workspace-content{flex:1;display:flex;min-height:0}
+      .wb-split-container{display:flex;flex:1;min-width:0;min-height:0}
+      .wb-split-pane{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0}
+      .wb-pane-body{flex:1;display:flex;min-height:0;min-width:0;position:relative}
+      .wb-session-holder{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
       .agency-modal-backdrop{position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;background:#090b10bb}
     </style></head><body><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>`);
   });
@@ -147,7 +147,7 @@ test('recoverable close lifecycle: immediate visual dismissal, background confir
 
   // Initial state: two tabs present
   await page.waitForFunction(() => window.terminals?.length === 2);
-  const tabsInitial = await page.$$eval('.maw-session-tab', (els) => els.map((el) => el.textContent?.trim()));
+  const tabsInitial = await page.$$eval('.wb-session-tab', (els) => els.map((el) => el.textContent?.trim()));
   assert.ok(tabsInitial.some((t) => t?.includes('Shell A')));
   assert.ok(tabsInitial.some((t) => t?.includes('Shell B')));
 
@@ -167,7 +167,7 @@ test('recoverable close lifecycle: immediate visual dismissal, background confir
   assert.match(errorText, /Termination not confirmed/);
 
   // Tab rolled back to visible
-  const tabsAfterRollback = await page.$$eval('.maw-session-tab', (els) => els.map((el) => el.textContent?.trim()));
+  const tabsAfterRollback = await page.$$eval('.wb-session-tab', (els) => els.map((el) => el.textContent?.trim()));
   assert.ok(tabsAfterRollback.some((t) => t?.includes('Shell A')));
 
   // Case 2: Successful close with immediate visual removal
@@ -180,7 +180,7 @@ test('recoverable close lifecycle: immediate visual dismissal, background confir
   await page.waitForSelector('.agency-modal-backdrop', { state: 'detached' });
 
   // Tab Shell A is immediately gone from the tab bar (0ms perceived latency)
-  const tabsDuringClose = await page.$$eval('.maw-session-tab', (els) => els.map((el) => el.textContent?.trim()));
+  const tabsDuringClose = await page.$$eval('.wb-session-tab', (els) => els.map((el) => el.textContent?.trim()));
   assert.equal(tabsDuringClose.some((t) => t?.includes('Shell A')), false, 'Shell A must be removed from tab bar immediately');
 
   // Wait for server delayed response

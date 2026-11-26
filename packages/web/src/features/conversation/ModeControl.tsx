@@ -25,7 +25,7 @@ import {
   isPermissionMode,
   type PermissionCycleCapability,
   type PermissionMode,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { modeChangeBlocked, modeControlTitle, modeLabel, shownMode } from '../agents/agent-ui.js';
 
 interface ModeControlProps {

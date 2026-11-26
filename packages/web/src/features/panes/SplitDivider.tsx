@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { SplitDirection } from '@agent-workbench/shared';
+import type { SplitDirection } from '@anvilary/workbench-shared';
 
 interface Props {
   splitId: string;
@@ -93,7 +93,7 @@ export function SplitDivider({
     divider.setPointerCapture(e.pointerId);
 
     // Find other parallel dividers in the workspace to allow collinear snapping (e.g. 2x2 grid alignment)
-    const otherDividers = Array.from(document.querySelectorAll<HTMLElement>('.maw-split-divider'));
+    const otherDividers = Array.from(document.querySelectorAll<HTMLElement>('.wb-split-divider'));
     const parallelTargets: number[] = [];
     for (const el of otherDividers) {
       if (el === divider) continue;
@@ -200,7 +200,7 @@ export function SplitDivider({
     <>
       <div
         ref={dividerRef}
-        className={`maw-split-divider maw-split-divider-${direction}${isDragging ? ' is-dragging' : ''}`}
+        className={`wb-split-divider wb-split-divider-${direction}${isDragging ? ' is-dragging' : ''}`}
         data-split-id={splitId}
         data-direction={direction}
         role="separator"
@@ -211,11 +211,11 @@ export function SplitDivider({
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
       >
-        <div className="maw-split-divider-handle" />
+        <div className="wb-split-divider-handle" />
       </div>
       {snapGuide && (
         <div
-          className={`maw-snap-guide maw-snap-guide-${direction}`}
+          className={`wb-snap-guide wb-snap-guide-${direction}`}
           style={
             isRow
               ? { left: `${snapGuide.x}px` }

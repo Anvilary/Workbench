@@ -90,7 +90,7 @@ delete process.env['OPENCODE_DB'];
 delete process.env['OPENCODE_MODELS_PATH'];
 delete process.env['OPENCODE_MODELS_URL'];
 
-const shared = await import('@agent-workbench/shared');
+const shared = await import('@anvilary/workbench-shared');
 
 let failures = 0;
 const check = (label, ok, extra = '') => {

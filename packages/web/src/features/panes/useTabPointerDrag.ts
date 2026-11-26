@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { MAX_LEAVES, type AgencyCliProfile, type SplitDirection, type WorkspaceId } from '@agent-workbench/shared';
+import { MAX_LEAVES, type AgencyCliProfile, type SplitDirection, type WorkspaceId } from '@anvilary/workbench-shared';
 import type { WorkspaceTab } from '../workspaces/workspace-model.js';
 import type { useWorkbenchStore } from '../workspaces/useWorkbenchStore.js';
 import { insertionIndex } from './tab-geometry.mjs';
@@ -58,14 +58,14 @@ export interface UseTabPointerDragOptions {
 
 function snapshotAllPanes(): CachedPaneGeometry[] {
   const result: CachedPaneGeometry[] = [];
-  const panes = document.querySelectorAll<HTMLElement>('.maw-split-pane');
+  const panes = document.querySelectorAll<HTMLElement>('.wb-split-pane');
   for (const paneEl of panes) {
     const paneId = paneEl.id.replace('pane-container-', '');
     if (!paneId) continue;
     const rect = paneEl.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) continue;
-    const bodyEl = paneEl.querySelector<HTMLElement>('.maw-pane-body');
-    const stripEl = paneEl.querySelector<HTMLElement>('.maw-pane-tabs');
+    const bodyEl = paneEl.querySelector<HTMLElement>('.wb-pane-body');
+    const stripEl = paneEl.querySelector<HTMLElement>('.wb-pane-tabs');
     result.push({
       paneId,
       paneEl,
@@ -93,12 +93,12 @@ function findCachedPaneAtPoint(
 }
 
 function measureHeaderGeometry(paneEl: HTMLElement): CachedHeaderGeometry | null {
-  const header = paneEl.querySelector<HTMLElement>('.maw-pane-header');
+  const header = paneEl.querySelector<HTMLElement>('.wb-pane-header');
   if (!header) return null;
-  const strip = header.querySelector<HTMLElement>('.maw-pane-tabs');
+  const strip = header.querySelector<HTMLElement>('.wb-pane-tabs');
   const scrollLeft = strip?.scrollLeft ?? 0;
   const headerRect = header.getBoundingClientRect();
-  const tabEls = [...header.querySelectorAll<HTMLElement>('.maw-session-tab')];
+  const tabEls = [...header.querySelectorAll<HTMLElement>('.wb-session-tab')];
   const tabRects = tabEls.map((element) => {
     const rect = element.getBoundingClientRect();
     // Subtract any inline translateX shift so midpoints remain stable in layout space
@@ -173,7 +173,7 @@ export function useTabPointerDrag({
     tabDrag.current = null;
     if (drag.isDragging) {
       suppressTabClickUntil.current = Date.now() + 200;
-      document.body.classList.remove('maw-pane-dragging');
+      document.body.classList.remove('wb-pane-dragging');
       setDragState(null);
       setTabDragPreview(null);
     }
@@ -209,7 +209,7 @@ export function useTabPointerDrag({
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || !event.isPrimary || (event.target as Element).closest('[data-close], input')) return;
-    const tabEl = (event.target as Element).closest<HTMLElement>('.maw-session-tab');
+    const tabEl = (event.target as Element).closest<HTMLElement>('.wb-session-tab');
     if (!tabEl) return;
     const tabId = tabEl.getAttribute('data-tab-id');
     if (!tabId) return;
@@ -259,13 +259,13 @@ export function useTabPointerDrag({
       const sourceTab = paneTabs.find((t) => t.id === drag.tabId);
       if (sourceTab) {
         const ghost = document.createElement('div');
-        ghost.className = 'maw-tab-drag-ghost';
+        ghost.className = 'wb-tab-drag-ghost';
         const iconSpan = document.createElement('span');
         iconSpan.setAttribute('aria-hidden', 'true');
         const sourceFav = favicons?.[sourceTab.id];
         if (sourceTab.kind === 'web' && sourceFav) {
           const img = document.createElement('img');
-          img.className = 'maw-tab-favicon';
+          img.className = 'wb-tab-favicon';
           img.src = sourceFav;
           iconSpan.appendChild(img);
         } else if (sourceTab.kind === 'web') {
@@ -288,14 +288,14 @@ export function useTabPointerDrag({
         drag.ghostEl = ghost;
       }
 
-      if (!document.querySelector('.maw-pane-drag-shield')) {
+      if (!document.querySelector('.wb-pane-drag-shield')) {
         const shield = document.createElement('div');
-        shield.className = 'maw-pane-drag-shield';
+        shield.className = 'wb-pane-drag-shield';
         shield.setAttribute('aria-hidden', 'true');
         document.body.appendChild(shield);
         drag.shieldEl = shield;
       }
-      document.body.classList.add('maw-pane-dragging');
+      document.body.classList.add('wb-pane-dragging');
     }
 
     event.preventDefault();

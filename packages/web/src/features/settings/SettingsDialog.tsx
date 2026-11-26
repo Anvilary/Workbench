@@ -1,5 +1,5 @@
 /**
- * Settings dialog for My Amazing Workspace (MaW).
+ * Settings dialog for Workbench (Workbench).
  *
  * Implements a cohesive, minimalist, desktop-oriented two-pane layout:
  * - Left navigation: General (including Appearance), Terminal, Browser, Agents, Usage, About, and Panels
@@ -20,7 +20,7 @@ import type {
   BrowserProfileId,
   BrowserProfileSite,
   ConsoleShellId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 import type { HideablePanel, PanelVisibility } from '../../shared/lib/panel-visibility.js';
 import type { AppSettingsApi } from './useAppSettings.js';
@@ -306,27 +306,27 @@ export function SettingsDialog({
   const isSearching = searchQuery.trim().length > 0;
 
   return (
-    <div className="modal-backdrop maw-settings-backdrop" onClick={onClose}>
+    <div className="modal-backdrop wb-settings-backdrop" onClick={onClose}>
       <div
         ref={dialogRef}
-        className="modal settings-dialog maw-settings-window"
+        className="modal settings-dialog wb-settings-window"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         onClick={(event) => event.stopPropagation()}
       >
-        <header className="modal-header maw-settings-header">
-          <div className="maw-settings-header-title-group">
-            <span className="maw-settings-header-icon" aria-hidden="true">
+        <header className="modal-header wb-settings-header">
+          <div className="wb-settings-header-title-group">
+            <span className="wb-settings-header-icon" aria-hidden="true">
               <GearIcon size={20} />
             </span>
-            <span id={titleId} className="modal-title maw-settings-title">
+            <span id={titleId} className="modal-title wb-settings-title">
               {t('settings.title')}
             </span>
           </div>
           <button
             type="button"
-            className="icon-button maw-settings-close-btn"
+            className="icon-button wb-settings-close-btn"
             onClick={onClose}
             title={t('common.closeEsc')}
             aria-label={t('common.closeEsc')}
@@ -335,21 +335,21 @@ export function SettingsDialog({
           </button>
         </header>
 
-        <div className="maw-settings-layout">
+        <div className="wb-settings-layout">
           <nav
-            className="maw-settings-nav"
+            className="wb-settings-nav"
             role="tablist"
             aria-label={t('settings.title')}
             onKeyDown={!isSearching ? handleNavKeyDown : undefined}
           >
-            <div className="maw-settings-search-box">
-              <span className="maw-settings-search-icon" aria-hidden="true">
+            <div className="wb-settings-search-box">
+              <span className="wb-settings-search-icon" aria-hidden="true">
                 <SearchIcon size={13} />
               </span>
               <input
                 ref={searchInputRef}
                 type="search"
-                className="maw-settings-search-input"
+                className="wb-settings-search-input"
                 placeholder={t('settings.search.placeholder')}
                 value={searchQuery}
                 onChange={(e) => {
@@ -362,7 +362,7 @@ export function SettingsDialog({
               {isSearching && (
                 <button
                   type="button"
-                  className="maw-settings-search-clear"
+                  className="wb-settings-search-clear"
                   onClick={() => {
                     setSearchQuery('');
                     searchInputRef.current?.focus();
@@ -376,16 +376,16 @@ export function SettingsDialog({
             </div>
 
             {isSearching ? (
-              <div className="maw-settings-search-results" role="listbox" aria-label={t('settings.search.placeholder')}>
+              <div className="wb-settings-search-results" role="listbox" aria-label={t('settings.search.placeholder')}>
                 {searchResults.length === 0 ? (
-                  <div className="maw-settings-search-empty">
-                    <p className="maw-settings-search-empty-text">
+                  <div className="wb-settings-search-empty">
+                    <p className="wb-settings-search-empty-text">
                       {t('settings.search.noResults')}
                     </p>
                   </div>
                 ) : (
                   <>
-                    <div className="maw-settings-search-count">
+                    <div className="wb-settings-search-count">
                       {t('settings.search.resultsCount', { count: searchResults.length })}
                     </div>
                     {searchResults.map((result, idx) => (
@@ -394,16 +394,16 @@ export function SettingsDialog({
                         type="button"
                         role="option"
                         aria-selected={idx === selectedResultIndex}
-                        className={`maw-settings-search-item ${idx === selectedResultIndex ? 'active' : ''}`}
+                        className={`wb-settings-search-item ${idx === selectedResultIndex ? 'active' : ''}`}
                         onClick={() => handleSelectSearchResult(result)}
                         onMouseEnter={() => setSelectedResultIndex(idx)}
                       >
-                        <div className="maw-settings-search-item-header">
-                          <span className="maw-settings-search-item-title">{result.title}</span>
-                          <span className="maw-settings-search-item-category">{result.categoryName}</span>
+                        <div className="wb-settings-search-item-header">
+                          <span className="wb-settings-search-item-title">{result.title}</span>
+                          <span className="wb-settings-search-item-category">{result.categoryName}</span>
                         </div>
                         {result.description && (
-                          <div className="maw-settings-search-item-desc">{result.description}</div>
+                          <div className="wb-settings-search-item-desc">{result.description}</div>
                         )}
                       </button>
                     ))}
@@ -411,7 +411,7 @@ export function SettingsDialog({
                 )}
               </div>
             ) : (
-              <div className="maw-settings-nav-list">
+              <div className="wb-settings-nav-list">
                 {visibleTabs.map((tab) => {
                   const isSelected = activeTab === tab.id;
                   const IconComponent = tab.icon;
@@ -423,21 +423,21 @@ export function SettingsDialog({
                       role="tab"
                       aria-selected={isSelected}
                       aria-controls={`settings-tabpanel-${tab.id}`}
-                      className={`maw-settings-nav-item ${isSelected ? 'active' : ''}`}
+                      className={`wb-settings-nav-item ${isSelected ? 'active' : ''}`}
                       onClick={() => setActiveTab(tab.id)}
                     >
-                      <span className="maw-settings-nav-icon">
+                      <span className="wb-settings-nav-icon">
                         <IconComponent size={15} />
                       </span>
-                      <span className="maw-settings-nav-label">{t(tab.labelKey)}</span>
+                      <span className="wb-settings-nav-label">{t(tab.labelKey)}</span>
                     </button>
                   );
                 })}
               </div>
             )}
 
-            <div className="maw-settings-sidebar-footer">
-              <span className="maw-settings-version" title={`Anvilary Workbench ${versionInfo.displayVersion}`}>
+            <div className="wb-settings-sidebar-footer">
+              <span className="wb-settings-version" title={`Anvilary Workbench ${versionInfo.displayVersion}`}>
                 {versionInfo.displayVersion}
               </span>
             </div>
@@ -447,15 +447,15 @@ export function SettingsDialog({
             id={`settings-tabpanel-${activeTab}`}
             role="tabpanel"
             aria-labelledby={`settings-tab-${activeTab}`}
-            className="maw-settings-content"
+            className="wb-settings-content"
           >
             {activeTab === 'usage' ? (
               <AgentsUsageView connection={connection} />
             ) : (
-              <div className="maw-settings-panel-inner">
-                <div className="maw-settings-section-header">
-                  <h2 className="maw-settings-section-title">{t(currentTabDef.labelKey)}</h2>
-                  <p className="maw-settings-section-desc">{t(currentTabDef.descKey)}</p>
+              <div className="wb-settings-panel-inner">
+                <div className="wb-settings-section-header">
+                  <h2 className="wb-settings-section-title">{t(currentTabDef.labelKey)}</h2>
+                  <p className="wb-settings-section-desc">{t(currentTabDef.descKey)}</p>
                 </div>
 
                 {activeTab === 'general' && (

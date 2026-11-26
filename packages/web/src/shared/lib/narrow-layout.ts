@@ -25,7 +25,7 @@ export const NARROW_MEDIA_QUERY = `(max-width: ${NARROW_MAX_WIDTH}px)`;
 export const TOUCH_MEDIA_QUERY = '(hover: none)';
 
 /** La vista elegida, por navegador: la PC guarda la suya en otras claves. */
-export const NARROW_VIEW_STORAGE_KEY = 'agent-workbench.narrow-view';
+export const NARROW_VIEW_STORAGE_KEY = 'workbench.narrow-view';
 
 /** Parámetro de la dirección que abre una pestaña concreta: lo que usa el aviso del teléfono. */
 export const TAB_QUERY_PARAM = 'tab';

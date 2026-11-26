@@ -13,8 +13,8 @@ import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 
 const require = createRequire(import.meta.url);
 const here = DESKTOP_ROOT;
-const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
-  ? '/opt/maw-electron/45.2.0/electron'
+const electronExecutable = fs.existsSync('/opt/workbench-electron/45.2.0/electron')
+  ? '/opt/workbench-electron/45.2.0/electron'
   : require('electron');
 
 const hasRequiredDesktopTools = (() => {
@@ -27,7 +27,7 @@ const hasRequiredDesktopTools = (() => {
 })();
 
 test('authoritative workspace copy-file rejects unauthorized paths and pastes into real Nautilus', { timeout: 60000 }, async (t) => {
-  if (process.env.MAW_NAUTILUS_TEST_ISOLATED !== '1') {
+  if (process.env.WORKBENCH_NAUTILUS_TEST_ISOLATED !== '1') {
     t.skip('Requires an explicitly isolated Xvfb display and D-Bus session');
     return;
   }
@@ -54,7 +54,7 @@ test('authoritative workspace copy-file rejects unauthorized paths and pastes in
   await writeFile(path.join(workspaceDir, sampleFileName), fileContent);
   await writeFile(path.join(unauthorizedDir, 'secret.txt'), 'secret outside workspace');
 
-  // Minimal HTTP server serving a test page with mawChatGpt command interface
+  // Minimal HTTP server serving a test page with workbench command interface
   const server = createServer((_req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end('<!doctype html><html><body><div id="root">MAW Test</div></body></html>');
@@ -65,16 +65,16 @@ test('authoritative workspace copy-file rejects unauthorized paths and pastes in
   let nautilusProc;
 
   try {
-    // Launch Electron desktop process with MAW_WORKSPACE_ROOT configured to authoritative workspace
+    // Launch Electron desktop process with WORKBENCH_WORKSPACE_ROOT configured to authoritative workspace
     desktop = await electron.launch({
       chromiumSandbox: true,
       executablePath: electronExecutable,
       args: [here, '--ozone-platform=x11'],
       env: {
         ...process.env,
-        MAW_WORKSPACE_ROOT: workspaceDir,
-        MAW_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
-        MAW_DESKTOP_DATA_DIR: dataDir,
+        WORKBENCH_WORKSPACE_ROOT: workspaceDir,
+        WORKBENCH_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
+        WORKBENCH_DESKTOP_DATA_DIR: dataDir,
       },
     });
 
@@ -83,7 +83,7 @@ test('authoritative workspace copy-file rejects unauthorized paths and pastes in
     // 1. Verify unauthorized cwd is denied
     const deniedRes = await page.evaluate(
       async ({ unauth, rel }) => {
-        return await window.mawChatGpt.command({
+        return await window.workbench.command({
           type: 'copy-file',
           cwd: unauth,
           relative: rel,
@@ -97,7 +97,7 @@ test('authoritative workspace copy-file rejects unauthorized paths and pastes in
     // 2. Verify path traversal escaping authoritative root is denied
     const traversalRes = await page.evaluate(
       async ({ ws, rel }) => {
-        return await window.mawChatGpt.command({
+        return await window.workbench.command({
           type: 'copy-file',
           cwd: ws,
           relative: rel,
@@ -150,7 +150,7 @@ test('authoritative workspace copy-file rejects unauthorized paths and pastes in
     assert.ok(wid, 'Expected visible Nautilus window for the destination folder');
 
     const copyRes = await page.evaluate(
-      ({ ws, rel }) => window.mawChatGpt.command({ type: 'copy-file', cwd: ws, relative: rel }),
+      ({ ws, rel }) => window.workbench.command({ type: 'copy-file', cwd: ws, relative: rel }),
       { ws: workspaceDir, rel: sampleFileName },
     );
     assert.equal(copyRes?.ok, true, 'Copy-file on authoritative file must succeed');

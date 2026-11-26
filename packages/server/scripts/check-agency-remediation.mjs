@@ -15,7 +15,7 @@ import WebSocket from 'ws';
 const serverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repo = path.resolve(serverDir, '../..');
 const root = await mkdtemp(path.join(tmpdir(), 'agency-remediation-'));
-const home = path.join(root, 'home'), config = path.join(root, 'xdg', 'agent-workbench');
+const home = path.join(root, 'home'), config = path.join(root, 'xdg', 'workbench');
 const accountA = path.join(root, 'account-a'), accountB = path.join(root, 'account-b');
 const cwd = path.join(home, 'workspace');
 await Promise.all([home, config, accountA, accountB, cwd].map((p) => mkdir(p, { recursive: true })));
@@ -42,7 +42,7 @@ const env = { ...process.env, HOME: home, USERPROFILE: home, APPDATA: path.join(
   XDG_CONFIG_HOME: path.dirname(config), XDG_DATA_HOME: path.join(root, 'data'),
   XDG_CACHE_HOME: path.join(root, 'cache'), XDG_STATE_HOME: path.join(root, 'state'), CODEX_HOME: accountA,
   PI_CODING_AGENT_DIR: path.join(root, 'pi'), PI_CODING_AGENT_SESSION_DIR: path.join(root, 'pi-sessions'),
-  AGENT_WORKBENCH_NO_OPEN: '1', AGENT_WORKBENCH_NO_RESTORE: '1' };
+  WORKBENCH_NO_OPEN: '1', WORKBENCH_NO_RESTORE: '1' };
 let server, browser;
 const sockets = [];
 let groups = 0;

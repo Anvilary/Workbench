@@ -1,4 +1,4 @@
-import type { CliProvider } from '@agent-workbench/shared';
+import type { CliProvider } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 
 /** 

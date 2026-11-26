@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import type { AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId } from '@agent-workbench/shared';
+import type { AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId } from '@anvilary/workbench-shared';
 import { ArchivedItemsDialog } from '../../../src/features/workspaces/ArchivedItemsDialog.js';
 
 globalThis.React = React;
@@ -34,7 +34,7 @@ test('ArchivedItemsDialog: renders dialog with archived projects and tabs', () =
 
   // Dialog container and title
   assert.ok(html.includes('Archived Items'), 'Renders Archived Items title');
-  assert.ok(html.includes('maw-archived-dialog'), 'Uses maw-archived-dialog class');
+  assert.ok(html.includes('wb-archived-dialog'), 'Uses wb-archived-dialog class');
 
   // Tabs with counts: 2 archived projects (p1, p3), 2 archived workspaces (w1, w3)
   assert.ok(html.includes('Projects (2)'), 'Renders Projects tab with count 2');

@@ -278,7 +278,7 @@ export function createBrowserViewController({
         return;
       }
       if (authenticationUrl(failedUrl)) {
-        void openExternal(failedUrl, 'This sign-in could not be opened inside MAW. Open it in your system browser?').catch(() => {});
+        void openExternal(failedUrl, 'This sign-in could not be opened inside Workbench. Open it in your system browser?').catch(() => {});
       }
       const message = `${providerName} failed to load (${code}). Use Reload page to retry.`;
       failures.set(id, message);

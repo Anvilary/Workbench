@@ -45,17 +45,17 @@ export function HardwareAccelerationControl({ available, status, busy = false, e
   const usable = available && status !== null;
   return (
     <>
-      <div className="maw-settings-row maw-settings-row-top">
-        <div className="maw-settings-row-text">
-          <span className="maw-settings-label">{t('settings.performance.hardwareAcceleration')}</span>
-          <span className="maw-settings-subtext">{t('settings.performance.hardwareAccelerationDesc')}</span>
+      <div className="wb-settings-row wb-settings-row-top">
+        <div className="wb-settings-row-text">
+          <span className="wb-settings-label">{t('settings.performance.hardwareAcceleration')}</span>
+          <span className="wb-settings-subtext">{t('settings.performance.hardwareAccelerationDesc')}</span>
         </div>
-        <div className="maw-settings-control">
+        <div className="wb-settings-control">
           {usable ? (
-            <label className="maw-settings-toggle-label">
+            <label className="wb-settings-toggle-label">
               <input
                 type="checkbox"
-                className="maw-settings-checkbox"
+                className="wb-settings-checkbox"
                 data-testid="hardware-acceleration-toggle"
                 checked={status.configured}
                 disabled={busy}
@@ -64,29 +64,29 @@ export function HardwareAccelerationControl({ available, status, busy = false, e
               />
             </label>
           ) : (
-            <span className="maw-settings-badge badge-unavailable">{t('settings.performance.unavailableBadge')}</span>
+            <span className="wb-settings-badge badge-unavailable">{t('settings.performance.unavailableBadge')}</span>
           )}
         </div>
       </div>
-      {!usable && <p className="maw-settings-hint">{t('settings.performance.unavailable')}</p>}
+      {!usable && <p className="wb-settings-hint">{t('settings.performance.unavailable')}</p>}
       {usable && (
         <>
           {status.source === 'env' ? (
-            <p className="maw-settings-hint" data-testid="hardware-acceleration-env">{t('settings.performance.envOverride')}</p>
+            <p className="wb-settings-hint" data-testid="hardware-acceleration-env">{t('settings.performance.envOverride')}</p>
           ) : status.pendingRestart && (
-            <div className="maw-settings-warning" data-testid="hardware-acceleration-restart">
-              <span className="maw-settings-badge badge-partial">{t('settings.performance.restartRequired')}</span>
-              <span className="maw-settings-warning-text">{t('settings.performance.restartNote')}</span>
+            <div className="wb-settings-warning" data-testid="hardware-acceleration-restart">
+              <span className="wb-settings-badge badge-partial">{t('settings.performance.restartRequired')}</span>
+              <span className="wb-settings-warning-text">{t('settings.performance.restartNote')}</span>
             </div>
           )}
-          <p className="maw-settings-hint" data-testid="hardware-acceleration-effective">
+          <p className="wb-settings-hint" data-testid="hardware-acceleration-effective">
             {t(status.effectiveAtStartup ? 'settings.performance.effectiveOn' : 'settings.performance.effectiveOff')}
             {status.gpuSummary ? ` ${t('settings.performance.gpuStatus', { summary: gpuSummaryText(status.gpuSummary) })}` : ''}
           </p>
-          <p className="maw-settings-hint">{t('settings.performance.gpuNote')}</p>
+          <p className="wb-settings-hint">{t('settings.performance.gpuNote')}</p>
         </>
       )}
-      {error && <p className="maw-settings-error-text" role="alert">{t('settings.performance.saveFailed')}</p>}
+      {error && <p className="wb-settings-error-text" role="alert">{t('settings.performance.saveFailed')}</p>}
     </>
   );
 }
@@ -94,7 +94,7 @@ export function HardwareAccelerationControl({ available, status, busy = false, e
 export interface PerformanceSettingsSubsectionProps {
   highlighted?: boolean;
   expandSignal?: number;
-  /** Injected for tests; defaults to `window.mawChatGpt`. */
+  /** Injected for tests; defaults to `window.workbench`. */
   bridge?: DesktopBridge | null;
 }
 

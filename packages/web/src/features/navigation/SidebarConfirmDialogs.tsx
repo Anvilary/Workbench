@@ -1,4 +1,4 @@
-import type { AgencyProject, AgencyRuntimeSession, AgencyWorkspace, EditorTab, WebTab } from '@agent-workbench/shared';
+import type { AgencyProject, AgencyRuntimeSession, AgencyWorkspace, EditorTab, WebTab } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 import { ConfirmDialog } from '../../shared/ui/ConfirmDialog.js';
 import type { AnchorRect } from '../../shared/ui/ModalDialog.js';

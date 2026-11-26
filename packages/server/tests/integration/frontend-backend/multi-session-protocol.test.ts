@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
-import { parseAgencyClientMessage, isAgencyTab } from '@agent-workbench/shared';
+import { parseAgencyClientMessage, isAgencyTab } from '@anvilary/workbench-shared';
 
 test('tab operations validate explicit workspace/tab IDs, duplicate orders and forbidden cwd/profile fields', () => {
   const workspaceId=randomUUID(),tabId=randomUUID();
@@ -49,9 +49,9 @@ test('managed Codex discovery does not attribute same-home/CWD native conversati
 
 test('legacy selection prefers an active current attempt without guessing from update time', async () => {
   const { migrateSessionTabs }=await import('../../../src/features/sessions/session-store.js');
-  const workspaceId=randomUUID() as import('@agent-workbench/shared').WorkspaceId;
+  const workspaceId=randomUUID() as import('@anvilary/workbench-shared').WorkspaceId;
   const now=new Date().toISOString();
-  const row=(lifecycle:'running'|'exited')=>({id:randomUUID() as import('@agent-workbench/shared').RuntimeSessionId,workspaceId,kind:'terminal' as const,profileId:null,nativeSessionId:null,selectedModel:null,selectedEffort:null,terminalId:null,lifecycle,activity:'unknown' as const,createdAt:now,updatedAt:now,startedAt:now,stoppedAt:null,exitCode:null});
+  const row=(lifecycle:'running'|'exited')=>({id:randomUUID() as import('@anvilary/workbench-shared').RuntimeSessionId,workspaceId,kind:'terminal' as const,profileId:null,nativeSessionId:null,selectedModel:null,selectedEffort:null,terminalId:null,lifecycle,activity:'unknown' as const,createdAt:now,updatedAt:now,startedAt:now,stoppedAt:null,exitCode:null});
   const past=row('exited'),live=row('running');const migrated=migrateSessionTabs([past,live]);
   assert.equal(migrated[0]!.tab?.selected,false);assert.equal(migrated[1]!.tab?.selected,true);
 });
@@ -65,7 +65,7 @@ test('rename validates stable IDs, title and forbids process identity fields', (
 });
 
 test('F-1: sessions snapshot scope survives parsing; unscoped stays unscoped; malformed scope rejected', async () => {
-  const { parseAgencyServerMessage } = await import('@agent-workbench/shared');
+  const { parseAgencyServerMessage } = await import('@anvilary/workbench-shared');
   const workspaceId = randomUUID();
   assert.deepEqual(parseAgencyServerMessage({ type: 'agency.sessions.snapshot', requestId: 'r', sessions: [], workspaceId }),
     { type: 'agency.sessions.snapshot', requestId: 'r', sessions: [], workspaceId });

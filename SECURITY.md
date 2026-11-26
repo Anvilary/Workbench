@@ -69,7 +69,7 @@ The full list of what is read and what is never opened, per CLI, is in
 > [!WARNING]
 > **Unsafe and diagnostic-only.** With `WORKBENCH_UNSAFE_LOCAL_NO_AUTH=1` the session token is not required, so any local process or user that can reach the loopback port can execute commands in your shell. Use it only for short local diagnostics.
 
-Safeguards that remain: startup fails unless the server binds exclusively to `127.0.0.1`, startup fails when remote access is enabled, and `Host` and `Origin` checks stay enforced. The legacy `MAW_UNSAFE_LOCAL_NO_AUTH` name is not honored. Details: [docs/security/local-auth.md](docs/security/local-auth.md). Threat model: [docs/security/threat-model.md](docs/security/threat-model.md).
+Safeguards that remain: startup fails unless the server binds exclusively to `127.0.0.1`, startup fails when remote access is enabled, and `Host` and `Origin` checks stay enforced. The legacy `WORKBENCH_UNSAFE_LOCAL_NO_AUTH` name is not honored. Details: [docs/security/local-auth.md](docs/security/local-auth.md). Threat model: [docs/security/threat-model.md](docs/security/threat-model.md).
 
 ## What counts
 

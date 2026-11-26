@@ -26,7 +26,7 @@ import {
   type TerminalDescriptor,
   type TerminalId,
   type TerminalOfflineReason,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { summarizeAgents } from '../../features/agents/agent-summary.js';
 import {
   PENDING_OPEN_TIMEOUT_MS,
@@ -42,7 +42,7 @@ import { useLocale } from '../../i18n/useLocale.js';
 import { isMemoryPanelRequest } from '../../features/memory/useMemory.js';
 import { isWorktreeDialogRequest } from '../../features/worktrees/useWorktrees.js';
 
-const ACTIVE_TAB_KEY = 'agent-workbench.activeTab';
+const ACTIVE_TAB_KEY = 'workbench.activeTab';
 
 function readActiveTab(): TerminalId | null {
   try {

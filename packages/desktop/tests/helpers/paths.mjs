@@ -3,14 +3,14 @@ import { fileURLToPath } from 'node:url';
 
 const HELPERS_DIR = path.dirname(fileURLToPath(import.meta.url));
 
-/** Root directory of `@agent-workbench/desktop`. */
+/** Root directory of `@anvilary/workbench-desktop`. */
 export const DESKTOP_ROOT = path.resolve(HELPERS_DIR, '..', '..');
 
 /** Monorepo root directory. */
 export const REPO_ROOT = path.resolve(DESKTOP_ROOT, '..', '..');
 
-/** Root directory of `@agent-workbench/web`. */
+/** Root directory of `@anvilary/workbench-web`. */
 export const WEB_ROOT = path.join(REPO_ROOT, 'packages', 'web');
 
-/** Root directory of `@agent-workbench/server`. */
+/** Root directory of `@anvilary/workbench-server`. */
 export const SERVER_ROOT = path.join(REPO_ROOT, 'packages', 'server');

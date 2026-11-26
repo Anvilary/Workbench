@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import type { WebTabServerMessage, WorkspaceId } from '@agent-workbench/shared';
+import type { WebTabServerMessage, WorkspaceId } from '@anvilary/workbench-shared';
 import { BrowserTabAdapter } from '../../../src/features/browser/browser-tab-adapter.js';
 import { BrowserTabStore } from '../../../src/features/browser/browser-tab-store.js';
 import { handleWebTabMessage } from '../../../src/features/browser/web-tab-request-handler.js';

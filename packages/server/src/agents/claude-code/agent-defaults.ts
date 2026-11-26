@@ -45,7 +45,7 @@
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import type { AgentDefaults } from '@agent-workbench/shared';
+import type { AgentDefaults } from '@anvilary/workbench-shared';
 import { ModelVariantRegistry } from './model-variants.js';
 
 /**

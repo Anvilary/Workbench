@@ -71,7 +71,7 @@ process.env['XDG_CACHE_HOME'] = path.join(root, 'xdg-cache');
 process.env['XDG_STATE_HOME'] = path.join(root, 'xdg-state');
 process.env['CODEX_HOME'] = path.join(root, 'codex');
 
-const shared = await import('@agent-workbench/shared');
+const shared = await import('@anvilary/workbench-shared');
 const {
   GLOBAL_SEARCH_MAX_QUERY_CHARS,
   GLOBAL_SEARCH_MAX_RESULTS,

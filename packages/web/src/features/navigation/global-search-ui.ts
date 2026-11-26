@@ -29,7 +29,7 @@ import {
   type TerminalDescriptor,
   type TerminalId,
   type VaultStatus,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { resumableSession } from '../agents/agent-ui.js';
 import { t } from '../../i18n/index.js';
 

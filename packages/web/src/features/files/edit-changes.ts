@@ -15,7 +15,7 @@
  * Puro, sin React ni DOM: lo prueba `check-doc-viewer.mjs`.
  */
 
-import type { DiffLine } from '@agent-workbench/shared';
+import type { DiffLine } from '@anvilary/workbench-shared';
 
 /** Lineas de contexto alrededor de cada cambio: para encontrar el lugar en la version nueva. */
 const CONTEXT_LINES = 1;

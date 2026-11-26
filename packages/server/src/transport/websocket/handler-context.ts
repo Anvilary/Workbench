@@ -9,7 +9,7 @@
  * reaches for a service it did not declare.
  */
 
-import type { ServerText, TerminalId } from '@agent-workbench/shared';
+import type { ServerText, TerminalId } from '@anvilary/workbench-shared';
 import type { WebSocket } from 'ws';
 import type { CliFolders } from '../../features/files/cli-folders.js';
 import type { DirectoryPickers } from '../../features/files/directory-picker.js';

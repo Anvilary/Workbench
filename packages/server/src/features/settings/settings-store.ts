@@ -47,7 +47,7 @@ import {
   type CustomDictionaryMutation,
   type SpellCheckSettings,
   type SpellCheckSettingsPatch,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { appSettingsPath } from '../../shared/app-paths.js';
 import { writeFileAtomic } from '../vault/write.js';
 

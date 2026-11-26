@@ -9,19 +9,19 @@ import {
   parseAgencyServerMessage,
   partitionForBrowserProfile,
   resolveEffectiveBrowserProfileId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { BrowserProfileStore } from '../../../src/features/browser/browser-profile-store.js';
 import { handleAgencyDomainRequest, type AgencyDomainContext } from '../../../src/features/workspaces/workspace-request-handler.js';
 import { AgencyWorkspaceStore } from '../../../src/features/workspaces/workspace-store.js';
 import { DirectoryPickers } from '../../../src/features/files/directory-picker.js';
 
 test('browser profile partition mapping preserves legacy Main partitions cleanly', () => {
-  assert.equal(partitionForBrowserProfile('main', 'chatgpt'), 'persist:maw-chatgpt');
-  assert.equal(partitionForBrowserProfile(undefined, 'github'), 'persist:maw-github');
-  assert.equal(partitionForBrowserProfile(null, 'perplexity'), 'persist:maw-perplexity');
-  assert.equal(partitionForBrowserProfile('main', 'other'), 'persist:maw-browser');
-  assert.equal(partitionForBrowserProfile('bp_work1', 'chatgpt'), 'persist:maw-profile-bp_work1-chatgpt');
-  assert.equal(partitionForBrowserProfile('bp_work1', 'other'), 'persist:maw-profile-bp_work1-browser');
+  assert.equal(partitionForBrowserProfile('main', 'chatgpt'), 'persist:workbench-chatgpt');
+  assert.equal(partitionForBrowserProfile(undefined, 'github'), 'persist:workbench-github');
+  assert.equal(partitionForBrowserProfile(null, 'perplexity'), 'persist:workbench-perplexity');
+  assert.equal(partitionForBrowserProfile('main', 'other'), 'persist:workbench-browser');
+  assert.equal(partitionForBrowserProfile('bp_work1', 'chatgpt'), 'persist:workbench-profile-bp_work1-chatgpt');
+  assert.equal(partitionForBrowserProfile('bp_work1', 'other'), 'persist:workbench-profile-bp_work1-browser');
 });
 
 test('browser profile resolution order: workspace -> project -> Main', () => {

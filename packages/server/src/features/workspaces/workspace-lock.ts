@@ -1,4 +1,4 @@
-import type { WorkspaceId } from '@agent-workbench/shared';
+import type { WorkspaceId } from '@anvilary/workbench-shared';
 
 /**
  * Shared per-workspace reservation mutex used across Lane A and Lane C.

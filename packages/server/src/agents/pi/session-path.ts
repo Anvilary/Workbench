@@ -17,7 +17,7 @@
  * Puro, sin disco: lo prueba `check-pi-adapter.mjs`.
  */
 
-import type { ConversationEvent, ConversationPart, MessageUsage } from '@agent-workbench/shared';
+import type { ConversationEvent, ConversationPart, MessageUsage } from '@anvilary/workbench-shared';
 import { NOTICE_DETAIL_MAX_CHARS, type PiEntry, type PiUsage } from './session-entries.js';
 
 /** Lo que el medidor necesita, sin la ventana: esa la pone el catalogo. */

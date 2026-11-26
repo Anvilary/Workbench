@@ -164,7 +164,7 @@ agent-workbench
 
 <img src="assets/captura-buscador.png" width="40%" alt="会話内の検索：各 CLI のセッションで 1 件ずつ一致し、それぞれの抜粋が表示されている様子">
 
-既定の保存先は、アプリの設定フォルダー（Windows では `%APPDATA%\agent-workbench\vault`）です。**フォルダーを変更…** を使うと、何も上書きせずに別のフォルダー（同期フォルダーや別のドライブなど）へコピーし、元のフォルダーはそのまま残します。同期フォルダーやリポジトリに置くと、会話も一緒に共有されます。
+既定の保存先は、アプリの設定フォルダー（Windows では `%APPDATA%\workbench\vault`）です。**フォルダーを変更…** を使うと、何も上書きせずに別のフォルダー（同期フォルダーや別のドライブなど）へコピーし、元のフォルダーはそのまま残します。同期フォルダーやリポジトリに置くと、会話も一緒に共有されます。
 
 <details>
 <summary>Gemini CLI と Antigravity IDE の履歴のインポート</summary>

@@ -34,7 +34,7 @@
 import { access } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import path from 'node:path';
-import type { ConsoleShellId } from '@agent-workbench/shared';
+import type { ConsoleShellId } from '@anvilary/workbench-shared';
 import { findInPath } from '../../agents/locate.js';
 
 export interface ShellLocation {

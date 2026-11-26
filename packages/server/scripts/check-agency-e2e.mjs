@@ -70,9 +70,9 @@ await mkdir(workspacesDir, { recursive: true });
 await writeFile(path.join(testHome, '.zshrc'), '# e2e test\n');
 await writeFile(path.join(testHome, '.zshenv'), '# e2e test\n');
 await writeFile(path.join(testHome, '.bashrc'), '# e2e test\n');
-await mkdir(path.join(testXdg, 'agent-workbench'), { recursive: true });
+await mkdir(path.join(testXdg, 'workbench'), { recursive: true });
 // An existing installation's profile store: synthetic accounts per provider.
-await writeFile(path.join(testXdg, 'agent-workbench', 'agency-profiles.json'), JSON.stringify({ schemaVersion: 1, profiles: [['codex-a', 'codex', 'Codex A'], ['claude-code', 'claude-code', 'Claude Code']]
+await writeFile(path.join(testXdg, 'workbench', 'agency-profiles.json'), JSON.stringify({ schemaVersion: 1, profiles: [['codex-a', 'codex', 'Codex A'], ['claude-code', 'claude-code', 'Claude Code']]
   .map(([id, provider, label]) => ({ id, provider, label, executable: '', args: [], environmentOverrides: {}, disabled: false })) }), { mode: 0o600 });
 
 const wsDirAlpha = path.join(workspacesDir, 'ws-alpha');
@@ -88,8 +88,8 @@ await mkdir(protectedCliDir, { recursive: true });
 
 const commonEnv = {
   ...process.env,
-  AGENT_WORKBENCH_NO_OPEN: '1',
-  AGENT_WORKBENCH_NO_RESTORE: '1',
+  WORKBENCH_NO_OPEN: '1',
+  WORKBENCH_NO_RESTORE: '1',
   HOME: testHome,
   USERPROFILE: testHome,
   APPDATA: testAppdata,
@@ -901,7 +901,7 @@ check(
 );
 
 // A store that becomes unreadable after startup must not crash the socket server.
-const profileFile = path.join(testXdg, 'agent-workbench', 'agency-profiles.json');
+const profileFile = path.join(testXdg, 'workbench', 'agency-profiles.json');
 await writeFile(profileFile, '{invalid');
 await writeFile(profileFile + '.bak', '{invalid');
 client3.send({ type: 'agency.profiles.list', requestId: 'corrupt-profile-list' });

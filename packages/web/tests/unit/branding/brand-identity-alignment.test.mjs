@@ -65,7 +65,7 @@ test('UI-04: Desktop application icon and launcher icons match canonical Anvilar
 
   const launcherSizes = [16, 24, 32, 48, 64, 96, 128, 192, 256, 512];
   for (const s of launcherSizes) {
-    const launcherIcon = path.join(repoRoot, `packages/desktop/assets/icons/maw-${s}.png`);
+    const launcherIcon = path.join(repoRoot, `packages/desktop/assets/icons/workbench-${s}.png`);
     assert.ok(existsSync(launcherIcon), `maw-${s}.png must exist`);
     if ([16, 32, 128, 256, 512].includes(s)) {
       const internalCanonical = path.join(repoRoot, `packages/web/public/brand/anvilary-tools-${s}.png`);

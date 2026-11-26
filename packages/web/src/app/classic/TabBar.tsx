@@ -27,7 +27,7 @@ import type {
   TerminalActivity,
   TerminalDescriptor,
   TerminalId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { AgentBadge } from '../../features/agents/AgentBadge.js';
 import { AgentSplitButton } from '../../features/agents/AgentSplitButton.js';
 import {

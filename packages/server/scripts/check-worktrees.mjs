@@ -52,7 +52,7 @@ process.env.XDG_CONFIG_HOME = path.join(root, 'xdg');
 process.env.HOME = path.join(root, 'home');
 process.env.USERPROFILE = path.join(root, 'home');
 
-const shared = await import('@agent-workbench/shared');
+const shared = await import('@anvilary/workbench-shared');
 const { worktreeFolderFor, mainRootFromShape } = await import('../src/features/worktrees/names.ts');
 const { readCheckout, branchFromHead, mainCwdFor } = await import('../src/features/worktrees/checkout.ts');
 const wtGit = await import('../src/features/worktrees/git.ts');

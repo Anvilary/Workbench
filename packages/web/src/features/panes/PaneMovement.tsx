@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { DragDropProvider, DragOverlay, PointerSensor, useDraggable } from '@dnd-kit/react';
 import { Accessibility, PointerActivationConstraints } from '@dnd-kit/dom';
-import type { WorkspaceId } from '@agent-workbench/shared';
+import type { WorkspaceId } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 import { PaneMenu, dismissPaneMenus } from './PaneMenu.js';
 
@@ -16,7 +16,7 @@ export function PaneGrip({ paneId, workspaceId, disabled, destinations, onSwap }
   const drag = useDraggable({ id: `pane:${workspaceId}:${paneId}`, type: 'pane', data: { workspaceId, paneId }, disabled });
   const setRef = useCallback((element: HTMLButtonElement | null) => { anchor.current = element; drag.ref(element); }, [drag.ref]);
   return <>
-    <button type="button" className={`maw-pane-grip maw-pane-action-button${drag.isDragging ? ' is-dragging' : ''}`}
+    <button type="button" className={`wb-pane-grip wb-pane-action-button${drag.isDragging ? ' is-dragging' : ''}`}
       ref={setRef}
       title={t('agency.splits.movePane')} aria-label={t('agency.splits.movePane')}
       aria-haspopup="menu" aria-expanded={open} disabled={disabled}
@@ -51,11 +51,11 @@ export function PaneMovement({ workspaceId, onSwap, children }: {
   const reduced = useRef(window.matchMedia('(prefers-reduced-motion: reduce)'));
   useEffect(() => () => {
     if (dropTimer.current !== null) clearTimeout(dropTimer.current);
-    document.body.classList.remove('maw-pane-dragging');
+    document.body.classList.remove('wb-pane-dragging');
   }, []);
-  const restore = () => { setActive(false); document.body.classList.remove('maw-pane-dragging'); };
+  const restore = () => { setActive(false); document.body.classList.remove('wb-pane-dragging'); };
   return <DragDropProvider sensors={sensors} plugins={defaults => [...defaults, accessibility]}
-    onDragStart={() => { dismissPaneMenus(); setActive(true); document.body.classList.add('maw-pane-dragging'); }}
+    onDragStart={() => { dismissPaneMenus(); setActive(true); document.body.classList.add('wb-pane-dragging'); }}
     onDragEnd={(event) => {
       const { source, target } = event.operation;
       if (event.canceled || source?.type !== 'pane' || target?.type !== 'pane' ||
@@ -70,12 +70,12 @@ export function PaneMovement({ workspaceId, onSwap, children }: {
       else dropTimer.current = window.setTimeout(() => { dropTimer.current = null; restore(); }, 180);
     }}>
     {children}
-    {active && <div className="maw-pane-drag-shield" aria-hidden="true" />}
-    <DragOverlay className="maw-pane-drag-overlay" dropAnimation={reduced.current.matches ? null : { duration: 180, easing: 'ease-out' }}>
+    {active && <div className="wb-pane-drag-shield" aria-hidden="true" />}
+    <DragOverlay className="wb-pane-drag-overlay" dropAnimation={reduced.current.matches ? null : { duration: 180, easing: 'ease-out' }}>
       {source => {
         const pane = document.getElementById(`pane-container-${source.data.paneId}`);
         const titles = [...(pane?.querySelectorAll('[role="tab"]') ?? [])].map(tab => tab.textContent?.trim());
-        return <div className="maw-pane-drag-preview"><strong>{t('agency.splits.movePane')}</strong><span>{titles.join(' · ') || t('agency.tabs.empty')}</span></div>;
+        return <div className="wb-pane-drag-preview"><strong>{t('agency.splits.movePane')}</strong><span>{titles.join(' · ') || t('agency.tabs.empty')}</span></div>;
       }}
     </DragOverlay>
   </DragDropProvider>;

@@ -26,7 +26,7 @@
 import { stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import type { AgentCapabilities } from '@agent-workbench/shared';
+import type { AgentCapabilities } from '@anvilary/workbench-shared';
 import type { AgentAdapter, AgentInput, LaunchHook, LaunchInput, LaunchPlan, SpawnedContext } from '../adapter.js';
 import { commandNotFoundMessage } from '../locate.js';
 import { modelOptions, PiModelCatalog } from './catalog.js';

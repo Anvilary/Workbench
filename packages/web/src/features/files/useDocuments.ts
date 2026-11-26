@@ -27,7 +27,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { DiffLine, FilePreview, PlanContent, ServerText, TerminalDescriptor, TerminalId } from '@agent-workbench/shared';
+import type { DiffLine, FilePreview, PlanContent, ServerText, TerminalDescriptor, TerminalId } from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 import {
   closeDoc,
@@ -51,7 +51,7 @@ import {
 } from './doc-tabs.js';
 import { CHANGES_GAP, editChanges, plainLineBreaks } from './edit-changes.js';
 
-const STORAGE_KEY = 'agent-workbench.docTabs';
+const STORAGE_KEY = 'workbench.docTabs';
 /** Cuanto se ve el "Guardado" de la barra despues de guardar. */
 const SAVED_ACK_MS = 1_600;
 

@@ -15,7 +15,7 @@ import type {
   ConsoleShellId,
   CustomDictionaryMutation,
   ServerMessage,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { AgentConnection, ConnectionStatus } from '../../connection/connection.js';
 import { serverTextMessage } from '../../i18n/server-text.js';
 

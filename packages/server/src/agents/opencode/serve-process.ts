@@ -137,7 +137,7 @@ export function parseListeningLine(line: string): string | null {
 
 /** Donde corre por defecto: una carpeta propia, vacia. */
 export function defaultServeCwd(): string {
-  return path.join(tmpdir(), 'agent-workbench', 'opencode-serve');
+  return path.join(tmpdir(), 'workbench', 'opencode-serve');
 }
 
 /** Un arranque que fallo, con un texto que ya no trae la contrasena. */

@@ -21,7 +21,7 @@ import type {
   VaultMeasurement,
   VaultState,
   VaultStatus,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { sessionAgentLabel } from '../agents/agent-ui.js';
 import { formatRoughDuration, formatWhen } from '../../i18n/format.js';
 import { t } from '../../i18n/index.js';

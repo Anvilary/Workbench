@@ -28,7 +28,7 @@
  * lo que se muestra son subagentes.
  */
 
-import { MAX_SUBAGENT_DESCRIPTION, type ConversationSubagent } from '@agent-workbench/shared';
+import { MAX_SUBAGENT_DESCRIPTION, type ConversationSubagent } from '@anvilary/workbench-shared';
 import { readTimestamp, recordOf } from './jsonl-events.js';
 
 /** Los nombres de la herramienta que lanza un subagente. */

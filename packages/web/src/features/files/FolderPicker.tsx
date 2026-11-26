@@ -22,7 +22,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { DirectoryPickerListing, ServerMessage } from '@agent-workbench/shared';
+import type { DirectoryPickerListing, ServerMessage } from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 import { t } from '../../i18n/index.js';
 import { serverTextMessage } from '../../i18n/server-text.js';

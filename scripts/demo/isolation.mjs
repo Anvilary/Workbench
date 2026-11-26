@@ -150,7 +150,7 @@ export function demoEnvironment(base, { home, bin, mainCwd, platform = process.p
   set('XDG_STATE_HOME', path.join(home, '.local', 'state'));
   set('CODEX_HOME', path.join(home, '.codex'));
   set('PATH', demoPath(bin, originalPath, { platform, pathext }));
-  set('AGENT_WORKBENCH_CWD', mainCwd);
+  set('WORKBENCH_CWD', mainCwd);
   /*
     Corrido desde una sesion de la CLI, el marcador heredado hace que la app
     muestre el aviso de CLAUDE.md 4.10, y saldria en las capturas. Las demas

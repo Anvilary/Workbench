@@ -18,7 +18,7 @@ window.navigateRequests = [];
 window.failFilter = null;
 window.navigateFailFilter = null;
 
-window.mawChatGpt = {
+window.workbench = {
   command(cmd) {
     if (window.failFilter && window.failFilter(cmd)) {
       return Promise.reject(new Error('Simulated bridge error: ' + cmd.type));
@@ -332,7 +332,7 @@ test('useNativeBrowserTabs preserves committed navigation until durable checkpoi
   assert(commands.every((c) => c.url !== 'https://chatgpt.com/'), 'reconnect does not resurrect the obsolete checkpoint URL');
 });
 
-test('C-07: tab-shortcut and close-shortcut target focused .maw-pane-tabs strip', { timeout: 60000 }, async (t) => {
+test('C-07: tab-shortcut and close-shortcut target focused .wb-pane-tabs strip', { timeout: 60000 }, async (t) => {
   const executablePath = browserExecutable();
   if (!executablePath) {
     t.skip('Chromium is not installed');
@@ -356,13 +356,13 @@ test('C-07: tab-shortcut and close-shortcut target focused .maw-pane-tabs strip'
     }
     res.setHeader('Content-Type', 'text/html');
     res.end(`<!doctype html><html><body>
-      <div class="maw-pane-header is-focused">
-        <div class="maw-pane-tabs" role="tablist">
-          <div class="maw-session-tab">
+      <div class="wb-pane-header is-focused">
+        <div class="wb-pane-tabs" role="tablist">
+          <div class="wb-session-tab">
             <button type="button" role="tab" id="t1" aria-selected="true">Tab 1</button>
             <button type="button" data-close="true" id="close-t1">x</button>
           </div>
-          <div class="maw-session-tab">
+          <div class="wb-session-tab">
             <button type="button" role="tab" id="t2" aria-selected="false">Tab 2</button>
             <button type="button" data-close="true" id="close-t2">x</button>
           </div>

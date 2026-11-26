@@ -7,7 +7,7 @@ import {
   buildSearchUrl,
   validateSearchEngine,
   DEFAULT_SEARCH_ENGINES,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { handleMenuArrowNavigation } from '../../../src/shared/hooks/useMenuKeyboardNav.ts';
 import { buildSettingsSearchCatalog, filterSettingsSearchCatalog, ALL_TABS } from '../../../src/features/settings/settings-search.ts';
 
@@ -194,7 +194,7 @@ test('UI-01: focus borders consistency: input and textarea focus rules do not pr
   assert.ok(fieldInputMatch[1].includes('outline: none'), '.agency-field input:focus must have outline: none');
 
   // Ensure destination input does not set outline
-  const destInputMatch = css.match(/\.maw-browser-dest-input:focus[^{]*\{([^}]+)\}/);
-  assert.ok(destInputMatch, 'Should find .maw-browser-dest-input:focus rule');
-  assert.ok(destInputMatch[1].includes('outline: none'), '.maw-browser-dest-input:focus must have outline: none');
+  const destInputMatch = css.match(/\.wb-browser-dest-input:focus[^{]*\{([^}]+)\}/);
+  assert.ok(destInputMatch, 'Should find .wb-browser-dest-input:focus rule');
+  assert.ok(destInputMatch[1].includes('outline: none'), '.wb-browser-dest-input:focus must have outline: none');
 });

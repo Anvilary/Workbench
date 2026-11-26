@@ -180,14 +180,14 @@ test('Archived Items acceptance: main menu trigger, tab switching, search filter
 
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await page.goto(`http://127.0.0.1:${port}/`);
-  await page.waitForSelector('#maw-shell-menu-trigger');
+  await page.waitForSelector('#wb-shell-menu-trigger');
 
   // 1. Open the main menu
-  await page.click('#maw-shell-menu-trigger');
+  await page.click('#wb-shell-menu-trigger');
   await page.waitForSelector('#menu-open-archived');
 
   // Verify menu order: 1. Notifications, 2. Performance, 3. Archived Items, 4. Settings
-  const menuItems = await page.locator('#maw-shell-menu-dropdown [role="menuitem"]').allInnerTexts();
+  const menuItems = await page.locator('#wb-shell-menu-dropdown [role="menuitem"]').allInnerTexts();
   assert.ok(menuItems[0].includes('Notifications'), 'Item 1 should be Notifications');
   assert.ok(menuItems[1].includes('Performance'), 'Item 2 should be Performance');
   assert.ok(menuItems[2].includes('Archived Items'), 'Item 3 should be Archived Items');
@@ -195,15 +195,15 @@ test('Archived Items acceptance: main menu trigger, tab switching, search filter
 
   // 2. Open Archived Items dialog
   await page.click('#menu-open-archived');
-  await page.waitForSelector('.maw-archived-dialog');
+  await page.waitForSelector('.wb-archived-dialog');
 
   // Verify dialog contents
-  assert.ok(await page.locator('.maw-archived-dialog').isVisible(), 'Archived dialog is visible');
+  assert.ok(await page.locator('.wb-archived-dialog').isVisible(), 'Archived dialog is visible');
   assert.equal(await page.locator('#archived-tab-projects').innerText(), 'Projects (1)');
   assert.equal(await page.locator('#archived-tab-workspaces').innerText(), 'Workspaces (2)');
 
   // Capture screenshot of dialog
-  await page.locator('.maw-archived-dialog').screenshot({
+  await page.locator('.wb-archived-dialog').screenshot({
     path: path.join(evidenceDir, 'archived-items-dialog.png'),
   });
 
@@ -214,24 +214,24 @@ test('Archived Items acceptance: main menu trigger, tab switching, search filter
 
   await page.fill('#archived-search-input', 'Alpha');
   await page.waitForTimeout(50);
-  assert.equal(await page.locator('.maw-archived-row').count(), 1);
+  assert.equal(await page.locator('.wb-archived-row').count(), 1);
 
   await page.fill('#archived-search-input', '');
 
   // 4. Switch to Workspaces tab
   await page.click('#archived-tab-workspaces');
   await page.waitForTimeout(100);
-  assert.equal(await page.locator('.maw-archived-row').count(), 2);
+  assert.equal(await page.locator('.wb-archived-row').count(), 2);
 
   // 5. Test Parent Project Archived workflow:
   // "Archived in Archived" belongs to "Archived Alpha" which is archived.
   // Clicking Restore should trigger the explicit confirmation prompt
-  const archivedInArchivedRow = page.locator('.maw-archived-row', { hasText: 'Archived in Archived' });
+  const archivedInArchivedRow = page.locator('.wb-archived-row', { hasText: 'Archived in Archived' });
   await archivedInArchivedRow.locator('button').click();
-  await page.waitForSelector('.maw-archived-parent-prompt');
+  await page.waitForSelector('.wb-archived-parent-prompt');
 
-  assert.ok(await page.locator('.maw-archived-parent-prompt').isVisible(), 'Parent prompt is shown');
-  assert.ok((await page.locator('.maw-archived-prompt-text').innerText()).includes('Archived Alpha'));
+  assert.ok(await page.locator('.wb-archived-parent-prompt').isVisible(), 'Parent prompt is shown');
+  assert.ok((await page.locator('.wb-archived-prompt-text').innerText()).includes('Archived Alpha'));
 
   // Confirm restoring both
   await page.click('button:has-text("Restore Project & Workspace")');
@@ -242,7 +242,7 @@ test('Archived Items acceptance: main menu trigger, tab switching, search filter
   assert.equal(await page.locator('#archived-tab-projects').innerText(), 'Projects (0)');
 
   // 6. Close the dialog with X button
-  await page.click('.maw-archived-dialog .agency-icon-button');
+  await page.click('.wb-archived-dialog .agency-icon-button');
   await page.waitForTimeout(100);
-  assert.ok(!(await page.locator('.maw-archived-dialog').isVisible()), 'Dialog is closed');
+  assert.ok(!(await page.locator('.wb-archived-dialog').isVisible()), 'Dialog is closed');
 });

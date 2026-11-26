@@ -5,7 +5,7 @@
  */
 import { copyFile, mkdir, readFile, rename, rm, writeFile, chmod } from 'node:fs/promises';
 import path from 'node:path';
-import type { CliProfileId } from '@agent-workbench/shared';
+import type { CliProfileId } from '@anvilary/workbench-shared';
 import {
   applyProfileChanges, createProfileDefinition, defaultDefinitions,
   installedDefaultDefinitions, identicalLaunchMessage, identicalLaunchPeer, validateDefinition,

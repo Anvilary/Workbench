@@ -17,7 +17,7 @@
  */
 
 import { useEffect } from 'react';
-import type { AgentId } from '@agent-workbench/shared';
+import type { AgentId } from '@anvilary/workbench-shared';
 import { formatList } from '../../i18n/format.js';
 import { t } from '../../i18n/index.js';
 import type { IntegrateDialog } from './useWorktrees.js';

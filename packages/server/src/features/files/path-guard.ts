@@ -21,7 +21,7 @@
 
 import { realpath } from 'node:fs/promises';
 import path from 'node:path';
-import { ServerTextError, serverText } from '@agent-workbench/shared';
+import { ServerTextError, serverText } from '@anvilary/workbench-shared';
 
 /** Una ruta rechazada. El texto va como clave: la frase la arma la web (§6.23). */
 export class InvalidPathError extends ServerTextError {}

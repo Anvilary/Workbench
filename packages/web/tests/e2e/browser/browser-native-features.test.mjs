@@ -33,7 +33,7 @@ const tabId = '8e4fefc1-e565-40cc-b85b-f7d43a16b1df';
 const listeners = new Set();
 window.__commands = [];
 
-window.mawChatGpt = {
+window.workbench = {
   command: async (cmd) => {
     window.__commands.push(cmd);
     if (cmd.type === 'find-in-page') {
@@ -73,11 +73,11 @@ function TestApp() {
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#111', color: '#fff', position: 'relative' }}>
       <button id="open-find-btn" onClick={() => setFindOpen(true)}>Open Find</button>
-      <div id="browser-pane" className="maw-browser-pane" style={{ width: 800, height: 600, margin: '20px auto' }}>
+      <div id="browser-pane" className="wb-browser-pane" style={{ width: 800, height: 600, margin: '20px auto' }}>
         {findOpen && (
           <BrowserFindBar id={tabId} onClose={() => setFindOpen(false)} />
         )}
-        <div id="browser-viewer" className="maw-browser-viewer" data-native-id={tabId} style={{ background: '#222' }}>
+        <div id="browser-viewer" className="wb-browser-viewer" data-native-id={tabId} style={{ background: '#222' }}>
           Browser View Area
         </div>
       </div>
@@ -162,23 +162,23 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
       });
     }, tabId);
 
-    await page.waitForSelector('.maw-context-menu');
-    const menuButtons = await page.$$eval('.maw-context-menu button', btns => btns.map(b => b.textContent.trim()));
+    await page.waitForSelector('.wb-context-menu');
+    const menuButtons = await page.$$eval('.wb-context-menu button', btns => btns.map(b => b.textContent.trim()));
     assert.deepEqual(menuButtons, ['Copy Page URL', 'Open URL', 'Open in external browser', 'Reload', 'Back', 'Forward', 'Search', 'Inspect Page']);
 
     // Check Open URL is disabled when no link/selection
-    const openUrlBtn = page.locator('.maw-context-menu button', { hasText: 'Open URL' });
+    const openUrlBtn = page.locator('.wb-context-menu button', { hasText: 'Open URL' });
     assert.equal(await openUrlBtn.isDisabled(), true, 'Open URL must be disabled when no link or URL is selected');
 
     // Check Back is enabled, Forward is disabled
-    const backBtn = page.locator('.maw-context-menu button', { hasText: 'Back' });
-    const forwardBtn = page.locator('.maw-context-menu button', { hasText: 'Forward' });
+    const backBtn = page.locator('.wb-context-menu button', { hasText: 'Back' });
+    const forwardBtn = page.locator('.wb-context-menu button', { hasText: 'Forward' });
     assert.equal(await backBtn.isDisabled(), false, 'Back should be enabled when canGoBack is true');
     assert.equal(await forwardBtn.isDisabled(), true, 'Forward should be disabled when canGoForward is false');
 
     // Dismiss menu
     await page.keyboard.press('Escape');
-    await page.waitForSelector('.maw-context-menu', { state: 'detached' });
+    await page.waitForSelector('.wb-context-menu', { state: 'detached' });
 
     // 2. Right-click on link: Copy Link Address + Copy Page URL, Open URL is enabled
     await page.evaluate((id) => {
@@ -197,16 +197,16 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
       });
     }, tabId);
 
-    await page.waitForSelector('.maw-context-menu');
-    const linkMenuButtons = await page.$$eval('.maw-context-menu button', btns => btns.map(b => b.textContent.trim()));
+    await page.waitForSelector('.wb-context-menu');
+    const linkMenuButtons = await page.$$eval('.wb-context-menu button', btns => btns.map(b => b.textContent.trim()));
     assert.deepEqual(linkMenuButtons, ['Copy Link Address', 'Open link in external browser', 'Copy Page URL', 'Open URL', 'Open in external browser', 'Reload', 'Back', 'Forward', 'Search', 'Inspect Page']);
 
-    const openUrlEnabledOnLink = await page.locator('.maw-context-menu button', { hasText: 'Open URL' }).isEnabled();
+    const openUrlEnabledOnLink = await page.locator('.wb-context-menu button', { hasText: 'Open URL' }).isEnabled();
     assert.equal(openUrlEnabledOnLink, true, 'Open URL must be enabled when right clicking a valid link');
 
     // Click Open URL -> sends open-link command
-    await page.locator('.maw-context-menu button', { hasText: 'Open URL' }).click();
-    await page.waitForSelector('.maw-context-menu', { state: 'detached' });
+    await page.locator('.wb-context-menu button', { hasText: 'Open URL' }).click();
+    await page.waitForSelector('.wb-context-menu', { state: 'detached' });
 
     let commands = await page.evaluate(() => window.__commands);
     const lastCmd = commands[commands.length - 1];
@@ -234,16 +234,16 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
       });
     }, tabId);
 
-    await page.waitForSelector('.maw-context-menu');
-    const suggestions = await page.$$eval('.maw-context-menu-suggestion', btns => btns.map(b => b.textContent.trim()));
+    await page.waitForSelector('.wb-context-menu');
+    const suggestions = await page.$$eval('.wb-context-menu-suggestion', btns => btns.map(b => b.textContent.trim()));
     assert.deepEqual(suggestions, ['default', 'defeat'], 'Spelling suggestions must appear at top of context menu');
 
-    const hasDivider = await page.$('.maw-context-menu-divider');
+    const hasDivider = await page.$('.wb-context-menu-divider');
     assert.ok(hasDivider, 'Divider must separate suggestions from standard items');
 
     // Click suggestion -> replaces misspelling
-    await page.click('.maw-context-menu-suggestion:first-child');
-    await page.waitForSelector('.maw-context-menu', { state: 'detached' });
+    await page.click('.wb-context-menu-suggestion:first-child');
+    await page.waitForSelector('.wb-context-menu', { state: 'detached' });
 
     commands = await page.evaluate(() => window.__commands);
     const replaceCmd = commands[commands.length - 1];
@@ -271,15 +271,15 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
       });
     }, tabId);
 
-    await page.waitForSelector('.maw-context-menu');
-    const noSuggText = await page.$eval('.maw-context-menu-disabled-item', b => b.textContent.trim());
+    await page.waitForSelector('.wb-context-menu');
+    const noSuggText = await page.$eval('.wb-context-menu-disabled-item', b => b.textContent.trim());
     assert.equal(noSuggText, 'No spelling suggestions');
-    const noSuggDisabled = await page.$eval('.maw-context-menu-disabled-item', b => b.disabled);
+    const noSuggDisabled = await page.$eval('.wb-context-menu-disabled-item', b => b.disabled);
     assert.equal(noSuggDisabled, true);
 
     // 5. Inspect Page action sends inspect-page command with coordinates
-    await page.locator('.maw-context-menu button', { hasText: 'Inspect Page' }).click();
-    await page.waitForSelector('.maw-context-menu', { state: 'detached' });
+    await page.locator('.wb-context-menu button', { hasText: 'Inspect Page' }).click();
+    await page.waitForSelector('.wb-context-menu', { state: 'detached' });
 
     commands = await page.evaluate(() => window.__commands);
     const inspectCmd = commands[commands.length - 1];
@@ -327,19 +327,19 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
       });
     }, tabId);
 
-    await page.waitForSelector('.maw-context-menu');
-    const multiSuggestions = await page.$$eval('.maw-context-menu-suggestion', btns => btns.map(b => b.textContent.trim()));
+    await page.waitForSelector('.wb-context-menu');
+    const multiSuggestions = await page.$$eval('.wb-context-menu-suggestion', btns => btns.map(b => b.textContent.trim()));
     assert.deepEqual(multiSuggestions, ['computador', 'computer'], 'Combined suggestions must not be duplicated across language categories');
 
-    const activeLangBtn = page.locator('.maw-context-menu-category-btn', { hasText: 'Active dictionaries (2)' });
+    const activeLangBtn = page.locator('.wb-context-menu-category-btn', { hasText: 'Active dictionaries (2)' });
     assert.equal(await activeLangBtn.getAttribute('aria-expanded'), 'false');
     await activeLangBtn.click();
     assert.equal(await activeLangBtn.getAttribute('aria-expanded'), 'true');
-    const indicators = await page.$$eval('.maw-context-menu-lang-indicator', els => els.map(e => e.textContent.trim()));
+    const indicators = await page.$$eval('.wb-context-menu-lang-indicator', els => els.map(e => e.textContent.trim()));
     assert.equal(indicators.length, 2);
 
-    await page.locator('.maw-context-menu-action-item', { hasText: 'Add to Dictionary' }).click();
-    await page.waitForSelector('.maw-context-menu', { state: 'detached' });
+    await page.locator('.wb-context-menu-action-item', { hasText: 'Add to Dictionary' }).click();
+    await page.waitForSelector('.wb-context-menu', { state: 'detached' });
 
     commands = await page.evaluate(() => window.__commands);
     const addDictCmd = commands.find(c => c.type === 'add-custom-dictionary-word');
@@ -365,13 +365,13 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
         dictionarySuggestions: [],
       });
     }, tabId);
-    await page.waitForSelector('.maw-context-menu');
-    await page.locator('.maw-context-menu button', { hasText: 'Search' }).click();
-    await page.waitForSelector('.maw-context-menu', { state: 'detached' });
-    await page.waitForSelector('.maw-browser-find-bar');
+    await page.waitForSelector('.wb-context-menu');
+    await page.locator('.wb-context-menu button', { hasText: 'Search' }).click();
+    await page.waitForSelector('.wb-context-menu', { state: 'detached' });
+    await page.waitForSelector('.wb-browser-find-bar');
 
     // 6. Find in Page functionality
-    const findInput = page.locator('.maw-browser-find-input');
+    const findInput = page.locator('.wb-browser-find-input');
     await assert.rejects(async () => {
       await findInput.waitFor({ state: 'attached', timeout: 1000 });
     }, { name: 'AssertionError' }).catch(() => {});
@@ -384,7 +384,7 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
     assert.ok(findCmd, 'find-in-page command must be sent when query is typed');
 
     // Match counter check
-    const counterText = await page.$eval('.maw-browser-find-counter', el => el.textContent.trim());
+    const counterText = await page.$eval('.wb-browser-find-counter', el => el.textContent.trim());
     assert.equal(counterText, '1/3', 'Match counter must show activeOrdinal/matches');
 
     // Enter -> findNext
@@ -415,7 +415,7 @@ test('Browser Native UX: Spellchecking Suggestions, 6-Item Context Menu, and Fin
 
     // Escape closes find bar and stops search
     await findInput.press('Escape');
-    await page.waitForSelector('.maw-browser-find-bar', { state: 'detached' });
+    await page.waitForSelector('.wb-browser-find-bar', { state: 'detached' });
 
     commands = await page.evaluate(() => window.__commands);
     const stopCmd = commands[commands.length - 1];
@@ -451,11 +451,11 @@ window.__preexistingStatus = {
   languages: ['en-US', 'fr'],
   statuses: {
     'en-US': { status: 'ready', failedPartitions: [] },
-    'fr': { status: 'failed', failedPartitions: ['persist:maw-chatgpt'] },
+    'fr': { status: 'failed', failedPartitions: ['persist:workbench-chatgpt'] },
   },
 };
 
-window.mawChatGpt = {
+window.workbench = {
   command: async (cmd) => {
     window.__commands.push(cmd);
     if (cmd.type === 'get-available-spellcheck-languages') {
@@ -467,7 +467,7 @@ window.mawChatGpt = {
     if (cmd.type === 'reconcile-custom-dictionary') {
       if (window.__failNextReconcile) {
         window.__failNextReconcile = false;
-        return { ok: false, failedPartitions: ['persist:maw-chatgpt'], error: 'Simulated partition sync failure' };
+        return { ok: false, failedPartitions: ['persist:workbench-chatgpt'], error: 'Simulated partition sync failure' };
       }
       return { ok: true, failedPartitions: [] };
     }
@@ -476,7 +476,7 @@ window.mawChatGpt = {
         window.__failNextDeleteProfileCleanup = false;
         return {
           ok: false,
-          failedDictionaryPartitions: ['persist:maw-profile-' + cmd.profileId + '-github'],
+          failedDictionaryPartitions: ['persist:workbench-profile-' + cmd.profileId + '-github'],
           error: 'Simulated native profile cleanup failure',
         };
       }
@@ -591,8 +591,8 @@ function IntegrationApp() {
     <div style={{ width: '100vw', height: '100vh', background: '#111', color: '#fff' }}>
       <button id="open-settings-btn" onClick={() => setSettingsOpen(true)}>Open Settings</button>
       <button id="toggle-remote-btn" style={{ position: 'fixed', top: 8, right: 8, zIndex: 99999 }} onClick={() => setRemoteClient((v) => !v)}>Toggle Remote</button>
-      <div className="maw-browser-pane" style={{ width: 800, height: 600 }}>
-        <div className="maw-browser-viewer" data-native-id={tabId}>Viewer</div>
+      <div className="wb-browser-pane" style={{ width: 800, height: 600 }}>
+        <div className="wb-browser-viewer" data-native-id={tabId}>Viewer</div>
       </div>
       <BrowserContextMenu appSettings={appSettings} />
       {settingsOpen && (
@@ -610,7 +610,7 @@ function IntegrationApp() {
           onDeleteBrowserProfile={async (profileId) => {
             const targetName = profiles.find((p) => p.id === profileId)?.name ?? profileId;
             setProfiles((prev) => prev.filter((p) => p.id !== profileId));
-            const res = await window.mawChatGpt.command({ type: 'delete-profile', profileId });
+            const res = await window.workbench.command({ type: 'delete-profile', profileId });
             if (res && res.ok === false) {
               setPendingCleanups((prev) => [
                 ...prev.filter((c) => c.profileId !== profileId),
@@ -620,7 +620,7 @@ function IntegrationApp() {
           }}
           pendingBrowserProfileCleanups={pendingCleanups}
           onRetryBrowserProfileCleanup={async (profileId, profileName) => {
-            const res = await window.mawChatGpt.command({ type: 'delete-profile', profileId });
+            const res = await window.workbench.command({ type: 'delete-profile', profileId });
             if (res?.ok !== false) {
               setPendingCleanups((prev) => prev.filter((c) => c.profileId !== profileId));
             } else {
@@ -679,7 +679,7 @@ test('R1/R2/R4/R5: context-menu dictionary persistence without Settings, failure
   try {
     const page = await browser.newPage();
     await page.goto(`http://127.0.0.1:${port}/`);
-    await page.waitForSelector('.maw-browser-pane');
+    await page.waitForSelector('.wb-browser-pane');
 
     // Deduplicated IPC across multiple mounted hooks
     const updateCmds = await page.evaluate(() => window.__commands.filter((c) => c.type === 'update-spellcheck-settings').length);
@@ -702,9 +702,9 @@ test('R1/R2/R4/R5: context-menu dictionary persistence without Settings, failure
         dictionarySuggestions: [],
       });
     });
-    await page.waitForSelector('.maw-context-menu');
-    await page.locator('.maw-context-menu-action-item', { hasText: 'Add to Dictionary' }).click();
-    await page.waitForSelector('.maw-context-menu', { state: 'detached' });
+    await page.waitForSelector('.wb-context-menu');
+    await page.locator('.wb-context-menu-action-item', { hasText: 'Add to Dictionary' }).click();
+    await page.waitForSelector('.wb-context-menu', { state: 'detached' });
 
     await page.waitForFunction(() => window.__serverUpdates.length >= 1);
     const afterCtxSave = await page.evaluate(() => window.__serverUpdates.at(-1));
@@ -730,13 +730,13 @@ test('R1/R2/R4/R5: context-menu dictionary persistence without Settings, failure
         dictionarySuggestions: [],
       });
     });
-    await page.waitForSelector('.maw-context-menu');
-    await page.locator('.maw-context-menu-action-item', { hasText: 'Add to Dictionary' }).click();
-    await page.waitForSelector('.maw-context-menu', { state: 'detached' });
-    await page.waitForSelector('.maw-context-menu-alert');
-    const ctxAlertText = await page.locator('.maw-context-menu-alert').textContent();
+    await page.waitForSelector('.wb-context-menu');
+    await page.locator('.wb-context-menu-action-item', { hasText: 'Add to Dictionary' }).click();
+    await page.waitForSelector('.wb-context-menu', { state: 'detached' });
+    await page.waitForSelector('.wb-context-menu-alert');
+    const ctxAlertText = await page.locator('.wb-context-menu-alert').textContent();
     assert.ok(ctxAlertText?.includes('Simulated server write failure'), `Expected visible context-menu error alert, got: ${ctxAlertText}`);
-    await page.locator('.maw-context-menu-alert button').click();
+    await page.locator('.wb-context-menu-alert button').click();
     assert.equal(await page.evaluate(() => window.__serverUpdates.length), prevUpdateCount, 'Rejected server commit must not record update');
     assert.equal(
       await page.evaluate(() => window.__commands.filter((c) => c.type === 'reconcile-custom-dictionary').length),
@@ -762,9 +762,9 @@ test('R1/R2/R4/R5: context-menu dictionary persistence without Settings, failure
         dictionarySuggestions: [],
       });
     });
-    await page.waitForSelector('.maw-context-menu');
-    await page.locator('.maw-context-menu-action-item', { hasText: 'Add to Dictionary' }).click();
-    await page.waitForSelector('.maw-context-menu', { state: 'detached' });
+    await page.waitForSelector('.wb-context-menu');
+    await page.locator('.wb-context-menu-action-item', { hasText: 'Add to Dictionary' }).click();
+    await page.waitForSelector('.wb-context-menu', { state: 'detached' });
 
     // 3. Open SettingsDialog later -> pre-existing dictionary failure, retry sync warning, and committed words must all be visible!
     await page.click('#open-settings-btn');
@@ -774,25 +774,25 @@ test('R1/R2/R4/R5: context-menu dictionary persistence without Settings, failure
     await retryBtn.waitFor();
     await retryBtn.click();
     await retryBtn.waitFor({ state: 'detached' });
-    const warningText = await spellCard.locator('.maw-settings-warning-text').textContent();
+    const warningText = await spellCard.locator('.wb-settings-warning-text').textContent();
     assert.ok(warningText?.includes('French'), `Expected pre-existing French failure warning, got: ${warningText}`);
 
-    await spellCard.locator('select.maw-settings-select').selectOption('work-profile');
-    const dictWords = await spellCard.locator('.maw-settings-dict-word').allTextContents();
+    await spellCard.locator('select.wb-settings-select').selectOption('work-profile');
+    const dictWords = await spellCard.locator('.wb-settings-dict-word').allTextContents();
     assert.deepEqual(dictWords, ['ctxnewword', 'durablepending']);
 
     // 4. Remove all configured languages -> preserves empty state without restoring en-US
-    const removeButtons = spellCard.locator('.maw-settings-lang-item button[aria-label^="Remove"]');
+    const removeButtons = spellCard.locator('.wb-settings-lang-item button[aria-label^="Remove"]');
     while (true) {
       const count = await removeButtons.count();
       if (count === 0) break;
       await removeButtons.first().click();
       await page.waitForFunction(
-        (expectedMax) => document.querySelectorAll('#setting-card-spellcheck .maw-settings-lang-item').length < expectedMax,
+        (expectedMax) => document.querySelectorAll('#setting-card-spellcheck .wb-settings-lang-item').length < expectedMax,
         count,
       );
     }
-    await spellCard.locator('.maw-settings-empty-hint', { hasText: 'No spell check languages configured.' }).waitFor();
+    await spellCard.locator('.wb-settings-empty-hint', { hasText: 'No spell check languages configured.' }).waitFor();
     const emptySave = await page.evaluate(() => window.__serverUpdates.at(-1));
     assert.deepEqual(emptySave.spellCheck.configuredLanguages, []);
     assert.deepEqual(emptySave.spellCheck.languages, []);
@@ -803,11 +803,11 @@ test('R1/R2/R4/R5: context-menu dictionary persistence without Settings, failure
       window.__failNextDeleteProfileCleanup = true;
     });
     const profilesCard = page.locator('#setting-card-browser-profiles');
-    await profilesCard.locator('.maw-settings-profile-row[data-profile-id="work-profile"] .maw-settings-profile-delete-btn').click();
+    await profilesCard.locator('.wb-settings-profile-row[data-profile-id="work-profile"] .wb-settings-profile-delete-btn').click();
     await page.locator('[role="dialog"] button', { hasText: 'Delete profile' }).last().click();
     const cleanupAlert = page.locator('[data-cleanup-profile-id="work-profile"]');
     await cleanupAlert.waitFor();
-    assert.equal(await profilesCard.locator('.maw-settings-profile-row[data-profile-id="work-profile"]').count(), 0);
+    assert.equal(await profilesCard.locator('.wb-settings-profile-row[data-profile-id="work-profile"]').count(), 0);
     await cleanupAlert.locator('button', { hasText: 'Retry cleanup' }).click();
     await cleanupAlert.waitFor({ state: 'detached' });
     assert.equal(await page.evaluate(() => window.__createProfileCalls || 0), 0);
@@ -819,7 +819,7 @@ test('R1/R2/R4/R5: context-menu dictionary persistence without Settings, failure
     // 6. Remote client without local desktop editing shows explicit read-only state
     await page.click('#toggle-remote-btn');
     await spellCard.locator('div[role="status"]', { hasText: 'desktop app' }).waitFor();
-    assert.equal(await spellCard.locator('.maw-settings-dict-add-form input').isDisabled(), true);
+    assert.equal(await spellCard.locator('.wb-settings-dict-add-form input').isDisabled(), true);
   } finally {
     await browser.close();
     await new Promise((r) => server.close(r));

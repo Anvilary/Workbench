@@ -11,7 +11,7 @@ body:
   - type: input
     attributes:
       label: Anvilary Workbench version
-      description: It's in the header of the app, or `npm ls -g agent-workbench`.
+      description: It's in the header of the app, or in `anvi-bench status`.
     validations:
       required: true
   - type: dropdown

@@ -1,5 +1,5 @@
 /**
- * Agents Usage view component for MAW Settings.
+ * Agents Usage view component for Workbench Settings.
  *
  * Implements compact, read-only monitoring of coding agent profiles (Codex, AGY, Claude)
  * with visible 5-hour and weekly quota progress bars, localized labels, accurate reset
@@ -12,7 +12,7 @@ import type {
   CostMetrics,
   TokenUsageMetrics,
   WindowUtilization,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 import type { UsageConnectionLike } from './useAgentsUsage.js';
 import { useAgentsUsage } from './useAgentsUsage.js';

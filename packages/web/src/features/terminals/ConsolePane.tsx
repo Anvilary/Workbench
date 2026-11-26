@@ -32,7 +32,7 @@
  * verdad es la × de cada solapa, y eso si termina el proceso.
  */
 
-import type { TerminalDescriptor, TerminalId } from '@agent-workbench/shared';
+import type { TerminalDescriptor, TerminalId } from '@anvilary/workbench-shared';
 import { TerminalView } from './TerminalView.js';
 import type { AgentConnection } from '../../connection/connection.js';
 import { isWindowsClient } from './console-paste.js';

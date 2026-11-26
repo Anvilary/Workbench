@@ -20,7 +20,7 @@ const allowed = (file) =>
   file === 'README.md' ||
   file === 'LICENSE' ||
   file === 'dist/server.js' ||
-  file === 'dist/maw-ptyd.mjs' ||
+  file === 'dist/ptyd.mjs' ||
   file === 'dist/terminal-state.mjs' ||
   file.startsWith('dist/web/');
 const strangers = files.filter((file) => !allowed(file));
@@ -31,7 +31,7 @@ if (strangers.length > 0) {
 }
 if (
   !files.includes('dist/server.js') ||
-  !files.includes('dist/maw-ptyd.mjs') ||
+  !files.includes('dist/ptyd.mjs') ||
   !files.includes('dist/terminal-state.mjs') ||
   !files.includes('dist/web/index.html')
 ) {

@@ -10,7 +10,7 @@
  * un segundo formato; moverlos aca no cambia ninguno.
  */
 
-import type { ConversationEvent, ConversationPart } from '@agent-workbench/shared';
+import type { ConversationEvent, ConversationPart } from '@anvilary/workbench-shared';
 
 /** Texto de un mensaje. Alcanza para leer la respuesta sin traer un libro. */
 export const TEXT_MAX_CHARS = 8_000;

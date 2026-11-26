@@ -38,35 +38,35 @@ const eventually = async (fn, message) => {
 
 test('authentication popups keep their opener, session, and failure fallback', { timeout: 90000 }, async () => {
   assert.ok(longAuthUrl.length > 2048 && longAuthUrl.length < 8192);
-  const server = createServer((_req, res) => res.end('<!doctype html><script>window.events=[];window.mawChatGpt.subscribe(s=>events.push(s));</script>'));
+  const server = createServer((_req, res) => res.end('<!doctype html><script>window.events=[];window.workbench.subscribe(s=>events.push(s));</script>'));
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const data = await mkdtemp(path.join(os.tmpdir(), 'maw-browser-auth-'));
+  const data = await mkdtemp(path.join(os.tmpdir(), 'wb-browser-auth-'));
   let app;
   let phase = 'start';
   try {
     app = await electron.launch({
       chromiumSandbox: true,
-      executablePath: '/opt/maw-electron/45.2.0/electron',
+      executablePath: '/opt/workbench-electron/45.2.0/electron',
       args: [desktopDir, '--ozone-platform=x11'],
       env: {
         ...process.env,
         HOME: data,
-        MAW_DESKTOP_DATA_DIR: data,
-        MAW_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
-        MAW_EXTERNAL_POLICY: 'deny',
+        WORKBENCH_DESKTOP_DATA_DIR: data,
+        WORKBENCH_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
+        WORKBENCH_EXTERNAL_POLICY: 'deny',
       },
     });
     const page = await app.firstWindow();
     await page.waitForFunction(() => Array.isArray(window.events), null, { timeout: 10000 });
     await app.evaluate(({ session }, authUrl) => {
-      const browser = session.fromPartition('persist:maw-browser');
+      const browser = session.fromPartition('persist:workbench-browser');
       const targetLiteral = JSON.stringify(authUrl);
       browser.protocol.handle('https', async (req) => {
         const url = new URL(req.url);
         // protocol.handle does not attach the Cookie header. The partition jar is what a real network request would send.
-        const stored = await browser.cookies.get({ url: req.url, name: 'maw_auth_probe' });
+        const stored = await browser.cookies.get({ url: req.url, name: 'wb_auth_probe' });
         const cookie = [req.headers.get('cookie') || '', ...stored.map(item => item.name + '=' + item.value)].filter(Boolean).join('; ');
-        if (cookie.includes('maw_auth_probe=kept')) globalThis.__mawSawAuthCookie = true;
+        if (cookie.includes('wb_auth_probe=kept')) globalThis.__mawSawAuthCookie = true;
         const marker = `${url.hostname}${url.pathname}:${req.method}`;
         if (url.hostname === 'www.linkedin.com' && url.pathname === '/login') {
           return new Response(`<!doctype html><title>linkedin</title><button id="continue">Continuar como Alexandre</button><script>
@@ -93,7 +93,7 @@ test('authentication popups keep their opener, session, and failure fallback', {
       });
       return browser.cookies.set({
         url: 'https://accounts.google.com/',
-        name: 'maw_auth_probe',
+        name: 'wb_auth_probe',
         value: 'kept',
         secure: true,
         sameSite: 'lax',
@@ -109,12 +109,12 @@ test('authentication popups keep their opener, session, and failure fallback', {
         new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(label + ' @ ' + phase)), 2500); }),
       ]).finally(() => clearTimeout(timer));
     };
-    const command = payload => limit(page.evaluate(cmd => window.mawChatGpt.command(cmd), payload), 'command');
+    const command = payload => limit(page.evaluate(cmd => window.workbench.command(cmd), payload), 'command');
     const clearEvents = () => limit(page.evaluate(() => { window.events.length = 0; }), 'clear');
     const events = () => limit(page.evaluate(() => window.events.map(event => ({ type: event.type, url: event.url, message: event.message }))), 'events');
     let openerId = 0;
     const tabState = () => limit(app.evaluate(({ webContents, session }, id) => {
-      const browser = session.fromPartition('persist:maw-browser');
+      const browser = session.fromPartition('persist:workbench-browser');
       const contents = id ? webContents.fromId(id) : webContents.getAllWebContents().find(item => item.session === browser && !item.getURL().startsWith('http://127.0.0.1'));
       if (!contents || contents.isDestroyed()) return null;
       return { id: contents.id, url: contents.getURL() };
@@ -132,7 +132,7 @@ test('authentication popups keep their opener, session, and failure fallback', {
             marker: document.getElementById('marker')?.textContent || '',
             cookie: document.getElementById('cookie')?.textContent || '',
             jar: document.cookie,
-            bridge: typeof window.mawChatGpt,
+            bridge: typeof window.workbench,
             opener: !!window.opener
           })`),
           new Promise((_, reject) => setTimeout(() => reject(new Error('js-timeout')), 1000)),
@@ -151,7 +151,7 @@ test('authentication popups keep their opener, session, and failure fallback', {
         opener,
         bridge,
         parent: !!popup.getParentWindow(),
-        sameSession: popup.webContents.session === session.fromPartition('persist:maw-browser'),
+        sameSession: popup.webContents.session === session.fromPartition('persist:workbench-browser'),
         sandbox: prefs.sandbox,
         nodeIntegration: prefs.nodeIntegration,
         contextIsolation: prefs.contextIsolation,
@@ -220,7 +220,7 @@ test('authentication popups keep their opener, session, and failure fallback', {
     }, 'authentication popup did not load');
     const popup = await popupState();
     assert.equal(popup.opener, true);
-    assert.equal(popup.cookie.includes('maw_auth_probe=kept') || popup.jar.includes('maw_auth_probe=kept'), true);
+    assert.equal(popup.cookie.includes('wb_auth_probe=kept') || popup.jar.includes('wb_auth_probe=kept'), true);
     assert.equal(popup.marker.includes('accounts.google.com/gsi/select:GET'), true);
     assert.equal(popup.sameSession, true);
     assert.equal(popup.parent, true);
@@ -271,7 +271,7 @@ test('authentication popups keep their opener, session, and failure fallback', {
       ]);
     }, openerId), 'oauth-marker');
     assert.equal(oauthPage[0].includes('accounts.google.com/o/oauth2/v2/auth:GET'), true);
-    assert.equal(oauthPage[1].includes('maw_auth_probe=kept'), true, 'oauth page lost the browser session cookie');
+    assert.equal(oauthPage[1].includes('wb_auth_probe=kept'), true, 'oauth page lost the browser session cookie');
     assert.equal((await events()).some(event => event.type === 'open-web-tab'), false);
 
     mark('script-return');
@@ -388,9 +388,9 @@ test('authentication popups keep their opener, session, and failure fallback', {
     await eventually(async () => (await events()).some(event => event.type === 'error' && /system browser|failed to load/.test(event.message)), 'failed in-tab sign-in had no fallback');
     assert.equal((await popupUrl()).url, '');
     assert.equal((await events()).some(event => event.type === 'open-web-tab'), false);
-    const cookies = await app.evaluate(({ session }) => session.fromPartition('persist:maw-browser').cookies.get({ name: 'maw_auth_probe' }));
+    const cookies = await app.evaluate(({ session }) => session.fromPartition('persist:workbench-browser').cookies.get({ name: 'wb_auth_probe' }));
     assert.equal(cookies[0]?.value, 'kept');
-    const otherPartition = await app.evaluate(({ session }) => session.fromPartition('persist:maw-chatgpt').cookies.get({ name: 'maw_auth_probe' }));
+    const otherPartition = await app.evaluate(({ session }) => session.fromPartition('persist:workbench-chatgpt').cookies.get({ name: 'wb_auth_probe' }));
     assert.equal(otherPartition.length, 0);
   } catch (error) {
     console.log('failed during', phase);

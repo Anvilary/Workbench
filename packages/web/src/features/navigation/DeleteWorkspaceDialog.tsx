@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AgencyRuntimeSession, AgencyWorkspace, EditorTab, WebTab } from '@agent-workbench/shared';
+import type { AgencyRuntimeSession, AgencyWorkspace, EditorTab, WebTab } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 import { ModalDialog, type AnchorRect } from '../../shared/ui/ModalDialog.js';
 import { editorDraftStore } from '../editor/editorDraftStore.js';

@@ -2,7 +2,7 @@
  * Following the transcript of a terminal's session, its plans and images.
  */
 
-import { serverText, type ClientMessage } from '@agent-workbench/shared';
+import { serverText, type ClientMessage } from '@anvilary/workbench-shared';
 import type { HandlerContext } from '../handler-context.js';
 
 export const conversationMessageTypes = [

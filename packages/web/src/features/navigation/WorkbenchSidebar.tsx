@@ -3,10 +3,10 @@ import { siblingDisplacementPx, useSidebarDrag } from './useSidebarDrag.js';
 import { agencySessionText } from '../workspaces/workspace-labels.js';
 import { useState, useRef, useCallback, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { DEFAULT_BROWSER_PROFILE_ID } from '@agent-workbench/shared';
+import { DEFAULT_BROWSER_PROFILE_ID } from '@anvilary/workbench-shared';
 import type {
   AgencyProject, AgencyRuntimeSession, AgencyWorkspace, BrowserProfile, EditorTab, ProjectId, WorkspaceId, WebTab,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { activeByProject, isAttention, workspaceTabs } from '../workspaces/workspace-model.js';
 import { InlineRenameInput } from '../../shared/ui/InlineRenameInput.js';
 import { StatusDot } from '../../shared/ui/StatusDot.js';

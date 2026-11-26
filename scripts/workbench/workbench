@@ -1,0 +1,2 @@
+#!/bin/sh
+WORKBENCH_CLI_NAME=workbench exec "$(dirname -- "$0")/anvi-bench" "$@"

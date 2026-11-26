@@ -1,5 +1,5 @@
 /**
- * Public API of @agent-workbench/shared.
+ * Public API of @anvilary/workbench-shared.
  *
  * This is the only barrel of the package. Everything else lives in the
  * directory that owns it: `protocol/` is the wire contract, the other

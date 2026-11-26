@@ -19,7 +19,7 @@ import {
   type RemoteAccessState,
   type RemoteAccessStatus,
   type RemoteDeviceSummary,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 import { formatWhen } from '../../i18n/format.js';
 

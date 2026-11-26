@@ -30,7 +30,7 @@ import {
   asString,
   asStringArray,
   type AgentId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { writeAtomically } from '../../shared/persistence/atomic-write.js';
 import { worktreesStatePath } from '../../shared/app-paths.js';
 import { samePathShape } from './checkout.js';

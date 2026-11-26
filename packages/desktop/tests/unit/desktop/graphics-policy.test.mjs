@@ -19,20 +19,20 @@ const present = () => true;
 const absent = () => false;
 
 test('safe graphics wins over every other setting and changes no environment', () => {
-  const policy = resolveGraphicsPolicy({ platform: 'linux', env: { MAW_SAFE_GRAPHICS: '1', MAW_GPU_ISOLATION: '0' }, renderNodes: HYBRID, exists: present });
+  const policy = resolveGraphicsPolicy({ platform: 'linux', env: { WORKBENCH_SAFE_GRAPHICS: '1', WORKBENCH_GPU_ISOLATION: '0' }, renderNodes: HYBRID, exists: present });
   assert.equal(policy.mode, GraphicsMode.SAFE);
   assert.equal(policy.disableHardwareAcceleration, true);
   assert.deepEqual(policy.env, {});
 });
 
 test('safe graphics applies on every platform', () => {
-  const policy = resolveGraphicsPolicy({ platform: 'win32', env: { MAW_SAFE_GRAPHICS: '1' }, renderNodes: [], exists: absent });
+  const policy = resolveGraphicsPolicy({ platform: 'win32', env: { WORKBENCH_SAFE_GRAPHICS: '1' }, renderNodes: [], exists: absent });
   assert.equal(policy.mode, GraphicsMode.SAFE);
 });
 
 test('only the exact value 1 enables safe graphics', () => {
   for (const value of ['0', 'true', '', 'yes']) {
-    const policy = resolveGraphicsPolicy({ platform: 'linux', env: { MAW_SAFE_GRAPHICS: value }, renderNodes: [], exists: absent });
+    const policy = resolveGraphicsPolicy({ platform: 'linux', env: { WORKBENCH_SAFE_GRAPHICS: value }, renderNodes: [], exists: absent });
     assert.equal(policy.mode, GraphicsMode.DEFAULT, `value ${JSON.stringify(value)}`);
   }
 });
@@ -44,8 +44,8 @@ test('an AMD+NVIDIA hybrid restricts GL and EGL vendors to Mesa without disablin
   assert.deepEqual(policy.env, { __EGL_VENDOR_LIBRARY_FILENAMES: MESA_EGL_VENDOR_FILE, __GLX_VENDOR_LIBRARY_NAME: 'mesa', VK_DRIVER_FILES: RADEON_VULKAN_ICD });
 });
 
-test('MAW_GPU_ISOLATION=0 restores the historical behaviour on a hybrid', () => {
-  const policy = resolveGraphicsPolicy({ platform: 'linux', env: { MAW_GPU_ISOLATION: '0' }, renderNodes: HYBRID, exists: present });
+test('WORKBENCH_GPU_ISOLATION=0 restores the historical behaviour on a hybrid', () => {
+  const policy = resolveGraphicsPolicy({ platform: 'linux', env: { WORKBENCH_GPU_ISOLATION: '0' }, renderNodes: HYBRID, exists: present });
   assert.equal(policy.mode, GraphicsMode.DEFAULT);
   assert.deepEqual(policy.env, {});
 });
@@ -86,7 +86,7 @@ test('graphicsLaunchEnv exports the Mesa-only variables for an isolated hybrid a
   const isolated = resolveGraphicsPolicy({ platform: 'linux', env: {}, renderNodes: HYBRID, exists: present });
   assert.deepEqual(graphicsLaunchEnv(isolated), { __EGL_VENDOR_LIBRARY_FILENAMES: MESA_EGL_VENDOR_FILE, __GLX_VENDOR_LIBRARY_NAME: 'mesa', VK_DRIVER_FILES: RADEON_VULKAN_ICD });
   assert.notEqual(graphicsLaunchEnv(isolated), isolated.env, 'returns a copy');
-  for (const env of [{ MAW_SAFE_GRAPHICS: '1' }, { MAW_GPU_ISOLATION: '0' }]) {
+  for (const env of [{ WORKBENCH_SAFE_GRAPHICS: '1' }, { WORKBENCH_GPU_ISOLATION: '0' }]) {
     assert.deepEqual(graphicsLaunchEnv(resolveGraphicsPolicy({ platform: 'linux', env, renderNodes: HYBRID, exists: present })), {});
   }
 });
@@ -97,7 +97,7 @@ test('applyGraphicsPolicy only disables hardware acceleration in safe mode and n
   const app = { disableHardwareAcceleration: () => { disabled += 1; } };
   applyGraphicsPolicy(resolveGraphicsPolicy({ platform: 'linux', env: {}, renderNodes: HYBRID, exists: present }), { app });
   assert.equal(disabled, 0);
-  applyGraphicsPolicy(resolveGraphicsPolicy({ platform: 'linux', env: { MAW_SAFE_GRAPHICS: '1' }, renderNodes: HYBRID, exists: present }), { app });
+  applyGraphicsPolicy(resolveGraphicsPolicy({ platform: 'linux', env: { WORKBENCH_SAFE_GRAPHICS: '1' }, renderNodes: HYBRID, exists: present }), { app });
   assert.equal(disabled, 1);
   assert.deepEqual({ ...process.env }, before);
 });
@@ -147,9 +147,9 @@ test('hardware video decode is enabled only when isolation is effective in the a
     assert.equal(shouldDisableHardwareVideoDecode({ policy: isolated, env: partial }), true, `without ${k}`);
   }
   // explicit opt-out, and every non-isolated mode
-  assert.equal(shouldDisableHardwareVideoDecode({ policy: isolated, env: { ...applied, MAW_HW_VIDEO_DECODE: '0' } }), true);
-  const def = resolveGraphicsPolicy({ platform: 'linux', env: { MAW_GPU_ISOLATION: '0' }, renderNodes: HYBRID, exists: present });
+  assert.equal(shouldDisableHardwareVideoDecode({ policy: isolated, env: { ...applied, WORKBENCH_HW_VIDEO_DECODE: '0' } }), true);
+  const def = resolveGraphicsPolicy({ platform: 'linux', env: { WORKBENCH_GPU_ISOLATION: '0' }, renderNodes: HYBRID, exists: present });
   assert.equal(shouldDisableHardwareVideoDecode({ policy: def, env: applied }), true);
-  const safe = resolveGraphicsPolicy({ platform: 'linux', env: { MAW_SAFE_GRAPHICS: '1' }, renderNodes: HYBRID, exists: present });
+  const safe = resolveGraphicsPolicy({ platform: 'linux', env: { WORKBENCH_SAFE_GRAPHICS: '1' }, renderNodes: HYBRID, exists: present });
   assert.equal(shouldDisableHardwareVideoDecode({ policy: safe, env: applied }), true);
 });

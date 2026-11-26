@@ -2,8 +2,8 @@
  * Notifications and tab activity acknowledgement.
  */
 
-import type { RequestId, ServerMessage } from '@agent-workbench/shared';
-import type { ClientMessage } from '@agent-workbench/shared';
+import type { RequestId, ServerMessage } from '@anvilary/workbench-shared';
+import type { ClientMessage } from '@anvilary/workbench-shared';
 import type { WebSocket } from 'ws';
 import { AgencyNotificationStore } from '../../../features/notifications/notification-store.js';
 import { TabActivityManager } from '../../../features/notifications/tab-activity-manager.js';

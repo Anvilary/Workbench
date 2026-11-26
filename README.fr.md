@@ -225,7 +225,7 @@ Avec la sauvegarde activée :
 <img src="assets/captura-buscador.png" width="40%" alt="Recherche dans les conversations : un résultat dans une session de chaque CLI, avec son extrait">
 
 Par défaut, elle se trouve dans le dossier de configuration de l'application
-(`%APPDATA%\agent-workbench\vault` sous Windows). **Changer de dossier…** la
+(`%APPDATA%\workbench\vault` sous Windows). **Changer de dossier…** la
 copie dans un autre — un dossier synchronisé, un autre disque — sans rien
 écraser, et laisse l'ancien tel quel. Si vous la placez dans un dossier
 synchronisé ou dans un dépôt, vos conversations voyagent avec elle.

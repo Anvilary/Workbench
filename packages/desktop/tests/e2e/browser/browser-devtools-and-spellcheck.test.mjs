@@ -13,8 +13,8 @@ import { DESKTOP_ROOT, REPO_ROOT } from '../../helpers/paths.mjs';
 
 const require = createRequire(import.meta.url);
 const WEB_ROOT = path.join(REPO_ROOT, 'packages/web');
-const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
-  ? '/opt/maw-electron/45.2.0/electron'
+const electronExecutable = fs.existsSync('/opt/workbench-electron/45.2.0/electron')
+  ? '/opt/workbench-electron/45.2.0/electron'
   : require('electron');
 
 async function eventually(check, message = 'condition', timeoutMs = 15000) {
@@ -124,8 +124,8 @@ function ShellApp() {
         <button id="open-settings-btn" type="button" onClick={() => setSettingsOpen(true)}>Settings</button>
         <span id="settings-loaded">{status ? 'loaded' : 'loading'}</span>
       </div>
-      <div className="maw-browser-pane" style={{ width: 700, height: 420 }}>
-        <div className="maw-browser-viewer" data-native-id="44444444-4444-4444-8444-444444444444" />
+      <div className="wb-browser-pane" style={{ width: 700, height: 420 }}>
+        <div className="wb-browser-viewer" data-native-id="44444444-4444-4444-8444-444444444444" />
       </div>
       <BrowserContextMenu appSettings={appSettings} />
       {settingsOpen && (
@@ -230,9 +230,9 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
     await desktop.evaluate(({ session }) => {
       const html = '<!doctype html><html><body style="margin:0;padding:0"><textarea id="ed" spellcheck="true" style="position:absolute;left:20px;top:20px;width:400px;height:120px;font-family:monospace;font-size:18px;padding:8px"></textarea></body></html>';
       for (const partition of [
-        'persist:maw-browser',
-        'persist:maw-profile-work-profile-browser',
-        'persist:maw-profile-work-profile-github',
+        'persist:workbench-browser',
+        'persist:workbench-profile-work-profile-browser',
+        'persist:workbench-profile-work-profile-github',
       ]) {
         const sess = session.fromPartition(partition);
         sess.protocol.handle('https', (req) => {
@@ -255,13 +255,13 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
         ...process.env,
         HOME: homeDir,
         XDG_CONFIG_HOME: xdgConfig,
-        MAW_DESKTOP_DATA_DIR: desktopDataDir,
-        MAW_DESKTOP_URL: shellUrl,
+        WORKBENCH_DESKTOP_DATA_DIR: desktopDataDir,
+        WORKBENCH_DESKTOP_URL: shellUrl,
       },
     });
     const page = await desktop.firstWindow();
     await page.waitForLoadState('domcontentloaded');
-    await page.waitForFunction(() => typeof window.mawChatGpt !== 'undefined');
+    await page.waitForFunction(() => typeof window.workbench !== 'undefined');
     await page.waitForSelector('#settings-loaded', { state: 'attached' });
     await eventually(async () => (await page.locator('#settings-loaded').textContent()) === 'loaded', 'settings loaded');
     await installTestHttpsPages(desktop);
@@ -272,7 +272,7 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
   let session1 = await launchDesktop();
   try {
     const { desktop, page } = session1;
-    const command = (cmd) => page.evaluate((c) => window.mawChatGpt.command(c), cmd);
+    const command = (cmd) => page.evaluate((c) => window.workbench.command(c), cmd);
 
     // Open main tab ('other' provider) and work-profile tab ('other' provider)
     await command({ type: 'open', id: mainTabId, provider: 'other', url: 'https://main.maw-test.org/page', profileId: 'main' });
@@ -286,7 +286,7 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
 
     await eventually(async () => {
       return await desktop.evaluate(({ session, webContents }) => {
-        const s = session.fromPartition('persist:maw-browser');
+        const s = session.fromPartition('persist:workbench-browser');
         const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
         return Boolean(v && !v.isLoading());
       });
@@ -301,7 +301,7 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
     // Focus textarea in native WebContentsView, insert misspelling "teh ", right-click -> real suggestions -> click suggestion -> verify "the "
     await desktop.evaluate(async ({ BrowserWindow, session, webContents }) => {
       const win = BrowserWindow.getAllWindows()[0];
-      const s = session.fromPartition('persist:maw-browser');
+      const s = session.fromPartition('persist:workbench-browser');
       const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
       win.focus();
       v.focus();
@@ -311,7 +311,7 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
     });
     await eventually(async () => {
       const val = await desktop.evaluate(async ({ session, webContents }) => {
-        const s = session.fromPartition('persist:maw-browser');
+        const s = session.fromPartition('persist:workbench-browser');
         const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
         return await v.executeJavaScript('document.getElementById("ed").value');
       });
@@ -320,25 +320,25 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
 
     // Poll boundedly for Chromium's async spellchecker underline pass to populate suggestions
     await eventually(async () => {
-      const hasMenu = await page.locator('.maw-context-menu-suggestion').count();
+      const hasMenu = await page.locator('.wb-context-menu-suggestion').count();
       if (hasMenu > 0) return true;
       await desktop.evaluate(({ session, webContents }) => {
-        const s = session.fromPartition('persist:maw-browser');
+        const s = session.fromPartition('persist:workbench-browser');
         const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
         v.sendInputEvent({ type: 'mouseDown', x: 42, y: 38, button: 'right', clickCount: 1 });
         v.sendInputEvent({ type: 'mouseUp', x: 42, y: 38, button: 'right', clickCount: 1 });
       });
       await new Promise((r) => setTimeout(r, 250));
-      return (await page.locator('.maw-context-menu-suggestion').count()) > 0;
+      return (await page.locator('.wb-context-menu-suggestion').count()) > 0;
     }, 'Chromium spelling suggestions menu to open', 15000);
-    const suggestions = await page.locator('.maw-context-menu-suggestion').allTextContents();
+    const suggestions = await page.locator('.wb-context-menu-suggestion').allTextContents();
     assert.ok(suggestions.includes('the'), `Expected Chromium suggestion 'the', got: ${JSON.stringify(suggestions)}`);
-    await page.locator('.maw-context-menu-suggestion', { hasText: /^the$/ }).click();
-    await page.waitForSelector('.maw-context-menu', { state: 'detached' });
+    await page.locator('.wb-context-menu-suggestion', { hasText: /^the$/ }).click();
+    await page.waitForSelector('.wb-context-menu', { state: 'detached' });
 
     await eventually(async () => {
       const val = await desktop.evaluate(async ({ session, webContents }) => {
-        const s = session.fromPartition('persist:maw-browser');
+        const s = session.fromPartition('persist:workbench-browser');
         const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
         return await v.executeJavaScript('document.getElementById("ed").value');
       });
@@ -347,21 +347,21 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
 
     // 1. Add custom dictionary word via actual context-menu flow BEFORE Settings has ever been opened!
     await desktop.evaluate(async ({ session, webContents }) => {
-      const s = session.fromPartition('persist:maw-browser');
+      const s = session.fromPartition('persist:workbench-browser');
       const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
       await v.executeJavaScript('document.getElementById("ed").value = ""; document.getElementById("ed").focus();');
       await v.insertText('anvilaryctxword ');
     });
     await new Promise((r) => setTimeout(r, 600));
     await desktop.evaluate(({ session, webContents }) => {
-      const s = session.fromPartition('persist:maw-browser');
+      const s = session.fromPartition('persist:workbench-browser');
       const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
       v.sendInputEvent({ type: 'mouseDown', x: 55, y: 38, button: 'right', clickCount: 1 });
       v.sendInputEvent({ type: 'mouseUp', x: 55, y: 38, button: 'right', clickCount: 1 });
     });
-    await page.waitForSelector('.maw-context-menu-spelling');
-    await page.locator('.maw-context-menu-action-item', { hasText: 'Add to Dictionary' }).click();
-    await page.waitForSelector('.maw-context-menu', { state: 'detached' });
+    await page.waitForSelector('.wb-context-menu-spelling');
+    await page.locator('.wb-context-menu-action-item', { hasText: 'Add to Dictionary' }).click();
+    await page.waitForSelector('.wb-context-menu', { state: 'detached' });
 
     // Verify persisted to settings.json on disk even without opening Settings
     await eventually(async () => {
@@ -376,24 +376,24 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
     await page.click('#open-settings-btn');
     await page.waitForSelector('#setting-card-spellcheck');
     const spellCard = page.locator('#setting-card-spellcheck');
-    await spellCard.locator('.maw-settings-dict-word', { hasText: 'anvilaryctxword' }).waitFor();
+    await spellCard.locator('.wb-settings-dict-word', { hasText: 'anvilaryctxword' }).waitFor();
 
     // Add Unicode word to Main, and add temporary word then remove it
-    await spellCard.locator('.maw-settings-dict-add-form input').fill('ação');
-    await spellCard.locator('.maw-settings-dict-add-form button[type="submit"]').click();
-    await spellCard.locator('.maw-settings-dict-word', { hasText: 'ação' }).waitFor();
+    await spellCard.locator('.wb-settings-dict-add-form input').fill('ação');
+    await spellCard.locator('.wb-settings-dict-add-form button[type="submit"]').click();
+    await spellCard.locator('.wb-settings-dict-word', { hasText: 'ação' }).waitFor();
 
-    await spellCard.locator('.maw-settings-dict-add-form input').fill('removetemp');
-    await spellCard.locator('.maw-settings-dict-add-form button[type="submit"]').click();
-    await spellCard.locator('.maw-settings-dict-word', { hasText: 'removetemp' }).waitFor();
+    await spellCard.locator('.wb-settings-dict-add-form input').fill('removetemp');
+    await spellCard.locator('.wb-settings-dict-add-form button[type="submit"]').click();
+    await spellCard.locator('.wb-settings-dict-word', { hasText: 'removetemp' }).waitFor();
     await spellCard.locator('button[aria-label="Remove removetemp"]').click();
-    await spellCard.locator('.maw-settings-dict-word', { hasText: 'removetemp' }).waitFor({ state: 'detached' });
+    await spellCard.locator('.wb-settings-dict-word', { hasText: 'removetemp' }).waitFor({ state: 'detached' });
 
     // Switch to Work Profile and add Unicode + ASCII words
-    await spellCard.locator('select.maw-settings-select').selectOption('work-profile');
-    await spellCard.locator('.maw-settings-dict-add-form input').fill('résumé');
-    await spellCard.locator('.maw-settings-dict-add-form button[type="submit"]').click();
-    await spellCard.locator('.maw-settings-dict-word', { hasText: 'résumé' }).waitFor();
+    await spellCard.locator('select.wb-settings-select').selectOption('work-profile');
+    await spellCard.locator('.wb-settings-dict-add-form input').fill('résumé');
+    await spellCard.locator('.wb-settings-dict-add-form button[type="submit"]').click();
+    await spellCard.locator('.wb-settings-dict-word', { hasText: 'résumé' }).waitFor();
 
     // 3 & 4. Inspect ALL 4 native provider partitions for both profiles and defaultSession
     const mainInspect = await command({ type: 'list-custom-dictionary-words', profileId: 'main' });
@@ -414,7 +414,7 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
 
     // 10. Simulate native partition divergence directly on one active partition ('main' / github) and verify reconciliation recovers deterministically
     await desktop.evaluate(({ session }) => {
-      const gh = session.fromPartition('persist:maw-github');
+      const gh = session.fromPartition('persist:workbench-github');
       gh.addWordToSpellCheckerDictionary('divergentghost');
     });
     const divergentRead = await command({ type: 'list-custom-dictionary-words', profileId: 'main' });
@@ -430,17 +430,17 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
     assert.deepEqual(recoveredRead.words, ['anvilaryctxword', 'ação']);
 
     // 11. Remove all configured languages in Settings -> verify empty state persists in settings.json
-    const langRemoveButtons = spellCard.locator('.maw-settings-lang-item button[aria-label^="Remove "]');
+    const langRemoveButtons = spellCard.locator('.wb-settings-lang-item button[aria-label^="Remove "]');
     while (true) {
       const count = await langRemoveButtons.count();
       if (count === 0) break;
       await langRemoveButtons.first().click();
       await page.waitForFunction(
-        (expectedMax) => document.querySelectorAll('#setting-card-spellcheck .maw-settings-lang-item').length < expectedMax,
+        (expectedMax) => document.querySelectorAll('#setting-card-spellcheck .wb-settings-lang-item').length < expectedMax,
         count,
       );
     }
-    await spellCard.locator('.maw-settings-empty-hint', { hasText: 'No spell check languages configured.' }).waitFor();
+    await spellCard.locator('.wb-settings-empty-hint', { hasText: 'No spell check languages configured.' }).waitFor();
     await eventually(async () => {
       const disk = JSON.parse(await readFile(settingsFilePath, 'utf8'));
       return Array.isArray(disk.browser?.spellCheck?.configuredLanguages) &&
@@ -456,16 +456,16 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
   let session2 = await launchDesktop();
   try {
     const { desktop, page } = session2;
-    const command = (cmd) => page.evaluate((c) => window.mawChatGpt.command(c), cmd);
+    const command = (cmd) => page.evaluate((c) => window.workbench.command(c), cmd);
 
     // 5 & 6. Verify additions, removals, and empty configuredLanguages survived restart
     await page.click('#open-settings-btn');
     await page.waitForSelector('#setting-card-spellcheck');
     const spellCard = page.locator('#setting-card-spellcheck');
-    await spellCard.locator('.maw-settings-empty-hint', { hasText: 'No spell check languages configured.' }).waitFor();
-    await spellCard.locator('.maw-settings-dict-word', { hasText: 'anvilaryctxword' }).waitFor();
-    await spellCard.locator('.maw-settings-dict-word', { hasText: 'ação' }).waitFor();
-    assert.equal(await spellCard.locator('.maw-settings-dict-word', { hasText: 'removetemp' }).count(), 0);
+    await spellCard.locator('.wb-settings-empty-hint', { hasText: 'No spell check languages configured.' }).waitFor();
+    await spellCard.locator('.wb-settings-dict-word', { hasText: 'anvilaryctxword' }).waitFor();
+    await spellCard.locator('.wb-settings-dict-word', { hasText: 'ação' }).waitFor();
+    assert.equal(await spellCard.locator('.wb-settings-dict-word', { hasText: 'removetemp' }).count(), 0);
 
     // 7 & 8. Initialize another provider partition ('github') on 'work-profile' AFTER restart & dictionary ops
     await command({ type: 'open', id: workGithubTabId, provider: 'github', url: 'https://github.com/', profileId: 'work-profile' });
@@ -532,16 +532,16 @@ test('R7: native DevTools element inspection accuracy across layouts, zoom level
     chromiumSandbox: true,
     executablePath: electronExecutable,
     args: [DESKTOP_ROOT, '--ozone-platform=x11'],
-    env: { ...process.env, HOME: dataDir, MAW_DESKTOP_DATA_DIR: dataDir, MAW_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/` },
+    env: { ...process.env, HOME: dataDir, WORKBENCH_DESKTOP_DATA_DIR: dataDir, WORKBENCH_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/` },
   });
   t.after(() => closeElectronSafely(desktop));
 
   const page = await desktop.firstWindow();
   await page.waitForLoadState('domcontentloaded');
-  await page.waitForFunction(() => typeof window.mawChatGpt !== 'undefined');
+  await page.waitForFunction(() => typeof window.workbench !== 'undefined');
 
   await desktop.evaluate(({ session }) => {
-    const sess = session.fromPartition('persist:maw-browser');
+    const sess = session.fromPartition('persist:workbench-browser');
     sess.protocol.handle('https', () => {
       return new Response(
         '<!doctype html><html><body style="margin:0;padding:0"><div id="decoy" style="position:absolute;left:10px;top:10px;width:120px;height:40px">Decoy</div><button id="target-btn" data-probe="exact-hit" style="position:absolute;left:180px;top:140px;width:160px;height:60px">Target</button></body></html>',
@@ -550,7 +550,7 @@ test('R7: native DevTools element inspection accuracy across layouts, zoom level
     });
   });
 
-  const command = (cmd) => page.evaluate((c) => window.mawChatGpt.command(c), cmd);
+  const command = (cmd) => page.evaluate((c) => window.workbench.command(c), cmd);
   await command({ type: 'open', id: tabId, provider: 'other', url: 'https://r7.maw-test.org/page' });
 
   const vp = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
@@ -564,7 +564,7 @@ test('R7: native DevTools element inspection accuracy across layouts, zoom level
   await command({ type: 'layout', views: [{ id: tabId, bounds: layouts[0].bounds }], viewport: vp });
   await eventually(async () => {
     return await desktop.evaluate(({ session, webContents }) => {
-      const sess = session.fromPartition('persist:maw-browser');
+      const sess = session.fromPartition('persist:workbench-browser');
       const v = webContents.getAllWebContents().find((c) => c.session === sess && c.getURL().includes('/page'));
       return Boolean(v && !v.isLoading());
     });
@@ -575,9 +575,9 @@ test('R7: native DevTools element inspection accuracy across layouts, zoom level
   assert.equal(/remote-debugging-(port|address)/.test(mainEntrySource), false);
   const secInfo = await desktop.evaluate(async ({ app, BrowserWindow, session, webContents }) => {
     const win = BrowserWindow.getAllWindows()[0];
-    const sess = session.fromPartition('persist:maw-browser');
+    const sess = session.fromPartition('persist:workbench-browser');
     const v = webContents.getAllWebContents().find((c) => c.session === sess && c.getURL().includes('/page'));
-    const hasBridgeInPage = await v.executeJavaScript('typeof window.mawChatGpt');
+    const hasBridgeInPage = await v.executeJavaScript('typeof window.workbench');
     return {
       remoteDebugPort: app.commandLine.getSwitchValue('remote-debugging-port'),
       hasRemoteDebugAddress: app.commandLine.hasSwitch('remote-debugging-address'),
@@ -595,7 +595,7 @@ test('R7: native DevTools element inspection accuracy across layouts, zoom level
     await command({ type: 'layout', views: [{ id: tabId, bounds: lay.bounds }], viewport: vp });
     for (const zoomLevel of [0, 2, -2]) {
       const coords = await desktop.evaluate(async ({ session, webContents }, zl) => {
-        const sess = session.fromPartition('persist:maw-browser');
+        const sess = session.fromPartition('persist:workbench-browser');
         const v = webContents.getAllWebContents().find((c) => c.session === sess && c.getURL().includes('/page'));
         v.setZoomLevel(zl);
         await new Promise((r) => setTimeout(r, 100));
@@ -606,13 +606,13 @@ test('R7: native DevTools element inspection accuracy across layouts, zoom level
       // Click first on decoy to make sure selection genuinely moves back to target-btn
       await command({ type: 'inspect-page', id: tabId, x: 20, y: 20 });
       await eventually(async () => {
-        const sel = await readSelectedElementInDevTools(desktop, 'persist:maw-browser', '/page');
+        const sel = await readSelectedElementInDevTools(desktop, 'persist:workbench-browser', '/page');
         return sel.some((t) => t.includes('decoy'));
       }, `decoy selected before ${lay.name} zoom=${zoomLevel}`);
 
       await command({ type: 'inspect-page', id: tabId, x: coords.x, y: coords.y });
       await eventually(async () => {
-        const sel = await readSelectedElementInDevTools(desktop, 'persist:maw-browser', '/page');
+        const sel = await readSelectedElementInDevTools(desktop, 'persist:workbench-browser', '/page');
         return sel.some((t) => t.includes('target-btn') && t.includes('exact-hit'));
       }, `target-btn selected at ${lay.name} zoom=${zoomLevel}`);
     }
@@ -623,13 +623,13 @@ test('R7: native DevTools element inspection accuracy across layouts, zoom level
 
   // Verify renderer crash closes DevTools cleanly
   await desktop.evaluate(({ session, webContents }) => {
-    const sess = session.fromPartition('persist:maw-browser');
+    const sess = session.fromPartition('persist:workbench-browser');
     const v = webContents.getAllWebContents().find((c) => c.session === sess && c.getURL().includes('/page'));
     v.forcefullyCrashRenderer();
   });
   await eventually(async () => {
     return await desktop.evaluate(({ session, webContents }) => {
-      const sess = session.fromPartition('persist:maw-browser');
+      const sess = session.fromPartition('persist:workbench-browser');
       const v = webContents.getAllWebContents().find((c) => c.session === sess && c.getURL().includes('/page'));
       return !v || v.isDestroyed() || !v.isDevToolsOpened();
     });
@@ -652,16 +652,16 @@ test('R7: native DevTools element inspection under non-default 1.5x display scal
     chromiumSandbox: true,
     executablePath: electronExecutable,
     args: [DESKTOP_ROOT, '--ozone-platform=x11', '--force-device-scale-factor=1.5'],
-    env: { ...process.env, HOME: dataDir, MAW_DESKTOP_DATA_DIR: dataDir, MAW_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/` },
+    env: { ...process.env, HOME: dataDir, WORKBENCH_DESKTOP_DATA_DIR: dataDir, WORKBENCH_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/` },
   });
   t.after(() => closeElectronSafely(desktop));
 
   const page = await desktop.firstWindow();
   await page.waitForLoadState('domcontentloaded');
-  await page.waitForFunction(() => typeof window.mawChatGpt !== 'undefined');
+  await page.waitForFunction(() => typeof window.workbench !== 'undefined');
 
   await desktop.evaluate(({ session }) => {
-    const sess = session.fromPartition('persist:maw-browser');
+    const sess = session.fromPartition('persist:workbench-browser');
     sess.protocol.handle('https', () => {
       return new Response(
         '<!doctype html><html><body style="margin:0;padding:0"><button id="scaled-target" style="position:absolute;left:200px;top:140px;width:180px;height:60px">Scaled</button></body></html>',
@@ -671,20 +671,20 @@ test('R7: native DevTools element inspection under non-default 1.5x display scal
   });
 
   const vp = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
-  const command = (cmd) => page.evaluate((c) => window.mawChatGpt.command(c), cmd);
+  const command = (cmd) => page.evaluate((c) => window.workbench.command(c), cmd);
   await command({ type: 'open', id: tabId, provider: 'other', url: 'https://scale.maw-test.org/page' });
   await command({ type: 'layout', views: [{ id: tabId, bounds: { x: 160, y: 40, width: Math.min(600, vp.width - 180), height: Math.min(500, vp.height - 60) } }], viewport: vp });
 
   await eventually(async () => {
     return await desktop.evaluate(({ session, webContents }) => {
-      const sess = session.fromPartition('persist:maw-browser');
+      const sess = session.fromPartition('persist:workbench-browser');
       const v = webContents.getAllWebContents().find((c) => c.session === sess && c.getURL().includes('/page'));
       return Boolean(v && !v.isLoading());
     });
   }, 'scaled page loaded');
 
   const dpr = await desktop.evaluate(async ({ session, webContents }) => {
-    const sess = session.fromPartition('persist:maw-browser');
+    const sess = session.fromPartition('persist:workbench-browser');
     const v = webContents.getAllWebContents().find((c) => c.session === sess && c.getURL().includes('/page'));
     return await v.executeJavaScript('window.devicePixelRatio');
   });
@@ -692,14 +692,14 @@ test('R7: native DevTools element inspection under non-default 1.5x display scal
 
   await command({ type: 'inspect-page', id: tabId, x: 260, y: 170 });
   await eventually(async () => {
-    const sel = await readSelectedElementInDevTools(desktop, 'persist:maw-browser', '/page');
+    const sel = await readSelectedElementInDevTools(desktop, 'persist:workbench-browser', '/page');
     return sel.some((t) => t.includes('scaled-target'));
   }, 'scaled-target selected under 1.5x display scaling');
 
   await command({ type: 'close', id: tabId });
   await eventually(async () => {
     return await desktop.evaluate(({ session, webContents }) => {
-      const sess = session.fromPartition('persist:maw-browser');
+      const sess = session.fromPartition('persist:workbench-browser');
       const v = webContents.getAllWebContents().find((c) => c.session === sess && c.getURL().includes('/page'));
       return !v || v.isDestroyed() || !v.isDevToolsOpened();
     });

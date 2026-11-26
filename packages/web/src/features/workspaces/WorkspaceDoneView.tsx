@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AgencyProject, AgencyRuntimeSession, AgencyWorkspace, EditorTab, WebTab } from '@agent-workbench/shared';
+import type { AgencyProject, AgencyRuntimeSession, AgencyWorkspace, EditorTab, WebTab } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 import { DeleteWorkspaceDialog } from '../navigation/DeleteWorkspaceDialog.js';
 

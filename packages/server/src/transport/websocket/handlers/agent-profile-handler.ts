@@ -2,7 +2,7 @@
  * CLI agent profiles and their capabilities.
  */
 
-import type { ClientMessage } from '@agent-workbench/shared';
+import type { ClientMessage } from '@anvilary/workbench-shared';
 import { inspectAgencyProfile, listAgencyProfiles } from '../../../features/profiles/profile-capabilities.js';
 import type { HandlerContext } from '../handler-context.js';
 

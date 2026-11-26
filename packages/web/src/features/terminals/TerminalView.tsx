@@ -22,7 +22,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SearchAddon } from '@xterm/addon-search';
 import { Terminal, type IMarker } from '@xterm/xterm';
 import { TerminalOutput } from './terminal-output.js';
-import type { TerminalId } from '@agent-workbench/shared';
+import type { TerminalId } from '@anvilary/workbench-shared';
 import { writeClipboard, readClipboard } from '../../shared/lib/clipboard.js';
 import type { AgentConnection } from '../../connection/connection.js';
 import { isConsolePasteKey } from './console-paste.js';

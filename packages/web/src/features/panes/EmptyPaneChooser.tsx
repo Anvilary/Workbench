@@ -1,4 +1,4 @@
-import type { AgencyCliProfile } from '@agent-workbench/shared';
+import type { AgencyCliProfile } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 
 export interface EmptyPaneChooserProps {
@@ -29,44 +29,44 @@ export function EmptyPaneChooser({
 
   return (
     <div
-      className="maw-empty-pane-chooser"
+      className="wb-empty-pane-chooser"
       data-pane-id={paneId}
     >
-      <div className="maw-empty-pane-card">
-        <div className="maw-empty-pane-header">
-          <h3 className="maw-empty-pane-title">
+      <div className="wb-empty-pane-card">
+        <div className="wb-empty-pane-header">
+          <h3 className="wb-empty-pane-title">
             {t('agency.tabs.emptyTitle')}
           </h3>
-          <p className="maw-empty-pane-subtitle">
+          <p className="wb-empty-pane-subtitle">
             {t('agency.tabs.emptySubtitle')}
           </p>
         </div>
 
-        <div className="maw-empty-pane-actions" role="group" aria-label={t('agency.tabs.add')}>
+        <div className="wb-empty-pane-actions" role="group" aria-label={t('agency.tabs.add')}>
           <button
             type="button"
-            className="maw-empty-pane-action"
+            className="wb-empty-pane-action"
             disabled={disabled}
             onClick={onAddTerminal}
             aria-label={t('agency.tabs.newTerminal')}
           >
-            <span className="maw-empty-pane-icon" aria-hidden="true">
+            <span className="wb-empty-pane-icon" aria-hidden="true">
               <svg viewBox="0 0 16 16" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="1.5" y="2" width="13" height="12" rx="1.5" />
                 <path d="M4.5 5.5l3 2.5-3 2.5M9.5 10.5h2.5" />
               </svg>
             </span>
-            <span className="maw-empty-pane-label">{t('agency.tabs.newTerminal')}</span>
+            <span className="wb-empty-pane-label">{t('agency.tabs.newTerminal')}</span>
           </button>
 
           <button
             type="button"
-            className="maw-empty-pane-action"
+            className="wb-empty-pane-action"
             disabled={disabled}
             onClick={onAddBrowser}
             aria-label={t('agency.web.newTab')}
           >
-            <span className="maw-empty-pane-icon" aria-hidden="true">
+            <span className="wb-empty-pane-icon" aria-hidden="true">
               <svg viewBox="0 0 16 16" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.3">
                 <rect x="1.5" y="2" width="13" height="12" rx="1.5" />
                 <path d="M1.5 5.5h13" />
@@ -74,25 +74,25 @@ export function EmptyPaneChooser({
                 <circle cx="6.5" cy="3.75" r="0.75" fill="currentColor" />
               </svg>
             </span>
-            <span className="maw-empty-pane-label">{t('agency.web.newTab')}</span>
+            <span className="wb-empty-pane-label">{t('agency.web.newTab')}</span>
           </button>
 
           <button
             type="button"
-            className="maw-empty-pane-action maw-empty-pane-action-disabled"
+            className="wb-empty-pane-action wb-empty-pane-action-disabled"
             disabled={true}
             title={t('agency.tabs.comingSoon')}
             aria-label={`${t('agency.tabs.openFile')} (${t('agency.tabs.comingSoon')})`}
           >
-            <span className="maw-empty-pane-icon" aria-hidden="true">
+            <span className="wb-empty-pane-icon" aria-hidden="true">
               <svg viewBox="0 0 16 16" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 1.5H3.5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V6L9 1.5z" />
                 <path d="M9 1.5V6h4.5" />
               </svg>
             </span>
-            <span className="maw-empty-pane-label">
+            <span className="wb-empty-pane-label">
               {t('agency.tabs.openFile')}
-              <span className="maw-empty-pane-badge">{t('agency.tabs.comingSoon')}</span>
+              <span className="wb-empty-pane-badge">{t('agency.tabs.comingSoon')}</span>
             </span>
           </button>
         </div>
@@ -100,7 +100,7 @@ export function EmptyPaneChooser({
         {canClose && (
           <button
             type="button"
-            className="maw-empty-pane-close"
+            className="wb-empty-pane-close"
             onClick={onClosePane}
           >
             {t('agency.splits.closePane')}

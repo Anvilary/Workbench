@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { tmpdir } from 'node:os';
 // Run from repo root:
 // node --import ./packages/server/node_modules/tsx/dist/loader.mjs scripts/audit/terminal-rendering-reproduction.mjs
 import assert from 'node:assert/strict';
@@ -40,7 +42,7 @@ try {
   assert.equal(result.rgbTruncation.after,'RGB');
   assert.notEqual(result.queuedReset.before,'RECOVERED');
   assert.equal(result.queuedReset.after,'RECOVERED');
-  const directory='docs/maw/terminal-rendering/evidence';
+  const directory=path.join(tmpdir(), 'workbench-evidence', 'terminal-rendering');
   await mkdir(directory,{recursive:true});
   await writeFile(directory+'/protocol-reproduction.json',JSON.stringify(result,null,2)+'\n');
   console.log(JSON.stringify(result,null,2));

@@ -354,14 +354,14 @@ test('sidebar ux & branding acceptance suite: drag-and-drop, controls, lifecycle
   const wsPrimeBtn = page.locator('.agency-workspace-nav-button').filter({ hasText: 'Workspace Prime' });
   await wsPrimeBtn.click();
 
-  const tab = page.locator('.maw-session-tab');
+  const tab = page.locator('.wb-session-tab');
   await tab.waitFor({ state: 'visible' });
 
   // Double click tab to rename
   const tabButton = tab.locator('[role="tab"]');
   await tabButton.dblclick();
 
-  const tabInput = tab.locator('.maw-tab-name-input');
+  const tabInput = tab.locator('.wb-tab-name-input');
   await tabInput.waitFor({ state: 'visible' });
 
   // Verify Single Outline (outline: none, only 1px border/box-shadow)

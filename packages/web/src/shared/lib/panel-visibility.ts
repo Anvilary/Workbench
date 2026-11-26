@@ -22,7 +22,7 @@ export type HideablePanel = 'git' | 'files' | 'plans' | 'memory' | 'console' | '
 /** En el orden en que los lista Ajustes: las solapas, y despues lo del pie. */
 export const HIDEABLE_PANELS: readonly HideablePanel[] = ['git', 'files', 'plans', 'memory', 'console', 'notes'];
 
-const STORAGE_KEY = 'agent-workbench.hiddenPanels';
+const STORAGE_KEY = 'workbench.hiddenPanels';
 
 function isHideablePanel(value: string): value is HideablePanel {
   return (HIDEABLE_PANELS as readonly string[]).includes(value);

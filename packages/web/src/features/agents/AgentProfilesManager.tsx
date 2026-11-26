@@ -7,7 +7,7 @@ import {
   type CliProfileId,
   type CliProvider,
   type ProfileStatus,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 import { t } from '../../i18n/index.js';
 import { parseProfileArgv } from '../workspaces/workspace-model.js';
@@ -41,11 +41,11 @@ const PROVIDERS: readonly ProviderMeta[] = [
 export async function browseNativeExecutable(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
   const bridge = (window as unknown as {
-    mawChatGpt?: {
+    workbench?: {
       browseExecutable?: (opts?: { title?: string }) => Promise<string | null>;
       command?: (cmd: { type: string; title?: string }) => Promise<{ ok?: boolean; path?: string | null }>;
     };
-  }).mawChatGpt;
+  }).workbench;
 
   if (bridge?.browseExecutable) {
     return bridge.browseExecutable({ title: t('settings.profiles.browseTitle') });
@@ -389,16 +389,16 @@ export function AgentProfilesManager({
   const statusBadge = (status: ProfileStatus) => {
     switch (status) {
       case 'available':
-        return <span className="maw-settings-badge badge-available">{t('settings.profiles.statusAvailable')}</span>;
+        return <span className="wb-settings-badge badge-available">{t('settings.profiles.statusAvailable')}</span>;
       case 'disabled':
-        return <span className="maw-settings-badge badge-disabled">{t('settings.profiles.statusDisabled')}</span>;
+        return <span className="wb-settings-badge badge-disabled">{t('settings.profiles.statusDisabled')}</span>;
       case 'needs-authentication':
-        return <span className="maw-settings-badge badge-missing">{t('settings.profiles.statusNeedsAuth')}</span>;
+        return <span className="wb-settings-badge badge-missing">{t('settings.profiles.statusNeedsAuth')}</span>;
       case 'not-installed':
-        return <span className="maw-settings-badge badge-missing">{t('settings.profiles.statusNotInstalled')}</span>;
+        return <span className="wb-settings-badge badge-missing">{t('settings.profiles.statusNotInstalled')}</span>;
       case 'error':
       default:
-        return <span className="maw-settings-badge badge-missing">{t('settings.profiles.statusError')}</span>;
+        return <span className="wb-settings-badge badge-missing">{t('settings.profiles.statusError')}</span>;
     }
   };
 
@@ -410,12 +410,12 @@ export function AgentProfilesManager({
       highlighted={highlightedCardId === 'setting-card-profiles'}
       forceExpanded={highlightedCardId === 'setting-card-profiles'}
       expandSignal={expandSignal}
-      bodyClassName="maw-profiles-body"
+      bodyClassName="wb-profiles-body"
       headerActions={
         !remoteClient ? (
           <button
             type="button"
-            className="action-button primary maw-add-profile-btn"
+            className="action-button primary wb-add-profile-btn"
             onClick={() => openAdd()}
           >
             + {t('settings.profiles.add')}
@@ -429,36 +429,36 @@ export function AgentProfilesManager({
         const collapsed = isGroupCollapsed(provider.id);
 
         return (
-          <div key={provider.id} className="maw-provider-group">
+          <div key={provider.id} className="wb-provider-group">
             <button
               type="button"
-              className="maw-provider-group-toggle"
+              className="wb-provider-group-toggle"
               onClick={() => toggleGroup(provider.id)}
               aria-expanded={!collapsed}
             >
-              <div className="maw-provider-title-wrapper">
-                <span className="maw-provider-icon" aria-hidden="true">
+              <div className="wb-provider-title-wrapper">
+                <span className="wb-provider-icon" aria-hidden="true">
                   <ProviderIcon provider={provider.id} size={16} />
                 </span>
-                <span className="maw-provider-name">{provider.label}</span>
-                <span className="maw-profiles-count">
+                <span className="wb-provider-name">{provider.label}</span>
+                <span className="wb-profiles-count">
                   ({count} {count === 1 ? t('settings.profiles.countSingle') : t('settings.profiles.countPlural')})
                 </span>
               </div>
-              <span className={`maw-provider-chevron ${collapsed ? 'collapsed' : 'expanded'}`} aria-hidden="true">
+              <span className={`wb-provider-chevron ${collapsed ? 'collapsed' : 'expanded'}`} aria-hidden="true">
                 ▾
               </span>
             </button>
 
               {!collapsed && (
-                <div className="maw-provider-profiles-list">
+                <div className="wb-provider-profiles-list">
                   {providerProfiles.length === 0 ? (
-                    <div className="maw-no-profiles">
+                    <div className="wb-no-profiles">
                       <p className="agency-muted">{t('settings.profiles.noProfiles')}</p>
                       {!remoteClient && (
                         <button
                           type="button"
-                          className="link-button maw-inline-add-btn"
+                          className="link-button wb-inline-add-btn"
                           onClick={() => openAdd(provider.id)}
                         >
                           + {t('settings.profiles.addForProvider', { provider: provider.label })}
@@ -466,17 +466,17 @@ export function AgentProfilesManager({
                       )}
                     </div>
                   ) : (
-                    <ul className="maw-profiles-items">
+                    <ul className="wb-profiles-items">
                       {providerProfiles.map((p) => (
-                        <li key={p.id} className="maw-profile-row">
-                          <div className="maw-profile-main">
-                            <div className="maw-profile-header-line">
-                              <span className="maw-profile-label">{p.label}</span>
-                              <span className="maw-profile-id">({p.id})</span>
+                        <li key={p.id} className="wb-profile-row">
+                          <div className="wb-profile-main">
+                            <div className="wb-profile-header-line">
+                              <span className="wb-profile-label">{p.label}</span>
+                              <span className="wb-profile-id">({p.id})</span>
                               {statusBadge(p.configurationStatus)}
                             </div>
-                            <div className="maw-profile-details">
-                              <span className="maw-profile-executable">
+                            <div className="wb-profile-details">
+                              <span className="wb-profile-executable">
                                 {p.executable ? (
                                   <code>{p.executable}</code>
                                 ) : (
@@ -484,12 +484,12 @@ export function AgentProfilesManager({
                                 )}
                               </span>
                               {p.args.length > 0 && (
-                                <span className="maw-profile-args">
+                                <span className="wb-profile-args">
                                   {t('settings.profiles.argsLabel')}: <code>{JSON.stringify(p.args)}</code>
                                 </span>
                               )}
                               {Object.keys(p.environmentOverrides).length > 0 && (
-                                <span className="maw-profile-env">
+                                <span className="wb-profile-env">
                                   {t('settings.profiles.envLabel')}:{' '}
                                   {Object.entries(p.environmentOverrides)
                                     .map(([k, v]) => `${k}=${v}`)
@@ -499,17 +499,17 @@ export function AgentProfilesManager({
                             </div>
                           </div>
                           {!remoteClient && (
-                            <div className="maw-profile-actions">
+                            <div className="wb-profile-actions">
                               <button
                                 type="button"
-                                className="action-button secondary maw-profile-btn"
+                                className="action-button secondary wb-profile-btn"
                                 onClick={() => openEdit(p)}
                               >
                                 {t('settings.profiles.edit')}
                               </button>
                               <button
                                 type="button"
-                                className="action-button danger maw-profile-btn"
+                                className="action-button danger wb-profile-btn"
                                 onClick={() => setRemovingProfile(p)}
                               >
                                 {t('settings.profiles.remove')}
@@ -531,22 +531,22 @@ export function AgentProfilesManager({
         <div className="agency-modal-backdrop" onClick={() => !saving && setShowAddModal(false)}>
           <div
             ref={addModalRef}
-            className="agency-dialog maw-profile-form-dialog"
+            className="agency-dialog wb-profile-form-dialog"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="maw-add-profile-title"
+            aria-labelledby="wb-add-profile-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="maw-add-profile-title">{t('settings.profiles.addTitle')}</h2>
+            <h2 id="wb-add-profile-title">{t('settings.profiles.addTitle')}</h2>
             <p className="agency-muted">{t('settings.profiles.addDesc')}</p>
 
             {formError && (
-              <div className="maw-settings-banner maw-settings-banner-error" role="alert">
+              <div className="wb-settings-banner wb-settings-banner-error" role="alert">
                 <span>{formError}</span>
               </div>
             )}
 
-            <div className="maw-form-group">
+            <div className="wb-form-group">
               <label htmlFor="new-profile-provider">{t('settings.profiles.provider')}</label>
               <select
                 id="new-profile-provider"
@@ -565,7 +565,7 @@ export function AgentProfilesManager({
               </select>
             </div>
 
-            <div className="maw-form-group">
+            <div className="wb-form-group">
               <label htmlFor="new-profile-label">
                 {t('settings.profiles.label')} <span className="agency-muted">({t('settings.profiles.optional')})</span>
               </label>
@@ -578,9 +578,9 @@ export function AgentProfilesManager({
               />
             </div>
 
-            <div className="maw-form-group">
+            <div className="wb-form-group">
               <label htmlFor="new-profile-executable">{t('settings.profiles.executable')}</label>
-              <div className="maw-executable-input-row">
+              <div className="wb-executable-input-row">
                 <input
                   id="new-profile-executable"
                   type="text"
@@ -590,7 +590,7 @@ export function AgentProfilesManager({
                 />
                 <button
                   type="button"
-                  className="action-button secondary maw-browse-btn"
+                  className="action-button secondary wb-browse-btn"
                   onClick={async () => {
                     const picked = await browseNativeExecutable();
                     if (picked) setNewExecutable(picked);
@@ -608,13 +608,13 @@ export function AgentProfilesManager({
                 );
                 if (quickPicks.length === 0) return null;
                 return (
-                  <div className="maw-quick-picks">
+                  <div className="wb-quick-picks">
                     <span className="agency-muted">{t('settings.profiles.discovered')}:</span>
                     {quickPicks.map((pick) => (
                       <button
                         key={pick}
                         type="button"
-                        className="link-button maw-pick-chip"
+                        className="link-button wb-pick-chip"
                         onClick={() => setNewExecutable(pick)}
                       >
                         {pick}
@@ -625,7 +625,7 @@ export function AgentProfilesManager({
               })()}
             </div>
 
-            <div className="maw-form-group">
+            <div className="wb-form-group">
               <label htmlFor="new-profile-args">
                 {t('agency.profile.args')}{' '}
                 <span className="agency-muted">({t('settings.profiles.optional')})</span>
@@ -637,11 +637,11 @@ export function AgentProfilesManager({
                 value={newArgs}
                 onChange={(e) => setNewArgs(e.target.value)}
               />
-              <span className="agency-muted maw-help-text">{t('agency.profile.argsHelp')}</span>
+              <span className="agency-muted wb-help-text">{t('agency.profile.argsHelp')}</span>
             </div>
 
-            <div className="maw-form-group">
-              <div className="maw-env-header">
+            <div className="wb-form-group">
+              <div className="wb-env-header">
                 <label>{t('settings.profiles.envOverrides')}</label>
                 <button
                   type="button"
@@ -652,7 +652,7 @@ export function AgentProfilesManager({
                 </button>
               </div>
               {newEnvOverrides.map(([key, val], idx) => (
-                <div key={idx} className="maw-env-row">
+                <div key={idx} className="wb-env-row">
                   <select
                     value={key}
                     onChange={(e) => {
@@ -679,7 +679,7 @@ export function AgentProfilesManager({
                   />
                   <button
                     type="button"
-                    className="action-button danger maw-env-remove-btn"
+                    className="action-button danger wb-env-remove-btn"
                     onClick={() => setNewEnvOverrides((prev) => prev.filter((_, i) => i !== idx))}
                   >
                     ×
@@ -688,7 +688,7 @@ export function AgentProfilesManager({
               ))}
             </div>
 
-            <div className="maw-modal-footer">
+            <div className="wb-modal-footer">
               <button
                 type="button"
                 className="action-button secondary"
@@ -715,7 +715,7 @@ export function AgentProfilesManager({
         <div className="agency-modal-backdrop" onClick={() => !saving && setEditingProfile(null)}>
           <div
             ref={editModalRef}
-            className="agency-dialog maw-profile-form-dialog"
+            className="agency-dialog wb-profile-form-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="maw-edit-profile-title"
@@ -727,12 +727,12 @@ export function AgentProfilesManager({
             <p className="agency-muted">{t('agency.profile.help', { name: editingProfile.label })}</p>
 
             {formError && (
-              <div className="maw-settings-banner maw-settings-banner-error" role="alert">
+              <div className="wb-settings-banner wb-settings-banner-error" role="alert">
                 <span>{formError}</span>
               </div>
             )}
 
-            <div className="maw-form-group">
+            <div className="wb-form-group">
               <label htmlFor="edit-profile-label">{t('settings.profiles.label')}</label>
               <input
                 id="edit-profile-label"
@@ -742,9 +742,9 @@ export function AgentProfilesManager({
               />
             </div>
 
-            <div className="maw-form-group">
+            <div className="wb-form-group">
               <label htmlFor="edit-profile-executable">{t('settings.profiles.executable')}</label>
-              <div className="maw-executable-input-row">
+              <div className="wb-executable-input-row">
                 <input
                   id="edit-profile-executable"
                   type="text"
@@ -753,7 +753,7 @@ export function AgentProfilesManager({
                 />
                 <button
                   type="button"
-                  className="action-button secondary maw-browse-btn"
+                  className="action-button secondary wb-browse-btn"
                   onClick={async () => {
                     const picked = await browseNativeExecutable();
                     if (picked) setEditExecutable(picked);
@@ -764,7 +764,7 @@ export function AgentProfilesManager({
               </div>
             </div>
 
-            <div className="maw-form-group">
+            <div className="wb-form-group">
               <label htmlFor="edit-profile-args">{t('agency.profile.args')}</label>
               <input
                 id="edit-profile-args"
@@ -772,11 +772,11 @@ export function AgentProfilesManager({
                 value={editArgs}
                 onChange={(e) => setEditArgs(e.target.value)}
               />
-              <span className="agency-muted maw-help-text">{t('agency.profile.argsHelp')}</span>
+              <span className="agency-muted wb-help-text">{t('agency.profile.argsHelp')}</span>
             </div>
 
-            <div className="maw-form-group">
-              <label className="maw-settings-choice">
+            <div className="wb-form-group">
+              <label className="wb-settings-choice">
                 <input
                   type="checkbox"
                   checked={editDisabled}
@@ -786,8 +786,8 @@ export function AgentProfilesManager({
               </label>
             </div>
 
-            <div className="maw-form-group">
-              <div className="maw-env-header">
+            <div className="wb-form-group">
+              <div className="wb-env-header">
                 <label>{t('settings.profiles.envOverrides')}</label>
                 <button
                   type="button"
@@ -798,7 +798,7 @@ export function AgentProfilesManager({
                 </button>
               </div>
               {editEnvOverrides.map(([key, val], idx) => (
-                <div key={idx} className="maw-env-row">
+                <div key={idx} className="wb-env-row">
                   <select
                     value={key}
                     onChange={(e) => {
@@ -824,7 +824,7 @@ export function AgentProfilesManager({
                   />
                   <button
                     type="button"
-                    className="action-button danger maw-env-remove-btn"
+                    className="action-button danger wb-env-remove-btn"
                     onClick={() => setEditEnvOverrides((prev) => prev.filter((_, i) => i !== idx))}
                   >
                     ×
@@ -833,7 +833,7 @@ export function AgentProfilesManager({
               ))}
             </div>
 
-            <div className="maw-modal-footer">
+            <div className="wb-modal-footer">
               <button
                 type="button"
                 className="action-button secondary"
@@ -860,7 +860,7 @@ export function AgentProfilesManager({
         <div className="agency-modal-backdrop" onClick={() => !saving && setRemovingProfile(null)}>
           <div
             ref={removeModalRef}
-            className="agency-dialog maw-profile-remove-dialog"
+            className="agency-dialog wb-profile-remove-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="maw-remove-profile-title"
@@ -874,13 +874,13 @@ export function AgentProfilesManager({
               })}
             </p>
 
-            <div className="maw-settings-banner maw-settings-banner-info" role="status">
-              <span className="maw-remove-notice-text">
+            <div className="wb-settings-banner wb-settings-banner-info" role="status">
+              <span className="wb-remove-notice-text">
                 {t('settings.profiles.removeNotice')}
               </span>
             </div>
 
-            <div className="maw-modal-footer">
+            <div className="wb-modal-footer">
               <button
                 type="button"
                 className="action-button secondary"

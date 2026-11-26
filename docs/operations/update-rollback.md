@@ -19,7 +19,7 @@ Consequences:
   reboot or `systemctl --user restart` keeps booting the release that was running. Staging twice simply
   replaces `staged`; the verified rollback target is unaffected.
 - A running server is pinned to the release it started from (Node resolves real paths at startup), so
-  switching any pointer never changes the live process. Its readiness file (`$WORKBENCH_RUNTIME_DIR/maw-ready.json`)
+  switching any pointer never changes the live process. Its readiness file (`$WORKBENCH_RUNTIME_DIR/workbench-ready.json`)
   contains `pid`, the authenticated loopback `url` and `releaseId`.
 - The service refuses to start anything that is not a release (`ExecStartPre` checks the metadata), so it
   never runs from a mutable developer checkout.

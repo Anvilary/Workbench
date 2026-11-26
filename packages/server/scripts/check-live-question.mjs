@@ -35,7 +35,7 @@ process.env.USERPROFILE = root;
 process.env.APPDATA = path.join(root, 'AppData', 'Roaming');
 process.env.LOCALAPPDATA = path.join(root, 'AppData', 'Local');
 
-const shared = await import('@agent-workbench/shared');
+const shared = await import('@anvilary/workbench-shared');
 const screens = await import('./fixtures/question-screens.mjs');
 const { readQuestionScreen, createClaudeCodeScreenQuestions, QUESTION_WAITING_FOR } = await import(
   '../src/agents/claude-code/question-screen.ts'

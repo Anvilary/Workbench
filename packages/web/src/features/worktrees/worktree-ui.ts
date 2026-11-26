@@ -32,7 +32,7 @@ import {
   type WorktreeRow,
   type WorktreeUntrackedBlock,
   type WorktreeVerdict,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { formatBytes, formatList } from '../../i18n/format.js';
 import { t, type MessageKey } from '../../i18n/index.js';
 

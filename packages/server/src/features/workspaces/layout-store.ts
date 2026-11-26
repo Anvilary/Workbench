@@ -3,7 +3,7 @@ import {
   type WorkspaceId,
   type WorkspacePaneLayout,
   isWorkspacePaneLayout,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { writeAtomically } from '../../shared/persistence/atomic-write.js';
 import { appConfigDir } from '../../shared/app-paths.js';
 import { SerialQueue } from '../../shared/concurrency/serial-queue.js';

@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { WorkspaceId } from '@agent-workbench/shared';
+import type { WorkspaceId } from '@anvilary/workbench-shared';
 import { AgencyNotificationStore } from '../../../src/features/notifications/notification-store.js';
 import { TabActivityManager } from '../../../src/features/notifications/tab-activity-manager.js';
 

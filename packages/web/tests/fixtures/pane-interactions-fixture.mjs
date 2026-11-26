@@ -37,7 +37,7 @@ const open=Terminal.prototype.open,dispose=Terminal.prototype.dispose;
 window.terminals=[];window.disposed=0;
 Terminal.prototype.open=function(element){window.terminals.push(this);return open.call(this,element)};
 Terminal.prototype.dispose=function(){window.disposed++;return dispose.call(this)};
-if(!window.mawChatGpt){let onState;window.fixtureBridgeSend=(s)=>onState?.(s);window.mawChatGpt={subscribe(fn){onState=fn;return()=>{}},async command(m){if(m.type==='open')setTimeout(()=>onState?.({type:'ready',id:m.id}),0);return {ok:true}}}}
+if(!window.workbench){let onState;window.fixtureBridgeSend=(s)=>onState?.(s);window.workbench={subscribe(fn){onState=fn;return()=>{}},async command(m){if(m.type==='open')setTimeout(()=>onState?.({type:'ready',id:m.id}),0);return {ok:true}}}}
 async function request(m){
  requests.push(m);
  if(m.type==='agency.session.create'||m.type==='agency.webTab.create'||m.type==='agency.editorTab.open'){
@@ -91,5 +91,5 @@ createRoot(document.getElementById('root')).render(<Harness/>);
 export const html=`<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/bundle.css"><style>
 :root{color-scheme:dark;font-family:system-ui;--agency-raised:#181b24;--agency-line:#ffffff20;--agency-muted:#94a3b8;--agency-text:#e2e8f0;--agency-bg:#12141a}
 html,body,#root{height:100%;margin:0;background:#0f1117;color:#e2e8f0}*{box-sizing:border-box}#root{display:flex;flex-direction:column}#start{flex-shrink:0;height:26px;background:#181b24;color:#94a3b8;border:0;text-align:left}
-.agency-workspace-view{flex:1;min-height:0;display:flex;flex-direction:column}.maw-workspace-topbar{min-height:32px}.maw-terminal-park{display:none}
+.agency-workspace-view{flex:1;min-height:0;display:flex;flex-direction:column}.workbench-topbar{min-height:32px}.wb-terminal-park{display:none}
 </style></head><body><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>`;

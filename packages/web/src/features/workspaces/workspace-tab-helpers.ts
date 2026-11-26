@@ -6,7 +6,7 @@ import {
   validatePerplexityUrl,
   type AgencyCliProfile,
   type WebTabProvider,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { WorkspaceTab } from './workspace-model.js';
 import { t } from '../../i18n/index.js';
 

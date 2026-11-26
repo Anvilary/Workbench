@@ -7,8 +7,8 @@
  */
 
 import path from 'node:path';
-import type { AgencyErrorCode, EditorTab, WorkspaceId } from '@agent-workbench/shared';
-import { isEditorTab, validateRelativeFilePath } from '@agent-workbench/shared';
+import type { AgencyErrorCode, EditorTab, WorkspaceId } from '@anvilary/workbench-shared';
+import { isEditorTab, validateRelativeFilePath } from '@anvilary/workbench-shared';
 import { appConfigDir } from '../../shared/app-paths.js';
 import { SerialQueue } from '../../shared/concurrency/serial-queue.js';
 import {

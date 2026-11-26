@@ -1,7 +1,8 @@
+import { workbenchEnv } from '../../../../../scripts/workbench/env.mjs';
 /**
  * Lifecycle coordinator for legacy Classic Workbench services.
  *
- * In MAW Next-Generation, Agency mode is the primary runtime view. Eagerly
+ * In Workbench Next-Generation, Agency mode is the primary runtime view. Eagerly
  * starting Classic Workbench services (SessionIndex, VaultService, and
  * watchSessions) on server boot attaches thousands of inotify filesystem
  * watchers across ~/.claude/projects, ~/.codex/sessions, etc., and parses
@@ -9,7 +10,7 @@
  *
  * ClassicWorkbenchLifecycle defers starting these legacy indexers and filesystem
  * watchers until classic mode is actively used (e.g. non-agency WS connection,
- * classic API/WS message, or MAW_EAGER_CLASSIC=1).
+ * classic API/WS message, or WORKBENCH_EAGER_CLASSIC=1).
  */
 
 import type { SessionIndex } from './session-index.js';
@@ -43,7 +44,7 @@ export class ClassicWorkbenchLifecycle {
     private readonly services: ClassicWorkbenchServices,
     private readonly options: ClassicLifecycleOptions = {},
   ) {
-    if (options.eager || process.env['MAW_EAGER_CLASSIC'] === '1') {
+    if (options.eager || workbenchEnv('EAGER_CLASSIC') === '1') {
       void this.ensureStarted();
     }
   }

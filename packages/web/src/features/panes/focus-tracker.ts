@@ -1,5 +1,5 @@
 /**
- * MAW Lane C - Focus-Aware Notification Suppression & Channel Routing.
+ * Workbench Lane C - Focus-Aware Notification Suppression & Channel Routing.
  *
  * Implements precise focus and visibility modeling across:
  *   - Application window focus (document.hasFocus)
@@ -10,8 +10,8 @@
  *
  * Invariants:
  *   - Actively viewed sessions never generate redundant completion toasts or OS notifications.
- *   - A session in another tab or workspace generates an in-app toast when MAW is focused.
- *   - When MAW is minimized or another OS application has focus, an OS desktop alert is dispatched.
+ *   - A session in another tab or workspace generates an in-app toast when Workbench is focused.
+ *   - When Workbench is minimized or another OS application has focus, an OS desktop alert is dispatched.
  */
 
 import { nativeLayoutCoordinator } from '../browser/native-layout-coordinator.js';
@@ -45,7 +45,7 @@ export class FocusTracker {
 
     window.addEventListener('blur', () => {
       // If a native view just reported focus within 150ms, the blur was caused by
-      // clicking into the child WebContentsView, so MAW window is still actively used.
+      // clicking into the child WebContentsView, so Workbench window is still actively used.
       if (Date.now() - this.lastNativeFocusTime > 150) {
         this.nativeViewFocused = false;
         this.nativeFocusedTabId = null;
@@ -53,7 +53,7 @@ export class FocusTracker {
     });
 
     // Subscribe to native view focus events from Electron desktop bridge
-    const bridge = (window as unknown as { mawChatGpt?: { subscribe: (fn: (e: { type: string; id?: string }) => void) => () => void } }).mawChatGpt;
+    const bridge = (window as unknown as { workbench?: { subscribe: (fn: (e: { type: string; id?: string }) => void) => () => void } }).workbench;
     if (bridge && typeof bridge.subscribe === 'function') {
       try {
         this.unsubscribeBridge = bridge.subscribe((state) => {
@@ -70,7 +70,7 @@ export class FocusTracker {
   }
 
   /**
-   * Returns whether the MAW application window currently has user focus,
+   * Returns whether the Workbench application window currently has user focus,
    * either in the shell renderer or in an attached native WebContentsView.
    */
   isWindowFocused(): boolean {
@@ -100,7 +100,7 @@ export class FocusTracker {
    * Determines whether the user is actively viewing the specified session tab.
    *
    * A session is actively viewed iff:
-   *   1. The MAW window is focused and visible (not minimized/hidden).
+   *   1. The Workbench window is focused and visible (not minimized/hidden).
    *   2. The user is not on the archive/Done view.
    *   3. The notification's workspace matches the currently active workspace.
    *   4. The tab is currently selected in the focused pane or layout coordinator.
@@ -132,8 +132,8 @@ export class FocusTracker {
   /**
    * Determines which channel should receive the notification:
    *   - 'suppress': Session is actively viewed; redundant alert suppressed.
-   *   - 'os': MAW is minimized or another application has focus; dispatch OS alert.
-   *   - 'toast': MAW is focused, but user is on another tab/workspace; show in-app toast.
+   *   - 'os': Workbench is minimized or another application has focus; dispatch OS alert.
+   *   - 'toast': Workbench is focused, but user is on another tab/workspace; show in-app toast.
    */
   determineDeliveryChannel(
     session: { workspaceId: string; tabId: string },

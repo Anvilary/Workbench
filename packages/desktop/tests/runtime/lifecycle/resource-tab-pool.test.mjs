@@ -12,8 +12,8 @@ import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 
 const require = createRequire(import.meta.url);
 const here = DESKTOP_ROOT;
-const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
-  ? '/opt/maw-electron/45.2.0/electron'
+const electronExecutable = fs.existsSync('/opt/workbench-electron/45.2.0/electron')
+  ? '/opt/workbench-electron/45.2.0/electron'
   : require('electron');
 
 // 12 distinct UUIDs for multi-tab test (more than the old hardcoded 8 limit)
@@ -40,7 +40,7 @@ function App() {
   const [events, setEvents] = useState([]);
 
   useEffect(() => {
-    const bridge = window.mawChatGpt;
+    const bridge = window.workbench;
     if (!bridge) return;
     return bridge.subscribe((state) => {
       setEvents((prev) => [...prev, state]);
@@ -90,22 +90,22 @@ test('resource-aware resident tab pool: creates >8 tabs, evicts LRU background v
   let desktop;
 
   try {
-    // Launch Electron with MAW_MAX_RESIDENT_VIEWS=5 to test pool eviction deterministically
+    // Launch Electron with WORKBENCH_MAX_RESIDENT_VIEWS=5 to test pool eviction deterministically
     desktop = await electron.launch({
       chromiumSandbox: true,
       executablePath: electronExecutable,
       args: [here, '--ozone-platform=x11'],
       env: {
         ...process.env,
-        MAW_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
-        MAW_DESKTOP_DATA_DIR: dataDir,
-        MAW_MAX_RESIDENT_VIEWS: '5',
+        WORKBENCH_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
+        WORKBENCH_DESKTOP_DATA_DIR: dataDir,
+        WORKBENCH_MAX_RESIDENT_VIEWS: '5',
       },
     });
 
     // Intercept synthetic pages so tests run without live network requests
     await desktop.evaluate(({ session }) => {
-      for (const partition of ['persist:maw-chatgpt', 'persist:maw-perplexity', 'persist:maw-github']) {
+      for (const partition of ['persist:workbench-chatgpt', 'persist:workbench-perplexity', 'persist:workbench-github']) {
         session.fromPartition(partition).protocol.handle('https', (req) =>
           new Response(`<!doctype html><title>${req.url}</title><div>Mock page for ${req.url}</div>`, {
             headers: { 'Content-Type': 'text/html' },
@@ -121,9 +121,9 @@ test('resource-aware resident tab pool: creates >8 tabs, evicts LRU background v
     const getResidentTabCount = async () => {
       return desktop.evaluate(({ webContents, session }) => {
         const partitions = [
-          session.fromPartition('persist:maw-chatgpt'),
-          session.fromPartition('persist:maw-perplexity'),
-          session.fromPartition('persist:maw-github'),
+          session.fromPartition('persist:workbench-chatgpt'),
+          session.fromPartition('persist:workbench-perplexity'),
+          session.fromPartition('persist:workbench-github'),
         ];
         return webContents.getAllWebContents().filter((c) => partitions.includes(c.session)).length;
       });
@@ -149,7 +149,7 @@ test('resource-aware resident tab pool: creates >8 tabs, evicts LRU background v
       const res = await page.evaluate(
         async ({ id, url, provider }) => {
           try {
-            await window.mawChatGpt.command({ type: 'open', id, url, provider });
+            await window.workbench.command({ type: 'open', id, url, provider });
             return { ok: true };
           } catch (err) {
             return { ok: false, error: String(err) };
@@ -177,7 +177,7 @@ test('resource-aware resident tab pool: creates >8 tabs, evicts LRU background v
     const v = { width: 1280, height: 860 };
     await page.evaluate(
       ({ id1, id2, v }) => {
-        window.mawChatGpt.command({
+        window.workbench.command({
           type: 'layout',
           views: [
             { id: id1, bounds: { x: 0, y: 0, width: 600, height: 800 } },
@@ -198,7 +198,7 @@ test('resource-aware resident tab pool: creates >8 tabs, evicts LRU background v
       const url = provider === 'chatgpt' ? `https://chatgpt.com/c/mock-${i}` : `https://github.com/mock-repo-${i}`;
       await page.evaluate(
         async ({ id, url, provider }) => {
-          await window.mawChatGpt.command({ type: 'open', id, url, provider });
+          await window.workbench.command({ type: 'open', id, url, provider });
         },
         { id: tabIds[i], url, provider }
       );
@@ -225,7 +225,7 @@ test('resource-aware resident tab pool: creates >8 tabs, evicts LRU background v
     const restoreRes = await page.evaluate(
       async ({ id }) => {
         try {
-          await window.mawChatGpt.command({
+          await window.workbench.command({
             type: 'open',
             id,
             url: 'https://github.com/mock-repo-4',
@@ -243,7 +243,7 @@ test('resource-aware resident tab pool: creates >8 tabs, evicts LRU background v
     // 6. Retain and Close cleanup: retain only tabs 4, 10, 11
     await page.evaluate(
       async ({ keepIds }) => {
-        await window.mawChatGpt.command({ type: 'retain', ids: keepIds });
+        await window.workbench.command({ type: 'retain', ids: keepIds });
       },
       { keepIds: [tabIds[4], tabIds[10], tabIds[11]] }
     );

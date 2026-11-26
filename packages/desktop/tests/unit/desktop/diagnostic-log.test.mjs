@@ -20,21 +20,21 @@ import {
 } from '../../../src/app/diagnostic-log.mjs';
 
 async function tempDir(t) {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'maw-desktop-log-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'workbench-desktop-log-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   return dir;
 }
 
 test('log directory: override, XDG_STATE_HOME, then ~/.local/state', () => {
   const homedir = () => '/home/user';
-  assert.equal(resolveDesktopLogDir({ env: { MAW_DESKTOP_LOG_DIR: '/tmp/x', XDG_STATE_HOME: '/s' }, homedir }), '/tmp/x');
-  assert.equal(resolveDesktopLogDir({ env: { XDG_STATE_HOME: '/s' }, homedir }), '/s/maw/logs');
-  assert.equal(resolveDesktopLogDir({ env: {}, homedir }), '/home/user/.local/state/maw/logs');
+  assert.equal(resolveDesktopLogDir({ env: { WORKBENCH_DESKTOP_LOG_DIR: '/tmp/x', XDG_STATE_HOME: '/s' }, homedir }), '/tmp/x');
+  assert.equal(resolveDesktopLogDir({ env: { XDG_STATE_HOME: '/s' }, homedir }), '/s/workbench/logs');
+  assert.equal(resolveDesktopLogDir({ env: {}, homedir }), '/home/user/.local/state/workbench/logs');
   // Isolated non-production instances log inside their own data directory.
-  assert.equal(resolveDesktopLogDir({ env: { MAW_DESKTOP_DATA_DIR: '/tmp/d', XDG_STATE_HOME: '/s' }, homedir }), '/tmp/d/logs');
-  assert.equal(resolveDesktopLogDir({ env: { MAW_DESKTOP_DATA_DIR: '/tmp/d', MAW_DESKTOP_PRODUCTION: '1', XDG_STATE_HOME: '/s' }, homedir }), '/s/maw/logs');
+  assert.equal(resolveDesktopLogDir({ env: { WORKBENCH_DESKTOP_DATA_DIR: '/tmp/d', XDG_STATE_HOME: '/s' }, homedir }), '/tmp/d/logs');
+  assert.equal(resolveDesktopLogDir({ env: { WORKBENCH_DESKTOP_DATA_DIR: '/tmp/d', WORKBENCH_DESKTOP_PRODUCTION: '1', XDG_STATE_HOME: '/s' }, homedir }), '/s/workbench/logs');
   // Relative overrides are ignored rather than resolved against an arbitrary cwd.
-  assert.equal(resolveDesktopLogDir({ env: { MAW_DESKTOP_LOG_DIR: 'rel', XDG_STATE_HOME: 'rel2' }, homedir }), '/home/user/.local/state/maw/logs');
+  assert.equal(resolveDesktopLogDir({ env: { WORKBENCH_DESKTOP_LOG_DIR: 'rel', XDG_STATE_HOME: 'rel2' }, homedir }), '/home/user/.local/state/workbench/logs');
 });
 
 test('the logger creates a 0700 directory and a 0600 file', async t => {
@@ -181,8 +181,8 @@ test('release info is read from the release root next to the app path, else null
   const appPath = path.join(release, 'packages', 'desktop');
   fs.mkdirSync(appPath, { recursive: true });
   assert.equal(readReleaseInfo(appPath), null);
-  fs.writeFileSync(path.join(release, '.maw-release-meta.json'), JSON.stringify({ releaseId: 'r-1', commit: 'abc' }));
+  fs.writeFileSync(path.join(release, '.workbench-release-meta.json'), JSON.stringify({ releaseId: 'r-1', commit: 'abc' }));
   assert.deepEqual(readReleaseInfo(appPath), { releaseId: 'r-1', commit: 'abc' });
-  fs.writeFileSync(path.join(release, '.maw-release-meta.json'), '{not json');
+  fs.writeFileSync(path.join(release, '.workbench-release-meta.json'), '{not json');
   assert.equal(readReleaseInfo(appPath), null);
 });

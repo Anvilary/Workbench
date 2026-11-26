@@ -35,7 +35,7 @@ import type {
   TerminalActivity,
   TerminalDescriptor,
   TerminalId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { AgentSplitButton } from '../../features/agents/AgentSplitButton.js';
 import type { ConnectionStatus } from '../../connection/connection.js';
 import { t } from '../../i18n/index.js';

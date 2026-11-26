@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
-import type { ProjectId, WorkspaceId } from '@agent-workbench/shared';
+import type { ProjectId, WorkspaceId } from '@anvilary/workbench-shared';
 import { TerminalRegistry } from '../../../src/features/terminals/terminal-registry.js';
 import { RemotePtySession } from '../../../src/features/terminals/remote-pty-session.js';
 import { AgencySessionRuntime } from '../../../src/features/sessions/session-runtime.js';
@@ -93,7 +93,7 @@ test('P1 B-05: failed kill keeps registry entry intact and allows stop retry wit
     kill: async (id: string) => {
       killAttempts++;
       if (failKill) throw new Error('Connection closed by supervisor');
-      // Simulate maw-ptyd emitting exit after kill succeeds
+      // Simulate workbench-ptyd emitting exit after kill succeeds
       queueMicrotask(() => {
         const entry = (registry as any).terminals.get(id);
         if (entry) {
@@ -173,7 +173,7 @@ test('P1 B-05: failed kill keeps registry entry intact and allows stop retry wit
   registry.disposeAll();
 });
 
-test('P1 B-05: stopping during maw-ptyd disconnect settles automatically when supervisor reconnects', async () => {
+test('P1 B-05: stopping during workbench-ptyd disconnect settles automatically when supervisor reconnects', async () => {
   const terminalId = randomUUID();
   const sessionId = randomUUID();
   const workspaceId = randomUUID() as WorkspaceId;

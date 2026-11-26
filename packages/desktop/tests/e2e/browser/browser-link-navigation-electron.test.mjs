@@ -11,8 +11,8 @@ import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 
 const require = createRequire(import.meta.url);
 const here = DESKTOP_ROOT;
-const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
-  ? '/opt/maw-electron/45.2.0/electron'
+const electronExecutable = fs.existsSync('/opt/workbench-electron/45.2.0/electron')
+  ? '/opt/workbench-electron/45.2.0/electron'
   : require('electron');
 
 async function eventually(check, message = 'condition') {
@@ -28,8 +28,8 @@ test('Electron runtime: clicking a cross-site web link in ChatGPT opens a new br
   const data = await mkdtemp(path.join(tmpdir(), 'maw-link-nav-'));
   const env = {
     ...process.env,
-    MAW_DESKTOP_URL: url + '/?mode=web&shape=single',
-    MAW_DESKTOP_DATA_DIR: data,
+    WORKBENCH_DESKTOP_URL: url + '/?mode=web&shape=single',
+    WORKBENCH_DESKTOP_DATA_DIR: data,
   };
 
   let desktop;
@@ -47,7 +47,7 @@ test('Electron runtime: clicking a cross-site web link in ChatGPT opens a new br
 
   // Intercept https requests in ChatGPT partition to serve our synthetic page with hyperlinks
   await desktop.evaluate(({ session }) => {
-    const chat = session.fromPartition('persist:maw-chatgpt');
+    const chat = session.fromPartition('persist:workbench-chatgpt');
     chat.protocol.handle('https', req => {
       const u = new URL(req.url);
       if (u.hostname === 'chatgpt.com') {
@@ -73,7 +73,7 @@ test('Electron runtime: clicking a cross-site web link in ChatGPT opens a new br
 
   // Start the UI fixture
   await page.locator('#start').click();
-  await page.waitForSelector('.maw-split-pane');
+  await page.waitForSelector('.wb-split-pane');
   await frames(page);
 
   // Wait for ChatGPT view to load and attach
@@ -90,7 +90,7 @@ test('Electron runtime: clicking a cross-site web link in ChatGPT opens a new br
 
   // Find the ChatGPT webContents
   const chatWebContentsId = await desktop.evaluate(({ session, webContents }) => {
-    const chatSession = session.fromPartition('persist:maw-chatgpt');
+    const chatSession = session.fromPartition('persist:workbench-chatgpt');
     const all = webContents.getAllWebContents();
     const chat = all.find(c => c.session === chatSession);
     return chat?.id;

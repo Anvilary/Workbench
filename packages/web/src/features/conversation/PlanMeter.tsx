@@ -13,7 +13,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import type { PlanLimitWindow, StatusLineState } from '@agent-workbench/shared';
+import type { PlanLimitWindow, StatusLineState } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 import {
   PLAN_DANGER_PERCENT,

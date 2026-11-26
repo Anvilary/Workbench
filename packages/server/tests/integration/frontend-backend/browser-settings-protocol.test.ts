@@ -10,7 +10,7 @@ import {
   DEFAULT_BROWSER_PROFILE_ID,
   parseServerMessage,
   type ServerMessage,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { attachWorkbenchSocket } from '../../../src/transport/websocket/socket-server.js';
 import { TerminalRegistry } from '../../../src/features/terminals/terminal-registry.js';
 import { createAgentRegistry } from '../../../src/agents/registry.js';

@@ -28,7 +28,7 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { TerminalActivity, TerminalId } from '@agent-workbench/shared';
+import type { TerminalActivity, TerminalId } from '@anvilary/workbench-shared';
 import { mergePrefill } from '../agents/agent-ui.js';
 import {
   assembleMessage,
@@ -67,7 +67,7 @@ import type { AgentConnection } from '../../connection/connection.js';
 const MIN_TEXTAREA_PX = 90;
 const DEFAULT_TEXTAREA_PX = 260;
 const MAX_TEXTAREA_PX = 720;
-const TEXTAREA_HEIGHT_KEY = 'agent-workbench.composer-height';
+const TEXTAREA_HEIGHT_KEY = 'workbench.composer-height';
 
 /**
  * Pone un texto en el cuadro, donde esta el cursor: la ruta de un archivo del

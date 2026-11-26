@@ -33,7 +33,7 @@ import {
   type GitDiff,
   type WorktreeChangedFile,
   type WorktreeCommit,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { GitMissingError, diffFromOutput, parsePorcelainV2, parseWorktreeListZ, type WorktreeEntry } from '../git/git-repo.js';
 
 export type { WorktreeEntry };

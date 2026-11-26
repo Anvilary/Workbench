@@ -1,5 +1,5 @@
-import { assignCreatedTab, reconcileLayout } from '@agent-workbench/shared';
-import type { AgencyClientMessage, AgencyRuntimeSession, AgencyServerMessage, EditorTabClientMessage, WebTabClientMessage, WorkspaceId, WorkspacePaneLayout } from '@agent-workbench/shared';
+import { assignCreatedTab, reconcileLayout } from '@anvilary/workbench-shared';
+import type { AgencyClientMessage, AgencyRuntimeSession, AgencyServerMessage, EditorTabClientMessage, WebTabClientMessage, WorkspaceId, WorkspacePaneLayout } from '@anvilary/workbench-shared';
 import { AgencyRuntimeError, type AgencySessionRuntime } from '../sessions/session-runtime.js';
 import type { AgencyWorkspaceStore } from './workspace-store.js';
 import { WorkspaceMutex } from './workspace-lock.js';

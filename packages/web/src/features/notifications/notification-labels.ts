@@ -1,4 +1,4 @@
-import type { MawActivityState } from '@agent-workbench/shared';
+import type { MawActivityState } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 
 export function notificationText(item: {

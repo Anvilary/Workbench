@@ -22,7 +22,7 @@
  */
 
 import { readFile as readFileFromDisk, stat as statFromDisk } from 'node:fs/promises';
-import { asRecord } from '@agent-workbench/shared';
+import { asRecord } from '@anvilary/workbench-shared';
 
 /** Cada cuanto, como mucho, se mira si el catalogo cambio. */
 export const CATALOG_RECHECK_MS = 60_000;

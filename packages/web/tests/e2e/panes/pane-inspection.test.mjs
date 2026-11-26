@@ -37,7 +37,7 @@ async function setup(t, web = false) {
   t.after(() => assert.deepEqual(errors, []));
   await page.goto('http://127.0.0.1:' + server.address().port + (web ? '/?web' : '/'));
   await page.locator('#start').click();
-  await page.waitForFunction(() => document.querySelectorAll('.maw-split-pane').length === 2);
+  await page.waitForFunction(() => document.querySelectorAll('.wb-split-pane').length === 2);
   if (!web) await page.waitForFunction(() => window.terminals.length === 2);
   await frames(page);
   return page;
@@ -46,15 +46,15 @@ async function setup(t, web = false) {
 const frames = (page, count = 4) => page.evaluate(async (count) => {
   for (let i = 0; i < count; i++) await new Promise(resolve => requestAnimationFrame(resolve));
 }, count);
-const focus = (page, side) => page.locator('#pane-container-' + side + ' .maw-pane-header').click({ position: { x: 30, y: 4 } });
+const focus = (page, side) => page.locator('#pane-container-' + side + ' .wb-pane-header').click({ position: { x: 30, y: 4 } });
 const ackIds = page => page.evaluate(() => window.inspection.requests.filter(m => m.type === 'agency.tab.acknowledge').map(m => m.tabId));
 const consistent = async (page, side, id) => {
   try {
     await page.waitForFunction(({ side, id, ws }) =>
-      document.querySelector('.maw-split-pane.is-focused')?.id === 'pane-container-' + side && window.inspection.state.selected[ws] === id,
+      document.querySelector('.wb-split-pane.is-focused')?.id === 'pane-container-' + side && window.inspection.state.selected[ws] === id,
     { side, id, ws: workspaceId });
   } catch (error) {
-    const state = await page.evaluate(() => ({ focus: document.querySelector('.maw-split-pane.is-focused')?.id, selected: window.inspection.state.selected, requests: window.inspection.requests.filter(m => m.type.startsWith('agency.')) }));
+    const state = await page.evaluate(() => ({ focus: document.querySelector('.wb-split-pane.is-focused')?.id, selected: window.inspection.state.selected, requests: window.inspection.requests.filter(m => m.type.startsWith('agency.')) }));
     throw new Error(JSON.stringify(state), { cause: error });
   }
 };
@@ -64,7 +64,7 @@ test('visible running CLIs retain background completion until the completed pane
   await page.evaluate(id => window.inspection.finish(id), tabB);
   await frames(page);
   assert.deepEqual(await ackIds(page), []);
-  assert.equal(await page.locator('.maw-session-pane:visible').count(), 2);
+  assert.equal(await page.locator('.wb-session-pane:visible').count(), 2);
   await focus(page, 'right');
   await page.waitForFunction(() => window.inspection.requests.some(m => m.type === 'agency.tab.acknowledge'));
   await consistent(page, 'right', tabB);
@@ -88,7 +88,7 @@ test('rapid focus changes serialize asynchronous selection and suppress stale in
   await page.evaluate(() => window.inspection.resolve());
   await page.waitForFunction(() => window.inspection.pending[0]?.message.tabId === '33333333-3333-4333-8333-333333333333');
   assert.deepEqual(await ackIds(page), []);
-  assert.equal(await page.locator('.maw-split-pane.is-focused').getAttribute('id'), 'pane-container-left');
+  assert.equal(await page.locator('.wb-split-pane.is-focused').getAttribute('id'), 'pane-container-left');
   await page.evaluate(() => { window.inspection.delay(false); window.inspection.resolve(); });
   await consistent(page, 'left', tabA);
   await focus(page, 'right');

@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AgentsUsageSnapshot, ClientMessage, ServerMessage } from '@agent-workbench/shared';
+import type { AgentsUsageSnapshot, ClientMessage, ServerMessage } from '@anvilary/workbench-shared';
 import type { ConnectionStatus } from '../../connection/connection.js';
 import { t } from '../../i18n/index.js';
 

@@ -83,8 +83,8 @@ export function requestPinDialog({
     };
 
     const cleanup = () => {
-      ipcMain.removeListener('maw:webauthn:pin-submit', onSubmit);
-      ipcMain.removeListener('maw:webauthn:pin-cancel', onCancel);
+      ipcMain.removeListener('workbench:webauthn:pin-submit', onSubmit);
+      ipcMain.removeListener('workbench:webauthn:pin-cancel', onCancel);
       clearTimeout(timer);
       if (signal) signal.removeEventListener('abort', onAbort);
     };
@@ -119,8 +119,8 @@ export function requestPinDialog({
     }, timeoutMs);
 
     if (signal) signal.addEventListener('abort', onAbort, { once: true });
-    ipcMain.on('maw:webauthn:pin-submit', onSubmit);
-    ipcMain.on('maw:webauthn:pin-cancel', onCancel);
+    ipcMain.on('workbench:webauthn:pin-submit', onSubmit);
+    ipcMain.on('workbench:webauthn:pin-cancel', onCancel);
 
     win.on('closed', () => {
       if (!settled) {

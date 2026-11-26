@@ -6,8 +6,8 @@ const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 // Expose minimal, unprivileged WebAuthn bridge to the isolated world
 contextBridge.exposeInMainWorld('__mawWebAuthn', Object.freeze({
-  get: (options) => ipcRenderer.invoke('maw:webauthn:get', options),
-  isAvailable: () => ipcRenderer.invoke('maw:webauthn:is-available'),
+  get: (options) => ipcRenderer.invoke('workbench:webauthn:get', options),
+  isAvailable: () => ipcRenderer.invoke('workbench:webauthn:is-available'),
 }));
 
 // Install the navigator.credentials wrapper in the main world

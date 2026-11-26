@@ -17,7 +17,7 @@ Workbench operates as an Electron multi-process application with isolated render
  (Desktop Electron)     (Remote Web Client / Fallback)
        │                       │
        ▼                       ▼
-mawChatGpt.command      navigator.clipboard.writeText
+workbench.command      navigator.clipboard.writeText
        │
        ▼ (IPC: validCommand policy check)
 [Desktop Main Process: Electron clipboard.writeText]

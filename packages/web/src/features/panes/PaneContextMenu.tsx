@@ -85,7 +85,7 @@ export function PaneContextMenu({
   return (
     <div
       ref={menuRef}
-      className="maw-context-menu"
+      className="wb-context-menu"
       role="menu"
       aria-label={t('agency.ui.copy')}
       style={{ left: `${clampedX}px`, top: `${clampedY}px` }}
@@ -158,7 +158,7 @@ export function PaneContextMenu({
       >
         {t('agency.ui.paste')}
       </button>
-      <div className="maw-context-menu-divider" role="separator" />
+      <div className="wb-context-menu-divider" role="separator" />
       {isLive && (
         <button
           type="button"
@@ -183,7 +183,7 @@ export function PaneContextMenu({
       </button>
       {fileCandidate && (
         <>
-          <div className="maw-context-menu-divider" role="separator" />
+          <div className="wb-context-menu-divider" role="separator" />
           {onOpenFile && (
             <button
               type="button"

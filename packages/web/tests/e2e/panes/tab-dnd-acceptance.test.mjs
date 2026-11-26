@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setup, frames, pane } from '../../fixtures/pane-interactions-harness.mjs';
 
-const menu = (page, n) => pane(page, n).locator('.maw-pane-add-tab');
+const menu = (page, n) => pane(page, n).locator('.wb-pane-add-tab');
 const create = async (page, n, kind) => {
   await menu(page, n).click();
   await page.getByRole('menuitem', {
@@ -28,18 +28,18 @@ test('AUDIT E: Tab Drag and Drop - ghost tracking, visual cursor following, reor
 
   // Pane 1 starts with Tab 1. Add Tab 2 and Tab 3 to Pane 1
   await create(page, 1, 'terminal');
-  await page.waitForFunction(() => document.querySelectorAll('#pane-container-pane-1 .maw-session-tab').length === 2);
+  await page.waitForFunction(() => document.querySelectorAll('#pane-container-pane-1 .wb-session-tab').length === 2);
   await create(page, 1, 'terminal');
-  await page.waitForFunction(() => document.querySelectorAll('#pane-container-pane-1 .maw-session-tab').length === 3);
+  await page.waitForFunction(() => document.querySelectorAll('#pane-container-pane-1 .wb-session-tab').length === 3);
 
   // Pane 2 starts with Tab 2 (or native web view)
   await create(page, 2, 'web');
-  await page.waitForFunction(() => document.querySelectorAll('#pane-container-pane-2 .maw-session-tab').length >= 1);
+  await page.waitForFunction(() => document.querySelectorAll('#pane-container-pane-2 .wb-session-tab').length >= 1);
 
   const initialDisposed = await page.evaluate(() => window.disposed);
 
   // 1. Reorder within a pane: Drag Tab 1 past Tab 2
-  const tabsPane1 = pane(page, 1).locator('.maw-session-tab');
+  const tabsPane1 = pane(page, 1).locator('.wb-session-tab');
   const tab0 = tabsPane1.nth(0);
   const tab1 = tabsPane1.nth(1);
   const box0 = await tab0.boundingBox();
@@ -58,10 +58,10 @@ test('AUDIT E: Tab Drag and Drop - ghost tracking, visual cursor following, reor
   await frames(page, 2);
 
   // Visual Assertion: Ghost element exists and shield exists
-  const ghost = page.locator('.maw-tab-drag-ghost');
+  const ghost = page.locator('.wb-tab-drag-ghost');
   await ghost.waitFor({ state: 'visible', timeout: 5000 });
   assert.equal(await ghost.count(), 1, 'Drag ghost element must be created');
-  assert.equal(await page.locator('.maw-pane-drag-shield').count(), 1, 'Drag shield element must be present');
+  assert.equal(await page.locator('.wb-pane-drag-shield').count(), 1, 'Drag shield element must be present');
 
   // Verify ghost transform follows cursor
   const ghostTransform = await ghost.evaluate(el => el.style.transform);
@@ -78,8 +78,8 @@ test('AUDIT E: Tab Drag and Drop - ghost tracking, visual cursor following, reor
   await frames(page, 5);
 
   // Assert ghost and shield cleaned up
-  assert.equal(await page.locator('.maw-tab-drag-ghost').count(), 0, 'Ghost element must be removed after mouse up');
-  assert.equal(await page.locator('.maw-pane-drag-shield').count(), 0, 'Shield element must be removed after mouse up');
+  assert.equal(await page.locator('.wb-tab-drag-ghost').count(), 0, 'Ghost element must be removed after mouse up');
+  assert.equal(await page.locator('.wb-pane-drag-shield').count(), 0, 'Shield element must be removed after mouse up');
 
   // Verify Tab 0 moved after Tab 1
   const reorderedTitles = await tabsPane1.evaluateAll(els => els.map(e => e.textContent?.trim()));
@@ -88,7 +88,7 @@ test('AUDIT E: Tab Drag and Drop - ghost tracking, visual cursor following, reor
   // 2. Drag across panes: Drag first tab of Pane 1 into Pane 2
   const sourceTab = tabsPane1.first();
   const sourceBox = await sourceTab.boundingBox();
-  const pane2Header = pane(page, 2).locator('.maw-pane-header');
+  const pane2Header = pane(page, 2).locator('.wb-pane-header');
   const targetBox = await pane2Header.boundingBox();
   assert.ok(sourceBox && targetBox);
 
@@ -105,7 +105,7 @@ test('AUDIT E: Tab Drag and Drop - ghost tracking, visual cursor following, reor
 
   // Pane 1 now has 2 tabs, Pane 2 has 2 + 1 = 3 tabs
   assert.equal(await tabsPane1.count(), 2, 'Pane 1 should have 2 tabs remaining');
-  assert.equal(await pane(page, 2).locator('.maw-session-tab').count(), 3, 'Pane 2 should have 3 tabs');
+  assert.equal(await pane(page, 2).locator('.wb-session-tab').count(), 3, 'Pane 2 should have 3 tabs');
 
   // 3. Cancel with Escape
   const cancelTab = tabsPane1.first();
@@ -125,13 +125,13 @@ test('AUDIT E: Tab Drag and Drop - ghost tracking, visual cursor following, reor
   await frames(page, 2);
 
   // Verify ghost is gone and tab order did not change
-  assert.equal(await page.locator('.maw-tab-drag-ghost').count(), 0, 'Ghost must be destroyed on Escape');
-  assert.equal(await page.locator('.maw-pane-drag-shield').count(), 0, 'Shield must be destroyed on Escape');
+  assert.equal(await page.locator('.wb-tab-drag-ghost').count(), 0, 'Ghost must be destroyed on Escape');
+  assert.equal(await page.locator('.wb-pane-drag-shield').count(), 0, 'Shield must be destroyed on Escape');
   const titlesAfterCancel = await tabsPane1.evaluateAll(els => els.map(e => e.textContent?.trim()));
   assert.deepEqual(titlesAfterCancel, titlesBeforeCancel, 'Tab order must not change after Escape cancel');
 
   // 4. Keyboard reordering: Alt+Arrow
-  const selectedTabButton = pane(page, 1).locator('.maw-session-tab button[role="tab"]').first();
+  const selectedTabButton = pane(page, 1).locator('.wb-session-tab button[role="tab"]').first();
   await selectedTabButton.focus();
   const titlesBeforeKey = await tabsPane1.evaluateAll(els => els.map(e => e.textContent?.trim()));
   await page.keyboard.press('Alt+ArrowRight');

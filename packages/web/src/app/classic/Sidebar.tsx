@@ -27,7 +27,7 @@ import {
   type SessionAgentId,
   type SessionSummary,
   type VaultStatus,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { AgentBadge } from '../../features/agents/AgentBadge.js';
 import { BranchIcon } from '../../shared/ui/BranchIcon.js';
 import { LongPressButton } from '../../shared/ui/LongPressButton.js';

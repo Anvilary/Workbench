@@ -48,7 +48,7 @@ export function parseHardwareAccelerationStatus(value: unknown): HardwareAcceler
 }
 
 export function desktopBridge(): DesktopBridge | null {
-  return typeof window !== 'undefined' && window.mawChatGpt ? window.mawChatGpt : null;
+  return typeof window !== 'undefined' && window.workbench ? window.workbench : null;
 }
 
 /** null when there is no desktop shell or it does not know the command (an older shell). */

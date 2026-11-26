@@ -294,12 +294,12 @@ test('applyWebContentsZoom bounds zoom levels, tracks map state, and emits zoom 
 
 test('discoverBackendReadiness enforces file permissions, rejects symlinks, and probes loopback URL', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'maw-readiness-test-'));
-  const previousRuntimeDir = process.env.MAW_RUNTIME_DIR;
+  const previousRuntimeDir = process.env.WORKBENCH_RUNTIME_DIR;
   let server;
   try {
     await chmod(dir, 0o700);
-    process.env.MAW_RUNTIME_DIR = dir;
-    const readyFile = path.join(dir, 'maw-ready.json');
+    process.env.WORKBENCH_RUNTIME_DIR = dir;
+    const readyFile = path.join(dir, 'workbench-ready.json');
 
     server = createServer((_req, res) => {
       res.writeHead(200);
@@ -328,9 +328,9 @@ test('discoverBackendReadiness enforces file permissions, rejects symlinks, and 
     await assert.rejects(() => discoverBackendReadiness(), /Invalid readiness file type/);
   } finally {
     if (previousRuntimeDir === undefined) {
-      delete process.env.MAW_RUNTIME_DIR;
+      delete process.env.WORKBENCH_RUNTIME_DIR;
     } else {
-      process.env.MAW_RUNTIME_DIR = previousRuntimeDir;
+      process.env.WORKBENCH_RUNTIME_DIR = previousRuntimeDir;
     }
     if (server) {
       await new Promise((resolve) => server.close(resolve));

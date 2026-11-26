@@ -131,14 +131,14 @@ test('live terminals keep scrollback, selection and the PTY attachment across sw
     res.end(`<!doctype html><html><head><style>
       html,body,#root{height:100%;margin:0}
       .agency-workspace-view{display:flex;flex-direction:column;height:100%}
-      .maw-split-workspace-content{flex:1;display:flex;min-height:0}
-      .maw-split-container{display:flex;flex:1;min-width:0;min-height:0}
-      .maw-split-pane{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0}
-      .maw-pane-body{flex:1;display:flex;min-height:0;min-width:0;position:relative}
-      .maw-session-holder{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
-      .maw-session-holder[hidden],.maw-session-pane[hidden],.maw-terminal-park{display:none !important}
+      .wb-split-workspace-content{flex:1;display:flex;min-height:0}
+      .wb-split-container{display:flex;flex:1;min-width:0;min-height:0}
+      .wb-split-pane{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0}
+      .wb-pane-body{flex:1;display:flex;min-height:0;min-width:0;position:relative}
+      .wb-session-holder{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
+      .wb-session-holder[hidden],.wb-session-pane[hidden],.wb-terminal-park{display:none !important}
       .agency-modal-backdrop{position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;background:#090b10bb}
-      .maw-session-pane{display:flex;flex:1;flex-direction:column;min-height:0}
+      .wb-session-pane{display:flex;flex:1;flex-direction:column;min-height:0}
       .agency-agent-body{flex:1;position:relative;min-height:0}
       .agency-xterm-host,.terminal-surface{position:absolute;inset:0}
       .terminal-surface-hidden{visibility:hidden}
@@ -234,16 +234,16 @@ test('live terminals keep scrollback, selection and the PTY attachment across sw
 
   // Pane actions menu: Escape cancels without modifying layout
   await page.getByRole('button', { name: 'Pane actions' }).click();
-  await page.locator('.maw-pane-menu').waitFor();
+  await page.locator('.wb-pane-menu').waitFor();
   await page.keyboard.press('Escape');
-  await page.waitForFunction(() => document.querySelectorAll('.maw-pane-menu').length === 0);
-  assert.equal(await page.locator('.maw-split-pane').count(), 1);
+  await page.waitForFunction(() => document.querySelectorAll('.wb-pane-menu').length === 0);
+  assert.equal(await page.locator('.wb-split-pane').count(), 1);
 
   // Pane actions -> Split vertically creates the second pane with EmptyPaneChooser, then New Terminal launches tabC
   await page.getByRole('button', { name: 'Pane actions' }).click();
   await page.getByRole('menuitem', { name: 'Split vertically' }).click();
-  await page.waitForFunction(() => document.querySelectorAll('.maw-split-pane').length === 2);
-  await page.locator('.maw-split-pane').nth(1).getByRole('button', { name: 'New Terminal' }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.wb-split-pane').length === 2);
+  await page.locator('.wb-split-pane').nth(1).getByRole('button', { name: 'New Terminal' }).click();
   const shellPane = await read(tabA);
   const tabC = '55555555-5555-4555-8555-555555555555';
   const newPane = await read(tabC);
@@ -257,7 +257,7 @@ test('live terminals keep scrollback, selection and the PTY attachment across sw
   assert.deepEqual((await snapshot()).attaches.sort(), ['term-a', 'term-b', 'term-c']);
 
   const tabABox = await page.getByRole('tab', { name: /Shell A/ }).boundingBox();
-  const pane2StripBox = await page.locator('.maw-split-pane').nth(1).locator('.maw-pane-tabs').boundingBox();
+  const pane2StripBox = await page.locator('.wb-split-pane').nth(1).locator('.wb-pane-tabs').boundingBox();
   await page.mouse.move(tabABox.x + tabABox.width / 2, tabABox.y + tabABox.height / 2);
   await page.mouse.down();
   await page.mouse.move(pane2StripBox.x + 24, pane2StripBox.y + pane2StripBox.height / 2, { steps: 12 });
@@ -271,7 +271,7 @@ test('live terminals keep scrollback, selection and the PTY attachment across sw
 
   await page.getByRole('button', { name: 'Pane actions' }).first().click();
   await page.getByRole('menuitem', { name: 'Single pane' }).click();
-  await page.waitForFunction(() => document.querySelectorAll('.maw-split-pane').length === 1);
+  await page.waitForFunction(() => document.querySelectorAll('.wb-split-pane').length === 1);
   assert.equal((await read(tabA)).n, 0);
   assert.equal((await read(tabB)).n, 1);
   assert.equal((await snapshot()).disposed, 0);

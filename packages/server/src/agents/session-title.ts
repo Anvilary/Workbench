@@ -11,7 +11,7 @@
  * tercer consumidor (hito 26).
  */
 
-import { pastedBlockPattern, pastedBoundaryPattern } from '@agent-workbench/shared';
+import { pastedBlockPattern, pastedBoundaryPattern } from '@anvilary/workbench-shared';
 
 /** Largo maximo de un titulo en la barra. */
 export const TITLE_MAX_LENGTH = 90;

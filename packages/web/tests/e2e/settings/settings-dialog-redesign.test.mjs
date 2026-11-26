@@ -15,7 +15,7 @@ const require = createRequire(path.join(projectRoot, 'package.json'));
 const { build } = require('esbuild');
 const { chromium } = require('playwright');
 
-const artifactDir = process.env.MAW_TEST_ARTIFACTS_DIR || path.join(tmpdir(), 'maw-test-artifacts', 'settings-dialog-redesign');
+const artifactDir = process.env.WORKBENCH_TEST_ARTIFACTS_DIR || path.join(tmpdir(), 'maw-test-artifacts', 'settings-dialog-redesign');
 mkdirSync(path.join(artifactDir, 'screenshots'), { recursive: true });
 
 function browserExecutable() {
@@ -373,30 +373,30 @@ test('SettingsDialog acceptance suite: 2-pane navigation, tabs, accessibility, a
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     await page.goto(`http://127.0.0.1:${port}`);
-    await page.waitForSelector('.maw-settings-window');
+    await page.waitForSelector('.wb-settings-window');
 
     // 1. Check title, header icon, and navigation items
-    const titleText = await page.textContent('.maw-settings-title');
+    const titleText = await page.textContent('.wb-settings-title');
     assert.equal(titleText.trim(), 'Settings');
-    const headerSvgCount = await page.locator('.maw-settings-header-icon svg').count();
+    const headerSvgCount = await page.locator('.wb-settings-header-icon svg').count();
     assert.equal(headerSvgCount, 1, 'Header icon should be an SVG');
 
-    const navTabs = page.locator('.maw-settings-nav-item');
+    const navTabs = page.locator('.wb-settings-nav-item');
     const tabCount = await navTabs.count();
     assert.equal(tabCount, 7, 'Expected 7 tabs (Appearance merged into General, including browser and legacy panels)');
 
     // Verify SVG icons on all nav items (no colorful emojis)
-    const navSvgCount = await page.locator('.maw-settings-nav-icon svg').count();
+    const navSvgCount = await page.locator('.wb-settings-nav-icon svg').count();
     assert.equal(navSvgCount, 7, 'All 7 nav items should use consistent SVG icons');
 
     // Verify authoritative version display at bottom-left
-    const versionEl = page.locator('.maw-settings-version');
+    const versionEl = page.locator('.wb-settings-version');
     assert.equal(await versionEl.count(), 1, 'Version display should exist in sidebar footer');
     const versionText = await versionEl.textContent();
     assert.ok(versionText?.startsWith('v0.8.1'), `Expected version starting with v0.8.1, got ${versionText}`);
 
     // 2. Verify Initial General Tab (now includes Terminal Theme & Dark Theme)
-    const generalSectionTitle = await page.textContent('.maw-settings-section-title');
+    const generalSectionTitle = await page.textContent('.wb-settings-section-title');
     assert.equal(generalSectionTitle.trim(), 'General');
     const generalThemeRadios = await page.locator('input[name="terminal-theme"]').count();
     assert.equal(generalThemeRadios, 2, 'General tab should now contain terminal theme preference radios');
@@ -407,40 +407,40 @@ test('SettingsDialog acceptance suite: 2-pane navigation, tabs, accessibility, a
     assert.equal(appearanceTabCount, 0, 'Appearance tab should no longer exist as a standalone category');
 
     // 4. Test Search Functionality: search, empty state, and navigation
-    const searchInput = page.locator('.maw-settings-search-input');
+    const searchInput = page.locator('.wb-settings-search-input');
     assert.equal(await searchInput.count(), 1, 'Search input should exist in sidebar');
 
     // 4a. Search for a query that matches settings in another category (e.g. "duckduckgo" or "search engine")
     await searchInput.fill('DuckDuckGo');
     await page.waitForTimeout(100);
-    const searchResults = page.locator('.maw-settings-search-item');
+    const searchResults = page.locator('.wb-settings-search-item');
     const resultCount = await searchResults.count();
     assert.ok(resultCount > 0, 'Expected at least 1 search result for DuckDuckGo');
 
     // Selecting result navigates to Browser category
     await searchResults.first().click();
     await page.waitForTimeout(100);
-    const activeSectionAfterSearch = await page.textContent('.maw-settings-section-title');
+    const activeSectionAfterSearch = await page.textContent('.wb-settings-section-title');
     assert.equal(activeSectionAfterSearch.trim(), 'Browser', 'Selecting search result should navigate to Browser category');
 
     // 4b. Test Empty State for search
     await searchInput.fill('xyznonexistentquery999');
     await page.waitForTimeout(100);
-    const emptyState = page.locator('.maw-settings-search-empty');
+    const emptyState = page.locator('.wb-settings-search-empty');
     assert.equal(await emptyState.count(), 1, 'Empty state should be displayed when no settings match');
 
     // 4c. Clear search to restore tab navigation
-    const clearBtn = page.locator('.maw-settings-search-clear');
+    const clearBtn = page.locator('.wb-settings-search-clear');
     await clearBtn.click();
     await page.waitForTimeout(100);
-    const restoredTabCount = await page.locator('.maw-settings-nav-item').count();
+    const restoredTabCount = await page.locator('.wb-settings-nav-item').count();
     assert.equal(restoredTabCount, 7, 'Clearing search should restore normal tab navigation');
 
     // 5. Navigate to Terminal Tab
     const terminalTab = page.locator('#settings-tab-terminal');
     await terminalTab.click();
     await page.waitForTimeout(100);
-    const terminalTitle = await page.textContent('.maw-settings-section-title');
+    const terminalTitle = await page.textContent('.wb-settings-section-title');
     assert.equal(terminalTitle.trim(), 'Terminal');
     const shellRadios = await page.locator('input[name="console-shell"]').count();
     assert.equal(shellRadios, 4, 'Expected auto + 3 installed shells');
@@ -450,63 +450,63 @@ test('SettingsDialog acceptance suite: 2-pane navigation, tabs, accessibility, a
     const agentsTab = page.locator('#settings-tab-agents');
     await agentsTab.click();
     await page.waitForTimeout(100);
-    const agentsTitle = await page.textContent('.maw-settings-section-title');
+    const agentsTitle = await page.textContent('.wb-settings-section-title');
     assert.equal(agentsTitle.trim(), 'Agents');
-    const cliRows = await page.locator('.maw-settings-cli-row').count();
+    const cliRows = await page.locator('.wb-settings-cli-row').count();
     assert.equal(cliRows, 5, 'Expected 5 configured agent CLIs');
 
     // 6b. Verify Profiles section in Agents Tab
     const profilesCard = page.locator('#setting-card-profiles');
     assert.equal(await profilesCard.count(), 1, 'Expected setting-card-profiles card');
-    const providerGroups = page.locator('.maw-provider-group');
+    const providerGroups = page.locator('.wb-provider-group');
     assert.equal(await providerGroups.count(), 5, 'Expected 5 provider groups (Codex, Claude, AGY, OpenCode, Pi)');
 
     // Codex has 2 profiles, so it should default to collapsed
-    const codexToggle = page.locator('.maw-provider-group-toggle').first();
+    const codexToggle = page.locator('.wb-provider-group-toggle').first();
     assert.equal(await codexToggle.getAttribute('aria-expanded'), 'false', 'Multi-profile provider should default to collapsed');
 
     // Click toggle to expand
     await codexToggle.click();
     assert.equal(await codexToggle.getAttribute('aria-expanded'), 'true', 'Clicking toggle expands the provider group');
-    const profileRows = page.locator('.maw-profile-row');
+    const profileRows = page.locator('.wb-profile-row');
     assert.ok((await profileRows.count()) >= 2, 'Expected expanded profiles to be visible');
 
     // Test Add Profile button and modal
-    const addProfileBtn = page.locator('.maw-add-profile-btn');
+    const addProfileBtn = page.locator('.wb-add-profile-btn');
     assert.equal(await addProfileBtn.count(), 1);
     await addProfileBtn.click();
-    const addModal = page.locator('.maw-profile-form-dialog');
+    const addModal = page.locator('.wb-profile-form-dialog');
     assert.equal(await addModal.count(), 1, 'Add profile dialog opened');
     const providerOptions = page.locator('#new-profile-provider option');
     assert.equal(await providerOptions.count(), 5, 'Expected 5 provider options in Add Profile');
-    const browseBtn = page.locator('.maw-browse-btn');
+    const browseBtn = page.locator('.wb-browse-btn');
     assert.equal(await browseBtn.count(), 1, 'Expected native browse button');
 
     // C-08: Escape closes only the nested Add Profile modal and keeps SettingsDialog open
     await page.keyboard.press('Escape');
     await page.waitForTimeout(50);
-    assert.equal(await page.locator('.maw-profile-form-dialog').count(), 0, 'Nested modal closed on Escape');
-    assert.equal(await page.locator('.maw-settings-window').count(), 1, 'SettingsDialog must remain open when nested modal closes via Escape');
+    assert.equal(await page.locator('.wb-profile-form-dialog').count(), 0, 'Nested modal closed on Escape');
+    assert.equal(await page.locator('.wb-settings-window').count(), 1, 'SettingsDialog must remain open when nested modal closes via Escape');
 
     // Re-open and test Cancel button too
     await addProfileBtn.click();
-    assert.equal(await page.locator('.maw-profile-form-dialog').count(), 1, 'Add profile dialog reopened');
-    await page.locator('.maw-modal-footer button:has-text("Cancel")').click();
-    assert.equal(await page.locator('.maw-profile-form-dialog').count(), 0, 'Dialog closed on Cancel');
+    assert.equal(await page.locator('.wb-profile-form-dialog').count(), 1, 'Add profile dialog reopened');
+    await page.locator('.wb-modal-footer button:has-text("Cancel")').click();
+    assert.equal(await page.locator('.wb-profile-form-dialog').count(), 0, 'Dialog closed on Cancel');
 
     await page.screenshot({ path: path.join(artifactDir, 'screenshots', 'settings-after-agents.png') });
 
     // 6c. C-10 & C-13: Browser tab profile deletion requires confirmation & + Add expands collapsed subsection
     await page.locator('#settings-tab-browser').click();
     await page.waitForTimeout(100);
-    const engineToggle = page.locator('#setting-card-search-engine .maw-subsection-toggle');
+    const engineToggle = page.locator('#setting-card-search-engine .wb-subsection-toggle');
     await engineToggle.click();
     assert.equal(await engineToggle.getAttribute('aria-expanded'), 'false', 'Search engine subsection collapsed');
-    await page.locator('#setting-card-search-engine .maw-settings-engine-action-btn').click();
+    await page.locator('#setting-card-search-engine .wb-settings-engine-action-btn').click();
     assert.equal(await engineToggle.getAttribute('aria-expanded'), 'true', 'Clicking + Add Search Engine expands collapsed subsection');
-    await page.locator('#setting-card-search-engine .maw-settings-form-actions button[type="button"]').click();
+    await page.locator('#setting-card-search-engine .wb-settings-form-actions button[type="button"]').click();
 
-    const deleteWorkProfileBtn = page.locator('[data-profile-id="prof-work"] .maw-settings-profile-delete-btn');
+    const deleteWorkProfileBtn = page.locator('[data-profile-id="prof-work"] .wb-settings-profile-delete-btn');
     await deleteWorkProfileBtn.click();
     await page.waitForTimeout(50);
     assert.equal(await page.locator('[data-profile-id="prof-work"]').count(), 1, 'Profile must NOT be deleted before confirmation');
@@ -515,7 +515,7 @@ test('SettingsDialog acceptance suite: 2-pane navigation, tabs, accessibility, a
     await page.keyboard.press('Escape');
     await page.waitForTimeout(50);
     assert.equal(await page.locator('.agency-dialog[role="dialog"]').count(), 0, 'Escape dismisses delete profile confirmation');
-    assert.equal(await page.locator('.maw-settings-window').count(), 1, 'SettingsDialog stays open after cancelling confirmation');
+    assert.equal(await page.locator('.wb-settings-window').count(), 1, 'SettingsDialog stays open after cancelling confirmation');
     assert.equal(await page.locator('[data-profile-id="prof-work"]').count(), 1, 'Profile remains intact after Escape');
     // Confirm deletion actually removes the profile
     await deleteWorkProfileBtn.click();
@@ -543,15 +543,15 @@ test('SettingsDialog acceptance suite: 2-pane navigation, tabs, accessibility, a
     const aboutTab = page.locator('#settings-tab-about');
     await aboutTab.click();
     await page.waitForTimeout(100);
-    const aboutAppName = await page.textContent('.maw-settings-about-name');
+    const aboutAppName = await page.textContent('.wb-settings-about-name');
     assert.equal(aboutAppName.trim(), 'Anvilary Workbench');
-    const specRows = await page.locator('.maw-settings-spec-row').count();
+    const specRows = await page.locator('.wb-settings-spec-row').count();
     assert.equal(specRows, 3, 'Expected 3 spec rows (Version, Desktop Runtime, Platform)');
     await page.screenshot({ path: path.join(artifactDir, 'screenshots', 'settings-after-about.png') });
 
     // 9. Test Arrow Key Navigation
     await page.keyboard.press('ArrowUp');
-    const activeNavTextAfterUp = await page.textContent('.maw-settings-nav-item.active');
+    const activeNavTextAfterUp = await page.textContent('.wb-settings-nav-item.active');
     assert.equal(activeNavTextAfterUp.includes('Usage'), true, 'ArrowUp navigated from About to Usage');
 
     // 10. Narrow Viewport Test (600x700)
@@ -562,7 +562,7 @@ test('SettingsDialog acceptance suite: 2-pane navigation, tabs, accessibility, a
     // 11. Escape Key Dismissal Test
     await page.keyboard.press('Escape');
     await page.waitForTimeout(100);
-    const dialogPresent = await page.locator('.maw-settings-window').count();
+    const dialogPresent = await page.locator('.wb-settings-window').count();
     assert.equal(dialogPresent, 0, 'Dialog should be dismissed on Escape');
     const closedIndicator = await page.locator('#closed-indicator').count();
     assert.equal(closedIndicator, 1, 'Closed callback should have been fired');

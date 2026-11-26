@@ -21,7 +21,7 @@
  * salvo la conexion de OpenCode, que se cierra sola (`agents/sqlite.ts`).
  */
 
-import type { ContextUsage, ConversationEvent, ConversationImageSource } from '@agent-workbench/shared';
+import type { ContextUsage, ConversationEvent, ConversationImageSource } from '@anvilary/workbench-shared';
 import type { HistorySource, LoadedImage, SessionFollower } from '../../agents/adapter.js';
 import type { EventLimits } from '../../agents/transport-limits.js';
 

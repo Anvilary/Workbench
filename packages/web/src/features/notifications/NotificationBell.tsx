@@ -33,19 +33,19 @@ export function NotificationBell({ unreadCount, open, onToggle }: Props): JSX.El
   return (
     <button
       type="button"
-      className={`agency-icon-button maw-bell-button ${open ? 'active' : ''}`}
+      className={`agency-icon-button wb-bell-button ${open ? 'active' : ''}`}
       onClick={onToggle}
       aria-label={t('agency.notifications.bell')}
       aria-haspopup="dialog"
       aria-expanded={open}
       title={t('agency.notifications.bell')}
     >
-      <span className="maw-bell-icon" aria-hidden="true">
+      <span className="wb-bell-icon" aria-hidden="true">
         <BellIcon />
       </span>
       {unreadCount > 0 && (
         <span
-          className="maw-unread-badge"
+          className="wb-unread-badge"
           aria-label={badgeLabel}
         >
           {unreadCount > 99 ? '99+' : unreadCount}

@@ -35,7 +35,7 @@ import {
   EMPTY_CONTEXT_USAGE,
   type ContextUsage,
   type PermissionMode,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { agentStatusDir } from '../../shared/app-paths.js';
 import type { AgentStatus, StatusSource } from '../adapter.js';
 import { ANTIGRAVITY_EFFORT_OPTIONS, CONVERSATION_ID_PATTERN } from './constants.js';

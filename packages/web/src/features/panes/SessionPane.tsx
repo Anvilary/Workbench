@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { AgencyCliProfile, AgencyRuntimeSession } from '@agent-workbench/shared';
+import type { AgencyCliProfile, AgencyRuntimeSession } from '@anvilary/workbench-shared';
 import type { Terminal } from '@xterm/xterm';
 import type { AgentConnection } from '../../connection/connection.js';
 import { TerminalView } from '../terminals/TerminalView.js';
@@ -220,9 +220,9 @@ export function SessionPane({
 
   const copyFile = async (relativePath: string) => {
     if (!workspaceCwd) return;
-    if (typeof window !== 'undefined' && window.mawChatGpt?.command && !(connection.isRemoteClient ? connection.isRemoteClient() : false)) {
+    if (typeof window !== 'undefined' && window.workbench?.command && !(connection.isRemoteClient ? connection.isRemoteClient() : false)) {
       try {
-        const res = (await window.mawChatGpt.command({
+        const res = (await window.workbench.command({
           type: 'copy-file',
           cwd: workspaceCwd,
           relative: relativePath,
@@ -299,7 +299,7 @@ export function SessionPane({
     connection.send({ type: 'files.read', terminalId: session.terminalId, path: relativePath });
   };
 
-  const canCopyNativeFile = typeof window !== 'undefined' && !!window.mawChatGpt?.command && !(connection.isRemoteClient ? connection.isRemoteClient() : false);
+  const canCopyNativeFile = typeof window !== 'undefined' && !!window.workbench?.command && !(connection.isRemoteClient ? connection.isRemoteClient() : false);
 
   const shellRestartedTitle =
     session.kind === 'terminal' && session.recovery?.status === 'resumed'
@@ -308,7 +308,7 @@ export function SessionPane({
 
   return (
     <div
-      className="maw-session-pane"
+      className="wb-session-pane"
       hidden={!active}
       role="tabpanel"
       id={'pane-' + session.tab?.id}

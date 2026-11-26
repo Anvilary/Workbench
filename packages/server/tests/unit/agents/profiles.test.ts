@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, chmod, rm, readFile, mkdir, symlink, readdir } from
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
-import type { CliProfileId } from '@agent-workbench/shared';
+import type { CliProfileId } from '@anvilary/workbench-shared';
 import { AgentRegistry } from '../../../src/agents/registry.js';
 import { createCodexAdapter } from '../../../src/agents/codex/index.js';
 import { createClaudeCodeAdapter } from '../../../src/agents/claude-code/index.js';

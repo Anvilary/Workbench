@@ -11,8 +11,8 @@ import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 
 const require = createRequire(import.meta.url);
 const here = DESKTOP_ROOT;
-const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
-  ? '/opt/maw-electron/45.2.0/electron'
+const electronExecutable = fs.existsSync('/opt/workbench-electron/45.2.0/electron')
+  ? '/opt/workbench-electron/45.2.0/electron'
   : require('electron');
 
 async function eventually(check, message = 'condition', timeoutMs = 15000) {
@@ -67,7 +67,7 @@ test('verify Chromium web API availability and synthetic fixture rendering in na
 
   const shellServer = createServer((_req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.end('<!doctype html><html><head><title>Workbench Test Shell</title></head><body><script>window.events=[];if(window.mawChatGpt)window.mawChatGpt.subscribe(s=>window.events.push(s));</script></body></html>');
+    res.end('<!doctype html><html><head><title>Workbench Test Shell</title></head><body><script>window.events=[];if(window.workbench)window.workbench.subscribe(s=>window.events.push(s));</script></body></html>');
   });
 
   await new Promise((resolve) => shellServer.listen(0, '127.0.0.1', resolve));
@@ -78,8 +78,8 @@ test('verify Chromium web API availability and synthetic fixture rendering in na
   const env = {
     ...process.env,
     HOME: dataDir,
-    MAW_DESKTOP_URL: `http://127.0.0.1:${serverPort}/`,
-    MAW_DESKTOP_DATA_DIR: dataDir,
+    WORKBENCH_DESKTOP_URL: `http://127.0.0.1:${serverPort}/`,
+    WORKBENCH_DESKTOP_DATA_DIR: dataDir,
   };
 
   let desktop;
@@ -116,10 +116,10 @@ test('verify Chromium web API availability and synthetic fixture rendering in na
   const page = await desktop.firstWindow();
   page.setDefaultTimeout(10000);
   await page.waitForLoadState('domcontentloaded');
-  await page.waitForFunction(() => typeof window.mawChatGpt !== 'undefined');
+  await page.waitForFunction(() => typeof window.workbench !== 'undefined');
 
   await desktop.evaluate(({ session }, html) => {
-    const sess = session.fromPartition('persist:maw-browser');
+    const sess = session.fromPartition('persist:workbench-browser');
     sess.protocol.handle('https', (req) => {
       const u = new URL(req.url);
       if (u.pathname === '/worker.js') {
@@ -136,8 +136,8 @@ test('verify Chromium web API availability and synthetic fixture rendering in na
 
   const viewport = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
   await page.evaluate(({ id, vp }) => {
-    void window.mawChatGpt.command({ type: 'open', id, provider: 'other', url: 'https://rich-content.maw-test.org/rich' });
-    void window.mawChatGpt.command({
+    void window.workbench.command({ type: 'open', id, provider: 'other', url: 'https://rich-content.maw-test.org/rich' });
+    void window.workbench.command({
       type: 'layout',
       views: [{ id, bounds: { x: 0, y: 40, width: vp.width, height: vp.height - 40 } }],
       viewport: vp,
@@ -146,14 +146,14 @@ test('verify Chromium web API availability and synthetic fixture rendering in na
 
   await eventually(async () => {
     return await desktop.evaluate(({ session, webContents }) => {
-      const sess = session.fromPartition('persist:maw-browser');
+      const sess = session.fromPartition('persist:workbench-browser');
       const view = webContents.getAllWebContents().find((c) => c.session === sess && c.getURL().includes('/rich'));
       return Boolean(view && !view.isDestroyed() && !view.isLoading());
     });
   }, 'native WebContentsView to load /rich');
 
   const diag = await desktop.evaluate(async ({ session, webContents }) => {
-    const sess = session.fromPartition('persist:maw-browser');
+    const sess = session.fromPartition('persist:workbench-browser');
     const tabWeb = webContents.getAllWebContents().find((c) => c.session === sess && c.getURL().includes('/rich'));
     return await tabWeb.executeJavaScript(`(async () => {
       const c2d = document.getElementById('canvas-2d');

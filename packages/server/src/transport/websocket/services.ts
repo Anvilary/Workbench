@@ -7,7 +7,7 @@
  * Handlers never create services; they receive the ones they declare.
  */
 
-import type { ServerMessage, TerminalId } from '@agent-workbench/shared';
+import type { ServerMessage, TerminalId } from '@anvilary/workbench-shared';
 import type { AgentRegistry } from '../../agents/registry.js';
 import { AgentsUsageCollector } from '../../agents/usage/collector.js';
 import { BrowserProfileStore } from '../../features/browser/browser-profile-store.js';
@@ -46,7 +46,7 @@ import type { WorktreeService } from '../../features/worktrees/service.js';
 
 /** What the host injects. Anything optional gets a private default and is flushed on shutdown. */
 export interface WorkbenchServiceOptions {
-  /** When true, MAW_UNSAFE_LOCAL_NO_AUTH=1 is active; skip token check on WS upgrade. */
+  /** When true, WORKBENCH_UNSAFE_LOCAL_NO_AUTH=1 is active; skip token check on WS upgrade. */
   noAuth?: boolean;
   /** La consola de las nuevas y las CLIs apagadas (`settings.*`, Hito 41, §6.32). */
   appSettings: AppSettingsService;
@@ -241,7 +241,7 @@ export function createWorkbenchServices(
     },
   );
 
-  const hasOpenActivityTab = (workspaceId: import('@agent-workbench/shared').WorkspaceId, tabId: string): boolean => {
+  const hasOpenActivityTab = (workspaceId: import('@anvilary/workbench-shared').WorkspaceId, tabId: string): boolean => {
     if (!agencyWorkspaceStore.getWorkspace(workspaceId)) return false;
     return agencyRuntime.list(workspaceId).some(session => session.tab?.id === tabId && session.tab.current && !session.tab.closedAt) ||
       agencyBrowserTabs.listTabs(workspaceId).some(tab => tab.id === tabId) ||

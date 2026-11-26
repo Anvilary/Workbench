@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import type { ProfileAvailability } from '@agent-workbench/shared';
+import type { ProfileAvailability } from '@anvilary/workbench-shared';
 
 export interface DiscoveredProfile {
   readonly profileId: string;

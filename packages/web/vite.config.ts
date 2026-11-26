@@ -36,7 +36,7 @@ export default defineConfig({
     preserveSymlinks: false,
   },
   optimizeDeps: {
-    exclude: ['@agent-workbench/shared'],
+    exclude: ['@anvilary/workbench-shared'],
   },
   build: {
     rollupOptions: {

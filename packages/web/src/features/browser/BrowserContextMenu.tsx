@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { classifyWebTabUrl, DEFAULT_BROWSER_PROFILE_ID, validateOtherWebUrl, type WebTab } from '@agent-workbench/shared';
+import { classifyWebTabUrl, DEFAULT_BROWSER_PROFILE_ID, validateOtherWebUrl, type WebTab } from '@anvilary/workbench-shared';
 import { getLocale, t } from '../../i18n/index.js';
 import type { useWorkbenchStore } from '../workspaces/useWorkbenchStore.js';
 import { useBrowserSettings } from './useBrowserSettings.js';
@@ -41,7 +41,7 @@ export function getBrowserContentBounds(tabId: string): { bounds: BoundingBox; o
 
   const viewer =
     document.querySelector<HTMLElement>(`[data-native-id="${tabId}"]`) ||
-    document.querySelector<HTMLElement>('.maw-browser-pane') ||
+    document.querySelector<HTMLElement>('.wb-browser-pane') ||
     document.querySelector<HTMLElement>('.agency-workspace-content');
 
   if (!viewer) {
@@ -233,7 +233,7 @@ export function BrowserContextMenu({
   const [suggestionsExpanded, setSuggestionsExpanded] = useState(true);
   const [activeLanguagesExpanded, setActiveLanguagesExpanded] = useState(false);
 
-  useEffect(() => window.mawChatGpt?.subscribe((state) => {
+  useEffect(() => window.workbench?.subscribe((state) => {
     if (state.type === 'browser-context' && state.id) {
       setSuggestionsExpanded(true);
       setActiveLanguagesExpanded(false);
@@ -314,7 +314,7 @@ export function BrowserContextMenu({
     return (
       <div
         role="alert"
-        className="agency-error-bar maw-context-menu-alert"
+        className="agency-error-bar wb-context-menu-alert"
         style={{ position: 'fixed', top: 12, right: 12, zIndex: 10000 }}
       >
         <span>{fallbackAlert}</span>
@@ -330,7 +330,7 @@ export function BrowserContextMenu({
   }
   const send = (action: string, url?: string) => {
     const command = url ? { type: 'browser-action', id: menu.id, action, url } : { type: 'browser-action', id: menu.id, action };
-    void window.mawChatGpt?.command(command);
+    void window.workbench?.command(command);
     setMenu(null);
   };
 
@@ -385,7 +385,7 @@ export function BrowserContextMenu({
   const handleInspectPage = () => {
     const x = Math.max(0, Math.min(32768, Math.round(menu.x)));
     const y = Math.max(0, Math.min(32768, Math.round(menu.y)));
-    void window.mawChatGpt?.command({
+    void window.workbench?.command({
       type: 'inspect-page',
       id: menu.id,
       x,
@@ -395,7 +395,7 @@ export function BrowserContextMenu({
   };
 
   const handleReplaceMisspelling = (word: string) => {
-    void window.mawChatGpt?.command({
+    void window.workbench?.command({
       type: 'browser-action',
       id: menu.id,
       action: 'replace-misspelling',
@@ -440,43 +440,43 @@ export function BrowserContextMenu({
   return (
     <div
       ref={menuRef}
-      className="maw-context-menu"
+      className="wb-context-menu"
       role="menu"
       style={{ left: `${finalX}px`, top: `${finalY}px` }}
       onPointerDown={(event) => event.stopPropagation()}
     >
       {hasMisspelling && (
-        <div className="maw-context-menu-spelling" role="group" aria-label={t('agency.browser.spellingSuggestions')}>
-          <div className="maw-context-menu-header">{t('agency.browser.spellCheck')}</div>
+        <div className="wb-context-menu-spelling" role="group" aria-label={t('agency.browser.spellingSuggestions')}>
+          <div className="wb-context-menu-header">{t('agency.browser.spellCheck')}</div>
           {/* Chromium returns a combined dictionarySuggestions array without per-language attribution.
               Keep suggestions in a single collapsible section and display active dictionaries separately. */}
-          <div className="maw-context-menu-category">
+          <div className="wb-context-menu-category">
             <button
               type="button"
               role="menuitem"
               aria-expanded={suggestionsExpanded}
-              className="maw-context-menu-category-btn"
+              className="wb-context-menu-category-btn"
               onClick={() => setSuggestionsExpanded((prev) => !prev)}
             >
-              <span className="maw-context-menu-chevron" aria-hidden="true">{suggestionsExpanded ? '▾' : '▸'}</span>
-              <span className="maw-context-menu-category-name">{t('agency.browser.spellingSuggestions')}</span>
+              <span className="wb-context-menu-chevron" aria-hidden="true">{suggestionsExpanded ? '▾' : '▸'}</span>
+              <span className="wb-context-menu-category-name">{t('agency.browser.spellingSuggestions')}</span>
             </button>
             {suggestionsExpanded && (
-              <div className="maw-context-menu-category-content">
+              <div className="wb-context-menu-category-content">
                 {menu.dictionarySuggestions.length > 0 ? (
                   menu.dictionarySuggestions.map((suggestion) => (
                     <button
                       key={suggestion}
                       type="button"
                       role="menuitem"
-                      className="maw-context-menu-suggestion"
+                      className="wb-context-menu-suggestion"
                       onClick={() => handleReplaceMisspelling(suggestion)}
                     >
                       {suggestion}
                     </button>
                   ))
                 ) : (
-                  <button type="button" role="menuitem" disabled className="maw-context-menu-disabled-item">
+                  <button type="button" role="menuitem" disabled className="wb-context-menu-disabled-item">
                     {t('agency.browser.noSpellingSuggestions')}
                   </button>
                 )}
@@ -484,23 +484,23 @@ export function BrowserContextMenu({
             )}
           </div>
           {enabledLanguages.length > 1 && (
-            <div className="maw-context-menu-category">
+            <div className="wb-context-menu-category">
               <button
                 type="button"
                 role="menuitem"
                 aria-expanded={activeLanguagesExpanded}
-                className="maw-context-menu-category-btn"
+                className="wb-context-menu-category-btn"
                 onClick={() => setActiveLanguagesExpanded((prev) => !prev)}
               >
-                <span className="maw-context-menu-chevron" aria-hidden="true">{activeLanguagesExpanded ? '▾' : '▸'}</span>
-                <span className="maw-context-menu-category-name">
+                <span className="wb-context-menu-chevron" aria-hidden="true">{activeLanguagesExpanded ? '▾' : '▸'}</span>
+                <span className="wb-context-menu-category-name">
                   {t('agency.browser.activeLanguages', { count: enabledLanguages.length })}
                 </span>
               </button>
               {activeLanguagesExpanded && (
-                <div className="maw-context-menu-category-content">
+                <div className="wb-context-menu-category-content">
                   {enabledLanguages.map((code) => (
-                    <div key={code} className="maw-context-menu-lang-indicator">
+                    <div key={code} className="wb-context-menu-lang-indicator">
                       {getLanguageDisplayName(code, currentLocale)} ({code})
                     </div>
                   ))}
@@ -511,7 +511,7 @@ export function BrowserContextMenu({
           <button
             type="button"
             role="menuitem"
-            className="maw-context-menu-action-item"
+            className="wb-context-menu-action-item"
             onClick={handleAddToDictionary}
           >
             {t('agency.browser.addToDictionary')}
@@ -519,17 +519,17 @@ export function BrowserContextMenu({
           <button
             type="button"
             role="menuitem"
-            className="maw-context-menu-action-item"
+            className="wb-context-menu-action-item"
             onClick={handleManageSpellCheck}
           >
             {t('agency.browser.manageSpellCheck')}
           </button>
-          <div className="maw-context-menu-divider" role="separator" />
+          <div className="wb-context-menu-divider" role="separator" />
         </div>
       )}
       {standardItems.map((item, idx) => (
         <span key={item.id ?? item.label} style={{ display: 'contents' }}>
-          {item.id === 'inspect-page' && idx > 0 && <div className="maw-context-menu-divider" role="separator" />}
+          {item.id === 'inspect-page' && idx > 0 && <div className="wb-context-menu-divider" role="separator" />}
           <button type="button" role="menuitem" disabled={item.disabled} onClick={item.run}>
             {item.label}
           </button>

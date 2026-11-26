@@ -4,7 +4,7 @@ import type {
   AgencyClientMessage, AgencyWorkspace, AgencyAgentSession, AgencyProfileCapabilities,
   BrowserProfile, ClientMessage,
   SessionActivity, SessionLifecycle, WorkspaceId, ProjectId, CliProfileId, WebTab, EditorTab,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 
 export interface AgencyTransport {
   /** Implemented by the integration owner on the existing authenticated /ws. */
@@ -26,7 +26,7 @@ export interface AgencySnapshot {
   sessions: readonly AgencyRuntimeSession[];
   webTabs: readonly WebTab[];
   editorTabs: readonly EditorTab[];
-  layouts: Record<WorkspaceId, import('@agent-workbench/shared').WorkspacePaneLayout>;
+  layouts: Record<WorkspaceId, import('@anvilary/workbench-shared').WorkspacePaneLayout>;
   layoutWarnings?: Record<WorkspaceId, string>;
 }
 

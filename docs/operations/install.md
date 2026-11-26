@@ -6,7 +6,7 @@ How to install Anvilary Workbench as a managed systemd user service on Linux. Fo
 
 | Component | Location |
 |---|---|
-| CLI | `~/.local/bin/anvi-bench`, plus the compatibility shims `anvil-bench`, `maw` and `workbench` |
+| CLI | `~/.local/bin/anvi-bench`, plus the compatibility shims `anvi-bench`, `maw` and `workbench` |
 | Helpers (`control.mjs`, `lib.sh`, `update.sh`, `restart-helper.sh`, unit renderers) | `~/.local/lib/workbench` |
 | Releases and pointers | `$XDG_DATA_HOME/workbench` (default `~/.local/share/workbench`) |
 | App config and state | `$XDG_CONFIG_HOME/workbench` (default `~/.config/workbench`) |

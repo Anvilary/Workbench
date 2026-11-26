@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { OutputBuffer as CurrentOutputBuffer } from '../../packages/server/src/features/terminals/output-buffer.ts';
 
-const { OutputBuffer } = process.env.MAW_OUTPUT_BUFFER_MODULE
-  ? await import(process.env.MAW_OUTPUT_BUFFER_MODULE)
+const { OutputBuffer } = process.env.WORKBENCH_OUTPUT_BUFFER_MODULE
+  ? await import(process.env.WORKBENCH_OUTPUT_BUFFER_MODULE)
   : { OutputBuffer: CurrentOutputBuffer };
 const totalBytes = Number(process.env.TOTAL_MIB ?? 16) * 1024 * 1024;
 const repetitions = Number(process.env.REPS ?? 3);

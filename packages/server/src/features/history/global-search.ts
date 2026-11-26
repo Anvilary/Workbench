@@ -59,7 +59,7 @@ import {
   type GlobalSearchResult,
   type GlobalSearchTruncation,
   type SessionAgentId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { parseJsonlLine } from '../../shared/jsonl-reader.js';
 
 /** Una linea mas larga que esto no se decodifica. */

@@ -12,8 +12,8 @@ import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 
 const require = createRequire(import.meta.url);
 const here = DESKTOP_ROOT;
-const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
-  ? '/opt/maw-electron/45.2.0/electron'
+const electronExecutable = fs.existsSync('/opt/workbench-electron/45.2.0/electron')
+  ? '/opt/workbench-electron/45.2.0/electron'
   : require('electron');
 
 async function eventually(check, message = 'condition', maxAttempts = 50, delayMs = 100) {
@@ -135,7 +135,7 @@ test('Electron runtime: local web application browsing, websocket, asset loading
   <div id="root"></div>
   <script>
     window.events = [];
-    window.mawChatGpt.subscribe(msg => {
+    window.workbench.subscribe(msg => {
       window.events.push(msg);
     });
   </script>
@@ -149,9 +149,9 @@ test('Electron runtime: local web application browsing, websocket, asset loading
   const env = {
     ...process.env,
     HOME: data,
-    MAW_DESKTOP_DATA_DIR: data,
-    MAW_DESKTOP_URL: `http://127.0.0.1:${shellPort}/`,
-    MAW_EXTERNAL_POLICY: 'allow',
+    WORKBENCH_DESKTOP_DATA_DIR: data,
+    WORKBENCH_DESKTOP_URL: `http://127.0.0.1:${shellPort}/`,
+    WORKBENCH_EXTERNAL_POLICY: 'allow',
   };
 
   let app;
@@ -178,9 +178,9 @@ test('Electron runtime: local web application browsing, websocket, asset loading
   const page = await app.firstWindow();
   await page.waitForFunction(() => Array.isArray(window.events), null, { timeout: 15000 });
 
-  // Setup protocol handler in persist:maw-browser to simulate a public site that attempts cross-network redirect
+  // Setup protocol handler in persist:workbench-browser to simulate a public site that attempts cross-network redirect
   await app.evaluate(({ session }, { localAppPort }) => {
-    const browser = session.fromPartition('persist:maw-browser');
+    const browser = session.fromPartition('persist:workbench-browser');
     browser.protocol.handle('https', async (req) => {
       const u = new URL(req.url);
       if (u.hostname === 'public-attacker.example.com' && u.pathname === '/redirect-to-local') {
@@ -205,7 +205,7 @@ test('Electron runtime: local web application browsing, websocket, asset loading
 
   // 3. Open local web app tab
   await page.evaluate(({ id, url }) => {
-    return window.mawChatGpt.command({
+    return window.workbench.command({
       type: 'open',
       id,
       url,
@@ -220,7 +220,7 @@ test('Electron runtime: local web application browsing, websocket, asset loading
   });
 
   await page.evaluate(({ id, w, h }) => {
-    return window.mawChatGpt.command({
+    return window.workbench.command({
       type: 'layout',
       id,
       bounds: { x: 0, y: 0, width: w, height: h },
@@ -238,7 +238,7 @@ test('Electron runtime: local web application browsing, websocket, asset loading
   }, 'WebContentsView to attach');
 
   const tabWebContentsId = await app.evaluate(({ session, webContents }) => {
-    const s = session.fromPartition('persist:maw-browser');
+    const s = session.fromPartition('persist:workbench-browser');
     const c = webContents.getAllWebContents().find(item => item.session === s);
     return c?.id;
   });
@@ -292,7 +292,7 @@ test('Electron runtime: local web application browsing, websocket, asset loading
 
   // 6. Navigation history works for local apps (back to home page)
   await page.evaluate(({ id }) => {
-    return window.mawChatGpt.command({
+    return window.workbench.command({
       type: 'browser-action',
       id,
       action: 'back',
@@ -310,7 +310,7 @@ test('Electron runtime: local web application browsing, websocket, asset loading
   // 7. Workbench backend loopback port protection
   // An embedded tab must NEVER be able to navigate to the Workbench backend port
   await page.evaluate(({ id, shellPort }) => {
-    return window.mawChatGpt.command({
+    return window.workbench.command({
       type: 'update',
       id,
       url: `http://127.0.0.1:${shellPort}/`,
@@ -327,7 +327,7 @@ test('Electron runtime: local web application browsing, websocket, asset loading
   // 8. Cross-network navigation and automatic redirect from public website to local network address are blocked
   // Navigate to public attacker site first
   await page.evaluate(({ id }) => {
-    return window.mawChatGpt.command({
+    return window.workbench.command({
       type: 'update',
       id,
       url: 'https://public-attacker.example.com/',
@@ -355,6 +355,6 @@ test('Electron runtime: local web application browsing, websocket, asset loading
 
   // Close tab cleanly
   await page.evaluate(({ id }) => {
-    return window.mawChatGpt.command({ type: 'close', id });
+    return window.workbench.command({ type: 'close', id });
   }, { id: tabId });
 });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isAllowedChatGptUrl, validateChatGptUrl, validatePerplexityUrl, validateGithubUrl, validateOtherWebUrl, classifyWebTabUrl, webTabProviderFor, isLoopbackHost } from '@agent-workbench/shared';
+import { isAllowedChatGptUrl, validateChatGptUrl, validatePerplexityUrl, validateGithubUrl, validateOtherWebUrl, classifyWebTabUrl, webTabProviderFor, isLoopbackHost } from '@anvilary/workbench-shared';
 
 test('Other tabs accept public HTTP(S), local loopback, and private network hosts while rejecting dangerous schemes and malformed hosts', () => {
   for (const url of [

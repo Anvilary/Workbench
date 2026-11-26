@@ -26,7 +26,7 @@ import {
   pasteStartLine,
   pastedBlockPattern,
   pastedBlockStartPattern,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 
 export { pasteEndLine, pasteReference, pasteStartLine };

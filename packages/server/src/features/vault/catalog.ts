@@ -35,7 +35,7 @@ import {
   type SessionTitleSource,
   type VaultBodyLine,
   type VaultHeader,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { parseJsonlLine, readHeadLines } from '../../shared/jsonl-reader.js';
 import { agentSessionsDir, assetsDir, isSafeSessionId, sessionFile, sessionsRoot } from './paths.js';
 

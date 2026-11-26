@@ -25,7 +25,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { VAULT_FORMAT } from '@agent-workbench/shared';
+import { VAULT_FORMAT } from '@anvilary/workbench-shared';
 import { agentSessionsDir, assetFile, assetsDir, sessionFile, vaultMarkerFile } from './paths.js';
 import type { SerializedSession } from './serialize.js';
 

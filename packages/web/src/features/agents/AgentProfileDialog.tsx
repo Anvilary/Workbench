@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import type { AgencyCliProfile } from '@agent-workbench/shared';
+import type { AgencyCliProfile } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 import { parseProfileArgv } from '../workspaces/workspace-model.js';
 import { providerSetupDescription, suggestedExecutable } from './profile-suggestions.js';

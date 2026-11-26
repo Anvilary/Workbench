@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { WebTab, SearchEngine } from '@agent-workbench/shared';
+import type { WebTab, SearchEngine } from '@anvilary/workbench-shared';
 import {
   DEFAULT_BROWSER_PROFILE_ID,
   validateChatGptUrl,
@@ -8,7 +8,7 @@ import {
   validatePerplexityUrl,
   getSearchEngine,
   resolveAddressBarInput,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 import { BrowserFindBar } from './BrowserFindBar.js';
 import { nativeLayoutCoordinator } from './native-layout-coordinator.js';
@@ -85,7 +85,7 @@ export function NativeBrowserView({
   useEffect(() => setAddress(tab.url), [tab.url]);
 
   useEffect(() => {
-    const bridge = window.mawChatGpt;
+    const bridge = window.workbench;
     if (!bridge || !supported || !host.current || !activeWorkspace) return;
 
     void bridge.command({ type: 'open', id, url: url.current, provider: tab.provider ?? nativeWebProvider(url.current), profileId }).catch((err) => {
@@ -192,11 +192,11 @@ export function NativeBrowserView({
   }, [id]);
 
   return (
-    <div className="maw-browser-pane">
-      {window.mawChatGpt && supported && toolbarOpen && <div className="maw-browser-toolbar">
-        <button type="button" aria-label={t('agency.browser.back')} disabled={!history.canGoBack} onClick={() => void window.mawChatGpt?.command({ type: 'browser-action', id, action: 'back' })}>‹</button>
-        <button type="button" aria-label={t('agency.browser.forward')} disabled={!history.canGoForward} onClick={() => void window.mawChatGpt?.command({ type: 'browser-action', id, action: 'forward' })}>›</button>
-        <button type="button" aria-label={t('agency.browser.reload')} onClick={() => void window.mawChatGpt?.command({ type: 'browser-action', id, action: 'reload' })}>↻</button>
+    <div className="wb-browser-pane">
+      {window.workbench && supported && toolbarOpen && <div className="wb-browser-toolbar">
+        <button type="button" aria-label={t('agency.browser.back')} disabled={!history.canGoBack} onClick={() => void window.workbench?.command({ type: 'browser-action', id, action: 'back' })}>‹</button>
+        <button type="button" aria-label={t('agency.browser.forward')} disabled={!history.canGoForward} onClick={() => void window.workbench?.command({ type: 'browser-action', id, action: 'forward' })}>›</button>
+        <button type="button" aria-label={t('agency.browser.reload')} onClick={() => void window.workbench?.command({ type: 'browser-action', id, action: 'reload' })}>↻</button>
         <form onSubmit={(event) => {
           event.preventDefault();
           const value = address.trim();
@@ -204,14 +204,14 @@ export function NativeBrowserView({
             const resolved = resolveAddressBarInput(value, effectiveSearchEngine, 'other');
             if (resolved.url) {
               setAddress(resolved.url);
-              void window.mawChatGpt?.command({ type: 'update', id, url: resolved.url, provider: 'other', profileId }).catch((reason) => setError(String(reason)));
+              void window.workbench?.command({ type: 'update', id, url: resolved.url, provider: 'other', profileId }).catch((reason) => setError(String(reason)));
             } else {
               addressInput.current?.setCustomValidity(resolved.error || t('agency.web.invalidUrl'));
               addressInput.current?.reportValidity();
             }
           } else {
             if (nativeWorkspaceUrl(value, provider)) {
-              void window.mawChatGpt?.command({ type: 'update', id, url: value, provider, profileId }).catch((reason) => setError(String(reason)));
+              void window.workbench?.command({ type: 'update', id, url: value, provider, profileId }).catch((reason) => setError(String(reason)));
             } else {
               addressInput.current?.setCustomValidity(t('agency.web.invalidUrl'));
               addressInput.current?.reportValidity();
@@ -224,8 +224,8 @@ export function NativeBrowserView({
       {findOpen && (
         <BrowserFindBar id={id} onClose={() => setFindOpen(false)} />
       )}
-      <div ref={host} className="maw-browser-viewer" data-native-id={id}>
-      {!window.mawChatGpt || !supported ? (
+      <div ref={host} className="wb-browser-viewer" data-native-id={id}>
+      {!window.workbench || !supported ? (
         <div className="agency-shell-placeholder">
           <p>{t('agency.web.externalHint')}</p>
           <a href={tab.url} target="_blank" rel="noopener noreferrer">{t('agency.web.externalOpen')}</a>
@@ -237,7 +237,7 @@ export function NativeBrowserView({
             type="button"
             onClick={() => {
               setError('');
-              void window.mawChatGpt?.command({ type: 'open', id, url: url.current, provider: tab.provider ?? nativeWebProvider(url.current), profileId });
+              void window.workbench?.command({ type: 'open', id, url: url.current, provider: tab.provider ?? nativeWebProvider(url.current), profileId });
             }}
           >
             {t('common.reloadPage')}
@@ -245,12 +245,12 @@ export function NativeBrowserView({
         </div>
       ) : (
         <>
-          {captureBackdrop && <img className="maw-capture-backdrop" src={captureBackdrop} alt="" />}
+          {captureBackdrop && <img className="wb-capture-backdrop" src={captureBackdrop} alt="" />}
           {(!isPageReady || restoring) && !captureBackdrop && (
-            <div className="maw-browser-loading-container" role="status" aria-label={t('agency.web.loadingPage')}>
+            <div className="wb-browser-loading-container" role="status" aria-label={t('agency.web.loadingPage')}>
               <img
                 src="/brand/workbench-logo-128.png"
-                className="maw-browser-loading-logo"
+                className="wb-browser-loading-logo"
                 alt=""
                 width="32"
                 height="32"
@@ -258,7 +258,7 @@ export function NativeBrowserView({
             </div>
           )}
           {downloadFeedback && (
-            <div className={`maw-pane-feedback maw-pane-feedback-${downloadFeedback.type}`} role="status">
+            <div className={`wb-pane-feedback wb-pane-feedback-${downloadFeedback.type}`} role="status">
               {downloadFeedback.message}
             </div>
           )}

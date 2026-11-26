@@ -27,7 +27,7 @@ import {
   type TerminalActivity,
   type TerminalId,
   type TerminalOfflineReason,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type { PartsUpdate } from '../../agents/adapter.js';
 import { draftEntriesOf } from '../../features/composer/draft-store.js';
 import type { WorkbenchServices } from './services.js';

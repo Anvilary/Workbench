@@ -35,7 +35,7 @@ function collectActiveOverlayRects(): OverlayRect[] {
   }
 
   const items = document.querySelectorAll<HTMLElement>(
-    '[role="dialog"], [role="menu"], .agency-modal-backdrop, .modal-backdrop, .agency-dropdown-menu, .maw-toast-item, .context-menu, .agency-dialog, .settings-dialog, .maw-performance-panel, .maw-notification-inbox, .maw-context-menu, .maw-pane-drag-shield, .agency-sidebar-drag-shield, .agency-sidebar-drag-ghost, .maw-pane-browser-picker-overlay, .maw-browser-picker-overlay, .maw-browser-dest-picker, .maw-pane-close-overlay, .agency-anchored-dialog'
+    '[role="dialog"], [role="menu"], .agency-modal-backdrop, .modal-backdrop, .agency-dropdown-menu, .wb-toast-item, .context-menu, .agency-dialog, .settings-dialog, .wb-performance-panel, .wb-notification-inbox, .wb-context-menu, .wb-pane-drag-shield, .agency-sidebar-drag-shield, .agency-sidebar-drag-ghost, .wb-pane-browser-picker-overlay, .wb-browser-picker-overlay, .wb-browser-dest-picker, .wb-pane-close-overlay, .agency-anchored-dialog'
   );
   if (items.length === 0) return rects;
 
@@ -253,7 +253,7 @@ class NativeLayoutCoordinator {
       if (this.views.size === 0) {
         this.stop();
         // Hide all views when no ChatGPT components are mounted
-        window.mawChatGpt?.command({
+        window.workbench?.command({
           type: 'layout',
           views: [],
           viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -265,7 +265,7 @@ class NativeLayoutCoordinator {
   }
 
   private start() {
-    const bridge = window.mawChatGpt;
+    const bridge = window.workbench;
     if (!bridge) return;
 
     // Terminal repaints (xterm DOM renderer rows, cursor blink) cannot move a native view or open an overlay.
@@ -346,7 +346,7 @@ class NativeLayoutCoordinator {
     this.unsubscribeBridge = bridge.subscribe((state) => {
       const entry = this.views.get(state.id ?? '');
       if (state.type === 'focused' && entry) {
-        window.dispatchEvent(new Event('maw:dismiss-pane-menus'));
+        window.dispatchEvent(new Event('workbench:dismiss-pane-menus'));
         if (entry.nativeVisible && entry.element.isConnected && !document.hidden) entry.onFocused?.();
       } else if (state.type === 'ready' && entry) {
         const wasReady = entry.isReady;
@@ -411,7 +411,7 @@ class NativeLayoutCoordinator {
   }
 
   measure() {
-    const bridge = window.mawChatGpt;
+    const bridge = window.workbench;
     if (!bridge) return;
 
     const viewport = { width: window.innerWidth, height: window.innerHeight };
@@ -443,7 +443,7 @@ class NativeLayoutCoordinator {
     }> = [];
 
     const overlayRects = collectActiveOverlayRects();
-    const paneDrag = document.querySelector('.maw-pane-drag-shield') !== null;
+    const paneDrag = document.querySelector('.wb-pane-drag-shield') !== null;
 
     for (const [id, reg] of this.views) {
       const el = reg.element;

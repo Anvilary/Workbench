@@ -11,8 +11,8 @@ import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { AgencyRuntimeSession } from '@agent-workbench/shared';
-import { parseAgencyClientMessage, parseAgencyServerMessage } from '@agent-workbench/shared';
+import type { AgencyRuntimeSession } from '@anvilary/workbench-shared';
+import { parseAgencyClientMessage, parseAgencyServerMessage } from '@anvilary/workbench-shared';
 import { AgencySessionStore, SplitAgencySessionStore, isLiveSession } from '../../../src/features/sessions/session-store.js';
 import { AgencySessionRuntime } from '../../../src/features/sessions/session-runtime.js';
 

@@ -28,7 +28,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import type { RemoteAccessStatus, RemoteDeviceSummary, RemotePairingCode, RemotePhonePairing } from '@agent-workbench/shared';
+import type { RemoteAccessStatus, RemoteDeviceSummary, RemotePairingCode, RemotePhonePairing } from '@anvilary/workbench-shared';
 import { t } from '../../i18n/index.js';
 import {
   canPair,

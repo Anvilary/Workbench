@@ -12,8 +12,8 @@ import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 
 const require = createRequire(import.meta.url);
 const here = DESKTOP_ROOT;
-const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
-  ? '/opt/maw-electron/45.2.0/electron'
+const electronExecutable = fs.existsSync('/opt/workbench-electron/45.2.0/electron')
+  ? '/opt/workbench-electron/45.2.0/electron'
   : require('electron');
 
 const browserCss = fs.readFileSync(path.join(here, '../web/src/app/workbench.css'), 'utf8');
@@ -48,7 +48,7 @@ function App() {
         style={{ display: activeWs === 'A' ? 'contents' : 'none' }}
         hidden={activeWs !== 'A'}
       >
-        <div className="maw-browser-pane" style={{ width: '800px', height: '600px' }}>
+        <div className="wb-browser-pane" style={{ width: '800px', height: '600px' }}>
           <NativeBrowserView
             tab={{ id: '${tabId}', url: 'https://chatgpt.com/' }}
             toolbarOpen={true}
@@ -114,14 +114,14 @@ test('browser workspace lifecycle, immediate restoration, loading logo, and empt
       args: [here, '--ozone-platform=x11'],
       env: {
         ...process.env,
-        MAW_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
-        MAW_DESKTOP_DATA_DIR: data,
+        WORKBENCH_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`,
+        WORKBENCH_DESKTOP_DATA_DIR: data,
       },
     });
 
     // Provide synthetic page with solid red background, form input, and scrollable content
     await desktop.evaluate(({ session }) => {
-      session.fromPartition('persist:maw-chatgpt').protocol.handle('https', () =>
+      session.fromPartition('persist:workbench-chatgpt').protocol.handle('https', () =>
         new Response(`<!doctype html>
 <html>
 <head>
@@ -180,22 +180,22 @@ test('browser workspace lifecycle, immediate restoration, loading logo, and empt
     assert.equal(await attached(), 0, 'View detached in Workspace B');
 
     // 4. Verify Workspace B starts with EmptyPaneChooser
-    await page.waitForSelector('.maw-empty-pane-chooser');
-    const newTerminalBtn = page.locator('.maw-empty-pane-action[aria-label="New Terminal"]');
+    await page.waitForSelector('.wb-empty-pane-chooser');
+    const newTerminalBtn = page.locator('.wb-empty-pane-action[aria-label="New Terminal"]');
     assert.ok(await newTerminalBtn.isVisible(), 'New Terminal button is visible in EmptyPaneChooser');
 
-    const webPageBtn = page.locator('.maw-empty-pane-action[aria-label="Web Page"]');
+    const webPageBtn = page.locator('.wb-empty-pane-action[aria-label="Web Page"]');
     assert.ok(await webPageBtn.isVisible(), 'Web Page button is visible in EmptyPaneChooser');
 
-    const openFileBtn = page.locator('.maw-empty-pane-action-disabled');
+    const openFileBtn = page.locator('.wb-empty-pane-action-disabled');
     assert.ok(await openFileBtn.isVisible(), 'Open File button is disabled');
     const openFileDisabledAttr = await openFileBtn.getAttribute('disabled');
     assert.notEqual(openFileDisabledAttr, null, 'Open File has disabled attribute');
-    const badgeText = await page.locator('.maw-empty-pane-badge').textContent();
+    const badgeText = await page.locator('.wb-empty-pane-badge').textContent();
     assert.equal(badgeText?.trim(), 'Coming soon', 'Shows Coming soon badge');
 
     // Confirm NO Coding Agent option exists in EmptyPaneChooser
-    const agentOptionCount = await page.locator('.maw-empty-pane-chooser button:has-text("Agent"), .maw-empty-pane-chooser button:has-text("Codex")').count();
+    const agentOptionCount = await page.locator('.wb-empty-pane-chooser button:has-text("Agent"), .wb-empty-pane-chooser button:has-text("Codex")').count();
     assert.equal(agentOptionCount, 0, 'No Coding Agent option in starting panel');
 
     // Test clicking New Terminal in EmptyPaneChooser
@@ -215,7 +215,7 @@ test('browser workspace lifecycle, immediate restoration, loading logo, and empt
     await page.waitForFunction(() => document.getElementById('displayed-indicator')?.textContent === 'displayed');
 
     // Verify loading logo did NOT appear on return to already-loaded workspace (zero flicker)
-    const loadingLogoCount = await page.locator('.maw-browser-loading-container').count();
+    const loadingLogoCount = await page.locator('.wb-browser-loading-container').count();
     assert.equal(loadingLogoCount, 0, 'Loading logo does not flicker on return to loaded workspace');
 
     // Capture bitmap and verify red content is actively painted

@@ -5,7 +5,7 @@ Electron does not provide a platform WebAuthn authenticator on Linux. Workbench 
 ## Scope
 
 - Assertions (sign-in) only. Registering new credentials is not bridged.
-- Only the main frame of a view in the ChatGPT partition may use the bridge, and only from an allowed origin: `https://chatgpt.com`, `https://auth.openai.com`, `https://auth0.openai.com`, `https://openai.com`. `WORKBENCH_WEBAUTHN_EXTRA_ORIGINS` (comma-separated; legacy `MAW_WEBAUTHN_EXTRA_ORIGINS`) adds origins for testing.
+- Only the main frame of a view in the ChatGPT partition may use the bridge, and only from an allowed origin: `https://chatgpt.com`, `https://auth.openai.com`, `https://auth0.openai.com`, `https://openai.com`. `WORKBENCH_WEBAUTHN_EXTRA_ORIGINS` (comma-separated; legacy `WORKBENCH_WEBAUTHN_EXTRA_ORIGINS`) adds origins for testing.
 - One request can be in flight at a time.
 
 ## Validation

@@ -13,7 +13,7 @@
  */
 
 import { useCallback, useRef, useState, type ReactNode } from 'react';
-import type { AgentId, AgentInfo } from '@agent-workbench/shared';
+import type { AgentId, AgentInfo } from '@anvilary/workbench-shared';
 import { AgentMenu } from '../agents/AgentMenu.js';
 import { continueButtonTitle } from '../agents/agent-ui.js';
 import { t } from '../../i18n/index.js';

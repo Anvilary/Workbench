@@ -288,7 +288,7 @@ const ids = (events) => events.map((event) => event.eventId).join(',');
 // B. Literales compartidos y envio por piezas (paso 2)
 // ---------------------------------------------------------------------------
 
-const shared = await import('@agent-workbench/shared');
+const shared = await import('@anvilary/workbench-shared');
 const {
   buildSubmission,
   buildSubmissionWrites,
@@ -1949,7 +1949,7 @@ async function waitFor(condition, timeoutMs = 5000) {
 
 // D1. Donde cae una pestana nueva: junto a las de su proyecto, por clave normalizada.
 {
-  const { insertionIndex } = await import('@agent-workbench/shared');
+  const { insertionIndex } = await import('@anvilary/workbench-shared');
   const tabs = {
     a: { kind: 'agent', cwd: 'D:\\Mi App' },
     b: { kind: 'agent', cwd: 'D:\\otra' },
@@ -2809,7 +2809,7 @@ const throwsOn = (run) => {
     env['HOME'] === demoHome && env['USERPROFILE'] === demoHome && env['CODEX_HOME'] === path.join(demoHome, '.codex') &&
     env['APPDATA'] === path.join(demoHome, 'AppData', 'Roaming') && env['LOCALAPPDATA'] === path.join(demoHome, 'AppData', 'Local') &&
     env['XDG_CONFIG_HOME'] === path.join(demoHome, '.config') && env['XDG_DATA_HOME'] === path.join(demoHome, '.local', 'share') &&
-    env['AGENT_WORKBENCH_CWD'] === 'W:\\Proyectos\\x', show(env));
+    env['WORKBENCH_CWD'] === 'W:\\Proyectos\\x', show(env));
   check('M7 entorno: sin el marcador ni las bases de otras CLIs, y lo demas intacto',
     !('CLAUDE_CODE_CHILD_SESSION' in env) && !('OPENCODE_DB' in env) && !('CODEX_SQLITE_HOME' in env) && env['OTRA'] === 'se queda');
   check('M7 entorno: sin las carpetas de Pi del usuario, que apuntarian a su historial de verdad',

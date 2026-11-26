@@ -19,7 +19,7 @@ import {
   validateSearchEngine,
   buildSearchUrl,
   DEFAULT_SEARCH_ENGINES,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { WEB_ROOT, REPO_ROOT } from '../../helpers/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -29,7 +29,7 @@ const require = createRequire(path.join(projectRoot, 'package.json'));
 const { build } = require('esbuild');
 const { chromium } = require('playwright');
 
-const artifactDir = process.env.MAW_TEST_ARTIFACTS_DIR || path.join(tmpdir(), 'maw-test-artifacts', 'browser-favorites-acceptance');
+const artifactDir = process.env.WORKBENCH_TEST_ARTIFACTS_DIR || path.join(tmpdir(), 'maw-test-artifacts', 'browser-favorites-acceptance');
 const screenshotsDir = path.join(artifactDir, 'screenshots');
 mkdirSync(screenshotsDir, { recursive: true });
 
@@ -336,7 +336,7 @@ import { SettingsDialog } from './src/features/settings/SettingsDialog.tsx';
 import { BrowserDestinationPicker } from './src/features/browser/BrowserDestinationPicker.tsx';
 import { GlobeIcon } from './src/shared/ui/GlobeIcon.tsx';
 import { TabNameInput } from './src/features/panes/TabNameInput.tsx';
-import { DEFAULT_BROWSER_FAVORITES, getSearchEngine } from '@agent-workbench/shared';
+import { DEFAULT_BROWSER_FAVORITES, getSearchEngine } from '@anvilary/workbench-shared';
 
 let currentTheme = 'dark';
 const mockTheme = {
@@ -460,27 +460,27 @@ function AcceptanceHarness() {
 
         {view === 'tabs' && (
           <div style={{ width: '800px', background: '#18191e', borderRadius: '8px', border: '1px solid #2a2b32', overflow: 'hidden' }}>
-            <div className="maw-pane-header is-focused" style={{ background: '#1c1d22', borderBottom: '1px solid #2a2b32', display: 'flex', alignItems: 'center' }}>
-              <div className="maw-tabs-strip" role="tablist" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+            <div className="wb-pane-header is-focused" style={{ background: '#1c1d22', borderBottom: '1px solid #2a2b32', display: 'flex', alignItems: 'center' }}>
+              <div className="wb-tabs-strip" role="tablist" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
                 {tabs.map((tab) => {
                   const isRenaming = renamingTabId === tab.id;
                   const isSelected = tab.selected;
                   return (
                     <div
                       key={tab.id}
-                      className={'maw-session-tab ' + (isSelected ? 'active ' : '') + (isRenaming ? 'renaming' : '')}
+                      className={'wb-session-tab ' + (isSelected ? 'active ' : '') + (isRenaming ? 'renaming' : '')}
                       data-tab-id={tab.id}
                       style={{ minWidth: '140px', maxWidth: '200px' }}
                     >
                       {isRenaming ? (
-                        <div className="maw-tab-rename-row">
-                          <span className="maw-tab-icon" aria-hidden="true">
+                        <div className="wb-tab-rename-row">
+                          <span className="wb-tab-icon" aria-hidden="true">
                             {tab.favicon ? (
-                              <span className="maw-tab-icon-wrapper">
-                                <img className="maw-tab-favicon" src={tab.favicon} alt="" />
+                              <span className="wb-tab-icon-wrapper">
+                                <img className="wb-tab-favicon" src={tab.favicon} alt="" />
                               </span>
                             ) : (
-                              <span className="maw-tab-icon-fallback">
+                              <span className="wb-tab-icon-fallback">
                                 <GlobeIcon size={14} />
                               </span>
                             )}
@@ -505,14 +505,14 @@ function AcceptanceHarness() {
                           onDoubleClick={() => setRenamingTabId(tab.id)}
                           onClick={() => setTabs(tabs.map(t => ({ ...t, selected: t.id === tab.id })))}
                         >
-                          <span className="maw-tab-icon" aria-hidden="true">
+                          <span className="wb-tab-icon" aria-hidden="true">
                             {tab.kind === 'web' ? (
                               tab.favicon ? (
-                                <span className="maw-tab-icon-wrapper">
-                                  <img className="maw-tab-favicon" src={tab.favicon} alt="" />
+                                <span className="wb-tab-icon-wrapper">
+                                  <img className="wb-tab-favicon" src={tab.favicon} alt="" />
                                 </span>
                               ) : (
-                                <span className="maw-tab-icon-fallback">
+                                <span className="wb-tab-icon-fallback">
                                   <GlobeIcon size={14} />
                                 </span>
                               )
@@ -544,11 +544,11 @@ function AcceptanceHarness() {
           <div style={{ width: '900px', height: '400px', display: 'flex', gap: '8px', padding: '8px', boxSizing: 'border-box' }}>
             {/* Left Split Pane */}
             <div style={{ flex: 1, background: '#18191e', borderRadius: '8px', border: '1px solid #2a2b32', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <div className="maw-pane-header is-focused" style={{ background: '#1c1d22', borderBottom: '1px solid #2a2b32' }}>
-                <div className="maw-tabs-strip" role="tablist">
-                  <div className="maw-session-tab active">
+              <div className="wb-pane-header is-focused" style={{ background: '#1c1d22', borderBottom: '1px solid #2a2b32' }}>
+                <div className="wb-tabs-strip" role="tablist">
+                  <div className="wb-session-tab active">
                     <button type="button" role="tab" aria-selected="true">
-                      <span className="maw-tab-icon"><img className="maw-tab-favicon" src={sampleFaviconDataUri} alt="" /></span>
+                      <span className="wb-tab-icon"><img className="wb-tab-favicon" src={sampleFaviconDataUri} alt="" /></span>
                       <span className="agency-truncate">ChatGPT</span>
                       <span className="agency-status-dot idle" />
                     </button>
@@ -563,19 +563,19 @@ function AcceptanceHarness() {
 
             {/* Right Split Pane */}
             <div style={{ flex: 1, background: '#18191e', borderRadius: '8px', border: '1px solid #2a2b32', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <div className="maw-pane-header is-focused" style={{ background: '#1c1d22', borderBottom: '1px solid #2a2b32' }}>
-                <div className="maw-tabs-strip" role="tablist">
-                  <div className="maw-session-tab active">
+              <div className="wb-pane-header is-focused" style={{ background: '#1c1d22', borderBottom: '1px solid #2a2b32' }}>
+                <div className="wb-tabs-strip" role="tablist">
+                  <div className="wb-session-tab active">
                     <button type="button" role="tab" aria-selected="true">
-                      <span className="maw-tab-icon"><img className="maw-tab-favicon" src={sampleFaviconDataUri} alt="" /></span>
+                      <span className="wb-tab-icon"><img className="wb-tab-favicon" src={sampleFaviconDataUri} alt="" /></span>
                       <span className="agency-truncate">Project Dashboard</span>
                       <span className="agency-status-dot idle" />
                     </button>
                     <button type="button" data-close>×</button>
                   </div>
-                  <div className="maw-session-tab">
+                  <div className="wb-session-tab">
                     <button type="button" role="tab" aria-selected="false">
-                      <span className="maw-tab-icon"><GlobeIcon size={14} /></span>
+                      <span className="wb-tab-icon"><GlobeIcon size={14} /></span>
                       <span className="agency-truncate">Other Search</span>
                       <span className="agency-status-dot idle" />
                     </button>
@@ -659,12 +659,12 @@ test('Browser Acceptance Suite: Settings, Destination Picker, Favicons, Minimal 
 
   try {
     await page.goto(url);
-    await page.waitForSelector('.maw-settings-window');
+    await page.waitForSelector('.wb-settings-window');
 
     // =========================================================================
     // 1. SETTINGS > BROWSER TAB VERIFICATION & SCREENSHOT
     // =========================================================================
-    const browserSectionTitle = await page.textContent('.maw-settings-section-title');
+    const browserSectionTitle = await page.textContent('.wb-settings-section-title');
     assert.equal(browserSectionTitle.trim(), 'Browser');
 
     // Check Search Engine Radios
@@ -673,29 +673,29 @@ test('Browser Acceptance Suite: Settings, Destination Picker, Favicons, Minimal 
     assert.equal(radioCount, 5, 'Should display all 5 HTTPS search engines');
 
     // Check Initial Favorites (ChatGPT, Perplexity, GitHub)
-    const favRows = page.locator('.maw-settings-favorite-row');
+    const favRows = page.locator('.wb-settings-favorite-row');
     const favCount = await favRows.count();
     assert.equal(favCount, 3, 'Should display 3 initial favorites');
 
     // Add a new favorite
-    await page.click('.maw-settings-action-btn');
-    await page.fill('.maw-settings-form-field input[type="text"]', 'Hacker News');
-    await page.fill('.maw-settings-form-field input[type="url"]', 'news.ycombinator.com');
-    await page.click('.maw-settings-form-actions button[type="submit"]');
+    await page.click('.wb-settings-action-btn');
+    await page.fill('.wb-settings-form-field input[type="text"]', 'Hacker News');
+    await page.fill('.wb-settings-form-field input[type="url"]', 'news.ycombinator.com');
+    await page.click('.wb-settings-form-actions button[type="submit"]');
     await page.waitForTimeout(100);
 
-    const updatedFavCount = await page.locator('.maw-settings-favorite-row').count();
+    const updatedFavCount = await page.locator('.wb-settings-favorite-row').count();
     assert.equal(updatedFavCount, 4, 'Should have 4 favorites after adding');
-    const lastFavUrl = await page.locator('.maw-settings-fav-url').last().textContent();
+    const lastFavUrl = await page.locator('.wb-settings-fav-url').last().textContent();
     assert.equal(lastFavUrl.trim(), 'https://news.ycombinator.com/');
 
     // Capture Settings > Browser screenshot
     await page.screenshot({ path: path.join(screenshotsDir, 'settings-browser-tab.png') });
 
     // Drag-and-drop handles & keyboard reordering verification
-    const grips = page.locator('.maw-fav-grip');
+    const grips = page.locator('.wb-fav-grip');
     assert.equal(await grips.count(), 4, 'Should display drag handles for all favorites');
-    const firstTitleBefore = await page.locator('.maw-settings-fav-title').first().textContent();
+    const firstTitleBefore = await page.locator('.wb-settings-fav-title').first().textContent();
     assert.equal(firstTitleBefore.trim(), 'ChatGPT');
 
     // Focus first grip and press ArrowDown to reorder via keyboard accessibility
@@ -703,18 +703,18 @@ test('Browser Acceptance Suite: Settings, Destination Picker, Favicons, Minimal 
     await page.keyboard.press('ArrowDown');
     await page.waitForTimeout(100);
 
-    const secondTitleAfter = await page.locator('.maw-settings-fav-title').nth(1).textContent();
+    const secondTitleAfter = await page.locator('.wb-settings-fav-title').nth(1).textContent();
     assert.equal(secondTitleAfter.trim(), 'ChatGPT', 'ChatGPT should now be at index 1 after keyboard reordering');
 
     // =========================================================================
     // 1B. CUSTOM SEARCH ENGINE MANAGEMENT VERIFICATION
     // =========================================================================
     // Add a custom search engine
-    await page.click('.maw-settings-engine-action-btn');
-    await page.fill('.maw-settings-engine-form input[type="text"]', 'Kagi');
-    await page.fill('.maw-settings-engine-form input[type="url"]', 'https://kagi.com');
-    await page.fill('.maw-settings-engine-form .maw-settings-form-field-full input', 'https://kagi.com/search?q=%s');
-    await page.click('.maw-settings-engine-form button[type="submit"]');
+    await page.click('.wb-settings-engine-action-btn');
+    await page.fill('.wb-settings-engine-form input[type="text"]', 'Kagi');
+    await page.fill('.wb-settings-engine-form input[type="url"]', 'https://kagi.com');
+    await page.fill('.wb-settings-engine-form .wb-settings-form-field-full input', 'https://kagi.com/search?q=%s');
+    await page.click('.wb-settings-engine-form button[type="submit"]');
     await page.waitForTimeout(100);
 
     const updatedRadioCount = await page.locator('input[name="default-search-engine"]').count();
@@ -726,17 +726,17 @@ test('Browser Acceptance Suite: Settings, Destination Picker, Favicons, Minimal 
     assert.equal(await page.locator('input[name="default-search-engine"]').last().isChecked(), true);
 
     // Edit the custom search engine
-    await page.locator('.maw-settings-engine-edit-btn').last().click();
-    await page.waitForSelector('.maw-settings-engine-form');
-    await page.fill('.maw-settings-engine-form input[type="text"]', 'Kagi Pro');
-    await page.click('.maw-settings-engine-form button[type="submit"]');
+    await page.locator('.wb-settings-engine-edit-btn').last().click();
+    await page.waitForSelector('.wb-settings-engine-form');
+    await page.fill('.wb-settings-engine-form input[type="text"]', 'Kagi Pro');
+    await page.click('.wb-settings-engine-form button[type="submit"]');
     await page.waitForTimeout(100);
 
-    const editedEngineLabel = await page.locator('.maw-settings-choice-label').last().textContent();
+    const editedEngineLabel = await page.locator('.wb-settings-choice-label').last().textContent();
     assert.equal(editedEngineLabel.trim(), 'Kagi Pro');
 
     // Remove the custom search engine
-    await page.locator('.maw-settings-engine-delete-btn').last().click();
+    await page.locator('.wb-settings-engine-delete-btn').last().click();
     await page.waitForTimeout(100);
     const finalRadioCount = await page.locator('input[name="default-search-engine"]').count();
     assert.equal(finalRadioCount, 5, 'Should return to 5 engines after removing custom engine');
@@ -745,19 +745,19 @@ test('Browser Acceptance Suite: Settings, Destination Picker, Favicons, Minimal 
     // 2. BROWSER DESTINATION PICKER VERIFICATION & SCREENSHOT
     // =========================================================================
     await page.click('#show-picker-btn');
-    await page.waitForSelector('.maw-browser-dest-picker');
+    await page.waitForSelector('.wb-browser-dest-picker');
 
-    const pickerItems = page.locator('.maw-browser-dest-item');
+    const pickerItems = page.locator('.wb-browser-dest-item');
     const pickerCount = await pickerItems.count();
     // 4 favorites (3 initial + 1 added)
     assert.equal(pickerCount, 4, 'Should show 4 favorites');
 
-    const dividerCount = await page.locator('.maw-browser-dest-divider').count();
+    const dividerCount = await page.locator('.wb-browser-dest-divider').count();
     assert.equal(dividerCount, 2, 'Should display dividers between sections');
 
-    const otherSection = page.locator('.maw-browser-dest-item-other');
+    const otherSection = page.locator('.wb-browser-dest-item-other');
     assert.equal(await otherSection.count(), 1, 'Should display Other section');
-    const otherEngine = await page.locator('.maw-browser-dest-engine-select').inputValue();
+    const otherEngine = await page.locator('.wb-browser-dest-engine-select').inputValue();
     assert.equal(otherEngine, 'duckduckgo');
 
     // Capture Browser Destination Picker screenshot
@@ -767,11 +767,11 @@ test('Browser Acceptance Suite: Settings, Destination Picker, Favicons, Minimal 
     // 3. BROWSER TAB WITH ACTUAL FAVICON & CUSTOM MAW TITLE
     // =========================================================================
     await page.click('#show-tabs-btn');
-    await page.waitForSelector('.maw-tabs-strip');
+    await page.waitForSelector('.wb-tabs-strip');
 
     // Tab 1: ChatGPT has actual website favicon
     const tab1 = page.locator('[data-tab-id="tab-1"]');
-    const tab1Favicon = tab1.locator('.maw-tab-favicon');
+    const tab1Favicon = tab1.locator('.wb-tab-favicon');
     assert.equal(await tab1Favicon.count(), 1, 'Tab 1 should display website favicon');
     await page.screenshot({ path: path.join(screenshotsDir, 'browser-tab-with-favicon.png') });
 
@@ -779,26 +779,26 @@ test('Browser Acceptance Suite: Settings, Destination Picker, Favicons, Minimal 
     const tab2 = page.locator('[data-tab-id="tab-2"]');
     const tab2Title = await tab2.locator('.agency-truncate').textContent();
     assert.equal(tab2Title.trim(), 'Project Dashboard');
-    assert.equal(await tab2.locator('.maw-tab-favicon').count(), 1, 'Custom titled tab preserves website favicon');
+    assert.equal(await tab2.locator('.wb-tab-favicon').count(), 1, 'Custom titled tab preserves website favicon');
     await page.screenshot({ path: path.join(screenshotsDir, 'browser-tab-custom-title.png') });
 
     // Tab 3: Fallback globe icon when no favicon available
     const tab3 = page.locator('[data-tab-id="tab-3"]');
-    assert.equal(await tab3.locator('.maw-globe-icon').count(), 1, 'Tab without favicon displays fallback globe icon');
+    assert.equal(await tab3.locator('.wb-globe-icon').count(), 1, 'Tab without favicon displays fallback globe icon');
 
     // =========================================================================
     // 4. MINIMAL INLINE TAB RENAMING (NO ORANGE CONTAINER/GLOW)
     // =========================================================================
     // Double click Tab 2 title to enter rename mode
     await tab2.locator('.agency-truncate').dblclick();
-    await page.waitForSelector('.maw-tab-name-input');
+    await page.waitForSelector('.wb-tab-name-input');
 
     // Favicon MUST remain visible during renaming!
-    assert.equal(await tab2.locator('.maw-tab-favicon').count(), 1, 'Favicon remains visible while renaming');
+    assert.equal(await tab2.locator('.wb-tab-favicon').count(), 1, 'Favicon remains visible while renaming');
 
     // Check inline input styles: verify orange container and border glow are gone
     const inputStyle = await page.evaluate(() => {
-      const input = document.querySelector('.maw-tab-name-input');
+      const input = document.querySelector('.wb-tab-name-input');
       if (!input) return null;
       const computed = window.getComputedStyle(input);
       return {
@@ -816,14 +816,14 @@ test('Browser Acceptance Suite: Settings, Destination Picker, Favicons, Minimal 
     await page.screenshot({ path: path.join(screenshotsDir, 'tab-renaming-minimal-inline.png') });
 
     // Edit title and press Enter to save
-    await page.fill('.maw-tab-name-input', 'Work Dashboard V2');
+    await page.fill('.wb-tab-name-input', 'Work Dashboard V2');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(100);
 
     // Verify title updated and rename input closed
     const updatedTitle = await tab2.locator('.agency-truncate').textContent();
     assert.equal(updatedTitle.trim(), 'Work Dashboard V2');
-    assert.equal(await page.locator('.maw-tab-name-input').count(), 0);
+    assert.equal(await page.locator('.wb-tab-name-input').count(), 0);
 
     // =========================================================================
     // 5. SPLIT PANES WITH BROWSER TABS

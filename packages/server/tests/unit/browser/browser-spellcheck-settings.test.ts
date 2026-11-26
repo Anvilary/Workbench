@@ -3,7 +3,7 @@ import test from 'node:test';
 import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { DEFAULT_BROWSER_PROFILE_ID, DEFAULT_BROWSER_SETTINGS } from '@agent-workbench/shared';
+import { DEFAULT_BROWSER_PROFILE_ID, DEFAULT_BROWSER_SETTINGS } from '@anvilary/workbench-shared';
 import { SettingsStore } from '../../../src/features/settings/settings-store.js';
 import { AppSettingsService } from '../../../src/features/settings/app-settings-service.js';
 

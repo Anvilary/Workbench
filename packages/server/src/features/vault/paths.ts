@@ -27,7 +27,7 @@ import {
   isVaultSessionId,
   normalizeCwdKey,
   type SessionAgentId,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { appConfigDir } from '../../shared/app-paths.js';
 
 /** La carpeta de la copia cuando `settings.json` no nombra otra. */

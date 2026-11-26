@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useRef, useState } from 'react';
-import type { AgentId, AgentInfo } from '@agent-workbench/shared';
+import type { AgentId, AgentInfo } from '@anvilary/workbench-shared';
 import { AgentMenu } from './AgentMenu.js';
 import { t } from '../../i18n/index.js';
 

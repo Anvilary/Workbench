@@ -13,7 +13,7 @@ export function NotificationToastContainer({ toasts, onDismiss, onNavigate }: Pr
 
   return (
     <div
-      className="maw-toast-container"
+      className="wb-toast-container"
       role="region"
       aria-label={t('agency.notifications.title')}
       aria-live="polite"
@@ -21,7 +21,7 @@ export function NotificationToastContainer({ toasts, onDismiss, onNavigate }: Pr
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          className={`maw-toast-item state-${toast.state}`}
+          className={`wb-toast-item state-${toast.state}`}
           role="status"
           tabIndex={0}
           onClick={() => onNavigate(toast)}
@@ -32,16 +32,16 @@ export function NotificationToastContainer({ toasts, onDismiss, onNavigate }: Pr
             }
           }}
         >
-          <div className="maw-toast-icon" aria-hidden="true">
+          <div className="wb-toast-icon" aria-hidden="true">
             {toast.state === 'finished' ? '✓' : toast.state === 'failed' ? '✕' : toast.state === 'needs-input' ? '?' : toast.state === 'working' ? '⚙' : '◇'}
           </div>
-          <div className="maw-toast-content">
-            <div className="maw-toast-title">{notificationText(toast).title}</div>
-            <div className="maw-toast-body">{notificationText(toast).body}</div>
+          <div className="wb-toast-content">
+            <div className="wb-toast-title">{notificationText(toast).title}</div>
+            <div className="wb-toast-body">{notificationText(toast).body}</div>
           </div>
           <button
             type="button"
-            className="maw-toast-dismiss"
+            className="wb-toast-dismiss"
             aria-label={t('agency.notifications.dismissToast')}
             onClick={(event) => {
               event.stopPropagation();

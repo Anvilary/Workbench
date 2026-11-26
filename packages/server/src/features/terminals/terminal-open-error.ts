@@ -8,7 +8,7 @@
  * ahi no cambian.
  */
 
-import { ServerTextError, serverText, type ServerText } from '@agent-workbench/shared';
+import { ServerTextError, serverText, type ServerText } from '@anvilary/workbench-shared';
 
 export type TerminalOpenErrorCode =
   | 'cli-not-found'

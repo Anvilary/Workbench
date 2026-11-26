@@ -27,7 +27,7 @@ import {
   type VaultHeader,
   type VaultImageRef,
   type VaultSource,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import { detectImageFormat } from '../composer/image-signature.js';
 
 /**

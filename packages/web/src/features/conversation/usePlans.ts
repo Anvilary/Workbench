@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import type { SessionPlan, TerminalId } from '@agent-workbench/shared';
+import type { SessionPlan, TerminalId } from '@anvilary/workbench-shared';
 import type { AgentConnection } from '../../connection/connection.js';
 
 export interface PlansView {

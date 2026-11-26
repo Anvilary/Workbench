@@ -38,9 +38,9 @@ import { OpenTabsStore } from '../../../src/features/terminals/open-tabs-store.j
 import { createAgentRegistry } from '../../../src/agents/registry.js';
 import { PtyHostClient } from '../../../src/pty-host/pty-host-client.js';
 // @ts-expect-error - standalone pure-ESM supervisor script
-import { PtySupervisor } from '../../../src/pty-host/maw-ptyd.mjs';
+import { PtySupervisor } from '../../../src/pty-host/ptyd.mjs';
 import { attachWorkbenchSocket } from '../../../src/transport/websocket/socket-server.js';
-import { publishReadiness } from '../../../src/maw-host.js';
+import { publishReadiness } from '../../../src/workbench-host.js';
 import { SettingsStore } from '../../../src/features/settings/settings-store.js';
 import { ArchivedSessions } from '../../../src/features/history/archived-sessions.js';
 import { WorktreeStore } from '../../../src/features/worktrees/store.js';
@@ -62,13 +62,13 @@ import { AgencyProfileStore } from '../../../src/features/profiles/profile-store
 import { AgencySessionRuntime } from '../../../src/features/sessions/session-runtime.js';
 import { SplitAgencySessionStore } from '../../../src/features/sessions/session-store.js';
 import { WorkspaceMutex } from '../../../src/features/workspaces/workspace-lock.js';
-import { encodeClientMessage, parseServerMessage, type ServerMessage } from '@agent-workbench/shared';
+import { encodeClientMessage, parseServerMessage, type ServerMessage } from '@anvilary/workbench-shared';
 import { REPO_ROOT } from '../../helpers/paths.js';
 
 const exec = promisify(execFile);
 
-const SCRIPT_DIR = path.join(REPO_ROOT, 'scripts/maw');
-const SUPERVISOR_SCRIPT = path.join(REPO_ROOT, 'packages/server/src/pty-host/maw-ptyd.mjs');
+const SCRIPT_DIR = path.join(REPO_ROOT, 'scripts/workbench');
+const SUPERVISOR_SCRIPT = path.join(REPO_ROOT, 'packages/server/src/pty-host/ptyd.mjs');
 const SYNTHETIC_AGENT_PATH = path.join(REPO_ROOT, 'packages/server/src/pty-host/fixtures/synthetic-agent.mjs');
 
 class WsClient {
@@ -436,28 +436,28 @@ test('DEPLOYMENT SAFETY 13: Fresh installation unit rendering and validation', a
 
   const env = {
     ...process.env,
-    MAW_NODE_BIN: process.execPath,
-    MAW_STATE_DIR: tmpState,
-    MAW_BIN_DIR: path.join(tmpState, 'bin'),
-    MAW_RUNTIME_NAME: 'maw',
-    MAW_PTYD_RUNTIME_NAME: 'maw-ptyd',
+    WORKBENCH_NODE_BIN: process.execPath,
+    WORKBENCH_STATE_DIR: tmpState,
+    WORKBENCH_BIN_DIR: path.join(tmpState, 'bin'),
+    WORKBENCH_RUNTIME_NAME: 'maw',
+    WORKBENCH_PTYD_RUNTIME_NAME: 'workbench-ptyd',
   };
 
   // Render backend unit
-  const mawUnit = (await exec('/bin/sh', [path.join(SCRIPT_DIR, 'maw-render-unit.sh')], { env })).stdout;
-  assert.ok(mawUnit.includes('Wants=maw-ptyd.service'), 'maw.service must declare Wants=maw-ptyd.service');
-  assert.ok(mawUnit.includes('After=network.target maw-ptyd.service'), 'maw.service must declare After=... maw-ptyd.service');
-  assert.ok(mawUnit.includes('RuntimeDirectory=maw'), 'maw.service must own RuntimeDirectory=maw');
+  const mawUnit = (await exec('/bin/sh', [path.join(SCRIPT_DIR, 'render-unit.sh')], { env })).stdout;
+  assert.ok(mawUnit.includes('Wants=workbench-ptyd.service'), 'workbench.service must declare Wants=workbench-ptyd.service');
+  assert.ok(mawUnit.includes('After=network.target workbench-ptyd.service'), 'workbench.service must declare After=... workbench-ptyd.service');
+  assert.ok(mawUnit.includes('RuntimeDirectory=maw'), 'workbench.service must own RuntimeDirectory=maw');
 
   // Render supervisor unit
-  const ptydUnit = (await exec('/bin/sh', [path.join(SCRIPT_DIR, 'maw-render-ptyd-unit.sh')], { env })).stdout;
-  assert.ok(ptydUnit.includes('RuntimeDirectory=maw-ptyd'), 'maw-ptyd.service must own RuntimeDirectory=maw-ptyd');
-  assert.ok(ptydUnit.includes('Environment=MAW_PTYD_SOCKET=%t/maw-ptyd/ptyd.sock'), 'maw-ptyd.service must configure socket under its own runtime dir');
-  assert.ok(ptydUnit.includes('Environment=MAW_PTYD_AUTH_FILE=%t/maw-ptyd/ptyd.sock.auth'), 'maw-ptyd.service must configure auth file under its own runtime dir');
-  assert.ok(ptydUnit.includes(process.execPath), 'maw-ptyd.service ExecStart must use absolute node binary');
-  assert.ok(!ptydUnit.includes('/usr/bin/env node'), 'maw-ptyd.service must not use /usr/bin/env node');
-  assert.ok(!ptydUnit.includes('PrivateTmp=true'), 'maw-ptyd.service must not set PrivateTmp=true (breaks user namespace and ssh config ownership)');
-  assert.ok(!ptydUnit.includes('NoNewPrivileges=true'), 'maw-ptyd.service must not set NoNewPrivileges=true (prohibits developer privilege escalation)');
+  const ptydUnit = (await exec('/bin/sh', [path.join(SCRIPT_DIR, 'render-ptyd-unit.sh')], { env })).stdout;
+  assert.ok(ptydUnit.includes('RuntimeDirectory=workbench-ptyd'), 'workbench-ptyd.service must own RuntimeDirectory=workbench-ptyd');
+  assert.ok(ptydUnit.includes('Environment=WORKBENCH_PTYD_SOCKET=%t/workbench-ptyd/ptyd.sock'), 'workbench-ptyd.service must configure socket under its own runtime dir');
+  assert.ok(ptydUnit.includes('Environment=WORKBENCH_PTYD_AUTH_FILE=%t/workbench-ptyd/ptyd.sock.auth'), 'workbench-ptyd.service must configure auth file under its own runtime dir');
+  assert.ok(ptydUnit.includes(process.execPath), 'workbench-ptyd.service ExecStart must use absolute node binary');
+  assert.ok(!ptydUnit.includes('/usr/bin/env node'), 'workbench-ptyd.service must not use /usr/bin/env node');
+  assert.ok(!ptydUnit.includes('PrivateTmp=true'), 'workbench-ptyd.service must not set PrivateTmp=true (breaks user namespace and ssh config ownership)');
+  assert.ok(!ptydUnit.includes('NoNewPrivileges=true'), 'workbench-ptyd.service must not set NoNewPrivileges=true (prohibits developer privilege escalation)');
 
   await rm(tmpState, { recursive: true, force: true });
 });

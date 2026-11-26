@@ -8,34 +8,34 @@ import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { PtyHostClient } from '../../../src/pty-host/pty-host-client.js';
 // @ts-expect-error - standalone pure-ESM supervisor script
-import { PtySupervisor } from '../../../src/pty-host/maw-ptyd.mjs';
+import { PtySupervisor } from '../../../src/pty-host/ptyd.mjs';
 import { REPO_ROOT } from '../../helpers/paths.js';
 
 const exec = promisify(execFile);
 
-const SCRIPT_DIR = path.join(REPO_ROOT, 'scripts/maw');
+const SCRIPT_DIR = path.join(REPO_ROOT, 'scripts/workbench');
 
 test('TERMINAL ENVIRONMENT 1: Unit template and rendered unit omit PrivateTmp and NoNewPrivileges', async () => {
-  const templatePath = path.join(SCRIPT_DIR, 'pty-host', 'maw-ptyd.service');
+  const templatePath = path.join(SCRIPT_DIR, 'pty-host', 'workbench-ptyd.service');
   const template = await fs.promises.readFile(templatePath, 'utf8');
 
-  assert.ok(!template.includes('PrivateTmp='), 'maw-ptyd.service template must not set PrivateTmp');
-  assert.ok(!template.includes('NoNewPrivileges='), 'maw-ptyd.service template must not set NoNewPrivileges');
+  assert.ok(!template.includes('PrivateTmp='), 'workbench-ptyd.service template must not set PrivateTmp');
+  assert.ok(!template.includes('NoNewPrivileges='), 'workbench-ptyd.service template must not set NoNewPrivileges');
 
   const tmpState = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'maw-unit-test-'));
   const env = {
     ...process.env,
-    MAW_STATE_DIR: tmpState,
-    MAW_NODE_BIN: process.execPath,
-    MAW_BIN_DIR: path.join(tmpState, 'bin'),
-    MAW_PTYD_RUNTIME_NAME: 'maw-ptyd-env-test',
+    WORKBENCH_STATE_DIR: tmpState,
+    WORKBENCH_NODE_BIN: process.execPath,
+    WORKBENCH_BIN_DIR: path.join(tmpState, 'bin'),
+    WORKBENCH_PTYD_RUNTIME_NAME: 'workbench-ptyd-env-test',
   };
 
-  const rendered = (await exec('/bin/sh', [path.join(SCRIPT_DIR, 'maw-render-ptyd-unit.sh')], { env })).stdout;
-  assert.ok(!rendered.includes('PrivateTmp='), 'Rendered maw-ptyd unit must not include PrivateTmp');
-  assert.ok(!rendered.includes('NoNewPrivileges='), 'Rendered maw-ptyd unit must not include NoNewPrivileges');
-  assert.ok(rendered.includes('RuntimeDirectory=maw-ptyd-env-test'), 'Rendered maw-ptyd unit must retain RuntimeDirectory');
-  assert.ok(rendered.includes('UMask=0077'), 'Rendered maw-ptyd unit must retain UMask=0077');
+  const rendered = (await exec('/bin/sh', [path.join(SCRIPT_DIR, 'render-ptyd-unit.sh')], { env })).stdout;
+  assert.ok(!rendered.includes('PrivateTmp='), 'Rendered workbench-ptyd unit must not include PrivateTmp');
+  assert.ok(!rendered.includes('NoNewPrivileges='), 'Rendered workbench-ptyd unit must not include NoNewPrivileges');
+  assert.ok(rendered.includes('RuntimeDirectory=workbench-ptyd-env-test'), 'Rendered workbench-ptyd unit must retain RuntimeDirectory');
+  assert.ok(rendered.includes('UMask=0077'), 'Rendered workbench-ptyd unit must retain UMask=0077');
 
   await fs.promises.rm(tmpState, { recursive: true, force: true });
 });
@@ -100,7 +100,7 @@ test('TERMINAL ENVIRONMENT 2: Supervisor spawns PTY children without adding user
 });
 
 test('TERMINAL ENVIRONMENT 3: Clean systemd user execution validates normal namespace, root file ownership, and SSH', async () => {
-  // Test transient systemd user service environment (how maw-ptyd.service runs without PrivateTmp and NoNewPrivileges)
+  // Test transient systemd user service environment (how workbench-ptyd.service runs without PrivateTmp and NoNewPrivileges)
   const userBus = `/run/user/${process.getuid ? process.getuid() : 1000}/bus`;
   const systemdEnv = {
     ...process.env,

@@ -191,8 +191,8 @@ export function canEvictView({
  * @param {number} params.totalBytes - Node os.totalmem() in bytes
  * @param {number} [params.tabWorkingSetBytes=0] - Sum of Electron app.getAppMetrics() 'Tab' workingSetSize in bytes
  * @param {number} [params.attachedCount=0] - Number of currently attached/visible browser views in layout (0-4)
- * @param {string|number|undefined} [params.envOverride] - Optional MAW_MAX_RESIDENT_VIEWS env override
- * @param {string|undefined} [params.tierOverride] - Optional MAW_MEMORY_PRESSURE_TIER override (for testing)
+ * @param {string|number|undefined} [params.envOverride] - Optional WORKBENCH_MAX_RESIDENT_VIEWS env override
+ * @param {string|undefined} [params.tierOverride] - Optional WORKBENCH_MEMORY_PRESSURE_TIER override (for testing)
  * @param {object} [params.pressure] - Optional readSystemPressure() result: sustained memory stalls and swap occupancy
  * @param {{assess: Function}} [params.pressureGovernor] - Optional createPressureGovernor() applying hysteresis to `pressure`
  * @param {number} [params.now] - Timestamp for the governor (tests)

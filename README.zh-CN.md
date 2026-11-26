@@ -164,7 +164,7 @@ agent-workbench
 
 <img src="assets/captura-buscador.png" width="40%" alt="在对话中搜索：每个 CLI 各有一个会话匹配，并显示片段">
 
-默认存放在应用的配置文件夹中（Windows 上是 `%APPDATA%\agent-workbench\vault`）。点击**更改文件夹…**，可以把它复制到另一个文件夹（比如同步文件夹或另一块硬盘），不会覆盖任何内容，原文件夹也保持原样。如果你把它放在同步文件夹或代码仓库中，你的对话也会随之被同步或提交。
+默认存放在应用的配置文件夹中（Windows 上是 `%APPDATA%\workbench\vault`）。点击**更改文件夹…**，可以把它复制到另一个文件夹（比如同步文件夹或另一块硬盘），不会覆盖任何内容，原文件夹也保持原样。如果你把它放在同步文件夹或代码仓库中，你的对话也会随之被同步或提交。
 
 <details>
 <summary>从 Gemini CLI 和 Antigravity IDE 导入历史记录</summary>

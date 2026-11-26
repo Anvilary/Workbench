@@ -1,7 +1,7 @@
 /** Durable logical ChatGPT tabs. Native Chromium views belong exclusively to the desktop. */
 import { randomUUID } from 'node:crypto';
-import type { CreateWebTabInput, WebTab, WorkspaceId } from '@agent-workbench/shared';
-import { classifyWebTabUrl, validateOtherWebUrl, validateWebTabTitle, webTabProviderFor } from '@agent-workbench/shared';
+import type { CreateWebTabInput, WebTab, WorkspaceId } from '@anvilary/workbench-shared';
+import { classifyWebTabUrl, validateOtherWebUrl, validateWebTabTitle, webTabProviderFor } from '@anvilary/workbench-shared';
 import { BrowserTabStore, BrowserTabStoreError } from './browser-tab-store.js';
 import type { AgencyWorkspaceStore } from '../workspaces/workspace-store.js';
 import { WorkspaceMutex } from '../workspaces/workspace-lock.js';

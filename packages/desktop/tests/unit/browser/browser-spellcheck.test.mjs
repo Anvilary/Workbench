@@ -192,14 +192,14 @@ test('createBrowserSessions: partial native add/remove failure rolls back mutate
   // 1. Native add returns false on github partition
   {
     const h = harness({
-      'persist:maw-profile-failadd-github': () => createMockSession({ failAdd: true }),
+      'persist:workbench-profile-failadd-github': () => createMockSession({ failAdd: true }),
     });
     // Pre-populate a word that must NOT be disturbed by rollback of a failed add of another word
     assert.equal((await h.sessions.addCustomDictionaryWord('existingword', 'failadd')).ok, false);
     const res = await h.sessions.addCustomDictionaryWord('partialword', 'failadd');
     assert.equal(res.ok, false);
     assert.equal(res.rolledBack, true);
-    assert.deepEqual(res.failedPartitions, ['persist:maw-profile-failadd-github']);
+    assert.deepEqual(res.failedPartitions, ['persist:workbench-profile-failadd-github']);
     const listed = await h.sessions.listCustomDictionaryWords('failadd');
     assert.deepEqual(listed.words, [], 'Rolled back partitions must not retain partialword');
     assert.equal(listed.consistent, true);
@@ -208,12 +208,12 @@ test('createBrowserSessions: partial native add/remove failure rolls back mutate
   // 2. Native add throws on perplexity partition
   {
     const h = harness({
-      'persist:maw-profile-throwadd-perplexity': () => createMockSession({ throwAdd: true }),
+      'persist:workbench-profile-throwadd-perplexity': () => createMockSession({ throwAdd: true }),
     });
     const res = await h.sessions.addCustomDictionaryWord('throwword', 'throwadd');
     assert.equal(res.ok, false);
     assert.equal(res.rolledBack, true);
-    assert.deepEqual(res.failedPartitions, ['persist:maw-profile-throwadd-perplexity']);
+    assert.deepEqual(res.failedPartitions, ['persist:workbench-profile-throwadd-perplexity']);
     assert.deepEqual((await h.sessions.listCustomDictionaryWords('throwadd')).words, []);
   }
 
@@ -221,7 +221,7 @@ test('createBrowserSessions: partial native add/remove failure rolls back mutate
   {
     let allowFailRemove = false;
     const h = harness({
-      'persist:maw-profile-failrem-browser': () => {
+      'persist:workbench-profile-failrem-browser': () => {
         const s = createMockSession();
         const origRemove = s.removeWordFromSpellCheckerDictionary;
         s.removeWordFromSpellCheckerDictionary = (w) => {
@@ -244,14 +244,14 @@ test('createBrowserSessions: partial native add/remove failure rolls back mutate
   // 4. Missing dictionary API fails cleanly
   {
     const h = harness({
-      'persist:maw-profile-noapi-chatgpt': () => createMockSession({ missingDictApi: true }),
+      'persist:workbench-profile-noapi-chatgpt': () => createMockSession({ missingDictApi: true }),
     });
     const res = await h.sessions.addCustomDictionaryWord('missingapi', 'noapi');
     assert.equal(res.ok, false);
     const listed = await h.sessions.listCustomDictionaryWords('noapi');
     assert.equal(listed.ok, false);
     assert.equal(listed.consistent, false);
-    assert.deepEqual(listed.failedPartitions, ['persist:maw-profile-noapi-chatgpt']);
+    assert.deepEqual(listed.failedPartitions, ['persist:workbench-profile-noapi-chatgpt']);
   }
 });
 
@@ -281,28 +281,28 @@ test('createBrowserSessions: listing exposes divergent partition state and recon
   assert.equal(afterLazy.consistent, true);
   assert.deepEqual(afterLazy.words, ['authoritative', 'ação']);
   assert.deepEqual(await perplexitySess.listWordsInSpellCheckerDictionary(), ['authoritative', 'ação']);
-  assert.equal(partitions.has('persist:maw-profile-work-rec-perplexity'), true);
+  assert.equal(partitions.has('persist:workbench-profile-work-rec-perplexity'), true);
 });
 
 test('createBrowserSessions: attaches lifecycle listeners before configuring dictionaries and preserves per-partition failures', () => {
   // Verify synchronous event emitted during setSpellCheckerLanguages on initial partition is captured!
   const h = harness({
-    'persist:maw-chatgpt': () => createMockSession({
+    'persist:workbench-chatgpt': () => createMockSession({
       emitSyncOnSetLangs: (langs, emit) => {
         for (const l of langs) emit('spellcheck-dictionary-download-failure', {}, l);
       },
     }),
-    'persist:maw-github': () => createMockSession({
+    'persist:workbench-github': () => createMockSession({
       emitSyncOnSetLangs: (langs, emit) => {
         for (const l of langs) emit('spellcheck-dictionary-initialized', {}, l);
       },
     }),
   });
 
-  // Even though persist:maw-github emitted 'ready', persist:maw-chatgpt failed -> aggregated status must stay 'failed'!
+  // Even though persist:workbench-github emitted 'ready', persist:workbench-chatgpt failed -> aggregated status must stay 'failed'!
   const initialStatus = h.sessions.getSpellCheckStatus();
   assert.equal(initialStatus.statuses['en-US'].status, 'failed');
-  assert.deepEqual(initialStatus.statuses['en-US'].failedPartitions, ['persist:maw-chatgpt']);
+  assert.deepEqual(initialStatus.statuses['en-US'].failedPartitions, ['persist:workbench-chatgpt']);
 
   // Unsupported language is reported truthfully
   h.sessions.applySpellCheckSettings({ enabled: true, languages: ['en-US', 'zz-ZZ'] });
@@ -318,14 +318,14 @@ test('createBrowserSessions: attaches lifecycle listeners before configuring dic
   h.sessions.applySpellCheckSettings({ enabled: true, languages: ['pt-PT'] });
   customSess.emit('spellcheck-dictionary-download-failure', {}, 'pt-PT');
   assert.equal(h.sessions.getSpellCheckStatus().statuses['pt-PT'].status, 'failed');
-  h.sessions.onProfileDeleted('temp-prof', ['persist:maw-profile-temp-prof-browser']);
-  assert.equal(h.sessions.getSpellCheckStatus().statuses['pt-PT'].status, 'failed'); // persist:maw-chatgpt also failed in this mock
+  h.sessions.onProfileDeleted('temp-prof', ['persist:workbench-profile-temp-prof-browser']);
+  assert.equal(h.sessions.getSpellCheckStatus().statuses['pt-PT'].status, 'failed'); // persist:workbench-chatgpt also failed in this mock
 });
 
 test('Scenario 9: primary partition failure followed by rollback failure reports rolledBack=false truthfully and recovers via reconcileCustomDictionary', async () => {
   let rejectRemove = false;
   const h = harness({
-    'persist:maw-profile-rbfail-chatgpt': () => {
+    'persist:workbench-profile-rbfail-chatgpt': () => {
       const s = createMockSession();
       const origRemove = s.removeWordFromSpellCheckerDictionary;
       s.removeWordFromSpellCheckerDictionary = (w) => {
@@ -334,7 +334,7 @@ test('Scenario 9: primary partition failure followed by rollback failure reports
       };
       return s;
     },
-    'persist:maw-profile-rbfail-github': () => createMockSession({ failAdd: true }),
+    'persist:workbench-profile-rbfail-github': () => createMockSession({ failAdd: true }),
   });
 
   // Allow chatgpt add to succeed, make inverse remove fail on chatgpt during rollback after github add fails
@@ -342,8 +342,8 @@ test('Scenario 9: primary partition failure followed by rollback failure reports
   const res = await h.sessions.addCustomDictionaryWord('partialstuck', 'rbfail');
   assert.equal(res.ok, false);
   assert.equal(res.rolledBack, false);
-  assert.deepEqual(res.failedPartitions, ['persist:maw-profile-rbfail-github']);
-  assert.deepEqual(res.rollbackFailedPartitions, ['persist:maw-profile-rbfail-chatgpt']);
+  assert.deepEqual(res.failedPartitions, ['persist:workbench-profile-rbfail-github']);
+  assert.deepEqual(res.rollbackFailedPartitions, ['persist:workbench-profile-rbfail-chatgpt']);
 
   // Listing truthfully shows divergence left behind by failed rollback
   const listed = await h.sessions.listCustomDictionaryWords('rbfail');
@@ -352,7 +352,7 @@ test('Scenario 9: primary partition failure followed by rollback failure reports
 
   // Reconcile against authoritative empty set after failure recovers once partition accepts writes again
   rejectRemove = false;
-  const gh = h.partitions.get('persist:maw-profile-rbfail-github');
+  const gh = h.partitions.get('persist:workbench-profile-rbfail-github');
   gh.addWordToSpellCheckerDictionary = (w) => {
     if (gh.customDictionary.has(w)) return false;
     gh.customDictionary.add(w);
@@ -373,7 +373,7 @@ test('Scenario 10: profile deletion awaits in-flight reconcile deterministically
   let pauseList = true;
 
   const h = harness({
-    'persist:maw-profile-racep-chatgpt': () => {
+    'persist:workbench-profile-racep-chatgpt': () => {
       const s = createMockSession();
       const origList = s.listWordsInSpellCheckerDictionary;
       s.listWordsInSpellCheckerDictionary = async () => {
@@ -405,7 +405,7 @@ test('Scenario 10: profile deletion awaits in-flight reconcile deterministically
     pauseList = false;
     const afterPause = await h.sessions.listCustomDictionaryWords('racep');
     assert.deepEqual(afterPause.words, []);
-    h.sessions.finishProfileDeletion('racep', ['persist:maw-profile-racep-chatgpt']);
+    h.sessions.finishProfileDeletion('racep', ['persist:workbench-profile-racep-chatgpt']);
     deletionFinished = true;
   })();
 
@@ -419,9 +419,9 @@ test('Scenario 10: profile deletion awaits in-flight reconcile deterministically
   pauseList = false;
   releaseList();
   const [recRes] = await Promise.all([reconcilePromise, deletionPromise]);
-  assert.ok(recRes.abortedPartitions?.includes('persist:maw-profile-racep-chatgpt'));
+  assert.ok(recRes.abortedPartitions?.includes('persist:workbench-profile-racep-chatgpt'));
 
-  const chatSess = h.partitions.get('persist:maw-profile-racep-chatgpt');
+  const chatSess = h.partitions.get('persist:workbench-profile-racep-chatgpt');
   assert.deepEqual([...chatSess.customDictionary], []);
   assert.deepEqual((await h.sessions.listCustomDictionaryWords('main')).words, ['mainkeep']);
   assert.deepEqual(await h.defaultSession.listWordsInSpellCheckerDictionary(), []);
@@ -429,7 +429,7 @@ test('Scenario 10: profile deletion awaits in-flight reconcile deterministically
 
 test('F3: lazy partition reconciliation failures emit custom-dictionary-sync-status and clear on retry or deletion', async () => {
   const h = harness({
-    'persist:maw-profile-lazysync-perplexity': () => createMockSession({ failAdd: true }),
+    'persist:workbench-profile-lazysync-perplexity': () => createMockSession({ failAdd: true }),
   });
   h.sessions.ensurePartitionSession('lazysync', 'chatgpt');
 
@@ -448,10 +448,10 @@ test('F3: lazy partition reconciliation failures emit custom-dictionary-sync-sta
     .filter((e) => e.type === 'custom-dictionary-sync-status');
   assert.equal(failureEvents.length, 1);
   assert.equal(failureEvents[0].ok, false);
-  assert.deepEqual(failureEvents[0].failedPartitions, ['persist:maw-profile-lazysync-perplexity']);
+  assert.deepEqual(failureEvents[0].failedPartitions, ['persist:workbench-profile-lazysync-perplexity']);
 
   // Repair partition and retry reconcile with the EXACT same dictionary map -> recovers cleanly
-  const pxSess = h.partitions.get('persist:maw-profile-lazysync-perplexity');
+  const pxSess = h.partitions.get('persist:workbench-profile-lazysync-perplexity');
   pxSess.addWordToSpellCheckerDictionary = (w) => {
     if (pxSess.customDictionary.has(w)) return false;
     pxSess.customDictionary.add(w);
@@ -468,7 +468,7 @@ test('F3: lazy partition reconciliation failures emit custom-dictionary-sync-sta
 test('F4: applySpellCheckSettings returns honest per-partition failure results and preserves status reporting', () => {
   let throwSetLangs = true;
   const h = harness({
-    'persist:maw-github': () => {
+    'persist:workbench-github': () => {
       const s = createMockSession();
       const origSetLangs = s.setSpellCheckerLanguages;
       s.setSpellCheckerLanguages = (langs) => {
@@ -486,7 +486,7 @@ test('F4: applySpellCheckSettings returns honest per-partition failure results a
     languages: ['en-US', 'zz-UNSUPPORTED'],
   });
   assert.equal(failRes.ok, false);
-  assert.deepEqual(failRes.failedPartitions, ['persist:maw-github']);
+  assert.deepEqual(failRes.failedPartitions, ['persist:workbench-github']);
   assert.match(failRes.error ?? '', /native failure/);
 
   // Unsupported language status reporting must still be preserved

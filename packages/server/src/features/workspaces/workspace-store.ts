@@ -10,8 +10,8 @@ import { copyFile, mkdir, readFile, realpath, rename, stat } from 'node:fs/promi
 import path from 'node:path';
 import type {
   AgencyErrorCode, AgencyProject, AgencyWorkspace, ProjectId, WorkspaceId,
-} from '@agent-workbench/shared';
-import { isValidBrowserProfileId } from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
+import { isValidBrowserProfileId } from '@anvilary/workbench-shared';
 import { appConfigDir } from '../../shared/app-paths.js';
 import { writeAtomically } from '../../shared/persistence/atomic-write.js';
 

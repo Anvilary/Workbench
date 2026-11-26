@@ -9,7 +9,7 @@
  * se dice.
  */
 
-import type { EffortOption } from '@agent-workbench/shared';
+import type { EffortOption } from '@anvilary/workbench-shared';
 
 /** Nombre del comando en el PATH. Con npm resuelve a un shim `pi.cmd` (16.1). */
 export const PI_COMMAND = 'pi';

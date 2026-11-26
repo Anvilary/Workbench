@@ -14,7 +14,7 @@ import {
   updateSplitRatio,
   type WorkspaceId,
   type WorkspacePaneLayout,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 
 test('split layout: default single pane', () => {
   const wsId = '11111111-1111-4111-8111-111111111111' as WorkspaceId;
@@ -200,13 +200,13 @@ test('split layout: reconcile handles deleted tabs, missing tabs, and malformed 
 });
 
 test('pane swaps exchange leaf references without changing splits for every supported shape', async () => {
-  const { swapPanes } = await import('@agent-workbench/shared');
+  const { swapPanes } = await import('@anvilary/workbench-shared');
   const pane = (id: string) => ({ type: 'pane' as const, id, tabIds: [id + '-tab'], selectedTabId: id + '-tab' });
-  const split = (first: import('@agent-workbench/shared').LayoutNode, second: import('@agent-workbench/shared').LayoutNode, direction: 'row' | 'column' = 'row') =>
+  const split = (first: import('@anvilary/workbench-shared').LayoutNode, second: import('@anvilary/workbench-shared').LayoutNode, direction: 'row' | 'column' = 'row') =>
     ({ type: 'split' as const, id: `${first.id}-${second.id}`, first, second, direction, ratio: .37 });
   const a = pane('a'), b = pane('b'), c = pane('c'), d = pane('d');
   const shapes = [split(a, b), split(a, b, 'column'), split(a, split(b, c, 'column')), split(split(a, b, 'column'), split(c, d, 'column')), split(a, split(b, split(c, d, 'column')))];
-  const skeleton = (node: import('@agent-workbench/shared').LayoutNode): unknown => node.type === 'pane' ? 'leaf' : ({ id: node.id, ratio: node.ratio, direction: node.direction, first: skeleton(node.first), second: skeleton(node.second) });
+  const skeleton = (node: import('@anvilary/workbench-shared').LayoutNode): unknown => node.type === 'pane' ? 'leaf' : ({ id: node.id, ratio: node.ratio, direction: node.direction, first: skeleton(node.first), second: skeleton(node.second) });
   for (const tree of shapes) {
     const before = structuredClone(tree);
     for (const source of getPaneNodes(tree)) for (const target of getPaneNodes(tree)) {
@@ -227,7 +227,7 @@ test('pane swaps exchange leaf references without changing splits for every supp
 });
 
 test('created tabs retain their destination or use a live fallback without duplicate assignments', async () => {
-  const { assignCreatedTab } = await import('@agent-workbench/shared');
+  const { assignCreatedTab } = await import('@anvilary/workbench-shared');
   const ws = '11111111-1111-4111-8111-111111111111' as WorkspaceId;
   const initial = createDefaultLayout(ws, ['existing', 'neighbor']);
   const tree = splitPane(initial.tree, 'pane-1', 'row', 'pane-2', 'neighbor')!;
@@ -290,7 +290,7 @@ test('split layout: layout ownership validates mixed native, browser, and editor
 });
 
 test('split layout: pruneEmptyPanes automatically collapses empty panes and expands siblings', async () => {
-  const { pruneEmptyPanes } = await import('@agent-workbench/shared');
+  const { pruneEmptyPanes } = await import('@anvilary/workbench-shared');
 
   // 1. Horizontal split: pane-2 is empty -> collapses to pane-1
   const hSplit = {

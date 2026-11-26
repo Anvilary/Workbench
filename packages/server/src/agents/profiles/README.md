@@ -128,7 +128,7 @@ are not profile-separated merely because profile IDs exist.
 Focused tests, executed from repository root after `corepack pnpm install --frozen-lockfile`:
 
 ```sh
-corepack pnpm --filter @agent-workbench/server exec tsx --test src/agents/profiles/profiles.test.ts
+corepack pnpm --filter @anvilary/workbench-server exec tsx --test src/agents/profiles/profiles.test.ts
 corepack pnpm typecheck
 corepack pnpm build
 corepack pnpm check

@@ -1,4 +1,4 @@
-import type { AgentId } from '@agent-workbench/shared';
+import type { AgentId } from '@anvilary/workbench-shared';
 
 export interface AppVersionInfo {
   version: string;
@@ -28,8 +28,8 @@ export function getAppVersionInfo(): AppVersionInfo {
   let version = '0.8.1';
   if (typeof __APP_VERSION__ === 'string' && __APP_VERSION__ !== 'dev' && __APP_VERSION__ !== 'test') {
     version = __APP_VERSION__;
-  } else if (typeof process !== 'undefined' && process.env?.MAW_APP_VERSION) {
-    version = process.env.MAW_APP_VERSION;
+  } else if (typeof process !== 'undefined' && process.env?.WORKBENCH_APP_VERSION) {
+    version = process.env.WORKBENCH_APP_VERSION;
   }
 
   let gitSha: string | null = null;

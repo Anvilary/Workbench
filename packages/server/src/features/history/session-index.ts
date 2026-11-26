@@ -44,7 +44,7 @@ import {
   type ProjectSummary,
   type SessionAgentId,
   type SessionSummary,
-} from '@agent-workbench/shared';
+} from '@anvilary/workbench-shared';
 import type {
   HistoryExtra,
   HistoryItem,

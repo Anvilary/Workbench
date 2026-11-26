@@ -10,7 +10,7 @@
  * Authorization of the upgrade lives here and nowhere else.
  */
 
-import { WS_PATH } from '@agent-workbench/shared';
+import { WS_PATH } from '@anvilary/workbench-shared';
 import type { Server as HttpServer, IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';

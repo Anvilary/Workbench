@@ -19,7 +19,7 @@ const { build } = require('esbuild');
 const { chromium } = require('playwright');
 
 const artifactDir =
-  process.env.MAW_USAGE_EVIDENCE_DIR ||
+  process.env.WORKBENCH_USAGE_EVIDENCE_DIR ||
   path.join(tmpdir(), 'maw-test-artifacts', 'agents-usage-redesign');
 mkdirSync(artifactDir, { recursive: true });
 
@@ -85,9 +85,9 @@ function App() {
   const [mounted, setMounted] = useState(true);
   setMountedGlobal = setMounted;
   return (
-    <div className="maw-settings-backdrop" style={{ position: 'static', minHeight: '100vh', padding: '16px', boxSizing: 'border-box' }}>
-      <div className="maw-settings-window" style={{ width: '100%', maxWidth: '720px', height: 'auto', maxHeight: 'none', margin: '0 auto' }}>
-        <main className="maw-settings-content" style={{ maxHeight: '760px' }}>
+    <div className="wb-settings-backdrop" style={{ position: 'static', minHeight: '100vh', padding: '16px', boxSizing: 'border-box' }}>
+      <div className="wb-settings-window" style={{ width: '100%', maxWidth: '720px', height: 'auto', maxHeight: 'none', margin: '0 auto' }}>
+        <main className="wb-settings-content" style={{ maxHeight: '760px' }}>
           {mounted ? <AgentsUsageView connection={mockConnection} /> : <div id="usage-unmounted">Closed</div>}
         </main>
       </div>
