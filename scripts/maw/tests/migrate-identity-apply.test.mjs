@@ -75,7 +75,9 @@ test('2. a populated legacy install is migrated by copy, leaving the legacy tree
   assert.equal(fs.existsSync(path.join(fixture.canonical.stateDir, 'current')), true);
   assert.equal(fs.existsSync(path.join(fixture.canonical.stateDir, 'healthy')), false);
   assert.match(fs.readFileSync(path.join(fixture.canonical.stateDir, 'update-log.jsonl'), 'utf8'), /identity-migration-initial-release/);
-  assert.equal(state.steps.release.legacyHealthyCommit, 'a'.repeat(40));
+  assert.equal(state.steps.release.legacyHealthyCommit, fixture.expectedCommit);
+  assert.equal(state.steps.release.commit, fixture.expectedCommit);
+  assert.equal(fs.readFileSync(path.join(fixture.home, 'updater-args.log'), 'utf8').trim(), `--initial --source ${fixture.sourceDir} --ref ${fixture.expectedCommit} --allow-unapproved-ref`);
 
   // State file is 0600 and marks every step.
   assert.equal(fs.statSync(fixture.canonical.stateFile).mode & 0o777, 0o600);
@@ -123,12 +125,14 @@ test('5. a kill after any step is recoverable: the rerun completes it', (t) => {
     };
     // Simulate a kill right before the marker was written, with the step's output half-written.
     const state = fixture.state();
-    state.steps[killed] = { status: 'pending' };
+    state.steps[killed] = ['config', 'userdata'].includes(killed)
+      ? { ...state.steps[killed], status: 'prepared' }
+      : { status: 'pending' };
     state.status = 'in-progress';
     fs.writeFileSync(fixture.canonical.stateFile, JSON.stringify(state, null, 2));
-    if (killed === 'config') fs.rmSync(path.join(fixture.canonical.configDir, 'settings.json'));
+    if (killed === 'config') fs.rmSync(fixture.canonical.configDir, { recursive: true, force: true });
     if (killed === 'env') fs.rmSync(fixture.canonical.envFile);
-    if (killed === 'userdata') fs.rmSync(path.join(fixture.canonical.userData, 'Partitions/workbench-browser/Cookies'));
+    if (killed === 'userdata') fs.rmSync(fixture.canonical.userData, { recursive: true, force: true });
     if (killed === 'helpers') fs.rmSync(path.join(fixture.binDir, 'maw'));
     if (killed === 'desktop') fs.rmSync(fixture.canonical.desktopFile);
     if (killed === 'units') fs.rmSync(path.join(fixture.unitDir, 'workbench.service'));
@@ -146,11 +150,23 @@ test('5. a kill after any step is recoverable: the rerun completes it', (t) => {
 test('a step marker that disagrees with the disk is redone', (t) => {
   const fixture = createFixture(t);
   assert.equal(fixture.run(['apply']).status, 0);
-  fs.rmSync(path.join(fixture.canonical.configDir, 'workspace.json'));
+  const ownerFile = path.join(fixture.canonical.configDir, 'owner-created-after-activation');
+  fs.writeFileSync(ownerFile, 'keep');
   const rerun = fixture.run(['apply']);
-  assert.equal(rerun.status, 0, rerun.stdout + rerun.stderr);
-  assert.match(rerun.stdout, /step config: marker says done but the observable state does not match: redoing/);
-  assert.equal(fs.existsSync(path.join(fixture.canonical.configDir, 'workspace.json')), true);
+  assert.equal(rerun.status, 2, rerun.stdout + rerun.stderr);
+  assert.match(rerun.stderr, /refusing to overwrite/);
+  assert.equal(fs.readFileSync(ownerFile, 'utf8'), 'keep');
+});
+
+test('an existing canonical userData tree is never overwritten on re-apply', (t) => {
+  const fixture = createFixture(t);
+  assert.equal(fixture.run(['apply']).status, 0);
+  const ownerFile = path.join(fixture.canonical.userData, 'owner-created-after-activation');
+  fs.writeFileSync(ownerFile, 'keep');
+  const rerun = fixture.run(['apply']);
+  assert.equal(rerun.status, 2);
+  assert.match(rerun.stderr, /refusing to overwrite/);
+  assert.equal(fs.readFileSync(ownerFile, 'utf8'), 'keep');
 });
 
 test('10. the env file migration renames, drops NO_AUTH, keeps unknown keys and never prints values', (t) => {
@@ -175,7 +191,7 @@ test('10. the env file migration renames, drops NO_AUTH, keeps unknown keys and 
     assert.ok(!result.stdout.includes(`=${value}`), `value ${value} must not be printed`);
   }
   const state = fixture.state();
-  assert.deepEqual(state.steps.env.dropped, ['MAW_UNSAFE_LOCAL_NO_AUTH']);
+  assert.deepEqual(state.steps.env.dropped, ['MAW_UNSAFE_LOCAL_NO_AUTH', 'WORKBENCH_UNSAFE_LOCAL_NO_AUTH']);
   assert.deepEqual(state.steps.env.unknownKeys, ['EDITOR', 'GIT_PAGER']);
   assert.equal(JSON.stringify(state).includes('45643'), false);
 });
@@ -188,6 +204,7 @@ test('the env transform keeps the canonical key when both names are set', () => 
   const dropped = transformEnvFile('AGENT_WORKBENCH_UNSAFE_LOCAL_NO_AUTH=1\n');
   assert.equal(dropped.content.trim(), '');
   assert.deepEqual(dropped.dropped, ['AGENT_WORKBENCH_UNSAFE_LOCAL_NO_AUTH']);
+  assert.equal(transformEnvFile('WORKBENCH_UNSAFE_LOCAL_NO_AUTH=1\n').content.trim(), '');
 });
 
 test('the missing canonical Electron runtime stops apply with exit 3 and the owner command', (t) => {

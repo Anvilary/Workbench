@@ -41,8 +41,10 @@ test('the canonical units are rendered, the legacy units masked, the new ones en
   assert.match(fs.readFileSync(path.join(fixture.unitDir, 'workbench.service'), 'utf8'), new RegExp(`EnvironmentFile=-${fixture.canonical.envFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   for (const unit of LEGACY_UNITS) {
     assert.equal(fixture.unitState(unit, 'enabled'), 'masked');
-    // The legacy unit file itself is never modified.
-    assert.equal(sha(path.join(fixture.unitDir, unit)), legacyUnitHashes[unit]);
+    // A real mask replaces the regular file with a /dev/null symlink, preserving its exact bytes in state.
+    assert.equal(fs.readlinkSync(path.join(fixture.unitDir, unit)), '/dev/null');
+    const saved = Buffer.from(fixture.state().steps.units.originalUnits[unit].content, 'base64');
+    assert.equal(crypto.createHash('sha256').update(saved).digest('hex'), legacyUnitHashes[unit]);
   }
   const calls = fixture.systemctlCalls();
   const disableAt = calls.findIndex((line) => line.startsWith('disable maw.service'));
@@ -144,6 +146,20 @@ test('verify fails when a running desktop still uses the legacy userData', (t) =
   assert.match(result.stdout, /verify: FAIL the running desktop uses the canonical userData/);
 });
 
+test('verify ignores unrelated browser profiles and requires an exact readiness release id', (t) => {
+  const fixture = createFixture(t);
+  assert.equal(fixture.run(['apply']).status, 0);
+  const extra = makeVerifiable(fixture);
+  fixture.addProcess(8282, { cmdline: ['electron', `--user-data-dir=${path.join(fixture.home, 'unrelated-browser-profile')}`] });
+  const result = fixture.run(['verify', '--accept', ...extra]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(fixture.state().status, 'verified');
+
+  const fake = fixture.run(['verify', '--accept', '--readiness-cmd', 'echo extra-20261126090000-beef1234', ...extra.slice(2)]);
+  assert.equal(fake.status, 2);
+  assert.match(fake.stdout, /FAIL readiness probe reports the canonical release id/);
+});
+
 test('7, 8. rollback after a failed first activation restores legacy operability', (t) => {
   const fixture = createFixture(t);
   const legacyBefore = {
@@ -192,6 +208,21 @@ test('7, 8. rollback after a failed first activation restores legacy operability
   assert.deepEqual(fileManifest(fixture.legacy.configDir), legacyBefore.config);
   assert.deepEqual(fileManifest(fixture.legacy.userData), legacyBefore.userData);
   assert.match(rolled.stdout, /rollback: start the legacy installation with: systemctl --user start maw-ptyd\.service maw\.service/);
+});
+
+test('rollback fails closed when canonical shutdown fails', (t) => {
+  const fixture = createFixture(t);
+  assert.equal(fixture.run(['apply']).status, 0);
+  const failing = path.join(fixture.home, 'systemctl-fail-stop');
+  fs.writeFileSync(failing, `#!/bin/sh\n[ "$2" != stop ] || exit 9\nexec "${path.join(fixture.mockBin, 'systemctl')}" "$@"\n`, { mode: 0o700 });
+  const result = fixture.run(['rollback', '--systemctl-cmd', failing]);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /failed to stop canonical units/);
+  for (const unit of LEGACY_UNITS) {
+    assert.equal(fixture.unitState(unit, 'enabled'), 'masked');
+    assert.equal(fs.readlinkSync(path.join(fixture.unitDir, unit)), '/dev/null');
+  }
+  assert.equal(fixture.state().status, 'applied');
 });
 
 test('clean needs a verified migration, an explicit --yes, and keeps the backup', (t) => {

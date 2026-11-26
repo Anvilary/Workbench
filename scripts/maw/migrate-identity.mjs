@@ -211,7 +211,7 @@ const VALUE_FLAGS = new Set([
   'systemctl-cmd', 'gsettings-cmd', 'tar-cmd', 'initial-release-cmd', 'readiness-cmd',
   'proc-root', 'free-space-bytes', 'electron-root', 'electron-version',
   'unit-template', 'ptyd-unit-template', 'helpers-source', 'icon-source',
-  'source', 'expect-commit',
+  'source', 'expect-commit', 'commit-map', 'commit-map-sha256',
 ]);
 
 const BOOL_FLAGS = new Set(['i-am-the-owner', 'accept', 'yes', 'dry-run', 'quiet', 'help']);
@@ -364,6 +364,8 @@ export function resolveContext(options, env = process.env) {
     iconSource: options.flags['icon-source'] !== undefined ? path.resolve(options.flags['icon-source']) : null,
     sourceDir: options.flags['source'] !== undefined ? path.resolve(options.flags['source']) : null,
     expectCommit: options.flags['expect-commit'] ?? null,
+    commitMap: options.flags['commit-map'] !== undefined ? path.resolve(options.flags['commit-map']) : null,
+    commitMapSha256: options.flags['commit-map-sha256'] ?? null,
     quiet: options.bools['quiet'] === true,
     out: [],
   };
@@ -474,7 +476,20 @@ function ownPids(ctx) {
   return pids;
 }
 
+function unixSocketInodes(ctx, socketPath) {
+  const result = new Set();
+  let lines;
+  try { lines = fs.readFileSync(path.join(ctx.procRoot, 'net/unix'), 'utf8').split('\n'); } catch { return result; }
+  for (const line of lines.slice(1)) {
+    const fields = line.trim().split(/\s+/);
+    if (fields.length >= 8 && fields[7] === socketPath && /^\d+$/.test(fields[6])) result.add(fields[6]);
+  }
+  return result;
+}
+
 function pidsHoldingSocket(ctx, socketPath) {
+  const inodes = unixSocketInodes(ctx, socketPath);
+  if (inodes.size === 0) return [];
   const holders = [];
   for (const pid of ownPids(ctx)) {
     const fdDir = path.join(ctx.procRoot, pid, 'fd');
@@ -491,8 +506,8 @@ function pidsHoldingSocket(ctx, socketPath) {
       } catch {
         continue;
       }
-      // Linux renders socket fds as `socket:[inode]`; a bind mount or a test fixture shows the path.
-      if (target === socketPath || target === `${socketPath} (deleted)`) {
+      const match = /^socket:\[(\d+)\]$/.exec(target);
+      if (match !== null && inodes.has(match[1])) {
         holders.push(pid);
         break;
       }
@@ -530,7 +545,10 @@ function pidsWithAnyUserDataDir(ctx) {
       continue;
     }
     for (const arg of raw.split('\0')) {
-      if (arg.startsWith('--user-data-dir=')) found.push({ pid, dir: path.resolve(arg.slice('--user-data-dir='.length)) });
+      if (arg.startsWith('--user-data-dir=')) {
+        const dir = path.resolve(arg.slice('--user-data-dir='.length));
+        if (dir === path.resolve(ctx.canonical.userData) || dir === path.resolve(ctx.legacy.userData)) found.push({ pid, dir });
+      }
     }
   }
   return found;
@@ -586,7 +604,9 @@ function freeSpaceBytes(ctx) {
 }
 
 function checkSourceCheckout(ctx) {
-  if (ctx.sourceDir === null) return [];
+  if (ctx.sourceDir === null) return ['--source is required for an identity migration initial release'];
+  if (ctx.expectCommit === null || !/^[0-9a-f]{40}$/.test(ctx.expectCommit)) return ['--expect-commit must be an explicit full 40-character SHA'];
+  if (ctx.commitMap === null || ctx.commitMapSha256 === null || !/^[0-9a-f]{64}$/.test(ctx.commitMapSha256)) return ['--commit-map and its full --commit-map-sha256 digest are required'];
   if (!isDirectory(ctx.sourceDir)) return [`--source is not a directory: ${ctx.sourceDir}`];
   const problems = [];
   const git = (args) => spawnSync('git', ['-C', ctx.sourceDir, ...args], { encoding: 'utf8' });
@@ -599,6 +619,32 @@ function checkSourceCheckout(ctx) {
   const status = git(['status', '--porcelain']);
   if ((status.status ?? 1) !== 0) problems.push('git status failed on --source');
   else if (status.stdout.trim() !== '') problems.push(`--source checkout is not clean: ${ctx.sourceDir}`);
+  let map;
+  try {
+    const content = fs.readFileSync(ctx.commitMap, 'utf8');
+    const digest = crypto.createHash('sha256').update(content).digest('hex');
+    if (digest !== ctx.commitMapSha256) problems.push('--commit-map SHA-256 does not match --commit-map-sha256');
+    const rows = content.trim().split(/\r?\n/);
+    if (rows.shift()?.trim() !== 'old new') problems.push('--commit-map must use git-filter-repo format with `old new` header');
+    map = new Map();
+    for (const row of rows) {
+      if (row.trim() === '') continue;
+      const [oldSha, newSha, ...extra] = row.trim().split(/\s+/);
+      if (extra.length !== 0 || !/^[0-9a-f]{40}$/.test(oldSha) || !/^[0-9a-f]{40}$/.test(newSha)) { problems.push('invalid full-SHA row in --commit-map'); break; }
+      if (map.has(oldSha)) { problems.push(`duplicate old SHA in --commit-map: ${oldSha}`); break; }
+      map.set(oldSha, newSha);
+    }
+  } catch {
+    problems.push(`cannot read --commit-map: ${ctx.commitMap}`);
+  }
+  const legacyCommit = legacyHealthyCommit(ctx);
+  if (legacyCommit === null) problems.push('legacy healthy release commit could not be determined');
+  else if (map?.has(legacyCommit) !== true) problems.push(`--commit-map has no row for legacy healthy commit ${legacyCommit}`);
+  else {
+    const mapped = map.get(legacyCommit);
+    const ancestor = git(['merge-base', '--is-ancestor', mapped, ctx.expectCommit]);
+    if (mapped === '0'.repeat(40) || (ancestor.status ?? 1) !== 0) problems.push('mapped legacy healthy commit is neither the expected candidate nor its ancestor');
+  }
   return problems;
 }
 
@@ -646,7 +692,7 @@ export function transformEnvFile(content) {
       continue;
     }
     const [, key, value] = match;
-    if (key === 'MAW_UNSAFE_LOCAL_NO_AUTH' || key === 'AGENT_WORKBENCH_UNSAFE_LOCAL_NO_AUTH') {
+    if (key === 'MAW_UNSAFE_LOCAL_NO_AUTH' || key === 'AGENT_WORKBENCH_UNSAFE_LOCAL_NO_AUTH' || key === 'WORKBENCH_UNSAFE_LOCAL_NO_AUTH') {
       dropped.push(key);
       continue;
     }
@@ -713,12 +759,12 @@ function rewriteJsonPaths(value, legacyPath, canonicalPath) {
   return { value: walk(value), changed };
 }
 
-function rewritePreferenceFiles(ctx) {
+function rewritePreferenceFiles(ctx, dataDir = ctx.canonical.userData) {
   const files = [];
   for (const name of ['Preferences', 'Local State']) {
-    files.push(path.join(ctx.canonical.userData, name));
+    files.push(path.join(dataDir, name));
   }
-  const partitionsDir = path.join(ctx.canonical.userData, 'Partitions');
+  const partitionsDir = path.join(dataDir, 'Partitions');
   if (isDirectory(partitionsDir)) {
     for (const entry of fs.readdirSync(partitionsDir)) {
       for (const name of ['Preferences', 'Local State']) files.push(path.join(partitionsDir, entry, name));
@@ -809,7 +855,7 @@ function stepBackup(ctx, state) {
   const [tarBin, ...tarPrefix] = ctx.tarCmd;
   const args = [...tarPrefix, '-c', '-f', archive, useZstd ? '--zstd' : '-z'];
   for (const name of USERDATA_EXCLUDES) args.push(`--exclude=${name}`);
-  args.push('--exclude=Singleton*', '--exclude=Cache_Data');
+  args.push('--exclude=Singleton*');
   args.push('-C', ctx.home, ...relative);
   args.push('-C', stage, 'legacy-state-meta');
   const created = spawnSync(tarBin, args, { encoding: 'utf8' });
@@ -844,22 +890,34 @@ function stepConfig(ctx, state) {
     entry.reason = 'no legacy config dir';
     return;
   }
-  fs.mkdirSync(path.dirname(ctx.canonical.configDir), { recursive: true });
-  if (!isDirectory(ctx.canonical.configDir)) fs.mkdirSync(ctx.canonical.configDir, { recursive: true, mode: 0o700 });
-  fs.cpSync(ctx.legacy.configDir, ctx.canonical.configDir, {
+  if (exists(ctx.canonical.configDir)) {
+    if (entry.status === 'prepared' && manifestEquals(entry.manifest ?? {}, fileManifest(ctx.canonical.configDir, (rel) => rel !== 'environment'))) {
+      entry.status = 'done';
+      return;
+    }
+    throw new Refusal(`canonical config dir already exists and does not match the prepared migration copy; refusing to overwrite: ${ctx.canonical.configDir}`);
+  }
+  const staging = `${ctx.canonical.configDir}.identity-migration-staging`;
+  fs.rmSync(staging, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(staging), { recursive: true });
+  fs.cpSync(ctx.legacy.configDir, staging, {
     recursive: true,
     preserveTimestamps: true,
     dereference: false,
-    force: true,
+    force: false,
   });
-  fs.chmodSync(ctx.canonical.configDir, 0o700);
-  const source = fileManifest(ctx.legacy.configDir);
-  const copied = fileManifest(ctx.canonical.configDir, (rel) => rel !== 'environment');
+  fs.chmodSync(staging, 0o700);
+  const source = fileManifest(ctx.legacy.configDir, (rel) => rel !== 'environment');
+  const copied = fileManifest(staging, (rel) => rel !== 'environment');
   if (!manifestEquals(source, copied)) throw new Error('config dir copy does not match the source manifest');
-  entry.status = 'done';
+  entry.status = 'prepared';
   entry.source = ctx.legacy.configDir;
   entry.dest = ctx.canonical.configDir;
   entry.manifest = copied;
+  writeState(ctx, state);
+  fs.renameSync(staging, ctx.canonical.configDir);
+  fs.chmodSync(ctx.canonical.configDir, 0o700);
+  entry.status = 'done';
   say(ctx, `config: copied ${Object.keys(copied).length} files to ${ctx.canonical.configDir}`);
 }
 
@@ -878,15 +936,25 @@ function stepEnv(ctx, state) {
     return;
   }
   const result = transformEnvFile(fs.readFileSync(ctx.legacy.envFile, 'utf8'));
-  writeFileMode(ctx.canonical.envFile, result.content, 0o600);
-  entry.status = 'done';
+  const digest = crypto.createHash('sha256').update(result.content).digest('hex');
+  if (exists(ctx.canonical.envFile)) {
+    if (entry.status === 'prepared' && sha256File(ctx.canonical.envFile) === entry.sha256) {
+      entry.status = 'done';
+      return;
+    }
+    throw new Refusal(`canonical environment file already exists and does not match the prepared migration copy; refusing to overwrite: ${ctx.canonical.envFile}`);
+  }
+  entry.status = 'prepared';
   entry.source = ctx.legacy.envFile;
   entry.dest = ctx.canonical.envFile;
+  entry.sha256 = digest;
   entry.dropped = result.dropped;
   entry.renamed = result.renamed;
   entry.unknownKeys = result.unknown;
   entry.collisions = result.collisions;
-  entry.sha256 = sha256File(ctx.canonical.envFile);
+  writeState(ctx, state);
+  writeFileMode(ctx.canonical.envFile, result.content, 0o600);
+  entry.status = 'done';
   say(ctx, `env: wrote ${ctx.canonical.envFile} (0600), renamed ${result.renamed.length} key(s)`);
   if (result.dropped.length > 0) say(ctx, `env: dropped (not carried forward): ${result.dropped.join(', ')}`);
   if (result.unknown.length > 0) say(ctx, `env: kept unknown keys verbatim: ${result.unknown.join(', ')}`);
@@ -920,17 +988,27 @@ function stepUserData(ctx, state) {
     entry.reason = 'no legacy userData';
     return;
   }
-  fs.mkdirSync(path.dirname(ctx.canonical.userData), { recursive: true });
-  fs.cpSync(ctx.legacy.userData, ctx.canonical.userData, {
+  if (exists(ctx.canonical.userData)) {
+    if (entry.status === 'prepared' && manifestEquals(entry.manifest ?? {}, fileManifest(ctx.canonical.userData))) {
+      entry.status = 'done';
+      entry.partitions = partitionManifest(ctx.canonical.userData);
+      return;
+    }
+    throw new Refusal(`canonical userData already exists and does not match the prepared migration copy; refusing to overwrite: ${ctx.canonical.userData}`);
+  }
+  const staging = `${ctx.canonical.userData}.identity-migration-staging`;
+  fs.rmSync(staging, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(staging), { recursive: true });
+  fs.cpSync(ctx.legacy.userData, staging, {
     recursive: true,
     preserveTimestamps: true,
     dereference: false,
     force: true,
     filter: (src) => userDataFilter(src),
   });
-  fs.chmodSync(ctx.canonical.userData, 0o700);
+  fs.chmodSync(staging, 0o700);
   // Partition rename happens before the JSON rewrite so the per-partition files are found at their new path.
-  const partitionsDir = path.join(ctx.canonical.userData, 'Partitions');
+  const partitionsDir = path.join(staging, 'Partitions');
   const renamedPartitions = [];
   if (isDirectory(partitionsDir)) {
     for (const name of fs.readdirSync(partitionsDir)) {
@@ -949,16 +1027,19 @@ function stepUserData(ctx, state) {
       renamedPartitions.push(`${name} -> ${target}`);
     }
   }
-  const rewritten = rewritePreferenceFiles(ctx);
-  const copied = fileManifest(ctx.canonical.userData);
-  entry.status = 'done';
+  const rewritten = rewritePreferenceFiles(ctx, staging);
+  const copied = fileManifest(staging);
+  entry.status = 'prepared';
   entry.source = ctx.legacy.userData;
   entry.dest = ctx.canonical.userData;
   entry.files = Object.keys(copied).length;
   entry.manifest = copied;
-  entry.partitions = partitionManifest(ctx.canonical.userData);
+  entry.partitions = partitionManifest(staging);
   entry.renamedPartitions = renamedPartitions;
   entry.rewrittenPaths = rewritten;
+  writeState(ctx, state);
+  fs.renameSync(staging, ctx.canonical.userData);
+  entry.status = 'done';
   say(ctx, `userData: copied ${entry.files} files to ${ctx.canonical.userData}`);
   if (renamedPartitions.length > 0) say(ctx, `userData: renamed partitions ${renamedPartitions.join(', ')}`);
   say(ctx, `userData: rewrote ${rewritten} legacy path value(s) in Preferences / Local State`);
@@ -985,7 +1066,7 @@ function legacyHealthyCommit(ctx) {
   if (!fs.existsSync(meta)) return null;
   try {
     const parsed = JSON.parse(fs.readFileSync(meta, 'utf8'));
-    return typeof parsed.commit === 'string' ? parsed.commit : null;
+    return typeof parsed.commit === 'string' && /^[0-9a-f]{40}$/.test(parsed.commit) ? parsed.commit : null;
   } catch {
     return null;
   }
@@ -1036,13 +1117,9 @@ function stepRelease(ctx, state) {
     WORKBENCH_BIN_DIR: ctx.binDir,
     WORKBENCH_NODE_BIN: process.execPath,
     WORKBENCH_SOURCE: ctx.sourceDir ?? '',
-    MAW_STATE_DIR: ctx.canonical.stateDir,
-    MAW_LIB_DIR: ctx.canonical.libDir,
-    MAW_BIN_DIR: ctx.binDir,
-    MAW_NODE_BIN: process.execPath,
   };
-  const args = ['--initial'];
-  if (ctx.sourceDir !== null) args.push('--source', ctx.sourceDir);
+  if (ctx.sourceDir === null || ctx.expectCommit === null) throw new Refusal('initial release needs explicit --source and full --expect-commit SHA');
+  const args = ['--initial', '--source', ctx.sourceDir, '--ref', ctx.expectCommit, '--allow-unapproved-ref'];
   const command = `${ctx.initialReleaseCmd} ${args.map((arg) => `'${arg.replace(/'/g, "'\\''")}'`).join(' ')}`;
   const result = spawnSync('/bin/sh', ['-c', command], { encoding: 'utf8', env: childEnv });
   if ((result.status ?? 1) !== 0) {
@@ -1050,6 +1127,7 @@ function stepRelease(ctx, state) {
   }
   const release = canonicalCurrentRelease(ctx);
   if (release === null) throw new Error('initial release command did not produce a valid `current` release');
+  if (release.commit !== ctx.expectCommit) throw new Error(`initial release commit ${release.commit ?? '(missing)'} does not match requested SHA ${ctx.expectCommit}`);
   // The first release is never marked healthy here: only the readiness probe after a real start may do that.
   const healthy = path.join(ctx.canonical.stateDir, 'healthy');
   if (exists(healthy)) throw new Error('initial release was marked healthy before any readiness probe: refusing');
@@ -1073,7 +1151,7 @@ function stepRelease(ctx, state) {
 function verifyRelease(ctx, entry) {
   const release = canonicalCurrentRelease(ctx);
   if (release === null) return false;
-  if (entry.releaseId !== null && entry.releaseId !== undefined) return release.releaseId === entry.releaseId;
+  if (entry.releaseId !== null && entry.releaseId !== undefined) return release.releaseId === entry.releaseId && release.commit === entry.commit;
   return true;
 }
 
@@ -1098,16 +1176,36 @@ function stepHelpers(ctx, state) {
       installed.push(item.name);
     }
   }
+  const sharedEnv = ctx.sourceDir === null ? null : path.join(ctx.sourceDir, 'packages/shared/src/workbench-env.mjs');
+  if (sharedEnv === null || !fs.existsSync(sharedEnv)) {
+    throw new Refusal('the pinned source checkout is missing packages/shared/src/workbench-env.mjs');
+  }
+  fs.copyFileSync(sharedEnv, path.join(ctx.canonical.libDir, 'env.mjs'));
+  fs.chmodSync(path.join(ctx.canonical.libDir, 'env.mjs'), 0o644);
+  installed.push('env.mjs');
   // The real CLI, then the shims. Originals are backed up once, into the state file directory.
   fs.mkdirSync(ctx.binBackupDir, { recursive: true, mode: 0o700 });
   fs.mkdirSync(ctx.binDir, { recursive: true });
-  const backedUp = Array.isArray(entry.binBackups) ? [...entry.binBackups] : [];
+  if (!entry.binOriginals) {
+    entry.binOriginals = Object.fromEntries([...SHIM_NAMES, 'anvi-bench'].map((name) => {
+      const target = path.join(ctx.binDir, name);
+      if (!exists(target)) return [name, { existed: false }];
+      const stat = fs.lstatSync(target);
+      return [name, stat.isSymbolicLink()
+        ? { existed: true, type: 'symlink', target: fs.readlinkSync(target) }
+        : { existed: true, type: 'file', mode: stat.mode & 0o777, sha256: sha256File(target) }];
+    }));
+    entry.binBackups = Object.entries(entry.binOriginals).filter(([, original]) => original.existed).map(([name]) => name);
+    writeState(ctx, state);
+  }
+  const backedUp = [...(entry.binBackups ?? [])];
   for (const name of [...SHIM_NAMES, 'anvi-bench']) {
     const target = path.join(ctx.binDir, name);
     const backup = path.join(ctx.binBackupDir, name);
-    if (!exists(target) || exists(backup)) continue;
-    fs.copyFileSync(target, backup);
-    fs.chmodSync(backup, 0o755);
+    if (!entry.binOriginals[name]?.existed || exists(backup)) continue;
+    const original = entry.binOriginals[name];
+    if (original.type === 'symlink') fs.symlinkSync(original.target, backup);
+    else fs.copyFileSync(target, backup);
     if (!backedUp.includes(name)) backedUp.push(name);
   }
   let cliSource = null;
@@ -1130,6 +1228,7 @@ function stepHelpers(ctx, state) {
   entry.status = 'done';
   entry.dest = ctx.canonical.libDir;
   entry.installed = installed;
+  entry.envSha256 = sha256File(path.join(ctx.canonical.libDir, 'env.mjs'));
   entry.binBackups = backedUp;
   entry.shims = [...SHIM_NAMES];
   say(ctx, `helpers: installed ${installed.length} file(s) in ${ctx.canonical.libDir}, anvi-bench plus ${SHIM_NAMES.length} shims in ${ctx.binDir}`);
@@ -1139,6 +1238,8 @@ function verifyHelpers(ctx, entry) {
   if (!isDirectory(ctx.canonical.libDir)) return false;
   const cli = path.join(ctx.binDir, 'anvi-bench');
   if (!fs.existsSync(cli)) return false;
+  const envFile = path.join(ctx.canonical.libDir, 'env.mjs');
+  if (!fs.existsSync(envFile) || sha256File(envFile) !== entry.envSha256) return false;
   for (const name of SHIM_NAMES) {
     const file = path.join(ctx.binDir, name);
     if (!fs.existsSync(file)) return false;
@@ -1186,11 +1287,26 @@ function stepUnits(ctx, state) {
   }
   const commands = [
     ['disable', ...LEGACY_UNITS],
-    ['mask', ...LEGACY_UNITS],
-    ['enable', ...CANONICAL_UNITS],
-    ['daemon-reload'],
   ];
-  for (const args of commands) {
+  if (!entry.originalUnits) {
+    entry.originalUnits = {};
+    for (const unit of LEGACY_UNITS) {
+      const file = path.join(ctx.unitDir, unit);
+      if (!exists(file)) { entry.originalUnits[unit] = null; continue; }
+      const stat = fs.lstatSync(file);
+      entry.originalUnits[unit] = stat.isSymbolicLink()
+        ? { type: 'symlink', target: fs.readlinkSync(file) }
+        : { type: 'file', content: fs.readFileSync(file).toString('base64'), mode: stat.mode & 0o777 };
+    }
+    writeState(ctx, state);
+  }
+  for (const unit of LEGACY_UNITS) {
+    const file = path.join(ctx.unitDir, unit);
+    if (exists(file) && !fs.lstatSync(file).isSymbolicLink()) fs.unlinkSync(file);
+  }
+  for (const args of [...commands, ['mask', ...LEGACY_UNITS],
+    ['enable', ...CANONICAL_UNITS],
+    ['daemon-reload']]) {
     const result = runSystemctl(ctx, args);
     // `disable` on a never-enabled unit is not an error worth stopping for; mask and enable are.
     if ((result.status ?? 1) !== 0 && args[0] !== 'disable') {
@@ -1240,12 +1356,13 @@ function hideLegacyDesktopEntry(ctx, entry) {
   fs.mkdirSync(ctx.desktopBackupDir, { recursive: true, mode: 0o700 });
   const backup = path.join(ctx.desktopBackupDir, path.basename(ctx.legacy.desktopFile));
   if (!fs.existsSync(backup)) fs.copyFileSync(ctx.legacy.desktopFile, backup);
+  entry.legacyDesktopBackup = backup;
+  if (ctx._state) writeState(ctx, ctx._state);
   const original = fs.readFileSync(backup, 'utf8');
   const lines = original.split('\n').filter((line) => !/^\s*(NoDisplay|Hidden)\s*=/.test(line));
   while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop();
   lines.push('NoDisplay=true', 'Hidden=true', '');
   writeFileMode(ctx.legacy.desktopFile, lines.join('\n'), 0o644);
-  entry.legacyDesktopBackup = backup;
   return true;
 }
 
@@ -1257,10 +1374,11 @@ function updateFavoriteApps(ctx, entry) {
   const raw = read.stdout.trim();
   if (!raw.includes("'maw.desktop'")) return null;
   const next = raw.replace(/'maw\.desktop'/g, "'workbench.desktop'");
-  const write = spawnSync(bin, [...prefix, 'set', 'org.gnome.shell', 'favorite-apps', next], { encoding: 'utf8', env: ctx.env });
-  if ((write.status ?? 1) !== 0) return null;
   entry.favoriteAppsPrevious = raw;
   entry.favoriteAppsNext = next;
+  if (ctx._state) writeState(ctx, ctx._state);
+  const write = spawnSync(bin, [...prefix, 'set', 'org.gnome.shell', 'favorite-apps', next], { encoding: 'utf8', env: ctx.env });
+  if ((write.status ?? 1) !== 0) return null;
   return next;
 }
 
@@ -1417,6 +1535,7 @@ function commandApply(ctx) {
     return EXIT_REFUSED;
   }
   if (state === null) state = emptyState();
+  ctx._state = state;
   if (state.status === 'cleaned') throw new Refusal('this installation was already cleaned: nothing to apply');
   if (state.status !== 'verified') state.status = 'in-progress';
   writeState(ctx, state);
@@ -1463,16 +1582,18 @@ function commandVerify(ctx) {
     && pidsHoldingSocket(ctx, ctx.canonical.ptydSocket).includes(mainPid);
   checks.push(['canonical PTY socket is owned by the workbench-ptyd MainPID', socketOk]);
   const release = canonicalCurrentRelease(ctx);
-  if (ctx.readinessCmd !== null) {
-    const probe = spawnSync('/bin/sh', ['-c', ctx.readinessCmd], { encoding: 'utf8', env: ctx.env });
-    const reported = probe.stdout.trim();
-    checks.push([
-      'readiness probe reports the canonical release id',
-      (probe.status ?? 1) === 0 && release !== null && release.releaseId !== null && reported.includes(String(release.releaseId)),
-    ]);
-  } else {
-    checks.push(['readiness probe (--readiness-cmd not given)', false]);
-  }
+  const control = path.join(ctx.canonical.libDir, 'control.mjs');
+  const testOverride = ctx.readinessCmd !== null && ctx.options.flags.home !== undefined && path.resolve(ctx.home) !== path.resolve(os.userInfo().homedir);
+  const probe = testOverride
+    ? spawnSync('/bin/sh', ['-c', ctx.readinessCmd], { encoding: 'utf8', env: ctx.env })
+    : release?.releaseId
+      ? spawnSync(process.execPath, [control, 'migration-ready', String(release.releaseId)], { encoding: 'utf8', env: ctx.env })
+      : { status: 1, stdout: '' };
+  const reported = (probe.stdout ?? '').replace(/\r?\n$/, '');
+  checks.push([
+    'readiness probe reports the canonical release id',
+    (probe.status ?? 1) === 0 && release !== null && release.releaseId !== null && reported === String(release.releaseId),
+  ]);
   const desktopUsers = pidsWithAnyUserDataDir(ctx);
   const desktopOk = desktopUsers.every((user) => user.dir === path.resolve(ctx.canonical.userData));
   checks.push(['the running desktop uses the canonical userData', desktopOk]);
@@ -1510,11 +1631,40 @@ function commandRollback(ctx) {
   if (state === null) throw new Refusal('no v1 migration state file: nothing to roll back');
   if (state.status === 'cleaned') throw new Refusal('the legacy installation was already removed by clean: rollback is impossible');
   const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
-  runSystemctl(ctx, ['stop', ...CANONICAL_UNITS]);
-  runSystemctl(ctx, ['disable', ...CANONICAL_UNITS]);
-  runSystemctl(ctx, ['unmask', ...LEGACY_UNITS]);
-  runSystemctl(ctx, ['enable', ...LEGACY_UNITS]);
-  runSystemctl(ctx, ['daemon-reload']);
+  for (const [name, original] of Object.entries(state.steps.helpers?.binOriginals ?? {})) {
+    if (original.existed && !exists(path.join(ctx.binBackupDir, name))) {
+      throw new Refusal(`rollback refused: missing write-ahead CLI backup for ${name}`);
+    }
+  }
+  const stopped = runSystemctl(ctx, ['stop', ...CANONICAL_UNITS]);
+  if (stopped.status !== 0) throw new Refusal(`rollback refused: failed to stop canonical units: ${stopped.stderr || stopped.stdout}`);
+  for (const [args, label] of [
+    [['disable', ...CANONICAL_UNITS], 'disable canonical units'],
+    [['unmask', ...LEGACY_UNITS], 'unmask legacy units'],
+  ]) {
+    const result = runSystemctl(ctx, args);
+    if (result.status !== 0) throw new Refusal(`rollback refused: failed to ${label}: ${result.stderr || result.stdout}`);
+  }
+  const originals = state.steps.units?.originalUnits ?? {};
+  for (const [unit, original] of Object.entries(originals)) {
+    if (original === null) continue;
+    const file = path.join(ctx.unitDir, unit);
+    if (exists(file) && fs.lstatSync(file).isSymbolicLink() && fs.readlinkSync(file) === '/dev/null') fs.unlinkSync(file);
+    if (!exists(file)) {
+      if (original.type === 'symlink') fs.symlinkSync(original.target, file);
+      else {
+        fs.writeFileSync(file, Buffer.from(original.content, 'base64'), { mode: original.mode });
+        fs.chmodSync(file, original.mode);
+      }
+    }
+  }
+  for (const [args, label] of [
+    [['enable', ...LEGACY_UNITS], 'enable legacy units'],
+    [['daemon-reload'], 'reload systemd'],
+  ]) {
+    const result = runSystemctl(ctx, args);
+    if (result.status !== 0) throw new Refusal(`rollback refused: failed to ${label}: ${result.stderr || result.stdout}`);
+  }
 
   const binBackups = state.steps.helpers?.binBackups ?? [];
   const restored = [];
@@ -1522,8 +1672,13 @@ function commandRollback(ctx) {
     const backup = path.join(ctx.binBackupDir, name);
     if (!fs.existsSync(backup)) continue;
     const target = path.join(ctx.binDir, name);
-    fs.copyFileSync(backup, target);
-    fs.chmodSync(target, 0o755);
+    const original = state.steps.helpers?.binOriginals?.[name];
+    fs.rmSync(target, { force: true });
+    if (original?.type === 'symlink') fs.symlinkSync(original.target, target);
+    else {
+      fs.copyFileSync(backup, target);
+      if (original?.mode !== undefined) fs.chmodSync(target, original.mode);
+    }
     restored.push(name);
   }
   for (const name of SHIM_NAMES) {
@@ -1532,10 +1687,17 @@ function commandRollback(ctx) {
     // Only remove what this migration created.
     if (fs.existsSync(target) && fs.readFileSync(target, 'utf8') === shimContent(name)) fs.rmSync(target);
   }
+  for (const [name, original] of Object.entries(state.steps.helpers?.binOriginals ?? {})) {
+    if (original.existed) continue;
+    const target = path.join(ctx.binDir, name);
+    if (!exists(target)) continue;
+    const expected = name === 'anvi-bench' ? path.join(ctx.canonical.libDir, 'anvi-bench') : null;
+    if (name === 'anvi-bench' && exists(expected) && sha256File(target) === sha256File(expected)) fs.rmSync(target);
+    else if (SHIM_NAMES.includes(name) && fs.readFileSync(target, 'utf8') === shimContent(name)) fs.rmSync(target);
+  }
   const desktopBackup = state.steps.desktop?.legacyDesktopBackup;
   if (typeof desktopBackup === 'string' && fs.existsSync(desktopBackup)) {
     fs.copyFileSync(desktopBackup, ctx.legacy.desktopFile);
-    fs.chmodSync(ctx.legacy.desktopFile, 0o644);
   }
   const favoritePrevious = state.steps.desktop?.favoriteAppsPrevious;
   if (typeof favoritePrevious === 'string' && ctx.gsettingsCmd !== null) {

@@ -1,5 +1,6 @@
 // Guard, preflight and `plan` tests for the identity migration (spec tests 1, 3, 4, 9 preflight half).
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -132,16 +133,21 @@ test('a source checkout at the wrong commit is refused', (t) => {
   git('add', '.');
   git('commit', '-q', '-m', 'baseline');
   const head = git('rev-parse', 'HEAD').stdout.trim();
+  const mapPath = path.join(fixture.home, 'source-commit-map');
+  const mapText = `old new\n${fixture.expectedCommit} ${head}\n`;
+  fs.writeFileSync(mapPath, mapText);
+  const mapDigest = crypto.createHash('sha256').update(mapText).digest('hex');
+  const pinned = ['--commit-map', mapPath, '--commit-map-sha256', mapDigest];
 
-  const wrong = fixture.run(['plan', '--source', source, '--expect-commit', 'c'.repeat(40)]);
+  const wrong = fixture.run(['plan', '--source', source, '--expect-commit', 'c'.repeat(40), ...pinned]);
   assert.equal(wrong.status, 2);
   assert.match(wrong.stdout, new RegExp(`--source is at ${head}, expected cccc`));
 
-  const right = fixture.run(['plan', '--source', source, '--expect-commit', head]);
+  const right = fixture.run(['plan', '--source', source, '--expect-commit', head, ...pinned]);
   assert.equal(right.status, 0, right.stdout + right.stderr);
 
   fs.writeFileSync(path.join(source, 'README.md'), 'dirty\n');
-  const dirty = fixture.run(['plan', '--source', source, '--expect-commit', head]);
+  const dirty = fixture.run(['plan', '--source', source, '--expect-commit', head, ...pinned]);
   assert.equal(dirty.status, 2);
   assert.match(dirty.stdout, /--source checkout is not clean/);
 });

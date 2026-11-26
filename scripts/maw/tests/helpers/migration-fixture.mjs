@@ -4,6 +4,7 @@
 // XDG_RUNTIME_DIR under it, plus a stateful mock `systemctl` and `gsettings` on PATH. Nothing here ever
 // touches the real home directory: the fixture refuses to build one inside it.
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -48,8 +49,8 @@ case "$verb" in
     done
     ;;
   disable) for u in "$@"; do set_value "$u" enabled disabled; done ;;
-  mask) for u in "$@"; do set_value "$u" enabled masked; done ;;
-  unmask) for u in "$@"; do set_value "$u" enabled disabled; done ;;
+  mask) for u in "$@"; do set_value "$u" enabled masked; [ -z "\${MOCK_SYSTEMD_UNIT_DIR:-}" ] || ln -sfn /dev/null "$MOCK_SYSTEMD_UNIT_DIR/$u"; done ;;
+  unmask) for u in "$@"; do set_value "$u" enabled disabled; target="\${MOCK_SYSTEMD_UNIT_DIR:-}/$u"; [ ! -L "$target" ] || [ "$(readlink "$target")" != /dev/null ] || unlink "$target"; done ;;
   start)
     for u in "$@"; do
       if [ "$(get "$u" enabled disabled)" = masked ]; then
@@ -90,6 +91,29 @@ function writeExecutable(file, content) {
   fs.chmodSync(file, 0o755);
 }
 
+function writePinnedSource(fixture) {
+  fs.mkdirSync(fixture.sourceDir, { recursive: true });
+  const git = (...args) => spawnSync('git', ['-C', fixture.sourceDir, ...args], { encoding: 'utf8' });
+  if (git('init', '-q').status !== 0) throw new Error('could not initialize synthetic source checkout');
+  git('config', 'user.name', 'Fixture');
+  git('config', 'user.email', 'fixture@example.test');
+  fs.writeFileSync(path.join(fixture.sourceDir, 'README.md'), 'synthetic migration source\n');
+  fs.mkdirSync(path.join(fixture.sourceDir, 'packages/shared/src'), { recursive: true });
+  fs.writeFileSync(path.join(fixture.sourceDir, 'packages/shared/src/workbench-env.mjs'), 'export const fixture = true;\n');
+  git('add', '.');
+  if (git('commit', '-q', '-m', 'fixture source').status !== 0) throw new Error('could not commit synthetic source checkout');
+  fixture.expectedCommit = git('rev-parse', 'HEAD').stdout.trim();
+  const mapText = `old new\n${fixture.expectedCommit} ${fixture.expectedCommit}\n`;
+  fs.writeFileSync(fixture.commitMap, mapText);
+  fixture.commitMapSha256 = crypto.createHash('sha256').update(mapText).digest('hex');
+  const healthy = path.join(fixture.legacy.stateDir, 'releases/20261101120000-abcdef12/.maw-release-meta.json');
+  if (fs.existsSync(healthy)) {
+    const meta = JSON.parse(fs.readFileSync(healthy, 'utf8'));
+    meta.commit = fixture.expectedCommit;
+    fs.writeFileSync(healthy, JSON.stringify(meta));
+  }
+}
+
 /**
  * Build an isolated fixture. `t` is a node:test context; the fixture is removed on test teardown.
  * @param {{ populate?: boolean, xdgLayout?: 'default'|'custom' }} opts
@@ -118,6 +142,8 @@ export function createFixture(t, opts = {}) {
     procRoot: path.join(home, 'proc'),
     electronRoot: path.join(home, 'opt/workbench-electron'),
     electronVersion: '45.2.0',
+    sourceDir: path.join(home, 'source-checkout'),
+    commitMap: path.join(home, 'commit-map'),
   };
   for (const dir of [fixture.configHome, fixture.dataHome, fixture.stateHome, fixture.runtimeDir, fixture.binDir, fixture.unitDir, fixture.mockBin, fixture.systemdState, fixture.procRoot]) {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -145,6 +171,7 @@ export function createFixture(t, opts = {}) {
   };
 
   if (populate) populateLegacy(fixture);
+  writePinnedSource(fixture);
   writeFakeUpdater(fixture);
   writeUnitTemplates(fixture);
   installElectronStub(fixture);
@@ -157,6 +184,7 @@ export function createFixture(t, opts = {}) {
     XDG_STATE_HOME: fixture.stateHome,
     XDG_RUNTIME_DIR: fixture.runtimeDir,
     MOCK_SYSTEMD_STATE: fixture.systemdState,
+    MOCK_SYSTEMD_UNIT_DIR: fixture.unitDir,
     MOCK_SYSTEMCTL_LOG: fixture.systemctlLog,
     MOCK_GSETTINGS_FILE: fixture.gsettingsFile,
     MOCK_GSETTINGS_LOG: fixture.gsettingsLog,
@@ -177,6 +205,10 @@ export function createFixture(t, opts = {}) {
     '--electron-root', fixture.electronRoot,
     '--electron-version', fixture.electronVersion,
     '--initial-release-cmd', `/bin/sh ${path.join(home, 'fake-updater.sh')}`,
+    '--source', fixture.sourceDir,
+    '--expect-commit', fixture.expectedCommit,
+    '--commit-map', fixture.commitMap,
+    '--commit-map-sha256', fixture.commitMapSha256,
     '--unit-template', path.join(home, 'templates/workbench.service'),
     '--ptyd-unit-template', path.join(home, 'templates/workbench-ptyd.service'),
     '--helpers-source', path.join(home, 'helpers-source'),
@@ -211,7 +243,14 @@ export function createFixture(t, opts = {}) {
     for (const [index, target] of fds.entries()) {
       const link = path.join(dir, 'fd', String(index));
       fs.rmSync(link, { force: true });
-      fs.symlinkSync(target, link);
+      if (target.endsWith('/ptyd.sock')) {
+        const inode = String(100000 + Number(pid));
+        fs.symlinkSync(`socket:[${inode}]`, link);
+        const netFile = path.join(fixture.procRoot, 'net/unix');
+        fs.mkdirSync(path.dirname(netFile), { recursive: true });
+        if (!fs.existsSync(netFile)) fs.writeFileSync(netFile, 'Num RefCount Protocol Flags Type St Inode Path\n');
+        fs.appendFileSync(netFile, `000: 00000002 00000000 00010000 0001 01 ${inode} ${target}\n`);
+      } else fs.symlinkSync(target, link);
     }
   };
 
@@ -237,6 +276,7 @@ function populateLegacy(fixture) {
     'AGENT_WORKBENCH_LOG_LEVEL=debug',
     'EDITOR=vim',
     'GIT_PAGER=cat',
+    'WORKBENCH_UNSAFE_LOCAL_NO_AUTH=1',
     '',
   ].join('\n'), { mode: 0o600 });
 
@@ -324,11 +364,12 @@ function populateLegacy(fixture) {
 function writeFakeUpdater(fixture) {
   const script = `#!/bin/sh
 set -eu
+printf '%s\\n' "$*" >> "${fixture.home}/updater-args.log"
 state_dir="\${WORKBENCH_STATE_DIR:?}"
 release_id="20261126090000-beef1234"
 dir="$state_dir/releases/$release_id"
 mkdir -p "$dir/packages/server/dist"
-printf '{"releaseId":"%s","commit":"%s","channelState":"staged"}\\n' "$release_id" "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2" > "$dir/.workbench-release-meta.json"
+printf '{"releaseId":"%s","commit":"%s","channelState":"staged"}\\n' "$release_id" "${fixture.expectedCommit}" > "$dir/.workbench-release-meta.json"
 printf 'export default 1;\\n' > "$dir/packages/server/dist/index.mjs"
 printf 'export default 1;\\n' > "$dir/packages/server/dist/ptyd.mjs"
 rm -f "$state_dir/current.tmp"
