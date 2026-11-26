@@ -1,7 +1,9 @@
-# Agency-UI Lane B: native CLI profiles
+# Native CLI profiles
 
-This package adds ten distinct, explicitly configured profiles, without
-installing, reauthenticating or wrapping a provider CLI.
+This package provides explicitly configured CLI profiles without installing,
+reauthenticating or wrapping a provider CLI: one generic default per supported
+CLI (`codex`, `agy`, `claude-code`) plus user-defined profiles. Onboarding
+guide: [docs/development/agent-profiles.md](../../../../../docs/development/agent-profiles.md).
 
 ## Owned modules and API
 
@@ -13,12 +15,12 @@ installing, reauthenticating or wrapping a provider CLI.
   `../../features/profiles/profile-capabilities.ts`: snapshots for the existing
   `agency.profiles.list`, `agency.profile.configure`, and
   `agency.profile.capabilities.get` messages. Wire validation and dispatch
-  belong to the integration owner, not this lane.
+  belong to the WebSocket transport.
 - `buildAgencyProfileLaunch(store, nativeRegistry, request)`: validates the
   explicitly configured executable and native resume UUID, reuses the
   Workbench provider adapter `launch()` method and its `environment()`
   filter, and returns `file`, literal `args[]`, canonical `cwd`, per-process
-  `env`, native session ID handling, provider and profile ID. Lane C passes
+  `env`, native session ID handling, provider and profile ID. The session runtime passes
   these directly into the existing PTY process owner, retains the returned
   Workbench terminal ID separately, and never launches a second process on
   browser reattach.
@@ -31,8 +33,8 @@ continue inside the original PTY.
 
 ## Important integration constraints
 
-The Workbench registry is keyed by provider, while these ten profile IDs are
-separate Agency domain IDs. Never pass `codex-0` to `AgentRegistry.get()`;
+The Workbench registry is keyed by provider, while profile IDs are
+separate Agency domain IDs. Never pass a profile ID such as `codex-a` to `AgentRegistry.get()`;
 use the stored provider. Never substitute `registry.defaultAgent()` after a
 profile lookup fails. The selected profile is authoritative.
 
@@ -42,7 +44,7 @@ The resolver validates the canonical target is an executable file but passes
 the selected symlink/alias entry point as the actual PTY `file`. This matters
 for native wrappers that select configuration by invocation name (such as
 `$0`). A profile whose configured executable is missing fails without trying
-another profile or resolving to a provider default. The initial
+another profile or resolving to a provider default. Default
 profiles deliberately have empty executable paths. Do not automatically assign
 all Codex or AGY profiles to a shared default binary, account or CLI home.
 **Separate profile IDs do not prove distinct authenticated accounts.**
@@ -84,12 +86,12 @@ acknowledged mutation are integrated. `VerifiedNativeCatalog` is a
 server-only extension point for evidence from the same native CLI/profile; it
 never allows model selection without acknowledgement.
 
-Codex App Server is not enabled by this lane. Native Codex TUI launch remains
+Codex App Server is not enabled. Native Codex TUI launch remains
 the fallback. Unverified CLI protocol handling must not be advertised.
 
 ## Model/effort capability integration seam (future work)
 
-**Unimplemented on all providers in Lane B**: no editable model or effort
+**Unimplemented on all providers**: no editable model or effort
 controls may be advertised. Current profile snapshots return
 `canSelectModel=false` / `canSelectEffort=false` even if a native catalog is
 supplied. A command written to the PTY is not an acknowledgement that the
@@ -116,7 +118,7 @@ provider changed a setting. The smallest safe incremental integration is:
    result otherwise, without changing stored selection or implying success.
    Keep the capability disabled independently for unsupported providers.
 
-Native resume IDs currently have format validation only. Lane C/integration
+Native resume IDs currently have format validation only. The session runtime
 must authorize their ownership using server-side Agency profile/session
 mapping before passing one to the original adapter. Provider history readers
 are not profile-separated merely because profile IDs exist.

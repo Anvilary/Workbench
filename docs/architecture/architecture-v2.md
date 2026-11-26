@@ -270,4 +270,4 @@ Updated at each checkpoint.
 
 ### Checkpoint 5: repository wide consistency (done)
 
-* Live documentation updated (`ARCHITECTURE.md` layout, `docs/architecture/*`, desktop README and validation notes); stale `Run:` headers in web tests corrected; historical reports under `docs/maw`, `docs/research` and `docs/agency` are left as records.
+* Live documentation updated (`ARCHITECTURE.md` layout, `docs/architecture/*`, desktop README and validation notes); stale `Run:` headers in web tests corrected; historical reports were later removed from the tree and remain in git history.

@@ -42,7 +42,7 @@ Watch the complete **Project Organization -> Persistent Terminal -> Coding Agent
 
 ## Why Workbench?
 
-- **Persistent PTY Daemon**: Terminal sessions are supervised by an independent background daemon (`maw-ptyd`). Long-running builds, autonomous coding agents, and test runners survive backend restarts and application updates without losing active processes or scrollback history.
+- **Persistent PTY Daemon**: Terminal sessions are supervised by an independent background daemon (`workbench-ptyd`). Long-running builds, autonomous coding agents, and test runners survive backend restarts and application updates without losing active processes or scrollback history.
 - **Zero Credential Access**: Workbench runs the coding CLIs you already have installed and authenticated locally (such as `codex`, `claude`, `opencode`, or `agy`) inside standard terminals. It never intercepts, copies, or stores your API keys, passwords, or provider tokens.
 - **Native Chromium Web Tabs**: Native Chromium `WebContentsView` instances embed documentation, web apps, and AI web interfaces directly inside workspace panes with isolated profiles, hardware acceleration, and native Find in Page.
 - **Fluid Multi-Pane Split Layouts**: Split any workspace horizontally or vertically with interactive divider resizing, drag-and-drop tab and pane reordering, and independent pane focus synchronization.
@@ -54,14 +54,14 @@ Watch the complete **Project Organization -> Persistent Terminal -> Coding Agent
 
 ### Persistent Terminals and Coding CLIs
 - **Clean Empty Workspace Start**: New workspaces open with an empty starting panel; no terminal launches automatically and no separate Coding Agent tab creator clutters the panel. Start any installed coding CLI (`claude`, `codex`, `opencode`, `agy`) or standard developer tool (`npm`, `cargo`, `git`) directly inside a terminal tab.
-- **Supervised Processes**: The independent `maw-ptyd` Unix-socket daemon supervises pseudo-terminals across backend restarts.
+- **Supervised Processes**: The independent `workbench-ptyd` Unix-socket daemon supervises pseudo-terminals across backend restarts.
 - **Scrollback and Search**: xterm.js terminal integration with scrollback persistence and incremental search.
 
 ### Native Chromium Web Tabs and Reliable Downloads
-- **Isolated Browser Profiles**: Dedicated Electron session partitions (`persist:maw-browser`, provider partitions, and custom workspace/project browser profiles) keep cookies and sessions isolated from Workbench internals.
+- **Isolated Browser Profiles**: Dedicated Electron session partitions (`persist:workbench-browser`, provider partitions, and custom workspace/project browser profiles) keep cookies and sessions isolated from Workbench internals.
 - **Native Workspace Switching & Loading Identity**: Switching between projects and workspaces preserves active native Chromium views and displays the animated canonical Anvilary logo while pages load.
 - **Destination Picker & Native Find in Page**: Quick access to developer favorites, search engines, arbitrary URLs, and Chromium-powered in-page search (`Ctrl+F`) with occurrence counters and smooth scrolling.
-- **Native Save As & Remembered Destination**: Permitted browser downloads (including HTTPS attachments, provider delivery endpoints, validated redirects, and verified `blob:` exports) open the operating system's native Save As dialog by default. After a completed download, Workbench privately remembers the chosen destination directory across websites and application restarts, falling back safely to `Downloads` if a folder becomes unavailable. (`MAW_DOWNLOAD_AUTO_SAVE=1` is available strictly as an opt-in for headless automation.)
+- **Native Save As & Remembered Destination**: Permitted browser downloads (including HTTPS attachments, provider delivery endpoints, validated redirects, and verified `blob:` exports) open the operating system's native Save As dialog by default. After a completed download, Workbench privately remembers the chosen destination directory across websites and application restarts, falling back safely to `Downloads` if a folder becomes unavailable. (`WORKBENCH_DOWNLOAD_AUTO_SAVE=1` is available strictly as an opt-in for headless automation.)
 
 ### Project, Workspace, and Pane Organization
 - **Hierarchical Sidebar & Archive Recovery**: Organize multiple projects with isolated directories or Git worktrees, drag to reorder projects and workspaces, archive completed work, and restore archived projects and workspaces from the Archive recovery dialog.
@@ -121,7 +121,7 @@ pnpm desktop
 
 ### Option 2: Production Linux Installation (Supervised Systemd Services + Desktop Runtime)
 
-For daily local workstation use on Ubuntu/Debian with persistent `maw-ptyd.service` terminal supervision, atomic release staging, and desktop launcher integration:
+For daily local workstation use on Ubuntu/Debian with persistent `workbench-ptyd.service` terminal supervision, atomic release staging, and desktop launcher integration:
 
 ```bash
 # 1. Install dependencies and build
@@ -129,22 +129,24 @@ pnpm install --frozen-lockfile
 pnpm build
 
 # 2. Install the launcher scripts, initial isolated release, and systemd user units
-sh scripts/maw/install.sh --service
+sh scripts/workbench/install.sh --service
 
 # 3. Build and install the sandboxed Electron desktop runtime package (.deb) and desktop icons
-sh scripts/maw/install.sh --desktop
+sh scripts/workbench/install.sh --desktop
 
 # 4. Start the supervised local service and launch Workbench desktop
-anvil-bench start
-anvil-bench desktop
+anvi-bench start
+anvi-bench desktop
 ```
+
+`anvil-bench` and `maw` remain available as compatibility aliases of `anvi-bench`.
 
 Routine updates stage into an isolated release directory without interrupting running terminals:
 
 ```bash
-anvil-bench update --no-restart   # Stage the latest release
-anvil-bench restart               # Activate safely while preserving maw-ptyd.service
-anvil-bench status                # Inspect service health and release pointers
+anvi-bench update --no-restart   # Stage the latest release
+anvi-bench restart               # Activate safely while preserving workbench-ptyd.service
+anvi-bench status                # Inspect service health and release pointers
 ```
 
 ---
@@ -154,10 +156,10 @@ anvil-bench status                # Inspect service health and release pointers
 | Boundary Area | Isolation Mechanism | Verification Detail |
 |---|---|---|
 | **Local HTTP & WebSocket Server** | Loopback-only (`127.0.0.1`) with random per-start auth token | Authenticated mode is always the default; foreign `Origin` and non-loopback `Host` headers are rejected. |
-| **Terminal Processes** | Independent `maw-ptyd` Unix socket (`0700` dir, `0600` auth token) | Runs under your standard local user permissions; survives backend restarts without touching CLI credentials. |
+| **Terminal Processes** | Independent `workbench-ptyd` Unix socket (`0700` dir, `0600` auth token) | Runs under your standard local user permissions; survives backend restarts without touching CLI credentials. |
 | **Desktop & Browser Isolation** | Sandboxed Electron renderer + partitioned `WebContentsView` sessions | `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`; remote pages have zero privileged IPC. |
 | **Downloads** | Scoped download policy + filename sanitization + native Save As | Validates URLs, redirects, and initiating `blob:` origins; prevents path traversal and silent overwrites. |
-| **Session Metadata** | Atomic JSON storage in `~/.config/agent-workbench` | Workspaces, layout trees, and tab states persist locally with `.bak` recovery and zero telemetry. |
+| **Session Metadata** | Atomic JSON storage in `~/.config/workbench` | Workspaces, layout trees, and tab states persist locally with `.bak` recovery and zero telemetry. |
 
 See [SECURITY.md](SECURITY.md) for vulnerability reporting and security boundaries, and [PRIVACY.md](PRIVACY.md) for privacy details.
 
@@ -168,7 +170,7 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting and security boundari
 - **Desktop Shell**: [Electron 45.2.0](https://www.electronjs.org/) (`WebContentsView`, strict Chromium sandboxing)
 - **Frontend UI**: [React 18.3](https://react.dev/), [TypeScript](https://www.typescriptlang.org/), custom CSS design tokens
 - **Terminal Rendering**: [xterm.js](https://xtermjs.org/) with search and WebGL addons
-- **Process Supervision**: Dedicated Unix-domain-socket daemon (`maw-ptyd`) with `node-pty`
+- **Process Supervision**: Dedicated Unix-domain-socket daemon (`workbench-ptyd`) with `node-pty`
 - **Layout Engine**: Binary split-tree reducer with `@dnd-kit` drag-and-drop orchestration
 - **Build & Monorepo Tooling**: [pnpm workspaces](https://pnpm.io/workspaces), [Vite 6](https://vite.dev/), [esbuild](https://esbuild.github.io/)
 
@@ -181,7 +183,7 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting and security boundari
 pnpm typecheck
 
 # Run static, i18n, parser, and path-guard checks
-env -u MAW_UNSAFE_LOCAL_NO_AUTH pnpm check
+env -u WORKBENCH_UNSAFE_LOCAL_NO_AUTH pnpm check
 
 # Run unit tests across shared, desktop, server, and web packages
 pnpm test:unit
@@ -190,19 +192,19 @@ pnpm test:unit
 pnpm build
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/architecture/ci-and-release-runbook.md](docs/architecture/ci-and-release-runbook.md) for integration, security, and Electron E2E test commands.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/operations/ci-and-release.md](docs/operations/ci-and-release.md) for integration, security, and Electron E2E test commands.
 
 ---
 
 ## Documentation Directory
 
 - [Architecture v2 Specification](docs/architecture/architecture-v2.md): Modular design, dependency rules, and IPC contracts.
-- [Browser Tabs Architecture](docs/maw/BROWSER-TABS.md): `WebContentsView` lifecycle, native focus coordination, and Find in Page.
-- [Update and Rollback Guide](docs/maw/UPDATE-ROLLBACK.md): Atomic release staging, symlink promotion, and rollback safety.
-- [CI and Release Runbook](docs/architecture/ci-and-release-runbook.md): CI tiers, local release checklist, and operational invariants.
+- [Browser Tabs](docs/browser/tabs.md): durable web tabs, `WebContentsView` ownership and URL policy.
+- [Update and Rollback Guide](docs/operations/update-rollback.md): Atomic release staging, symlink promotion, and rollback safety.
+- [CI and Release Runbook](docs/operations/ci-and-release.md): CI tiers, local release checklist, and operational invariants.
 - [Security Policy](SECURITY.md): Security model, loopback auth defaults, and private vulnerability reporting.
 
-*Note: Files under `docs/maw/` and `docs/research/` include historical design and audit records from earlier development milestones alongside active operational runbooks.*
+The full list of documents is in the [documentation index](docs/README.md).
 
 ---
 
@@ -212,7 +214,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/architecture/ci-and-release-run
 - **Open File Tab Action**: The `Open File...` entry in the pane `+` tab menu is currently disabled and marked `Coming soon`.
 - **Authenticated Third-Party Web Exports**: Native browser downloads (including Save As, remembered destinations, and Perplexity/GitHub `blob:` flows) are verified with deterministic synthetic fixtures; third-party site changes behind authenticated sessions may require future policy updates.
 - **WebContentsView Z-Ordering**: Native Chromium views render in Electron's native compositor; HTML menus and modals coordinate surface visibility over active web views.
-- **Daemon Socket Isolation**: `maw-ptyd` relies on per-user Unix socket directory permissions (`0700`) under `$XDG_RUNTIME_DIR`.
+- **Daemon Socket Isolation**: `workbench-ptyd` relies on per-user Unix socket directory permissions (`0700`) under `$XDG_RUNTIME_DIR`.
 
 ---
 

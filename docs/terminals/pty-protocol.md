@@ -1,12 +1,6 @@
-# PTY Supervisor Wire Protocol Specification (Version 1 — Frozen Contract)
+# PTY supervisor wire protocol (version 1)
 
-- **Document Version:** 1.0.0
-- **Protocol Version:** `1`
-- **Lane Ownership:** Lane A (`feat/maw-pty-supervisor`)
-- **Consumer:** Lane B (`TerminalRegistry` Adapter & Reconnection Coordinator)
-- **Status:** **FROZEN & VERIFIED** (Passed automated acceptance and failure-injection test suites)
-
----
+Frozen contract between the backend (`TerminalRegistry` adapter and reconnection coordinator) and the [persistent PTY supervisor](ptyd.md). Protocol version: `1`. Changes require a new protocol version.
 
 ## 1. Architectural Overview & Security Model
 
@@ -36,7 +30,7 @@ The persistent PTY supervisor (`workbench-ptyd`) is a standalone local daemon th
 
 ### 1.1 Unix Domain Socket Path & Filesystem DAC
 - **Default Socket Path:**
-  `${process.env.XDG_RUNTIME_DIR || '/run/user/' + process.getuid()}/maw/ptyd.sock`
+  `${process.env.XDG_RUNTIME_DIR || '/run/user/' + process.getuid()}/workbench-ptyd/ptyd.sock`
   (Overridable via `--socket <path>` or `WORKBENCH_PTYD_SOCKET`).
 - **Parent Directory DAC:** Must be created with mode `0700` (`rwx------`) and verified to be owned by `process.getuid()`.
 - **Socket Inode DAC:** Bound synchronously using `process.umask(0o177)` to ensure mode `0600` (`rw-------`). On Linux, `connect(2)` requires write permissions on the socket inode; combined with `0700` parent directory permissions, other unprivileged users cannot access or connect.

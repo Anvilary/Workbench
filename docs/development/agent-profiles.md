@@ -1,138 +1,51 @@
-# Workbench Profile Onboarding Guide
+# Agent profiles
 
-This guide describes how to configure, verify, and operate CLI agent profiles in Anvilary Workbench (Workbench).
+A profile binds a workspace tab to one coding-agent CLI and its authenticated account. Workbench ships one generic default per supported CLI and lets you add more. Implementation notes for contributors: [`packages/server/src/agents/profiles/README.md`](../../packages/server/src/agents/profiles/README.md). Recovery rules: [recovery](../operations/recovery.md).
 
----
+## Defaults
 
-## What Are Profiles and Why Are Executables Empty by Default?
+| Profile ID | Provider | Standard command |
+|---|---|---|
+| `codex` | Codex | `codex` |
+| `agy` | Antigravity (AGY) | `agy` |
+| `claude-code` | Claude Code | `claude` |
 
-In Workbench, **CLI Profiles** define the execution environments, isolation boundaries, arguments, and credential sandboxes used by autonomous agent sessions (such as OpenAI Codex, Google Antigravity/AGY, and Anthropic Claude Code).
+Additional accounts are user-defined profiles (for example `codex-a` and `codex-b`, each running its own wrapper). Workbench can suggest accounts it discovers in standard locations, but never assigns them automatically.
 
-### Why Executables Are Empty by Default
-When Workbench is first installed, profile entries exist in `agency-profiles.json`, but their `executable` fields are intentionally left blank:
+## Why executables start empty
 
-1. **Security & Explicit Consent**: Workbench never assumes access to or auto-selects executables from `$PATH`. Executing arbitrary system binaries or invoking native models without explicit review violates least-privilege principles.
-2. **Provider Isolation**: Multi-agent development requires distinct execution wrappers (e.g., `codex-0`, `codex-1`, `agy-0` through `agy-5`). Auto-detecting a generic `claude` or `codex` command would risk routing multiple agents into the same credentials and conversation databases.
-3. **Preventing Accidental Cloud Costs**: Requiring the user to configure each profile ensures agents are not spawned unintentionally against billable APIs.
+Workbench never guesses which binary or account a profile should use. An empty executable means "not configured": the UI shows a **Profile not configured** banner with a **Configure** button, and the profile dialog shows provider-specific setup notes and placeholder suggestions without persisting them.
 
-Until a profile has its executable configured, its status is marked as unconfigured, and Workbench prevents launching agents under that profile.
+Separate profile IDs do not prove separate accounts. Two names can resolve to the same binary and the same provider login. Account isolation comes from the wrapper you configure, not from Workbench.
 
----
+## Setting up a profile
 
-## Profile Onboarding UI Enhancements
+1. Create a wrapper per account that sets the provider's home and execs the real CLI. For example, for a second Codex account:
 
-In the `feat/maw-launcher-update-onboarding` branch, the UI provides active guidance during first-run setup:
+   ```sh
+   #!/bin/sh
+   # ~/.local/bin/codex-a
+   export CODEX_HOME="$HOME/.codex-a"
+   exec codex "$@"
+   ```
 
-1. **Smart Suggestions (`profile-suggestions.ts`)**:
-   - Helper functions `suggestedExecutable(profile)` and `providerSetupNote(profile)` provide contextual recommendations based on the profile's ID and provider type.
-2. **Setup Guidance in `AgencyProfileDialog`**:
-   - If a profile's executable field is empty, the dialog highlights first-time configuration instructions.
-   - The input field displays an intelligent placeholder suggesting the exact expected wrapper (e.g., placeholder text `codex-0` or `agy-2`).
-   - Placeholders are hints only and are **never pre-filled** or automatically submitted, preserving explicit user confirmation.
-3. **"Profile not configured" Banner in `AgencyWorkspaceView`**:
-   - If an unconfigured profile is selected or present in a workspace, an inline warning banner appears:
-     > **Profile not configured** — This agent profile needs an executable wrapper path before sessions can be launched.
-   - A prominent **Configure** button opens the `AgencyProfileDialog` directly.
+   AGY accounts typically use a private HOME/XDG root per account (for example `~/.local/share/agy-a-profile/home`), with any keyring or D-Bus helper started outside Workbench (see [recovery](../operations/recovery.md#keyring-and-helper-lifetime)). Claude Code uses `~/.claude`, or `CLAUDE_CONFIG_DIR` set by its wrapper.
+2. Make the wrapper resolvable from the service `PATH` (`~/.local/bin` is included by the rendered unit), or configure an absolute path.
+3. Authenticate once in a normal terminal with the wrapper. Workbench never runs a login flow.
+4. In Workbench, open the profile dialog, set the executable to the wrapper name, and save.
 
----
+The resolver validates that the target is an executable file but launches the entry point you selected (symlink or alias), because some wrappers select their configuration by invocation name.
 
-## Step-by-Step Setup for Each Provider Type
+## Rules
 
-All wrapper binaries on this host are located in `/home/user/.local/bin/` (which is included in `workbench.service`'s default `PATH`).
+- No API keys, tokens, home overrides or account identities are stored in profiles. Only reviewed locale and terminal colour environment overrides are accepted.
+- Never pass a profile ID to the provider registry; use its provider. A missing executable fails the launch; there is no fallback to another profile or a provider default.
+- Workbench does not create, rewrite or delete provider homes. Never delete a profile home to reset a profile.
+- Account-specific directories (`.codex*`, `.gemini`, `.claude`, keyring directories) are refused as workspace directories.
 
-### 1. OpenAI Codex Profiles (`codex-0`, `codex-1`, `codex-3`, etc.)
+## Verifying and recovering
 
-Each Codex profile represents an isolated workspace root and native session store.
-
-- **Codex 00**:
-  - Open Profile Settings.
-  - Set **Executable** to: `codex-0`
-  - Arguments: leave empty or enter `[]`
-  - *Context*: The wrapper sets `CODEX_HOME=~/.codex`.
-- **Codex 01**:
-  - Set **Executable** to: `codex-1`
-  - Arguments: `[]`
-  - *Context*: The wrapper sets `CODEX_HOME=~/.codex-ar`.
-- **Codex 03**:
-  - Set **Executable** to: `codex-3`
-  - Arguments: `[]`
-  - *Context*: The wrapper sets `CODEX_HOME=~/.codex-3`.
-
-### 2. Google Antigravity / AGY Profiles (`agy-0` through `agy-5`)
-
-AGY profiles require isolated credentials, dedicated D-Bus secret services, and independent user directories.
-
-- **Setup Rule**: Set the executable to `agy-0` through `agy-5` matching the profile number.
-  - Profile `agy-0` → Executable: `agy-0` (uses default user Secret Service and `~/.gemini/antigravity-cli`).
-  - Profile `agy-1` → Executable: `agy-1` (uses `agy-1-profile-start` helper and isolated storage at `~/.local/share/agy-1-profile/home/.gemini/antigravity-cli`).
-  - Profile `agy-2` → Executable: `agy-2`
-  - Profile `agy-3` → Executable: `agy-3`
-  - Profile `agy-4` → Executable: `agy-4`
-  - Profile `agy-5` → Executable: `agy-5`
-- **Arguments**: Leave empty or set `[]`.
-- **Authentication Mode**: Each wrapper operates in account mode. No secret API keys need to be configured in Workbench.
-
-### 3. Anthropic Claude Code (`claude-code`)
-
-- **Setup Rule**:
-  - Profile `claude-code` → Set **Executable** to: `claude` (or the absolute path `/home/user/.local/bin/claude`).
-- **Arguments**: Leave empty or enter `[]`.
-- **Context**: Reuses the user's attested `~/.claude` session configuration and native project-session JSONL store.
-
----
-
-## Security and Isolation Rules
-
-> [!CAUTION]
-> **Never Share Executables Between Profiles**  
-> Do NOT set multiple Codex or AGY profiles to point to the same executable or wrapper. Sharing wrappers causes agents to overwrite each other's native session state, poll conflicting logs, and corrupt historical conversation trees.
-
-> [!WARNING]
-> **Never Copy Credentials Across Profiles**  
-> Each named wrapper (`agy-1`, `agy-2`, etc.) manages its own private keyring helper and isolated XDG storage. Copying credential tokens between profile directories bypasses the host identity attestation model and causes recovery checks to fail closed.
-
-> [!IMPORTANT]
-> **Never Export Plaintext API Keys into Workbench or Systemd**  
-> Workbench is designed to execute reviewed local wrappers that handle their own authentication. Do not export `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` into `workbench.service` or global systemd environment files.
-
----
-
-## Verifying Profile Configuration
-
-After saving the executable and arguments in the `AgencyProfileDialog`:
-
-1. **Check UI Status**:
-   - The "Profile not configured" banner immediately disappears from `AgencyWorkspaceView`.
-   - In the **New CLI** launcher dialog, the profile's `configurationStatus` becomes `'available'`.
-   - The **Start Agent** button becomes enabled.
-2. **Verify Process Execution**:
-   - In your workspace, click **New CLI** and select the configured profile.
-   - The PTY will open and invoke the wrapper.
-   - Confirm the provider greeting or TUI prompt renders properly.
-3. **Verify Configuration File**:
-   - Inspect `agency-profiles.json` to confirm persistence:
-     ```sh
-     cat ~/.config/workbench/agency-profiles.json
-     ```
-   - Confirm that the `executable` field matches your configured wrapper.
-
----
-
-## Recovery from a Misconfigured Profile
-
-If a typo is entered (e.g., `agy99` instead of `agy-0`, or a nonexistent binary path):
-
-1. **Symptom**:
-   - Attempting to launch an agent tab produces an error message:
-     `Executable not found` or `Failed to spawn process`.
-2. **Correction Steps**:
-   - In the Workbench sidebar or header, click on **Settings** / **Profiles** (or click the profile name in the session view).
-   - Click **Configure Profile** to reopen `AgencyProfileDialog`.
-   - Correct the executable name (e.g., update `agy99` to `agy-0`).
-   - Click **Save**.
-3. **Inspecting Server Logs**:
-   - If process launch continues to fail, run `anvi-bench logs` in a terminal to inspect systemd spawn diagnostics:
-     ```sh
-     anvi-bench logs
-     ```
-   - Ensure the binary exists in `/home/user/.local/bin/` and has executable permissions (`chmod +x`).
+- Run the wrapper in a normal terminal and confirm it reports the expected account.
+- Check the service environment: `systemctl --user show-environment` and the rendered unit's `PATH` must resolve the same wrapper.
+- For automatic resume, build and check the host identity manifest as described in [recovery](../operations/recovery.md#versioned-host-bindings).
+- A misconfigured profile can be reset by clearing its executable in the dialog. Profile data is restored from the `.bak` checkpoint if the primary file is malformed; a newer schema is never downgraded.

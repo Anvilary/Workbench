@@ -1,11 +1,11 @@
-# Agency-UI foundation contract
+# Session contract
 
-Status: committed foundation contract on `dev`; full runtime integration and local verification are pending.
+Domain contract for projects, workspaces, profiles and sessions (the internal `agency` module). Browser tabs follow [browser tabs](../browser/tabs.md); recovery follows [recovery](../operations/recovery.md).
 
 ## Source of truth
 
 - Base: `cvelasquez/agent-workbench` at `5d804f5c5151677b03fceb4a7a2dc20b8ac117ef` (MIT, copyright Christian Velasquez 2026). Keep its full `LICENSE` and relevant notices.
-- UI reference: `user/codex-webui` at `835348e224157516497738cdcb8bd1049951cc5d`. Inspiration only; do not copy unlicensed or ambiguously licensed source. No Python backend merge.
+- UI inspiration came from an external web UI for Codex; no source was copied.
 - Types: `packages/shared/src/agency-protocol.ts`. This is an *additive* domain contract, not a replacement for the existing upstream protocol.
 - The actual pinned upstream `PROTOCOL_VERSION` is **8** and WebSocket route is **`/ws`**. Update the existing parser/union in `packages/shared/src/protocol.ts` when wiring the contract, then update the version only if protocol compatibility requires it.
 
@@ -52,7 +52,7 @@ The existing upstream PTY messages are deliberately reused unchanged for the act
 
 `agency.session.selection.set` changes future agent messages/settings only where a provider-native mechanism supports it. The server must acknowledge actual native settings application before reporting a new selection. Models and effort belong in the composer; fall back to the installed CLI's default when unsupported. No direct model API calls.
 
-Directory selection starts with the existing server-owned `picker.open` / `picker.enter` flow. Extending that picker to safely resolve the selected current directory by socket-scoped `pickerId` belongs to the project/workspace lane. Do not trust a client-supplied absolute path, symlink escape, or protected authentication directory.
+Directory selection starts with the existing server-owned `picker.open` / `picker.enter` flow. Extending that picker to safely resolve the selected current directory by socket-scoped `pickerId` belongs to the project and workspace feature. Do not trust a client-supplied absolute path, symlink escape, or protected authentication directory.
 
 ## Security and lifecycle
 
