@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { readFileSync, readdirSync as readDir } from 'node:fs';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { WEB_ROOT } from '../../helpers/paths.mjs';
@@ -18,7 +19,9 @@ import { WEB_ROOT } from '../../helpers/paths.mjs';
 const WORKSPACES = 3;
 const TABS_PER_WORKSPACE = 10;
 const TERMINAL_COUNT = WORKSPACES * TABS_PER_WORKSPACE;
-const OUTPUT_LINES = 2000;
+// Lines written into each terminal. The default keeps the run quick; a larger value
+// (MAW_MEASURE_LINES) shows what per-instance scrollback costs, closer to an agent session.
+const OUTPUT_LINES = Number(process.env.MAW_MEASURE_LINES ?? 2000);
 
 const fixture = `
 import React, { useState } from 'react';
@@ -144,6 +147,37 @@ const PAGE_CSS = `
   .terminal-surface-hidden{visibility:hidden}
 `;
 
+/**
+ * Proportional set size of the browser process tree we started, in MiB.
+ *
+ * Runtime.getHeapUsage only sees the JS heap: xterm keeps its line buffers in typed
+ * arrays that live outside it, and the DOM is not in it either. PSS of our own tree is
+ * the only number that covers both, and it is the same metric the campaign baseline uses.
+ * Returns null off Linux.
+ */
+function treePssMiB(rootPid) {
+  let total = 0;
+  const seen = new Set();
+  const stack = [rootPid];
+  while (stack.length > 0) {
+    const pid = stack.pop();
+    if (seen.has(pid)) continue;
+    seen.add(pid);
+    try {
+      const rollup = readFileSync('/proc/' + pid + '/smaps_rollup', 'utf8');
+      const match = /^Pss:\s+(\d+) kB$/m.exec(rollup);
+      if (match) total += Number(match[1]);
+    } catch { /* the process is gone or not readable */ }
+    try {
+      for (const task of readDir('/proc/' + pid + '/task')) {
+        const children = readFileSync('/proc/' + pid + '/task/' + task + '/children', 'utf8').trim();
+        for (const child of children.length > 0 ? children.split(/\s+/) : []) stack.push(Number(child));
+      }
+    } catch { /* no children */ }
+  }
+  return seen.size > 1 || total > 0 ? Number((total / 1024).toFixed(1)) : null;
+}
+
 const percentile = (values, p) => {
   const sorted = [...values].sort((a, b) => a - b);
   const index = Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1);
@@ -197,6 +231,8 @@ test('30 terminals across three workspaces: working set and restore latency', { 
     }));
     const row = {
       label,
+      // Walk from this test process: the browser we launched is one of its descendants.
+      treePssMiB: process.platform === 'linux' ? treePssMiB(process.pid) : null,
       heapUsedMiB: Number((heap.usedSize / (1024 * 1024)).toFixed(2)),
       heapTotalMiB: Number((heap.totalSize / (1024 * 1024)).toFixed(2)),
       ...dom,
