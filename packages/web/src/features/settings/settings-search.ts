@@ -119,6 +119,16 @@ export function buildSettingsSearchCatalog({
     keywords: ['appearance', 'theme', 'dark', 'follow', 'terminal theme', 'dark-only', 'color', 'contrast'],
   });
 
+  items.push({
+    id: 'general-performance',
+    tabId: 'general',
+    targetId: 'setting-card-performance',
+    categoryName: t('settings.category.general'),
+    title: t('settings.performance.hardwareAcceleration'),
+    description: t('settings.performance.hardwareAccelerationDesc'),
+    keywords: ['performance', 'hardware acceleration', 'gpu', 'graphics', 'webgl', 'rendering', 'cpu'],
+  });
+
   if (onOpenVault !== null) {
     items.push({
       id: 'general-vault',

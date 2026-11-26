@@ -380,7 +380,17 @@ export function TerminalView({
         if (typeof WebglAddon !== 'function') throw new Error('WebGL addon export not found');
         const webgl = new WebglAddon();
         webgl.onContextLoss(() => webgl.dispose());
-        terminal.loadAddon(webgl);
+        try {
+          terminal.loadAddon(webgl);
+        } catch (error) {
+          // No WebGL2 context (acceleration disabled, blocklisted driver): drop the half-loaded addon so the
+          // default renderer stays in charge.
+          try { webgl.dispose(); } catch { /* already torn down */ }
+          // The addon builds its link layer canvas before it asks for the context and does not remove it when
+          // that fails; nothing else owns it, so remove it here.
+          terminal.element?.querySelectorAll('canvas.xterm-link-layer').forEach((canvas) => canvas.remove());
+          throw error;
+        }
       }).catch((error: unknown) => {
         console.info('[terminal] WebGL no disponible; se usa el renderer por defecto.', String(error));
       });

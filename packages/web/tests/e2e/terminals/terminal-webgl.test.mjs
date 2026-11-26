@@ -107,6 +107,27 @@ test('xterm WebGL addon is fetched only on opt-in, works or falls back, and neve
   assert.ok(!gl.logs.some(line => line.includes('WebGL no disponible')), gl.logs.join('\n'));
   console.log('# webgl renderer active in headless Chromium: ' + usesCanvas);
 
+  // WebGL init failure (no context, or getContext throwing, as with hardware acceleration disabled and no
+  // software fallback): no page error, the default renderer keeps showing the output, the fallback is logged.
+  for (const [label, init] of [
+    ['no webgl2 context', () => { const get = HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext = function (type, ...rest) { return type === 'webgl2' ? null : get.call(this, type, ...rest); }; }],
+    ['getContext throws', () => { const get = HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext = function (type, ...rest) { if (type === 'webgl2') throw new Error('context creation failed'); return get.call(this, type, ...rest); }; }],
+  ]) {
+    const failing = await browser.newPage();
+    await failing.addInitScript(init);
+    const failErrors = []; failing.on('pageerror', error => failErrors.push(error.message));
+    const failLogs = []; failing.on('console', message => failLogs.push(message.text()));
+    await failing.goto(base + '/?renderer=webgl');
+    await failing.waitForFunction(chunk => performance.getEntriesByType('resource').some(e => e.name.endsWith(chunk)), webglChunk);
+    await failing.getByText('PTY-OUTPUT-OK').waitFor();
+    await failing.waitForTimeout(500);
+    assert.deepEqual(failErrors, [], label);
+    assert.equal(await failing.evaluate(() => document.querySelectorAll('.xterm canvas').length), 0, label + ': no WebGL canvas left behind');
+    assert.ok((await failing.evaluate(() => document.querySelector('.xterm')?.textContent ?? '')).includes('PTY-OUTPUT-OK'), label);
+    assert.ok(failLogs.some(line => line.includes('WebGL no disponible')), label + ': fallback logged: ' + failLogs.join(' | '));
+    await failing.close();
+  }
+
   // Unmount while the WebGL chunk is still loading: no error, nothing attached to the disposed terminal.
   delay = 1500;
   const page = await browser.newPage();

@@ -4,6 +4,7 @@ import type { TerminalThemeState } from '../../terminals/useTerminalTheme.js';
 import { vaultName } from '../../vault/vault-ui.js';
 import { CollapsibleSubsection } from '../CollapsibleSubsection.js';
 import { TERMINAL_THEME_NAMES } from '../settings-search.js';
+import { PerformanceSettingsSubsection } from './PerformanceSettingsSubsection.js';
 
 export interface GeneralSettingsSectionProps {
   terminalTheme: TerminalThemeState;
@@ -87,6 +88,11 @@ export function GeneralSettingsSection({
           </div>
         </div>
       </CollapsibleSubsection>
+
+      <PerformanceSettingsSubsection
+        highlighted={highlightedCardId === 'setting-card-performance'}
+        expandSignal={expandSignal}
+      />
 
       {(onOpenVault !== null || onOpenRemote !== null) && (
         <CollapsibleSubsection
