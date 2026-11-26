@@ -1,11 +1,69 @@
 import { useEffect, useState, useCallback, useId } from 'react';
-import type { PerformanceSnapshot } from '@agent-workbench/shared';
+import type { PerformanceBrowserLifecycle, PerformanceSnapshot } from '@agent-workbench/shared';
 import { formatBytes } from '../../i18n/format.js';
 import { t } from '../../i18n/index.js';
 import { PerformanceSparkline } from './PerformanceSparkline.js';
 
 interface Props {
   onClose: () => void;
+}
+
+const UNAVAILABLE = 'unavailable';
+
+function formatSeconds(ms: number | null | undefined): string {
+  if (typeof ms !== 'number' || !Number.isFinite(ms)) return UNAVAILABLE;
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 60_000) return `${Math.round(ms / 1000)} s`;
+  return `${Math.round(ms / 60_000)} min`;
+}
+
+function formatReasonCounts(counts: Record<string, number | null | undefined> | null | undefined): string {
+  if (!counts) return UNAVAILABLE;
+  const entries = Object.entries(counts).filter(([, value]) => typeof value === 'number' && value > 0);
+  if (entries.length === 0) return 'none';
+  return entries.map(([reason, value]) => `${reason} ${value}`).join(', ');
+}
+
+/**
+ * Compact lifecycle facts from the eviction governor. Metrics the governor cannot
+ * measure are shown as unavailable, never as a zero.
+ */
+function BrowserLifecycleSummary({ browser }: { browser?: PerformanceBrowserLifecycle }): JSX.Element {
+  if (!browser) {
+    return <div className="maw-perf-shared-notice">Lifecycle telemetry {UNAVAILABLE}</div>;
+  }
+  const protectionAges = Object.entries(browser.protectionAgeMs ?? {})
+    .filter(([, value]) => typeof value === 'number')
+    .map(([reason, value]) => `${reason} ${formatSeconds(value as number)}`);
+  return (
+    <div className="maw-perf-shared-notice">
+      <div>
+        Resident {browser.residentViews} &bull; attached {browser.attachedViews} &bull; detached{' '}
+        {browser.detachedViews} &bull; suspended {browser.suspendedViews} &bull; renderer processes{' '}
+        {browser.rendererProcessCount ?? UNAVAILABLE}
+      </div>
+      <div>
+        Tier {browser.tier ?? UNAVAILABLE}
+        {browser.tier ? ` (${browser.tierSource})` : ''} &bull; budget {browser.budget ?? UNAVAILABLE} &bull;{' '}
+        {browser.overBudget === null ? `over budget ${UNAVAILABLE}` : browser.overBudget ? 'over budget' : 'within budget'} &bull;{' '}
+        unload AI tabs under pressure{' '}
+        {browser.aiUnloadUnderPressure === null ? UNAVAILABLE : browser.aiUnloadUnderPressure ? 'on' : 'off'}
+      </div>
+      <div>Protected: {formatReasonCounts(browser.protectedCounts)}</div>
+      {protectionAges.length > 0 && <div>Protection age: {protectionAges.join(', ')}</div>}
+      <div>Eviction blockers: {formatReasonCounts(browser.evictionBlockers)}</div>
+      <div>
+        Last eviction:{' '}
+        {browser.lastEviction
+          ? `${formatSeconds(Date.now() - browser.lastEviction.at)} ago, reclaimed ${
+            browser.lastEviction.reclaimedPssBytes === null
+              ? `${UNAVAILABLE} (${browser.lastEviction.reclaimedPssUnavailableReason ?? UNAVAILABLE})`
+              : formatBytes(browser.lastEviction.reclaimedPssBytes)
+          }`
+          : 'none this session'}
+      </div>
+    </div>
+  );
 }
 
 export function PerformancePanel({ onClose }: Props): JSX.Element {
@@ -501,6 +559,7 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
 
                 {expandBrowsers && (
                   <div className="maw-perf-table-wrapper">
+                    <BrowserLifecycleSummary browser={snapshot.browser} />
                     {snapshot.browserViews.views.length === 0 ? (
                       <p className="maw-perf-empty">{t('performance.noBrowsersOpen')}</p>
                     ) : (
