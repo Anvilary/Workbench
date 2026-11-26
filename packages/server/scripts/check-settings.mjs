@@ -177,6 +177,7 @@ const workDir = await mkdtemp(path.join(os.tmpdir(), 'aw-check-settings-'));
         favorites: store.get().browser.favorites,
         searchEngines: store.get().browser.searchEngines,
         spellCheck: store.get().browser.spellCheck,
+        unloadInactiveAiTabsUnderPressure: false,
       },
     }),
     json(service.status()));

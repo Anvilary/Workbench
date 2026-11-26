@@ -23,7 +23,6 @@ function closedTab(overrides: Partial<WebTab> & { id: string; closedAgoMs: numbe
   const { closedAgoMs, ...rest } = overrides;
   const stamp = new Date(NOW - closedAgoMs).toISOString();
   return {
-    id: rest.id,
     workspaceId: workspaceA,
     kind: 'web',
     title: 'ChatGPT',
