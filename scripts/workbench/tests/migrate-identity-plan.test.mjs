@@ -154,7 +154,7 @@ test('a source checkout at the wrong commit is refused', (t) => {
   git('commit', '-q', '-m', 'baseline');
   const head = git('rev-parse', 'HEAD').stdout.trim();
   const mapPath = path.join(fixture.home, 'source-commit-map');
-  const mapText = `old new\n${fixture.expectedCommit} ${head}\n`;
+  const mapText = `${'old'.padEnd(41)}new\n${fixture.expectedCommit} ${head}\n`;
   fs.writeFileSync(mapPath, mapText);
   const mapDigest = crypto.createHash('sha256').update(mapText).digest('hex');
   const pinned = ['--commit-map', mapPath, '--commit-map-sha256', mapDigest];

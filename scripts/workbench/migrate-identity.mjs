@@ -598,7 +598,7 @@ function checkSourceCheckout(ctx) {
     const digest = crypto.createHash('sha256').update(content).digest('hex');
     if (digest !== ctx.commitMapSha256) problems.push('--commit-map SHA-256 does not match --commit-map-sha256');
     const rows = content.trim().split(/\r?\n/);
-    if (rows.shift()?.trim() !== 'old new') problems.push('--commit-map must use git-filter-repo format with `old new` header');
+    if (rows.shift()?.trim().split(/\s+/).join(' ') !== 'old new') problems.push('--commit-map must use git-filter-repo format with `old new` header');
     map = new Map();
     for (const row of rows) {
       if (row.trim() === '') continue;
