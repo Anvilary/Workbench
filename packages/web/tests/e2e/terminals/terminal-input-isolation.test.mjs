@@ -122,6 +122,12 @@ async function setup(t) {
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('http://127.0.0.1:' + server.address().port);
   await page.waitForSelector('.xterm-helper-textarea', { state: 'attached' });
+  // Warm set (WB-05): a tab that was never shown has no xterm. These tests are about an
+  // inactive but mounted terminal, so bring the second tab in and come back.
+  await page.getByRole('tab', { name: /CLI A2/ }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.xterm-helper-textarea').length === 2);
+  await page.getByRole('tab', { name: /Shell A1/ }).click();
+  await page.waitForFunction((id) => !document.getElementById('pane-' + id).hidden, TAB_A1);
   await page.waitForTimeout(150); // initial 60ms ResizeObserver fit settles
   const inputs = () => page.evaluate(() => window.sent.filter((m) => m.type === 'input').map((m) => [m.terminalId, m.data]));
   const clearSent = () => page.evaluate(() => { window.sent.length = 0; });

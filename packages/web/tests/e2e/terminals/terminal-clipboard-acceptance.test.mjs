@@ -160,7 +160,12 @@ test('terminal selection and clipboard acceptance: selection, copy all, copy las
 
   const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
   await page.goto('http://127.0.0.1:' + server.address().port);
+  // Warm set (WB-05): only the selected tab mounts on load; visit the other one so both
+  // terminals exist, then come back to the first.
+  await page.waitForFunction(() => window.terminals?.length === 1);
+  await page.locator('[role="tab"]').nth(1).click();
   await page.waitForFunction(() => window.terminals?.length === 2);
+  await page.locator('[role="tab"]').nth(0).click();
 
   // 1. Write structured shell output to Terminal A
   await page.evaluate(() => {
