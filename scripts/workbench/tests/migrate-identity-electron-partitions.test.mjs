@@ -14,6 +14,7 @@ import { _electron } from 'playwright';
 import { fileURLToPath } from 'node:url';
 import { createFixture } from './helpers/migration-fixture.mjs';
 import { fileManifest } from '../migrate-identity.mjs';
+import { runtimeFor } from '../desktop-runtime.mjs';
 import { pidsWithHome, reapProcessesWithHome } from '../../../packages/desktop/tests/helpers/owned-processes.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -57,10 +58,12 @@ async function startProbeOrigin(t) {
   return server.address().port;
 }
 
-function electronBinary() {
+async function electronBinary() {
+  const { directory } = await runtimeFor(REPO_ROOT);
   const candidates = [
     process.env.WB_TEST_ELECTRON,
     process.env.WORKBENCH_ELECTRON_EXECUTABLE,
+    path.join(directory, 'electron'),
     '/opt/maw-electron/45.2.0/electron',
     path.join(REPO_ROOT, 'node_modules/electron/dist/electron'),
     path.join(REPO_ROOT, 'packages/desktop/node_modules/electron/dist/electron'),
@@ -133,7 +136,7 @@ async function runProbe(fixture, { mode, partitions, userData, port, outFile, el
   return { ...JSON.parse(fs.readFileSync(outFile, 'utf8')), startedPid: result.startedPid };
 }
 
-const electron = electronBinary();
+const electron = await electronBinary();
 
 test('11. partition state survives the migration through real Electron launches', { timeout: 300_000, skip: electron === null ? 'no Electron runtime available' : false }, async (t) => {
   const fixture = createFixture(t);
