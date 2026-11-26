@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { _electron as electron } from 'playwright';
 import { DESKTOP_ROOT, REPO_ROOT } from '../../helpers/paths.mjs';
+import { guardHomeProcessesOnExit, pidsWithHome, reapProcessesWithHome } from '../../helpers/owned-processes.mjs';
 
 const here = DESKTOP_ROOT;
 const repo = process.env.MAW_RENDERING_REPO || REPO_ROOT;
@@ -30,6 +31,9 @@ async function until(check, label, timeout = 15000) {
 test('terminal rendering, recovery, scrollbars and isolated Codex soak in Electron', { timeout: 240000 }, async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'maw-rendering-electron-'));
   const home = path.join(root, 'home'), config = path.join(root, 'config/agent-workbench');
+  // The Codex soak starts a managed `codex app-server` daemon that detaches
+  // (setsid) from the PTY; it is owned by this fixture through its unique HOME.
+  const releaseExitGuard = guardHomeProcessesOnExit(home);
   await Promise.all([mkdir(path.join(home, '.codex'), {recursive:true}), mkdir(config, { recursive: true }), mkdir(evidence, { recursive: true })]);
   const now = new Date().toISOString();
   const project = { id: randomUUID(), name: 'Rendering fixture', status: 'active', createdAt: now, updatedAt: now, archivedAt: null };
@@ -42,7 +46,7 @@ test('terminal rendering, recovery, scrollbars and isolated Codex soak in Electr
   for (const key of Object.keys(env)) if (/^(MAW_|AGENT_WORKBENCH_PORT)|(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN|SECRET)/.test(key)) delete env[key];
   env.MAW_PERSISTENT_PTY = '0';
   env.MAW_RUNTIME_DIR = path.join(root, 'runtime');
-  let serverLog = '', desktop, originalIndex;
+  let serverLog = '', desktop, originalIndex, testFailed = false;
   const child = spawn(process.execPath, ['--import', path.join(repo, 'packages/server/node_modules/tsx/dist/loader.mjs'),
     path.join(repo, 'packages/server/src/index.ts'), '--prod'], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.on('data', c => { serverLog = (serverLog + c).slice(-65536); });
@@ -276,14 +280,26 @@ process.stdin.on('data',d=>{if(d.includes(113)){out('\\x1b[?1049l');process.exit
     if (!baseline) assert.deepEqual(result.errors, []);
     await writeFile(path.join(evidence, baseline ? 'before-runtime.json' : 'after-runtime.json'), JSON.stringify(result,null,2)+'\n');
   } catch (error) {
+    testFailed = true;
     await writeFile(path.join(evidence, baseline ? 'before-runtime.json' : 'after-runtime.json'), JSON.stringify({...result,failure:String(error)},null,2)+'\n');
     throw error;
   } finally {
-    if (desktop) await desktop.close();
-    if (originalIndex) await writeFile(path.join(repo, 'packages/web/dist/index.html'), originalIndex);
-    child.kill('SIGTERM');
-    await until(()=>child.exitCode!==null || child.signalCode!==null,'backend shutdown',10000).catch(()=>child.kill('SIGKILL'));
-    await writeFile(path.join(evidence,baseline?'before-backend.log':'after-backend.log'),serverLog.replace(/token=[\w-]+/g,'token=REDACTED'));
-    await rm(root,{recursive:true,force:true});
+    // Every step runs even if an earlier one fails, so no child outlives the test.
+    const teardownErrors = [];
+    const step = async (fn) => { try { await fn(); } catch (error) { teardownErrors.push(error); } };
+    await step(async () => { if (desktop) await desktop.close(); });
+    await step(async () => { if (originalIndex) await writeFile(path.join(repo, 'packages/web/dist/index.html'), originalIndex); });
+    await step(async () => {
+      child.kill('SIGTERM');
+      await until(()=>child.exitCode!==null || child.signalCode!==null,'backend shutdown',10000).catch(()=>child.kill('SIGKILL'));
+    });
+    await step(() => writeFile(path.join(evidence,baseline?'before-backend.log':'after-backend.log'),serverLog.replace(/token=[\w-]+/g,'token=REDACTED')));
+    await step(() => reapProcessesWithHome(home));
+    await step(() => { assert.deepEqual(pidsWithHome(home), [], 'no process with the fixture HOME may survive teardown'); });
+    releaseExitGuard();
+    await step(() => rm(root,{recursive:true,force:true}));
+    // Do not mask the test's own failure; still report teardown problems.
+    for (const error of teardownErrors) console.error('[terminal-rendering] teardown:', error);
+    if (teardownErrors.length > 0 && !testFailed) throw teardownErrors[0];
   }
 });
