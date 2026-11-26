@@ -39,7 +39,7 @@ Cookies are stored by Chromium without OS keyring encryption. Their confidential
 
 ## DevTools
 
-Inspect opens detached DevTools for the view (`page-commands.mjs`), optionally at the clicked element. A view with open DevTools is protected from eviction below critical memory pressure.
+Inspect opens detached DevTools for the view (`page-commands.mjs`), optionally at the clicked element. A view with open DevTools is protected from eviction at all memory-pressure tiers.
 
 ## Spellcheck
 

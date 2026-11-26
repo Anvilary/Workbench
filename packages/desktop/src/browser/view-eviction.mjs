@@ -27,7 +27,7 @@ export const PROTECTION_REASONS = Object.freeze([
  */
 const RECLAIM_UNAVAILABLE_REASON = 'shared-renderer-attribution';
 
-export function createViewEviction({ app, state, evictTab, isAiUnloadUnderPressureEnabled = () => false }) {
+export function createViewEviction({ app, state, evictTab }) {
   const { views, providers, urls, attachedViews, suspendedTabs, lastAccessedAt, activeDownloads, popupOwners, interactionProtected } = state;
 
   let lastBudgetInfo = null;
@@ -43,15 +43,7 @@ export function createViewEviction({ app, state, evictTab, isAiUnloadUnderPressu
     }
   }
 
-  function aiUnloadEnabled() {
-    try {
-      return isAiUnloadUnderPressureEnabled() === true;
-    } catch {
-      return false;
-    }
-  }
-
-  function canEvict(id, memoryTier) {
+  function canEvict(id) {
     return canEvictView({
       id,
       attachedViews,
@@ -62,8 +54,6 @@ export function createViewEviction({ app, state, evictTab, isAiUnloadUnderPressu
       providers,
       interactionProtected,
       durablePage,
-      memoryTier,
-      evictProviderUnderPressure: aiUnloadEnabled(),
     });
   }
 
@@ -100,8 +90,8 @@ export function createViewEviction({ app, state, evictTab, isAiUnloadUnderPressu
   }
 
   /** The first reason that stops a resident view from being evicted right now, if any. */
-  function blockReasonOf(id, memoryTier) {
-    if (canEvict(id, memoryTier)) return null;
+  function blockReasonOf(id) {
+    if (canEvict(id)) return null;
     const reasons = protectionReasonsOf(id);
     for (const reason of PROTECTION_REASONS) {
       if (reasons.includes(reason)) return reason;
@@ -157,10 +147,7 @@ export function createViewEviction({ app, state, evictTab, isAiUnloadUnderPressu
       const candidateId = selectEvictionCandidate({
         residentIds: views.keys(),
         lastAccessedAt,
-        canEvict: (id) => canEvict(id, memoryTier),
-        isProtected: (id) => devToolsOpen(id)
-          || (isProtectedProvider(providers.get(id) ?? 'chatgpt'))
-          || interactionProtected.has(id),
+        canEvict: (id) => canEvict(id),
         excludeId,
       });
 
@@ -168,7 +155,7 @@ export function createViewEviction({ app, state, evictTab, isAiUnloadUnderPressu
         const blockers = {};
         for (const id of views.keys()) {
           if (excludeId && id === excludeId) continue;
-          const reason = blockReasonOf(id, memoryTier);
+          const reason = blockReasonOf(id);
           if (reason) blockers[reason] = (blockers[reason] ?? 0) + 1;
         }
         lastTrim = {
@@ -243,7 +230,6 @@ export function createViewEviction({ app, state, evictTab, isAiUnloadUnderPressu
       budget,
       budgetSampleAgeMs: budgetInfo ? Math.max(0, now - budgetInfo.computedAt) : null,
       overBudget: budget === null ? null : views.size > budget,
-      aiUnloadUnderPressure: aiUnloadEnabled(),
       evictionBlockers: lastTrim ? { ...lastTrim.blockers } : null,
       lastTrimAt: lastTrim ? lastTrim.at : null,
       rendererProcessCount: null,

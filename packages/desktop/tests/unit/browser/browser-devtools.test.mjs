@@ -142,7 +142,7 @@ test('canEvictView: protects tabs with open DevTools from background eviction', 
   assert.equal(evictableAfterClose, true);
 });
 
-test('canEvictView and selectEvictionCandidate: bounded DevTools protection yields under CRITICAL pressure after ordinary tabs', () => {
+test('canEvictView and selectEvictionCandidate: DevTools remains protected under critical pressure', () => {
   const devToolsContents = mockWebContents({ isOpened: true });
   const ordinaryContents = mockWebContents({ isOpened: false });
   const views = new Map([
@@ -173,7 +173,7 @@ test('canEvictView and selectEvictionCandidate: bounded DevTools protection yiel
     }), false, `DevTools tab must be protected under ${tier} pressure`);
   }
 
-  // Under CRITICAL pressure, DevTools tab becomes eligible, but ordinary tab is selected first
+  // Critical pressure retains the DevTools tab and reclaims the ordinary tab.
   assert.equal(canEvictView({
     id: 'tab-devtools',
     attachedViews: new Set(),
@@ -185,7 +185,7 @@ test('canEvictView and selectEvictionCandidate: bounded DevTools protection yiel
     interactionProtected: new Set(),
     durablePage: () => true,
     memoryTier: MemoryPressureTier.CRITICAL,
-  }), true);
+  }), false);
 
   const firstCandidate = selectEvictionCandidate({
     residentIds: views.keys(),

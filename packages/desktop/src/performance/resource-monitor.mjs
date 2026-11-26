@@ -64,7 +64,6 @@ const UNAVAILABLE_BROWSER_LIFECYCLE = Object.freeze({
   budget: null,
   budgetSampleAgeMs: null,
   overBudget: null,
-  aiUnloadUnderPressure: null,
   evictionBlockers: null,
   lastTrimAt: null,
   lastEviction: null,

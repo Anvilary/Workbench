@@ -45,9 +45,7 @@ function BrowserLifecycleSummary({ browser }: { browser?: PerformanceBrowserLife
       <div>
         Tier {browser.tier ?? UNAVAILABLE}
         {browser.tier ? ` (${browser.tierSource})` : ''} &bull; budget {browser.budget ?? UNAVAILABLE} &bull;{' '}
-        {browser.overBudget === null ? `over budget ${UNAVAILABLE}` : browser.overBudget ? 'over budget' : 'within budget'} &bull;{' '}
-        unload AI tabs under pressure{' '}
-        {browser.aiUnloadUnderPressure === null ? UNAVAILABLE : browser.aiUnloadUnderPressure ? 'on' : 'off'}
+        {browser.overBudget === null ? `over budget ${UNAVAILABLE}` : browser.overBudget ? 'over budget' : 'within budget'}
       </div>
       <div>Protected: {formatReasonCounts(browser.protectedCounts)}</div>
       {protectionAges.length > 0 && <div>Protection age: {protectionAges.join(', ')}</div>}

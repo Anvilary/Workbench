@@ -56,49 +56,35 @@ test('typing marks a view interaction protected and records its protection age',
   }
 });
 
-test('eviction clears interaction protection so a restored view starts unprotected', () => {
+test('critical pressure preserves an interacted document while a second tab opens', () => {
   const { controller, createdViews, sent, restore } = setup({ maxResident: 1, tier: 'critical' });
   try {
     controller.open({ id: 'tab-a', url: GITHUB_URL, provider: 'github' });
     type(createdViews[0].webContents);
-    assert.equal(controller.browserLifecycleTelemetry().protectedCounts.interaction, 1);
-
-    // Opening a second tab trims the pool back to the budget of one resident view.
     controller.open({ id: 'tab-b', url: GITHUB_URL, provider: 'github' });
 
-    assert.ok(sent.some((m) => m.type === 'suspended' && m.id === 'tab-a'), 'tab-a must be suspended');
-    const afterEviction = controller.browserLifecycleTelemetry();
-    assert.equal(afterEviction.residentViews, 1);
-    assert.equal(afterEviction.suspendedViews, 1);
-    assert.equal(afterEviction.protectedCounts.interaction, 0, 'protection must not survive eviction');
-
-    controller.open({ id: 'tab-a', url: GITHUB_URL, provider: 'github' });
-    assert.equal(controller.browserLifecycleTelemetry().protectedCounts.interaction, 0);
+    assert.ok(!sent.some(m => m.type === 'suspended' && m.id === 'tab-a'));
+    const telemetry = controller.browserLifecycleTelemetry();
+    assert.equal(telemetry.residentViews, 2);
+    assert.equal(telemetry.suspendedViews, 0);
+    assert.equal(telemetry.protectedCounts.interaction, 1);
+    assert.equal(telemetry.overBudget, true);
   } finally {
     restore();
   }
 });
 
-test('in-page navigation releases interaction protection only when the page reports no draft', async () => {
+test('in-page navigation retains interaction protection without inspecting page content', () => {
   const { controller, createdViews, restore } = setup();
   try {
     controller.open({ id: 'tab-a', url: CHATGPT_URL, provider: 'chatgpt' });
     const contents = createdViews[0].webContents;
     type(contents);
-
-    contents.__state.probeResult = true;
-    contents.emit('did-navigate-in-page', { preventDefault: () => {} }, 'https://chatgpt.com/c/1', true);
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(controller.browserLifecycleTelemetry().protectedCounts.interaction, 1, 'a held draft keeps protection');
-
     contents.__state.probeResult = false;
-    contents.emit('did-navigate-in-page', { preventDefault: () => {} }, 'https://chatgpt.com/c/2', true);
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(controller.browserLifecycleTelemetry().protectedCounts.interaction, 0);
+    contents.emit('did-navigate-in-page', {}, 'https://chatgpt.com/c/1', true);
 
-    const worldIds = contents.__state.probeCalls.map((call) => call.worldId);
-    assert.equal(worldIds.length, 2);
-    assert.ok(worldIds.every((id) => id !== 0), 'the probe never runs in the page main world');
+    assert.equal(controller.browserLifecycleTelemetry().protectedCounts.interaction, 1);
+    assert.equal(contents.__state.probeCalls.length, 0);
   } finally {
     restore();
   }

@@ -5,7 +5,6 @@ import {
   selectEvictionCandidate,
   MemoryPressureTier,
   isProtectedProvider,
-  isTypingInput,
   canEvictView,
 } from '../../../src/performance/resource-budget.mjs';
 
@@ -206,53 +205,20 @@ test('selectEvictionCandidate: anti-thrashing dwell hysteresis prioritizes matur
   assert.equal(fallbackCandidate, 'tab-b');
 });
 
-test('data safety: generative AI tabs protected from eviction in normal memory tier', () => {
-  // Simulate canEvict with provider check across tiers
-  function mockCanEvict(id, provider, tier) {
-    if (tier === MemoryPressureTier.NORMAL) {
-      if (provider === 'chatgpt' || provider === 'perplexity') return false;
-    }
-    return true;
-  }
-
-  const residentIds = ['tab-chatgpt', 'tab-docs'];
-  const lastAccessedAt = new Map([
-    ['tab-chatgpt', 1000], // oldest
-    ['tab-docs', 2000],
-  ]);
-
-  // Under normal tier, tab-chatgpt is protected from automatic eviction
-  const normalCandidate = selectEvictionCandidate({
-    residentIds,
-    lastAccessedAt,
-    canEvict: (id) => mockCanEvict(id, id === 'tab-chatgpt' ? 'chatgpt' : 'github', MemoryPressureTier.NORMAL),
-    minDwellMs: 1000,
-    now: 5000,
-  });
-  assert.equal(normalCandidate, 'tab-docs', 'tab-docs is evicted because tab-chatgpt is protected in normal tier');
-
-  // Under critical tier, tab-chatgpt can be evicted if necessary to protect system from OOM
-  const criticalCandidate = selectEvictionCandidate({
-    residentIds,
-    lastAccessedAt,
-    canEvict: (id) => mockCanEvict(id, id === 'tab-chatgpt' ? 'chatgpt' : 'github', MemoryPressureTier.CRITICAL),
-    minDwellMs: 1000,
-    now: 5000,
-  });
-  assert.equal(criticalCandidate, 'tab-chatgpt', 'under critical pressure oldest candidate is evictable');
-});
-
-// Helper modeling canEvict matching packages/desktop/main.mjs
 function createMockCanEvict({ attachedIds = new Set(), focusedId = null, providers = new Map() } = {}) {
-  return function canEvict(id, tier = MemoryPressureTier.NORMAL) {
-    if (attachedIds.has(id)) return false;
-    if (focusedId === id) return false;
-    const provider = providers.get(id) ?? 'chatgpt';
-    if (isProtectedProvider(provider) && tier !== MemoryPressureTier.CRITICAL) {
-      return false;
-    }
-    return true;
-  };
+    const views = new Map([...providers].map(([id]) => [id, {
+    webContents: {
+      isDestroyed: () => false,
+      isLoading: () => false,
+      getURL: () => 'https://example.com/',
+    },
+  }]));
+  return id => canEvictView({
+    id, attachedViews: attachedIds, views, providers,
+    layoutFocusedId: focusedId,
+    activeDownloads: new Map(), popupOwners: new Map(), interactionProtected: new Set(),
+    durablePage: () => true,
+  });
 }
 
 test('data safety: NORMAL memory pressure protects ChatGPT and Perplexity tabs', () => {
@@ -328,7 +294,7 @@ test('data safety: MODERATE memory pressure protects ChatGPT and Perplexity tabs
   assert.equal(aiCandidate, null, 'ChatGPT and Perplexity must remain protected under MODERATE memory pressure');
 });
 
-test('data safety: HIGH memory pressure retains protection while sufficient headroom remains', () => {
+test('data safety: HIGH memory pressure retains protection', () => {
   const providers = new Map([
     ['tab-chatgpt', 'chatgpt'],
     ['tab-github', 'github'],
@@ -350,7 +316,7 @@ test('data safety: HIGH memory pressure retains protection while sufficient head
   });
   assert.equal(candidate, 'tab-github');
 
-  // Under HIGH pressure, AI tab retains protection because memory is not CRITICAL
+  // Under HIGH pressure, AI protection still applies
   const aiCandidate = selectEvictionCandidate({
     residentIds: ['tab-chatgpt'],
     lastAccessedAt,
@@ -359,10 +325,10 @@ test('data safety: HIGH memory pressure retains protection while sufficient head
     minDwellMs: 500,
     now: 5000,
   });
-  assert.equal(aiCandidate, null, 'AI tabs must retain protection under HIGH pressure when headroom remains');
+  assert.equal(aiCandidate, null, 'AI tabs must retain protection under HIGH pressure');
 });
 
-test('data safety: CRITICAL memory pressure emergency eviction permits AI tab eviction as last resort', () => {
+test('data safety: CRITICAL memory pressure retains AI tabs after ordinary tabs are reclaimed', () => {
   const providers = new Map([
     ['tab-chatgpt-1', 'chatgpt'],
     ['tab-chatgpt-2', 'chatgpt'],
@@ -386,7 +352,7 @@ test('data safety: CRITICAL memory pressure emergency eviction permits AI tab ev
   });
   assert.equal(firstCandidate, 'tab-docs', 'Unprotected tab must be evicted first even if an AI tab is older');
 
-  // Phase 2: Once ordinary tabs are gone, emergency policy allows evicting background AI tab (LRU)
+  // Phase 2: Once ordinary tabs are gone, AI tabs remain resident
   const secondCandidate = selectEvictionCandidate({
     residentIds: ['tab-chatgpt-1', 'tab-chatgpt-2'],
     lastAccessedAt,
@@ -395,7 +361,7 @@ test('data safety: CRITICAL memory pressure emergency eviction permits AI tab ev
     minDwellMs: 500,
     now: 5000,
   });
-  assert.equal(secondCandidate, 'tab-chatgpt-1', 'Oldest background AI tab evicted as emergency last resort');
+  assert.equal(secondCandidate, null);
 });
 
 test('data safety: Two visible AI tabs are protected under all pressure tiers including CRITICAL', () => {
@@ -448,7 +414,7 @@ test('data safety: One visible and one background AI tab', () => {
     assert.equal(candidate, null, `Under ${tier}, background AI tab is protected`);
   }
 
-  // Under CRITICAL: visible tab is protected; background tab can be evicted
+  // Critical pressure also retains both tabs
   const criticalCandidate = selectEvictionCandidate({
     residentIds: ['tab-visible-chat', 'tab-bg-chat'],
     lastAccessedAt,
@@ -457,7 +423,7 @@ test('data safety: One visible and one background AI tab', () => {
     minDwellMs: 0,
     now: 5000,
   });
-  assert.equal(criticalCandidate, 'tab-bg-chat', 'Under CRITICAL, only background AI tab can be evicted');
+  assert.equal(criticalCandidate, null);
 });
 
 test('data safety: Several ordinary background webpages evicted in deterministic LRU order before AI tabs', () => {
@@ -552,7 +518,7 @@ test('data safety: Standby quota changes do not evict protected content merely t
   assert.equal(resident.size, 2, 'Protected tabs remain resident even if exceeding count quota');
 });
 
-test('data safety: Repeated memory pressure transitions update eviction eligibility dynamically', () => {
+test('data safety: repeated pressure transitions retain AI protection', () => {
   const providers = new Map([['tab-ai', 'chatgpt']]);
   const lastAccessedAt = new Map([['tab-ai', 1000]]);
   const canEvict = createMockCanEvict({ providers });
@@ -571,8 +537,8 @@ test('data safety: Repeated memory pressure transitions update eviction eligibil
   assert.equal(selectEvictionCandidate(params(MemoryPressureTier.MODERATE)), null);
   // Cycle 3: HIGH -> protected
   assert.equal(selectEvictionCandidate(params(MemoryPressureTier.HIGH)), null);
-  // Cycle 4: CRITICAL -> evictable (emergency last resort)
-  assert.equal(selectEvictionCandidate(params(MemoryPressureTier.CRITICAL)), 'tab-ai');
+  // Cycle 4: CRITICAL -> protected
+  assert.equal(selectEvictionCandidate(params(MemoryPressureTier.CRITICAL)), null);
   // Cycle 5: Recovery back to NORMAL -> protected immediately
   assert.equal(selectEvictionCandidate(params(MemoryPressureTier.NORMAL)), null);
   // Cycle 6: Back to MODERATE -> protected
@@ -581,8 +547,8 @@ test('data safety: Repeated memory pressure transitions update eviction eligibil
 
 test('data safety: Rapid tab switching updates lastAccessedAt and preserves active tab', () => {
   const providers = new Map([
-    ['tab-a', 'chatgpt'],
-    ['tab-b', 'perplexity'],
+    ['tab-a', 'other'],
+    ['tab-b', 'other'],
   ]);
   const attachedIds = new Set();
   const lastAccessedAt = new Map();
@@ -629,25 +595,7 @@ test('calculateResourceBudget: tierOverride deterministically controls memory pr
   assert.equal(normal.budget, 3);
 });
 
-test('isTypingInput distinguishes text-editing keys from shortcuts and navigation', () => {
-  assert.equal(isTypingInput({ type: 'keyDown', key: 'a' }), true);
-  assert.equal(isTypingInput({ type: 'keyDown', key: 'Enter' }), true);
-  assert.equal(isTypingInput({ type: 'keyDown', key: 'Backspace' }), true);
-  assert.equal(isTypingInput({ type: 'keyDown', key: 'Delete' }), true);
-
-  assert.equal(isTypingInput({ type: 'keyUp', key: 'a' }), false);
-  assert.equal(isTypingInput({ type: 'keyDown', control: true, key: 'Tab' }), false);
-  assert.equal(isTypingInput({ type: 'keyDown', control: true, key: 'w' }), false);
-  assert.equal(isTypingInput({ type: 'keyDown', control: true, key: 'c' }), false);
-  assert.equal(isTypingInput({ type: 'keyDown', meta: true, key: 'l' }), false);
-  assert.equal(isTypingInput({ type: 'keyDown', key: 'Tab' }), false);
-  assert.equal(isTypingInput({ type: 'keyDown', key: 'Escape' }), false);
-  assert.equal(isTypingInput({ type: 'keyDown', key: 'ArrowDown' }), false);
-  assert.equal(isTypingInput({ type: 'keyDown', key: 'F11' }), false);
-  assert.equal(isTypingInput({ type: 'keyDown', key: 'Shift' }), false);
-});
-
-test('canEvictView protects AI and typed tabs in normal pressure but permits emergency eviction under CRITICAL pressure', () => {
+test('canEvictView protects AI and interacted tabs throughout the pressure range', () => {
   const makeView = (url) => ({
     webContents: {
       isDestroyed: () => false,
@@ -679,9 +627,9 @@ test('canEvictView protects AI and typed tabs in normal pressure but permits eme
   assert.equal(canEvictView({ ...base, id: 'chatgpt-bg', memoryTier: MemoryPressureTier.NORMAL }), false);
   assert.equal(canEvictView({ ...base, id: 'github-typed', memoryTier: MemoryPressureTier.NORMAL }), false);
 
-  // Critical pressure: background AI and typed tabs become emergency eviction candidates
-  assert.equal(canEvictView({ ...base, id: 'chatgpt-bg', memoryTier: MemoryPressureTier.CRITICAL }), true);
-  assert.equal(canEvictView({ ...base, id: 'github-typed', memoryTier: MemoryPressureTier.CRITICAL }), true);
+  // Critical pressure retains these pages as well.
+  assert.equal(canEvictView({ ...base, id: 'chatgpt-bg', memoryTier: MemoryPressureTier.CRITICAL }), false);
+  assert.equal(canEvictView({ ...base, id: 'github-typed', memoryTier: MemoryPressureTier.CRITICAL }), false);
 
   // Attached or focused views are NEVER evictable even under CRITICAL pressure
   assert.equal(

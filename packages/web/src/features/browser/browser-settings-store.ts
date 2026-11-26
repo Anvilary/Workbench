@@ -140,9 +140,6 @@ let desiredConfig: { enabled: boolean; languages: string[] } | null = null;
 let desiredConfigKey = '';
 let appliedConfigKey = '';
 let configInFlightPromise: Promise<boolean> | null = null;
-let desiredLifecycleKey = '';
-let appliedLifecycleKey = '';
-let lifecycleInFlightPromise: Promise<boolean> | null = null;
 
 let desiredDictMap: Record<string, string[]> = {};
 let desiredDictKey = '';
@@ -193,10 +190,8 @@ function resetBridgeTrackingIfChanged(bridge: DesktopBridge | undefined): void {
     lastBridgeRef = bridge;
     appliedConfigKey = '';
     appliedDictKey = '';
-    appliedLifecycleKey = '';
     configInFlightPromise = null;
     dictInFlightPromise = null;
-    lifecycleInFlightPromise = null;
     nativeSyncState = { status: 'idle', failedPartitions: [], error: null };
     if (bridge && typeof bridge.subscribe === 'function') {
       bridgeUnsubscribe = bridge.subscribe((state) => {
@@ -239,47 +234,6 @@ function setDesiredDict(sc: SpellCheckSettings | undefined): void {
   const map = normalizeCustomWordsMap(sc?.customWordsByProfile);
   desiredDictMap = map;
   desiredDictKey = JSON.stringify(map);
-}
-
-function setDesiredLifecycle(settings: BrowserSettings): void {
-  desiredLifecycleKey = JSON.stringify({ unload: settings.unloadInactiveAiTabsUnderPressure === true });
-}
-
-/**
- * Replicates the browser lifecycle policy to the desktop. The backend settings remain
- * authoritative; this only mirrors the committed value, and a failed send is retried by
- * the same focus and visibility recovery path as the spellcheck configuration.
- */
-export function ensureNativeLifecycleSynced(bridge: DesktopBridge | undefined = getBridge()): Promise<boolean> {
-  if (!bridge || !desiredLifecycleKey) return Promise.resolve(true);
-  resetBridgeTrackingIfChanged(bridge);
-  if (desiredLifecycleKey === appliedLifecycleKey) return Promise.resolve(true);
-  if (lifecycleInFlightPromise) return lifecycleInFlightPromise;
-
-  const run = async (): Promise<boolean> => {
-    try {
-      while (desiredLifecycleKey && desiredLifecycleKey !== appliedLifecycleKey) {
-        const targetKey = desiredLifecycleKey;
-        const payload = JSON.parse(targetKey) as { unload: boolean };
-        try {
-          const res = (await bridge.command({
-            type: 'update-browser-lifecycle-settings',
-            unloadInactiveAiTabsUnderPressure: payload.unload,
-          })) as { ok?: boolean } | undefined;
-          if (!res?.ok) return false;
-          appliedLifecycleKey = targetKey;
-        } catch {
-          return false;
-        }
-      }
-      return desiredLifecycleKey === appliedLifecycleKey;
-    } finally {
-      lifecycleInFlightPromise = null;
-    }
-  };
-
-  lifecycleInFlightPromise = run();
-  return lifecycleInFlightPromise;
 }
 
 export function ensureNativeConfigSynced(bridge: DesktopBridge | undefined = getBridge()): Promise<boolean> {
@@ -388,9 +342,6 @@ function handleRecoveryTrigger(): void {
   if (desiredConfig && desiredConfigKey !== appliedConfigKey && !configInFlightPromise) {
     void ensureNativeConfigSynced(bridge);
   }
-  if (desiredLifecycleKey !== appliedLifecycleKey && !lifecycleInFlightPromise) {
-    void ensureNativeLifecycleSynced(bridge);
-  }
   if (
     hasAuthoritativeServerState &&
     desiredDictKey !== appliedDictKey &&
@@ -460,12 +411,10 @@ export function syncAuthoritativeBrowserSettings(
   saveCachedBrowserSettings(currentSettings);
   setDesiredConfig(currentSettings.spellCheck);
   setDesiredDict(currentSettings.spellCheck);
-  setDesiredLifecycle(currentSettings);
   notifyListeners();
 
   const bridge = getBridge();
   void ensureNativeConfigSynced(bridge);
-  void ensureNativeLifecycleSynced(bridge);
   if (!options.deferNativeDictSync) {
     void ensureNativeDictionarySynced(bridge);
   }
@@ -504,8 +453,6 @@ export function commitBrowserPreferenceMutation(
         const rollback = cloneBrowserSettings(authoritativeSettings);
         currentSettings = rollback;
         setDesiredConfig(rollback.spellCheck);
-        setDesiredLifecycle(rollback);
-        void ensureNativeLifecycleSynced(getBridge());
       }
       preferenceError = !res.ok ? res.error : 'Failed to save browser settings';
       notifyListeners();
@@ -526,10 +473,6 @@ export function commitBrowserPreferenceMutation(
   if (plan.patch.spellCheck) {
     setDesiredConfig(currentSettings.spellCheck);
     void ensureNativeConfigSynced(getBridge());
-  }
-  if (plan.patch.unloadInactiveAiTabsUnderPressure !== undefined) {
-    setDesiredLifecycle(currentSettings);
-    void ensureNativeLifecycleSynced(getBridge());
   }
   notifyListeners();
   targetApi?.setBrowserSettings(plan.patch);

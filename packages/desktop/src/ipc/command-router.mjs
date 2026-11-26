@@ -76,7 +76,6 @@ export function registerCommandRouter({ ipcMain, win, dialog, backend, controlle
       ...controller.getSpellCheckStatus(),
     }),
     'update-spellcheck-settings': async (command) => controller.applySpellCheckSettings(command),
-    'update-browser-lifecycle-settings': async (command) => controller.applyLifecycleSettings(command),
     'list-custom-dictionary-words': async (command) => controller.listCustomDictionaryWords(command.profileId),
     'add-custom-dictionary-word': async (command) => controller.addCustomDictionaryWord(command.word, command.profileId),
     'remove-custom-dictionary-word': async (command) => controller.removeCustomDictionaryWord(command.word, command.profileId),

@@ -669,10 +669,6 @@ export function validCommand(value, options = {}) {
     if (!Array.isArray(value.languages) || value.languages.length > 64) return false;
     return value.languages.every(lang => typeof lang === 'string' && /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,4})*$/.test(lang) && lang.length <= 32);
   }
-  if (value.type === 'update-browser-lifecycle-settings') {
-    if (!exact(value, ['type', 'unloadInactiveAiTabsUnderPressure'])) return false;
-    return typeof value.unloadInactiveAiTabsUnderPressure === 'boolean';
-  }
   if (value.type === 'reconcile-custom-dictionary') {
     if (!exact(value, ['type', 'customWordsByProfile'])) return false;
     if (!record(value.customWordsByProfile)) return false;

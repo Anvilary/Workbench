@@ -113,38 +113,8 @@ export function isProtectedProvider(provider) {
   return provider === 'chatgpt' || provider === 'perplexity';
 }
 
-const NON_TYPING_KEYS = new Set([
-  'Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock', 'NumLock', 'ScrollLock',
-  'Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-  'Home', 'End', 'PageUp', 'PageDown', 'Insert', 'ContextMenu', 'PrintScreen', 'Pause',
-  'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
-  'F13', 'F14', 'F15', 'F16', 'F17', 'F18', 'F19', 'F20', 'F21', 'F22', 'F23', 'F24',
-]);
-
-/**
- * Returns true only for non-modifier keyboard input that may edit page form/draft
- * content, excluding shortcuts and navigation keys.
- */
-export function isTypingInput(input) {
-  if (!input || input.type !== 'keyDown') return false;
-  if (input.control || input.meta || input.alt) return false;
-  const key = typeof input.key === 'string' ? input.key : '';
-  if (!key || NON_TYPING_KEYS.has(key)) return false;
-  return key.length === 1 || key === 'Enter' || key === 'Backspace' || key === 'Delete';
-}
-
-/**
- * Evaluates whether a resident browser view is eligible for background eviction.
- * Attached, focused, loading, downloading, and popup-owning views are never evicted.
- * Protected AI providers, views with unsaved typing input, and views with open DevTools
- * are preserved under NORMAL/MODERATE/HIGH memory pressure and only become emergency
- * eviction candidates under CRITICAL pressure (after unprotected tabs via selectEvictionCandidate).
- *
- * With the opt-in `evictProviderUnderPressure` policy, provider protection alone stops
- * holding a view resident from HIGH pressure upwards. Every other retention rule
- * (attached, focused, loading, downloading, popup owner, non-durable, DevTools,
- * interaction) still applies unchanged.
- */
+/** A memory budget may evict untouched background pages. Critical pressure keeps
+ * the same safety checks, since page state and AI generation cannot be inferred. */
 export function canEvictView({
   id,
   attachedViews,
@@ -155,8 +125,6 @@ export function canEvictView({
   providers,
   interactionProtected,
   durablePage,
-  memoryTier = MemoryPressureTier.NORMAL,
-  evictProviderUnderPressure = false,
 }) {
   if (attachedViews.has(id)) return false;
   if (layoutFocusedId === id) return false;
@@ -171,13 +139,9 @@ export function canEvictView({
   const provider = providers.get(id) ?? 'chatgpt';
   if (!durablePage(provider, view.webContents.getURL())) return false;
 
-  if (memoryTier !== MemoryPressureTier.CRITICAL) {
-    if (typeof view.webContents.isDevToolsOpened === 'function' && view.webContents.isDevToolsOpened()) return false;
-    if (interactionProtected.has(id)) return false;
-    const providerEligible = evictProviderUnderPressure
-      && (memoryTier === MemoryPressureTier.HIGH || memoryTier === MemoryPressureTier.CRITICAL);
-    if (isProtectedProvider(provider) && !providerEligible) return false;
-  }
+  if (typeof view.webContents.isDevToolsOpened === 'function' && view.webContents.isDevToolsOpened()) return false;
+  if (interactionProtected.has(id)) return false;
+  if (isProtectedProvider(provider)) return false;
 
   return true;
 }

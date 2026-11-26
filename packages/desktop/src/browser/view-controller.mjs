@@ -90,26 +90,8 @@ export function createBrowserViewController({
     send({ type: 'suspended', id });
   }
 
-  // Opt-in policy from Settings. Off keeps provider-protected AI tabs resident until
-  // memory pressure is critical, which is the historical behavior.
-  let unloadInactiveAiTabsUnderPressure = false;
-
-  const eviction = createViewEviction({
-    app,
-    state,
-    evictTab,
-    isAiUnloadUnderPressureEnabled: () => unloadInactiveAiTabsUnderPressure,
-  });
+  const eviction = createViewEviction({ app, state, evictTab });
   const { trimCapacity } = eviction;
-
-  /** Applies the browser lifecycle policy pushed from Settings. */
-  function applyLifecycleSettings(command) {
-    const next = command?.unloadInactiveAiTabsUnderPressure === true;
-    const changed = next !== unloadInactiveAiTabsUnderPressure;
-    unloadInactiveAiTabsUnderPressure = next;
-    if (changed && next) trimCapacity();
-    return { ok: true, unloadInactiveAiTabsUnderPressure };
-  }
 
   function resolveTabProfileIdOrFail(id, requestedProfileId) {
     if (requestedProfileId !== undefined && !isValidBrowserProfileId(requestedProfileId)) {
@@ -244,11 +226,6 @@ export function createBrowserViewController({
     });
     view.webContents.on('did-navigate-in-page', (event, url, isMainFrame = true) => {
       committed(event, url, isMainFrame);
-      if (!isMainFrame || views.get(id) !== view) return;
-      // Single-page providers navigate in page, so this is the only realistic chance to
-      // release interaction protection. It is released only when the page itself reports
-      // no focused editable holding content; never on elapsed time.
-      void navigation.clearInteractionProtectionIfIdle(id, view.webContents);
     });
     view.webContents.on('page-favicon-updated', (_event, favicons) => {
       if (views.get(id) !== view || view.webContents.isDestroyed()) return;
@@ -451,7 +428,6 @@ export function createBrowserViewController({
     capture: pageCommands.capture,
     inspectPage: pageCommands.inspectPage,
     applySpellCheckSettings: sessions.applySpellCheckSettings,
-    applyLifecycleSettings,
     getAvailableSpellCheckerLanguages: sessions.getAvailableSpellCheckerLanguages,
     getSpellCheckStatus: sessions.getSpellCheckStatus,
     listCustomDictionaryWords: sessions.listCustomDictionaryWords,

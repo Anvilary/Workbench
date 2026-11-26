@@ -27,19 +27,18 @@ A raised tier is held for two minutes after its signal last justified it (hyster
 
 ## Eviction rules
 
-Never evicted:
+Workbench retains attached or focused views, loading pages, active downloads, popup owners,
+open DevTools and pages without a restorable URL. ChatGPT and Perplexity stay resident
+because their background work cannot be inferred from the page's visibility. Keyboard
+or pointer interaction protects a page for the life of its document, including in-page
+navigation. Navigating to a new document ends the old document's protection.
 
-- attached (visible) or focused views;
-- views with an active download;
-- views that own an open popup.
+The same protections apply at critical pressure. Workbench may remain over its resident
+budget and reports which protections prevented eviction. The previous experimental
+AI-unloading preference no longer controls eviction.
 
-Protected below critical pressure, evicted only as a last resort under critical pressure:
-
-- generative AI providers (ChatGPT and Perplexity), whose drafts are not persisted;
-- views with recent typing input (non-modifier keys that may edit a draft);
-- views with open DevTools.
-
-Candidate selection is least recently used among eligible views, preferring views that have been resident for at least 15 seconds (anti-thrashing), and always considers unprotected views before protected ones.
+Eligible views are selected by least recent use, with preference for views that have
+been resident for at least 15 seconds.
 
 ## Benchmarks
 

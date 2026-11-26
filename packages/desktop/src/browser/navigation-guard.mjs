@@ -9,44 +9,10 @@ import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
  */
 
 import { DEFAULT_BROWSER_PROFILE_ID, otherUrl, externalUrl, targetWebProvider, isSameSite, authenticationUrl, decideWindowOpen, getBrowserZoomAction, isLocalOrPrivateHost, isWorkbenchBackendUrl } from '../../policy.mjs';
-import { isTypingInput } from '../performance/resource-budget.mjs';
 import { isOAuthLoopbackCallback, createOAuthLoopbackGate } from '../security/oauth-loopback.mjs';
 import { applyWebContentsZoom } from './zoom-controller.mjs';
 import { navigationAllowed, isProviderFileDeliveryUrl } from './provider-policy.mjs';
-import { markProtectionReason, clearProtectionReason } from './view-state.mjs';
-
-/**
- * A dedicated isolated world for Workbench lifecycle probes. Nothing is injected into
- * the page's own world, so page scripts can neither observe nor shadow the probe.
- */
-const INTERACTION_PROBE_WORLD_ID = 1017;
-
-/**
- * Boolean-only probe: is there a focused editable element that currently holds content?
- * It never returns, logs or transmits the content itself. Any failure answers "true"
- * (assume a draft exists) so protection is only ever dropped on a definitive answer.
- */
-const FOCUSED_EDITABLE_HAS_CONTENT_PROBE = `(() => {
-  try {
-    let node = document.activeElement;
-    for (let depth = 0; depth < 4 && node && node.tagName === 'IFRAME'; depth += 1) {
-      const inner = node.contentDocument;
-      if (!inner) return true;
-      node = inner.activeElement;
-    }
-    if (!node) return false;
-    const tag = node.tagName;
-    const nonTextInput = /^(button|submit|reset|checkbox|radio|file|image|range|color|hidden)$/i;
-    const editable = node.isContentEditable === true
-      || tag === 'TEXTAREA'
-      || (tag === 'INPUT' && !nonTextInput.test(node.type || 'text'));
-    if (!editable) return false;
-    const content = node.isContentEditable === true ? node.textContent : node.value;
-    return typeof content === 'string' ? content.trim().length > 0 : true;
-  } catch {
-    return true;
-  }
-})()`;
+import { markProtectionReason } from './view-state.mjs';
 
 export function createNavigationGuard({
   electron, win, send, backend, secure, isWebAuthnEnabled, webauthnPreload, state,
@@ -55,39 +21,6 @@ export function createNavigationGuard({
   const { shell, dialog } = electron;
   const { views, urls, profileIds, popups, popupOwners, authEntryUrls, interactionProtected, zoomLevels, linkOpenHistory, findRequests } = state;
   const { invalidate, hideAll } = layout;
-
-  /** One probe at a time per view, so in-page navigation bursts cannot queue work. */
-  const idleProbesInFlight = new Set();
-
-  /**
-   * Clears interaction protection after an in-page navigation, but only when the page
-   * reports that it holds no focused editable element with content. The probe runs in an
-   * isolated world, is provider agnostic and returns a boolean: it never reads, sends or
-   * stores page content. Protection is kept whenever the answer is not a definitive "no
-   * draft" (API missing, destroyed view, throw, or a non-boolean result).
-   */
-  async function clearInteractionProtectionIfIdle(id, contents) {
-    if (!id || !interactionProtected.has(id)) return false;
-    if (!contents || contents.isDestroyed?.()) return false;
-    if (typeof contents.executeJavaScriptInIsolatedWorld !== 'function') return false;
-    if (idleProbesInFlight.has(id)) return false;
-    idleProbesInFlight.add(id);
-    try {
-      const hasDraft = await contents.executeJavaScriptInIsolatedWorld(
-        INTERACTION_PROBE_WORLD_ID,
-        [{ code: FOCUSED_EDITABLE_HAS_CONTENT_PROBE }],
-      );
-      if (hasDraft !== false) return false;
-      if (views.get(id)?.webContents !== contents) return false;
-      interactionProtected.delete(id);
-      clearProtectionReason(state, id, 'interaction');
-      return true;
-    } catch {
-      return false;
-    } finally {
-      idleProbesInFlight.delete(id);
-    }
-  }
 
   function allowLinkOpen(tabId) {
     const now = Date.now();
@@ -360,6 +293,14 @@ export function createNavigationGuard({
         invalidate();
       });
     });
+    function protectInteraction(id) {
+      if (!id) return;
+      interactionProtected.add(id);
+      markProtectionReason(state, id, 'interaction');
+    }
+    contents.on('before-mouse-event', (_event, mouse) => {
+      if (mouse.type === 'mouseDown') protectInteraction(getTabId());
+    });
     contents.on('before-input-event', (event, input) => {
       const id = getTabId();
       if (input.type === 'keyDown' && (input.control || input.meta) && input.key.toLowerCase() === 'f') {
@@ -376,10 +317,7 @@ export function createNavigationGuard({
         applyBrowserZoom(id, contents, zoomAction);
         return;
       }
-      if (id && isTypingInput(input)) {
-        interactionProtected.add(id);
-        markProtectionReason(state, id, 'interaction');
-      }
+      if (input.type === 'keyDown') protectInteraction(id);
       desktopShortcut(event, input);
     });
     contents.on('found-in-page', (_event, result) => {
@@ -430,6 +368,5 @@ export function createNavigationGuard({
 
   return {
     guard, openExternal, tryOpenOAuthLoopback, isContentsInAuthFlow, applyBrowserZoom,
-    clearInteractionProtectionIfIdle,
   };
 }

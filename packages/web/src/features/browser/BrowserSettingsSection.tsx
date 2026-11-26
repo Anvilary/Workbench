@@ -1087,26 +1087,6 @@ export function BrowserSettingsSection({
         </div>
       </CollapsibleSubsection>
 
-      <CollapsibleSubsection
-        id="setting-card-tab-memory"
-        title={t('settings.browser.lifecycleTitle')}
-        highlighted={highlightedCardId === 'setting-card-tab-memory'}
-        expandSignal={(expandSignal ?? 0) + sectionExpandSignal}
-        headerActions={
-          <label className="wb-settings-toggle-label" onClick={(e) => e.stopPropagation()}>
-            <input
-              type="checkbox"
-              className="wb-settings-checkbox"
-              checked={browserSettings.unloadInactiveAiTabsUnderPressure}
-              onChange={(e) => browserSettings.setUnloadInactiveAiTabsUnderPressure(e.target.checked)}
-            />
-            <span className="wb-settings-toggle-text">{t('settings.browser.unloadInactiveAiTabs')}</span>
-          </label>
-        }
-      >
-        <p className="wb-settings-hint">{t('settings.browser.unloadInactiveAiTabsDescription')}</p>
-      </CollapsibleSubsection>
-
       <SpellCheckSettingsSection
         browserSettings={browserSettings}
         browserProfiles={effectiveProfiles}

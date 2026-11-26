@@ -17,18 +17,16 @@ function fakeView({ url = 'https://chatgpt.com/', loading = false, devTools = fa
   };
 }
 
-function setup({ maxResident, tier, aiUnload = false } = {}) {
+function setup({ maxResident, tier } = {}) {
   const state = createBrowserViewState();
   const evicted = [];
   const previousMax = process.env.WORKBENCH_MAX_RESIDENT_VIEWS;
   const previousTier = process.env.WORKBENCH_MEMORY_PRESSURE_TIER;
   if (maxResident !== undefined) process.env.WORKBENCH_MAX_RESIDENT_VIEWS = String(maxResident);
   if (tier !== undefined) process.env.WORKBENCH_MEMORY_PRESSURE_TIER = tier;
-  const aiUnloadRef = { enabled: aiUnload };
   const eviction = createViewEviction({
     app: { getAppMetrics: () => [] },
     state,
-    isAiUnloadUnderPressureEnabled: () => aiUnloadRef.enabled,
     evictTab: (id) => {
       evicted.push(id);
       state.views.delete(id);
@@ -42,7 +40,7 @@ function setup({ maxResident, tier, aiUnload = false } = {}) {
     if (previousTier === undefined) delete process.env.WORKBENCH_MEMORY_PRESSURE_TIER;
     else process.env.WORKBENCH_MEMORY_PRESSURE_TIER = previousTier;
   };
-  return { state, eviction, evicted, restoreEnv, aiUnloadRef };
+  return { state, eviction, evicted, restoreEnv };
 }
 
 test('telemetry reports residency, attachment and suspension counts', () => {
@@ -152,13 +150,12 @@ test('eviction blockers record why a trim pass stopped over budget', () => {
     const telemetry = eviction.collectTelemetry();
     assert.equal(telemetry.overBudget, true);
     assert.deepEqual(telemetry.evictionBlockers, { provider: 2 });
-    assert.equal(telemetry.aiUnloadUnderPressure, false);
   } finally {
     restoreEnv();
   }
 });
 
-test('a pool of only protected views still yields an emergency candidate under CRITICAL', () => {
+test('a protected pool stays resident and explains the over-budget state under critical pressure', () => {
   const { state, eviction, evicted, restoreEnv } = setup({ maxResident: 1, tier: 'critical' });
   try {
     state.views.set('ai-1', fakeView());
@@ -171,7 +168,9 @@ test('a pool of only protected views still yields an emergency candidate under C
     state.lastAccessedAt.set('ai-2', 2);
 
     eviction.trimCapacity();
-    assert.deepEqual(evicted, ['ai-1'], 'the least recently used protected view is the emergency candidate');
+    assert.deepEqual(evicted, []);
+    assert.equal(eviction.collectTelemetry().overBudget, true);
+    assert.deepEqual(eviction.collectTelemetry().evictionBlockers, { interaction: 2 });
   } finally {
     restoreEnv();
   }
@@ -194,27 +193,7 @@ test('the governor hysteresis state is never advanced by telemetry reads', () =>
   }
 });
 
-test('the opt-in policy makes provider tabs evictable at HIGH, and only then', () => {
-  for (const [tier, expected] of [['normal', []], ['moderate', []], ['high', ['ai-1']], ['critical', ['ai-1']]]) {
-    const { state, eviction, evicted, restoreEnv } = setup({ maxResident: 1, tier, aiUnload: true });
-    try {
-      state.views.set('ai-1', fakeView());
-      state.views.set('ai-2', fakeView());
-      state.providers.set('ai-1', 'chatgpt');
-      state.providers.set('ai-2', 'chatgpt');
-      state.lastAccessedAt.set('ai-1', 1);
-      state.lastAccessedAt.set('ai-2', 2);
-
-      eviction.trimCapacity();
-      assert.deepEqual(evicted, expected, `tier ${tier}`);
-      assert.equal(eviction.collectTelemetry().aiUnloadUnderPressure, true);
-    } finally {
-      restoreEnv();
-    }
-  }
-});
-
-test('the opt-in policy never overrides the other retention rules at HIGH', () => {
+test('critical pressure keeps ordinary pages protected while they have active work', () => {
   const cases = [
     ['attached', (state) => state.attachedViews.set('ai-1', state.views.get('ai-1'))],
     ['focused', (state) => { state.layoutFocusedId = 'ai-1'; }],
@@ -225,10 +204,10 @@ test('the opt-in policy never overrides the other retention rules at HIGH', () =
     ['interaction', (state) => state.interactionProtected.add('ai-1')],
   ];
   for (const [label, apply] of cases) {
-    const { state, eviction, evicted, restoreEnv } = setup({ maxResident: 1, tier: 'high', aiUnload: true });
+    const { state, eviction, evicted, restoreEnv } = setup({ maxResident: 1, tier: 'critical' });
     try {
-      state.views.set('ai-1', fakeView());
-      state.providers.set('ai-1', 'chatgpt');
+      state.views.set('ai-1', fakeView({ url: 'https://example.com/' }));
+      state.providers.set('ai-1', 'other');
       state.lastAccessedAt.set('ai-1', 1);
       apply(state);
 
@@ -237,24 +216,5 @@ test('the opt-in policy never overrides the other retention rules at HIGH', () =
     } finally {
       restoreEnv();
     }
-  }
-});
-
-test('turning the policy off restores provider protection at HIGH', () => {
-  const { state, eviction, evicted, restoreEnv, aiUnloadRef } = setup({ maxResident: 1, tier: 'high', aiUnload: true });
-  try {
-    state.views.set('ai-1', fakeView());
-    state.views.set('ai-2', fakeView());
-    state.providers.set('ai-1', 'chatgpt');
-    state.providers.set('ai-2', 'chatgpt');
-    state.lastAccessedAt.set('ai-1', 1);
-    state.lastAccessedAt.set('ai-2', 2);
-
-    aiUnloadRef.enabled = false;
-    eviction.trimCapacity();
-    assert.deepEqual(evicted, []);
-    assert.equal(eviction.collectTelemetry().aiUnloadUnderPressure, false);
-  } finally {
-    restoreEnv();
   }
 });

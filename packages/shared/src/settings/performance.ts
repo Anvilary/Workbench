@@ -112,7 +112,6 @@ export interface PerformanceBrowserLifecycle {
   /** Age of the governor's cached tier and budget; telemetry never reassesses pressure. */
   budgetSampleAgeMs: number | null;
   overBudget: boolean | null;
-  aiUnloadUnderPressure: boolean | null;
   /** Why the last trim pass stopped while still over budget. Null: no trim pass yet. */
   evictionBlockers: Partial<Record<BrowserProtectionReason | 'unknown', number>> | null;
   lastTrimAt: number | null;
