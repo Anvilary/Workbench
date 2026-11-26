@@ -435,5 +435,7 @@ export function createBrowserViewController({
     attachedViews: () => attachedViews,
     /** Read-only sources for the resource monitor. */
     collectorSources: () => ({ views, providers, urls, attachedViews, suspendedTabs }),
+    /** Browser lifecycle telemetry, owned by the eviction governor. */
+    browserLifecycleTelemetry: () => eviction.collectTelemetry(),
   };
 }

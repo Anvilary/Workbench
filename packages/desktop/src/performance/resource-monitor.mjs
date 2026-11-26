@@ -47,6 +47,28 @@ export const AGENT_PROVIDERS = [
   { id: 'pi', label: 'Pi' },
 ];
 
+/**
+ * Emitted when the browser view controller is not wired into the monitor: every
+ * governor-owned metric is explicitly unavailable rather than silently zero.
+ */
+const UNAVAILABLE_BROWSER_LIFECYCLE = Object.freeze({
+  residentViews: 0,
+  attachedViews: 0,
+  detachedViews: 0,
+  suspendedViews: 0,
+  protectedCounts: {},
+  protectionAgeMs: {},
+  tier: null,
+  memoryTier: null,
+  budget: null,
+  budgetSampleAgeMs: null,
+  overBudget: null,
+  aiUnloadUnderPressure: null,
+  evictionBlockers: null,
+  lastTrimAt: null,
+  lastEviction: null,
+});
+
 const UNAVAILABLE_SMAPS = Object.freeze({
   isAvailable: false, pssBytes: 0, rssBytes: 0, privateBytes: 0, sharedBytes: 0, swapPssBytes: 0,
 });
@@ -440,6 +462,7 @@ export class ResourceCollector {
     attachedViews = new Map(),
     suspendedTabs = new Map(),
     getBackendReadiness,
+    getBrowserLifecycle = null,
     onState,
     intervalMs = DEFAULT_INTERVAL_MS,
     procRoot = '/proc',
@@ -452,6 +475,8 @@ export class ResourceCollector {
     this.attachedViews = attachedViews;
     this.suspendedTabs = suspendedTabs;
     this.getBackendReadiness = getBackendReadiness;
+    /** Optional: the eviction governor's lifecycle telemetry (null when unwired, e.g. in tests). */
+    this.getBrowserLifecycle = getBrowserLifecycle;
     this.onState = onState;
     this.intervalMs = intervalMs;
     this.procRoot = procRoot;
@@ -1009,15 +1034,37 @@ export class ResourceCollector {
       // Calculate Tab working set for memory tier calculation
       const tabWorkingSetBytes = browserViewMetrics.reduce((acc, v) => acc + v.pssBytes, 0);
 
-      const budgetInfo = calculateResourceBudget({
-        freeBytes,
-        availableBytes,
-        totalBytes,
-        tabWorkingSetBytes,
-        attachedCount: this.attachedViews.size,
-        envOverride: process.env.MAW_MAX_RESIDENT_VIEWS,
-        tierOverride: process.env.MAW_MEMORY_PRESSURE_TIER,
-      });
+      // The eviction governor owns the tier and the budget (it holds the pressure
+      // hysteresis state). The monitor only computes them itself when the governor has
+      // not run yet, and reports which source produced the tier, so the panel can never
+      // show a tier that policy does not actually use.
+      const lifecycle = (() => {
+        try {
+          return typeof this.getBrowserLifecycle === 'function' ? this.getBrowserLifecycle() : null;
+        } catch {
+          return null;
+        }
+      })();
+
+      const governorTier = lifecycle?.tier ?? null;
+      const budgetInfo = governorTier
+        ? { tier: governorTier, memoryTier: lifecycle.memoryTier ?? governorTier, budget: lifecycle.budget }
+        : calculateResourceBudget({
+          freeBytes,
+          availableBytes,
+          totalBytes,
+          tabWorkingSetBytes,
+          attachedCount: this.attachedViews.size,
+          envOverride: process.env.MAW_MAX_RESIDENT_VIEWS,
+          tierOverride: process.env.MAW_MEMORY_PRESSURE_TIER,
+        });
+
+      const browserLifecycle = {
+        ...(lifecycle ?? UNAVAILABLE_BROWSER_LIFECYCLE),
+        rendererProcessCount: measuredRenderers.size,
+        tierSource: governorTier ? 'governor' : 'monitor-fallback',
+        isAvailable: Boolean(lifecycle),
+      };
 
       // -------------------------------------------------------------
       // Resource Separation: MaW Application vs Managed Workloads
@@ -1135,6 +1182,7 @@ export class ResourceCollector {
           suspendedCount: browserViewMetrics.filter((v) => v.lifecycle === 'suspended').length,
           views: browserViewMetrics,
         },
+        browser: browserLifecycle,
         otherTerminals: {
           totalCpuPercent: Number(otherTerminalMetrics.reduce((acc, t) => acc + t.cpuPercent, 0).toFixed(1)),
           totalPssBytes: otherTerminalMetrics.reduce((acc, t) => acc + t.pssBytes, 0),

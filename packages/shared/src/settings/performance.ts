@@ -73,6 +73,56 @@ export interface PerformanceBrowserViewMetric {
   sharedBytes: number;
 }
 
+/** Why a resident browser view is currently held in memory by the eviction governor. */
+export type BrowserProtectionReason =
+  | 'focused'
+  | 'download'
+  | 'popup'
+  | 'loading'
+  | 'nondurable'
+  | 'devtools'
+  | 'interaction'
+  | 'provider';
+
+export interface PerformanceBrowserEviction {
+  at: number;
+  id?: string;
+  tier?: MemoryPressureTierName;
+  /** Null: renderer processes are shared between views, so no per-view reclaim is measurable. */
+  reclaimedPssBytes: number | null;
+  reclaimedPssUnavailableReason: string | null;
+}
+
+/**
+ * Browser lifecycle telemetry, computed by the eviction governor itself.
+ * Null fields are explicitly unavailable, never a measured zero.
+ */
+export interface PerformanceBrowserLifecycle {
+  residentViews: number;
+  attachedViews: number;
+  /** Resident but not attached to the layout. */
+  detachedViews: number;
+  suspendedViews: number;
+  protectedCounts: Partial<Record<BrowserProtectionReason, number>>;
+  /** Oldest age in ms of each currently applying protection reason. */
+  protectionAgeMs: Partial<Record<BrowserProtectionReason, number | null>>;
+  tier: MemoryPressureTierName | null;
+  memoryTier: MemoryPressureTierName | null;
+  budget: number | null;
+  /** Age of the governor's cached tier and budget; telemetry never reassesses pressure. */
+  budgetSampleAgeMs: number | null;
+  overBudget: boolean | null;
+  aiUnloadUnderPressure: boolean | null;
+  /** Why the last trim pass stopped while still over budget. Null: no trim pass yet. */
+  evictionBlockers: Partial<Record<BrowserProtectionReason | 'unknown', number>> | null;
+  lastTrimAt: number | null;
+  /** Renderer processes serving resident views (shared renderers counted once). */
+  rendererProcessCount: number | null;
+  lastEviction: PerformanceBrowserEviction | null;
+  tierSource: 'governor' | 'monitor-fallback';
+  isAvailable: boolean;
+}
+
 export interface PerformanceTerminalMetric {
   terminalId: string;
   sessionId?: string;
@@ -158,6 +208,7 @@ export interface PerformanceSnapshot {
     suspendedCount: number;
     views: PerformanceBrowserViewMetric[];
   };
+  browser: PerformanceBrowserLifecycle;
   otherTerminals: {
     totalCpuPercent: number;
     totalPssBytes: number;

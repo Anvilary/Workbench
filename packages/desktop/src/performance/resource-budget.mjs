@@ -139,6 +139,11 @@ export function isTypingInput(input) {
  * Protected AI providers, views with unsaved typing input, and views with open DevTools
  * are preserved under NORMAL/MODERATE/HIGH memory pressure and only become emergency
  * eviction candidates under CRITICAL pressure (after unprotected tabs via selectEvictionCandidate).
+ *
+ * With the opt-in `evictProviderUnderPressure` policy, provider protection alone stops
+ * holding a view resident from HIGH pressure upwards. Every other retention rule
+ * (attached, focused, loading, downloading, popup owner, non-durable, DevTools,
+ * interaction) still applies unchanged.
  */
 export function canEvictView({
   id,
@@ -151,6 +156,7 @@ export function canEvictView({
   interactionProtected,
   durablePage,
   memoryTier = MemoryPressureTier.NORMAL,
+  evictProviderUnderPressure = false,
 }) {
   if (attachedViews.has(id)) return false;
   if (layoutFocusedId === id) return false;
@@ -167,7 +173,10 @@ export function canEvictView({
 
   if (memoryTier !== MemoryPressureTier.CRITICAL) {
     if (typeof view.webContents.isDevToolsOpened === 'function' && view.webContents.isDevToolsOpened()) return false;
-    if (interactionProtected.has(id) || isProtectedProvider(provider)) return false;
+    if (interactionProtected.has(id)) return false;
+    const providerEligible = evictProviderUnderPressure
+      && (memoryTier === MemoryPressureTier.HIGH || memoryTier === MemoryPressureTier.CRITICAL);
+    if (isProtectedProvider(provider) && !providerEligible) return false;
   }
 
   return true;

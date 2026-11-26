@@ -26,6 +26,9 @@ export function createBrowserViewState() {
     activeDownloads: new Map(), // id -> number (count)
     reservedDownloadPaths: new Set(), // full file paths reserved for in-flight downloads
     interactionProtected: new Set(),
+    // id -> { [reason]: timestamp }. When a protection reason was first observed, for
+    // protection-age telemetry only. It never influences eviction decisions.
+    protectionSince: new Map(),
     zoomLevels: new Map(), // id -> number
     tabFavicons: new Map(), // id -> string (best validated favicon URL)
     linkOpenHistory: new Map(),
@@ -34,4 +37,28 @@ export function createBrowserViewState() {
     layoutFocusedId: null,
     reportedFocusedId: null,
   };
+}
+
+/** Stamps the first moment a protection reason was observed for a view. Idempotent. */
+export function markProtectionReason(state, id, reason, now = Date.now()) {
+  if (!id || !reason) return;
+  const entry = state.protectionSince.get(id);
+  if (!entry) {
+    state.protectionSince.set(id, { [reason]: now });
+    return;
+  }
+  if (entry[reason] === undefined) entry[reason] = now;
+}
+
+/** Drops one protection reason stamp (the reason no longer applies). */
+export function clearProtectionReason(state, id, reason) {
+  const entry = state.protectionSince.get(id);
+  if (!entry) return;
+  delete entry[reason];
+  if (Object.keys(entry).length === 0) state.protectionSince.delete(id);
+}
+
+/** Drops every protection stamp of a view (closed, evicted or shut down). */
+export function clearProtectionReasons(state, id) {
+  state.protectionSince.delete(id);
 }

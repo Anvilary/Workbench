@@ -12,6 +12,7 @@ export function createPerformanceChannel({ app, win, send, backend, controller }
     win,
     ...controller.collectorSources(),
     getBackendReadiness: () => backend.readiness(),
+    getBrowserLifecycle: () => controller.browserLifecycleTelemetry(),
     onState: (snapshot) => {
       send({ type: 'performance-update', snapshot });
     },
