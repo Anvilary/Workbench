@@ -146,7 +146,12 @@ test('recoverable close lifecycle: immediate visual dismissal, background confir
   await page.goto('http://127.0.0.1:' + server.address().port);
 
   // Initial state: two tabs present
+  // Warm set (WB-05): only the selected tab mounts an xterm on load. Visit the other
+  // tab so both terminals exist, then come back, which is the state this test exercises.
+  await page.waitForFunction(() => window.terminals?.length === 1);
+  await page.locator('[role="tab"]').nth(1).click();
   await page.waitForFunction(() => window.terminals?.length === 2);
+  await page.locator('[role="tab"]').nth(0).click();
   const tabsInitial = await page.$$eval('.wb-session-tab', (els) => els.map((el) => el.textContent?.trim()));
   assert.ok(tabsInitial.some((t) => t?.includes('Shell A')));
   assert.ok(tabsInitial.some((t) => t?.includes('Shell B')));

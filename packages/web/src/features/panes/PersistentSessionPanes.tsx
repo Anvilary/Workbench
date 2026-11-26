@@ -6,6 +6,7 @@ import type { AgentConnection } from '../../connection/connection.js';
 import type { AgencyTransport, WorkspaceTab } from '../workspaces/workspace-model.js';
 import type { useWorkbenchStore } from '../workspaces/useWorkbenchStore.js';
 import { SessionPane } from './SessionPane.js';
+import { forgetTerminal } from '../terminals/terminal-warm-set.js';
 
 interface Props {
   tabs: readonly WorkspaceTab[];
@@ -51,6 +52,8 @@ export function PersistentSessionPanes({
   workspaceCwd,
 }: Props): JSX.Element {
   const holders = useRef(new Map<string, HTMLDivElement>());
+  /** terminalId por pestana, para limpiar el conjunto caliente cuando la pestana se va. */
+  const terminalIds = useRef(new Map<string, string>());
   const park = useRef<HTMLDivElement>(null);
   const nativeTabs = tabs.filter((tab): tab is Extract<WorkspaceTab, { kind: 'native' }> => tab.kind === 'native');
 
@@ -71,6 +74,7 @@ export function PersistentSessionPanes({
         holder.dataset.tabId = tab.id;
         holders.current.set(tab.id, holder);
       }
+      if (tab.session.terminalId) terminalIds.current.set(tab.id, tab.session.terminalId);
       const pane = getPaneNodes(layout.tree).find((item) => item.tabIds.includes(tab.id));
       const paneVisible = !!pane && (!layout.maximizedPaneId || layout.maximizedPaneId === pane.id);
       const host = pane && paneVisible ? paneHosts.current.get(pane.id) : undefined;
@@ -83,6 +87,14 @@ export function PersistentSessionPanes({
       if (!live.has(id)) {
         holder.remove();
         holders.current.delete(id);
+        // La pestana se fue de esta vista: su terminal ya no vuelve, y el conjunto
+        // caliente no tiene que guardarle nada (WB-05). Ojo: solo aca, no en el
+        // desmontaje de la vista, donde las mismas terminales vuelven enseguida.
+        const terminalId = terminalIds.current.get(id);
+        if (terminalId !== undefined) {
+          forgetTerminal(terminalId);
+          terminalIds.current.delete(id);
+        }
       }
     }
   }, [placementKey, layout, nativeTabs, paneHosts]);

@@ -140,7 +140,14 @@ test('TASK B: 42,000-line scrollback, search, Ctrl+Shift+A, Ctrl+A/C semantics, 
 
   const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
   await page.goto('http://127.0.0.1:' + server.address().port);
+  // Warm set (WB-05): only the selected tab mounts on load. Visit the other two so all
+  // three terminals exist, then come back to the first one.
+  await page.waitForFunction(() => window.terminals?.length === 1);
+  await page.locator('[role="tab"]').nth(1).click();
+  await page.waitForFunction(() => window.terminals?.length === 2);
+  await page.locator('[role="tab"]').nth(2).click();
   await page.waitForFunction(() => window.terminals?.length === 3);
+  await page.locator('[role="tab"]').nth(0).click();
 
   // 1. Verify all 3 terminals have scrollback configured to 42,000
   const scrollbacks = await page.evaluate(() => window.terminals.map((t) => t.options.scrollback));

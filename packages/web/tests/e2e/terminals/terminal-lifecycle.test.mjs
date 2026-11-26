@@ -154,7 +154,13 @@ test('live terminals keep scrollback, selection and the PTY attachment across sw
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('http://127.0.0.1:' + server.address().port);
+  // Warm set (WB-05): a tab that was never shown has no xterm yet. Visiting both tabs
+  // brings them into the warm set, which is where this test's invariants live: once
+  // mounted, a terminal survives switches and pane moves.
+  await page.waitForFunction(() => window.terminals?.length === 1);
+  await page.getByRole('tab', { name: /CLI B/ }).click();
   await page.waitForFunction(() => window.terminals?.length === 2);
+  await page.getByRole('tab', { name: /Shell A/ }).click();
 
   const snapshot = () => page.evaluate(() => ({
     attaches: window.sent.filter((message) => message.type === 'terminal.attach').map((message) => message.terminalId),

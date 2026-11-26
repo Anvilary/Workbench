@@ -196,3 +196,37 @@ test('concurrent terminals handle interleaved split-boundary frames independentl
     laneB.dispose(); termB.dispose();
   }
 });
+
+/*
+  Remount out of the warm set (WB-05): the lane starts with no offset, so the attach
+  asks for a full checkpoint, and output already in flight for the old attachment can
+  arrive while the checkpoint is being parsed. Every byte must land exactly once and in
+  offset order, including a frame that straddles the checkpoint watermark.
+*/
+test('remount applies the checkpoint and in-flight frames exactly once in offset order', async () => {
+  const term = new Terminal({ cols: 90, rows: 26, allowProposedApi: true });
+  const lane = new TerminalOutput(term);
+  try {
+    assert.equal(lane.offset, undefined, 'a remounted lane has no watermark, so attach omits sinceOffset');
+    // Frames queued for the previous attachment, below the checkpoint watermark.
+    lane.output('STALE-A', 40);
+    lane.output('STALE-B', 60);
+    lane.replay({ type: 'terminal.replay', terminalId: 'a', reset: true, truncated: false,
+      data: '\x1b[?1049h\x1b[HSCREEN-café-漢', endOffset: 100, cols: 90, rows: 26 });
+    assert.equal(lane.offset, 100);
+    lane.output('DROPPED', 90); // below the watermark: already inside the checkpoint
+    lane.output('DROPPED', 100); // exactly at the watermark
+    const straddle = Buffer.from('-xyzLIVE', 'utf8'); // bytes 97..104, four of them already applied
+    lane.output(straddle.toString('utf8'), 104);
+    lane.output('-TAIL', 109);
+    await until(() => text(term).includes('LIVE-TAIL'));
+    const rendered = text(term);
+    assert.equal(rendered.includes('STALE'), false, 'pre-checkpoint frames never reach the screen');
+    assert.equal(rendered.includes('DROPPED'), false, 'frames at or below the watermark are dropped');
+    assert.equal((rendered.match(/LIVE/g) || []).length, 1, 'the straddling frame is applied once');
+    assert.equal(rendered.includes('SCREEN-café-漢LIVE-TAIL'), true, 'the checkpoint and the delta join seamlessly');
+    assert.equal(rendered.includes('�'), false);
+    assert.equal(lane.offset, 109);
+    assert.equal(term.buffer.active.type, 'alternate', 'the checkpoint restored the alternate screen');
+  } finally { lane.dispose(); term.dispose(); }
+});
