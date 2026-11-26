@@ -10,7 +10,7 @@
 
 import { CHANNEL, trustedSender, validCommand } from '../../policy.mjs';
 
-export function registerCommandRouter({ ipcMain, win, dialog, backend, controller, performance, clipboardCommands }) {
+export function registerCommandRouter({ ipcMain, win, dialog, backend, controller, performance, hardwareAcceleration, clipboardCommands }) {
   const handlers = {
     'restore-shell-storage': async () => {
       const storage = backend.takePendingShellStorage();
@@ -49,6 +49,8 @@ export function registerCommandRouter({ ipcMain, win, dialog, backend, controlle
     'performance-pause': () => performance.pause(),
     'performance-resume': () => performance.resume(),
     'performance-refresh': () => performance.refresh(),
+    'get-hardware-acceleration': async () => hardwareAcceleration.status(),
+    'set-hardware-acceleration': async (command) => hardwareAcceleration.set(command.enabled),
     'open': async (command) => { controller.open(command); },
     'update': async (command) => { controller.update(command); },
     'clone-profile': (command) => controller.cloneProfile(command),

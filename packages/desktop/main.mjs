@@ -29,7 +29,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const electron = { app, BrowserWindow, WebContentsView, ipcMain, session, shell, dialog, clipboard };
 // First: from here on, main-process errors leave a trace on disk.
 const logger = installDesktopDiagnostics({ app, dialog });
-const initialBackendUrl = configureProcess({ app, logger });
+const { backendUrl: initialBackendUrl, hardwareAcceleration } = configureProcess({ app, logger });
 
 // Do not await app.whenReady() at module scope: Electron waits for ESM
 // evaluation before emitting ready, which would deadlock initialization.
@@ -50,7 +50,7 @@ async function start() {
   });
   const performance = createPerformanceChannel({ app, win, send, backend, controller });
   registerCommandRouter({
-    ipcMain, win, dialog, backend, controller, performance,
+    ipcMain, win, dialog, backend, controller, performance, hardwareAcceleration,
     clipboardCommands: createClipboardCommands({ clipboard, ClipboardItem }),
   });
   const webauthn = isWebAuthnEnabled

@@ -1,14 +1,24 @@
 /**
  * Process level setup that must run before the app is ready: data directory,
  * application name, sandboxing, GPU switches, graphics policy and the single
- * instance lock. Returns the backend URL this instance was started for.
+ * instance lock. Returns the backend URL this instance was started for and the
+ * hardware acceleration setting decided for it.
  */
 
 import path from 'node:path';
 import { serviceUrl } from '../../policy.mjs';
 import { applyGraphicsPolicy, resolveGraphicsPolicy, shouldDisableHardwareVideoDecode } from '../gpu/graphics-policy.mjs';
+import { readDesktopPreferences } from './desktop-preferences.mjs';
+import { createHardwareAccelerationSettings } from './hardware-acceleration.mjs';
 
-export function configureProcess({ app }) {
+/** The saved hardware acceleration preference; anything unusable means "use the default" and is logged. */
+function readAccelerationPreference(userDataDir, logger) {
+  const { prefs, state, error } = readDesktopPreferences(userDataDir);
+  if (state !== 'ok') logger?.warn(`desktop preferences ${state}${error ? ` (${error})` : ''}; hardware acceleration uses its default`);
+  return prefs.hardwareAcceleration;
+}
+
+export function configureProcess({ app, logger }) {
 // Deliberately distinct from both production MAW and any Brave/Neko profile.
 app.setPath('userData', path.resolve(process.env.MAW_DESKTOP_DATA_DIR || path.join(app.getPath('appData'), 'maw-desktop-prototype')));
 app.setName(process.env.MAW_DESKTOP_PRODUCTION === '1' ? 'Anvilary Workbench' : 'Anvilary Workbench Prototype');
@@ -21,14 +31,16 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 if (!process.env.DRI_PRIME) process.env.DRI_PRIME = '0';
 // Must run before app.whenReady(): disableHardwareAcceleration() is only valid before ready.
 // Vendor isolation is applied by the launcher; see src/gpu/graphics-policy.mjs.
-const graphicsPolicy = applyGraphicsPolicy(resolveGraphicsPolicy(), { app });
+const userDataDir = app.getPath('userData');
+const graphicsPolicy = applyGraphicsPolicy(resolveGraphicsPolicy({ hardwareAccelerationPreference: readAccelerationPreference(userDataDir, logger) }), { app });
 const softwareVideoDecode = shouldDisableHardwareVideoDecode({ policy: graphicsPolicy, env: process.env });
 if (softwareVideoDecode) app.commandLine.appendSwitch('disable-accelerated-video-decode');
-console.error(`[maw-desktop] graphics mode=${graphicsPolicy.mode} (${graphicsPolicy.reason}); video decode=${softwareVideoDecode ? 'software' : 'hardware'}`);
+console.error(`[maw-desktop] graphics mode=${graphicsPolicy.mode} (${graphicsPolicy.reason}); hardware acceleration=${graphicsPolicy.hardwareAcceleration.effective ? 'on' : 'off'} (source ${graphicsPolicy.hardwareAcceleration.source}); video decode=${softwareVideoDecode ? 'software' : 'hardware'}`);
+const hardwareAcceleration = createHardwareAccelerationSettings({ app, userDataDir, startup: graphicsPolicy.hardwareAcceleration, logger });
 let local = serviceUrl(process.env.MAW_DESKTOP_URL || '');
 delete process.env.MAW_DESKTOP_URL;
 if (!app.requestSingleInstanceLock({ serviceUrl: local.href })) app.exit(0);
 
 // Do not await app.whenReady() at module scope: Electron waits for ESM
-  return local;
+  return { backendUrl: local, hardwareAcceleration };
 }

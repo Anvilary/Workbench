@@ -694,6 +694,8 @@ export function validCommand(value, options = {}) {
       (exact(value, ['type', 'word', 'profileId']) && isValidBrowserProfileId(value.profileId));
     return validShape && typeof value.word === 'string' && value.word.trim().length > 0 && value.word.length <= 128 && !/[\r\n\0]/.test(value.word);
   }
+  if (value.type === 'get-hardware-acceleration') return exact(value, ['type']);
+  if (value.type === 'set-hardware-acceleration') return exact(value, ['type', 'enabled']) && typeof value.enabled === 'boolean';
   if (value.type === 'get-backend-endpoint') return exact(value, ['type']);
   if (value.type === 'get-favicons') return exact(value, ['type']);
   if (value.type === 'restore-shell-storage') return exact(value, ['type']);

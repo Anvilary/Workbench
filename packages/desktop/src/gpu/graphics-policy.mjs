@@ -59,21 +59,38 @@ export function detectRenderNodes({
 /**
  * Decides the graphics configuration before Electron is ready.
  *
- * Operator controls (environment):
- *   MAW_SAFE_GRAPHICS=1   disable hardware acceleration entirely (software compositing, no WebGL).
+ * Hardware acceleration precedence:
+ *   1. MAW_SAFE_GRAPHICS=1   forces it off (software compositing, no WebGL). Diagnostic override.
+ *   2. MAW_SAFE_GRAPHICS=0   forces it on, whatever the saved preference says.
+ *   3. the saved desktop preference (`hardwareAccelerationPreference`, boolean).
+ *   4. otherwise on (missing, invalid or unreadable preference).
+ * Other operator controls (environment):
  *   MAW_GPU_ISOLATION=0   keep the historical behaviour even on an AMD+NVIDIA hybrid.
  *
- * @returns {{ mode: string, disableHardwareAcceleration: boolean, env: Record<string,string>, reason: string }}
+ * `hardwareAcceleration.source` says which rule decided: 'env', 'preference' or 'default'.
+ *
+ * @returns {{ mode: string, disableHardwareAcceleration: boolean, env: Record<string,string>, reason: string,
+ *   hardwareAcceleration: { effective: boolean, source: 'env'|'preference'|'default' } }}
  */
 export function resolveGraphicsPolicy({
   platform = process.platform,
   env = process.env,
   renderNodes = detectRenderNodes(),
   exists = fs.existsSync,
+  hardwareAccelerationPreference,
 } = {}) {
+  const forced = env.MAW_SAFE_GRAPHICS === '1' || env.MAW_SAFE_GRAPHICS === '0';
+  const source = forced ? 'env' : typeof hardwareAccelerationPreference === 'boolean' ? 'preference' : 'default';
   if (env.MAW_SAFE_GRAPHICS === '1') {
-    return { mode: GraphicsMode.SAFE, disableHardwareAcceleration: true, env: {}, reason: 'MAW_SAFE_GRAPHICS=1' };
+    return { mode: GraphicsMode.SAFE, disableHardwareAcceleration: true, env: {}, reason: 'MAW_SAFE_GRAPHICS=1', hardwareAcceleration: { effective: false, source } };
   }
+  if (source === 'preference' && hardwareAccelerationPreference === false) {
+    return { mode: GraphicsMode.SAFE, disableHardwareAcceleration: true, env: {}, reason: 'hardware acceleration disabled in desktop preferences', hardwareAcceleration: { effective: false, source } };
+  }
+  return { ...resolveAcceleratedPolicy({ platform, env, renderNodes, exists }), hardwareAcceleration: { effective: true, source } };
+}
+
+function resolveAcceleratedPolicy({ platform, env, renderNodes, exists }) {
   const base = { mode: GraphicsMode.DEFAULT, disableHardwareAcceleration: false, env: {} };
   if (platform !== 'linux') return { ...base, reason: 'not linux' };
   if (env.MAW_GPU_ISOLATION === '0') return { ...base, reason: 'MAW_GPU_ISOLATION=0' };
