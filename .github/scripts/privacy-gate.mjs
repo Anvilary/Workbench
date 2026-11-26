@@ -11,7 +11,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -108,11 +108,17 @@ async function checkGitleaks(root) {
     const archivePath = path.join(work, name);
     writeFileSync(archivePath, archive);
     execFileSync('tar', ['-xzf', archivePath, '-C', work, 'gitleaks'], { stdio: 'inherit' });
-    const config = path.join(root, '.gitleaks.toml');
+    // Scan a committed source tree. A developer's ignored profiles, caches and build
+    // output are outside the repository and may contain unrelated private material.
+    const source = path.join(work, 'source');
+    mkdirSync(source);
+    const tree = execFileSync('git', ['archive', 'HEAD'], { cwd: root, maxBuffer: 128 * 1024 * 1024 });
+    execFileSync('tar', ['-xf', '-', '-C', source], { input: tree });
+    const config = path.join(source, '.gitleaks.toml');
     const args = ['dir', '.', '--redact', '--no-banner', '--exit-code', '1'];
     if (existsSync(config)) args.push('--config', config);
     try {
-      execFileSync(path.join(work, 'gitleaks'), args, { cwd: root, stdio: 'inherit' });
+      execFileSync(path.join(work, 'gitleaks'), args, { cwd: source, stdio: 'inherit' });
     } catch {
       console.error('privacy-gate: gitleaks reported findings (values redacted above).');
       return false;

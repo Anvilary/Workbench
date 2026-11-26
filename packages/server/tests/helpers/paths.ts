@@ -18,5 +18,5 @@ export const WEB_ROOT = path.join(REPO_ROOT, 'packages', 'web');
 /** Root directory of `@anvilary/workbench-desktop`. */
 export const DESKTOP_ROOT = path.join(REPO_ROOT, 'packages', 'desktop');
 
-/** Directory containing MAW lifecycle and launch scripts. */
-export const SCRIPTS_WORKBENCH_DIR = path.join(REPO_ROOT, 'scripts', 'maw');
+/** Directory containing Workbench lifecycle and launch scripts. */
+export const SCRIPTS_WORKBENCH_DIR = path.join(REPO_ROOT, 'scripts', 'workbench');

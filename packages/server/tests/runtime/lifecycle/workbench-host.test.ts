@@ -65,7 +65,7 @@ test('control uses current private readiness, refuses stale PIDs and never print
   await new Promise<void>(resolve => server.listen(0,'127.0.0.1',resolve));
   const address=server.address(); assert.ok(address && typeof address !== 'string');
   const control=fileURLToPath(new URL('../../../../../scripts/workbench/control.mjs',import.meta.url));
-  const runtime=path.join(temp,'maw');
+  const runtime=path.join(temp,'workbench');
   const clear=await publishReadiness(runtime,`http://127.0.0.1:${address.port}/?token=disposable-secret`);
   const environment: NodeJS.ProcessEnv = { ...process.env, XDG_RUNTIME_DIR: temp, PATH: bin + ':' + process.env.PATH, WORKBENCH_TEST_PID: String(process.pid) };
   delete environment.WORKBENCH_RUNTIME_DIR;
@@ -101,7 +101,7 @@ test('control url omits credentials and open authenticates the specified browser
   const control = fileURLToPath(new URL('../../../../../scripts/workbench/control.mjs', import.meta.url));
   const maw = fileURLToPath(new URL('../../../../../scripts/workbench/maw', import.meta.url));
   const anvilBench = fileURLToPath(new URL('../../../../../scripts/workbench/anvil-bench', import.meta.url));
-  const runtime = path.join(temp, 'maw');
+  const runtime = path.join(temp, 'workbench');
   const expectedUrl = `http://127.0.0.1:${address.port}/?token=disposable-secret`;
   const clear = await publishReadiness(runtime, expectedUrl);
   const environment: NodeJS.ProcessEnv = { ...process.env, XDG_RUNTIME_DIR: temp, PATH: bin + ':' + process.env.PATH, WORKBENCH_TEST_PID: String(process.pid) };
@@ -177,7 +177,7 @@ test('U-10: readiness carries the release identity and control refuses a differe
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
     const address = server.address(); assert.ok(address && typeof address !== 'string');
     const control = fileURLToPath(new URL('../../../../../scripts/workbench/control.mjs', import.meta.url));
-    const runtime = path.join(temp, 'maw');
+    const runtime = path.join(temp, 'workbench');
     const url = `http://127.0.0.1:${address.port}/?token=t0k`;
     const env = { ...process.env, WORKBENCH_RUNTIME_DIR: runtime, PATH: bin + ':' + process.env.PATH, WORKBENCH_TEST_PID: String(process.pid) };
     const clear = await publishReadiness(runtime, url, id);
