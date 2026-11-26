@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
+import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -168,6 +169,20 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
     await rm(tempRoot, { recursive: true, force: true });
   });
 
+  // Seed the versioned Chromium dictionary used by Electron 45.2.0. All
+  // disposable partitions share this file and can load it without a CDN race.
+  const dictionaryResponse = await fetch(
+    'https://chromium.googlesource.com/chromium/deps/hunspell_dictionaries.git/+/cee14e319bb7603a1157bb4d1e216be64ee82b77/en-US-10-2.bdic?format=TEXT',
+    { signal: AbortSignal.timeout(20000) },
+  );
+  assert.ok(dictionaryResponse.ok, `en-US dictionary fixture download returned ${dictionaryResponse.status}`);
+  const dictionary = Buffer.from(await dictionaryResponse.text(), 'base64');
+  assert.equal(createHash('sha256').update(dictionary).digest('hex'),
+    'b0d80e6b6c5491879365e176ecbd98074602a663429bcfcfb0a5a8375c051f13');
+  const dictionaryDir = path.join(desktopDataDir, 'Dictionaries');
+  fs.mkdirSync(dictionaryDir);
+  await writeFile(path.join(dictionaryDir, 'en-US-10-2.bdic'), dictionary);
+
   const { SettingsStore, AppSettingsService } = await buildHostSettingsModule(tempRoot);
 
   const bundle = await build({
@@ -239,10 +254,6 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
       </style>
       <div id="ed" contenteditable spellcheck="true"></div>
       <div id="custom" contenteditable spellcheck="true"></div></html>`;
-      globalThis.r6DictionaryInitialized = false;
-      session.fromPartition('persist:workbench-browser').on('spellcheck-dictionary-initialized', (_event, language) => {
-        if (language === 'en-US') globalThis.r6DictionaryInitialized = true;
-      });
       for (const partition of [
         'persist:workbench-browser',
         'persist:workbench-profile-work-profile-browser',
@@ -292,46 +303,67 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
     await command({ type: 'open', id: mainTabId, provider: 'other', url: 'https://main.maw-test.org/page', profileId: 'main' });
     await command({ type: 'open', id: workTabId, provider: 'other', url: 'https://work.maw-test.org/page', profileId: 'work-profile' });
     const vp1 = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
-    await command({
+    const layout = {
       type: 'layout',
       views: [{ id: mainTabId, bounds: { x: 0, y: 40, width: Math.min(700, vp1.width), height: Math.min(420, Math.max(200, vp1.height - 40)) } }],
       viewport: vp1,
-    });
-
+    };
+    let viewId;
     await eventually(async () => {
-      return await desktop.evaluate(({ session, webContents }) => {
-        const s = session.fromPartition('persist:workbench-browser');
-        const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
-        return Boolean(v && !v.isLoading());
+      await command(layout);
+      viewId = await desktop.evaluate(({ BrowserWindow, session }) => {
+        const partition = session.fromPartition('persist:workbench-browser');
+        const win = BrowserWindow.getAllWindows()[0];
+        const nativeView = win.contentView.children.find(child => child.webContents?.session === partition);
+        const view = nativeView?.webContents;
+        return nativeView?.getVisible() && view.getURL().endsWith('/page') && !view.isLoading() ? view.id : null;
       });
-    }, 'main WebContentsView loaded');
+      return viewId !== null;
+    }, 'main browser view attached, visible and loaded');
 
-    const viewId = await desktop.evaluate(({ session, webContents }) => {
-      const partition = session.fromPartition('persist:workbench-browser');
-      return webContents.getAllWebContents().find(c => c.session === partition && c.getURL().endsWith('/page')).id;
-    });
     const readEditor = (editorId) => desktop.evaluate(({ webContents }, { viewId, editorId }) => {
       return webContents.fromId(viewId).executeJavaScript(`document.getElementById(${JSON.stringify(editorId)}).textContent`);
     }, { viewId, editorId });
 
     const openSpellingMenu = async (editorId, word) => {
-      await desktop.evaluate(async ({ BrowserWindow, webContents }, { viewId, editorId }) => {
-        const view = webContents.fromId(viewId);
-        const { x, y } = await view.executeJavaScript(`(() => {
-          const bounds = document.getElementById(${JSON.stringify(editorId)}).getBoundingClientRect();
-          return { x: bounds.x + 12, y: bounds.y + 20 };
-        })()`);
-        BrowserWindow.getAllWindows()[0].focus();
-        view.focus();
-        // Blink requires user activation for idle spelling checks.
-        view.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
-        view.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
-      }, { viewId, editorId });
-
-      await eventually(() => desktop.evaluate(({ webContents }, { viewId, editorId }) => {
-        return webContents.fromId(viewId).executeJavaScript(`document.hasFocus() &&
-          document.activeElement.id === ${JSON.stringify(editorId)} && navigator.userActivation.isActive`);
-      }, { viewId, editorId }), `native editor focus and user activation for ${word}`);
+      let editorState;
+      try {
+        await eventually(async () => {
+          editorState = await desktop.evaluate(async ({ BrowserWindow, webContents }, { viewId, editorId }) => {
+            const view = webContents.fromId(viewId);
+            const win = BrowserWindow.getAllWindows()[0];
+            const state = await view.executeJavaScript(`(() => {
+              const editor = document.getElementById(${JSON.stringify(editorId)});
+              const bounds = editor.getBoundingClientRect();
+              const x = bounds.x + 12;
+              const y = bounds.y + 20;
+              return {
+                x, y,
+                visible: document.visibilityState === 'visible',
+                focused: document.hasFocus(),
+                editableFocused: document.activeElement === editor,
+                hitEditor: document.elementFromPoint(x, y) === editor,
+                userActivation: navigator.userActivation.isActive,
+              };
+            })()`);
+            if (!state.focused) {
+              win.focus();
+              view.focus();
+            } else if (state.visible && state.hitEditor && !(state.editableFocused && state.userActivation)) {
+              // Blink requires user activation for idle spelling checks.
+              const { x, y } = state;
+              view.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
+              view.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
+            }
+            return state;
+          }, { viewId, editorId });
+          return editorState.visible && editorState.hitEditor && editorState.focused &&
+            editorState.editableFocused && editorState.userActivation;
+        }, `native editor focus and user activation for ${word}`);
+      } catch (error) {
+        t.diagnostic(JSON.stringify(editorState));
+        throw error;
+      }
 
       // Put the caret beyond a complete sentence so the misspelling is never
       // treated as the word still being typed.
@@ -383,9 +415,14 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
       await page.locator('.wb-context-menu-spelling').waitFor({ state: 'visible' });
     };
 
-    // The aggregate app status can report ready when another partition initializes.
-    await eventually(() => desktop.evaluate(() => globalThis.r6DictionaryInitialized),
-      'en-US dictionary initialized in the main browser partition', 20000);
+    // Startup can initialize dictionaries before the harness attaches. The
+    // app retains that status, and the painted marker below proves the native
+    // renderer in the main browser partition actually used the dictionary.
+    await eventually(async () => {
+      const status = await command({ type: 'get-spellcheck-status' });
+      assert.notEqual(status?.statuses?.['en-US']?.status, 'failed', 'en-US dictionary failed to load');
+      return status?.statuses?.['en-US']?.status === 'ready';
+    }, 'en-US dictionary ready', 20000);
 
     await openSpellingMenu('ed', 'teh');
     const suggestion = page.locator('.wb-context-menu-suggestion', { hasText: /^the$/ });
