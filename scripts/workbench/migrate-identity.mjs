@@ -1099,6 +1099,19 @@ function canonicalCurrentRelease(ctx) {
   return null;
 }
 
+function canonicalChildEnvironment(ctx) {
+  const inherited = Object.fromEntries(Object.entries(ctx.env).filter(([name]) =>
+    !/^(?:MAW_|WORKBENCH_|AGENT_WORKBENCH_)/.test(name)));
+  return {
+    ...inherited,
+    HOME: ctx.home,
+    XDG_CONFIG_HOME: ctx.configHome,
+    XDG_DATA_HOME: ctx.dataHome,
+    XDG_STATE_HOME: ctx.stateHome,
+    XDG_RUNTIME_DIR: ctx.runtimeDir,
+  };
+}
+
 function stepRelease(ctx, state) {
   const entry = state.steps.release;
   if (!ctx.sourceDir || !ctx.expectCommit) throw new Refusal('initial release requires a pinned source checkout.');
@@ -1107,15 +1120,8 @@ function stepRelease(ctx, state) {
   fs.mkdirSync(ctx.canonical.logDir, { recursive: true, mode: 0o700 });
   if (ctx.sourceDir !== null) fs.writeFileSync(path.join(ctx.canonical.stateDir, 'source_path'), `${ctx.sourceDir}\n`);
   fs.writeFileSync(path.join(ctx.canonical.stateDir, 'node_path'), `${process.execPath}\n`);
-  const inherited = Object.fromEntries(Object.entries(ctx.env).filter(([name]) =>
-    !/^(?:MAW_|WORKBENCH_|AGENT_WORKBENCH_)/.test(name)));
   const childEnv = {
-    ...inherited,
-    HOME: ctx.home,
-    XDG_CONFIG_HOME: ctx.configHome,
-    XDG_DATA_HOME: ctx.dataHome,
-    XDG_STATE_HOME: ctx.stateHome,
-    XDG_RUNTIME_DIR: ctx.runtimeDir,
+    ...canonicalChildEnvironment(ctx),
     WORKBENCH_STATE_DIR: ctx.canonical.stateDir,
     WORKBENCH_LIB_DIR: ctx.canonical.libDir,
     WORKBENCH_BIN_DIR: ctx.binDir,
@@ -1611,7 +1617,14 @@ function commandVerify(ctx) {
   const probe = testOverride
     ? spawnSync('/bin/sh', ['-c', ctx.readinessCmd], { encoding: 'utf8', env: ctx.env })
     : release?.releaseId
-      ? spawnSync(process.execPath, [control, 'migration-ready', String(release.releaseId)], { encoding: 'utf8', env: ctx.env })
+      ? spawnSync(process.execPath, [control, 'migration-ready', String(release.releaseId)], {
+        encoding: 'utf8',
+        env: {
+          ...canonicalChildEnvironment(ctx),
+          WORKBENCH_UNIT: 'workbench.service',
+          WORKBENCH_RUNTIME_DIR: path.join(ctx.runtimeDir, 'workbench'),
+        },
+      })
       : { status: 1, stdout: '' };
   const reported = (probe.stdout ?? '').replace(/\r?\n$/, '');
   checks.push([

@@ -6,9 +6,9 @@
   "description": "Interfaz de Agent Workbench",
   "scripts": {
     "build": "vite build",
-    "test:unit": "tsx --test \"tests/unit/**/*.test.{mjs,ts}\"",
-    "test:integration": "tsx --test --test-concurrency=2 \"tests/integration/**/*.test.mjs\"",
-    "test:e2e": "tsx --test --test-concurrency=2 \"tests/e2e/**/*.test.mjs\"",
+    "test:unit": "node ../../scripts/run-isolated-tests.mjs --import tsx --test \"tests/unit/**/*.test.{mjs,ts}\"",
+    "test:integration": "node ../../scripts/run-isolated-tests.mjs --import tsx --test --test-concurrency=2 \"tests/integration/**/*.test.mjs\"",
+    "test:e2e": "node ../../scripts/run-isolated-tests.mjs --import tsx --test --test-concurrency=2 \"tests/e2e/**/*.test.mjs\"",
     "test": "pnpm test:unit && pnpm test:integration && pnpm test:e2e",
     "typecheck": "tsc -p tsconfig.json"
   },

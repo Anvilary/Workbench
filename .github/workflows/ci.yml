@@ -53,6 +53,7 @@ jobs:
       - name: Documentation links
         run: |
           node --test scripts/check-doc-links.test.mjs
+          node --test scripts/run-isolated-tests.test.mjs
           node scripts/check-doc-links.mjs
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck

@@ -160,6 +160,38 @@ test('verify ignores unrelated browser profiles and requires an exact readiness 
   assert.match(fake.stdout, /FAIL readiness probe reports the canonical release id/);
 });
 
+test('verify pins the canonical readiness probe despite inherited application overrides', (t) => {
+  const fixture = createFixture(t);
+  assert.equal(fixture.run(['apply']).status, 0);
+  makeVerifiable(fixture);
+  const expected = {
+    WORKBENCH_UNIT: 'workbench.service',
+    WORKBENCH_RUNTIME_DIR: path.join(fixture.runtimeDir, 'workbench'),
+    XDG_CONFIG_HOME: fixture.configHome,
+    XDG_RUNTIME_DIR: fixture.runtimeDir,
+  };
+  fs.writeFileSync(path.join(fixture.canonical.libDir, 'control.mjs'), `
+    import assert from 'node:assert/strict';
+    for (const [key, value] of Object.entries(${JSON.stringify(expected)})) assert.equal(process.env[key], value);
+    for (const key of ['WORKBENCH_SYSTEMD_BUS_ADDRESS', 'MAW_RUNTIME_DIR', 'AGENT_WORKBENCH_NO_RESTORE']) {
+      assert.equal(process.env[key], undefined);
+    }
+    assert.equal(process.argv[2], 'migration-ready');
+    console.log(process.argv[3]);
+  `);
+  const result = fixture.run(['verify', '--accept'], { env: {
+    WORKBENCH_UNIT: 'maw.service',
+    WORKBENCH_RUNTIME_DIR: '/outside-fixture',
+    WORKBENCH_SYSTEMD_BUS_ADDRESS: 'unix:path=/outside-fixture',
+    MAW_RUNTIME_DIR: '/outside-fixture',
+    AGENT_WORKBENCH_NO_RESTORE: '1',
+    XDG_CONFIG_HOME: '/outside-fixture',
+    XDG_RUNTIME_DIR: '/outside-fixture',
+  } });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(fixture.state().status, 'verified');
+});
+
 test('7, 8. rollback after a failed first activation restores legacy operability', (t) => {
   const fixture = createFixture(t);
   const legacyBefore = {
