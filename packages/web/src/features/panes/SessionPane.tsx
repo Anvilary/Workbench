@@ -12,6 +12,7 @@ import { TerminalSearchBar } from '../terminals/TerminalSearchBar.js';
 import { PaneFeedback } from './PaneFeedback.js';
 import { terminalPathCandidate } from '../terminals/terminal-path.mjs';
 import { extractBufferText, extractLastOutput } from '../terminals/terminal-buffer.js';
+import { useTerminalWarm } from '../terminals/terminal-warm-set.js';
 import { writeClipboard, readClipboard } from '../../shared/lib/clipboard.js';
 
 interface Props {
@@ -69,6 +70,13 @@ export function SessionPane({
   };
 
   const live = ['starting', 'running', 'stopping'].includes(session.lifecycle);
+
+  /*
+    Conjunto caliente acotado (WB-05): la pty vive siempre en el servidor, pero el
+    xterm solo se monta para las terminales a la vista y las ultimas que se vieron.
+    Las demas desmontan su instancia y vuelven con el replay al mostrarse de nuevo.
+  */
+  const warm = useTerminalWarm(live && session.terminalId ? session.terminalId : null, active);
 
   useEffect(() => {
     return () => {
@@ -334,6 +342,11 @@ export function SessionPane({
                 onClose={() => setSearchOpen(false)}
               />
             )}
+            {!warm ? (
+              // La caja la pone el host, no la vista: al remontar, el primer fit tiene
+              // que medir el tamano real y no caer al 80x24 de emergencia.
+              <div className="agency-xterm-dormant" data-terminal-dormant={session.terminalId} style={{ width: '100%', height: '100%' }} />
+            ) : (
             <TerminalView
               key={session.terminalId}
               terminalId={session.terminalId}
@@ -355,6 +368,7 @@ export function SessionPane({
               onClipboardError={(err) => showFeedback(err.message, 'error')}
               onClipboardSuccess={(msg) => showFeedback(msg || t('agency.ui.copied'), 'success')}
             />
+            )}
           </div>
         ) : (
           <div className="agency-shell-placeholder">

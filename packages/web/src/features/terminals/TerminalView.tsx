@@ -35,6 +35,7 @@ import {
 } from './terminal-input-gate.js';
 import { isDrag, momentumStep, releaseVelocity, wholePixels, type TouchSample } from './touch-scroll.js';
 import { useTerminalHistory } from './useTerminalHistory.js';
+import { readTerminalRestore, rememberTerminalRestore } from './terminal-warm-set.js';
 
 /** Capacidad del buffer de scrollback activo de xterm (lineas). */
 export const ACTIVE_TERMINAL_SCROLLBACK = 42_000;
@@ -369,6 +370,9 @@ export function TerminalView({
     // The terminal may be disposed while the chunk loads; `terminalDisposed` keeps a late addon off it.
     let webglAttempted = false;
     let terminalDisposed = false;
+    // Al desmontar hay que soltar el addon aunque el terminal ya se haya ido: es
+    // duenio de un contexto WebGL y de sus canvas (WB-05, conjunto caliente).
+    let webglAddon: { dispose: () => void } | null = null;
     const enableWebglRenderer = (): void => {
       if (webglAttempted || preferredRenderer() !== 'webgl') return;
       webglAttempted = true;
@@ -379,9 +383,13 @@ export function TerminalView({
         const WebglAddon = module.WebglAddon ?? (module as unknown as { default?: typeof module }).default?.WebglAddon;
         if (typeof WebglAddon !== 'function') throw new Error('WebGL addon export not found');
         const webgl = new WebglAddon();
-        webgl.onContextLoss(() => webgl.dispose());
+        webgl.onContextLoss(() => {
+          webglAddon = null;
+          webgl.dispose();
+        });
         try {
           terminal.loadAddon(webgl);
+          webglAddon = webgl;
         } catch (error) {
           // No WebGL2 context (acceleration disabled, blocklisted driver): drop the half-loaded addon so the
           // default renderer stays in charge.
@@ -844,9 +852,29 @@ export function TerminalView({
     const scrollSub = terminal.onScroll(checkScrollbackPrompt);
     const bufferSub = terminal.buffer.onBufferChange(checkScrollbackPrompt);
 
+    /*
+      Remontaje (WB-05): esta vista pudo haber desmontado su xterm al salir del
+      conjunto caliente. El replay del servidor devuelve la pantalla emulada, no el
+      scrollback que el ring ya expulso, asi que lo unico que se puede devolver es
+      donde estaba mirando el usuario. Si el buffer restaurado no tiene historial
+      (`baseY === 0`) no hay nada que restaurar, y eso es lo normal.
+    */
+    const restorePoint = readTerminalRestore(terminalId);
+    let restorePointPending = restorePoint !== undefined && !restorePoint.atBottom;
+    const applyRestorePoint = (): void => {
+      if (!restorePointPending || restorePoint === undefined) return;
+      restorePointPending = false;
+      const buffer = terminal.buffer.active;
+      if (buffer.baseY === 0) return;
+      terminal.scrollToLine(Math.min(restorePoint.viewportLine, buffer.baseY));
+    };
+
     const output = new TerminalOutput(terminal, (restoring) => {
       restoringReplay.current = restoring;
-      if (!restoring) fitAndReport();
+      if (!restoring) {
+        fitAndReport();
+        applyRestorePoint();
+      }
     });
     const offMessage = connection.onMessage((message) => {
       if (!('terminalId' in message) || message.terminalId !== terminalId) return;
@@ -875,7 +903,16 @@ export function TerminalView({
       }
     });
 
-    /** Pide el buffer y sincroniza el tamano. Corre al montar y al reconectar. */
+    /**
+     * Pide el buffer y sincroniza el tamano. Corre al montar y al reconectar.
+     *
+     * Al montar, `output.offset` es undefined y no se manda `sinceOffset`: un xterm
+     * nuevo esta vacio y una rodaja incremental pintaria el hueco sobre la nada, asi
+     * que hace falta el replay completo (`reset:true`), que trae la pantalla emulada.
+     * Al reconectar sobre un xterm vivo si hay offset, y el servidor manda solo el
+     * delta. Los dos caminos estan verificados en
+     * packages/server/tests/runtime/pty/terminal-remount-fidelity.test.ts.
+     */
     const attach = (): void => {
       if (hasBox() && !restoringReplay.current) {
         try {
@@ -924,9 +961,19 @@ export function TerminalView({
       lastPromptStartMarker?.dispose();
       offMessage();
       offReopen();
+      // Lo que el replay no puede reconstruir, para cuando esta terminal vuelva al
+      // conjunto caliente. El offset queda como marca de continuidad, no para pedir
+      // el replay: un xterm nuevo necesita la pantalla completa.
+      rememberTerminalRestore(terminalId, {
+        offset: output.offset,
+        atBottom: seen.atBottom,
+        viewportLine: seen.line,
+      });
       // Desenganchar no mata el proceso: la pty sigue viva en el servidor.
       connection.send({ type: 'terminal.detach', terminalId });
       terminalDisposed = true;
+      webglAddon?.dispose();
+      webglAddon = null;
       output.dispose();
       restoringReplay.current = false;
       terminal.dispose();
