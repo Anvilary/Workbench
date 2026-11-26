@@ -1,3 +1,4 @@
+import net from 'node:net';
 // Guard, preflight and `plan` tests for the identity migration (spec tests 1, 3, 4, 9 preflight half).
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -95,6 +96,25 @@ test('a process holding the legacy PTY socket blocks apply', (t) => {
   const result = fixture.run(['apply']);
   assert.equal(result.status, 2);
   assert.match(result.stdout, /legacy PTY socket in use by pid\(s\) 4242/);
+});
+
+test('preflight finds a real Unix socket owner by inode', { skip: process.platform !== 'linux' }, async (t) => {
+  const fixture = createFixture(t);
+  const socket = path.join(fixture.runtimeDir, 'maw-ptyd/ptyd.sock');
+  fs.mkdirSync(path.dirname(socket), { recursive: true });
+  const server = net.createServer();
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(socket, resolve);
+  });
+  try {
+    const result = fixture.run(['apply', '--proc-root', '/proc']);
+    assert.equal(result.status, 2, result.stdout + result.stderr);
+    assert.match(result.stdout, /legacy PTY socket in use/);
+    assert.match(result.stdout, new RegExp(`pid\\(s\\) [^:]*${process.pid}`));
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
 });
 
 test('a desktop process using the legacy userData blocks apply', (t) => {

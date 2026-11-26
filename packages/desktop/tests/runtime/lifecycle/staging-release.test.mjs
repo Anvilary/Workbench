@@ -228,12 +228,13 @@ test('staging release creates and restores a general Browser tab through the rea
     };
     const settings = await openBrowserSettings();
     await settings.getByRole('button', { name: 'Delete Search Engine: DuckDuckGo', exact: true }).click();
-    assert.equal(await settings.getByRole('radio', { name: /Google/ }).isChecked(), true);
+    const googleRadio = settings.getByRole('radio', { name: /Google/ });
+    await eventually(() => googleRadio.isChecked(), 'persisted search engine fallback');
     await settings.getByRole('button', { name: 'Restore built-in definitions', exact: true }).click();
     const ddgRadio = settings.getByRole('radio', { name: /DuckDuckGo/ });
     await ddgRadio.waitFor({ state: 'visible' });
     await ddgRadio.click();
-    assert.equal(await ddgRadio.isChecked(), true);
+    await eventually(() => ddgRadio.isChecked(), 'persisted search engine selection');
     await settings.getByRole('button', { name: 'Reset to defaults', exact: true }).click();
     assert.equal(await ddgRadio.isChecked(), true);
 

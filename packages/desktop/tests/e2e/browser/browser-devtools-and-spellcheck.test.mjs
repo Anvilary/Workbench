@@ -598,7 +598,7 @@ test('R7: native DevTools element inspection accuracy across layouts, zoom level
         const sess = session.fromPartition('persist:workbench-browser');
         const v = webContents.getAllWebContents().find((c) => c.session === sess && c.getURL().includes('/page'));
         v.setZoomLevel(zl);
-        await new Promise((r) => setTimeout(r, 100));
+        await v.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
         const zf = v.getZoomFactor();
         return { x: Math.round(250 * zf), y: Math.round(165 * zf) };
       }, zoomLevel);

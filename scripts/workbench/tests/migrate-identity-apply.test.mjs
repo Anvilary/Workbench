@@ -223,6 +223,17 @@ test('the missing canonical Electron runtime stops apply with exit 3 and the own
   assert.equal(fixture.state().status, 'applied');
 });
 
+test('migration remaps installed path overrides to the same canonical supervisor as the unit', (t) => {
+  const fixture = createFixture(t, { xdgLayout: 'custom' });
+  fs.appendFileSync(fixture.legacy.envFile, `MAW_PTYD_SOCKET=${fixture.runtimeDir}/maw-ptyd/ptyd.sock\n`);
+  fs.appendFileSync(fixture.legacy.envFile, `WORKBENCH_RUNTIME_DIR=${fixture.runtimeDir}/maw\n`);
+  const result = fixture.run(['apply']);
+  assert.equal(result.status, 0, result.stderr);
+  const migrated = fs.readFileSync(fixture.canonical.envFile, 'utf8');
+  assert.ok(migrated.includes(`WORKBENCH_PTYD_SOCKET="${fixture.runtimeDir}/workbench-ptyd/ptyd.sock"`));
+  assert.ok(migrated.includes(`WORKBENCH_RUNTIME_DIR="${fixture.runtimeDir}/workbench"`));
+});
+
 test('14. migrateConfigDir copies for a non-systemd install and is idempotent', (t) => {
   const fixture = createFixture(t, { populate: true });
   const legacyDir = fixture.legacy.configDir;

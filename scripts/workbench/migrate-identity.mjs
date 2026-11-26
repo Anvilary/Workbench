@@ -664,7 +664,7 @@ function preflight(ctx, state) {
  * not carry token-free mode forward). Unknown keys are kept verbatim and reported by name.
  * Values are never echoed anywhere.
  */
-export function transformEnvFile(content) {
+export function transformEnvFile(content, identityPaths = {}) {
   const lines = content.split('\n');
   const outLines = [];
   const dropped = [];
@@ -715,7 +715,8 @@ export function transformEnvFile(content) {
       }
       emitted.set(newKey, isCanonicalSource);
     }
-    outLines.push(`${newKey}=${value}`);
+    const effectiveValue = Object.hasOwn(identityPaths, newKey) ? JSON.stringify(identityPaths[newKey]) : value;
+    outLines.push(`${newKey}=${effectiveValue}`);
   }
   let text = outLines.join('\n');
   if (!text.endsWith('\n')) text += '\n';
@@ -927,7 +928,18 @@ function stepEnv(ctx, state) {
     entry.reason = 'no legacy env file';
     return;
   }
-  const result = transformEnvFile(fs.readFileSync(ctx.legacy.envFile, 'utf8'));
+  const ptyRuntimeDir = path.dirname(ctx.canonical.ptydSocket);
+  const identityPaths = {
+    WORKBENCH_RUNTIME_DIR: path.join(ctx.runtimeDir, 'workbench'),
+    WORKBENCH_PTYD_RUNTIME_DIR: ptyRuntimeDir,
+    WORKBENCH_PTYD_SOCKET: ctx.canonical.ptydSocket,
+    WORKBENCH_PTYD_AUTH_FILE: `${ctx.canonical.ptydSocket}.auth`,
+    WORKBENCH_STATE_DIR: ctx.canonical.stateDir,
+    WORKBENCH_RELEASES_DIR: path.join(ctx.canonical.stateDir, 'releases'),
+    WORKBENCH_LIB_DIR: ctx.canonical.libDir,
+    WORKBENCH_DESKTOP_DATA_DIR: ctx.canonical.userData,
+  };
+  const result = transformEnvFile(fs.readFileSync(ctx.legacy.envFile, 'utf8'), identityPaths);
   const digest = crypto.createHash('sha256').update(result.content).digest('hex');
   if (exists(ctx.canonical.envFile)) {
     if (entry.status === 'prepared' && sha256File(ctx.canonical.envFile) === entry.sha256) {
