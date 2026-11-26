@@ -82,10 +82,10 @@ const keyCases = [
   ['win32', '\\\\srv\\\\share\\\\x', '\\\\srv\\share\\x'],
   ['win32', 'C:\\', 'c:\\'],
   ['win32', 'C:\\\\', 'c:\\'],
-  ['linux', '/home/u/p/', '/home/u/p'],
-  ['linux', '//home//u', '/home/u'],
+  ['linux', '/home/user/p/', '/home/user/p'],
+  ['linux', '//home//user', '/home/user'],
   ['linux', '/', '/'],
-  ['darwin', '/Users/u/p//', '/Users/u/p'],
+  ['darwin', '/Users/user/p//', '/Users/user/p'],
   ['win32', '', ''],
   ['linux', '', ''],
 ];
@@ -99,7 +99,7 @@ check(
 );
 check(
   'linux: las mayusculas importan',
-  normalizeCwdKey('/Home/u', 'linux') !== normalizeCwdKey('/home/u', 'linux'),
+  normalizeCwdKey('/Home/user', 'linux') !== normalizeCwdKey('/home/user', 'linux'),
 );
 
 // Con que cwd se reanuda una sesion desde la barra lateral.

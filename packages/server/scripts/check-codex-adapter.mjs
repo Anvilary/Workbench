@@ -680,8 +680,8 @@ const { CodexSessionDiscovery, pickPendingTab } = await import('../src/agents/co
 
 const DAY = 86_400_000;
 const win = process.platform === 'win32';
-const CWD = win ? 'D:\\Mi App' : '/home/u/mi-app';
-const OTHER_CWD = win ? 'D:\\Otra' : '/home/u/otra';
+const CWD = win ? 'D:\\Mi App' : '/home/user/mi-app';
+const OTHER_CWD = win ? 'D:\\Otra' : '/home/user/otra';
 const sessionsRoot = path.join(codexHome, 'sessions');
 const archivedRoot = path.join(codexHome, 'archived_sessions');
 
@@ -1298,7 +1298,7 @@ async function waitFor(condition, timeoutMs = 5000) {
     return scanRollout({ ref: file, sessionId: nameId, group: nameId, mtimeMs: 1234, sizeBytes: 99 });
   };
 
-  const moved = win ? 'D:\\Mi App\\sub' : '/home/u/mi-app/sub';
+  const moved = win ? 'D:\\Mi App\\sub' : '/home/user/mi-app/sub';
   const cli = await scan(
     sessionMeta({ id: cid(30) }) + taskStarted(BASE) + turnContext(BASE + 1) + userPair(BASE + 2, '[Image #1] mirá <b>esto</b>', [{ mediaType: 'image/png', data: PNG }]) +
     assistant(BASE + 3, 'ok') + taskStarted(BASE + 4) + turnContext(BASE + 5, { cwd: moved }) + userPair(BASE + 6, 'segundo'));
@@ -1434,7 +1434,7 @@ async function waitFor(condition, timeoutMs = 5000) {
     zstd.plainRolloutPathOf('d/r.jsonl.zst') === 'd/r.jsonl' && zstd.compressedRolloutPathOf('d/r.jsonl') === 'd/r.jsonl.zst');
 
   // Z2. La barra: cabeza y cola del comprimido.
-  const moved = win ? 'D:\\Mi App\\sub' : '/home/u/mi-app/sub';
+  const moved = win ? 'D:\\Mi App\\sub' : '/home/user/mi-app/sub';
   const packedId = cid(60);
   const packedContent = sessionMeta({ id: packedId }) + taskStarted(BASE) + turnContext(BASE + 1) +
     userPair(BASE + 2, 'desde el comprimido', [{ mediaType: 'image/png', data: PNG }]) + assistant(BASE + 3, 'listo') +
@@ -1532,7 +1532,7 @@ async function waitFor(condition, timeoutMs = 5000) {
   check('C13 (M4) casada en otro proyecto: segura', h2?.uncertain === false);
   const h3 = pickPendingTab(cand({}), [tab('t1', 9_000, { submitted: ['hola'] })], [{ terminalId: 'casada', cwdKey: key('D:\\Mi App') }]);
   check('C13 (M4) con el texto confirmado, la casada no la vuelve dudosa', h3?.confirmedByText === true && h3.uncertain === false);
-  const linux = pickPendingTab(cand({ cwdKey: key('/Home/u', 'linux') }), [tab('t1', 9_000, { cwdKey: key('/home/u', 'linux') })]);
+  const linux = pickPendingTab(cand({ cwdKey: key('/Home/user', 'linux') }), [tab('t1', 9_000, { cwdKey: key('/home/user', 'linux') })]);
   check('C13 linux: las mayusculas cuentan', linux === null);
 }
 
@@ -1576,7 +1576,7 @@ async function waitFor(condition, timeoutMs = 5000) {
 
   // M2: 40 lineas sin user_message -> se casa sin texto en vez de esperar para siempre.
   clock = T0 + 60_000;
-  const cwdC = win ? 'D:\\Proyecto C' : '/home/u/proyecto-c';
+  const cwdC = win ? 'D:\\Proyecto C' : '/home/user/proyecto-c';
   register('tab-c', T0 + 30_000, cwdC);
   let crowded = sessionMeta({ id: did(5), createdAt: T0 + 31_000, cwd: cwdC });
   for (let i = 0; i < 45; i++) crowded += tokenCountNull(T0 + 31_001);
@@ -1586,7 +1586,7 @@ async function waitFor(condition, timeoutMs = 5000) {
 
   // M2: rechazo definitivo de un candidato sin pestana elegible, y M4: fuera los /fork.
   clock = T0 + 200_000;
-  const guard = register('tab-g', T0 + 100_000, win ? 'D:\\Guardia' : '/home/u/guardia');
+  const guard = register('tab-g', T0 + 100_000, win ? 'D:\\Guardia' : '/home/user/guardia');
   await writeDisc(did(6), sessionMeta({ id: did(6), createdAt: T0 + 150_000 }) + userPair(T0 + 150_001, 'nadie'), T0 + 150_000);
   await discovery.scanOnce();
   // Lanzada "antes" del rollout: no puede pasar, y por eso rechazarlo es seguro.
@@ -1597,7 +1597,7 @@ async function waitFor(condition, timeoutMs = 5000) {
     !reports.some((r) => r.includes(did(6))), show(reports));
   check('C14 (M4) un rollout con forked_from_id no se asigna', !reports.some((r) => r.includes(did(7))), show(reports));
 
-  const freshCwd = win ? 'D:\\Reciente' : '/home/u/reciente';
+  const freshCwd = win ? 'D:\\Reciente' : '/home/user/reciente';
   await writeDisc(did(8), sessionMeta({ id: did(8), createdAt: clock - 1_000, cwd: freshCwd }) + userPair(clock - 999, 'recien'), clock - 1_000);
   await discovery.scanOnce();
   register('tab-i', clock - 5_000, freshCwd);
@@ -1605,10 +1605,10 @@ async function waitFor(condition, timeoutMs = 5000) {
   check('C14 (M2) uno creado hace menos de 2 s no se rechaza: lo toma la pendiente que llega', reports.at(-1) === `tab-i=${did(8)}`, show(reports));
 
   // Se recuerdan los ultimos cinco textos.
-  const cwdJ = win ? 'D:\\Textos' : '/home/u/textos';
+  const cwdJ = win ? 'D:\\Textos' : '/home/user/textos';
   const hookJ = register('tab-j', clock + 1_000, cwdJ);
   for (let i = 1; i <= 6; i++) hookJ.onSubmitted(`mensaje ${i}`);
-  const cwdK = win ? 'D:\\Textos2' : '/home/u/textos2';
+  const cwdK = win ? 'D:\\Textos2' : '/home/user/textos2';
   const hookK = register('tab-k', clock + 1_000, cwdK);
   for (let i = 1; i <= 6; i++) hookK.onSubmitted(`mensaje ${i}`);
   clock += 10_000;
@@ -1620,7 +1620,7 @@ async function waitFor(condition, timeoutMs = 5000) {
   check('C14 el ultimo si confirma: sin aviso para esa', reports.includes(`tab-k=${did(10)}`) && texts.length === 1, texts.join(' | '));
 
   // Pasada final al salir el proceso.
-  const cwdE = win ? 'D:\\Salida' : '/home/u/salida';
+  const cwdE = win ? 'D:\\Salida' : '/home/user/salida';
   const hookE = register('tab-e', clock + 1_000, cwdE);
   clock += 10_000;
   await writeDisc(did(11), sessionMeta({ id: did(11), createdAt: clock - 5_000, cwd: cwdE }) + userPair(clock - 4_999, 'chau'), clock - 5_000);
@@ -1642,7 +1642,7 @@ async function waitFor(condition, timeoutMs = 5000) {
   check('C14 cancel de todas: sin pendientes y sin sondeo', discovery.pendingCount() === 0 && !discovery.isPolling());
   const reportsBefore = reports.length;
   guard.onSubmitted('tarde');
-  await writeDisc(did(12), sessionMeta({ id: did(12), createdAt: T0 + 100_500, cwd: win ? 'D:\\Guardia' : '/home/u/guardia' }) + userPair(T0 + 100_501, 'tarde'), T0 + 100_500);
+  await writeDisc(did(12), sessionMeta({ id: did(12), createdAt: T0 + 100_500, cwd: win ? 'D:\\Guardia' : '/home/user/guardia' }) + userPair(T0 + 100_501, 'tarde'), T0 + 100_500);
   await discovery.scanOnce();
   check('C14 una pestana cancelada no recibe nada', reports.length === reportsBefore);
 
@@ -1768,8 +1768,8 @@ async function waitFor(condition, timeoutMs = 5000) {
   const discovery = new CodexSessionDiscovery({ pollMs: 2_000_000_000, now: () => T0 + 60_000, sessionsRoot: () => discRoot });
   const reports = [];
   const did = (n) => `019f1000-0000-7000-8000-${String(n).padStart(12, '0')}`;
-  const cwdP = win ? 'D:\\Paginado' : '/home/u/paginado';
-  const cwdQ = win ? 'D:\\Otro modo' : '/home/u/otro-modo';
+  const cwdP = win ? 'D:\\Paginado' : '/home/user/paginado';
+  const cwdQ = win ? 'D:\\Otro modo' : '/home/user/otro-modo';
   const hookP = discovery.register({ terminalId: 'tab-p', cwd: cwdP, launchedAt: T0, reportSessionId: (id) => reports.push(`tab-p=${id}`) });
   // La TUI en Windows pierde `¿` y `¡`: lo escrito tiene que confirmar igual.
   hookP.onSubmitted('¡Respondé solo OK!');
@@ -1965,10 +1965,10 @@ async function waitFor(condition, timeoutMs = 5000) {
   check('D1 una consola del mismo cwd no agrupa', insertionIndex(['s', 'b'], describe, agentAt('D:\\Mi App'), 'win32') === 2);
   check('D1 sin ninguna del proyecto: al final', insertionIndex(['a', 'b'], describe, agentAt('D:\\nueva'), 'win32') === 2);
   check('D1 un id que ya no esta se salta', insertionIndex(['fantasma', 'a'], describe, agentAt('D:\\Mi App'), 'win32') === 2);
-  const linux = { x: { kind: 'agent', cwd: '/Home/u' }, y: { kind: 'agent', cwd: '/otro' } };
-  check('D1 linux: /Home/u y /home/u son dos proyectos',
-    insertionIndex(['x', 'y'], (id) => linux[id], agentAt('/home/u'), 'linux') === 2 &&
-    insertionIndex(['x', 'y'], (id) => linux[id], agentAt('/Home/u/'), 'linux') === 1);
+  const linux = { x: { kind: 'agent', cwd: '/Home/user' }, y: { kind: 'agent', cwd: '/otro' } };
+  check('D1 linux: /Home/user y /home/user son dos proyectos',
+    insertionIndex(['x', 'y'], (id) => linux[id], agentAt('/home/user'), 'linux') === 2 &&
+    insertionIndex(['x', 'y'], (id) => linux[id], agentAt('/Home/user/'), 'linux') === 1);
 }
 
 // D2. El libro de actividad.
@@ -2606,7 +2606,7 @@ const throwsOn = (run) => {
   liveHook?.cancel();
 
   // Una pestana nueva queda esperando su sesion, y el gancho la encuentra con el sondeo real.
-  const e1Cwd = win ? 'D:\\Mi App E1' : '/home/u/mi-app-e1';
+  const e1Cwd = win ? 'D:\\Mi App E1' : '/home/user/mi-app-e1';
   const launchedAt = Date.now();
   const reported = [];
   const hook = adapter.onSpawned(context({ cwd: e1Cwd, launchedAt, reportSessionId: (sessionId) => reported.push(sessionId) }));
@@ -2894,8 +2894,8 @@ const tab = (agent, cwd, kind = 'agent') => ({ kind, agent, cwd });
   check('W2 las consolas no cuentan, aunque traigan CLI', webUi.lastAgentFor([tab('codex', 'D:\\x'), tab(null, 'D:\\x', 'shell')], 'D:\\x', 'win32') === 'codex' &&
     webUi.lastAgentFor([tab('codex', 'D:\\x'), tab('claude-code', 'D:\\x', 'shell')], 'D:\\x', 'win32') === 'codex' &&
     webUi.lastAgentFor([tab(null, 'D:\\x', 'shell')], 'D:\\x', 'win32') === null);
-  check('W2 linux: las mayusculas separan proyectos', webUi.lastAgentFor([tab('codex', '/Home/u')], '/home/u', 'linux') === null &&
-    webUi.lastAgentFor([tab('codex', '/home/u/')], '/home/u', 'linux') === 'codex');
+  check('W2 linux: las mayusculas separan proyectos', webUi.lastAgentFor([tab('codex', '/Home/user')], '/home/user', 'linux') === null &&
+    webUi.lastAgentFor([tab('codex', '/home/user/')], '/home/user', 'linux') === 'codex');
   check('W2 sin pestanas del proyecto: null', webUi.lastAgentFor(tabs, 'D:\\nada', 'win32') === null);
 }
 

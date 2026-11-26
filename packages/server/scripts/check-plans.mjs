@@ -77,7 +77,7 @@ const planExit = {
   type: 'attachment',
   attachment: {
     type: 'plan_mode_exit',
-    planFilePath: '/home/ana/.claude/plans/mi-778-discrepancia.md',
+    planFilePath: '/home/user/.claude/plans/mi-778-discrepancia.md',
     planExists: true,
   },
 };

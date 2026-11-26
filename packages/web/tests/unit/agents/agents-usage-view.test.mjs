@@ -181,7 +181,7 @@ test('reset countdown prefers resetsAt, anchors resetsInSeconds, never goes nega
 });
 
 test('formatPath abbreviates user home directory cleanly', () => {
-  assert.equal(formatPath('/home/developer/.codex-a'), '~/.codex-a');
+  assert.equal(formatPath('/home/user/.codex-a'), '~/.codex-a');
   assert.equal(formatPath('/home/user/some/path'), '~/some/path');
   assert.equal(formatPath('/var/log/syslog'), '/var/log/syslog');
 });

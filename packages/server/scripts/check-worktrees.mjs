@@ -111,7 +111,7 @@ process.on('exit', () => {
   check('N3 la / de una rama pasa a - en su carpeta', shared.worktreeFolderName('feat/login/v2') === 'feat-login-v2');
   check('N4 la carpeta va al lado del proyecto, en <proyecto>.worktrees',
     worktreeFolderFor('D:\\Mi App', 'feat/login', path.win32) === 'D:\\Mi App.worktrees\\feat-login' &&
-      worktreeFolderFor('/home/u/app', 'x', path.posix) === '/home/u/app.worktrees/x');
+      worktreeFolderFor('/home/user/app', 'x', path.posix) === '/home/user/app.worktrees/x');
   check('N5 se reconoce la principal por la forma de la ruta',
     mainRootFromShape('D:\\Mi App.worktrees\\feat-login', path.win32) === 'D:\\Mi App' &&
       mainRootFromShape('/r/app/.claude/worktrees/x', path.posix) === '/r/app' &&

@@ -360,10 +360,10 @@ const SESSION = '8bce50c3-8819-451b-aff1-def6e206867d';
 /** El JSON de la 2.1.303, con datos sensibles inventados. Sin `rate_limits` es la primera corrida. */
 const claudeJson = (over = {}) => ({
   session_id: SESSION,
-  transcript_path: 'C:\\Users\\u\\.claude\\projects\\carpeta-secreta\\x.jsonl',
-  cwd: 'C:\\Users\\u\\carpeta-secreta',
+  transcript_path: 'C:\\Users\\user\\.claude\\projects\\carpeta-secreta\\x.jsonl',
+  cwd: 'C:\\Users\\user\\carpeta-secreta',
   model: { id: 'claude-haiku-5-5', display_name: 'Haiku 5.5' },
-  workspace: { current_dir: 'C:\\Users\\u\\carpeta-secreta' },
+  workspace: { current_dir: 'C:\\Users\\user\\carpeta-secreta' },
   version: '2.1.303',
   cost: { total_cost_usd: 1.2345 },
   context_window: { used_percentage: 4, context_window_size: 1000000 },
@@ -432,7 +432,7 @@ const limits = (fiveHour, sevenDay) => ({
     check(`4.8 una carpeta con ${bad} no tiene fragmento`, claudeStatusLineFragment(`C:\\Users\\a${bad}b\\x\\claude-code-statusline.mjs`, 'win32') === null);
   }
   check('4.8 macOS/Linux: la ruta tal cual; una barra invertida no tiene fragmento',
-    claudeStatusLineCommand('/home/u/x.mjs', 'linux') === 'node "/home/u/x.mjs"' && claudeStatusLineCommand('/home/u\\x.mjs', 'darwin') === null);
+    claudeStatusLineCommand('/home/user/x.mjs', 'linux') === 'node "/home/user/x.mjs"' && claudeStatusLineCommand('/home/user\\x.mjs', 'darwin') === null);
   const fragment = JSON.parse(claudeStatusLineFragment(winScript, 'win32'));
   check('4.8 el fragmento: solo statusLine, con type y command', same(Object.keys(fragment), ['statusLine']) && same(Object.keys(fragment.statusLine), ['type', 'command']));
   check('4.8 el fragmento que se ofrece se detecta como active', claudeStatusLineStateOf(fragment.statusLine) === 'active');

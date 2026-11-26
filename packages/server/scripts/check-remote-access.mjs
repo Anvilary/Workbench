@@ -665,7 +665,7 @@ try {
     check('el nombre es la etiqueta, o la última carpeta de la ruta',
       tabNameFor({ label: 'Backend', cwd: 'D:\\Mi App' }) === 'Backend' &&
       tabNameFor({ label: '', cwd: 'D:\\Proyectos\\Mi App\\' }) === 'Mi App' &&
-      tabNameFor({ label: '', cwd: '/home/ana/mi-app' }) === 'mi-app' && tabNameFor(undefined) === '');
+      tabNameFor({ label: '', cwd: '/home/user/mi-app' }) === 'mi-app' && tabNameFor(undefined) === '');
   }
   // --- 14. El teléfono (hito 38, §15) -------------------------------------------
   {

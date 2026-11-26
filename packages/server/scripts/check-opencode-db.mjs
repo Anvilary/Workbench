@@ -323,21 +323,21 @@ const fakeCatalog = { contextWindow: async (provider, model) => (provider === 'o
 // ---------------------------------------------------------------------------
 
 {
-  const win = (env) => resolveOpenCodePaths(env, 'C:\\Users\\u', 'win32');
+  const win = (env) => resolveOpenCodePaths(env, 'C:\\Users\\user', 'win32');
   const defaults = win({});
   check('3 win32 por defecto: carpetas bajo el home, la base en datos y el catalogo en cache', same(defaults, {
-    dbFile: 'C:\\Users\\u\\.local\\share\\opencode\\opencode.db',
-    walFile: 'C:\\Users\\u\\.local\\share\\opencode\\opencode.db-wal',
-    modelsFile: 'C:\\Users\\u\\.cache\\opencode\\models.json',
-    dataDir: 'C:\\Users\\u\\.local\\share\\opencode',
-    configDir: 'C:\\Users\\u\\.config\\opencode',
-    cacheDir: 'C:\\Users\\u\\.cache\\opencode',
-    stateDir: 'C:\\Users\\u\\.local\\state\\opencode',
+    dbFile: 'C:\\Users\\user\\.local\\share\\opencode\\opencode.db',
+    walFile: 'C:\\Users\\user\\.local\\share\\opencode\\opencode.db-wal',
+    modelsFile: 'C:\\Users\\user\\.cache\\opencode\\models.json',
+    dataDir: 'C:\\Users\\user\\.local\\share\\opencode',
+    configDir: 'C:\\Users\\user\\.config\\opencode',
+    cacheDir: 'C:\\Users\\user\\.cache\\opencode',
+    stateDir: 'C:\\Users\\user\\.local\\state\\opencode',
   }), show(defaults));
   const absolute = win({ OPENCODE_DB: 'D:\\prueba\\oc.db' });
   check('3 OPENCODE_DB absoluta: tal cual, con su -wal', absolute.dbFile === 'D:\\prueba\\oc.db' && absolute.walFile === 'D:\\prueba\\oc.db-wal', show(absolute));
   check('3 OPENCODE_DB relativa: dentro de la carpeta de datos',
-    win({ OPENCODE_DB: 'otra.db' }).dbFile === 'C:\\Users\\u\\.local\\share\\opencode\\otra.db', show(win({ OPENCODE_DB: 'otra.db' })));
+    win({ OPENCODE_DB: 'otra.db' }).dbFile === 'C:\\Users\\user\\.local\\share\\opencode\\otra.db', show(win({ OPENCODE_DB: 'otra.db' })));
   const memory = win({ OPENCODE_DB: ':memory:' });
   check('3 OPENCODE_DB :memory: -> sin base', memory.dbFile === null && memory.walFile === null);
   check('3 una ruta colgada de la unidad actual (\\x.db) -> sin base', win({ OPENCODE_DB: '\\x.db' }).dbFile === null);
@@ -351,9 +351,9 @@ const fakeCatalog = { contextWindow: async (provider, model) => (provider === 'o
   check('3 una variable vacia cuenta como ausente',
     same(win({ OPENCODE_DB: '', XDG_DATA_HOME: '', XDG_CACHE_HOME: '', OPENCODE_MODELS_PATH: '', OPENCODE_MODELS_URL: '' }), defaults));
   check('3 una XDG relativa no se lee: la resolveria el cwd de otro proceso', win({ XDG_DATA_HOME: 'datos' }).dbFile === null);
-  const linux = resolveOpenCodePaths({ OPENCODE_DB: '/tmp/oc.db' }, '/home/u', 'linux');
+  const linux = resolveOpenCodePaths({ OPENCODE_DB: '/tmp/oc.db' }, '/home/user', 'linux');
   check('3 linux: rutas posix',
-    linux.dbFile === '/tmp/oc.db' && linux.dataDir === '/home/u/.local/share/opencode' && linux.modelsFile === '/home/u/.cache/opencode/models.json', show(linux));
+    linux.dbFile === '/tmp/oc.db' && linux.dataDir === '/home/user/.local/share/opencode' && linux.modelsFile === '/home/user/.cache/opencode/models.json', show(linux));
 }
 
 // ---------------------------------------------------------------------------
@@ -1332,7 +1332,7 @@ const historyOf = (file, extra = {}) => {
   oldSchema.db.close();
 
   check('12 nativeCwd', nativeCwd('D:/Mi App/', 'win32') === 'D:\\Mi App' && nativeCwd('D:/', 'win32') === 'D:\\' &&
-    nativeCwd('//srv/share/x/', 'win32') === '\\\\srv\\share\\x' && nativeCwd('/home/u', 'win32') === '/home/u' &&
+    nativeCwd('//srv/share/x/', 'win32') === '\\\\srv\\share\\x' && nativeCwd('/home/user', 'win32') === '/home/user' &&
     nativeCwd('D:/x', 'linux') === 'D:/x' && nativeCwd('', 'win32') === null);
   check('12 los titulos por defecto de OpenCode', DEFAULT_TITLE_PATTERN.test('New session - 2026-09-01T10:00:00.000Z') &&
     DEFAULT_TITLE_PATTERN.test('Child session - 2026-09-01T10:00:00.000Z') && !DEFAULT_TITLE_PATTERN.test('New session - hola'));
@@ -1379,7 +1379,7 @@ const historyOf = (file, extra = {}) => {
   // Este caso no lanza nada: un `serve` que se intentara arrancar fallaria aca, sin tocar el disco.
   const serveSpawns = [];
   const adapter = createOpenCodeAdapter({
-    env: { OPENCODE_DB: customDb }, home: 'C:\\Users\\u', platform: 'win32',
+    env: { OPENCODE_DB: customDb }, home: 'C:\\Users\\user', platform: 'win32',
     serveProcess: { cwd: path.join(root, 'serve-13'), spawn: (file) => { serveSpawns.push(file); throw new Error('en este chequeo no se lanza nada'); } },
   });
   // Hito 29 (§5.3, sin `promptApi`): serve + attach. O11 compara lo mismo en check-opencode-serve.
@@ -1444,7 +1444,7 @@ const historyOf = (file, extra = {}) => {
       typeof hook.onInput === 'function' && hook.onSubmitted === undefined), show(hooks.map((hook) => Object.keys(hook ?? {}))));
   for (const hook of hooks) hook?.cancel();
   check('13 protectedDirs: las cuatro carpetas bajo el home, y no la de un OPENCODE_DB propio', same(adapter.protectedDirs(), [
-    'C:\\Users\\u\\.local\\share\\opencode', 'C:\\Users\\u\\.config\\opencode', 'C:\\Users\\u\\.cache\\opencode', 'C:\\Users\\u\\.local\\state\\opencode',
+    'C:\\Users\\user\\.local\\share\\opencode', 'C:\\Users\\user\\.config\\opencode', 'C:\\Users\\user\\.cache\\opencode', 'C:\\Users\\user\\.local\\state\\opencode',
   ]) && !adapter.protectedDirs().some((dir) => customDb.startsWith(dir)), show(adapter.protectedDirs()));
   adapter.dispose();
 

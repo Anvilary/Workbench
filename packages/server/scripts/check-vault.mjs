@@ -1768,7 +1768,7 @@ const agentsWith = (agent, history) => ({
     parseAppSettings({ version: 1, vault: { toolResultMaxChars: 'mucho' } }, 'win32')?.vault.toolResultMaxChars === 64_000 &&
     parseAppSettings({ version: 1, vault: { dir: '\\copia' } }, 'win32')?.vault.dir === null &&
     parseAppSettings({ version: 1, vault: { dir: 'D:\\Copias' } }, 'win32')?.vault.dir === 'D:\\Copias' &&
-    parseAppSettings({ version: 1, vault: { dir: '/home/prueba/copia' } }, 'linux')?.vault.dir === '/home/prueba/copia');
+    parseAppSettings({ version: 1, vault: { dir: '/home/user/copia' } }, 'linux')?.vault.dir === '/home/user/copia');
 
   const future = JSON.stringify({ version: 2, vault: { enabled: true, algoNuevo: 1 } });
   await writeFile(file, future);
@@ -2517,7 +2517,7 @@ const { DirectoryPickers } = await import('../src/features/files/directory-picke
     checkVaultTarget('D:\\Datos\\copia', 'D:\\Datos', win),
     checkVaultTarget('D:\\Copia', 'D:\\Copia2', win),
     checkVaultTarget('D:\\Copia', 'E:\\Sync\\copia', win),
-    checkVaultTarget('/home/u/copia', '/home/u/Copia', { protectedDirs: [], platform: 'linux' }),
+    checkVaultTarget('/home/user/copia', '/home/user/Copia', { protectedDirs: [], platform: 'linux' }),
   ].map((check13) => check13.kind);
   check('13 checkVaultTarget: relativa, protegida (sin importar mayusculas), misma, destino dentro, origen dentro, hermana con prefijo, otra unidad, posix con mayusculas',
     same(kinds, ['refused', 'refused', 'same', 'refused', 'refused', 'ok', 'ok', 'ok']), show(kinds));

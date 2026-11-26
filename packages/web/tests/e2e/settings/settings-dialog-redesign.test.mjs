@@ -164,7 +164,7 @@ const mockSnapshot = {
       model: 'gpt-5-turbo',
       availability: 'available',
       collectionStatus: 'healthy',
-      profileDir: '/home/developer/.codex-a',
+      profileDir: '/home/user/.codex-a',
       planType: 'Team Plus',
       fiveHourUtilization: { status: 'available', usedPercent: 42, resetsInSeconds: 3600 },
       weeklyUtilization: { status: 'available', usedPercent: 68, resetsInSeconds: 86400 },
@@ -178,7 +178,7 @@ const mockSnapshot = {
       model: 'Gemini 3.8 Flash High',
       availability: 'available',
       collectionStatus: 'healthy',
-      profileDir: '/home/developer/.gemini/agy-b',
+      profileDir: '/home/user/.gemini/agy-b',
       planType: 'Internal Workhorse',
       fiveHourUtilization: { status: 'available', usedPercent: 18, resetsInSeconds: 7200 },
       tokens: { totalTokens: 6008900, inputTokens: 4120400, outputTokens: 1888500 },
@@ -192,7 +192,7 @@ const mockSnapshot = {
       availability: 'missing',
       collectionStatus: 'unconfigured',
       collectionError: 'No credentials found in ~/.claude/config.json',
-      profileDir: '/home/developer/.claude',
+      profileDir: '/home/user/.claude',
     }
   ],
 };

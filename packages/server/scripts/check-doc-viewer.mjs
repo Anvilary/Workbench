@@ -166,7 +166,7 @@ const keys = (strip) => strip.docs.map((doc) => doc.key).join(',');
   const shared = await import('@agent-workbench/shared');
   const { readFileSync } = await import('node:fs');
   const win = { cwd: 'D:\\Mi Proyecto', platform: 'win32' };
-  const posix = { cwd: '/home/ana/proyecto', platform: 'linux' };
+  const posix = { cwd: '/home/user/proyecto', platform: 'linux' };
   const of = (mention, root = win) => paths.projectPathOf(mention, root);
 
   check('6.1 una relativa, con cualquiera de las dos barras y sin el ./ de adelante',
@@ -182,7 +182,7 @@ const keys = (strip) => strip.docs.map((doc) => doc.key).join(',');
       of('D:\\Otro\\docs\\guia.md') === null && of('C:\\Windows\\win.ini') === null && of('\\\\servidor\\share\\x.md') === null &&
       of('D:\\Mi Proyecto Dos\\x.md') === null && of('D:\\Mi Proyecto') === null);
   check('6.5 fuera de Windows: una absoluta de adentro vale, distinguiendo mayusculas; una con unidad, no',
-    of('/home/ana/proyecto/src/a.ts', posix) === 'src/a.ts' && of('/home/ana/Proyecto/src/a.ts', posix) === null &&
+    of('/home/user/proyecto/src/a.ts', posix) === 'src/a.ts' && of('/home/user/Proyecto/src/a.ts', posix) === null &&
       of('/etc/passwd', posix) === null && of('C:/x/a.ts', posix) === null);
   check('6.6 en Windows, una que empieza con / no se adivina', of('/d/Mi Proyecto/src/a.ts') === null && of('/src/a.ts') === null);
   check('6.7 nada que salga con .., ni el home, ni una direccion, ni un patron, ni una opcion',

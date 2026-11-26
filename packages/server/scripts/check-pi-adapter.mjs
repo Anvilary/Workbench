@@ -155,8 +155,8 @@ const describe = (events) =>
   check('P1 la carpeta de un proyecto: sin barra inicial, y con / \\ : cambiados por -',
     windows
       ? paths.projectFolderName('D:\\Proyectos\\demo') === '--D--Proyectos-demo--'
-      : paths.projectFolderName('/home/u/proyecto') === '--home-u-proyecto--',
-    paths.projectFolderName(windows ? 'D:\\Proyectos\\demo' : '/home/u/proyecto'));
+      : paths.projectFolderName('/home/user/proyecto') === '--home-user-proyecto--',
+    paths.projectFolderName(windows ? 'D:\\Proyectos\\demo' : '/home/user/proyecto'));
   check('P1 la forma de una carpeta de proyecto',
     paths.isProjectFolderName('--D--x--') && !paths.isProjectFolderName('bin') && !paths.isProjectFolderName('----'));
 

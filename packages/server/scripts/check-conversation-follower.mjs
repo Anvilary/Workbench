@@ -867,7 +867,7 @@ check('un mensaje que era solo la imagen queda solo con la imagen',
 //    CLI y lo tecleado no.
 const slashFile = path.join(dir, 'barras.jsonl');
 await writeFile(slashFile,
-  userStr('i6', '@"C:/Users/Ana/AppData/Local/Temp/otra.png" que color es') +
+  userStr('i6', '@"C:/Users/user/AppData/Local/Temp/otra.png" que color es') +
   imageAttach('at6', 'i6', pathOf('otra.png')));
 const slashFollower = new ConversationFollower(slashFile);
 const slash = await slashFollower.poll();

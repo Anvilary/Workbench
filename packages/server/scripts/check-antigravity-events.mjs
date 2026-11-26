@@ -117,8 +117,8 @@ const shared = await import('@agent-workbench/shared');
 
   const statusLine = {
     state: 'missing',
-    settingsPath: 'C:\\Users\\u\\.gemini\\antigravity-cli\\settings.json',
-    scriptPath: 'C:\\Users\\u\\AppData\\Roaming\\agent-workbench\\integrations\\antigravity-statusline.mjs',
+    settingsPath: 'C:\\Users\\user\\.gemini\\antigravity-cli\\settings.json',
+    scriptPath: 'C:\\Users\\user\\AppData\\Roaming\\agent-workbench\\integrations\\antigravity-statusline.mjs',
     fragment: '{\n  "statusLine": {}\n}',
   };
   check('15 status line valida se lee tal cual', same(parseStatusLineSetupInfo(statusLine), statusLine));
@@ -442,12 +442,12 @@ const result = (index, content, extra = {}) => step(index, 'MODEL', 'GENERIC', {
 
 // Forma de la 1.2.2: USER_INPUT con aviso, llamada, resultado GENERIC, paso que
 // solo razona, comando que falla, mensaje de sistema y la respuesta final.
-const viewArgs = { AbsolutePath: 'C:/Users/u/demo-app/notas/bienvenida.md', toolAction: 'Viewing note', toolSummary: 'View note' };
-const commandArgs = { CommandLine: 'cmd /c exit 3', Cwd: 'C:\\Users\\u\\demo-app', WaitMsBeforeAsync: 5000, toolAction: 'Running terminal command', toolSummary: 'Run exit command' };
+const viewArgs = { AbsolutePath: 'C:/Users/user/demo-app/notas/bienvenida.md', toolAction: 'Viewing note', toolSummary: 'View note' };
+const commandArgs = { CommandLine: 'cmd /c exit 3', Cwd: 'C:\\Users\\user\\demo-app', WaitMsBeforeAsync: 5000, toolAction: 'Running terminal command', toolSummary: 'Run exit command' };
 const transcript122 = [
   step(0, 'USER_EXPLICIT', 'USER_INPUT', { content: userContent('Contame qué dice la nota de bienvenida.', settingsBlock('None', 'Gemini 3.8 Flash (High)')) }),
   planner(1, [call('view_file', viewArgs)], { thinking: 'Hay que leer la nota.\n\n\n' }),
-  result(2, 'Created At: 2026-09-12T21:15:47-05:00\nCompleted At: 2026-09-12T21:15:47-05:00\nFile Path: `file:///C:/Users/u/demo-app/notas/bienvenida.md`\nTotal Lines: 1\n1: # Bienvenida\n'),
+  result(2, 'Created At: 2026-09-12T21:15:47-05:00\nCompleted At: 2026-09-12T21:15:47-05:00\nFile Path: `file:///C:/Users/user/demo-app/notas/bienvenida.md`\nTotal Lines: 1\n1: # Bienvenida\n'),
   planner(3, [], { thinking: 'Ya la tengo; pruebo un comando.' }),
   planner(5, [call('run_command', commandArgs)]),
   result(6, 'Created At: 2026-09-12T21:15:56-05:00\nCompleted At: 2026-09-12T21:15:57-05:00\n\nThe command exited with code 1.\nStdout:\n\nStderr:\n\n'),
@@ -493,7 +493,7 @@ const transcript122 = [
 // La version anterior: resultados RUN_COMMAND, historial de sistema y una tarea
 // en segundo plano que se reescribe con el mismo step_index.
 {
-  const lookupArgs = { CommandLine: 'Get-Command demo -ErrorAction SilentlyContinue', Cwd: 'C:\\Users\\u\\demo', WaitMsBeforeAsync: 5000, toolAction: 'Checking demo command location', toolSummary: 'Checking demo command' };
+  const lookupArgs = { CommandLine: 'Get-Command demo -ErrorAction SilentlyContinue', Cwd: 'C:\\Users\\user\\demo', WaitMsBeforeAsync: 5000, toolAction: 'Checking demo command location', toolSummary: 'Checking demo command' };
   const old = [
     step(0, 'USER_EXPLICIT', 'USER_INPUT', { content: '<USER_REQUEST>\n¿Dónde quedó instalado el comando?\n</USER_REQUEST>' }),
     step(1, 'SYSTEM', 'CONVERSATION_HISTORY'),
@@ -544,13 +544,13 @@ const transcript122 = [
   const { feed } = feeder(mapper);
   const events = feed([
     step(0, 'USER_EXPLICIT', 'USER_INPUT', { content: userContent('revisá el proyecto') }),
-    planner(1, [call('list_dir', { DirectoryPath: 'C:/Users/u/demo' })]),
+    planner(1, [call('list_dir', { DirectoryPath: 'C:/Users/user/demo' })]),
     result(2, 'uno'),
-    planner(3, [call('view_file', { AbsolutePath: 'C:/Users/u/demo/a.md' })]),
+    planner(3, [call('view_file', { AbsolutePath: 'C:/Users/user/demo/a.md' })]),
     result(4, 'dos'),
-    planner(5, [call('view_file', { AbsolutePath: 'C:/Users/u/demo/b.md' })]),
+    planner(5, [call('view_file', { AbsolutePath: 'C:/Users/user/demo/b.md' })]),
     // El 6 falta: la llamada del 5 no tiene resultado.
-    planner(7, [call('view_file', { AbsolutePath: 'C:/Users/u/demo/c.md' })]),
+    planner(7, [call('view_file', { AbsolutePath: 'C:/Users/user/demo/c.md' })]),
     result(8, 'el de c.md'),
   ]);
   const results = partsOf(events, 'tool-result');
@@ -625,7 +625,7 @@ const transcript122 = [
 // D4: `transcript.jsonl` con argumentos doble-codificados da el mismo `input`.
 {
   const encode = (args) => Object.fromEntries(Object.entries(args).map(([key, value]) => [key, JSON.stringify(value)]));
-  const lookupArgs = { CommandLine: 'Get-Command demo', Cwd: 'C:\\Users\\u\\demo', WaitMsBeforeAsync: 5000, Recursive: true, Missing: null, Filter: ['*.md'], Label: '-c', When: '2026-09-12' };
+  const lookupArgs = { CommandLine: 'Get-Command demo', Cwd: 'C:\\Users\\user\\demo', WaitMsBeforeAsync: 5000, Recursive: true, Missing: null, Filter: ['*.md'], Label: '-c', When: '2026-09-12' };
   const full = planner(5, [call('run_command', lookupArgs)]);
   const compact = planner(5, [call('run_command', encode(lookupArgs))]);
   const fromFull = new TranscriptMapper().consume(full, 1, { find: () => undefined });
@@ -691,11 +691,11 @@ const transcript122 = [
   const { fileUriToPath } = await import('../src/agents/antigravity/file-uri.ts');
   const cases = [
     ['file:///d%3A/proy', 'win32', 'd:\\proy'],
-    ['file://C:/Users/u/p', 'win32', 'C:\\Users\\u\\p'],
+    ['file://C:/Users/user/p', 'win32', 'C:\\Users\\user\\p'],
     ['file://D:/Con Espacios/p', 'win32', 'D:\\Con Espacios\\p'],
-    ['file:///C:/Users/u/proyecto%20prueba', 'win32', 'C:\\Users\\u\\proyecto prueba'],
-    ['file:///home/u/p', 'linux', '/home/u/p'],
-    ['file:///Users/u/p%20q', 'darwin', '/Users/u/p q'],
+    ['file:///C:/Users/user/proyecto%20prueba', 'win32', 'C:\\Users\\user\\proyecto prueba'],
+    ['file:///home/user/p', 'linux', '/home/user/p'],
+    ['file:///Users/user/p%20q', 'darwin', '/Users/user/p q'],
     ['https://x', 'win32', null],
     ['basura', 'win32', null],
     ['', 'linux', null],
@@ -1079,11 +1079,11 @@ function insertSummaries(db, rows) {
   await writeFile(agyPaths.historyPath(), [
     JSON.stringify({ display: 'arranquemos con la prueba', timestamp: 1779470000000, workspace: 'D:\\demo\\entorno', conversationId: ID.may }),
     JSON.stringify({ display: '-c', timestamp: 1779470100000, workspace: 'D:\\demo\\entorno' }),
-    JSON.stringify({ display: '/model gemini-3.7-flash-low', timestamp: 1779476200000, workspace: 'C:\\Users\\u\\demo-notas', conversationId: ID.add, type: 'slash_command' }),
+    JSON.stringify({ display: '/model gemini-3.7-flash-low', timestamp: 1779476200000, workspace: 'C:\\Users\\user\\demo-notas', conversationId: ID.add, type: 'slash_command' }),
     JSON.stringify({ display: 'segundo mensaje', timestamp: 1779476300000, workspace: 'D:\\demo\\entorno', conversationId: ID.may }),
   ].join('\n') + '\n');
   await mkdir(path.dirname(agyPaths.lastConversationsPath()), { recursive: true });
-  await writeFile(agyPaths.lastConversationsPath(), JSON.stringify({ 'D:\\demo\\instalador': ID.last, 'C:\\Users\\u\\demo-notas': ID.add, 'D:\\otro': 'no-uuid' }));
+  await writeFile(agyPaths.lastConversationsPath(), JSON.stringify({ 'D:\\demo\\instalador': ID.last, 'C:\\Users\\user\\demo-notas': ID.add, 'D:\\otro': 'no-uuid' }));
   await mkdir(agyPaths.projectsRoot(), { recursive: true });
   await writeFile(path.join(agyPaths.projectsRoot(), `${PROJ_A}.json`), JSON.stringify({ id: PROJ_A, name: 'demo-a', projectResources: { resources: [{ gitFolder: { folderUri: 'file:///d%3A/demo-a', allowWrite: true } }] } }));
   await writeFile(path.join(agyPaths.projectsRoot(), `${PROJ_B}.json`), JSON.stringify({ id: PROJ_B, name: 'demo-b', projectResources: { resources: [{ gitFolder: { folderUri: 'file://D:/Con Espacios/demo', allowWrite: true } }] } }));
@@ -1094,13 +1094,13 @@ function insertSummaries(db, rows) {
   writer.exec('PRAGMA journal_mode = WAL');
   writer.exec(CREATE_SUMMARIES);
   insertSummaries(writer, [
-    summaryRow(ID.add, { title: 'Ordenar Notas Del Proyecto', preview: 'Ordenar Notas Del Proyecto', step_count: 18, last_modified_time: '2026-09-13 02:17:41.1234567+00:00', workspace_uris: '["file:///C:/Users/u/demo-notas"]' }),
+    summaryRow(ID.add, { title: 'Ordenar Notas Del Proyecto', preview: 'Ordenar Notas Del Proyecto', step_count: 18, last_modified_time: '2026-09-13 02:17:41.1234567+00:00', workspace_uris: '["file:///C:/Users/user/demo-notas"]' }),
     summaryRow(ID.noCwd, { title: 'Revisar Tareas Pendientes', preview: 'Revisar Tareas Pendientes', step_count: 9, last_modified_time: '2026-09-13 02:08:10.7654321+00:00' }),
     summaryRow(ID.may, { preview: 'Armando El Entorno', step_count: 13, last_modified_time: '2026-05-22 18:40:05.1111111+00:00', project_id: PROJ_A }),
     summaryRow(ID.mayC, { preview: '-c', step_count: 6, last_modified_time: '2026-05-22 18:42:07.2222222+00:00', project_id: PROJ_B }),
     summaryRow(ID.sub, { title: 'Sub Agente', step_count: 4, parent_conversation_id: ID.add, nesting_depth: 1 }),
-    summaryRow(ID.clear, { step_count: 0, last_modified_time: '0001-01-01 00:00:00+00:00', workspace_uris: '["file:///C:/Users/u/demo-notas"]' }),
-    summaryRow(ID.steps, { title: 'Pasos Sin Transcript', step_count: 3, last_modified_time: '2026-09-13 02:30:00+00:00', workspace_uris: '["file:///C:/Users/u/demo-pasos"]' }),
+    summaryRow(ID.clear, { step_count: 0, last_modified_time: '0001-01-01 00:00:00+00:00', workspace_uris: '["file:///C:/Users/user/demo-notas"]' }),
+    summaryRow(ID.steps, { title: 'Pasos Sin Transcript', step_count: 3, last_modified_time: '2026-09-13 02:30:00+00:00', workspace_uris: '["file:///C:/Users/user/demo-pasos"]' }),
     summaryRow(ID.ide, { title: 'Titulo Del IDE', step_count: 20, workspace_uris: '["file:///C:/ide"]', app_data_dir: 'antigravity' }),
   ]);
   writer.close();
@@ -1146,14 +1146,14 @@ function insertSummaries(db, rows) {
   const scans = new Map();
   for (const item of items ?? []) scans.set(item.sessionId, await history.scan(item));
   const expected = [
-    [ID.add, 'C:\\Users\\u\\demo-notas', 'Ordenar Notas Del Proyecto', 'ai', 'workspace_uris[0]'],
+    [ID.add, 'C:\\Users\\user\\demo-notas', 'Ordenar Notas Del Proyecto', 'ai', 'workspace_uris[0]'],
     [ID.noCwd, null, 'Revisar Tareas Pendientes', 'ai', 'ninguna fuente'],
     [ID.may, 'D:\\demo\\entorno', 'arranquemos con la prueba', 'first-message', 'history.jsonl (transcript en 0 B)'],
     [ID.mayC, 'D:\\Con Espacios\\demo', '-c', 'first-message', 'el proyecto (preview)'],
     [ID.last, 'D:\\demo\\instalador', 'Revisá los permisos del instalador', 'first-message', 'last_conversations.json (cabeza del transcript)'],
     [ID.compact, null, 'Pregunta del compacto', 'first-message', 'transcript.jsonl'],
     [ID.ide, null, 'Pregunta de la CLI', 'first-message', 'sin la fila del IDE'],
-    [ID.steps, 'C:\\Users\\u\\demo-pasos', 'Pasos Sin Transcript', 'ai', 'solo el indice'],
+    [ID.steps, 'C:\\Users\\user\\demo-pasos', 'Pasos Sin Transcript', 'ai', 'solo el indice'],
   ];
   for (const [id, cwd, title, titleSource, what] of expected) {
     const scanned = scans.get(id);
@@ -1171,7 +1171,7 @@ function insertSummaries(db, rows) {
   const keyOf = (id) => projects.find((project) => project.sessions.some((s) => s.sessionId === id))?.key;
   check('5 (A2) la conversacion sin cwd queda en unknown:antigravity:conv:<id>', keyOf(ID.noCwd) === `unknown:antigravity:conv:${ID.noCwd}`, show(keyOf(ID.noCwd)));
   check('5 (A2) y no se junta con otra sin cwd ni con la de workspace_uris',
-    keyOf(ID.compact) === `unknown:antigravity:conv:${ID.compact}` && keyOf(ID.add) === 'c:\\users\\u\\demo-notas', show([keyOf(ID.compact), keyOf(ID.add)]));
+    keyOf(ID.compact) === `unknown:antigravity:conv:${ID.compact}` && keyOf(ID.add) === 'c:\\users\\user\\demo-notas', show([keyOf(ID.compact), keyOf(ID.add)]));
 
   // changedRefs.
   const transcriptOfAdd = agyPaths.transcriptPaths(ID.add).full;
@@ -1208,7 +1208,7 @@ function insertSummaries(db, rows) {
   liveWriter.exec('PRAGMA wal_autocheckpoint = 0');
   await writeTranscript(ID.fresh, jsonl([step(0, 'USER_EXPLICIT', 'USER_INPUT', { content: userContent('conversacion nueva') })]));
   insertSummaries(liveWriter, [
-    summaryRow(ID.fresh, { title: 'Conversacion Recien Creada', step_count: 2, workspace_uris: '["file:///C:/Users/u/demo-nueva"]' }),
+    summaryRow(ID.fresh, { title: 'Conversacion Recien Creada', step_count: 2, workspace_uris: '["file:///C:/Users/user/demo-nueva"]' }),
     summaryRow(ID.noCwd, { title: 'Titulo Nuevo Del Indice', step_count: 11 }),
   ]);
   const walFile = `${summariesFile}-wal`;
@@ -1409,12 +1409,12 @@ function runProcess(file, args, input, options = {}) {
 
 /** El JSON de ejemplo de la documentacion, con los campos medidos en la 1.2.2 y datos sensibles inventados. */
 const officialStatusJson = (over = {}) => ({
-  cwd: 'C:\\Users\\u\\carpeta-secreta',
+  cwd: 'C:\\Users\\user\\carpeta-secreta',
   session_id: U(500),
   conversation_id: U(500),
-  transcript_path: 'C:\\Users\\u\\.gemini\\antigravity\\brain\\x\\transcript.jsonl',
+  transcript_path: 'C:\\Users\\user\\.gemini\\antigravity\\brain\\x\\transcript.jsonl',
   model: { id: 'Gemini 3.7 Flash (Medium)', display_name: 'Gemini 3.7 Flash (Medium)', effort: 'medium' },
-  workspace: { current_dir: 'C:\\Users\\u\\carpeta-secreta', project_dir: 'C:\\Users\\u\\carpeta-secreta' },
+  workspace: { current_dir: 'C:\\Users\\user\\carpeta-secreta', project_dir: 'C:\\Users\\user\\carpeta-secreta' },
   version: '1.2.2',
   context_window: {
     total_input_tokens: 88244, total_output_tokens: 61074, context_window_size: 1048576, used_percentage: 14.24, remaining_percentage: 85.76,
@@ -1500,7 +1500,7 @@ const statusRecord = (id, over = {}) => ({
     check(`10 (P0-1) Windows: una carpeta con ${bad} no tiene fragmento`,
       statusLineFragment(`C:\\Users\\a${bad}b\\agent-workbench\\integrations\\antigravity-statusline.mjs`, 'win32') === null);
   }
-  const posix = '/home/u/.config/agent-workbench/integrations/antigravity-statusline.mjs';
+  const posix = '/home/user/.config/agent-workbench/integrations/antigravity-statusline.mjs';
   check('10 (P0-1) POSIX: node con la ruta entre comillas', statusLineCommand(posix, 'linux') === `node "${posix}"`);
   check('10 (P0-1) POSIX: una ruta con $ o comillas no tiene fragmento',
     statusLineCommand('/home/u$x/a.mjs', 'linux') === null && statusLineCommand('/home/"u/a.mjs', 'darwin') === null);

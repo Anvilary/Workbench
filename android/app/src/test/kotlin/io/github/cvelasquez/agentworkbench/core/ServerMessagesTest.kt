@@ -11,7 +11,7 @@ class ServerMessagesTest {
             ServerMessage.parse("""{"type":"hello","protocolVersion":8,"agents":[],"defaultAgent":null,"platform":"win32","defaultCwd":"C:\\","shellName":"PowerShell","remoteClient":true}"""),
         )
         val list = ServerMessage.parse(
-            """{"type":"terminal.list","terminals":[{"terminalId":"t1","kind":"agent","cwd":"D:\\Proyectos\\Mi App","agent":"claude-code","sessionId":"s","label":"","resumed":false,"createdAt":1,"alive":true,"exitCode":null,"sleeping":false},{"terminalId":"t2","cwd":"/home/ana/web","label":"Backend"}],"order":["t1","t2"]}""",
+            """{"type":"terminal.list","terminals":[{"terminalId":"t1","kind":"agent","cwd":"D:\\Proyectos\\Mi App","agent":"claude-code","sessionId":"s","label":"","resumed":false,"createdAt":1,"alive":true,"exitCode":null,"sleeping":false},{"terminalId":"t2","cwd":"/home/user/web","label":"Backend"}],"order":["t1","t2"]}""",
         ) as ServerMessage.TerminalList
         assertEquals(listOf("Mi App", "Backend"), list.terminals.map { it.tabName })
         assertEquals(ServerMessage.Activity("t1", "waiting"), ServerMessage.parse("""{"type":"terminal.activity","terminalId":"t1","activity":"waiting"}"""))
@@ -30,7 +30,7 @@ class ServerMessagesTest {
     fun `el nombre de una pestaña es su etiqueta, o la última carpeta`() {
         assertEquals("Backend", ServerMessage.tabName("Backend", "D:\\x"))
         assertEquals("Mi App", ServerMessage.tabName("", "D:\\Proyectos\\Mi App\\"))
-        assertEquals("mi-app", ServerMessage.tabName("", "/home/ana/mi-app"))
+        assertEquals("mi-app", ServerMessage.tabName("", "/home/user/mi-app"))
         assertEquals("", ServerMessage.tabName("", ""))
     }
 
@@ -39,7 +39,7 @@ class ServerMessagesTest {
         val renamed = ServerMessage.Terminal("t2", "Backend", "D:\\Proyectos\\Mi App\\")
         assertEquals("Mi App", renamed.projectName)
         assertEquals("Mi App · Laptop", ServerMessage.noticeBody(renamed.projectName, "Laptop"))
-        assertEquals("web", ServerMessage.Terminal("t3", "", "/home/ana/web").projectName)
+        assertEquals("web", ServerMessage.Terminal("t3", "", "/home/user/web").projectName)
         // Sin carpeta (no debería pasar), sólo la PC: nada de un "· Laptop" suelto.
         assertEquals("Laptop", ServerMessage.noticeBody("", "Laptop"))
     }
