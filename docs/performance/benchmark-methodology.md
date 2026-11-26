@@ -1,8 +1,10 @@
-# Benchmark Specification: Automated Performance, Resource Efficiency, and Regression Gates
+# Benchmark methodology
+
+Methodology for measuring the embedded browser surfaces and terminals: what to measure, how to report it and which regressions fail a change. This page defines methodology only; run reports are not kept in the repository. See also the [resource monitor](resource-monitor.md) and the [budget policy](budget-policy.md).
 
 ## Overview
 
-This specification defines a reproducible, automated benchmark suite and resource-efficiency test framework for MAW's embedded browser surfaces (ChatGPT, Perplexity, and native WebContentsView lifecycle). It establishes strict acceptance thresholds and regression gates covering **CPU usage, memory allocation (PSS/RSS/Private), GPU memory, interaction latency, and frame cadence**.
+This specification defines a reproducible, automated benchmark suite and resource-efficiency test framework for Workbench's embedded browser surfaces (ChatGPT, Perplexity, and native WebContentsView lifecycle). It establishes strict acceptance thresholds and regression gates covering **CPU usage, memory allocation (PSS/RSS/Private), GPU memory, interaction latency, and frame cadence**.
 
 ---
 
@@ -14,15 +16,15 @@ The benchmark harness is organized into modular Node.js/Electron suites executed
 
 ```sh
 # Run the complete webview benchmark suite with resource accounting
-xvfb-run -a pnpm --filter @agent-workbench/desktop run bench:webview
+xvfb-run -a pnpm --filter @anvilary/workbench-desktop run bench:webview
 
 # Run individual targeted benchmarks
-xvfb-run -a pnpm --filter @agent-workbench/desktop run bench:lifecycle
-xvfb-run -a pnpm --filter @agent-workbench/desktop run bench:tab-switch
-xvfb-run -a pnpm --filter @agent-workbench/desktop run bench:pane-resize
-xvfb-run -a pnpm --filter @agent-workbench/desktop run bench:overlay-capture
-xvfb-run -a pnpm --filter @agent-workbench/desktop run bench:concurrent-stream
-xvfb-run -a pnpm --filter @agent-workbench/desktop run bench:resource-matrix
+xvfb-run -a pnpm --filter @anvilary/workbench-desktop run bench:lifecycle
+xvfb-run -a pnpm --filter @anvilary/workbench-desktop run bench:tab-switch
+xvfb-run -a pnpm --filter @anvilary/workbench-desktop run bench:pane-resize
+xvfb-run -a pnpm --filter @anvilary/workbench-desktop run bench:overlay-capture
+xvfb-run -a pnpm --filter @anvilary/workbench-desktop run bench:concurrent-stream
+xvfb-run -a pnpm --filter @anvilary/workbench-desktop run bench:resource-matrix
 ```
 
 ### Statistical Reporting Standards
@@ -118,7 +120,7 @@ Every benchmark executes warm and cold iterations, discarding initial JIT compil
 ### Benchmark 6: Multi-Workload Resource and Memory Matrix (`bench:resource-matrix`)
 - **Objective**: Quantify RSS, PSS, Private Memory, and CPU utilization across six standardized operational states.
 - **Standard States Tested**:
-  1. MAW Shell Only (Window with empty shell, zero webviews).
+  1. Workbench Shell Only (Window with empty shell, zero webviews).
   2. One Active Webpage (Single WebContentsView loaded with 2,500 DOM elements).
   3. Two Resident Webpages (1 visible active, 1 detached standby).
   4. Four Resident Webpages (2 split visible, 2 detached standby).
@@ -140,10 +142,3 @@ Every benchmark executes warm and cold iterations, discarding initial JIT compil
 In local test runs and CI pipelines:
 1. Benchmarks execute against baseline commits.
 2. Any commit that introduces a **> 10% regression** in warm tab switch latency (p95), pointer-to-bounds delta, or idle PSS fails the CI quality gate.
-3. Automated benchmark reports are emitted in JSON format to `docs/maw/webview-performance/evidence/latest-benchmark.json` alongside human-readable Markdown summaries.
-
-### Validation Against Integrated Lane A Revision
-Before any performance optimization PR is merged:
-1. The optimization branch must be test-merged with Lane A commit `b56b4f3a76e033e07d722bf8810cf19aa36a8ce3`.
-2. All 8-pane split configurations must pass `bench:resource-matrix` and `bench:pane-resize`.
-3. Tab scrolling wheel interactions in `PaneHeader.tsx` must remain smooth at 60Hz.

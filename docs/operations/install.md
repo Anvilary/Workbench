@@ -1,94 +1,60 @@
-# MAW operations
+# Install
 
-## Installation status
+How to install Anvilary Workbench as a managed systemd user service on Linux. For the npm or Windows path, see the [root README](../../README.md). The canonical paths used below are defined in [identity migration](../architecture/identity-migration.md).
 
-Commands installed at /home/user/.local/bin/maw and /home/user/.local/lib/maw/control.mjs. Source: scripts/maw/. Tested from arbitrary cwd. No live maw.service installed, enabled or started. The original main checkout and existing providers remain untouched.
+## What gets installed
 
-The service template (`scripts/maw/maw.service`) is rendered at install time by `scripts/maw/maw-render-unit.sh`: the Node binary found on PATH, the state directory (`~/.local/share/maw`) and PATH are substituted; nothing user-specific is hard-coded. `WorkingDirectory` and `ExecStart` go through `<state>/current`, an isolated release built by `maw update` (never the developer checkout); `ExecStartPre` guards refuse anything without release metadata. systemd does not load interactive shell files. Optional command removal also covers ~/.local/lib/maw/maw-lib.sh, maw-update.sh and maw-restart-helper.sh.
+| Component | Location |
+|---|---|
+| CLI | `~/.local/bin/anvi-bench`, plus the compatibility shims `anvil-bench`, `maw` and `workbench` |
+| Helpers (`control.mjs`, `lib.sh`, `update.sh`, `restart-helper.sh`, unit renderers) | `~/.local/lib/workbench` |
+| Releases and pointers | `$XDG_DATA_HOME/workbench` (default `~/.local/share/workbench`) |
+| App config and state | `$XDG_CONFIG_HOME/workbench` (default `~/.config/workbench`) |
+| Optional environment file | `$XDG_CONFIG_HOME/workbench/environment` (mode 0600) |
+| User units | `workbench.service` (backend) and `workbench-ptyd.service` (persistent PTY supervisor) |
+| Desktop entry | `workbench.desktop`, icon `workbench` |
+| Electron runtime | `/opt/workbench-electron/<version>` (root-owned package `workbench-electron`) |
 
-pnpm: 12.16.1. Corepack 0.36.0 verified; Node 24.22.0 verified. Use the repository pin via `corepack pnpm install --frozen-lockfile`. No global pnpm changes needed. Future removal of this NVM version requires updating the unit and wrapper paths.
+Sources live in `scripts/workbench/`. The unit template is rendered at install time by `render-unit.sh` (and `render-ptyd-unit.sh` for the supervisor): the Node binary, the state directory and `PATH` are substituted, nothing user-specific is hard-coded. `WorkingDirectory` and `ExecStart` go through `<state>/current`, an isolated release built by `anvi-bench update`, never a developer checkout. `ExecStartPre` guards refuse to start anything without release metadata. systemd does not read interactive shell files, so the rendered `PATH` must contain every tool the agents need.
 
-## Guarded activation
+Use the repository pins: `corepack pnpm install --frozen-lockfile`. No global pnpm change is needed.
 
-1. Review and deploy the feature to the original repository through the normal reviewed integration process. This agent does not merge or modify main. Before deployment record the running server PIDs/cwds and which store each owns. The new guard cannot coordinate with pre-feature servers that do not implement it.
-2. Back up the existing application JSON configuration (default ~/.config/agent-workbench; honor any prior XDG override) with private permissions. Do not copy native credentials into MAW. Ensure the service environment selects the same intended stores and profiles.
-3. Install frozen dependencies and build from the deployed original repository. Verify `packages/server/src/maw-host.ts` exists. Run the full checks recorded in IMPLEMENTATION-STATUS.md.
-4. Stop any old/manual server owning those stores deliberately after accounting for its live PTYs. No signal is implied by installation. Live PTYs terminate with the server; native conversation recovery creates replacement processes.
-5. Run `scripts/maw/install.sh --service` from the deployed repository. It refuses to overwrite an existing unit. Review `systemctl --user cat maw.service` and `systemd-analyze --user verify ~/.config/systemd/user/maw.service`.
-6. Run `systemctl --user enable maw.service`, then `maw start`, `maw status`, `maw open`. Check workspace recovery outcomes. Test one controlled reboot manually only after accepting provider limitations in RECOVERY.md.
+## Installer modes
 
-Existing Linger=yes was observed; it was not changed. An enabled user unit normally starts at login. With lingering it can run at boot before login and after logout, with this user's file permissions, credentials accessible to native CLIs, and resource usage. Encrypted or unavailable home directories can delay/fail boot startup. No sudo or root unit is used.
-
-## Commands
-
-`maw start`, `maw stop`, `maw restart`, `maw status`, `maw logs`, `maw logs --follow`, `maw open`, `maw help` work from any directory. Stop/restart warn about terminating PTYs, never erase metadata. Restart cannot preserve the original processes or volatile terminal scrollback.
-
-Status checks systemd ActiveState/SubState/MainPID and an authenticated HTTP readiness probe. Open requires a private runtime file whose PID matches systemd MainPID, validates the loopback URL, checks readiness and invokes xdg-open without printing the token. Managed startup output omits the token. Runtime metadata is mode 0600 under a 0700 directory; it contains a per-start token, not persistent provider credentials. Other processes under the same user may inspect argv/runtime files as with the original browser launcher.
-
-Restart=on-failure, 5-second delay, at most 3 starts per 120 seconds; `systemctl --user reset-failed maw.service` clears the limit after fixing a failure. KillMode=control-group clears remaining server children on shutdown. Graceful shutdown flushes Agency stores. Loopback and existing Host/token/Origin checks remain enforced. Logs use the existing journal retention policy; the unit rate-limits messages to 200 per 30 seconds. No global journal settings changed.
-
-## Rollback
-
-Warn about PTYs, then `systemctl --user disable --now maw.service`. Preserve the unit for inspection or remove only that unit and run `systemctl --user daemon-reload`. Leave lingering and unrelated services alone. Restore the previous application deployment through Git review; retain JSON backups and native provider history. Optional command removal affects only ~/.local/bin/maw and ~/.local/lib/maw/control.mjs. Never delete profile homes. Recovery fields are additive and old native references are retained; do not overwrite newer metadata with a backup without reviewing the intervening work.
-
-## Native context continuation (2026-10-28)
-
-The former AGY/Claude implementation blocker is resolved by version 2 host bindings and provider-specific native-state checks. Deployment and real authenticated acceptance remain manual. The original main checkout is unchanged and cannot read version 2; therefore no identity manifest was installed into the live configuration. All existing profiles, wrappers, accounts, credentials and sessions were preserved.
-
-Read RECOVERY.md for the per-profile matrix and the distinction between authentication reuse and historical ownership. The observed interactive and systemd contexts both verify against the prepared host manifest with the MAW PATH. No live CLI was launched to obtain this evidence. AGY named wrappers retain their existing private D-Bus/keyring helper behavior; MAW does not recreate that behavior or import secrets into the user manager.
-
-After deploying this branch, review HOST-CONTEXT-SPEC.example.json against the current wrappers and command paths. Generate a NEW private manifest with:
-
-```
-pnpm --filter @agent-workbench/server exec tsx scripts/build-native-attestation.mjs /absolute/reviewed-spec.json /absolute/new-identities.json
-pnpm --filter @agent-workbench/server exec tsx scripts/check-native-context.mjs /absolute/agency-profiles.json /absolute/new-identities.json
-```
-
-The builder reads only reviewed executable/helper artifacts, not credentials, and refuses to overwrite its output. The checker reads only profile/identity configuration and executable metadata; it never launches native CLIs or changes configuration. Check the same inputs under a transient systemd process with the service PATH before installation. A required variable's presence does not prove authentication or an unlocked keyring.
-
-Install the reviewed manifest as mode 0600 at the existing configuration's agency-native-identities.json only after deploying version 2 support. Preserve any prior manifest privately and do not replace an existing one without reviewing its bindings. Never point a pre-feature checkout at the version 2 file. Future binary/wrapper/helper upgrades fail closed until reviewed; do not automatically rehash changes and assume old sessions are safe to resume.
-
-Before rolling back to the original main version, move the version 2 manifest to a private backup and restore the prior version 1 manifest if one existed. This host originally had no identity manifest. Preserve all newer runtime/native references; do not use manifest rollback to erase session metadata. The live service remains disabled; no wrapper, native keyring helper or credential store was modified by this continuation.
-
-Presence-only auth comparison found GEMINI_API_KEY only in the interactive environment. All six AGY settings use account mode, in which the native CLI ignores that variable unless modelProvider selects gemini (see the official source in RECOVERY.md). No secret was imported into systemd. AGY attestations now require account mode; changing that setting invalidates recovery. If API-key mode is desired later, explicit interactive wrapper launch remains available, but its historical named-account ownership is not verified automatically.
-
-AGY shared-helper lifetime check: an existing private D-Bus/keyring helper is reused without moving it. If the original profile-start helper creates daemons for the first time inside maw.service, those daemons inherit the MAW cgroup and KillMode=control-group may terminate them at MAW shutdown, affecting later manual wrappers that reuse that private bus. Before live activation, keep each required original profile-start helper in an independent persistent user context (for example a reviewed oneshot user unit with RemainAfterExit=yes), ordered before MAW and without PartOf=maw.service. Use the original helper executable; do not replace its authentication setup. Verify its cgroup/lifetime through a controlled native acceptance test. No real helper was executed or relocated during this work. This lifecycle prerequisite remains a manual deployment check; it is not proof of unlocked authentication before login.
-
-## Multi-session tabs deployment and rollback boundary
-
-The multi-session feature is developed separately from PR #8 and targets its branch while #8 is unmerged. No dependency worktree, live service or user configuration was modified. Deploy the reviewed feature code and build before opening the new UI; do not activate a service as part of reviewing the draft PR.
-
-Logical tab count and process count differ: historical/exited/closed attempts remain durable, while at most 24 active Agency attempts are reserved globally and TerminalRegistry independently enforces its 24-entry limit atomically across raw and managed opens. AGY startup recovery retains PR #8's conservative external-process observation, not a shared laptop-wide semaphore. No workspace-level one-agent/one-shell restriction remains. A tab close acts on its exact runtime/PTY; workspace navigation and Done/Archive never imply close.
-
-Back up agency-sessions.json and its validated backup privately before deployment. Schema 1 migrates to schema 2 at startup/next save; all old runtime/native references remain. The prior PR #8 reader rejects schema 2 rather than silently downgrading it. Before rollback, preserve the complete newer schema 2 files under private backup names. Returning to the older reader requires an explicitly reviewed schema 1 snapshot and will not display newer logical tabs; never overwrite or discard the schema 2 history to make an older build start. Native provider history remains outside MAW and must not be removed.
-
-Manual acceptance: create each preset; add mixed/repeated profiles and three shells; verify exact native auth contexts; switch/scroll/reorder/refresh without process creation; cancel and confirm closing only one running session; close an exited tab; restart the managed server only in an approved isolated/deployed environment and inspect shell replacement/native-resume identities; verify Done/Archived and closed tabs stay stopped. Check real native TUI bottom rows, keyboard/clipboard behavior, keyring cgroup prerequisites and reboot with the original profiles. No paid/native authentication smoke was performed automatically.
-
-## feat/maw-launcher-update-onboarding additions (2026-10-29)
-
-### Launcher Enhancements
-
-1. **`maw url`**: Prints the authenticated localhost URL (e.g. `http://127.0.0.1:<port>/?token=<token>`) strictly to standard output for the invoking authorized user. The session token is never emitted into systemd logs or journalctl, preserving loopback credential confinement.
-2. **Improved `maw open [browser]`**: Accepts an optional browser binary parameter (e.g., `maw open brave`, `maw open google-chrome`, `maw open firefox`). When omitted, defaults to `xdg-open`. Pre-validates service readiness and URL validity before spawning. Browsers are never automatically spawned on service startup.
-3. **`maw update`**: stages the approved channel (`origin/main`) as an isolated release without touching what the service boots; `maw restart` activates and verifies it, rolling back to the last verified healthy release on failure. Details: [UPDATE-ROLLBACK.md](UPDATE-ROLLBACK.md).
-
-### Developer-Safe Restart Mechanism
-
-When `maw update --restart` (or `maw restart`) is executed inside a MAW-hosted shell or agent tab, issuing a synchronous `systemctl --user restart maw.service` would trigger `KillMode=control-group` and terminate the invoking shell before completion. 
-
-The launcher detects whether any ancestor process belongs to `maw.service`'s `MainPID`. If detected inside a MAW shell, it hands off the restart to a transient systemd user timer unit:
 ```sh
-systemd-run --user --unit=maw-restart-$ts --no-block --on-active=2 systemctl --user restart maw.service
+sh scripts/workbench/install.sh --commands-only      # CLI and helpers only
+sh scripts/workbench/install.sh --service            # also render the user units (refuses to overwrite an existing unit)
+sh scripts/workbench/install.sh --desktop            # install the pinned Electron runtime package (uses sudo apt-get)
+sh scripts/workbench/install.sh --desktop-assets     # desktop entry and icons
+sh scripts/workbench/install.sh --integrate-desktop  # desktop assets and enable both units at login
 ```
-This enables the update process to finish writing audit logs and exit code 0 cleanly, while the transient unit restarts the service out-of-cgroup 2 seconds later.
 
-### Profile Onboarding Improvements
+## First installation
 
-1. **Profile Suggestions (`profile-suggestions.ts`)**: Introduces `suggestedExecutable()` and `providerSetupNote()` helpers to provide provider-specific wrapper recommendations and contextual setup guidance.
-2. **First-Time Guidance in `AgencyProfileDialog`**: When a profile's executable field is empty, the dialog displays provider-specific onboarding notes explaining the wrapper requirement (e.g., distinct wrappers `codex-0`, `codex-1`, `agy-0`–`agy-5`, `claude`) and placeholder suggestions, without auto-filling or persisting unreviewed executables.
-3. **Unconfigured Profile Banners (`AgencyWorkspaceView`)**: Displays a clear, prominent "Profile not configured" banner with an inline "Configure" button whenever an unconfigured profile is viewed or selected in a workspace.
+1. Build and test from a clean checkout of the approved revision.
+2. Back up any existing application config directory with private permissions. Never copy native agent credentials into Workbench.
+3. Run `install.sh --service`. Review the result with `systemctl --user cat workbench.service` and `systemd-analyze --user verify ~/.config/systemd/user/workbench.service`.
+4. Run `install.sh --integrate-desktop` (or `systemctl --user enable workbench-ptyd.service workbench.service`), then `anvi-bench start`, `anvi-bench status` and `anvi-bench open`.
+5. Test one controlled reboot only after reading [recovery](recovery.md).
 
-For complete operational details, safety procedures, and onboarding guides, refer to:
-- [LAUNCHER.md](file:///home/user/Projects/My-Amazing-Workspace/docs/maw/LAUNCHER.md): Complete command reference, security model, and acceptance workflow.
-- [UPDATE-ROLLBACK.md](UPDATE-ROLLBACK.md): Detailed update lifecycle, rollback boundaries, and manual recovery steps.
-- [PROFILE-ONBOARDING.md](file:///home/user/Projects/My-Amazing-Workspace/docs/maw/PROFILE-ONBOARDING.md): First-run setup, wrapper naming rules, and provider-specific configurations.
+An enabled user unit starts at login. With lingering enabled it can also run before login and after logout, with the user's file permissions and credentials. Encrypted or unavailable home directories can delay or fail boot startup. No root unit is used.
+
+## Service behavior
+
+- `Restart=on-failure` with a 5 second delay, at most 3 starts per 120 seconds. `systemctl --user reset-failed workbench.service` clears the limit after fixing the cause.
+- `KillMode=control-group` stops remaining backend children on shutdown. Terminals live in `workbench-ptyd.service`, a separate control group, so a backend restart does not kill them (see [persistent PTY supervisor](../terminals/ptyd.md)).
+- Graceful shutdown flushes the session stores.
+- Loopback binding and the Host, token and Origin checks stay enforced (see [local authentication](../security/local-auth.md)).
+- The unit rate-limits journal messages to 200 per 30 seconds.
+- Runtime metadata lives under `$XDG_RUNTIME_DIR/workbench` (directory 0700, files 0600). It holds a per-start token, never provider credentials.
+
+## Uninstall
+
+Warn about live terminals, then `systemctl --user disable --now workbench.service workbench-ptyd.service`. Remove only those units and run `systemctl --user daemon-reload`. Leave lingering and unrelated services alone. Removing the CLI affects only `~/.local/bin/anvi-bench`, its shims and `~/.local/lib/workbench`. Never delete agent profile homes. Keep app config backups and native provider history.
+
+## Related
+
+- [Launcher and CLI](launcher.md)
+- [Update and rollback](update-rollback.md)
+- [Desktop on Ubuntu](desktop-production.md)
+- [Startup acceptance](startup-acceptance.md)

@@ -29,7 +29,7 @@ Pre-existing defect fixed before the migration, in its own commit (`164f497`): t
 | server runtime | 212 tests, 209 pass, 3 skipped (real systemd, opt-in) |
 | desktop integration | 16 pass |
 
-Electron, web integration and web e2e baselines are recorded in the final report. All runs use an isolated `HOME`, `XDG_*` and `MAW_RUNTIME_DIR` so they cannot touch the live installation or its PTY supervisor.
+Electron, web integration and web e2e baselines are recorded in the final report. All runs use an isolated `HOME`, `XDG_*` and `WORKBENCH_RUNTIME_DIR` so they cannot touch the live installation or its PTY supervisor.
 
 ## 2. Inventory
 
@@ -49,14 +49,14 @@ Electron, web integration and web e2e baselines are recorded in the final report
 | `shared/src/protocol.ts` | 4,016 | See above. |
 | `server/src/terminal-registry.ts` | 1,803 | One state machine (terminal lifecycle, PTY supervisor client, recovery, activity). Cohesive; decomposition only where ownership is unambiguous (see section 5.4). |
 | `web/src/agency/AgencySidebar.tsx`, `AgencyWorkspaceView.tsx`, `AgencyApp.tsx` | 1,007 / 963 / 888 | Composition components that also own drag and drop, dialogs and layout persistence logic. |
-| `server/src/conversation-hub.ts`, `memory-bridge.ts`, `worktrees/service.ts`, `desktop/resource-monitor.mjs`, `server/src/pty-host/maw-ptyd.mjs` | 1.1k to 1.4k | Cohesive single-responsibility modules. Left intact on purpose. |
+| `server/src/conversation-hub.ts`, `memory-bridge.ts`, `worktrees/service.ts`, `desktop/resource-monitor.mjs`, `server/src/pty-host/ptyd.mjs` | 1.1k to 1.4k | Cohesive single-responsibility modules. Left intact on purpose. |
 
 ### Redundant or misleading organization
 
 * `server/src/features/{agents,sessions,settings,workspaces}/index.ts` are re-export-only barrels over files that live elsewhere. v1 documented these as done; Rule 5 of this migration forbids that as an end state. `web/src/features/{terminals,agents,editor}/index.ts` are bare barrels with no implementation behind them. v2 treats the v1 feature layout as a stalled migration to finish, not as a baseline to build on.
 * `terminal-socket.ts` is misleading: it is the whole application protocol, not a terminal socket.
 * `agency/` (server and web) is a legacy product name used as a directory for several unrelated responsibilities (workspaces, live sessions, profiles, notifications, browser tabs, editor tabs).
-* Two 1-line test shims under `src/` (`agents/profiles/profiles.test.ts`, `agency/native-context.test.ts`) point at tests that were moved in v1. The installed updater (`~/.local/share/maw/current`) already uses the new `tests/` paths, so no verified consumer remains.
+* Two 1-line test shims under `src/` (`agents/profiles/profiles.test.ts`, `agency/native-context.test.ts`) point at tests that were moved in v1. The installed updater (`~/.local/share/workbench/current`) already uses the new `tests/` paths, so no verified consumer remains.
 * `Agency*` and `NativeChatGpt*` are legacy internal UI names. The product is a general browser plus terminal workbench; the native view is no longer ChatGPT specific.
 
 ### Dependency direction (verified with a static import scan on the base)
@@ -68,8 +68,8 @@ Electron, web integration and web e2e baselines are recorded in the final report
 
 ### Runtime and persistence boundaries
 
-* The PTY supervisor `maw-ptyd.mjs` is a separate long-lived process. It survives backend and desktop restarts. Its wire contract with `pty-host-client.ts` and `terminal-state.mjs` must not change.
-* Persisted state lives under `$XDG_CONFIG_HOME/agent-workbench` (workspace, layouts, tabs, notes, drafts, profiles). File names, schema versions and the `mawCompatibility` markers in the root `package.json` are compatibility contracts.
+* The PTY supervisor `ptyd.mjs` is a separate long-lived process. It survives backend and desktop restarts. Its wire contract with `pty-host-client.ts` and `terminal-state.mjs` must not change.
+* Persisted state lives under `$XDG_CONFIG_HOME/workbench` (workspace, layouts, tabs, notes, drafts, profiles). File names, schema versions and the `mawCompatibility` markers in the root `package.json` are compatibility contracts.
 * Browser partitions are `persist:` partitions derived by `partitionForBrowserProfile` in `desktop/policy.mjs`. Names must not change.
 * Protocol: `PROTOCOL_VERSION = 8`, message types are strings such as `agency.workspace.create`. They stay as they are.
 
@@ -83,20 +83,20 @@ These paths and names are read by live launchers, updaters, packaging or old ins
 
 | Contract | Reason |
 | --- | --- |
-| `packages/{shared,server,web,desktop}` locations | `scripts/maw/*`, install, packaging |
-| `packages/server/src/index.ts`, `packages/server/src/maw-host.ts` | `maw_valid_release` in `scripts/maw/maw-lib.sh`, `install.sh`, staging tests |
-| `packages/server/src/pty-host/maw-ptyd.mjs`, `terminal-state.mjs` | bundled as `dist/maw-ptyd.mjs` and `dist/terminal-state.mjs`; release validators require them |
+| `packages/{shared,server,web,desktop}` locations | `scripts/workbench/*`, install, packaging |
+| `packages/server/src/index.ts`, `packages/server/src/workbench-host.ts` | `maw_valid_release` in `scripts/workbench/lib.sh`, `install.sh`, staging tests |
+| `packages/server/src/pty-host/ptyd.mjs`, `terminal-state.mjs` | bundled as `dist/ptyd.mjs` and `dist/terminal-state.mjs`; release validators require them |
 | `packages/server/scripts/build-bundle.mjs` entry `src/index.ts` | production bundle |
-| `packages/desktop/main.mjs`, `preload.cjs`, `policy.mjs` | Electron entry and shell preload; `scripts/maw/desktop-launch.mjs` launches `packages/desktop` as the app dir. The WebAuthn preload and dialog assets are loaded only by `main.mjs` and moved to `src/security/webauthn/` |
-| `packages/desktop/src/gpu/graphics-policy.mjs` | imported by path from the release directory in `scripts/maw/desktop-launch.mjs` |
-| `packages/server/tests/unit/agents/profiles.test.ts` | executed by `scripts/maw/maw-update.sh` |
+| `packages/desktop/main.mjs`, `preload.cjs`, `policy.mjs` | Electron entry and shell preload; `scripts/workbench/desktop-launch.mjs` launches `packages/desktop` as the app dir. The WebAuthn preload and dialog assets are loaded only by `main.mjs` and moved to `src/security/webauthn/` |
+| `packages/desktop/src/gpu/graphics-policy.mjs` | imported by path from the release directory in `scripts/workbench/desktop-launch.mjs` |
+| `packages/server/tests/unit/agents/profiles.test.ts` | executed by `scripts/workbench/update.sh` |
 | `packages/server/tests/security/filesystem/native-context.test.ts`, `packages/server/scripts/check-native-systemd.mjs` | systemd check scripts |
-| `packages/desktop/tests/integration/desktop/production.test.mjs` and the web test files listed in `scripts/maw/validate-release.mjs` | release validation |
+| `packages/desktop/tests/integration/desktop/production.test.mjs` and the web test files listed in `scripts/workbench/validate-release.mjs` | release validation |
 | pnpm script names in every `package.json` | CI, updater, runbooks |
 | Protocol message type strings, `PROTOCOL_VERSION`, `WS_PATH`, `TOKEN_QUERY_PARAM` | wire contract with the web client and the Android companion |
 | Persisted file names and schema versions, `mawCompatibility` | on-disk compatibility |
-| `MAW_*` environment variables, `CHANNEL` IPC name, `persist:` partition names, systemd unit names | runtime compatibility |
-| `window.mawChatGpt` bridge name in `preload.cjs` | preload to renderer contract; the TypeScript type is renamed, the exposed global is not |
+| `WORKBENCH_*` environment variables, `CHANNEL` IPC name, `persist:` partition names, systemd unit names | runtime compatibility |
+| `window.workbench` bridge name in `preload.cjs` | preload to renderer contract; the TypeScript type is renamed, the exposed global is not |
 
 The `dist-npm` allowlist (`scripts/build-npm.mjs`, `.github/scripts/check-tarball.mjs`) depends on build outputs only.
 
@@ -130,7 +130,7 @@ settings/           settings, remote access, performance, support
 ### 4.2 `packages/server/src` (as implemented)
 
 ```text
-index.ts, maw-host.ts          frozen entry points (composition root)
+index.ts, workbench-host.ts          frozen entry points (composition root)
 pty-host/                      frozen: persistent PTY supervisor, client and wire types
 transport/
   http/                        auth-middleware.ts, listen.ts, ui-hosting.ts
@@ -186,7 +186,7 @@ tools/        developer capture and measurement tools
 
 ### 4.4 `packages/web/src` (as implemented)
 
-See `module-boundaries.md`. `connection/` holds the WebSocket client and the `window.mawChatGpt` declaration; `app/classic/` holds the classic shell; `features/navigation/useSidebarDrag.ts` owns the sidebar pointer drag.
+See `module-boundaries.md`. `connection/` holds the WebSocket client and the `window.workbench` declaration; `app/classic/` holds the classic shell; `features/navigation/useSidebarDrag.ts` owns the sidebar pointer drag.
 
 ## 5. Decomposition decisions
 
@@ -206,12 +206,12 @@ Only `RemotePtySession` (a stateless proxy for a supervisor session) was extract
 The sidebar pointer drag moved into `useSidebarDrag` (it runs inside the same component, so identity and mounting are unchanged). `WorkspaceView` and `WorkbenchApp` were left whole: their layout and ref state is shared across most handlers.
 
 ### 5.6 Intentionally left alone
-`maw-ptyd.mjs`, `resource-monitor.mjs`, `conversation-hub.ts`, `memory-bridge.ts`, `worktrees/service.ts` and the agent adapters. Large but cohesive.
+`ptyd.mjs`, `resource-monitor.mjs`, `conversation-hub.ts`, `memory-bridge.ts`, `worktrees/service.ts` and the agent adapters. Large but cohesive.
 
 ## 6. Invariants checked at every checkpoint
 
 1. `shared` has no Node, Electron or React imports; `server` has no React or Electron; `web` has no `server`/`desktop` imports; no value-import cycles.
-2. Public export surface of `@agent-workbench/shared` is unchanged (runtime keys and type names, diffed against the base).
+2. Public export surface of `@anvilary/workbench-shared` is unchanged (runtime keys and type names, diffed against the base).
 3. Test counts do not drop. Test scripts enumerate directories, so new test directories are added to the package scripts.
 4. Frozen paths from section 3 exist and the staging shell tests pass.
 5. No test is skipped or weakened to pass.

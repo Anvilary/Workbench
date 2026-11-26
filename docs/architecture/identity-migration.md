@@ -1,76 +1,92 @@
-# Anvilary Workbench Rebranding & Compatibility Migration
+# Identity migration
 
-This document records the staged transition from **My Amazing Workspace (MaW)** / **Agent Workbench** to **Anvilary Workbench** (`Workbench`), the compatibility boundaries preserved in v1, and the deferred migrations required before transferring packages or systemd service identities.
+This document defines the canonical identity of Anvilary Workbench and how an installation that still uses the legacy identity (the earlier "MAW" and "Agent Workbench" names) moves to it. The earlier cosmetic rebrand (product name in the UI, window title, server banner and the `anvil-bench` CLI) is complete. This document describes the target for the remaining persistent identifiers.
 
-## Target Identity
+## Canonical identity
 
-- **Full product name**: `Anvilary Workbench`
-- **Short application name**: `Workbench`
-- **Preferred CLI**: `anvil-bench` (`maw` retained as a compatibility alias)
-- **Future GitHub repository**: `Anvilary/Workbench` (transfer deferred; do not change repository coordinates yet)
+| Kind | Legacy | Canonical |
+|---|---|---|
+| Product | My Amazing Workspace, MAW, Agent Workbench | Anvilary Workbench (short: Workbench) |
+| Root package | `agent-workbench` | `@anvilary/workbench` (private until distribution resumes; the `agent-workbench` npm name belongs to the upstream author and is never published from this fork) |
+| Workspace packages | `@agent-workbench/{shared,server,web,desktop}` | `@anvilary/workbench-{shared,server,web,desktop}` |
+| CLI | `maw`, `anvil-bench` | `anvi-bench`. `anvil-bench`, `maw` and `workbench` are compatibility shims that exec `anvi-bench`; help text names the invoked command |
+| Environment variables | `MAW_*`, `AGENT_WORKBENCH_*` | `WORKBENCH_*` (see below) |
+| Desktop bridge and IPC | `window.mawChatGpt`, `maw:*` | `window.workbench`, `workbench:*` (no alias: desktop and web ship together) |
+| systemd units | `maw.service`, `maw-ptyd.service`, `maw-restart-helper` | `workbench.service`, `workbench-ptyd.service`, `workbench-restart-helper` |
+| Runtime directories | `$XDG_RUNTIME_DIR/maw`, `$XDG_RUNTIME_DIR/maw-ptyd` | `$XDG_RUNTIME_DIR/workbench`, `$XDG_RUNTIME_DIR/workbench-ptyd` (socket and auth file names unchanged) |
+| Release state | `~/.local/share/maw` | `$XDG_DATA_HOME/workbench` (`releases/`, pointers, `update-log.jsonl`, `source_path`, `node_path`) |
+| Release metadata | `.maw-release-meta.json`, `.maw-candidate` | `.workbench-release-meta.json`, `.workbench-candidate` |
+| App config and state | `~/.config/agent-workbench` | `$XDG_CONFIG_HOME/workbench` (Windows: `%APPDATA%/workbench`) |
+| Environment file | `~/.config/maw/environment` | `$XDG_CONFIG_HOME/workbench/environment` |
+| Desktop userData | `~/.local/share/maw-desktop` | `$XDG_DATA_HOME/workbench-desktop` (development prototype: `workbench-desktop-dev`) |
+| Browser partitions | `persist:maw-<x>`, `persist:maw-profile-<id>-<provider>` | `persist:workbench-<x>`, `persist:workbench-profile-<id>-<provider>` |
+| Logs | `~/.local/state/maw/logs` | `$XDG_STATE_HOME/workbench/logs` |
+| Helpers | `~/.local/lib/maw` | `~/.local/lib/workbench` |
+| Desktop entry and icon | `maw.desktop`, icon `maw-workspace` | `workbench.desktop`, `StartupWMClass=workbench`, icon `workbench` |
+| Electron runtime | `/opt/maw-electron/<ver>`, package `maw-electron` | `/opt/workbench-electron/<ver>`, package `workbench-electron` |
+| Temporary directories | `<tmp>/agent-workbench/*` | `<tmp>/workbench/*` (ephemeral, not migrated) |
 
-## Summary of Implemented Branding & CLI Changes
+Unchanged on purpose:
 
-### User-Facing Web, Desktop, and Server Branding
+- The Android `applicationId`, the `agentworkbench://` deep link and the `AgentWorkbenchAndroid` user agent. Changing them would break paired devices and the Android update path.
+- Upstream attribution and licence files (see [LICENSING.md](../../LICENSING.md)).
+- The internal `agency` module, CSS class and i18n key names, and persisted file names inside the config directory (`agency-*.json`).
 
-- Web document title (`packages/web/index.html`) updated to `Anvilary Workbench`.
-- All 9 web locale bundles (`packages/web/src/i18n/locales/*.json`) updated so `settings.about.app` is `Anvilary Workbench`, `agency.ui.agency` / `agency.ui.agencyUI` are `Workbench`, and user-facing strings referencing `Agent Workbench`, `My Amazing Workspace`, `MAW`, or `MaW` use `Anvilary Workbench` or `Workbench`.
-- About settings logo mark (`packages/web/src/features/settings/sections/AboutSettingsSection.tsx`) updated to `AW` (with `aria-hidden="true"`), and version tooltip (`packages/web/src/SettingsDialog.tsx`) updated to `Anvilary Workbench <version>`.
-- Classic UI header/narrow chrome and system notifications (`packages/web/src/App.tsx`, `packages/web/src/NarrowShell.tsx`, `packages/web/src/system-notification.ts`) updated to `Anvilary Workbench`.
-- Electron main window title and `app.setName` (`packages/desktop/main.mjs`) updated to `Anvilary Workbench` (and `Anvilary Workbench Prototype` in non-production prototype launches).
-- Server console banner, shutdown/startup error messages, and startup support/missing-CLI lines (`packages/server/src/index.ts`, `packages/server/src/startup-summary.ts`) updated to `Anvilary Workbench`.
-- Package description (`package.json`), Windows launcher (`scripts/package.mjs` generating `Anvilary Workbench.cmd`), and dev prototype launcher message (`scripts/desktop-prototype.mjs`) updated.
+Browser `localStorage` keys are migrated once inside the app (read old, write new, remove old).
 
-### Additive CLI & Desktop Entry Interfaces
+### Environment variables
 
-- Added `scripts/maw/anvil-bench`, forwarding through `scripts/maw/maw` with `MAW_CLI_NAME=anvil-bench` so help and update usage strings match the invoked command (`anvil-bench` vs `maw`).
-- Updated `scripts/maw/install.sh` to install both `anvil-bench` and `maw` into `bin_dir` and `lib_dir`.
-- Updated the XDG desktop entry (`maw.desktop`) generated by `scripts/maw/install.sh` to `Name=Workbench`, `GenericName=Anvilary Workbench`, `Exec=".../anvil-bench" desktop`, and expanded `Keywords`, while preserving the `maw.desktop` filename and `Icon=maw-workspace` asset name for dock/taskbar continuity.
-- Added `'anvil-bench': 'dist/server.js'` to the generated npm package `bin` map in `scripts/build-npm.mjs` alongside the existing `'agent-workbench': 'dist/server.js'` entry.
+Each runtime resolves configuration through one resolver with one rule: `WORKBENCH_X` wins, else the legacy `MAW_X` (or `AGENT_WORKBENCH_X`), else the default. When both names are set with different values, a single warning names both variables (never the values). Legacy names are accepted for a deprecation period and then removed.
 
-## Intentionally Preserved Runtime & Persistence Identifiers
+Exceptions:
 
-The following compatibility-sensitive identifiers were inspected and deliberately preserved unchanged in this phase:
+- `WORKBENCH_UNSAFE_LOCAL_NO_AUTH` has no legacy alias. The migration must not carry the token-free diagnostic mode forward (see [local authentication](../security/local-auth.md)).
+- Test-only and evidence-only variables are renamed without aliases.
 
-| Category | Preserved Identifier(s) | Reason |
-| --- | --- | --- |
-| Systemd user units & names | `maw.service`, `maw-ptyd.service`, `maw-restart-helper` | Live production services and transient upgrade helpers target these exact unit names across updates and rollbacks. |
-| Runtime dirs & sockets | `$XDG_RUNTIME_DIR/maw`, `$XDG_RUNTIME_DIR/maw-ptyd`, `ptyd.sock`, `ptyd.sock.auth`, `maw-ready.json` | Backend and persistent PTY supervisor communicate over fixed socket and readiness paths. |
-| Release & state storage | `~/.local/share/maw`, `releases/`, `current`, `healthy`, `previous`, `.maw-release-meta.json`, `.maw-candidate`, `/opt/maw-electron/<ver>/electron` | Release state machine, rollback checks, and root-owned Electron sandbox package depend on existing paths. |
-| User config & desktop data | `~/.config/agent-workbench`, `~/.local/share/maw-desktop`, `maw-desktop-prototype` | Preserves saved workspaces, settings, credentials, and signed-in desktop sessions. |
-| Electron partitions & IPC | `persist:maw-chatgpt`, `persist:maw-github`, `persist:maw-perplexity`, `persist:maw-browser`, `maw:desktop` | Renaming partitions would log users out of persisted provider sessions. |
-| Desktop launcher ID & icon | `maw.desktop`, `app.setDesktopName('maw.desktop')`, `maw-workspace` | Avoids breaking Wayland/GNOME/dock app-ID matching and existing desktop pins. |
-| Environment & localStorage keys | `MAW_*`, `AGENT_WORKBENCH_*`, `agent-workbench.theme`, `agency-ui.*` | Preserves automation hooks, security toggles (`MAW_UNSAFE_LOCAL_NO_AUTH`), and browser UI state. |
-| Security & Android contracts | `AgentWorkbenchAndroid/` user-agent check, `agentworkbench://settings` deep link, `.gitignore` memory comment `# Memoria compartida de los agentes (Agent Workbench)` | Avoids breaking paired Android clients and project `.gitignore` detection. |
-| Internal code symbols & CSS | `MawRoot.tsx`, `maw-host.ts`, `maw-ptyd.mjs`, `.maw-*`, `.agency-*`, `scripts/maw/*` | Purely internal layout/identifiers; avoids noisy diffs during branding transition. |
+## Migration tool
 
-## Phase 4 Evaluation: Internal Workspace & npm Package Naming
+One implementation, `scripts/workbench/migrate-identity.mjs` (Node, no dependencies), with the commands `plan | apply | verify | rollback | clean`. The Linux CLI exposes it as `anvi-bench migrate ...`. Non-systemd installs (Windows, npm) call only its `migrateConfigDir()` step at server startup: copy the legacy config directory to the canonical one when the canonical one is absent. It is idempotent.
 
-Transitioning workspace packages from `@agent-workbench/*` (`@agent-workbench/shared`, `@agent-workbench/server`, `@agent-workbench/web`, `@agent-workbench/desktop`) to `@anvilary/workbench-*` and renaming the published npm package from `agent-workbench` is **deferred** to a dedicated migration PR.
+State is recorded in `$XDG_DATA_HOME/workbench/migration/identity-v1.json` (mode 0600), step by step, with source, destination and a checksum manifest. Completion of a step is re-verified from observable state, not trusted from the marker alone.
 
-### Why Deferred
+### Copy, never move
 
-1. **Broad blast radius across build and runtime scripts**: Over 100 files reference `@agent-workbench/*` or `agent-workbench` across workspace `package.json` manifests, TypeScript project references, `pnpm-lock.yaml`, `scripts/maw/install.sh` (`@agent-workbench/server` check/build expectations), `scripts/maw/maw-update.sh`, `.github/workflows/ci.yml`, `.github/workflows/publish.yml`, and `.github/scripts/smoke.mjs`.
-2. **Independent migration scope**: Packaging allowlists (`.github/scripts/check-tarball.mjs` now includes `dist/maw-ptyd.mjs` and `dist/terminal-state.mjs`), settings checks (`packages/server/scripts/check-settings.mjs`), and tiered CI gating (`.github/workflows/ci.yml`) are tracked and validated independently so a future package rename PR remains focused and reviewable.
-3. **npm ecosystem continuity**: Adding `'anvil-bench'` to `bin` inside `dist-npm/package.json` introduces the preferred CLI immediately without unpublishing or stranding `npm install -g agent-workbench` / `npx agent-workbench` users.
+The legacy installation (release state, units, config, userData, helpers, CLI scripts and the legacy Electron runtime) stays byte for byte intact until `clean`. Rollback therefore needs no data restore in the normal case. A backup archive is kept as defense in depth.
 
-### Future `@anvilary/workbench-*` Migration Checklist
+### `plan`
 
-1. Publish a transitional release of `agent-workbench` whose `bin` exposes both `anvil-bench` and `agent-workbench` (implemented now).
-2. Establish the `@anvilary` npm scope and decide whether `@anvilary/workbench` supersedes `agent-workbench` (with a deprecation notice wrapper package on `agent-workbench`).
-3. Rename workspace package names (`@anvilary/workbench-shared`, `@anvilary/workbench-server`, `@anvilary/workbench-web`, `@anvilary/workbench-desktop`), update imports/filters across `package.json` scripts and CI workflows, regenerate `pnpm-lock.yaml`, and update `check-maw-package.mjs` + `.github/scripts/smoke.mjs` + `.github/scripts/check-tarball.mjs`.
+Read-only preflight. It prints the full step list and refuses (exit 2, with a precise reason) when:
 
-## Future Operational Migrations & Repo Transfer Prerequisites
+- a legacy unit or restart helper is active or activating;
+- any process of the current user holds the legacy PTY socket or runs Electron with the legacy userData;
+- a destination exists without a matching v1 state file (never overwrite);
+- free space is less than twice the copy size;
+- the source checkout given with `--source` is not a clean checkout at `--expect-commit`.
 
-Before changing systemd unit names, XDG directories, Electron partitions, or transferring the GitHub repository to `Anvilary/Workbench`:
+Missing sources mean a fresh install: it exits 0 with "nothing to migrate".
 
-1. **Systemd & runtime directory migration**: Introducing `anvilary-workbench.service` / `anvilary-workbench-ptyd.service` requires an idempotent pre-stop/migrate step in `scripts/maw/install.sh` (stopping `maw.service` and `maw-ptyd.service` only with zero active PTYs, migrating `~/.local/share/maw` and `~/.config/agent-workbench` non-destructively, and keeping symlinks or unit aliases so rollback works). Because restarting `maw-ptyd.service` drops live PTYs, this cannot run silently inside an automatic background update.
-2. **Desktop runtime `.deb` package**: `scripts/maw/build-desktop-deb.mjs` currently builds `maw-electron-<ver>_<arch>.deb` under `/opt/maw-electron/<ver>/`. Renaming that package requires updating `install.sh --desktop`, AppArmor rules, and `scripts/maw/maw` runtime discovery with dual-path fallback.
-3. **GitHub repository transfer (`Anvilary/Workbench`)**:
-   - Update `REPO_URL` in `scripts/build-npm.mjs`, `package.json`, `README.md`, translations (`README.*.md`), and `packages/web/src/features/settings/sections/AboutSettingsSection.tsx` once `Anvilary/Workbench` exists.
-   - Verify GitHub Actions secrets, npm trusted publishing / OIDC settings (`.github/workflows/publish.yml`), and branch rulesets in the target organization.
-   - Re-point host git remotes or `source_path` on installed machines (`~/.local/share/maw/source_path`) if updater fetches from origin.
-4. **Verification notes (resolved outside rebranding)**:
-   - `.github/workflows/ci.yml`: uses tiered jobs (`verify`, unit shards, and `run_heavy`-gated Tier 2/3 jobs) with `CI Gate` aggregation and builds before runtime/desktop suites.
-   - `.github/scripts/check-tarball.mjs`: explicitly allows `dist/maw-ptyd.mjs` and `dist/terminal-state.mjs` emitted by `scripts/build-npm.mjs`.
-   - `packages/server/scripts/check-settings.mjs`: validated as part of `pnpm check`.
+### `apply`
+
+Each step is idempotent:
+
+1. **Backup.** Archive of the legacy config, environment file, userData without HTTP and GPU caches, release metadata (pointer targets, update log), units and desktop entry, under `$XDG_DATA_HOME/workbench-migration-backup/` (directory 0700, file 0600), with a verified checksum.
+2. **Config.** Copy to `$XDG_CONFIG_HOME/workbench` preserving modes and timestamps; verify the manifest.
+3. **Environment file.** Rename `MAW_X` and `AGENT_WORKBENCH_X` keys to `WORKBENCH_X`. Drop `MAW_UNSAFE_LOCAL_NO_AUTH` (recorded by name only). Unknown keys are kept and listed by name. Values are never printed. Written with mode 0600.
+4. **Desktop userData.** Copy to `$XDG_DATA_HOME/workbench-desktop`, excluding only Chromium caches (`Cache`, `Code Cache`, `GPUCache`, `DawnGraphiteCache`, `DawnWebGPUCache`, `GPUPersistentCache`, `ShaderCache`), `Crashpad` and `Singleton*` lock files. Cookies, Local Storage, IndexedDB, Service Worker data, dictionaries and preferences are copied. Inside the copy, `Partitions/maw-*` become `Partitions/workbench-*`, and absolute legacy paths in `Preferences` and `Local State` are rewritten. Cookies are stored without OS keyring encryption, so the directory rename does not affect their readability.
+5. **Release state.** Build the first canonical release from the verified source with the normal updater in initial mode. It becomes `healthy` only after the normal readiness probe. Legacy releases are not copied.
+6. **Helpers and CLI.** Install `~/.local/lib/workbench` and `anvi-bench`; replace `maw`, `anvil-bench` and `workbench` with shims. The legacy scripts are saved for rollback.
+7. **Units.** Render `workbench.service` and `workbench-ptyd.service`. Disable and mask the legacy units (masking guarantees two supervisors can never run), enable the canonical units without starting them.
+8. **Desktop entry.** Write `workbench.desktop` and the `workbench` icon, hide the legacy entry with a user override, and update a GNOME favorites entry if one exists.
+9. **Electron runtime.** If `/opt/workbench-electron/<ver>` is missing, print the owner's install command and stop in the `awaiting-runtime` state (exit 3). Re-running `apply` continues.
+
+### `verify`, `rollback`, `clean`
+
+- `verify` checks that the canonical units are active, the socket is owned by the supervisor, the readiness probe reports the canonical release, the desktop uses the canonical userData, the config manifests match and the legacy units are masked and inactive. The state becomes `verified` only when every check passes and the owner passes `--accept`.
+- `rollback` (any state before `clean`) stops and disables the canonical units, unmasks and enables the legacy units, restores the CLI scripts, desktop entry override and favorites, and renames canonical copies to `*.rolled-back-<ts>` without deleting them.
+- `clean` requires `verified` and `--yes`. It lists, then removes, the legacy units, helpers, release state, config, userData, environment file, desktop entry and icons. The backup is kept until the owner deletes it.
+
+## Related
+
+- [Install](../operations/install.md), [update and rollback](../operations/update-rollback.md), [launcher](../operations/launcher.md)
+- [Browser profiles and partitions](../browser/profiles.md)
+- [Architecture decisions](decisions.md)

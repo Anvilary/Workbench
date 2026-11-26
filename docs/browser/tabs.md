@@ -1,8 +1,8 @@
-# MAW Lane B — Durable Browser Tabs and ChatGPT Workspace Integration
+# Workbench Lane B — Durable Browser Tabs and ChatGPT Workspace Integration
 
 ## Overview
 
-Lane B introduces the durable browser-tab domain for My Amazing Workspace (MAW), enabling workspaces to associate and persist multiple ChatGPT conversations alongside native CLI and terminal sessions.
+Lane B introduces the durable browser-tab domain for Anvilary Workbench (Workbench), enabling workspaces to associate and persist multiple ChatGPT conversations alongside native CLI and terminal sessions.
 
 This implementation satisfies all core requirements and lifecycle safety amendments:
 1. **Explicit `web` tab kind**: Distinct from native CLI (`kind: 'agent'`) and shell (`kind: 'terminal'`) sessions.
@@ -12,7 +12,7 @@ This implementation satisfies all core requirements and lifecycle safety amendme
 5. **Runtime decoupling**: Ephemeral browser runtime identifiers (`targetRef`) are decoupled from durable tab identities (`id`).
 6. **Controller-driven selection & target reconciliation**: On selection, requests that the browser controller display the verified live Chromium target. On restart, reattaches to existing live Chromium targets without creating duplicate pages.
 7. **Switching without teardown**: Switching from ChatGPT 1 to ChatGPT 2 activates ChatGPT 2 without navigating ChatGPT 1 away or terminating its target. Background pages and streaming responses continue uninterrupted.
-8. **Truthful recovery semantics**: Differentiates between MAW server restart (where Neko targets may still be alive) and browser restart (where targets are dead). Verifies ownership via `{ tabId, workspaceId }` and never guesses by URL or title.
+8. **Truthful recovery semantics**: Differentiates between Workbench server restart (where Neko targets may still be alive) and browser restart (where targets are dead). Verifies ownership via `{ tabId, workspaceId }` and never guesses by URL or title.
 9. **Atomic tab operations**: In-process operation queue serializes mutations per workspace; idempotent `launchId` prevents duplicate tab creation from rapid client requests.
 10. **Workspace lifecycle validity**: Validates workspace existence and lifecycle state (`active`, non-archived, non-deleted parent project) before mutations.
 11. **Reliable closing**: Persists `cleanupRequired` state if browser target destruction fails; reconciles orphaned targets without touching sibling tabs.
@@ -159,7 +159,7 @@ Lane A implements `BrowserControllerDriver` (`packages/server/src/agency/browser
 
 ```typescript
 export interface TargetMetadata {
-  /** Stable MAW tab ID. */
+  /** Stable Workbench tab ID. */
   tabId: string;
   /** Owning Agency workspace ID. */
   workspaceId: string;
@@ -170,7 +170,7 @@ export interface TargetMetadata {
 export interface BrowserControllerDriver {
   /**
    * Request that the browser engine open a new Chromium page/target at the specified URL
-   * tagged with MAW tab ownership metadata.
+   * tagged with Workbench tab ownership metadata.
    */
   openTarget(url: string, metadata?: TargetMetadata): Promise<OpenTargetResult>;
 
@@ -215,22 +215,22 @@ To guarantee safety across server and container restarts, the integration contra
 
 1. **Target Creation (`openTarget`)**:
    - The driver must associate the newly created Chromium page target with `TargetMetadata`: `{ tabId, workspaceId, url }`.
-   - The target ID returned to MAW is treated as an ephemeral runtime handle.
+   - The target ID returned to Workbench is treated as an ephemeral runtime handle.
 2. **Reattachment (`verifyTargetOwnership`)**:
-   - MAW loads persisted `targetRef` values strictly as **untrusted reconciliation hints**, never as proof of ownership.
-   - On reattachment / selection, MAW invokes `driver.verifyTargetOwnership(targetRef, expected)`.
+   - Workbench loads persisted `targetRef` values strictly as **untrusted reconciliation hints**, never as proof of ownership.
+   - On reattachment / selection, Workbench invokes `driver.verifyTargetOwnership(targetRef, expected)`.
    - The driver MUST verify that:
      1. The target is alive and valid in Chromium CDP.
      2. The target's registered metadata matches `expected.tabId` and `expected.workspaceId`.
    - **Never infer ownership from URL or page title alone**, as distinct workspaces or tabs may share identical URLs.
-   - If verified, MAW activates the target without reopening or navigating the page.
-   - If unverified, stale, dead, or belonging to another workspace, MAW treats the target as unavailable, clears the stale reference, and opens a fresh verified target.
+   - If verified, Workbench activates the target without reopening or navigating the page.
+   - If unverified, stale, dead, or belonging to another workspace, Workbench treats the target as unavailable, clears the stale reference, and opens a fresh verified target.
 3. **Closure (`closeTarget`)**:
    - The driver destroys the Chromium CDP page target and removes its ownership entry from the registry.
-   - If destruction fails (e.g. CDP timeout), MAW marks `cleanupRequired: true` on the tab and safely retries closure later via `reconcileCleanup()`, without affecting sibling tabs.
+   - If destruction fails (e.g. CDP timeout), Workbench marks `cleanupRequired: true` on the tab and safely retries closure later via `reconcileCleanup()`, without affecting sibling tabs.
 4. **Browser Container Restart**:
    - When the Neko container restarts, all previous Chromium targets are destroyed.
-   - `verifyTargetOwnership` returns `false` for old handles. MAW safely discards stale hints and lazily allocates new targets upon explicit user activation.
+   - `verifyTargetOwnership` returns `false` for old handles. Workbench safely discards stale hints and lazily allocates new targets upon explicit user activation.
 5. **Lane A Implementation Boundary**:
    - Lane A currently exposes Chromium target IDs in Neko, but has **not yet implemented** server-side metadata attachment and `verifyTargetOwnership`.
    - **Real Neko reattachment must not be claimed until Lane A implements this registry contract and it is tested against the live controller.**
@@ -313,7 +313,7 @@ All 39 focused unit, regression, and acceptance tests pass cleanly with zero ext
 
 | Test File | Tests | Coverage |
 |---|---|---|
-| `browser-tab-reconciliation.test.ts` | 16 | Reattachment on restart, zero duplicate pages, background page continuation, atomic operations & launchId dedup, failed close & cleanupRequired, workspace validity, shared native/web selection, saved/unloaded tabs, stale/foreign target detection, unconfigured Neko driver explicitly failing, failed activation leaving error state, invalid workspace configuration rejecting Done/archived/unknown, cross-workspace duplicate launch IDs, failed creation without unhandled rejection, MAW restart with verified target identity, and failed browser cleanup safe retry |
+| `browser-tab-reconciliation.test.ts` | 16 | Reattachment on restart, zero duplicate pages, background page continuation, atomic operations & launchId dedup, failed close & cleanupRequired, workspace validity, shared native/web selection, saved/unloaded tabs, stale/foreign target detection, unconfigured Neko driver explicitly failing, failed activation leaving error state, invalid workspace configuration rejecting Done/archived/unknown, cross-workspace duplicate launch IDs, failed creation without unhandled rejection, Workbench restart with verified target identity, and failed browser cleanup safe retry |
 | `url-validation.test.ts` | 6 | Canonical ChatGPT URLs, query/fragments, HTTPS enforcement, SSRF defense, port blocking, domain spoofing, credential blocking |
 | `browser-tab-persistence.test.ts` | 7 | Atomic writes, mode 0o600, backup generation, corrupt quarantine, conservative restore, selection normalization, duplicate detection |
 | `browser-tab-adapter.test.ts` | 8 | Target opening, target switching without teardown, lazy attach on select, navigation, renaming, reordering, close with adjacent selection, cross-workspace isolation |

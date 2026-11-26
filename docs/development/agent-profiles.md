@@ -1,21 +1,21 @@
-# MAW Profile Onboarding Guide
+# Workbench Profile Onboarding Guide
 
-This guide describes how to configure, verify, and operate CLI agent profiles in My-Amazing-Workspace (MAW).
+This guide describes how to configure, verify, and operate CLI agent profiles in Anvilary Workbench (Workbench).
 
 ---
 
 ## What Are Profiles and Why Are Executables Empty by Default?
 
-In MAW, **CLI Profiles** define the execution environments, isolation boundaries, arguments, and credential sandboxes used by autonomous agent sessions (such as OpenAI Codex, Google Antigravity/AGY, and Anthropic Claude Code).
+In Workbench, **CLI Profiles** define the execution environments, isolation boundaries, arguments, and credential sandboxes used by autonomous agent sessions (such as OpenAI Codex, Google Antigravity/AGY, and Anthropic Claude Code).
 
 ### Why Executables Are Empty by Default
-When MAW is first installed, profile entries exist in `agency-profiles.json`, but their `executable` fields are intentionally left blank:
+When Workbench is first installed, profile entries exist in `agency-profiles.json`, but their `executable` fields are intentionally left blank:
 
-1. **Security & Explicit Consent**: MAW never assumes access to or auto-selects executables from `$PATH`. Executing arbitrary system binaries or invoking native models without explicit review violates least-privilege principles.
+1. **Security & Explicit Consent**: Workbench never assumes access to or auto-selects executables from `$PATH`. Executing arbitrary system binaries or invoking native models without explicit review violates least-privilege principles.
 2. **Provider Isolation**: Multi-agent development requires distinct execution wrappers (e.g., `codex-0`, `codex-1`, `agy-0` through `agy-5`). Auto-detecting a generic `claude` or `codex` command would risk routing multiple agents into the same credentials and conversation databases.
 3. **Preventing Accidental Cloud Costs**: Requiring the user to configure each profile ensures agents are not spawned unintentionally against billable APIs.
 
-Until a profile has its executable configured, its status is marked as unconfigured, and MAW prevents launching agents under that profile.
+Until a profile has its executable configured, its status is marked as unconfigured, and Workbench prevents launching agents under that profile.
 
 ---
 
@@ -38,7 +38,7 @@ In the `feat/maw-launcher-update-onboarding` branch, the UI provides active guid
 
 ## Step-by-Step Setup for Each Provider Type
 
-All wrapper binaries on this host are located in `/home/user/.local/bin/` (which is included in `maw.service`'s default `PATH`).
+All wrapper binaries on this host are located in `/home/user/.local/bin/` (which is included in `workbench.service`'s default `PATH`).
 
 ### 1. OpenAI Codex Profiles (`codex-0`, `codex-1`, `codex-3`, etc.)
 
@@ -70,7 +70,7 @@ AGY profiles require isolated credentials, dedicated D-Bus secret services, and 
   - Profile `agy-4` → Executable: `agy-4`
   - Profile `agy-5` → Executable: `agy-5`
 - **Arguments**: Leave empty or set `[]`.
-- **Authentication Mode**: Each wrapper operates in account mode. No secret API keys need to be configured in MAW.
+- **Authentication Mode**: Each wrapper operates in account mode. No secret API keys need to be configured in Workbench.
 
 ### 3. Anthropic Claude Code (`claude-code`)
 
@@ -92,8 +92,8 @@ AGY profiles require isolated credentials, dedicated D-Bus secret services, and 
 > Each named wrapper (`agy-1`, `agy-2`, etc.) manages its own private keyring helper and isolated XDG storage. Copying credential tokens between profile directories bypasses the host identity attestation model and causes recovery checks to fail closed.
 
 > [!IMPORTANT]
-> **Never Export Plaintext API Keys into MAW or Systemd**  
-> MAW is designed to execute reviewed local wrappers that handle their own authentication. Do not export `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` into `maw.service` or global systemd environment files.
+> **Never Export Plaintext API Keys into Workbench or Systemd**  
+> Workbench is designed to execute reviewed local wrappers that handle their own authentication. Do not export `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` into `workbench.service` or global systemd environment files.
 
 ---
 
@@ -112,7 +112,7 @@ After saving the executable and arguments in the `AgencyProfileDialog`:
 3. **Verify Configuration File**:
    - Inspect `agency-profiles.json` to confirm persistence:
      ```sh
-     cat ~/.config/agent-workbench/agency-profiles.json
+     cat ~/.config/workbench/agency-profiles.json
      ```
    - Confirm that the `executable` field matches your configured wrapper.
 
@@ -126,13 +126,13 @@ If a typo is entered (e.g., `agy99` instead of `agy-0`, or a nonexistent binary 
    - Attempting to launch an agent tab produces an error message:
      `Executable not found` or `Failed to spawn process`.
 2. **Correction Steps**:
-   - In the MAW sidebar or header, click on **Settings** / **Profiles** (or click the profile name in the session view).
+   - In the Workbench sidebar or header, click on **Settings** / **Profiles** (or click the profile name in the session view).
    - Click **Configure Profile** to reopen `AgencyProfileDialog`.
    - Correct the executable name (e.g., update `agy99` to `agy-0`).
    - Click **Save**.
 3. **Inspecting Server Logs**:
-   - If process launch continues to fail, run `maw logs` in a terminal to inspect systemd spawn diagnostics:
+   - If process launch continues to fail, run `anvi-bench logs` in a terminal to inspect systemd spawn diagnostics:
      ```sh
-     maw logs
+     anvi-bench logs
      ```
    - Ensure the binary exists in `/home/user/.local/bin/` and has executable permissions (`chmod +x`).

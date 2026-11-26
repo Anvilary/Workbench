@@ -10,20 +10,20 @@
 
 ## 1. Architectural Overview & Security Model
 
-The persistent PTY supervisor (`maw-ptyd`) is a standalone local daemon that decouples coding-agent process lifetimes (`node-pty` children) from the MAW backend (`maw.service`).
+The persistent PTY supervisor (`workbench-ptyd`) is a standalone local daemon that decouples coding-agent process lifetimes (`node-pty` children) from the Workbench backend (`workbench.service`).
 
 ```
 +-------------------------------------------------------------+
-|              MAW Backend (maw.service / Node)                |
+|              Workbench Backend (workbench.service / Node)                |
 |               (PtyHostClient / TerminalRegistry)            |
 +-------------------------------------------------------------+
                               |
                      Unix Domain Socket
-               ($XDG_RUNTIME_DIR/maw/ptyd.sock)
+               ($XDG_RUNTIME_DIR/workbench/ptyd.sock)
             0700 dir, 0600 socket, 256-bit token
                               |
 +-------------------------------------------------------------+
-|            Persistent PTY Supervisor (maw-ptyd.mjs)         |
+|            Persistent PTY Supervisor (ptyd.mjs)         |
 |  - Owns master PTY file descriptors                         |
 |  - Drains stdout into 256 KiB ring buffers (monotonic bytes)|
 |  - Tracks exit status & stores 10-min tombstones            |
@@ -37,15 +37,15 @@ The persistent PTY supervisor (`maw-ptyd`) is a standalone local daemon that dec
 ### 1.1 Unix Domain Socket Path & Filesystem DAC
 - **Default Socket Path:**
   `${process.env.XDG_RUNTIME_DIR || '/run/user/' + process.getuid()}/maw/ptyd.sock`
-  (Overridable via `--socket <path>` or `MAW_PTYD_SOCKET`).
+  (Overridable via `--socket <path>` or `WORKBENCH_PTYD_SOCKET`).
 - **Parent Directory DAC:** Must be created with mode `0700` (`rwx------`) and verified to be owned by `process.getuid()`.
 - **Socket Inode DAC:** Bound synchronously using `process.umask(0o177)` to ensure mode `0600` (`rw-------`). On Linux, `connect(2)` requires write permissions on the socket inode; combined with `0700` parent directory permissions, other unprivileged users cannot access or connect.
 
 ### 1.2 Authentication & Peer Credential Limitations
 - **Node.js `SO_PEERCRED` Limitation:** In pure Node.js (without third-party C++ native addons or FFI), `net.Socket` wraps libuv's `uv_pipe_t` and does **not** expose OS-level peer credentials (`SO_PEERCRED` / `struct ucred`). Scanning `/proc/*/fd` or shelling out to `ss` introduces severe race conditions (TOCTOU), process-spawn overhead, and permission barriers across different UIDs.
 - **Verified Local Authentication Alternative:**
-  - Upon startup, `maw-ptyd` generates an ephemeral, cryptographically secure 256-bit token (`crypto.randomBytes(32)`).
-  - The token is written to `${socketPath}.auth` (or `MAW_PTYD_AUTH_FILE`) with strict mode `0600` (`rw-------`).
+  - Upon startup, `workbench-ptyd` generates an ephemeral, cryptographically secure 256-bit token (`crypto.randomBytes(32)`).
+  - The token is written to `${socketPath}.auth` (or `WORKBENCH_PTYD_AUTH_FILE`) with strict mode `0600` (`rw-------`).
   - The connecting client must read this auth file and supply `{ op: "hello", version: 1, authToken: "<hex>" }` within **3,000 ms** of socket connection.
   - Verification uses constant-time comparison (`crypto.timingSafeEqual`) to prevent timing side-channel attacks.
   - Any connection failing authentication or exceeding the handshake deadline is immediately terminated.
@@ -272,7 +272,7 @@ Closes or unsubscribes the client **without killing any running PTY child proces
 ```
 
 ### 3.10 Daemon Shutdown (`shutdown`)
-Used during full workspace shutdown (`maw stop --all`) or test teardown.
+Used during full workspace shutdown (`anvi-bench stop --all`) or test teardown.
 
 ```json
 {
@@ -339,13 +339,13 @@ The supervisor maintains an `OutputBuffer` with a 256 KiB ring cap (`DEFAULT_LIM
 ## 6. Process Lifecycle & Tombstone Retention Contract
 
 1. **Backend Independence:**
-   - When the MAW backend disconnects (`Socket.end()` / `close` / crash / SIGKILL), `maw-ptyd` simply removes the client from its subscribers list.
-   - PTY master descriptors (`master_fd`) remain open in `maw-ptyd`.
-   - Child processes continue executing and writing output to `maw-ptyd`'s ring buffer uninterrupted.
+   - When the Workbench backend disconnects (`Socket.end()` / `close` / crash / SIGKILL), `workbench-ptyd` simply removes the client from its subscribers list.
+   - PTY master descriptors (`master_fd`) remain open in `workbench-ptyd`.
+   - Child processes continue executing and writing output to `workbench-ptyd`'s ring buffer uninterrupted.
 2. **Direct POSIX Parentage:**
-   - `maw-ptyd` is the direct parent process of every PTY child. It receives kernel `SIGCHLD` and records exact `exitCode` and `signal`.
+   - `workbench-ptyd` is the direct parent process of every PTY child. It receives kernel `SIGCHLD` and records exact `exitCode` and `signal`.
 3. **Tombstone Records:**
-   - If a child process exits while the MAW backend is disconnected (or before the backend reaps it), `maw-ptyd` stores a Tombstone record with the process exit metadata and final 256 KiB output buffer for **10 minutes** (`TOMBSTONE_TTL_MS = 600,000`).
+   - If a child process exits while the Workbench backend is disconnected (or before the backend reaps it), `workbench-ptyd` stores a Tombstone record with the process exit metadata and final 256 KiB output buffer for **10 minutes** (`TOMBSTONE_TTL_MS = 600,000`).
    - When the backend restarts and connects, the tombstone is delivered in `snapshot.tombstones` and can be queried via `replay`.
 
 ---
@@ -387,6 +387,6 @@ When an error occurs, the supervisor replies with:
 
 ## 9. Known Unsupported Cases
 
-1. **Host Kernel Reboot / Power Outage:** Processes in volatile RAM cannot survive OS kernel reboot. MAW persists workspace layout and `nativeSessionId`s so Lane B can offer 1-click provider `--resume`.
-2. **Supervisor Fatal Crash (`SIGKILL` on `maw-ptyd`):** If the supervisor itself dies, the kernel closes PTY master file descriptors, sending `SIGHUP` to slave processes.
+1. **Host Kernel Reboot / Power Outage:** Processes in volatile RAM cannot survive OS kernel reboot. Workbench persists workspace layout and `nativeSessionId`s so Lane B can offer 1-click provider `--resume`.
+2. **Supervisor Fatal Crash (`SIGKILL` on `workbench-ptyd`):** If the supervisor itself dies, the kernel closes PTY master file descriptors, sending `SIGHUP` to slave processes.
 3. **Cross-Machine Migration:** POSIX file descriptors and Unix domain sockets cannot be migrated across physical or virtual machines without checkpoint/restore tooling (CRIU).

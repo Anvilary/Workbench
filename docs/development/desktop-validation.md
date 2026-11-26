@@ -39,10 +39,10 @@ Sessions can expire or be revoked. Authentication is not guaranteed indefinitely
 
 ## Visual and interaction evidence
 
-* [Official ChatGPT in the whole MAW content pane](evidence/chatgpt.png): one MAW tab strip, no address bar or streaming controls.
+* [Official ChatGPT in the whole Workbench content pane](evidence/chatgpt.png): one Workbench tab strip, no address bar or streaming controls.
 * [Second selected native ChatGPT tab](evidence/second-tab.png): separate WebContents identity and independent saved URL; both pages remain alive.
 * [Existing native terminal selected](evidence/terminal.png): the ChatGPT surface is detached, and its page remains alive.
-* [MAW dropdown](evidence/dropdown.png) and [MAW dialog](evidence/dialog.png): the native surface is detached so HTML controls remain usable.
+* [Workbench dropdown](evidence/dropdown.png) and [Workbench dialog](evidence/dialog.png): the native surface is detached so HTML controls remain usable.
 * [Fullscreen](evidence/fullscreen.png): native content follows the workspace bounds.
 * [Brave compatibility fallback](evidence/brave-fallback.png): existing tabs work with an external ChatGPT link; no iframe or Electron bridge.
 
@@ -67,9 +67,9 @@ From the worktree root:
 pnpm typecheck
 pnpm build
 pnpm check
-pnpm --filter @agent-workbench/web test:integration
-pnpm --filter @agent-workbench/desktop test
-xvfb-run -a pnpm --filter @agent-workbench/desktop test:electron
+pnpm --filter @anvilary/workbench-web test:integration
+pnpm --filter @anvilary/workbench-desktop test
+xvfb-run -a pnpm --filter @anvilary/workbench-desktop test:electron
 ```
 
 From `packages/server`:
@@ -81,7 +81,7 @@ xvfb-run -a pnpm exec tsx scripts/check-maw-integration.mjs
 
 Results: typecheck/build/check passed; 26 frontend tests, 154 focused backend/security
 tests, four desktop policy tests and the Electron process suite passed. The full
-isolated MAW acceptance script passed real Bash PTY behavior, authenticated HTTP,
+isolated Workbench acceptance script passed real Bash PTY behavior, authenticated HTTP,
 notification safety, browser fallback and server-restart restoration. Tests for the
 removed streaming controller/viewer were retired; logical persistence, URL
 validation and CLI/session tests remain. `check-docs` reports its existing skip
@@ -97,12 +97,12 @@ following are medians in MiB:
 
 | Group | Processes | Summed RSS | PSS |
 | --- | ---: | ---: | ---: |
-| Electron: MAW frontend plus two anonymous official ChatGPT pages | 10 | 1,130.8 | 425.1 |
+| Electron: Workbench frontend plus two anonymous official ChatGPT pages | 10 | 1,130.8 | 425.1 |
 | Existing idle production Neko container, including its descendants | 22 | 237.1 | 118.1 |
 | Existing Brave browser across its current user workload | 25 | 7,638.5 | 5,502.9 |
 
 These are **not equivalent workloads**. The existing Neko container was idle;
-Brave had its existing user workload and extensions, not a controlled MAW-only
+Brave had its existing user workload and extensions, not a controlled Workbench-only
 session. No page inventory or private browser content was inspected. The common
 Node backend is excluded from these browser/container groups. Summed RSS counts
 shared pages more than once; PSS is the more useful resident-memory comparison.

@@ -6,10 +6,10 @@ Anvilary Workbench is a **modular monolith** in four packages. [Architecture v2]
 
 | Package | Role | Key Entry Points |
 | --- | --- | --- |
-| `@agent-workbench/shared` | Wire protocol (types, validators, codecs by message family), URL policies, pure layout and domain logic | `packages/shared/src/index.ts`, `packages/shared/src/protocol/index.ts` |
-| `@agent-workbench/server` | Express/WebSocket backend, feature services and persistence, agent adapters, PTY supervisor | `packages/server/src/index.ts`, `packages/server/src/maw-host.ts`, `packages/server/src/pty-host/maw-ptyd.mjs`, `packages/server/src/transport/websocket/socket-server.ts` |
-| `@agent-workbench/web` | React + TypeScript interface organized by feature | `packages/web/src/main.tsx`, `packages/web/src/app/WorkbenchRoot.tsx` |
-| `@agent-workbench/desktop` | Trusted Electron shell: native browser views, isolated partitions, privileged IPC, WebAuthn bridge, resource budget | `packages/desktop/main.mjs`, `packages/desktop/policy.mjs`, `packages/desktop/src/browser/view-controller.mjs` |
+| `@anvilary/workbench-shared` | Wire protocol (types, validators, codecs by message family), URL policies, pure layout and domain logic | `packages/shared/src/index.ts`, `packages/shared/src/protocol/index.ts` |
+| `@anvilary/workbench-server` | Express/WebSocket backend, feature services and persistence, agent adapters, PTY supervisor | `packages/server/src/index.ts`, `packages/server/src/workbench-host.ts`, `packages/server/src/pty-host/ptyd.mjs`, `packages/server/src/transport/websocket/socket-server.ts` |
+| `@anvilary/workbench-web` | React + TypeScript interface organized by feature | `packages/web/src/main.tsx`, `packages/web/src/app/WorkbenchRoot.tsx` |
+| `@anvilary/workbench-desktop` | Trusted Electron shell: native browser views, isolated partitions, privileged IPC, WebAuthn bridge, resource budget | `packages/desktop/main.mjs`, `packages/desktop/policy.mjs`, `packages/desktop/src/browser/view-controller.mjs` |
 | Android app (`android/`) | Standalone companion Android project outside the pnpm workspace | `android/` |
 
 ## Preserved Operational Invariants

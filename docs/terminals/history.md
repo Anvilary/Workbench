@@ -17,7 +17,7 @@
 ### PTY Supervisor
 The application supports two PTY supervisory architectures:
 - **In-process PTY** (`node-pty` direct): default mode. PTY processes run directly in the Node.js server and terminate if the server restarts.
-- **Persistent PTY daemon** (`PtyHostClient`): enabled via `MAW_PERSISTENT_PTY=1`. PTY processes survive server restarts and re-bind over a local Unix domain socket.
+- **Persistent PTY daemon** (`PtyHostClient`): enabled via `WORKBENCH_PERSISTENT_PTY=1`. PTY processes survive server restarts and re-bind over a local Unix domain socket.
 
 ### TerminalRegistry
 [`packages/server/src/terminal-registry.ts`](../../../packages/server/src/terminal-registry.ts) coordinates PTY lifecycle across all sessions. It manages per-terminal listener sets and attaches output buffers. It does not provide historical disk persistence across restarts.
@@ -54,7 +54,7 @@ Under Lane F, live xterm.js scrollback is reduced to **5,000 lines**, while hist
 ## 3. Selected Storage Architecture
 
 ### Segmented Append-Only Flat Files with Atomic JSON Index
-One dedicated directory is created per terminal under `~/.config/agent-workbench/terminal-history/<terminalId>/`:
+One dedicated directory is created per terminal under `~/.config/workbench/terminal-history/<terminalId>/`:
 - `seg-N.bin`: UTF-8 plain-text binary segments, append-only, rotated every 10,000 lines (configurable).
 - `index.json`: Atomic index tracking segment line boundaries, creation timestamps, and pruned line counts.
 
@@ -260,13 +260,13 @@ Benchmarks executed on Linux x64 (16 CPUs, Node v24.22.0) using synthetic dispos
 ```bash
 pnpm -r typecheck
 ```
-- `@agent-workbench/shared`: Pass (0 errors)
-- `@agent-workbench/server`: Pass (0 errors)
-- `@agent-workbench/web`: Pass (0 errors)
+- `@anvilary/workbench-shared`: Pass (0 errors)
+- `@anvilary/workbench-server`: Pass (0 errors)
+- `@anvilary/workbench-web`: Pass (0 errors)
 
 ### Server Test Suites
 ```bash
-pnpm --filter @agent-workbench/server exec tsx --test \
+pnpm --filter @anvilary/workbench-server exec tsx --test \
   src/terminal-history-store.test.ts \
   src/terminal-history-authorization.test.ts \
   src/terminal-ansi-fidelity.test.ts \
@@ -276,7 +276,7 @@ Result: **17/17 tests pass** (587 ms).
 
 Full server regression suite:
 ```bash
-pnpm --filter @agent-workbench/server exec tsx --test \
+pnpm --filter @anvilary/workbench-server exec tsx --test \
   src/agency/*.test.ts \
   src/agency/browser-tabs/*.test.ts \
   src/agency/runtime/*.test.ts \
@@ -293,13 +293,13 @@ Result: **235/235 tests pass** (0 failures).
 
 ### Web Test Suite
 ```bash
-pnpm --filter @agent-workbench/web test && node --test packages/web/src/useTerminalHistory.test.mjs
+pnpm --filter @anvilary/workbench-web test && node --test packages/web/src/useTerminalHistory.test.mjs
 ```
 Result: **54/54 tests pass** (0 failures).
 
 ### Production Bundling
-- `pnpm --filter @agent-workbench/server run build:bundle`: Pass (server bundle built in 61 ms).
-- `pnpm --filter @agent-workbench/web run build`: Pass (Vite production bundle built in 2.34 s).
+- `pnpm --filter @anvilary/workbench-server run build:bundle`: Pass (server bundle built in 61 ms).
+- `pnpm --filter @anvilary/workbench-web run build`: Pass (Vite production bundle built in 2.34 s).
 
 ### Em Dash Audit
 - Em dash audit: **0 em dashes detected** across all changed code and documentation.

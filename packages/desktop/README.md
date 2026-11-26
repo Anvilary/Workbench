@@ -1,6 +1,6 @@
 # Anvilary Workbench Desktop
 
-For installation against the existing service, use [the production Ubuntu guide](PRODUCTION.md). The production command is `anvil-bench desktop` (`maw desktop` remains available as a compatibility alias); `pnpm desktop` below is development only.
+For installation against the existing service, use [the production Ubuntu guide](PRODUCTION.md). The production command is `anvil-bench desktop` (`anvi-bench desktop` remains available as a compatibility alias); `pnpm desktop` below is development only.
 
 An Ubuntu desktop-first Anvilary Workbench shell using the existing local Node service and
 React frontend. Neko source and infrastructure are retired in this branch; no
@@ -24,16 +24,16 @@ the same directory on subsequent launches to retain authentication and workspace
 metadata. The directory contains credentials; retain it privately. No Brave or
 Neko profile is read or imported.
 
-Create a project/workspace, then use MAW's existing **+ → New ChatGPT tab** action.
+Create a project/workspace, then use Workbench's existing **+ → New ChatGPT tab** action.
 Create another tab to verify independent pages. **+ → Open URL** navigates the
 selected ChatGPT tab; F2 and the existing tab controls rename, reorder and close
 tabs. There is no extra website toolbar. F11 toggles window fullscreen from
-either the MAW renderer or the website. Ctrl+Tab / Ctrl+Shift+Tab and
-Ctrl+PageDown / Ctrl+PageUp switch existing MAW tabs; Ctrl+W uses the existing
+either the Workbench renderer or the website. Ctrl+Tab / Ctrl+Shift+Tab and
+Ctrl+PageDown / Ctrl+PageUp switch existing Workbench tabs; Ctrl+W uses the existing
 close flow, including confirmation for running CLI/PTY sessions.
 
 For a separately managed development service, run the shell with its token-bearing loopback
-startup URL in `MAW_DESKTOP_URL` and an isolated `MAW_DESKTOP_DATA_DIR`.
+startup URL in `WORKBENCH_DESKTOP_URL` and an isolated `WORKBENCH_DESKTOP_DATA_DIR`.
 The shell does not launch or manage a backend itself. Do not change the installed
 service for this experiment. All web tabs are managed by the desktop client; ordinary browser clients receive an external-link fallback.
 
@@ -60,8 +60,8 @@ step. The shell refuses `--no-sandbox`.
 
 Keep React, the Node service, authenticated WebSocket protocol, workspace stores,
 CLI launch ownership, PTYs and the systemd service architecture. Add a thin
-`BrowserWindow` for the local MAW frontend and one `WebContentsView` per visited
-ChatGPT tab. A single dedicated `persist:maw-chatgpt` session supplies cookies and
+`BrowserWindow` for the local Workbench frontend and one `WebContentsView` per visited
+ChatGPT tab. A single dedicated `persist:workbench-chatgpt` session supplies cookies and
 website storage to all of those views. The shell has a different session.
 
 The Node service stores existing `WebTab` UUIDs, titles, URLs,
@@ -73,7 +73,7 @@ CLI and web tabs.
 The local renderer's narrow bridge accepts `open`, `update`, `retain`, `close`
 and `layout`. Main validates the exact sender WebContents, main frame, configured
 origin, action shape, UUID, URL and bounds. Remote pages receive no preload.
-Native navigation events checkpoint committed ChatGPT URLs through MAW's existing
+Native navigation events checkpoint committed ChatGPT URLs through Workbench's existing
 authenticated navigate message; no page DOM is read. OAuth paths and credential
 query parameters are excluded. Failed/offline checkpoints retain the last durable
 URL and retry on a later focus/reconnect.
@@ -82,7 +82,7 @@ React measures the actual pane, viewport and clipping ancestors continuously whi
 the selected surface is mounted; only changed measurements cause IPC. Scroll and
 CSS layout changes need no guessed delay. Main converts CSS bounds using the
 shell's zoom factor, rejects stale viewport measurements, and immediately detaches
-on resize/minimize/fullscreen transitions until fresh bounds arrive. MAW menus,
+on resize/minimize/fullscreen transitions until fresh bounds arrive. Workbench menus,
 dialogs, notification toasts and sidebar dragging detach the surface. Detaching
 retains the page; closing/removing the logical tab destroys it, including after a
 shell reload. Unvisited restored tabs load lazily. Eight live pages are allowed
@@ -109,7 +109,7 @@ API references: [WebContentsView](https://www.electronjs.org/docs/latest/api/web
 All renderers use `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`
 and `webSecurity: true`. No website preload, certificate bypass, UA impersonation,
 header rewriting, credential extraction or website instrumentation exists in the
-application. The website has no MAW bridge or terminal/filesystem API.
+application. The website has no Workbench bridge or terminal/filesystem API.
 
 Top-level destinations are exact HTTPS hosts: `chatgpt.com`, the legacy
 `chat.openai.com` redirect, `auth.openai.com`, `auth0.openai.com`,

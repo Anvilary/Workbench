@@ -19,7 +19,7 @@ packages/<pkg>/tests/
 
 ## Path Resolution Helpers
 
-Every test tree uses dedicated root helpers (`tests/helpers/paths.ts` for `@agent-workbench/server`, `tests/helpers/paths.mjs` for `@agent-workbench/web` and `@agent-workbench/desktop`) exporting `REPO_ROOT`, package roots (`SERVER_ROOT`, `WEB_ROOT`, `DESKTOP_ROOT`), `SERVER_SRC` / `WEB_SRC`, and `SCRIPTS_MAW_DIR`. Tests never rely on volatile `process.cwd()` lookups or fragile hardcoded depth arithmetic.
+Every test tree uses dedicated root helpers (`tests/helpers/paths.ts` for `@anvilary/workbench-server`, `tests/helpers/paths.mjs` for `@anvilary/workbench-web` and `@anvilary/workbench-desktop`) exporting `REPO_ROOT`, package roots (`SERVER_ROOT`, `WEB_ROOT`, `DESKTOP_ROOT`), `SERVER_SRC` / `WEB_SRC`, and `SCRIPTS_MAW_DIR`. Tests never rely on volatile `process.cwd()` lookups or fragile hardcoded depth arithmetic.
 
 ## Running Suites
 
@@ -40,9 +40,9 @@ Every test tree uses dedicated root helpers (`tests/helpers/paths.ts` for `@agen
 
 ### Environment Notes
 
-- `MAW_UNSAFE_LOCAL_NO_AUTH`: Security and remote-access pairing tests expect token-auth mode unless explicitly testing no-auth behavior; unset `MAW_UNSAFE_LOCAL_NO_AUTH` when running `pnpm check` or server test tiers from a local dev shell where it may be exported.
-- `MAW_REAL_SYSTEMD=1`: Enables the 3 live user-systemd tests in `packages/server/tests/runtime/lifecycle/maw-systemd-acceptance.test.ts` (automatically skipped when unset).
-- `MAW_TEST_ARTIFACTS_DIR`: Overrides where acceptance UI screenshots are written (defaults under OS `tmpdir()`).
+- `WORKBENCH_UNSAFE_LOCAL_NO_AUTH`: Security and remote-access pairing tests expect token-auth mode unless explicitly testing no-auth behavior; unset `WORKBENCH_UNSAFE_LOCAL_NO_AUTH` when running `pnpm check` or server test tiers from a local dev shell where it may be exported.
+- `WORKBENCH_REAL_SYSTEMD=1`: Enables the 3 live user-systemd tests in `packages/server/tests/runtime/lifecycle/maw-systemd-acceptance.test.ts` (automatically skipped when unset).
+- `WORKBENCH_TEST_ARTIFACTS_DIR`: Overrides where acceptance UI screenshots are written (defaults under OS `tmpdir()`).
 
 ## CI tiers
 

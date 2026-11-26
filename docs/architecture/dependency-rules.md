@@ -4,10 +4,10 @@ Dependencies point one way. The rules below are enforced by tests, not by conven
 
 ## Packages
 
-1. `@agent-workbench/shared` imports nothing from the monorepo and no Node, Electron or React module.
-2. `@agent-workbench/server` imports `shared` only. Never `web`, `desktop`, React or Electron.
-3. `@agent-workbench/web` imports `shared` only. One unit test imports server pure helpers on purpose.
-4. `@agent-workbench/desktop` talks to `web` only through the validated IPC channel and to `server` only over loopback HTTP readiness.
+1. `@anvilary/workbench-shared` imports nothing from the monorepo and no Node, Electron or React module.
+2. `@anvilary/workbench-server` imports `shared` only. Never `web`, `desktop`, React or Electron.
+3. `@anvilary/workbench-web` imports `shared` only. One unit test imports server pure helpers on purpose.
+4. `@anvilary/workbench-desktop` talks to `web` only through the validated IPC channel and to `server` only over loopback HTTP readiness.
 
 ## Server (`packages/server/src`)
 
