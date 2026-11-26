@@ -130,7 +130,7 @@ test('commands installation preserves existing user state and is repeatable', as
   const dir=await mkdtemp(path.join(tmpdir(),'workbench-desktop-install-'));t.after(()=>rm(dir,{recursive:true,force:true}));
   const state=path.join(dir,'state');await mkdir(state);
   await writeFile(path.join(state,'sentinel'),'existing history');
-  const env={...process.env,WORKBENCH_STATE_DIR:state,WORKBENCH_LIB_DIR:path.join(dir,'lib'),WORKBENCH_BIN_DIR:path.join(dir,'bin'),WORKBENCH_NODE_BIN:process.execPath};
+  const env={...process.env, HOME: dir, XDG_CONFIG_HOME: path.join(dir, 'config'),WORKBENCH_STATE_DIR:state,WORKBENCH_LIB_DIR:path.join(dir,'lib'),WORKBENCH_BIN_DIR:path.join(dir,'bin'),WORKBENCH_NODE_BIN:process.execPath};
   for(let i=0;i<2;i++)await exec('/bin/sh',[path.join(root,'scripts/workbench/install.sh'),'--commands-only'],{env});
   assert.equal(await readFile(path.join(state,'sentinel'),'utf8'),'existing history');
   assert.equal(await readFile(path.join(dir,'lib/desktop-runtime-version'),'utf8'),'45.2.0');
@@ -150,7 +150,7 @@ test('desktop installer creates a graphical entry without service activation (ap
   await writeFile(path.join(tools,'sudo'),'#!/bin/sh\nprintf "%s\\n" "$@" > '+JSON.stringify(path.join(dir,'apt-args'))+'\n',{mode:0o755});
   const nodeWrapper=path.join(tools,'node-wrapper');
   await writeFile(nodeWrapper,'#!/usr/bin/env node\nif(!process.argv[2].endsWith("build-desktop-deb.mjs"))require("child_process").execFileSync(process.execPath,process.argv.slice(2),{stdio:"inherit"});\n',{mode:0o755});
-  const env={...process.env,PATH:tools+':'+process.env.PATH,WORKBENCH_STATE_DIR:path.join(dir,'state'),WORKBENCH_LIB_DIR:path.join(dir,'lib'),WORKBENCH_BIN_DIR:path.join(dir,'bin with spaces'),WORKBENCH_NODE_BIN:nodeWrapper,XDG_DATA_HOME:path.join(dir,'data')};
+  const env={...process.env, HOME: dir, XDG_CONFIG_HOME: path.join(dir, 'config'),PATH:tools+':'+process.env.PATH,WORKBENCH_STATE_DIR:path.join(dir,'state'),WORKBENCH_LIB_DIR:path.join(dir,'lib'),WORKBENCH_BIN_DIR:path.join(dir,'bin with spaces'),WORKBENCH_NODE_BIN:nodeWrapper,XDG_DATA_HOME:path.join(dir,'data')};
   await exec('/bin/sh',[path.join(root,'scripts/workbench/install.sh'),'--desktop'],{env});
   const entry=await readFile(path.join(dir,'data/applications/workbench.desktop'),'utf8');
   assert.match(entry,/^Name=Workbench$/m);assert.match(entry,/^GenericName=Anvilary Workbench$/m);assert.ok(entry.includes('Exec="'+path.join(dir,'bin with spaces/anvi-bench')+'" desktop'));

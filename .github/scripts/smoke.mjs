@@ -76,7 +76,7 @@ for (const name of ['anvil-bench', 'maw', 'workbench']) {
 
 const baseEnv = { ...process.env };
 for (const key of Object.keys(baseEnv)) {
-  if (/^(MAW_|AGENT_WORKBENCH_|ELECTRON_RUN_AS_NODE$)/.test(key)) delete baseEnv[key];
+  if (/^(MAW_|WORKBENCH_|AGENT_WORKBENCH_|ELECTRON_RUN_AS_NODE$)/.test(key)) delete baseEnv[key];
 }
 const env = {
   ...baseEnv,

@@ -20,7 +20,7 @@ wb_init_paths
 
 control_script="${WORKBENCH_CONTROL_SCRIPT:-$self_dir/control.mjs}"
 timeout_seconds="${WORKBENCH_READY_TIMEOUT:-20}"
-cli_name="${WORKBENCH_CLI_NAME:-workbench}"
+cli_name="${WORKBENCH_CLI_NAME:-anvi-bench}"
 mode=restart
 force=false
 

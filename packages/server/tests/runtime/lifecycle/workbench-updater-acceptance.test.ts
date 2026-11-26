@@ -537,7 +537,7 @@ test('maw rollback refuses an older target before mutating current or staged poi
 test('1. staging builds an isolated release and changes ONLY the staged pointer (U-4)', () => withFixture(async f => {
   const commit = await pushUpstream(f, 'v2');
   const res = await update(f);
-  assert.match(res.stdout, /MAW update staged successfully/);
+  assert.match(res.stdout, /Workbench update staged successfully/);
   assert.match(res.stdout, /keeps booting the current release, even after a crash or reboot/);
   const p = await pointers(f);
   assert.equal(p.current, f.initialId);
@@ -1064,7 +1064,7 @@ test('34. linked Git worktree source (.git file) is supported', () => withFixtur
   assert.ok((await stat(path.join(worktreeDir, '.git'))).isFile());
   await pushUpstream(f, 'wt');
   const res = await update(f, ['--no-restart', '--source', worktreeDir]);
-  assert.match(res.stdout, /MAW update staged successfully/);
+  assert.match(res.stdout, /Workbench update staged successfully/);
 }));
 
 test('active start requires authenticated HTTP success and adopts the first healthy release without restarting', () => withFixture(async f => {

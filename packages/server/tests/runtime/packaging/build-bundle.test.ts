@@ -24,8 +24,10 @@ test('Prebuilt production server bundle: exists and starts cleanly under raw nod
   const tempHome = await mkdtemp(path.join(tmpdir(), 'maw-bundle-test-'));
 
   try {
+    const inherited = Object.fromEntries(Object.entries(process.env).filter(([name]) =>
+      !/^(?:MAW_|WORKBENCH_|AGENT_WORKBENCH_)/.test(name)));
     const env = {
-      ...process.env,
+      ...inherited,
       HOME: tempHome,
       USERPROFILE: tempHome,
       XDG_CONFIG_HOME: path.join(tempHome, '.config'),
@@ -35,9 +37,6 @@ test('Prebuilt production server bundle: exists and starts cleanly under raw nod
       WORKBENCH_NO_RESTORE: '1',
       WORKBENCH_EAGER_CLASSIC: '0',
     };
-    delete (env as Record<string, string | undefined>).WORKBENCH_UNSAFE_LOCAL_NO_AUTH;
-    delete (env as Record<string, string | undefined>).WORKBENCH_RUNTIME_DIR;
-
     const child = spawn(process.execPath, [bundlePath, '--prod'], {
       cwd: serverRoot,
       env,

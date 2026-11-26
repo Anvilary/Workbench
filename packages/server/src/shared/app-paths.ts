@@ -28,7 +28,7 @@ export function legacyAppConfigDir(): string {
   return configDirFor('agent-explorer');
 }
 
-function configDirFor(name: string): string {
+export function configDirFor(name: string): string {
   if (process.platform === 'win32') {
     const appData = process.env['APPDATA'];
     if (appData !== undefined && appData.length > 0) return path.join(appData, name);

@@ -88,7 +88,9 @@ for desktop_file in service-readiness.mjs desktop-runtime.mjs desktop-launch.mjs
   install -m 644 "$script_dir/$desktop_file" "$lib_dir/$desktop_file"
 done
 install -m 644 "$repo_dir/packages/shared/src/workbench-env.mjs" "$lib_dir/env.mjs"
-install -m 644 "$script_dir/migrate-identity.mjs" "$lib_dir/migrate-identity.mjs"
+for migration_file in migrate-identity.mjs migrate-config.mjs; do
+  install -m 644 "$script_dir/$migration_file" "$lib_dir/$migration_file"
+done
 if [ -f "$repo_dir/packages/desktop/package.json" ]; then
   desktop_target_version=$("$node_bin" -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1])).devDependencies.electron)' "$repo_dir/packages/desktop/package.json")
   # Preserve a working bootstrap until the replacement package is installed.

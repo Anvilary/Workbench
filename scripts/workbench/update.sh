@@ -14,7 +14,7 @@ wb_init_paths
 wb_bin="$self_dir/anvi-bench"
 [ -f "$wb_bin" ] || wb_bin="${WORKBENCH_BIN_DIR:-$HOME/.local/bin}/anvi-bench"
 
-cli_name="${WORKBENCH_CLI_NAME:-workbench}"
+cli_name="${WORKBENCH_CLI_NAME:-anvi-bench}"
 usage="Usage: $cli_name update [--restart|--no-restart] [--ref <git-ref> --allow-unapproved-ref] [--source <dir>]"
 
 # Strip optional leading "update" subcommand if invoked via wrapper: anvi-bench update "$@"
@@ -282,8 +282,12 @@ trap '' HUP INT TERM
 rm -f "$candidate_dir/.git"
 git -C "$source_dir" worktree prune 2>/dev/null || true
 channel_state=approved; [ "$approved" = true ] || channel_state=unapproved
-printf '{"releaseId":"%s","commit":"%s","ref":"%s","channel":"%s","builtAt":"%s","source":"%s","schema":2,"supervisor":true}\n' \
-  "$release_id" "$target_commit" "$target_ref" "$channel_state" "$ts" "$source_dir" > "$candidate_dir/.workbench-release-meta.json"
+if ! "$node_bin" -e '
+  const [releaseId, commit, ref, channel, builtAt, source] = process.argv.slice(1);
+  console.log(JSON.stringify({ releaseId, commit, ref, channel, builtAt, source, schema: 2, supervisor: true }));
+' "$release_id" "$target_commit" "$target_ref" "$channel_state" "$ts" "$source_dir" > "$candidate_dir/.workbench-release-meta.json"; then
+  handle_candidate_failure validate 'could not write release identity'
+fi
 rm -f "$candidate_dir/.workbench-candidate"
 if ! wb_valid_release "$candidate_dir"; then
   handle_candidate_failure validate 'built release is missing service entry points'

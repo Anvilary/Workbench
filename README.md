@@ -123,6 +123,8 @@ pnpm desktop
 
 For daily local workstation use on Ubuntu/Debian with persistent `workbench-ptyd.service` terminal supervision, atomic release staging, and desktop launcher integration:
 
+For a legacy installation that already has data or services, use the [identity migration](docs/architecture/identity-migration.md) before installing the canonical services.
+
 ```bash
 # 1. Install dependencies and build
 pnpm install --frozen-lockfile

@@ -69,6 +69,7 @@ test('control uses current private readiness, refuses stale PIDs and never print
   const clear=await publishReadiness(runtime,`http://127.0.0.1:${address.port}/?token=disposable-secret`);
   const environment: NodeJS.ProcessEnv = { ...process.env, XDG_RUNTIME_DIR: temp, PATH: bin + ':' + process.env.PATH, WORKBENCH_TEST_PID: String(process.pid) };
   delete environment.WORKBENCH_RUNTIME_DIR;
+  delete environment.MAW_RUNTIME_DIR;
   try {
     const status=await run(process.execPath,[control,'status'],{cwd:'/',env:environment});
     assert.match(status.stdout,/Healthy/); assert.ok(!status.stdout.includes('disposable-secret'));
@@ -106,6 +107,7 @@ test('control url omits credentials and open authenticates the specified browser
   const clear = await publishReadiness(runtime, expectedUrl);
   const environment: NodeJS.ProcessEnv = { ...process.env, XDG_RUNTIME_DIR: temp, PATH: bin + ':' + process.env.PATH, WORKBENCH_TEST_PID: String(process.pid) };
   delete environment.WORKBENCH_RUNTIME_DIR;
+  delete environment.MAW_RUNTIME_DIR;
   try {
     const urlOut = await run(process.execPath, [control, 'url'], { cwd: '/', env: environment });
     assert.equal(urlOut.stdout.trim(), new URL(expectedUrl).origin + '/');

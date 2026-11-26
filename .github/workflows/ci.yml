@@ -176,6 +176,7 @@ jobs:
       - run: pnpm build
       - run: env -u WORKBENCH_UNSAFE_LOCAL_NO_AUTH pnpm --filter @anvilary/workbench-server run test:runtime
       - run: pnpm test:staging:shell
+      - run: pnpm test:migration
 
   test-desktop-integration:
     name: Desktop Integration & Packaging Tests

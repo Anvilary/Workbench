@@ -32,7 +32,7 @@ export async function launchProduction({ ready = readyService, startService = st
   const metadata = JSON.parse(await readFile(path.join(release, '.workbench-release-meta.json'), 'utf8'));
   if (metadata.releaseId !== state.releaseId || path.basename(release) !== state.releaseId) throw new Error('Service release identity mismatch');
   const { directory } = await runtime(release);
-  const profile = path.resolve(workbenchEnv('DESKTOP_DATA_DIR') || path.join(dataHome, 'workbench-desktop'));
+  const profile = path.resolve(dataHome, 'workbench-desktop');
   await mkdir(profile, { recursive: true, mode: 0o700 });
   const info = await lstat(profile);
   if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid()) throw new Error('Unsafe desktop profile');

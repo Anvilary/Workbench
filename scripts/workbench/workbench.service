@@ -22,6 +22,7 @@ Environment=WORKBENCH_PERSISTENT_PTY=1
 Environment=WORKBENCH_AUTO_SPAWN_PTYD=0
 # Optional persistent connection settings; secrets never belong in a release.
 EnvironmentFile=-@ENV_FILE@
+UnsetEnvironment=WORKBENCH_UNSAFE_LOCAL_NO_AUTH MAW_UNSAFE_LOCAL_NO_AUTH
 RuntimeDirectory=@RUNTIME_NAME@
 RuntimeDirectoryMode=0700
 UMask=0077

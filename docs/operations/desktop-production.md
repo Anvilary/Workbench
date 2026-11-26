@@ -1,6 +1,6 @@
 # Anvilary Workbench on Ubuntu
 
-Open **Workbench** (**Anvilary Workbench**) from the application menu, or run `anvi-bench desktop` (`anvi-bench` and `maw` are compatibility aliases). The desktop
+Open **Workbench** (**Anvilary Workbench**) from the application menu, or run `anvi-bench desktop` (`anvil-bench` and `maw` are compatibility aliases). The desktop
 launcher opens the verified running release in the existing Electron profile.
 It uses the user service and starts the current release if it is stopped. It
 does not activate a staged release. `pnpm desktop` starts a development fixture.

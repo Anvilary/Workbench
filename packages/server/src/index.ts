@@ -16,6 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAgentRegistry } from './agents/registry.js';
+import { migrateConfigDir } from '../../../scripts/workbench/migrate-config.mjs';
 import { migrateLegacyConfigDir } from './bootstrap/config-dir-migration.js';
 import { openBrowser } from './bootstrap/open-browser.js';
 import { ensurePtyHelperExecutable } from './bootstrap/pty-helper.js';
@@ -70,7 +71,7 @@ import {
   createSessionToken,
   isLocalNoAuthEnabled,
 } from './security/request-guards.js';
-import { appConfigDir } from './shared/app-paths.js';
+import { appConfigDir, configDirFor } from './shared/app-paths.js';
 import { createAuthMiddleware } from './transport/http/auth-middleware.js';
 import { isPortUnavailable, listenOnLoopback } from './transport/http/listen.js';
 import { mountBuiltUi, mountDevUi } from './transport/http/ui-hosting.js';
@@ -130,6 +131,8 @@ async function main(): Promise<void> {
   const defaultCwd = resolveDefaultCwd();
   // Antes de que nadie lea la configuracion: si quedo en el directorio del
   // nombre viejo, se mueve al nuevo (ver `config-dir-migration.ts`).
+  const configCopy = migrateConfigDir({ legacyDir: configDirFor('agent-workbench'), canonicalDir: appConfigDir() });
+  if (configCopy.migrated) console.log('Previous Workbench settings copied to the canonical configuration directory.');
   const movedFrom = await migrateLegacyConfigDir();
   if (movedFrom !== null) console.log(`Configuration moved from ${movedFrom} to ${appConfigDir()}`);
   /*

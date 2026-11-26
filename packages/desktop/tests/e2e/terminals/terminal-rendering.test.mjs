@@ -127,8 +127,10 @@ window.ready = async () => {
     page.on('pageerror', error => result.errors.push(error.message));
     await page.waitForFunction(() => window.connection?.getStatus() === 'open');
     await page.evaluate(() => window.ready());
-    await page.waitForFunction(() => window.term(0) && window.term(1));
+    await page.getByRole('tab').nth(1).click();
+    await page.waitForFunction(() => window.term(1));
     await page.getByRole('tab').first().click();
+    await page.waitForFunction(() => window.term(0) && window.term(1));
     await delay(200);
     const command = (i, data) => page.evaluate(({i,data}) => window.command(i,data), {i,data});
     const read = i => page.evaluate(async index => {
