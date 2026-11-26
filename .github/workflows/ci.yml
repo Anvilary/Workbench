@@ -45,6 +45,11 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # Before install, so the scans cover only repository files.
+      - name: Privacy gate (home paths and pinned gitleaks)
+        run: |
+          node --test .github/scripts/privacy-gate.test.mjs
+          node .github/scripts/privacy-gate.mjs all
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm --filter @agent-workbench/shared run test:unit

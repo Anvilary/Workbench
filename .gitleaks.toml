@@ -1,0 +1,19 @@
+# gitleaks configuration for the privacy gate (.github/scripts/privacy-gate.mjs).
+# Default rules stay enabled; each allowlist below covers one reviewed class of
+# synthetic values and matches the finding's line, not whole files.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Synthetic tokens and keys in check scripts and tests"
+condition = "AND"
+paths = ['''^packages/server/(scripts|tests)/''']
+regexTarget = "line"
+regexes = ['''\b(hookToken|resumeToken|exitToken|launchToken|deduplicationKey)\s*[:=]\s*'[a-z0-9-]+'[,;)]?''']
+
+[[allowlists]]
+description = "Placeholder token words in documentation examples"
+condition = "AND"
+paths = ['''^docs/.*\.md$''']
+regexTarget = "secret"
+regexes = ['''^[a-z]+(_[a-z]+)+$''']

@@ -1,0 +1,43 @@
+# Temporary privacy-gate allowlist: tracked files that still contain personal home
+# paths. Repo-relative paths only, never the identifiers themselves.
+# The docs lane rewrites these files and removes every entry; delete this file then.
+docs/maw/audit/AUDIT-CHECKPOINTS.md
+docs/maw/audit-round2/CHECKPOINTS.md
+docs/maw/audit-round2/evidence/schema-before.txt
+docs/maw/claude-review/FINAL-REPORT.md
+docs/maw/claude-review/REMEDIATION-CHECKPOINTS.md
+docs/maw/claude-review/REMEDIATION-FINAL.md
+docs/maw/HOST-CONTEXT-SPEC.example.json
+docs/maw/HOST-IDENTITIES.example.json
+docs/maw/IMPLEMENTATION-STATUS.md
+docs/maw/INTEGRATION-CHECKPOINTS.md
+docs/maw/integration/FINAL_ACCEPTANCE.md
+docs/maw/LAUNCHER.md
+docs/maw/MULTI-SESSION-STATUS.md
+docs/maw/neko/ARCHITECTURE.md
+docs/maw/neko/VERIFICATION-EVIDENCE.md
+docs/maw/OPERATIONS.md
+docs/maw/PROFILE-ONBOARDING.md
+docs/maw/RECOVERY.md
+docs/maw/TAB-UX-NOTIFICATIONS.md
+docs/maw/terminal-clipboard/REMEDIATION_REPORT.md
+docs/maw/terminal-history/CORRECTION_REPORT.md
+docs/maw/ux-stabilization/PLAN.md
+docs/maw/ux-stabilization/REMEDIATION_REPORT.md
+docs/maw/webview-performance/AUDIT.md
+docs/maw/webview-performance/BASELINE.md
+docs/maw/webview-performance/FINAL_IMPLEMENTATION_REPORT.md
+docs/maw/webview-performance/FINAL_REMEDIATION_REPORT.md
+docs/maw/webview-performance/OPTIMIZATION_PLAN.md
+docs/maw/webview-performance/SLICE_1_IMPLEMENTATION.md
+docs/maw/webview-performance/SLICE_2_IMPLEMENTATION.md
+docs/maw/webview-performance/SLICE_3_IMPLEMENTATION.md
+docs/research/maw-next-generation/DEPLOYMENT_READINESS.md
+docs/research/maw-next-generation/integration/CONFIRMED_FINDINGS.md
+docs/research/maw-next-generation/integration/INTEGRATION_CHECKPOINT.md
+docs/research/maw-next-generation/integration/scripts/maw-integrate.mjs
+docs/research/maw-next-generation/integration/tests/full-system-acceptance.test.ts
+docs/research/maw-next-generation/lanes/B/CONTRACT_REVIEW.md
+docs/research/maw-next-generation/lanes/B/IMPLEMENTATION_CHECKPOINT.md
+docs/research/maw-next-generation/lanes/D/LANE_D_REPORT.md
+HANDOFF.md
