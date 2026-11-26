@@ -19,11 +19,19 @@ const allowed = (file) =>
   file === 'package.json' ||
   file === 'README.md' ||
   file === 'LICENSE' ||
+  file === 'LICENSE.UPSTREAM' ||
+  file === 'NOTICE' ||
+  file === 'LICENSING.md' ||
+  file === 'SOURCE.md' ||
   file === 'dist/server.js' ||
   file === 'dist/maw-ptyd.mjs' ||
   file === 'dist/terminal-state.mjs' ||
   file.startsWith('dist/web/');
 const strangers = files.filter((file) => !allowed(file));
+const missingLicenses = ['LICENSE', 'LICENSE.UPSTREAM', 'NOTICE', 'LICENSING.md', 'SOURCE.md'].filter((file) => !files.includes(file));
+if (missingLicenses.length > 0) {
+  throw new Error('Tarball is missing license or source notices: ' + missingLicenses.join(', '));
+}
 
 if (strangers.length > 0) {
   console.error('Unexpected files in the tarball:\n  ' + strangers.join('\n  '));

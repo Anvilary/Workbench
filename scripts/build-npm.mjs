@@ -83,7 +83,28 @@ if (existsSync(supervisorSrc)) {
     path.join(outDir, 'dist', 'terminal-state.mjs'),
   );
 }
-cpSync(path.join(repoRoot, 'LICENSE'), path.join(outDir, 'LICENSE'));
+for (const file of ['LICENSE', 'LICENSE.UPSTREAM', 'NOTICE', 'LICENSING.md']) {
+  cpSync(path.join(repoRoot, file), path.join(outDir, file));
+}
+let sourceRevision = '';
+try {
+  sourceRevision = execFileSync('git', ['-C', repoRoot, 'rev-parse', 'HEAD'], {
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+  }).trim();
+} catch {}
+const sourceUrl = /^[a-f0-9]{40}$/.test(sourceRevision)
+  ? `${REPO_URL}/tree/${sourceRevision}`
+  : REPO_URL;
+writeFileSync(path.join(outDir, 'SOURCE.md'), [
+  '# Corresponding source',
+  '',
+  `Source repository: ${sourceUrl}`,
+  '',
+  'The AGPL-3.0-or-later license requires corresponding source for covered distributions.',
+  'For a published artifact, the distributor must make the exact corresponding source, including build and installation scripts, available under the applicable terms.',
+  'A build from a dirty working tree or a source archive without revision metadata requires a separate exact source offer before distribution.',
+  '',
+].join('\n'));
 
 // npm renderiza el README en la pagina del paquete, y ahi una ruta relativa a
 // `assets/` no existe: las capturas saldrian rotas. Apuntan a GitHub solo en la
@@ -115,7 +136,7 @@ writeFileSync(
       keywords: rootPkg.keywords,
       type: 'module',
       bin: { 'anvil-bench': 'dist/server.js', 'agent-workbench': 'dist/server.js' },
-      files: ['dist'],
+      files: ['dist', 'LICENSE.UPSTREAM', 'NOTICE', 'LICENSING.md', 'SOURCE.md'],
       engines: rootPkg.engines,
       dependencies,
     },

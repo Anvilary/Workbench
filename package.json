@@ -19,7 +19,7 @@
     "cli",
     "ui"
   ],
-  "license": "PolyForm-Noncommercial-1.0.0",
+  "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Anvilary/Workbench.git"

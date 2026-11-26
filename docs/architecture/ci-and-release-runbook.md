@@ -22,6 +22,8 @@ Configure `CI Gate` as the required PR status on the protected branches. If prev
 
 ## 2. Local release checklist
 
+Before publishing covered binaries or npm packages, verify the exact corresponding source is publicly available, the build matches that revision, and the artifact includes the AGPL license, upstream MIT license, attribution notices and corresponding-source directions. See [LICENSING.md](../../LICENSING.md).
+
 Use disposable HOME and XDG directories and a dedicated Xvfb display. Leave `MAW_UNSAFE_LOCAL_NO_AUTH` and `MAW_REAL_SYSTEMD` unset. Run the following from an isolated checkout.
 
 1. Run `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm build`, and `pnpm check`. The checks include localization and settings compatibility.
