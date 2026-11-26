@@ -497,8 +497,8 @@ test('Accounting separation: MaW application overhead is separated from managed 
   const expectedWorkloadPss = (8000 + 10000 + 50000) * 1024;
   const expectedTotalPss = expectedAppPss + expectedWorkloadPss;
 
-  assert.equal(snapshot.global.appMawPssBytes, expectedAppPss, 'MaW application memory should only count app processes');
-  assert.equal(snapshot.global.mawPssBytes, expectedAppPss, 'mawPssBytes must reflect application overhead');
+  assert.equal(snapshot.global.appWorkbenchPssBytes, expectedAppPss, 'MaW application memory should only count app processes');
+  assert.equal(snapshot.global.workbenchPssBytes, expectedAppPss, 'workbenchPssBytes must reflect application overhead');
   assert.equal(snapshot.global.workloadPssBytes, expectedWorkloadPss, 'workloadPssBytes must track managed agents and shells');
   assert.equal(snapshot.global.totalCombinedPssBytes, expectedTotalPss, 'totalCombinedPssBytes must equal app + workload');
 

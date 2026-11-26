@@ -139,7 +139,7 @@ test('commands installation preserves existing user state and is repeatable', as
   await exec('/bin/sh',[path.join(root,'scripts/workbench/install.sh'),'--commands-only'],{env});
   assert.equal(await readFile(path.join(dir,'lib/desktop-runtime-version'),'utf8'),'44.0.0');
   const anvilHelp = await exec(path.join(dir,'bin/anvil-bench'), ['help'], { env });
-  assert.match(anvilHelp.stdout, /^Usage: anvi-bench /);
+  assert.match(anvilHelp.stdout, /^Usage: anvil-bench /);
   const mawHelp = await exec(path.join(dir,'bin/maw'), ['help'], { env });
   assert.match(mawHelp.stdout, /^Usage: maw /);
 });
@@ -153,7 +153,7 @@ test('desktop installer creates a graphical entry without service activation (ap
   const env={...process.env,PATH:tools+':'+process.env.PATH,WORKBENCH_STATE_DIR:path.join(dir,'state'),WORKBENCH_LIB_DIR:path.join(dir,'lib'),WORKBENCH_BIN_DIR:path.join(dir,'bin with spaces'),WORKBENCH_NODE_BIN:nodeWrapper,XDG_DATA_HOME:path.join(dir,'data')};
   await exec('/bin/sh',[path.join(root,'scripts/workbench/install.sh'),'--desktop'],{env});
   const entry=await readFile(path.join(dir,'data/applications/workbench.desktop'),'utf8');
-  assert.match(entry,/^Name=Workbench$/m);assert.match(entry,/^GenericName=Anvilary Workbench$/m);assert.ok(entry.includes('Exec="'+path.join(dir,'bin with spaces/anvil-bench')+'" desktop'));
+  assert.match(entry,/^Name=Workbench$/m);assert.match(entry,/^GenericName=Anvilary Workbench$/m);assert.ok(entry.includes('Exec="'+path.join(dir,'bin with spaces/anvi-bench')+'" desktop'));
   assert.match(entry,/^Icon=workbench$/m);
   assert.match(await readFile(path.join(dir,'apt-args'),'utf8'),/^apt-get\ninstall\n/);
 });

@@ -78,7 +78,7 @@ test('control uses current private readiness, refuses stale PIDs and never print
   } finally { await clear(); await new Promise<void>(resolve=>server.close(()=>resolve())); await rm(temp,{recursive:true,force:true}); }
 });
 
-test('control url outputs authenticated loopback URL and open launches specified browser', async () => {
+test('control url omits credentials and open authenticates the specified browser', async () => {
   const { createServer } = await import('node:http');
   const { execFile } = await import('node:child_process');
   const { promisify } = await import('node:util');
@@ -108,7 +108,7 @@ test('control url outputs authenticated loopback URL and open launches specified
   delete environment.WORKBENCH_RUNTIME_DIR;
   try {
     const urlOut = await run(process.execPath, [control, 'url'], { cwd: '/', env: environment });
-    assert.equal(urlOut.stdout.trim(), expectedUrl);
+    assert.equal(urlOut.stdout.trim(), new URL(expectedUrl).origin + '/');
 
     await run(process.execPath, [control, 'open'], { cwd: '/', env: environment });
     await run(process.execPath, [control, 'open', 'brave-browser'], { cwd: '/', env: environment });
@@ -120,7 +120,7 @@ test('control url outputs authenticated loopback URL and open launches specified
     ]);
 
     const mawUrlOut = await run(maw, ['url'], { cwd: '/', env: environment });
-    assert.equal(mawUrlOut.stdout.trim(), expectedUrl);
+    assert.equal(mawUrlOut.stdout.trim(), new URL(expectedUrl).origin + '/');
 
     await run(maw, ['open'], { cwd: '/', env: environment });
     await run(maw, ['open', 'brave-browser'], { cwd: '/', env: environment });
@@ -134,12 +134,12 @@ test('control url outputs authenticated loopback URL and open launches specified
     ]);
 
     const helpOut = await run(maw, ['help'], { cwd: '/', env: environment });
-    assert.match(helpOut.stdout, /Usage: maw \{desktop\|start \[--force\]\|stop\|restart \[--force\]\|rollback\|status\|logs \[--follow\]\|url\|open \[browser\]\|update \[--no-restart\|--restart\] \[--ref <ref> --allow-unapproved-ref\]\|help\}/);
+    assert.match(helpOut.stdout, /Usage: maw \{desktop\|start \[--force\]\|stop\|restart \[--force\]\|rollback\|status\|logs \[--follow\]\|url\|open \[browser\]\|update \[--no-restart\|--restart\] \[--ref <ref> --allow-unapproved-ref\]\|migrate\|help\}/);
 
     const anvilUrlOut = await run(anvilBench, ['url'], { cwd: '/', env: environment });
-    assert.equal(anvilUrlOut.stdout.trim(), expectedUrl);
+    assert.equal(anvilUrlOut.stdout.trim(), new URL(expectedUrl).origin + '/');
     const anvilHelpOut = await run(anvilBench, ['help'], { cwd: '/', env: environment });
-    assert.match(anvilHelpOut.stdout, /Usage: anvi-bench \{desktop\|start \[--force\]\|stop\|restart \[--force\]\|rollback\|status\|logs \[--follow\]\|url\|open \[browser\]\|update \[--no-restart\|--restart\] \[--ref <ref> --allow-unapproved-ref\]\|help\}/);
+    assert.match(anvilHelpOut.stdout, /Usage: anvil-bench \{desktop\|start \[--force\]\|stop\|restart \[--force\]\|rollback\|status\|logs \[--follow\]\|url\|open \[browser\]\|update \[--no-restart\|--restart\] \[--ref <ref> --allow-unapproved-ref\]\|migrate\|help\}/);
 
     await assert.rejects(run(maw, ['url', 'extra'], { cwd: '/', env: environment }));
     await assert.rejects(run(anvilBench, ['url', 'extra'], { cwd: '/', env: environment }));

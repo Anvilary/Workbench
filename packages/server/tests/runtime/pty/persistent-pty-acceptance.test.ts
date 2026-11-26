@@ -7,6 +7,7 @@ import net from 'node:net';
 // @ts-expect-error - standalone pure-ESM supervisor script
 import { PtySupervisor } from '../../../src/pty-host/ptyd.mjs';
 import { PtyHostClient } from '../../../src/pty-host/pty-host-client.js';
+import { MAX_SESSIONS } from '../../../src/pty-host/pty-host-types.js';
 import { SERVER_SRC } from '../../helpers/paths.js';
 
 const SYNTHETIC_AGENT_PATH = path.join(SERVER_SRC, 'pty-host', 'fixtures', 'synthetic-agent.mjs');
@@ -411,6 +412,35 @@ test('Persistent PTY Acceptance: Concurrent isolated sessions', async () => {
     client.detach();
   } finally {
     supervisor.close({ killAll: true });
+    env.cleanup();
+  }
+});
+
+
+test('the default supervisor accepts exactly 100 live PTYs and reports its quota', {
+  skip: process.platform !== 'linux',
+  timeout: 30_000,
+}, async () => {
+  assert.equal(MAX_SESSIONS, 100);
+  const env = createIsolatedEnv();
+  const supervisor = new PtySupervisor({ socketPath: env.socketPath, authPath: env.authPath });
+  let client: PtyHostClient | undefined;
+  try {
+    await supervisor.listen();
+    client = await PtyHostClient.connectOrSpawn({ ...env, autoSpawn: false });
+    const shell = { cmd: '/bin/sh', args: ['-c', 'read line'], cwd: env.tmpDir, cols: 80, rows: 24 };
+    for (let i = 0; i < MAX_SESSIONS; i++) {
+      const session = await client.spawn({ ...shell, id: `quota-${i}` });
+      assert.ok(session.pid > 0);
+    }
+    await assert.rejects(client.spawn({ ...shell, id: 'quota-overflow' }), {
+      code: 'QUOTA_EXCEEDED',
+      message: /Maximum session limit reached \(100\)/,
+    });
+    assert.equal((await client.list()).sessions.filter(session => session.alive).length, 100);
+  } finally {
+    client?.detach();
+    await supervisor.close({ killAll: true });
     env.cleanup();
   }
 });

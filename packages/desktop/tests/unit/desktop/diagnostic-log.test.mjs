@@ -82,6 +82,21 @@ test('the logger never throws when the directory is unwritable', async t => {
   assert.equal(throwing.warn('still fine'), false);
 });
 
+test('diagnostics refuses a symlink and tightens an existing log before appending', async t => {
+  const dir = await tempDir(t);
+  const logger = createDiagnosticLogger({ dir });
+  const unrelated = path.join(dir, 'unrelated');
+  fs.writeFileSync(unrelated, 'keep');
+  fs.symlinkSync(unrelated, logger.file);
+  assert.equal(logger.warn('private'), false);
+  assert.equal(fs.readFileSync(unrelated, 'utf8'), 'keep');
+  fs.unlinkSync(logger.file);
+  fs.writeFileSync(logger.file, 'older entry');
+  fs.chmodSync(logger.file, 0o644);
+  assert.equal(logger.warn('new entry'), true);
+  assert.equal(fs.statSync(logger.file).mode & 0o777, 0o600);
+});
+
 test('stdout EPIPE is ignored, every other stream error still surfaces', () => {
   const stream = new PassThrough();
   const consoleRef = { error() {}, warn() {} };

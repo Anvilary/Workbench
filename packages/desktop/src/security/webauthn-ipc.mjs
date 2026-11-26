@@ -1,4 +1,4 @@
-import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
+import { workbenchEnv } from '../../../../packages/shared/src/workbench-env.mjs';
 /**
  * IPC handlers of the WebAuthn bridge.
  *

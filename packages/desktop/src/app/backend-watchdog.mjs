@@ -15,7 +15,7 @@ export function startBackendWatchdog({ win, send, backend, controller, appState 
     }
     try {
       const probe = await fetch(backend.current(), { signal: AbortSignal.timeout(1200), redirect: 'error' });
-      if (probe.ok || probe.status === 401) {
+      if (probe.ok) {
         backendFailureCount = 0;
         return;
       }

@@ -5,7 +5,7 @@
 const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 // Expose minimal, unprivileged WebAuthn bridge to the isolated world
-contextBridge.exposeInMainWorld('__mawWebAuthn', Object.freeze({
+contextBridge.exposeInMainWorld('__workbenchWebAuthn', Object.freeze({
   get: (options) => ipcRenderer.invoke('workbench:webauthn:get', options),
   isAvailable: () => ipcRenderer.invoke('workbench:webauthn:is-available'),
 }));
@@ -13,9 +13,9 @@ contextBridge.exposeInMainWorld('__mawWebAuthn', Object.freeze({
 // Install the navigator.credentials wrapper in the main world
 const injectScript = `
 (() => {
-  if (!navigator.credentials || !window.__mawWebAuthn) return;
-  if (window.__mawWebAuthnInstalled) return;
-  window.__mawWebAuthnInstalled = true;
+  if (!navigator.credentials || !window.__workbenchWebAuthn) return;
+  if (window.__workbenchWebAuthnInstalled) return;
+  window.__workbenchWebAuthnInstalled = true;
 
   const originalGet = navigator.credentials.get.bind(navigator.credentials);
 
@@ -58,7 +58,7 @@ const injectScript = `
     if (options.mediation === 'conditional') {
       return originalGet(options);
     }
-    if (!(await window.__mawWebAuthn.isAvailable()).available) {
+    if (!(await window.__workbenchWebAuthn.isAvailable()).available) {
       return originalGet(options);
     }
 
@@ -79,7 +79,7 @@ const injectScript = `
       })),
     };
 
-    const res = await window.__mawWebAuthn.get(serialized);
+    const res = await window.__workbenchWebAuthn.get(serialized);
     if (!res || !res.success) {
       const errName = res?.error?.name || 'NotAllowedError';
       const errMsg = res?.error?.message || 'WebAuthn assertion failed';

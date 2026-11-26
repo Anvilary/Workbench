@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Tipos del protocolo cliente-servidor de Agent Workbench",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./env": "./src/workbench-env.mjs"
   },
   "scripts": {
     "test:unit": "tsx --test \"tests/unit/**/*.test.ts\"",

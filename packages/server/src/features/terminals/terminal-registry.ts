@@ -1,4 +1,4 @@
-import { workbenchEnv } from '../../../../../scripts/workbench/env.mjs';
+import { workbenchEnv } from '@anvilary/workbench-shared/env';
 /**
  * Registro de terminales vivas.
  *

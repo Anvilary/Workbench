@@ -1,4 +1,4 @@
-import { workbenchEnv } from '../../scripts/workbench/env.mjs';
+import { workbenchEnv } from '../../packages/shared/src/workbench-env.mjs';
 import { app, BrowserWindow, WebContentsView, Menu, ipcMain, session, shell, dialog, clipboard, ClipboardItem } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,7 +49,7 @@ async function start() {
   const controller = createBrowserViewController({
     electron, win, send, backend, secure, isWebAuthnEnabled, webauthnPreload, desktopShortcut,
   });
-  const performance = createPerformanceChannel({ app, win, send, backend, controller });
+  const performance = createPerformanceChannel({ app, win, send, backend, controller, hardwareAcceleration });
   registerCommandRouter({
     ipcMain, win, dialog, backend, controller, performance, hardwareAcceleration,
     clipboardCommands: createClipboardCommands({ clipboard, ClipboardItem }),

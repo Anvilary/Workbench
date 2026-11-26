@@ -19,7 +19,7 @@ packages/<pkg>/tests/
 
 ## Path Resolution Helpers
 
-Every test tree uses dedicated root helpers (`tests/helpers/paths.ts` for `@anvilary/workbench-server`, `tests/helpers/paths.mjs` for `@anvilary/workbench-web` and `@anvilary/workbench-desktop`) exporting `REPO_ROOT`, package roots (`SERVER_ROOT`, `WEB_ROOT`, `DESKTOP_ROOT`), `SERVER_SRC` / `WEB_SRC`, and `SCRIPTS_MAW_DIR`. Tests never rely on volatile `process.cwd()` lookups or fragile hardcoded depth arithmetic.
+Every test tree uses dedicated root helpers (`tests/helpers/paths.ts` for `@anvilary/workbench-server`, `tests/helpers/paths.mjs` for `@anvilary/workbench-web` and `@anvilary/workbench-desktop`) exporting `REPO_ROOT`, package roots (`SERVER_ROOT`, `WEB_ROOT`, `DESKTOP_ROOT`), `SERVER_SRC` / `WEB_SRC`, and `SCRIPTS_WORKBENCH_DIR`. Tests never rely on volatile `process.cwd()` lookups or fragile hardcoded depth arithmetic.
 
 ## Running Suites
 

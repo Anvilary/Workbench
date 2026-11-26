@@ -6,7 +6,8 @@
 
 import { ResourceCollector } from './resource-monitor.mjs';
 
-export function createPerformanceChannel({ app, win, send, backend, controller }) {
+export function createPerformanceChannel({ app, win, send, backend, controller, hardwareAcceleration }) {
+  const withGraphics = snapshot => ({ ...snapshot, hardwareAcceleration: hardwareAcceleration.status() });
   const resourceCollector = new ResourceCollector({
     app,
     win,
@@ -14,7 +15,7 @@ export function createPerformanceChannel({ app, win, send, backend, controller }
     getBackendReadiness: () => backend.readiness(),
     getBrowserLifecycle: () => controller.browserLifecycleTelemetry(),
     onState: (snapshot) => {
-      send({ type: 'performance-update', snapshot });
+      send({ type: 'performance-update', snapshot: withGraphics(snapshot) });
     },
   });
   let performanceSubscribed = false;
@@ -22,7 +23,7 @@ export function createPerformanceChannel({ app, win, send, backend, controller }
   return {
     async subscribe() {
     const snapshot = await (performanceSubscribed ? resourceCollector.refresh() : (performanceSubscribed = true, resourceCollector.subscribe()));
-    return { ok: true, snapshot };
+    return { ok: true, snapshot: withGraphics(snapshot) };
     },
     unsubscribe() {
     if (performanceSubscribed) resourceCollector.unsubscribe();
@@ -39,7 +40,7 @@ export function createPerformanceChannel({ app, win, send, backend, controller }
     },
     async refresh() {
       const snapshot = await resourceCollector.refresh();
-      return { ok: true, snapshot };
+      return { ok: true, snapshot: withGraphics(snapshot) };
     },
     /** The shell page reloaded or crashed: the panel is gone with it. */
     reset() {

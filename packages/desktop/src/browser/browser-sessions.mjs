@@ -1,4 +1,4 @@
-import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
+import { workbenchEnv } from '../../../../packages/shared/src/workbench-env.mjs';
 /**
  * Chromium sessions of the browser partitions.
  *

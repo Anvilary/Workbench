@@ -21,7 +21,7 @@ case "$cli_name" in
   *) cli_name="anvi-bench" ;;
 esac
 
-usage() { printf '%s\n' "Usage: $cli_name {desktop|start [--force]|stop|restart [--force]|rollback|status|logs [--follow]|url|open [browser]|update [--no-restart|--restart] [--ref <ref> --allow-unapproved-ref]|help}"; }
+usage() { printf '%s\n' "Usage: $cli_name {desktop|start [--force]|stop|restart [--force]|rollback|status|logs [--follow]|url|open [browser]|update [--no-restart|--restart] [--ref <ref> --allow-unapproved-ref]|migrate|help}"; }
 
 # True when this command runs inside the Workbench service (its PTYs inherit the unit's cgroup), or descends
 # from the service's main process (e.g. a PTY moved into another scope). Exact cgroup path component.
@@ -98,6 +98,10 @@ run_activation() {   # extra helper args...
 
 command_name=${1:-help}
 case "$command_name" in
+  migrate)
+    shift
+    exec "$node_bin" "$script_dir/migrate-identity.mjs" "$@"
+    ;;
   desktop)
     [ "$#" -eq 1 ] || { usage >&2; exit 2; }
     desktop_version=$(cat "$script_dir/desktop-runtime-version" 2>/dev/null || true)

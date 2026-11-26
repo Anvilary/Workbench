@@ -65,4 +65,4 @@ anvi-bench update --ref origin/feature/x --allow-unapproved-ref   # explicit non
 
 ## Environment variables
 
-Configuration variables use the `WORKBENCH_` prefix. The legacy `MAW_` names are still accepted during the deprecation period; when both are set, the `WORKBENCH_` value wins and a warning names both variables.
+Configuration uses `WORKBENCH_*`. For supported overrides, Workbench reads the canonical value first, then the legacy `MAW_*` value, then the built-in default. The original `AGENT_WORKBENCH_*` names for cwd, debug, open, and restore are also supported. When the canonical and legacy values differ, the warning lists the variable names. The legacy `MAW_UNSAFE_LOCAL_NO_AUTH` flag has no effect. A fresh or migrated service requires backend authentication by default.

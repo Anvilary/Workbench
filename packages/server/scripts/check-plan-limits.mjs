@@ -427,7 +427,7 @@ const limits = (fiveHour, sevenDay) => ({
   // El comando del fragmento.
   const winScript = 'C:\\Users\\Jane Doe\\AppData\\Roaming\\workbench\\integrations\\claude-code-statusline.mjs';
   check('4.8 Windows: barras normales y entre comillas, aunque haya espacios',
-    claudeStatusLineCommand(winScript, 'win32') === 'node "C:/Users/Jane Doe/AppData/Roaming/agent-workbench/integrations/claude-code-statusline.mjs"');
+    claudeStatusLineCommand(winScript, 'win32') === 'node "C:/Users/Jane Doe/AppData/Roaming/workbench/integrations/claude-code-statusline.mjs"');
   for (const bad of ['$', '`', '"']) {
     check(`4.8 una carpeta con ${bad} no tiene fragmento`, claudeStatusLineFragment(`C:\\Users\\a${bad}b\\x\\claude-code-statusline.mjs`, 'win32') === null);
   }

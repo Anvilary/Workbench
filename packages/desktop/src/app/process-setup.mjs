@@ -1,4 +1,4 @@
-import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
+import { workbenchEnv } from '../../../../packages/shared/src/workbench-env.mjs';
 /**
  * Process level setup that must run before the app is ready: data directory,
  * application name, sandboxing, GPU switches, graphics policy and the single

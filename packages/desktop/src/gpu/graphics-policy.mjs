@@ -1,3 +1,4 @@
+import { workbenchEnv } from '../../../../packages/shared/src/workbench-env.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -79,9 +80,9 @@ export function resolveGraphicsPolicy({
   exists = fs.existsSync,
   hardwareAccelerationPreference,
 } = {}) {
-  const forced = env.WORKBENCH_SAFE_GRAPHICS === '1' || env.WORKBENCH_SAFE_GRAPHICS === '0';
+  const forced = workbenchEnv('SAFE_GRAPHICS', env) === '1' || workbenchEnv('SAFE_GRAPHICS', env) === '0';
   const source = forced ? 'env' : typeof hardwareAccelerationPreference === 'boolean' ? 'preference' : 'default';
-  if (env.WORKBENCH_SAFE_GRAPHICS === '1') {
+  if (workbenchEnv('SAFE_GRAPHICS', env) === '1') {
     return { mode: GraphicsMode.SAFE, disableHardwareAcceleration: true, env: {}, reason: 'WORKBENCH_SAFE_GRAPHICS=1', hardwareAcceleration: { effective: false, source } };
   }
   if (source === 'preference' && hardwareAccelerationPreference === false) {
@@ -93,7 +94,7 @@ export function resolveGraphicsPolicy({
 function resolveAcceleratedPolicy({ platform, env, renderNodes, exists }) {
   const base = { mode: GraphicsMode.DEFAULT, disableHardwareAcceleration: false, env: {} };
   if (platform !== 'linux') return { ...base, reason: 'not linux' };
-  if (env.WORKBENCH_GPU_ISOLATION === '0') return { ...base, reason: 'WORKBENCH_GPU_ISOLATION=0' };
+  if (workbenchEnv('GPU_ISOLATION', env) === '0') return { ...base, reason: 'WORKBENCH_GPU_ISOLATION=0' };
 
   const drivers = new Set(renderNodes.map((n) => n.driver));
   if (!(drivers.has('nvidia') && drivers.has('amdgpu'))) return { ...base, reason: 'not an AMD+NVIDIA hybrid' };
@@ -138,7 +139,7 @@ export function applyGraphicsPolicy(policy, { app }) {
  * software decode.
  */
 export function shouldDisableHardwareVideoDecode({ policy, env = process.env }) {
-  if (env.WORKBENCH_HW_VIDEO_DECODE === '0') return true;
+  if (workbenchEnv('HW_VIDEO_DECODE', env) === '0') return true;
   if (policy.mode !== GraphicsMode.AMD_ISOLATED) return true;
   const restricted = Boolean(
     (env.__EGL_VENDOR_LIBRARY_FILENAMES || env.__EGL_VENDOR_LIBRARY_DIRS)

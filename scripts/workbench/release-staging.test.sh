@@ -395,7 +395,7 @@ fi
 begin "20. workbench.service sets WORKBENCH_AUTO_SPAWN_PTYD=0 and terminal-registry respects it"
 reg_source=$(cat "$repo_dir/packages/server/src/features/terminals/terminal-registry.ts")
 unit_source=$(cat "$repo_dir/scripts/workbench/workbench.service")
-if echo "$reg_source" | grep -q "WORKBENCH_AUTO_SPAWN_PTYD" && echo "$unit_source" | grep -q "WORKBENCH_AUTO_SPAWN_PTYD=0"; then
+if echo "$reg_source" | grep -Fq "workbenchEnv('AUTO_SPAWN_PTYD')" && echo "$unit_source" | grep -q "WORKBENCH_AUTO_SPAWN_PTYD=0"; then
   ok
 else
   fail "workbench.service must configure WORKBENCH_AUTO_SPAWN_PTYD=0 and terminal-registry must check it"

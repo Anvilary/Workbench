@@ -19,4 +19,4 @@ export const WEB_ROOT = path.join(REPO_ROOT, 'packages', 'web');
 export const DESKTOP_ROOT = path.join(REPO_ROOT, 'packages', 'desktop');
 
 /** Directory containing MAW lifecycle and launch scripts. */
-export const SCRIPTS_MAW_DIR = path.join(REPO_ROOT, 'scripts', 'maw');
+export const SCRIPTS_WORKBENCH_DIR = path.join(REPO_ROOT, 'scripts', 'maw');

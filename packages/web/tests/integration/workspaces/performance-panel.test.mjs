@@ -117,7 +117,7 @@ test('mock desktop bridge interacts correctly with performance command lifecycle
       systemMemoryTotalBytes: 32000000000,
       systemMemoryFreeBytes: 18000000000,
       systemMemoryPressurePercent: 43.7,
-      mawProcessCount: 9,
+      workbenchProcessCount: 9,
       services: {
         backend: { online: true, pid: 1234 },
         ptySupervisor: { online: true, pid: 1235 },
@@ -132,8 +132,8 @@ test('mock desktop bridge interacts correctly with performance command lifecycle
       },
     },
     history: [
-      { timestamp: Date.now() - 2000, mawCpuPercent: 3.8, mawPssBytes: 480000000, mawProcessCount: 9 },
-      { timestamp: Date.now(), mawCpuPercent: 4.2, mawPssBytes: 485000000, mawProcessCount: 9 },
+      { timestamp: Date.now() - 2000, workbenchCpuPercent: 3.8, workbenchPssBytes: 480000000, workbenchProcessCount: 9 },
+      { timestamp: Date.now(), workbenchCpuPercent: 4.2, workbenchPssBytes: 485000000, workbenchProcessCount: 9 },
     ],
     infrastructure: {
       totalCpuPercent: 2.1,

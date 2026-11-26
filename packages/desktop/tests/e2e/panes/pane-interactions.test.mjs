@@ -15,9 +15,9 @@ import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 const require=createRequire(import.meta.url),exec=promisify(execFile);
 const here = DESKTOP_ROOT;
 const artifactDir=process.env.WORKBENCH_PANE_EVIDENCE_DIR;
-const electronExecutable = fs.existsSync('/opt/workbench-electron/45.2.0/electron')
+const electronExecutable = process.env.WORKBENCH_ELECTRON_EXECUTABLE || (fs.existsSync('/opt/workbench-electron/45.2.0/electron')
   ? '/opt/workbench-electron/45.2.0/electron'
-  : require('electron');
+  : require('electron'));
 
 async function eventually(check,message='native pane state'){
  for(let n=0;n<200;n++){if(await check())return;await new Promise(resolve=>setTimeout(resolve,40))}

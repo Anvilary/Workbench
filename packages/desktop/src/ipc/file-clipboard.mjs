@@ -1,4 +1,4 @@
-import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
+import { workbenchEnv } from '../../../../packages/shared/src/workbench-env.mjs';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 

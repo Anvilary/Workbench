@@ -26,7 +26,7 @@ export function pasteRoot(): string {
  * `resolveInside` contra `pasteRoot()` (`conversation-image.ts`).
  */
 const PASTED_IMAGE =
-  /(?:^|[\\/])workbench[\\/]pasted[\\/][A-Za-z0-9_-]+[\\/]pegada-\d+-[0-9a-f]{8}\.(png|jpg|gif|webp)$/i;
+  /(?:^|[\\/])(?:agent-)?workbench[\\/]pasted[\\/][A-Za-z0-9_-]+[\\/]pegada-\d+-[0-9a-f]{8}\.(png|jpg|gif|webp)$/i;
 
 const MEDIA_TYPES: Readonly<Record<string, string>> = {
   png: 'image/png',

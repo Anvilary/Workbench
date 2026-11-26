@@ -14,9 +14,9 @@ import { PARTITION } from '../../../policy.mjs';
 import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 const require = createRequire(import.meta.url);
 const here = DESKTOP_ROOT;
-const electronExecutable = fs.existsSync('/opt/workbench-electron/45.2.0/electron')
+const electronExecutable = process.env.WORKBENCH_ELECTRON_EXECUTABLE || (fs.existsSync('/opt/workbench-electron/45.2.0/electron')
   ? '/opt/workbench-electron/45.2.0/electron'
-  : require('electron');
+  : require('electron'));
 const browserCss = fs.readFileSync(path.join(here, '../web/src/app/workbench.css'), 'utf8');
 const ids = ['8e4fefc1-e565-40cc-b85b-f7d43a16b1df', 'f52e047f-d947-426c-a0fa-c349d035d338'];
 const fixture = `import React, {useState} from 'react';

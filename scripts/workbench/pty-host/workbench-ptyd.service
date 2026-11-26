@@ -27,8 +27,8 @@ RuntimeDirectoryMode=0700
 # Supervisor socket and auth file live under /run/user/<UID>/@PTYD_RUNTIME_NAME@/
 Environment=WORKBENCH_PTYD_SOCKET=%t/@PTYD_RUNTIME_NAME@/ptyd.sock
 Environment=WORKBENCH_PTYD_AUTH_FILE=%t/@PTYD_RUNTIME_NAME@/ptyd.sock.auth
-StandardOutput=append:%h/.local/state/workbench/logs/workbench-ptyd.stdout.log
-StandardError=append:%h/.local/state/workbench/logs/workbench-ptyd.stderr.log
+StandardOutput=append:@LOG_DIR@/workbench-ptyd.stdout.log
+StandardError=append:@LOG_DIR@/workbench-ptyd.stderr.log
 UMask=0077
 
 [Install]

@@ -132,7 +132,7 @@ export function SessionPane({
       isAlternate = buffer.type === 'alternate';
       text = extractBufferText(buffer, 0, buffer.length - 1);
     } else if (kind === 'last') {
-      const marker = (term as unknown as { __mawLastCommandMarker?: { line: number } | null }).__mawLastCommandMarker;
+      const marker = (term as unknown as { __workbenchLastCommandMarker?: { line: number } | null }).__workbenchLastCommandMarker;
       text = extractLastOutput(term, marker);
     }
 
@@ -440,7 +440,7 @@ export function SessionPane({
         const term = terminal.current;
         const buffer = term?.buffer.active;
         const hasBuffer = Boolean(buffer && buffer.length > 0 && extractBufferText(buffer, 0, Math.min(buffer.length - 1, 50)).trim().length > 0);
-        const hasLast = Boolean(term && extractLastOutput(term, (term as unknown as { __mawLastCommandMarker?: { line: number } | null }).__mawLastCommandMarker).trim().length > 0);
+        const hasLast = Boolean(term && extractLastOutput(term, (term as unknown as { __workbenchLastCommandMarker?: { line: number } | null }).__workbenchLastCommandMarker).trim().length > 0);
 
         return (
           <PaneContextMenu

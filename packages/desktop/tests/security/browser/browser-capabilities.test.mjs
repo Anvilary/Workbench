@@ -44,7 +44,7 @@ window.workbench.subscribe(s => {
   let app;
   const launch = () => electron.launch({
     chromiumSandbox: true,
-    executablePath: '/opt/workbench-electron/45.2.0/electron',
+    executablePath: process.env.WORKBENCH_ELECTRON_EXECUTABLE || '/opt/workbench-electron/45.2.0/electron',
     args: [desktopDir, '--ozone-platform=x11'],
     env: {
       ...process.env,
@@ -347,16 +347,22 @@ window.workbench.subscribe(s => {
     assert.equal(fullscreenResults.isFullscreen, true, 'document.fullscreenElement must be active');
     assert.equal(fullscreenResults.permState, 'granted', 'Fullscreen permission must be granted');
 
-    // 4. Verify unthrottled requestAnimationFrame when unfocused (backgroundThrottling: false)
-    const animationResults = await app.evaluate(async ({ webContents, session, BrowserWindow }) => {
+    // Fullscreen exit invalidates layout. Wait for the shell to reattach the
+    // page before measuring how it animates without native focus.
+    await eventually(() => app.evaluate(({ webContents, session, BrowserWindow }) => {
+      const contents = webContents.getAllWebContents().find(c =>
+        c.session === session.fromPartition('persist:workbench-browser') && c.getURL().includes('/media-test'));
       const win = BrowserWindow.getAllWindows().find(w => w.getTitle().includes('Workbench'));
-      const childrenCount = win ? win.contentView.children.length : -1;
+      return win?.contentView.children.some(view => view.webContents === contents) &&
+        contents?.backgroundThrottling === false;
+    }));
+    const animationResults = await app.evaluate(async ({ webContents, session }) => {
       const contents = webContents.getAllWebContents().find(c =>
         c.session === session.fromPartition('persist:workbench-browser') &&
         c.getURL().includes('/media-test')
       );
-      const isVisible = contents ? !!contents.getOwnerBrowserWindow() : false;
       const jsResult = await contents.executeJavaScript(`(async () => {
+        document.querySelectorAll('video').forEach(video => video.pause());
         let rafCount = 0;
         await new Promise(r => {
           let start = 0;

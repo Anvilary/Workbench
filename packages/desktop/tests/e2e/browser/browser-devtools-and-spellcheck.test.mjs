@@ -13,9 +13,9 @@ import { DESKTOP_ROOT, REPO_ROOT } from '../../helpers/paths.mjs';
 
 const require = createRequire(import.meta.url);
 const WEB_ROOT = path.join(REPO_ROOT, 'packages/web');
-const electronExecutable = fs.existsSync('/opt/workbench-electron/45.2.0/electron')
+const electronExecutable = process.env.WORKBENCH_ELECTRON_EXECUTABLE || (fs.existsSync('/opt/workbench-electron/45.2.0/electron')
   ? '/opt/workbench-electron/45.2.0/electron'
-  : require('electron');
+  : require('electron'));
 
 async function eventually(check, message = 'condition', timeoutMs = 15000) {
   const start = Date.now();

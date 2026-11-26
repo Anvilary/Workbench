@@ -39,7 +39,7 @@ test('performance administrative endpoint enforces loopback, session authenticat
   let authKind: string | null = null;
   app.use((req, _res, next) => {
     if (authKind) {
-      (req as any).mawCredential = { kind: authKind };
+      (req as any).workbenchCredential = { kind: authKind };
     }
     next();
   });
@@ -52,7 +52,7 @@ test('performance administrative endpoint enforces loopback, session authenticat
       response.status(403).json({ ok: false, error: 'Loopback access only' });
       return;
     }
-    const reqAuth = (request as unknown as { mawCredential?: { kind: string } }).mawCredential;
+    const reqAuth = (request as unknown as { workbenchCredential?: { kind: string } }).workbenchCredential;
     if (!reqAuth || (reqAuth.kind !== 'session' && reqAuth.kind !== 'local')) {
       response.status(reqAuth?.kind === 'device' ? 403 : 401).json({
         ok: false,
@@ -149,7 +149,7 @@ test('real no-auth middleware grants the local credential used by the performanc
   try {
     app.use(createNoAuthMiddleware(port));
     app.get('/api/performance/terminals', (request, response) => {
-      response.json({ kind: (request as typeof request & { mawCredential?: { kind: string } }).mawCredential?.kind });
+      response.json({ kind: (request as typeof request & { workbenchCredential?: { kind: string } }).workbenchCredential?.kind });
     });
     const result = await fetch(`http://127.0.0.1:${port}/api/performance/terminals`);
     assert.equal(result.status, 200);

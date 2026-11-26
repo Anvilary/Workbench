@@ -1,4 +1,4 @@
-import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
+import { workbenchEnv } from '../../../../packages/shared/src/workbench-env.mjs';
 /**
  * Native Resource Performance Monitor for Workbench Desktop
  *
@@ -613,11 +613,13 @@ export class ResourceCollector {
             if (readiness.url) {
               const termUrl = new URL('/api/performance/terminals', readiness.url);
               const token = readiness.url.searchParams.get('token');
-              if (token) termUrl.searchParams.set('token', token);
-
               const resp = await fetch(termUrl, {
                 signal: AbortSignal.timeout(1000),
-                headers: { Accept: 'application/json' },
+                redirect: 'error',
+                headers: {
+                  Accept: 'application/json',
+                  ...(token ? { 'x-agent-workbench-token': token } : {}),
+                },
               });
               if (resp.ok) {
                 const termData = await resp.json();
@@ -1090,11 +1092,11 @@ export class ResourceCollector {
       ];
 
       // Workbench Application Overhead
-      const appMawPss = appProcesses.reduce((acc, p) => acc + p.pssBytes, 0);
-      const appMawRss = appProcesses.reduce((acc, p) => acc + p.rssBytes, 0);
-      const appMawPrivate = appProcesses.reduce((acc, p) => acc + p.privateBytes, 0);
-      const appMawShared = appProcesses.reduce((acc, p) => acc + p.sharedBytes, 0);
-      const appMawCpu = Number(appProcesses.reduce((acc, p) => acc + p.cpuPercent, 0).toFixed(1));
+      const appWorkbenchPss = appProcesses.reduce((acc, p) => acc + p.pssBytes, 0);
+      const appWorkbenchRss = appProcesses.reduce((acc, p) => acc + p.rssBytes, 0);
+      const appWorkbenchPrivate = appProcesses.reduce((acc, p) => acc + p.privateBytes, 0);
+      const appWorkbenchShared = appProcesses.reduce((acc, p) => acc + p.sharedBytes, 0);
+      const appWorkbenchCpu = Number(appProcesses.reduce((acc, p) => acc + p.cpuPercent, 0).toFixed(1));
 
       // Managed Workloads
       const workloadPss = workloadProcesses.reduce((acc, p) => acc + p.pssBytes, 0);
@@ -1104,8 +1106,8 @@ export class ResourceCollector {
       const workloadCpu = Number(workloadProcesses.reduce((acc, p) => acc + p.cpuPercent, 0).toFixed(1));
 
       // Combined totals
-      const totalCombinedPss = appMawPss + workloadPss;
-      const totalCombinedCpu = Number((appMawCpu + workloadCpu).toFixed(1));
+      const totalCombinedPss = appWorkbenchPss + workloadPss;
+      const totalCombinedCpu = Number((appWorkbenchCpu + workloadCpu).toFixed(1));
 
       // Clean up terminated PIDs from lastProcessCpu map
       for (const p of this.lastProcessCpu.keys()) {
@@ -1123,19 +1125,19 @@ export class ResourceCollector {
         sampleDurationMs: Number(this.lastSampleDurationMs.toFixed(2)),
         global: {
           cpuUsagePercent: Number(systemCpuPercent.toFixed(1)),
-          mawCpuPercent: appMawCpu,
-          appMawCpuPercent: appMawCpu,
+          workbenchCpuPercent: appWorkbenchCpu,
+          appWorkbenchCpuPercent: appWorkbenchCpu,
           workloadCpuPercent: workloadCpu,
           totalCombinedCpuPercent: totalCombinedCpu,
           cpuCoreCount: numCores,
-          mawPssBytes: appMawPss,
-          appMawPssBytes: appMawPss,
+          workbenchPssBytes: appWorkbenchPss,
+          appWorkbenchPssBytes: appWorkbenchPss,
           workloadPssBytes: workloadPss,
           totalCombinedPssBytes: totalCombinedPss,
-          mawRssBytes: appMawRss,
-          mawPrivateBytes: appMawPrivate,
-          mawSharedBytes: appMawShared,
-          mawSwapPssBytes: appProcesses.reduce((acc, p) => acc + (p.swapPssBytes || 0), 0),
+          workbenchRssBytes: appWorkbenchRss,
+          workbenchPrivateBytes: appWorkbenchPrivate,
+          workbenchSharedBytes: appWorkbenchShared,
+          workbenchSwapPssBytes: appProcesses.reduce((acc, p) => acc + (p.swapPssBytes || 0), 0),
           workloadRssBytes: workloadRss,
           workloadPrivateBytes: workloadPrivate,
           workloadSharedBytes: workloadShared,
@@ -1147,7 +1149,7 @@ export class ResourceCollector {
           gpuHardwareUtilization: null, // Explicit unavailable state without external driver polling
           gpuVramBytes: null, // Explicit unavailable state: dedicated VRAM cannot be inferred from RSS
           gpuStatusNote: 'Hardware VRAM & GPU engine telemetry unavailable without external driver polling',
-          totalMawProcesses: appProcesses.length,
+          totalWorkbenchProcesses: appProcesses.length,
           totalWorkloadProcesses: workloadProcesses.length,
           backendHealth: {
             status: backendPid ? (backendInventoryAvailable ? 'healthy' : 'degraded') : 'unreachable',
@@ -1183,6 +1185,9 @@ export class ResourceCollector {
           views: browserViewMetrics,
         },
         browser: browserLifecycle,
+        livePtyCount: backendInventoryAvailable
+          ? backendTerminals.filter(entry => Number.isSafeInteger(entry.pid) && entry.pid > 0).length
+          : null,
         otherTerminals: {
           totalCpuPercent: Number(otherTerminalMetrics.reduce((acc, t) => acc + t.cpuPercent, 0).toFixed(1)),
           totalPssBytes: otherTerminalMetrics.reduce((acc, t) => acc + t.pssBytes, 0),
@@ -1206,10 +1211,10 @@ export class ResourceCollector {
       // Maintain in-memory history (ring buffer)
       this.history.push({
         timestamp: nowMs,
-        mawCpuPercent: snapshot.global.mawCpuPercent,
+        workbenchCpuPercent: snapshot.global.workbenchCpuPercent,
         systemCpuPercent: snapshot.global.cpuUsagePercent,
-        mawPssBytes: snapshot.global.mawPssBytes,
-        mawProcessCount: snapshot.global.totalMawProcesses,
+        workbenchPssBytes: snapshot.global.workbenchPssBytes,
+        workbenchProcessCount: snapshot.global.totalWorkbenchProcesses,
       });
 
       if (this.history.length > MAX_HISTORY_POINTS) {

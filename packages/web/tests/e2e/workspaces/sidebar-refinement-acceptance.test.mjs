@@ -13,7 +13,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = WEB_ROOT;
 
 const ARTIFACT_EVIDENCE_DIR = process.env.ARTIFACT_DIR || path.join(homedir(), '.gemini/antigravity-cli/brain/00000000-0000-4000-8000-000000000000');
-const LOCAL_EVIDENCE_DIR = path.join(webRoot, 'tests/evidence');
+const LOCAL_EVIDENCE_DIR = path.join(tmpdir(), 'workbench-evidence', 'sidebar-refinement');
 
 try { mkdirSync(LOCAL_EVIDENCE_DIR, { recursive: true }); } catch {}
 try { mkdirSync(ARTIFACT_EVIDENCE_DIR, { recursive: true }); } catch {}

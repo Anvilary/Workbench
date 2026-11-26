@@ -19,11 +19,11 @@ import { promisify } from 'node:util';
 import { createServer } from 'node:http';
 import net from 'node:net';
 import { randomBytes } from 'node:crypto';
-import { SCRIPTS_MAW_DIR } from '../../helpers/paths.js';
+import { SCRIPTS_WORKBENCH_DIR } from '../../helpers/paths.js';
 
 const exec = promisify(execFile);
 
-const SCRIPT_DIR = SCRIPTS_MAW_DIR;
+const SCRIPT_DIR = SCRIPTS_WORKBENCH_DIR;
 const WORKBENCH_BIN = path.join(SCRIPT_DIR, 'maw');
 const WORKBENCH_UPDATE_BIN = path.join(SCRIPT_DIR, 'update.sh');
 const WORKBENCH_RESTART_HELPER_BIN = path.join(SCRIPT_DIR, 'restart-helper.sh');
@@ -120,7 +120,7 @@ case "$cmd" in
     case "$*" in *workbench-ptyd.service*) : > "$F/ptyd-stopped"; exit 0 ;; esac
     : > "$F/backend-stops"
     if [ -e "$F/write-data-on-stop" ]; then
-      cp "$F/write-data-on-stop" "$XDG_CONFIG_HOME/agent-workbench/agency-web-tabs.json"
+      cp "$F/write-data-on-stop" "$XDG_CONFIG_HOME/workbench/agency-web-tabs.json"
     fi
     exit 0 ;;
 esac
@@ -136,7 +136,7 @@ if (process.argv[2] === 'check-data') {
   let supported = 1;
   try { supported = JSON.parse(fs.readFileSync(target + '/package.json', 'utf8')).workbenchCompatibility?.browserTabStore || 1; } catch {}
   const config = process.env.XDG_CONFIG_HOME || process.env.HOME + '/.config';
-  for (const file of [config + '/agent-workbench/agency-web-tabs.json', config + '/agent-workbench/agency-web-tabs.json.bak']) {
+  for (const file of [config + '/workbench/agency-web-tabs.json', config + '/workbench/agency-web-tabs.json.bak']) {
     try { if (JSON.parse(fs.readFileSync(file, 'utf8')).version > supported) process.exit(3); } catch (error) { if (error.code !== 'ENOENT') process.exit(1); }
   }
   process.exit(0);
@@ -948,6 +948,9 @@ test('31. U-3/U-13a: install --service builds an isolated first release and rend
   await exec('git', ['clone', f.bareDir, repo]);
   await mkdir(path.join(repo, 'scripts'), { recursive: true });
   await exec('cp', ['-r', SCRIPT_DIR, path.join(repo, 'scripts/workbench')]);
+  const sharedDir = path.join(repo, 'packages/shared/src');
+  await mkdir(sharedDir, { recursive: true });
+  await exec('cp', [path.resolve(SCRIPT_DIR, '../../packages/shared/src/workbench-env.mjs'), sharedDir]);
   await git(repo, 'config', 'user.name', 'MAW Tester');
   await git(repo, 'config', 'user.email', 'tester@example.com');
   await git(repo, 'add', '.');
@@ -978,6 +981,9 @@ test('31b. installed library renders and runs after the installer source is remo
   const repo = path.join(f.root, 'installer-source');
   await mkdir(path.join(repo, 'scripts'), { recursive: true });
   await exec('cp', ['-r', SCRIPT_DIR, path.join(repo, 'scripts/workbench')]);
+  const sharedDir = path.join(repo, 'packages/shared/src');
+  await mkdir(sharedDir, { recursive: true });
+  await exec('cp', [path.resolve(SCRIPT_DIR, '../../packages/shared/src/workbench-env.mjs'), sharedDir]);
   const env = {
     ...f.env, WORKBENCH_LIB_DIR: path.join(f.root, 'installed-lib'), WORKBENCH_BIN_DIR: path.join(f.root, 'installed-bin'),
     WORKBENCH_RUNTIME_NAME: 'maw-installed-fixture',
@@ -1011,14 +1017,14 @@ test('31b. installed library renders and runs after the installer source is remo
     const url = `http://127.0.0.1:${addr.port}/?token=installed-fixture`;
     await writeFile(path.join(f.runtimeDir, 'workbench-ready.json'), JSON.stringify({ pid: process.pid, url, releaseId: f.initialId }), { mode: 0o600 });
     await writeFile(path.join(f.root, 'mainpid'), `${process.pid}\n`);
-    assert.equal((await exec(installedMaw, ['url'], { env: { ...env, WORKBENCH_CONTROL_SCRIPT: '' }, cwd: f.root })).stdout.trim(), url);
+    assert.equal((await exec(installedMaw, ['url'], { env: { ...env, WORKBENCH_CONTROL_SCRIPT: '' }, cwd: f.root })).stdout.trim(), new URL(url).origin + '/');
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
 }));
 
 // ---------------------------------------------------------------------------
 // Control (unchanged contract)
 // ---------------------------------------------------------------------------
-test('32. browser-independent startup and maw url loopback token retrieval', () => withFixture(async f => {
+test('32. browser-independent startup and CLI URL without credentials', () => withFixture(async f => {
   const server = createServer((req, res) => { res.statusCode = req.url?.includes('token=secure-token-123') ? 200 : 401; res.end('ok'); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
@@ -1029,7 +1035,7 @@ test('32. browser-independent startup and maw url loopback token retrieval', () 
     await writeFile(path.join(f.root, 'mainpid'), `${process.pid}\n`);
     const env = { ...f.env, WORKBENCH_CONTROL_SCRIPT: '' };
     const urlOut = await exec(WORKBENCH_BIN, ['url'], { env });
-    assert.equal(urlOut.stdout.trim(), expectedUrl);
+    assert.equal(urlOut.stdout.trim(), new URL(expectedUrl).origin + '/');
   } finally { await new Promise(r => server.close(r)); }
 }));
 

@@ -12,9 +12,9 @@ import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 
 const require = createRequire(import.meta.url);
 const here = DESKTOP_ROOT;
-const electronExecutable = fs.existsSync('/opt/workbench-electron/45.2.0/electron')
+const electronExecutable = process.env.WORKBENCH_ELECTRON_EXECUTABLE || (fs.existsSync('/opt/workbench-electron/45.2.0/electron')
   ? '/opt/workbench-electron/45.2.0/electron'
-  : require('electron');
+  : require('electron'));
 
 // 12 distinct UUIDs for multi-tab test (more than the old hardcoded 8 limit)
 const tabIds = [

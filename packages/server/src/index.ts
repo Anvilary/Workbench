@@ -1,4 +1,4 @@
-import { workbenchEnv } from '../../../scripts/workbench/env.mjs';
+import { workbenchEnv } from '@anvilary/workbench-shared/env';
 /**
  * Arranque de Agent Workbench.
  *
@@ -378,7 +378,7 @@ async function main(): Promise<void> {
       response.status(403).json({ ok: false, error: 'Loopback access only' });
       return;
     }
-    const reqAuth = (request as unknown as { mawCredential?: { kind: string } }).mawCredential;
+    const reqAuth = (request as unknown as { workbenchCredential?: { kind: string } }).workbenchCredential;
     if (!reqAuth || (reqAuth.kind !== 'session' && reqAuth.kind !== 'local')) {
       response.status(reqAuth?.kind === 'device' ? 403 : 401).json({
         ok: false,

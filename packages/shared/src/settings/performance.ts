@@ -147,19 +147,19 @@ export interface PerformanceServiceHealth {
 
 export interface PerformanceGlobalOverview {
   cpuUsagePercent: number; // Normalized total system CPU usage (0-100%)
-  mawCpuPercent: number; // CPU used by MAW application overhead (0-100%)
-  appMawCpuPercent?: number; // Explicit MAW application CPU (0-100%)
+  workbenchCpuPercent: number; // CPU used by MAW application overhead (0-100%)
+  appWorkbenchCpuPercent?: number; // Explicit MAW application CPU (0-100%)
   workloadCpuPercent?: number; // CPU used by managed workloads (agents + shells) (0-100%)
   totalCombinedCpuPercent?: number; // Combined total CPU (0-100%)
   cpuCoreCount: number;
-  mawPssBytes: number; // Physical RAM actually held by MAW application processes (PSS)
-  appMawPssBytes?: number; // Explicit MAW application memory (PSS)
+  workbenchPssBytes: number; // Physical RAM actually held by MAW application processes (PSS)
+  appWorkbenchPssBytes?: number; // Explicit MAW application memory (PSS)
   workloadPssBytes?: number; // Physical RAM held by managed workloads (PSS)
   totalCombinedPssBytes?: number; // Combined total RAM (PSS)
-  mawRssBytes: number; // Raw RSS sum (displayed for comparison, not as actual physical consumption)
-  mawPrivateBytes: number;
-  mawSharedBytes: number;
-  mawSwapPssBytes?: number;
+  workbenchRssBytes: number; // Raw RSS sum (displayed for comparison, not as actual physical consumption)
+  workbenchPrivateBytes: number;
+  workbenchSharedBytes: number;
+  workbenchSwapPssBytes?: number;
   workloadRssBytes?: number;
   workloadPrivateBytes?: number;
   workloadSharedBytes?: number;
@@ -171,7 +171,7 @@ export interface PerformanceGlobalOverview {
   gpuHardwareUtilization: number | null; // Null indicates explicit unavailable state
   gpuVramBytes: number | null; // Null indicates explicit unavailable state
   gpuStatusNote: string;
-  totalMawProcesses: number;
+  totalWorkbenchProcesses: number;
   totalWorkloadProcesses?: number;
   backendHealth: PerformanceServiceHealth;
   supervisorHealth: PerformanceServiceHealth;
@@ -180,10 +180,10 @@ export interface PerformanceGlobalOverview {
 
 export interface PerformanceHistoricalPoint {
   timestamp: number;
-  mawCpuPercent: number;
+  workbenchCpuPercent: number;
   systemCpuPercent: number;
-  mawPssBytes: number;
-  mawProcessCount: number;
+  workbenchPssBytes: number;
+  workbenchProcessCount: number;
 }
 
 export interface PerformanceSnapshot {
@@ -208,6 +208,14 @@ export interface PerformanceSnapshot {
     views: PerformanceBrowserViewMetric[];
   };
   browser: PerformanceBrowserLifecycle;
+  livePtyCount?: number | null;
+  hardwareAcceleration?: {
+    configured: boolean;
+    effectiveAtStartup: boolean;
+    source: string;
+    pendingRestart: boolean;
+    gpuSummary: { text: string } | null;
+  };
   otherTerminals: {
     totalCpuPercent: number;
     totalPssBytes: number;

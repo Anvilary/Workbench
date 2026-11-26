@@ -1,4 +1,4 @@
-import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
+import { workbenchEnv } from '../../../../packages/shared/src/workbench-env.mjs';
 /**
  * Commands that act on the page inside one native view: back, forward, reload,
  * copy, zoom, spellcheck replacement, opening links, find in page and capture.

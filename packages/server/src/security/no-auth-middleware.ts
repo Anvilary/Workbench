@@ -8,7 +8,7 @@ export function createNoAuthMiddleware(port: number) {
       response.status(403).type('text/plain').send('Origin not allowed.\nOrigen no permitido.');
       return;
     }
-    (request as Request & { mawCredential?: { kind: string } }).mawCredential = authorization.credential;
+    (request as Request & { workbenchCredential?: { kind: string } }).workbenchCredential = authorization.credential;
     next();
   };
 }

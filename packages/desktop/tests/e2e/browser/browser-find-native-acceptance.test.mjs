@@ -7,7 +7,7 @@ import os from 'node:os';
 import { _electron as electron } from 'playwright';
 import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 
-const electronExecutable = '/opt/workbench-electron/45.2.0/electron';
+const electronExecutable = process.env.WORKBENCH_ELECTRON_EXECUTABLE || ('/opt/workbench-electron/45.2.0/electron');
 
 async function eventually(check, message = 'condition', timeoutMs = 15000) {
   const start = Date.now();

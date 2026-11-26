@@ -171,9 +171,9 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
     }));
   };
 
-  const cpuHistory = snapshot?.history?.map((h) => h.mawCpuPercent) || [];
-  const ramHistory = snapshot?.history?.map((h) => h.mawPssBytes) || [];
-  const procHistory = snapshot?.history?.map((h) => h.mawProcessCount) || [];
+  const cpuHistory = snapshot?.history?.map((h) => h.workbenchCpuPercent) || [];
+  const ramHistory = snapshot?.history?.map((h) => h.workbenchPssBytes) || [];
+  const procHistory = snapshot?.history?.map((h) => h.workbenchProcessCount) || [];
 
   return (
     <div
@@ -264,14 +264,14 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
               {/* Card 1: Workbench App CPU */}
               <div className="wb-perf-card">
                 <div className="wb-perf-card-header">
-                  <span className="wb-perf-card-label">{t('performance.mawAppCpu')}</span>
+                  <span className="wb-perf-card-label">{t('performance.workbenchAppCpu')}</span>
                   <span className="wb-perf-card-sub">
                     {snapshot.global.cpuCoreCount} {t('performance.cores')}
                   </span>
                 </div>
                 <div className="wb-perf-card-body">
                   <div className="wb-perf-card-val-row">
-                    <span className="wb-perf-card-val">{snapshot.global.appMawCpuPercent ?? snapshot.global.mawCpuPercent}%</span>
+                    <span className="wb-perf-card-val">{snapshot.global.appWorkbenchCpuPercent ?? snapshot.global.workbenchCpuPercent}%</span>
                     <span className="wb-perf-card-note">
                       System: {snapshot.global.cpuUsagePercent}% · Workloads: {snapshot.global.workloadCpuPercent ?? Number(snapshot.aiAgents.totalCpuPercent + snapshot.otherTerminals.totalCpuPercent).toFixed(1)}%
                     </span>
@@ -290,7 +290,7 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
               {/* Card 2: Workbench App RAM */}
               <div className="wb-perf-card">
                 <div className="wb-perf-card-header">
-                  <span className="wb-perf-card-label">{t('performance.mawAppRam')}</span>
+                  <span className="wb-perf-card-label">{t('performance.workbenchAppRam')}</span>
                   <span
                     className={`wb-perf-pressure-badge tier-${snapshot.global.systemMemoryPressure}`}
                     title={`System memory pressure: ${snapshot.global.systemMemoryPressure.toUpperCase()}`}
@@ -300,7 +300,7 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
                 </div>
                 <div className="wb-perf-card-body">
                   <div className="wb-perf-card-val-row">
-                    <span className="wb-perf-card-val">{formatBytes(snapshot.global.appMawPssBytes ?? snapshot.global.mawPssBytes)}</span>
+                    <span className="wb-perf-card-val">{formatBytes(snapshot.global.appWorkbenchPssBytes ?? snapshot.global.workbenchPssBytes)}</span>
                     <span className="wb-perf-card-note">
                       Workloads: {formatBytes(snapshot.global.workloadPssBytes ?? (snapshot.aiAgents.totalPssBytes + snapshot.otherTerminals.totalPssBytes))} · Available: {formatBytes(snapshot.global.systemAvailableBytes)}
                     </span>
@@ -557,6 +557,18 @@ export function PerformancePanel({ onClose }: Props): JSX.Element {
 
                 {expandBrowsers && (
                   <div className="wb-perf-table-wrapper">
+                    <div className="wb-perf-shared-notice">
+                      Mounted terminal renderers {document.querySelectorAll('.xterm').length}
+                      {' '} &bull; live PTYs {snapshot.livePtyCount ?? UNAVAILABLE}
+                    </div>
+                    {snapshot.hardwareAcceleration && (
+                      <div className="wb-perf-shared-notice">
+                        Hardware acceleration {snapshot.hardwareAcceleration.effectiveAtStartup ? 'on' : 'off'}
+                        {' '}({snapshot.hardwareAcceleration.source}), configured {snapshot.hardwareAcceleration.configured ? 'on' : 'off'}
+                        {snapshot.hardwareAcceleration.pendingRestart && ' · restart pending'}
+                        {' '} &bull; {snapshot.hardwareAcceleration.gpuSummary?.text ?? UNAVAILABLE}
+                      </div>
+                    )}
                     <BrowserLifecycleSummary browser={snapshot.browser} />
                     {snapshot.browserViews.views.length === 0 ? (
                       <p className="wb-perf-empty">{t('performance.noBrowsersOpen')}</p>

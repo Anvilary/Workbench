@@ -17,6 +17,7 @@
  * logged.
  */
 
+import { workbenchEnv } from '../../../../packages/shared/src/workbench-env.mjs';
 import nodeFs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -34,9 +35,11 @@ const MAX_ENTRY_CHARS = 16 * 1024;
  * installed instance's log. Otherwise `${XDG_STATE_HOME:-~/.local/state}/workbench/logs`.
  */
 export function resolveDesktopLogDir({ env = process.env, homedir = os.homedir } = {}) {
-  if (env.WORKBENCH_DESKTOP_LOG_DIR && path.isAbsolute(env.WORKBENCH_DESKTOP_LOG_DIR)) return path.resolve(env.WORKBENCH_DESKTOP_LOG_DIR);
-  if (env.WORKBENCH_DESKTOP_PRODUCTION !== '1' && env.WORKBENCH_DESKTOP_DATA_DIR && path.isAbsolute(env.WORKBENCH_DESKTOP_DATA_DIR)) {
-    return path.join(path.resolve(env.WORKBENCH_DESKTOP_DATA_DIR), 'logs');
+  const override = workbenchEnv('DESKTOP_LOG_DIR', env);
+  if (override && path.isAbsolute(override)) return path.resolve(override);
+  const profile = workbenchEnv('DESKTOP_DATA_DIR', env);
+  if (workbenchEnv('DESKTOP_PRODUCTION', env) !== '1' && profile && path.isAbsolute(profile)) {
+    return path.join(path.resolve(profile), 'logs');
   }
   const stateHome = env.XDG_STATE_HOME && path.isAbsolute(env.XDG_STATE_HOME)
     ? env.XDG_STATE_HOME
@@ -74,19 +77,26 @@ export function createDiagnosticLogger({
   now = () => new Date(),
 } = {}) {
   const file = path.join(dir, filename);
-  let dirReady = false;
-
   function ensureDir() {
-    if (dirReady) return;
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    try { fs.chmodSync(dir, 0o700); } catch {}
-    dirReady = true;
+    const info = fs.lstatSync(dir);
+    if (!info.isDirectory() || (process.getuid && info.uid !== process.getuid())) throw new Error('Unsafe diagnostics directory');
+    if (info.mode & 0o077) fs.chmodSync(dir, 0o700);
+  }
+
+  function verifyLog(info) {
+    if (!info.isFile() || info.nlink !== 1 || (process.getuid && info.uid !== process.getuid())) {
+      throw new Error('Unsafe diagnostics log');
+    }
   }
 
   function rotateIfNeeded(incoming) {
-    let size = 0;
-    try { size = fs.statSync(file).size; } catch { return; }
-    if (size + incoming <= maxBytes) return;
+    let info;
+    try { info = fs.lstatSync(file); }
+    catch (error) { if (error?.code === 'ENOENT') return; throw error; }
+    verifyLog(info);
+    if (info.size + incoming <= maxBytes) return;
+    if (info.mode & 0o077) fs.chmodSync(file, 0o600);
     for (let i = keep; i >= 1; i--) {
       const from = i === 1 ? file : `${file}.${i - 1}`;
       try { fs.renameSync(from, `${file}.${i}`); } catch {}
@@ -101,10 +111,18 @@ export function createDiagnosticLogger({
       const line = `${now().toISOString()} [${level}] pid=${process.pid} ${message}\n`;
       ensureDir();
       rotateIfNeeded(Buffer.byteLength(line));
-      fs.appendFileSync(file, line, { encoding: 'utf8', mode: 0o600 });
+      const { O_APPEND, O_CREAT, O_WRONLY, O_NOFOLLOW = 0 } = fs.constants;
+      const fd = fs.openSync(file, O_APPEND | O_CREAT | O_WRONLY | O_NOFOLLOW, 0o600);
+      try {
+        const info = fs.fstatSync(fd);
+        verifyLog(info);
+        if (info.mode & 0o077) fs.fchmodSync(fd, 0o600);
+        fs.appendFileSync(fd, line, 'utf8');
+      } finally {
+        fs.closeSync(fd);
+      }
       return true;
     } catch {
-      dirReady = false;
       return false;
     }
   }

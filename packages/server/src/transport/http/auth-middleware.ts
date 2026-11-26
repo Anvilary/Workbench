@@ -57,7 +57,7 @@ export function createAuthMiddleware(port: number, token: string, remote: Remote
     const authorization = authorizeRequest(request, port, token, remote.verifier());
     if (authorization.ok) {
       const { credential } = authorization;
-      (request as any).mawCredential = credential;
+      (request as any).workbenchCredential = credential;
       if (credential.kind === 'session' && credential.source === 'query') {
         response.setHeader('Set-Cookie', buildTokenCookie(token));
       }

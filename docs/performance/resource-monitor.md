@@ -186,7 +186,7 @@ An inspection of the administrative endpoint `GET /api/performance/terminals` id
    - The endpoint strictly verifies `request.socket.remoteAddress` matches `127.0.0.1`, `::1`, or IPv4-mapped loopback `::ffff:127.0.0.1`. Non-loopback requests receive 403 Forbidden.
 2. Mandatory Local Session Authentication:
    - Loopback access alone is not considered sufficient authorization.
-   - The endpoint now verifies `(request as any).mawCredential`. Requests without a valid session credential (`kind === 'session'` or `kind === 'local'`) are rejected with 401 Unauthorized.
+   - The endpoint now verifies `(request as any).workbenchCredential`. Requests without a valid session credential (`kind === 'session'` or `kind === 'local'`) are rejected with 401 Unauthorized.
    - Paired remote devices (`kind === 'device'`) are explicitly rejected with 403 Forbidden, preventing remote paired clients from discovering host processes.
 3. DNS Rebinding & Cross-Origin Protection:
    - `createAuthMiddleware` enforces `hasValidHost(request, port)` and `hasValidOrigin(request, port)`. Malicious browser pages on other origins attempting to fetch the endpoint receive 403.

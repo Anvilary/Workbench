@@ -20,7 +20,7 @@ test('general Browser preserves its session, navigation and user input while iso
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const data = await mkdtemp(path.join(os.tmpdir(), 'wb-browser-release-'));
   let app;
-  const launch = () => electron.launch({ chromiumSandbox: true, executablePath: '/opt/workbench-electron/45.2.0/electron',
+  const launch = () => electron.launch({ chromiumSandbox: true, executablePath: process.env.WORKBENCH_ELECTRON_EXECUTABLE || '/opt/workbench-electron/45.2.0/electron',
     args: [desktopDir, '--ozone-platform=x11'], env: { ...process.env, HOME: data, WORKBENCH_DESKTOP_DATA_DIR: data,
       WORKBENCH_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/`, WORKBENCH_MAX_RESIDENT_VIEWS: '1', WORKBENCH_MEMORY_PRESSURE_TIER: 'critical' } });
   try {

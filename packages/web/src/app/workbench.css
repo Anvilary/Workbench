@@ -1529,11 +1529,11 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .wb-zoom-indicator {
-    animation: mawZoomFade 140ms ease-out;
+    animation: workbenchZoomFade 140ms ease-out;
   }
 }
 
-@keyframes mawZoomFade {
+@keyframes workbenchZoomFade {
   from {
     opacity: 0;
   }

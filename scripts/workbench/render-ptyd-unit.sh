@@ -21,6 +21,7 @@ wb_init_paths
 state_dir="${WORKBENCH_STATE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/workbench}"
 bin_dir="${WORKBENCH_BIN_DIR:-$HOME/.local/bin}"
 ptyd_runtime_name="${WORKBENCH_PTYD_RUNTIME_NAME:-workbench-ptyd}"
+log_dir="${XDG_STATE_HOME:-$HOME/.local/state}/workbench/logs"
 # systemd treats '%' as a specifier: escape it; also escape sed replacement metacharacters.
 esc() { printf '%s' "$1" | sed 's/%/%%/g; s/[&|\\]/\\&/g'; }
 ptyd_template="$script_dir/pty-host/workbench-ptyd.service"
@@ -31,4 +32,5 @@ sed -e "s|@NODE_BIN@|$(esc "$node_bin")|g" \
     -e "s|@STATE_DIR@|$(esc "$state_dir")|g" \
     -e "s|@PATH@|$(esc "$(dirname "$node_bin"):$bin_dir:/usr/local/bin:/usr/bin:/bin")|g" \
     -e "s|@PTYD_RUNTIME_NAME@|$(esc "$ptyd_runtime_name")|g" \
+    -e "s|@LOG_DIR@|$(esc "$log_dir")|g" \
     "$ptyd_template"

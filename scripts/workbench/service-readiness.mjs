@@ -52,7 +52,7 @@ export async function startCurrentService() {
     { env: systemdEnv(), timeout: 5000 });
 }
 
-export async function readyService() {
+export async function readyService({ expectedReleaseId, requireAuth = false } = {}) {
   let file;
   const uid = typeof process.getuid === 'function' ? process.getuid() : null;
   if (workbenchEnv('RUNTIME_DIR')) {
@@ -73,7 +73,7 @@ export async function readyService() {
   // Release identity: the activation helper names the release it expects. A server that publishes its
   // release ID must match it exactly; an older server without the field is checked through the working
   // directory systemd gave it (WorkingDirectory=<state>/current, resolved when the process started).
-  const expected = workbenchEnv('EXPECT_RELEASE_ID') || '';
+  const expected = expectedReleaseId || workbenchEnv('EXPECT_RELEASE_ID') || '';
   if (expected) {
     if (typeof state.releaseId === 'string' || state.releaseId === null) {
       if (state.releaseId !== expected) throw new Error(`Serving release ${state.releaseId}, expected ${expected}`);
@@ -87,6 +87,7 @@ export async function readyService() {
     throw new Error('Invalid loopback URL');
   }
   const noAuth = !url.searchParams.get('token');
+  if (requireAuth && (noAuth || state.releaseId !== expectedReleaseId)) throw new Error('Authenticated release readiness is required');
   const response = await fetch(url, { signal: AbortSignal.timeout(3000), redirect: 'error' });
   if (!response.ok) throw new Error('Service is not ready');
   return { url, state, pid, noAuth };

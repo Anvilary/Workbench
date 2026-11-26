@@ -30,6 +30,31 @@ ptyd_runtime_name="${WORKBENCH_PTYD_RUNTIME_NAME:-workbench-ptyd}"
 node_bin="${WORKBENCH_NODE_BIN:-$node_bin}"
 
 mode="${1:---commands-only}"
+if [ "$mode" = --migrate ]; then
+  shift
+  [ -n "$node_bin" ] && [ -x "$node_bin" ] || { printf '%s\n' 'Node is required for migration.' >&2; exit 1; }
+  exec "$node_bin" "$script_dir/migrate-identity.mjs" "$@"
+fi
+
+# A legacy service file or release pointer requires the explicit identity migration.
+# Once both legacy names are masked, only the verified migration owns this transition.
+legacy_state="${XDG_DATA_HOME:-$HOME/.local/share}/maw"
+legacy_unit=false
+for legacy in maw.service maw-ptyd.service; do
+  if [ -e "$unit_dir/$legacy" ] || [ -L "$unit_dir/$legacy" ]; then
+    if [ "$(readlink "$unit_dir/$legacy" || true)" != /dev/null ]; then legacy_unit=true; fi
+  fi
+done
+if [ "$legacy_unit" = true ] ||
+   { [ -L "$legacy_state/current" ] && [ ! -f "$state_dir/migration/identity-v1.json" ]; }; then
+  printf '%s\n' 'A legacy Workbench installation exists. Run install.sh --migrate plan before installing canonical commands or services.' >&2
+  exit 2
+fi
+if [ "$unit_name" = maw.service ] || [ "$ptyd_unit_name" = maw-ptyd.service ] ||
+   [ "$runtime_name" = "$ptyd_runtime_name" ]; then
+  printf '%s\n' 'Workbench requires separate canonical backend and supervisor identities.' >&2
+  exit 2
+fi
 case "$mode" in
   --commands-only) ;;
   --desktop-assets) ;;
@@ -49,7 +74,7 @@ case "$mode" in
     }
     [ -n "$node_bin" ] && [ -x "$node_bin" ] || { printf '%s\n' 'node not found; set WORKBENCH_NODE_BIN.' >&2; exit 1; }
     ;;
-  *) printf '%s\n' 'Usage: install.sh [--commands-only|--service|--desktop|--desktop-assets|--integrate-desktop]' >&2; exit 2 ;;
+  *) printf '%s\n' 'Usage: install.sh [--commands-only|--service|--desktop|--desktop-assets|--integrate-desktop|--migrate COMMAND]' >&2; exit 2 ;;
 esac
 
 install -d -m 700 "$lib_dir" "$state_dir" "$state_dir/releases"
@@ -59,9 +84,11 @@ install -d "$bin_dir"
 
 install -m 644 "$script_dir/lib.sh" "$lib_dir/lib.sh"
 install -m 644 "$script_dir/control.mjs" "$lib_dir/control.mjs"
-for desktop_file in service-readiness.mjs desktop-runtime.mjs desktop-launch.mjs env.mjs; do
+for desktop_file in service-readiness.mjs desktop-runtime.mjs desktop-launch.mjs; do
   install -m 644 "$script_dir/$desktop_file" "$lib_dir/$desktop_file"
 done
+install -m 644 "$repo_dir/packages/shared/src/workbench-env.mjs" "$lib_dir/env.mjs"
+install -m 644 "$script_dir/migrate-identity.mjs" "$lib_dir/migrate-identity.mjs"
 if [ -f "$repo_dir/packages/desktop/package.json" ]; then
   desktop_target_version=$("$node_bin" -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1])).devDependencies.electron)' "$repo_dir/packages/desktop/package.json")
   # Preserve a working bootstrap until the replacement package is installed.

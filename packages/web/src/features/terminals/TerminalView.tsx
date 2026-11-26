@@ -361,7 +361,7 @@ export function TerminalView({
     terminal.loadAddon(new WebLinksAddon());
     const searchAddon = new SearchAddon();
     terminal.loadAddon(searchAddon);
-    (terminal as unknown as { __mawSearchAddon?: SearchAddon }).__mawSearchAddon = searchAddon;
+    (terminal as unknown as { __workbenchSearchAddon?: SearchAddon }).__workbenchSearchAddon = searchAddon;
     onSearchAddonRef.current?.(searchAddon);
     terminal.open(container);
     onTerminalInstanceRef.current?.(terminal);
@@ -672,11 +672,11 @@ export function TerminalView({
       if (data.startsWith('C')) {
         lastCommandStartMarker?.dispose();
         lastCommandStartMarker = terminal.registerMarker(0);
-        (terminal as unknown as { __mawLastCommandMarker?: IMarker | null }).__mawLastCommandMarker = lastCommandStartMarker;
+        (terminal as unknown as { __workbenchLastCommandMarker?: IMarker | null }).__workbenchLastCommandMarker = lastCommandStartMarker;
       } else if (data.startsWith('A')) {
         lastPromptStartMarker?.dispose();
         lastPromptStartMarker = terminal.registerMarker(0);
-        (terminal as unknown as { __mawLastPromptMarker?: IMarker | null }).__mawLastPromptMarker = lastPromptStartMarker;
+        (terminal as unknown as { __workbenchLastPromptMarker?: IMarker | null }).__workbenchLastPromptMarker = lastPromptStartMarker;
       }
       return true;
     });

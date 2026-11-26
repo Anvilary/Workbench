@@ -22,9 +22,9 @@ import { DESKTOP_ROOT, REPO_ROOT } from '../../helpers/paths.mjs';
 
 const require = createRequire(path.join(REPO_ROOT, 'package.json'));
 const { build } = require('esbuild');
-const electronExecutable = existsSync('/opt/workbench-electron/45.2.0/electron')
+const electronExecutable = process.env.WORKBENCH_ELECTRON_EXECUTABLE || (existsSync('/opt/workbench-electron/45.2.0/electron')
   ? '/opt/workbench-electron/45.2.0/electron'
-  : require('electron');
+  : require('electron'));
 
 const evidenceDir = process.env.WORKBENCH_USAGE_ELECTRON_EVIDENCE_DIR;
 

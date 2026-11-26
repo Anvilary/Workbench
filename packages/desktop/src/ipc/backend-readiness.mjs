@@ -1,4 +1,4 @@
-import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
+import { workbenchEnv } from '../../../../packages/shared/src/workbench-env.mjs';
 import { existsSync } from 'node:fs';
 import { lstat, readFile } from 'node:fs/promises';
 import os from 'node:os';

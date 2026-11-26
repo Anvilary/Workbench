@@ -2,7 +2,7 @@
  * REAL systemd acceptance for MAW activation and rollback (opt-in: WORKBENCH_REAL_SYSTEMD=1).
  *
  * Uses the production unit template (scripts/workbench/workbench.service rendered by render-unit.sh) as a
- * disposable runtime unit `maw-test-<random>.service` in $XDG_RUNTIME_DIR/systemd/user, with its own state
+ * disposable runtime unit `workbench-test-<random>.service` in $XDG_RUNTIME_DIR/systemd/user, with its own state
  * dir, runtime directory and loopback port. Never touches workbench.service, the real state dir or any live
  * process. The unit file, its runtime directory and the temp state are removed afterwards.
  *
@@ -20,11 +20,11 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomBytes } from 'node:crypto';
 import { build } from 'esbuild';
-import { SCRIPTS_MAW_DIR, SERVER_SRC } from '../../helpers/paths.js';
+import { SCRIPTS_WORKBENCH_DIR, SERVER_SRC } from '../../helpers/paths.js';
 
 const exec = promisify(execFile);
 const enabled = process.env['WORKBENCH_REAL_SYSTEMD'] === '1' && process.platform === 'linux' && !!process.env['XDG_RUNTIME_DIR'];
-const SCRIPT_DIR = SCRIPTS_MAW_DIR;
+const SCRIPT_DIR = SCRIPTS_WORKBENCH_DIR;
 
 const TSX = await realpath(path.resolve(SERVER_SRC, '../node_modules/tsx')).catch(() => null);
 
@@ -77,8 +77,8 @@ async function makeRelease(releases: string, id: string, source: string): Promis
 
 test('real systemd: crash-looping candidate hits start-limit, is detected, and the verified release is restored', { skip: !enabled || !TSX }, async () => {
   const suffix = randomBytes(4).toString('hex');
-  const unit = `maw-test-${suffix}.service`;
-  const runtimeName = `maw-test-${suffix}`;
+  const unit = `workbench-test-${suffix}.service`;
+  const runtimeName = `workbench-test-${suffix}`;
   const unitDir = path.join(process.env['XDG_RUNTIME_DIR']!, 'systemd/user');
   const unitFile = path.join(unitDir, unit);
   const root = await realpath(await mkdtemp(path.join(tmpdir(), 'maw-systemd-')));
@@ -88,7 +88,7 @@ test('real systemd: crash-looping candidate hits start-limit, is detected, and t
   const env = {
     ...process.env, WORKBENCH_STATE_DIR: state, WORKBENCH_UNIT: unit, WORKBENCH_RUNTIME_DIR: path.join(process.env['XDG_RUNTIME_DIR']!, runtimeName),
     WORKBENCH_NODE_BIN: process.execPath, WORKBENCH_READY_TIMEOUT: '25', WORKBENCH_CGROUP_FILE: path.join(root, 'none'),
-    WORKBENCH_PTYD_UNIT: `maw-test-ptyd-${suffix}.service`, XDG_CONFIG_HOME: path.join(root, 'config'), WORKBENCH_ENV_FILE: path.join(root, 'no-environment'),
+    WORKBENCH_PTYD_UNIT: `workbench-test-ptyd-${suffix}.service`, XDG_CONFIG_HOME: path.join(root, 'config'), WORKBENCH_ENV_FILE: path.join(root, 'no-environment'),
   };
   const helper = async (): Promise<{ code: number; out: string }> => {
     try { const r = await exec(path.join(SCRIPT_DIR, 'restart-helper.sh'), ['--unit', unit], { env }); return { code: 0, out: r.stdout + r.stderr }; }
@@ -148,7 +148,7 @@ test('real systemd: crash-looping candidate hits start-limit, is detected, and t
   } finally {
     await exec('systemctl', ['--user', 'stop', unit]).catch(() => undefined);
     await exec('systemctl', ['--user', 'reset-failed', unit]).catch(() => undefined);
-    if (path.basename(unitFile).startsWith('maw-test-')) await rm(unitFile, { force: true });
+    if (path.basename(unitFile).startsWith('workbench-test-')) await rm(unitFile, { force: true });
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -163,22 +163,22 @@ test('real systemd: a release built from this repository activates, is verified 
   skip: !enabled || process.env['WORKBENCH_REAL_RELEASE'] !== '1', timeout: 900_000,
 }, async () => {
   const suffix = randomBytes(4).toString('hex');
-  const unit = `maw-test-${suffix}.service`;
-  const runtimeName = `maw-test-${suffix}`;
-  const ptydRuntime = `maw-test-ptyd-${suffix}`;
+  const unit = `workbench-test-${suffix}.service`;
+  const runtimeName = `workbench-test-${suffix}`;
+  const ptydRuntime = `workbench-test-ptyd-${suffix}`;
   const ptydUnit = `${ptydRuntime}.service`;
   const unitDir = path.join(process.env['XDG_RUNTIME_DIR']!, 'systemd/user');
   const unitFile = path.join(unitDir, unit);
   const ptydUnitFile = path.join(unitDir, ptydUnit);
   const dropIn = path.join(unitDir, unit + '.d');
-  const root = await realpath(await mkdtemp(path.join(tmpdir(), 'maw-real-release-')));
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), 'workbench-real-release-')));
   const state = path.join(root, '.local/share/workbench');
   const sandbox = path.join(root, 'sandbox');
   const repoRoot = path.resolve(SCRIPT_DIR, '../..');
   const env = { ...process.env, WORKBENCH_STATE_DIR: state, WORKBENCH_UNIT: unit, WORKBENCH_RUNTIME_DIR: path.join(process.env['XDG_RUNTIME_DIR']!, runtimeName),
     WORKBENCH_NODE_BIN: process.execPath, WORKBENCH_READY_TIMEOUT: '20', WORKBENCH_CGROUP_FILE: path.join(root, 'none'), WORKBENCH_ENV_FILE: path.join(root, 'no-environment'),
     WORKBENCH_PTYD_UNIT: ptydUnit, XDG_CONFIG_HOME: path.join(sandbox, 'config'),
-    WORKBENCH_LIB_DIR: path.join(root, 'lib'), WORKBENCH_BIN_DIR: path.join(root, 'bin') };
+    WORKBENCH_LIB_DIR: path.join(root, 'lib'), WORKBENCH_BIN_DIR: path.join(root, 'bin'), WORKBENCH_HEADLESS: '1' };
   try {
     await exec('/bin/sh', [path.join(SCRIPT_DIR, 'install.sh'), '--commands-only'], { env });
     const built = await exec('/bin/sh', [path.join(SCRIPT_DIR, 'update.sh'), '--initial', '--source', repoRoot, '--ref', 'HEAD', '--allow-unapproved-ref'],
@@ -225,13 +225,16 @@ test('real systemd: a release built from this repository activates, is verified 
     const status = await exec(process.execPath, [path.join(SCRIPT_DIR, 'control.mjs'), 'status'], { env: { ...env, WORKBENCH_EXPECT_RELEASE_ID: id } });
     assert.match(status.stdout, new RegExp(`release ${id}`));
     const url = (await exec(process.execPath, [path.join(SCRIPT_DIR, 'control.mjs'), 'url'], { env })).stdout.trim();
-    const page = await (await fetch(url)).text();
+    const readiness = JSON.parse(await (await import('node:fs/promises')).readFile(path.join(env.WORKBENCH_RUNTIME_DIR, 'workbench-ready.json'), 'utf8'));
+    assert.equal(url, new URL(readiness.url).origin + '/');
+    assert.equal((await fetch(url)).status, 401);
+    const page = await (await fetch(readiness.url)).text();
     const builtIndex = await (await import('node:fs/promises')).readFile(path.join(release, 'packages/web/dist/index.html'), 'utf8');
     const mainChunk = builtIndex.match(/assets\/index-[\w-]+\.js/)?.[0];
     assert.ok(mainChunk && page.includes(mainChunk), 'the service serves this release\'s own built UI');
-    const assetUrl = new URL(mainChunk, url); assetUrl.search = new URL(url).search;
+    const assetUrl = new URL(mainChunk, url); assetUrl.search = new URL(readiness.url).search;
     assert.equal((await fetch(assetUrl)).status, 200, 'built assets under hidden release parents');
-    const missingUrl = new URL('/assets/missing.js', url); missingUrl.search = new URL(url).search;
+    const missingUrl = new URL('/assets/missing.js', url); missingUrl.search = new URL(readiness.url).search;
     assert.equal((await fetch(missingUrl)).status, 404, 'missing assets never become healthy HTML');
     assert.equal((await fetch(new URL('/', url))).status, 401, 'UI remains authenticated');
     const startedPid = Number((await exec('systemctl', ['--user', 'show', unit, '--property=MainPID', '--value'])).stdout.trim());
@@ -252,7 +255,7 @@ test('real systemd: a release built from this repository activates, is verified 
     await exec('systemctl', ['--user', 'stop', ptydUnit]).catch(() => undefined);
     await exec('systemctl', ['--user', 'reset-failed', unit]).catch(() => undefined);
     await exec('systemctl', ['--user', 'reset-failed', ptydUnit]).catch(() => undefined);
-    if (path.basename(unitFile).startsWith('maw-test-')) { await rm(unitFile, { force: true }); await rm(dropIn, { recursive: true, force: true }); }
+    if (path.basename(unitFile).startsWith('workbench-test-')) { await rm(unitFile, { force: true }); await rm(dropIn, { recursive: true, force: true }); }
     await rm(ptydUnitFile, { force: true });
     await rm(root, { recursive: true, force: true });
   }
@@ -266,9 +269,9 @@ test('real systemd: a release built from this repository activates, is verified 
  */
 test('real systemd: in-app lifecycle commands and restart delegation succeed under simulated private D-Bus session', { skip: !enabled || !TSX }, async () => {
   const suffix = randomBytes(4).toString('hex');
-  const unit = `maw-test-${suffix}.service`;
-  const helperUnit = `maw-test-helper-${suffix}`;
-  const runtimeName = `maw-test-${suffix}`;
+  const unit = `workbench-test-${suffix}.service`;
+  const helperUnit = `workbench-test-helper-${suffix}`;
+  const runtimeName = `workbench-test-${suffix}`;
   const uid = process.getuid ? process.getuid() : 1000;
   const userDir = `/run/user/${uid}`;
   const unitDir = path.join(userDir, 'systemd/user');
@@ -300,7 +303,7 @@ test('real systemd: in-app lifecycle commands and restart delegation succeed und
     WORKBENCH_STATE_DIR: state,
     WORKBENCH_UNIT: unit,
     WORKBENCH_HELPER_UNIT: helperUnit,
-    WORKBENCH_PTYD_UNIT: `maw-test-ptyd-${suffix}.service`,
+    WORKBENCH_PTYD_UNIT: `workbench-test-ptyd-${suffix}.service`,
     XDG_CONFIG_HOME: path.join(root, 'config'),
     WORKBENCH_ENV_FILE: path.join(root, 'no-environment'),
     WORKBENCH_RUNTIME_DIR: runtimeDir,
@@ -422,7 +425,7 @@ test('real systemd: in-app lifecycle commands and restart delegation succeed und
     await exec('systemctl', ['--user', 'stop', `${helperUnit}.service`]).catch(() => undefined);
     await exec('systemctl', ['--user', 'stop', `${helperUnit}.timer`]).catch(() => undefined);
     await exec('systemctl', ['--user', 'reset-failed', unit]).catch(() => undefined);
-    if (path.basename(unitFile).startsWith('maw-test-')) await rm(unitFile, { force: true });
+    if (path.basename(unitFile).startsWith('workbench-test-')) await rm(unitFile, { force: true });
     await rm(root, { recursive: true, force: true });
     await rm(runtimeDir, { recursive: true, force: true }).catch(() => undefined);
   }

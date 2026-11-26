@@ -166,6 +166,17 @@ try {
     console.log(isPersistentBackend() ? 'persistent' : 'in-process');
     process.exit(0);
   }
+  if (process.argv[2] === 'migration-ready') {
+    const expectedReleaseId = process.argv[3];
+    if (!/^[0-9]{14}-[0-9a-f]{4,40}(-[0-9]+)?$/.test(expectedReleaseId || '')) throw new Error('Expected release ID is required');
+    const { state, pid } = await readyService({ expectedReleaseId, requireAuth: true });
+    const release = readlinkSync(`/proc/${pid}/cwd`);
+    if (path.basename(release) !== expectedReleaseId || unitPid(workbenchEnv('UNIT') || 'workbench.service') !== pid) {
+      throw new Error('Backend release changed during readiness verification');
+    }
+    console.log(state.releaseId);
+    process.exit(0);
+  }
   const { url, state, pid, noAuth } = await readyService();
   const release = typeof state.releaseId === 'string' ? `; release ${state.releaseId}` : '';
   const modeLabel = noAuth ? '; token-free local mode (WORKBENCH_UNSAFE_LOCAL_NO_AUTH=1)' : '';

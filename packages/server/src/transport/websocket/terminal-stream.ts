@@ -1,4 +1,4 @@
-import { workbenchEnv } from '../../../../../scripts/workbench/env.mjs';
+import { workbenchEnv } from '@anvilary/workbench-shared/env';
 /**
  * One socket's view of terminal output.
  *

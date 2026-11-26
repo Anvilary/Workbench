@@ -297,7 +297,7 @@ test('TASK B: 42,000-line scrollback, search, Ctrl+Shift+A, Ctrl+A/C semantics, 
   // 8. Test terminal search across the 42,000-line buffer:
   const searchResult = await page.evaluate(() => {
     const term = window.terminals[0];
-    const addon = term.__mawSearchAddon;
+    const addon = term.__workbenchSearchAddon;
     if (!addon) return { ok: false, error: 'missing SearchAddon' };
     const foundMid = addon.findNext('SYNTH_LINE_025000');
     const selMid = term.getSelection();

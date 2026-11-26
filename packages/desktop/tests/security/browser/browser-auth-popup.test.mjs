@@ -46,7 +46,7 @@ test('authentication popups keep their opener, session, and failure fallback', {
   try {
     app = await electron.launch({
       chromiumSandbox: true,
-      executablePath: '/opt/workbench-electron/45.2.0/electron',
+      executablePath: process.env.WORKBENCH_ELECTRON_EXECUTABLE || '/opt/workbench-electron/45.2.0/electron',
       args: [desktopDir, '--ozone-platform=x11'],
       env: {
         ...process.env,

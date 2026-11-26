@@ -1,4 +1,4 @@
-import { workbenchEnv } from '../../../../scripts/workbench/env.mjs';
+import { workbenchEnv } from '@anvilary/workbench-shared/env';
 /**
  * Cliente IPC para conectarse a `workbench-ptyd` (Persistent PTY Supervisor).
  *

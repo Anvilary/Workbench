@@ -231,7 +231,7 @@ export const RETAINED_COMPAT_MESSAGE_KEYS: readonly MessageKey[] = [
   'performance.cpuUtilization',
   'performance.gpuProcess',
   'performance.idle',
-  'performance.mawProcesses',
+  'performance.workbenchProcesses',
   'performance.normalizedTotal',
   'performance.notActive',
   'performance.ramPhysicalPss',

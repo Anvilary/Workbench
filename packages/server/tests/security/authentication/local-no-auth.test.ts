@@ -82,6 +82,27 @@ test('isLocalNoAuthEnabled returns true only when env var is exactly "1"', () =>
 // authorizeRequestNoAuth: token-free mode accepts loopback requests
 // ---------------------------------------------------------------------------
 
+test('the legacy flag does not authorize a token-free backend', () => {
+  const legacyKey = 'MAW_UNSAFE_LOCAL_NO_AUTH';
+  const canonicalKey = 'WORKBENCH_UNSAFE_LOCAL_NO_AUTH';
+  const legacy = process.env[legacyKey];
+  const canonical = process.env[canonicalKey];
+  try {
+    process.env[legacyKey] = '1';
+    delete process.env[canonicalKey];
+    assert.equal(isLocalNoAuthEnabled(), false);
+    process.env[canonicalKey] = '0';
+    assert.equal(isLocalNoAuthEnabled(), false);
+    process.env[canonicalKey] = '1';
+    assert.equal(isLocalNoAuthEnabled(), true);
+  } finally {
+    if (legacy === undefined) delete process.env[legacyKey];
+    else process.env[legacyKey] = legacy;
+    if (canonical === undefined) delete process.env[canonicalKey];
+    else process.env[canonicalKey] = canonical;
+  }
+});
+
 test('no-auth: loopback request without token or cookie is accepted', () => {
   const req = makeRequest({ host: LOOPBACK_HOST_HEADER });
   const result = authorizeRequestNoAuth(req, PORT);
