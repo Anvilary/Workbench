@@ -35,3 +35,16 @@ Thumbs.db
 
 /dist-desktop/
 /dist-release-evidence/
+
+# Local demo deliverables and private evidence (never committed)
+/workbench-demo-deliverables/
+/workbench-demo-final/
+/workbench-demo-final.tar.gz
+/evidence-local/
+
+# Credential and capture material
+*.har
+*.pem
+*.key
+.env.*
+!.env.example
