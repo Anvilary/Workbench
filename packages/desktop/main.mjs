@@ -8,6 +8,7 @@ import { startBackendWatchdog } from './src/app/backend-watchdog.mjs';
 import { installLifecycle } from './src/app/lifecycle.mjs';
 import { createMainWindow, wireShellWindowEvents } from './src/app/main-window.mjs';
 import { configureProcess } from './src/app/process-setup.mjs';
+import { installDesktopDiagnostics } from './src/app/diagnostic-log.mjs';
 import { createDesktopShortcut } from './src/app/shell-shortcuts.mjs';
 import { createBrowserViewController } from './src/browser/view-controller.mjs';
 import { createClipboardCommands } from './src/ipc/clipboard-commands.mjs';
@@ -26,7 +27,9 @@ export { isOAuthLoopbackCallback };
  */
 const here = path.dirname(fileURLToPath(import.meta.url));
 const electron = { app, BrowserWindow, WebContentsView, ipcMain, session, shell, dialog, clipboard };
-const initialBackendUrl = configureProcess({ app });
+// First: from here on, main-process errors leave a trace on disk.
+const logger = installDesktopDiagnostics({ app, dialog });
+const initialBackendUrl = configureProcess({ app, logger });
 
 // Do not await app.whenReady() at module scope: Electron waits for ESM
 // evaluation before emitting ready, which would deadlock initialization.
@@ -62,4 +65,4 @@ async function start() {
   installLifecycle({ app, win, backend, controller, performance, webauthn, watchdog, appState });
   await win.loadURL(backend.current().href);
 }
-void start().catch(() => { console.error('MAW desktop could not start. Check service readiness and the desktop runtime installation.'); app.exit(1); });
+void start().catch((error) => { logger.error('desktop start failed', error); console.error('MAW desktop could not start. Check service readiness and the desktop runtime installation.'); app.exit(1); });

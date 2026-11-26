@@ -25,9 +25,6 @@ const graphicsPolicy = applyGraphicsPolicy(resolveGraphicsPolicy(), { app });
 const softwareVideoDecode = shouldDisableHardwareVideoDecode({ policy: graphicsPolicy, env: process.env });
 if (softwareVideoDecode) app.commandLine.appendSwitch('disable-accelerated-video-decode');
 console.error(`[maw-desktop] graphics mode=${graphicsPolicy.mode} (${graphicsPolicy.reason}); video decode=${softwareVideoDecode ? 'software' : 'hardware'}`);
-app.on('child-process-gone', (_event, details) => {
-  if (details.type === 'GPU') console.error(`[maw-desktop] GPU process gone: reason=${details.reason} exitCode=${details.exitCode}`);
-});
 let local = serviceUrl(process.env.MAW_DESKTOP_URL || '');
 delete process.env.MAW_DESKTOP_URL;
 if (!app.requestSingleInstanceLock({ serviceUrl: local.href })) app.exit(0);
