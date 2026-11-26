@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { discoverProfiles, type MonitoredProfileConfig } from '../../../src/agents/usage/discovery.js';
+import { defaultMonitoredProfiles, discoverProfiles, getUserHome, type MonitoredProfileConfig } from '../../../src/agents/usage/discovery.js';
 import { collectCodexUsage } from '../../../src/agents/usage/codex-collector.js';
 import { collectClaudeUsage } from '../../../src/agents/usage/claude-collector.js';
 import { collectAntigravityUsage } from '../../../src/agents/usage/antigravity-collector.js';
@@ -11,35 +11,71 @@ import { AgentsUsageCollector } from '../../../src/agents/usage/collector.js';
 
 describe('Agents Usage Backend', () => {
   describe('Profile Discovery & Provider Mapping', () => {
-    it('discovers all 12 default monitored profiles', async () => {
-      const profiles = await discoverProfiles();
-      assert.equal(profiles.length, 12, 'Must discover all 12 monitored profiles');
+    it('a fresh HOME with no CLI directories yields only installed-CLI defaults', async () => {
+      const home = await mkdtemp(join(tmpdir(), 'maw-usage-home-'));
+      try {
+        assert.deepEqual(defaultMonitoredProfiles({ home, env: {}, which: () => null }), []);
 
-      const ids = profiles.map((p) => p.profileId);
-      assert.ok(ids.includes('codex-0'));
-      assert.ok(ids.includes('codex-1'));
-      assert.ok(ids.includes('codex-2'));
-      for (let i = 0; i <= 7; i++) {
-        assert.ok(ids.includes(`agy0${i}`));
+        const installed = new Set(['codex', 'claude']);
+        const which = (name: string) => (installed.has(name) ? join('/usr/bin', name) : null);
+        const configs = defaultMonitoredProfiles({ home, env: {}, which });
+        assert.deepEqual(configs.map((c) => [c.profileId, c.binaryName, c.profileDir]), [
+          ['codex', 'codex', join(home, '.codex')],
+          ['claude-code', 'claude', join(home, '.claude')],
+        ]);
+        const profiles = discoverProfiles(configs, { home, env: {}, which });
+        assert.deepEqual(profiles.map((p) => [p.profileId, p.provider, p.availability]), [
+          ['codex', 'OpenAI', 'missing'],
+          ['claude-code', 'Anthropic', 'missing'],
+        ]);
+
+        // Standard homes honour CODEX_HOME and CLAUDE_CONFIG_DIR; AGY uses the user home.
+        const env = { CODEX_HOME: join(home, 'codex-home'), CLAUDE_CONFIG_DIR: join(home, 'claude-home') };
+        const all = defaultMonitoredProfiles({ home, env, which: (name) => join('/usr/bin', name) });
+        assert.deepEqual(all.map((c) => [c.profileId, c.profileDir]), [
+          ['codex', env.CODEX_HOME], ['agy', home], ['claude-code', env.CLAUDE_CONFIG_DIR],
+        ]);
+      } finally {
+        await rm(home, { recursive: true, force: true });
       }
-      assert.ok(ids.includes('claude-code'));
     });
 
-    it('correctly maps providers according to configurations', async () => {
-      const profiles = await discoverProfiles();
-      const codexProfiles = profiles.filter((p) => p.profileId.startsWith('codex'));
-      for (const p of codexProfiles) {
-        assert.equal(p.provider, 'OpenAI', `Codex profile ${p.profileId} must map to OpenAI`);
+    it('discovers additional accounts only from existing multi-account directories', async () => {
+      const home = await mkdtemp(join(tmpdir(), 'maw-usage-home-'));
+      try {
+        await mkdir(join(home, '.codex'), { recursive: true });
+        await writeFile(join(home, '.codex', 'auth.json'), '{}');
+        for (const name of ['.codex-work', '.codex2']) {
+          await mkdir(join(home, name), { recursive: true });
+          await writeFile(join(home, name, 'config.toml'), '');
+        }
+        await mkdir(join(home, '.codex-empty'), { recursive: true }); // no auth/config files
+        await mkdir(join(home, '.codex.bak'), { recursive: true });
+        await writeFile(join(home, '.codex.bak', 'auth.json'), '{}'); // not an account suffix
+        await writeFile(join(home, '.codexfile'), ''); // not a directory
+        await mkdir(join(home, '.local/share/agy-personal-profile/home'), { recursive: true });
+        await mkdir(join(home, '.local/share/agy-work-profile/home'), { recursive: true });
+        await mkdir(join(home, '.local/share/agy-stale-profile'), { recursive: true }); // no home
+        await mkdir(join(home, '.local/share/other-profile/home'), { recursive: true });
+
+        const configs = defaultMonitoredProfiles({ home, env: {}, which: () => null });
+        assert.deepEqual(configs.map((c) => [c.profileId, c.label, c.defaultProvider, c.binaryName]), [
+          ['codex', 'Codex', 'OpenAI', 'codex'],
+          ['codex-work', 'Codex work', 'OpenAI', 'codex-work'],
+          ['codex2', 'Codex 2', 'OpenAI', 'codex2'],
+          ['agy-personal', 'AGY personal', 'Google', 'agy-personal'],
+          ['agy-work', 'AGY work', 'Google', 'agy-work'],
+        ]);
+        assert.equal(configs.find((c) => c.profileId === 'agy-work')!.profileDir, join(home, '.local/share/agy-work-profile/home'));
+        const profiles = discoverProfiles(configs, { home, env: {}, which: () => null });
+        assert.ok(profiles.every((p) => p.availability === 'available'));
+
+        // Running inside an AGY profile home still discovers from the real home.
+        assert.equal(getUserHome(join(home, '.local/share/agy-work-profile/home')), home);
+        assert.equal(getUserHome(home), home);
+      } finally {
+        await rm(home, { recursive: true, force: true });
       }
-
-      const claudeProfile = profiles.find((p) => p.profileId === 'claude-code');
-      assert.ok(claudeProfile);
-      assert.equal(claudeProfile.provider, 'Anthropic', 'Claude code must map to Anthropic');
-
-      const agy-7 = profiles.find((p) => p.profileId === 'agy-7');
-      assert.ok(agy-7);
-      // agy-7 uses Claude Sonnet in local config, or Anthropic/Google provider
-      assert.ok(['Anthropic', 'Google'].includes(agy-7.provider));
     });
 
     it('identifies missing profile directories gracefully', async () => {

@@ -10,7 +10,8 @@ export async function nativeRecoveryCapacity(provider: CliProvider, procRoot = '
       if (!/^\d+$/.test(pid)) continue;
       try {
         if ((await stat(procRoot + '/' + pid)).uid !== process.getuid()) continue;
-        if (/^agy(?:0[0-5])?$/.test((await readFile(procRoot + '/' + pid + '/comm', 'utf8')).trim())) count++;
+        // `agy` or a multi-account wrapper named agy<suffix> (e.g. agy-work, agy2).
+        if (/^agy(?:[-_]?[A-Za-z0-9][A-Za-z0-9_-]*)?$/.test((await readFile(procRoot + '/' + pid + '/comm', 'utf8')).trim())) count++;
       } catch (error) {
         if (!['ENOENT', 'ESRCH'].includes((error as NodeJS.ErrnoException).code ?? '')) return false;
       }

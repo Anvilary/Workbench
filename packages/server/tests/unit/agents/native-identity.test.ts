@@ -22,7 +22,7 @@ test('host identity is immutable and bound to exact executable, argv and environ
   assert.equal(identities.forProfile({ ...profile, executable: '/another/wrapper' }), null);
   assert.equal(identities.forProfile({ ...profile, args: ['two', 'words'] }), null);
   assert.equal(identities.forProfile({ ...profile, environmentOverrides: { LANG: 'C' } }), null);
-  assert.equal(identities.forProfile({ ...profile, id: 'codex-1' as typeof profile.id }), null);
+  assert.equal(identities.forProfile({ ...profile, id: 'codex-b' as typeof profile.id }), null);
   assert.deepEqual(identities.protectedDirs(), [root]);
   await writeFile(manifest, JSON.stringify({ version: 1, identities: [{ ...profile, profileId: profile.id, home: 'relative' }] }));
   await assert.rejects(NativeIdentities.load(manifest), /Invalid/);

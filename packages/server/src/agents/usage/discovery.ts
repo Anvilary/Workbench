@@ -29,114 +29,135 @@ export interface MonitoredProfileConfig {
   readonly profileDir?: string;
 }
 
-export function getUserHome(): string {
-  const raw = os.homedir();
-  const match = raw.match(/^(\/home\/[^/]+)\/\.local\/share\/agy\d+-profile\/home/);
+/**
+ * The real user home. When the server itself runs inside an AGY multi-account
+ * profile (HOME set to `<home>/.local/share/agy<suffix>-profile/home`), climb
+ * back out of it so every account is discovered from the same root.
+ */
+export function getUserHome(raw: string = os.homedir()): string {
+  const match = raw.match(/^(.+?)\/\.local\/share\/[^/]+-profile\/home\/?$/);
   if (match && match[1]) {
     return match[1];
   }
   return raw;
 }
 
-export const MONITORED_PROFILES: readonly MonitoredProfileConfig[] = [
-  // Codex
-  {
-    profileId: 'codex-0',
-    label: 'Codex 00',
-    defaultProvider: 'OpenAI',
-    binaryName: 'codex-0',
-    getProfileDir: () => process.env['CODEX_00_HOME'] || path.join(getUserHome(), '.codex-0'),
-  },
-  {
-    profileId: 'codex-1',
-    label: 'Codex 01',
-    defaultProvider: 'OpenAI',
-    binaryName: 'codex-1',
-    getProfileDir: () => process.env['CODEX_01_HOME'] || path.join(getUserHome(), '.codex-1'),
-  },
-  {
-    profileId: 'codex-2',
-    label: 'Codex 02',
-    defaultProvider: 'OpenAI',
-    binaryName: 'codex-2',
-    getProfileDir: () => process.env['CODEX_02_HOME'] || path.join(getUserHome(), '.codex-2'),
-  },
+export interface DiscoveryOptions {
+  /** Real user home; defaults to `getUserHome()`. */
+  readonly home?: string;
+  /** Environment for CODEX_HOME, CLAUDE_CONFIG_DIR and PATH; defaults to `process.env`. */
+  readonly env?: NodeJS.ProcessEnv;
+  /** Locates a CLI command; defaults to `~/.local/bin` then PATH. */
+  readonly which?: (binaryName: string) => string | null;
+}
 
-  // AGY
-  {
-    profileId: 'agy-0',
-    label: 'AGY 00',
-    defaultProvider: 'Google',
-    binaryName: 'agy-0',
-    getProfileDir: () => process.env['AGY_00_HOME'] || getUserHome(),
-  },
-  {
-    profileId: 'agy-1',
-    label: 'AGY 01',
-    defaultProvider: 'Google',
-    binaryName: 'agy-1',
-    getProfileDir: () => process.env['AGY_01_HOME'] || path.join(getUserHome(), '.local/share/agy-1-profile/home'),
-  },
-  {
-    profileId: 'agy-2',
-    label: 'AGY 02',
-    defaultProvider: 'Anthropic',
-    binaryName: 'agy-2',
-    getProfileDir: () => process.env['AGY_02_HOME'] || path.join(getUserHome(), '.local/share/agy-2-profile/home'),
-  },
-  {
-    profileId: 'agy-3',
-    label: 'AGY 03',
-    defaultProvider: 'Google',
-    binaryName: 'agy-3',
-    getProfileDir: () => process.env['AGY_03_HOME'] || path.join(getUserHome(), '.local/share/agy-3-profile/home'),
-  },
-  {
-    profileId: 'agy-4',
-    label: 'AGY 04',
-    defaultProvider: 'Google',
-    binaryName: 'agy-4',
-    getProfileDir: () => process.env['AGY_04_HOME'] || path.join(getUserHome(), '.local/share/agy-4-profile/home'),
-  },
-  {
-    profileId: 'agy-5',
-    label: 'AGY 05',
-    defaultProvider: 'Google',
-    binaryName: 'agy-5',
-    getProfileDir: () => process.env['AGY_05_HOME'] || path.join(getUserHome(), '.local/share/agy-5-profile/home'),
-  },
-  {
-    profileId: 'agy-6',
-    label: 'AGY 06',
-    defaultProvider: 'Google',
-    binaryName: 'agy-6',
-    getProfileDir: () => process.env['AGY_06_HOME'] || path.join(getUserHome(), '.local/share/agy-6-profile/home'),
-  },
-  {
-    profileId: 'agy-7',
-    label: 'AGY 07',
-    defaultProvider: 'Anthropic',
-    binaryName: 'agy-7',
-    getProfileDir: () => process.env['AGY_07_HOME'] || path.join(getUserHome(), '.local/share/agy-7-profile/home'),
-  },
+/** Suffix of an additional account directory, e.g. `00`, `work`, `-personal`. */
+const ACCOUNT_SUFFIX = /^[-_]?([A-Za-z0-9][A-Za-z0-9_-]{0,31})$/;
+const CODEX_ACCOUNT_MARKERS = ['auth.json', 'config.toml'];
 
-  // Claude
-  {
-    profileId: 'claude-code',
-    label: 'Claude Code',
-    defaultProvider: 'Anthropic',
-    binaryName: 'claude',
-    getProfileDir: () => process.env['CLAUDE_CONFIG_DIR'] || path.join(getUserHome(), '.claude'),
-  },
-];
+function isDirectory(candidate: string): boolean {
+  try {
+    return fs.statSync(candidate).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
-function resolveBinary(binaryName: string): string | null {
+function sameDirectory(a: string, b: string): boolean {
+  try {
+    return fs.realpathSync(a) === fs.realpathSync(b);
+  } catch {
+    return path.resolve(a) === path.resolve(b);
+  }
+}
+
+function listEntries(dir: string): string[] {
+  try {
+    return fs.readdirSync(dir).sort();
+  } catch {
+    return [];
+  }
+}
+
+function accountSuffix(rest: string): string | null {
+  const match = rest.match(ACCOUNT_SUFFIX);
+  return match && match[1] ? match[1] : null;
+}
+
+/**
+ * Additional Codex accounts: `~/.codex<suffix>` directories that hold Codex
+ * auth or config files. Only existing directories are returned.
+ */
+function discoverCodexAccounts(home: string, standardDir: string): MonitoredProfileConfig[] {
+  const result: MonitoredProfileConfig[] = [];
+  for (const entry of listEntries(home)) {
+    if (!entry.startsWith('.codex')) continue;
+    const suffix = accountSuffix(entry.slice('.codex'.length));
+    if (suffix === null) continue;
+    const dir = path.join(home, entry);
+    if (!isDirectory(dir) || sameDirectory(dir, standardDir)) continue;
+    if (!CODEX_ACCOUNT_MARKERS.some((marker) => fs.existsSync(path.join(dir, marker)))) continue;
+    const profileId = 'codex' + entry.slice('.codex'.length);
+    result.push({ profileId, label: `Codex ${suffix}`, defaultProvider: 'OpenAI', binaryName: profileId, profileDir: dir });
+  }
+  return result;
+}
+
+/** Additional AGY accounts: existing `~/.local/share/agy<suffix>-profile/home` directories. */
+function discoverAgyAccounts(home: string): MonitoredProfileConfig[] {
+  const root = path.join(home, '.local', 'share');
+  const result: MonitoredProfileConfig[] = [];
+  for (const entry of listEntries(root)) {
+    if (!entry.startsWith('agy') || !entry.endsWith('-profile')) continue;
+    const rest = entry.slice('agy'.length, -'-profile'.length);
+    const suffix = accountSuffix(rest);
+    if (suffix === null) continue;
+    const dir = path.join(root, entry, 'home');
+    if (!isDirectory(dir)) continue;
+    const profileId = 'agy' + rest;
+    result.push({ profileId, label: `AGY ${suffix}`, defaultProvider: 'Google', binaryName: profileId, profileDir: dir });
+  }
+  return result;
+}
+
+/**
+ * Profiles to monitor, derived from this machine only:
+ *  - one generic default per installed CLI (or existing standard home), using
+ *    its standard home: CODEX_HOME or ~/.codex, ~ for AGY (~/.gemini), and
+ *    CLAUDE_CONFIG_DIR or ~/.claude;
+ *  - additional accounts discovered from existing multi-account directories.
+ */
+export function defaultMonitoredProfiles(options: DiscoveryOptions = {}): MonitoredProfileConfig[] {
+  const env = options.env ?? process.env;
+  const home = options.home ?? getUserHome();
+  const which = options.which ?? ((name: string) => resolveBinary(name, home, env));
+
+  const codexDir = env['CODEX_HOME'] || path.join(home, '.codex');
+  const claudeDir = env['CLAUDE_CONFIG_DIR'] || path.join(home, '.claude');
+  const agyMarker = path.join(home, '.gemini', 'antigravity-cli');
+
+  const result: MonitoredProfileConfig[] = [];
+  if (which('codex') !== null || isDirectory(codexDir)) {
+    result.push({ profileId: 'codex', label: 'Codex', defaultProvider: 'OpenAI', binaryName: 'codex', profileDir: codexDir });
+  }
+  result.push(...discoverCodexAccounts(home, codexDir));
+  if (which('agy') !== null || isDirectory(agyMarker)) {
+    result.push({ profileId: 'agy', label: 'AGY', defaultProvider: 'Google', binaryName: 'agy', profileDir: home });
+  }
+  result.push(...discoverAgyAccounts(home));
+  if (which('claude') !== null || isDirectory(claudeDir)) {
+    result.push({ profileId: 'claude-code', label: 'Claude Code', defaultProvider: 'Anthropic', binaryName: 'claude', profileDir: claudeDir });
+  }
+  return result;
+}
+
+function resolveBinary(binaryName: string, home: string = getUserHome(), env: NodeJS.ProcessEnv = process.env): string | null {
   // Check standard user bin directory first
-  const userBin = path.join(getUserHome(), '.local/bin', binaryName);
+  const userBin = path.join(home, '.local/bin', binaryName);
   if (fs.existsSync(userBin)) return userBin;
 
   // Check PATH
-  const pathEnv = process.env['PATH'] || '';
+  const pathEnv = env['PATH'] || '';
   const dirs = pathEnv.split(path.delimiter);
   for (const dir of dirs) {
     if (!dir) continue;
@@ -153,7 +174,11 @@ function resolveBinary(binaryName: string): string | null {
   return null;
 }
 
-export function discoverProfiles(configs: readonly MonitoredProfileConfig[] = MONITORED_PROFILES): DiscoveredProfile[] {
+export function discoverProfiles(
+  configs: readonly MonitoredProfileConfig[] = defaultMonitoredProfiles(),
+  options: DiscoveryOptions = {},
+): DiscoveredProfile[] {
+  const which = options.which ?? ((name: string) => resolveBinary(name, options.home ?? getUserHome(), options.env ?? process.env));
   const seenCanonical = new Map<string, string>(); // canonical path -> first profileId
   const results: DiscoveredProfile[] = [];
 
@@ -176,7 +201,7 @@ export function discoverProfiles(configs: readonly MonitoredProfileConfig[] = MO
       exists = false;
     }
 
-    const execPath = resolveBinary(binaryName);
+    const execPath = which(binaryName);
 
     let availability: ProfileAvailability = 'available';
     let availabilityMessage: string | undefined;

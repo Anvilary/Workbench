@@ -8,7 +8,7 @@ import path from 'node:path';
 import type { CliProfileId } from '@agent-workbench/shared';
 import {
   applyProfileChanges, createProfileDefinition, defaultDefinitions,
-  identicalLaunchMessage, identicalLaunchPeer, validateDefinition,
+  installedDefaultDefinitions, identicalLaunchMessage, identicalLaunchPeer, validateDefinition,
   type CreateProfileParams, type ProfileChanges, type ProfileDefinition,
 } from '../../agents/profiles/definition.js';
 
@@ -27,7 +27,14 @@ export class AgencyProfileStore {
 
   flush(): Promise<void> { return this.pending; }
 
-  constructor(private readonly filename: string) {
+  /**
+   * `environment` only decides which generic defaults seed a store that does
+   * not exist yet (one per CLI installed on its PATH).
+   */
+  constructor(
+    private readonly filename: string,
+    private readonly environment: NodeJS.ProcessEnv = process.env,
+  ) {
     if (!path.isAbsolute(filename)) throw new Error('Profile store path must be absolute.');
   }
 
@@ -50,7 +57,6 @@ export class AgencyProfileStore {
     if (!Array.isArray(data['profiles'])) {
       throw new InvalidProfileStoreError('Invalid Agency profile list.');
     }
-    const defaults = defaultDefinitions();
     const seen = new Set<string>();
     const defined: ProfileDefinition[] = [];
     for (const item of data['profiles']) {
@@ -72,22 +78,9 @@ export class AgencyProfileStore {
       ? new Set<string>(data['deletedProfileIds'].filter((x): x is string => typeof x === 'string'))
       : new Set<string>();
     this.deletedProfileIds = deleted;
-
-    const result: ProfileDefinition[] = [];
-    for (const item of defaults) {
-      const saved = defined.find((d) => d.id === item.id);
-      if (saved) {
-        result.push(saved);
-      } else if (!deleted.has(item.id)) {
-        result.push(item);
-      }
-    }
-    for (const custom of defined) {
-      if (!defaults.some((item) => item.id === custom.id)) {
-        result.push(custom);
-      }
-    }
-    return result;
+    // An existing store is authoritative: defaults only seed a store that does
+    // not exist yet, so upgrades never add, reorder or drop saved profiles.
+    return defined;
   }
 
   private async readFileOrNull(filename: string): Promise<ProfileDefinition[] | null> {
@@ -127,7 +120,7 @@ export class AgencyProfileStore {
     // A prior atomic update may leave only the backup. Do not reset profiles.
     // An invalid or unsupported backup fails closed instead of using defaults.
     const backup = await this.readFileOrNull(this.filename + '.bak');
-    if (backup === null) return defaultDefinitions();
+    if (backup === null) return installedDefaultDefinitions(this.environment);
     await this.write(backup, false, Array.from(this.deletedProfileIds));
     return backup;
   }

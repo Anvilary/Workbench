@@ -8,8 +8,8 @@ import { t } from '../../i18n/index.js';
  */
 export function suggestedExecutable(profileId: string, provider: CliProvider): string {
   // Each named wrapper is its own auth identity: suggest only the matching one.
-  if (provider === 'codex') return profileId; // codex-0, codex-1, codex-3
-  if (provider === 'antigravity') return profileId; // agy-0 through agy-5
+  if (provider === 'codex') return profileId; // e.g. codex, codex-work, codex-personal
+  if (provider === 'antigravity') return profileId; // e.g. agy, agy-work, agy-personal
   if (provider === 'claude-code') return 'claude';
   if (provider === 'opencode') return 'opencode';
   if (provider === 'pi') return 'pi';

@@ -22,13 +22,31 @@ const UUID1 = '00000000-0000-4000-8000-000000000001';
 const UUID2 = '00000000-0000-4000-8000-000000000002';
 const UUID3 = '00000000-0000-4000-8000-000000000003';
 
-async function fixture() {
+/** A populated store with several accounts per provider, as an existing installation has. */
+const SEEDED: readonly [string, string, string][] = [
+  ['codex-a', 'codex', 'Codex A'], ['codex-b', 'codex', 'Codex B'], ['codex-c', 'codex', 'Codex C'],
+  ['agy-a', 'antigravity', 'AGY A'], ['agy-b', 'antigravity', 'AGY B'], ['agy-c', 'antigravity', 'AGY C'],
+  ['agy-d', 'antigravity', 'AGY D'], ['agy-e', 'antigravity', 'AGY E'], ['agy-f', 'antigravity', 'AGY F'],
+  ['claude-code', 'claude-code', 'Claude Code'],
+];
+
+function seededStoreText(): string {
+  return JSON.stringify({
+    schemaVersion: 1,
+    profiles: SEEDED.map(([id, provider, label]) => ({
+      id, provider, label, executable: '', args: [], environmentOverrides: {}, disabled: false,
+    })),
+  }, null, 2) + '\n';
+}
+
+async function fixture(options: { seed?: boolean; environment?: NodeJS.ProcessEnv } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'agency-profiles-test-'));
   const file = path.join(root, 'profiles.json');
   const binary = path.join(root, 'agent original');
   await writeFile(binary, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
   await chmod(binary, 0o700);
-  const store = new AgencyProfileStore(file);
+  if (options.seed ?? true) await writeFile(file, seededStoreText(), { mode: 0o600 });
+  const store = new AgencyProfileStore(file, options.environment ?? { PATH: '' });
   return { root, file, binary, store, cleanup: () => rm(root, { recursive: true, force: true }) };
 }
 
@@ -39,37 +57,93 @@ function nativeRegistry() {
   ]);
 }
 
-test('all ten named profiles start unconfigured, without account alias fallback', async () => {
+test('seeded named profiles start unconfigured, without account alias fallback', async () => {
   const f = await fixture();
   try {
     const defs = await f.store.listDefinitions();
-    assert.deepEqual(defs.map((x) => x.id), [
-      'codex-0', 'codex-1', 'codex-3',
-      'agy-0', 'agy-1', 'agy-2', 'agy-3', 'agy-4', 'agy-5',
-      'claude-code',
-    ]);
+    assert.deepEqual(defs.map((x) => x.id), SEEDED.map(([id]) => id));
     assert.ok(defs.every((x) => x.executable === '' && x.args.length === 0));
-    assert.equal(defaultDefinitions().length, 10);
     const status = await inspectAgencyProfile(defs[0]!, nativeRegistry());
     assert.equal(status.configurationStatus, 'error');
     assert.equal(status.capabilities.canLaunch, false);
   } finally { await f.cleanup(); }
 });
 
+test('a fresh store seeds one unconfigured generic profile per installed CLI only', async () => {
+  const bin = await mkdtemp(path.join(os.tmpdir(), 'agency-profiles-bin-'));
+  try {
+    const empty = await fixture({ seed: false, environment: { PATH: bin } });
+    try {
+      assert.deepEqual(await empty.store.listDefinitions(), []);
+    } finally { await empty.cleanup(); }
+
+    for (const command of ['codex', 'claude']) {
+      await writeFile(path.join(bin, command), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+    }
+    // Present but not executable: not an installed CLI.
+    await writeFile(path.join(bin, 'agy'), '', { mode: 0o600 });
+    const f = await fixture({ seed: false, environment: { PATH: bin } });
+    try {
+      const defs = await f.store.listDefinitions();
+      assert.deepEqual(defs.map((x) => [x.id, x.provider]), [['codex', 'codex'], ['claude-code', 'claude-code']]);
+      assert.ok(defs.every((x) => x.executable === '' && x.args.length === 0 && !x.disabled));
+      assert.deepEqual(defaultDefinitions().map((x) => x.id), ['codex', 'agy', 'claude-code']);
+      // Seeds persist once configured; a later install does not add profiles to an existing store.
+      await f.store.configure(asId('codex'), { label: 'Codex Main' });
+      await chmod(path.join(bin, 'agy'), 0o700);
+      const reopened = new AgencyProfileStore(f.file, { PATH: bin });
+      assert.deepEqual((await reopened.listDefinitions()).map((x) => x.id), ['codex', 'claude-code']);
+    } finally { await f.cleanup(); }
+  } finally { await rm(bin, { recursive: true, force: true }); }
+});
+
+test('an existing populated store round-trips unchanged through load and save', async () => {
+  const bin = await mkdtemp(path.join(os.tmpdir(), 'agency-profiles-bin-'));
+  const f = await fixture();
+  try {
+    // Every generic CLI is installed: none may be merged into the existing store.
+    for (const command of ['codex', 'agy', 'claude']) {
+      await writeFile(path.join(bin, command), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+    }
+    const custom = {
+      id: 'codex-d', provider: 'codex', label: 'Codex D', executable: 'codex-d',
+      args: ['--profile', 'two words'], environmentOverrides: { LANG: 'en_US.UTF-8' }, disabled: true,
+    };
+    const original = JSON.parse(seededStoreText());
+    original.profiles.splice(2, 0, custom);
+    original.deletedProfileIds = ['codex'];
+    const text = JSON.stringify(original, null, 2) + '\n';
+    await writeFile(f.file, text);
+
+    const store = new AgencyProfileStore(f.file, { PATH: bin });
+    const loaded = await store.listDefinitions();
+    assert.deepEqual(loaded.map((x) => x.id), original.profiles.map((x: { id: string }) => x.id));
+    assert.deepEqual(JSON.parse(JSON.stringify(loaded)), original.profiles);
+
+    // A save that changes nothing writes back the identical document.
+    await store.configure(asId('agy-c'), {});
+    assert.equal(await readFile(f.file, 'utf8'), text);
+    assert.deepEqual(JSON.parse(JSON.stringify(await new AgencyProfileStore(f.file, { PATH: bin }).listDefinitions())), original.profiles);
+  } finally {
+    await f.cleanup();
+    await rm(bin, { recursive: true, force: true });
+  }
+});
+
 test('profile persistence retains literal argument boundaries, labels and reviewed overrides', async () => {
   const f = await fixture();
   try {
-    await f.store.configure(asId('codex-0'), {
+    await f.store.configure(asId('codex-a'), {
       executable: f.binary, label: 'Work',
       args: ['--config', 'foo="literal with spaces"', 'one two', 'semi;colon'],
       environmentOverrides: { LANG: 'pt_PT.UTF-8', TERM: 'xterm-256color' },
     });
     const reopened = new AgencyProfileStore(f.file);
-    const item = await reopened.getDefinition(asId('codex-0'));
+    const item = await reopened.getDefinition(asId('codex-a'));
     assert.deepEqual(item?.args, ['--config', 'foo="literal with spaces"', 'one two', 'semi;colon']);
     assert.deepEqual({ ...item?.environmentOverrides }, { LANG: 'pt_PT.UTF-8', TERM: 'xterm-256color' });
     assert.equal(item?.label, 'Work');
-    assert.equal((await reopened.getDefinition(asId('codex-1')))?.executable, '');
+    assert.equal((await reopened.getDefinition(asId('codex-b')))?.executable, '');
     const raw = await readFile(f.file, 'utf8');
     assert.equal(raw.includes('auth.json'), false);
     assert.equal(JSON.parse(raw).schemaVersion, 1);
@@ -89,9 +163,9 @@ test('invalid fields, credentials and secret environment keys cannot persist', a
       { provider: 'antigravity' },
       { executable: 'bad\nvalue' },
     ]) {
-      await assert.rejects(f.store.configure(asId('codex-0'), changes as never));
+      await assert.rejects(f.store.configure(asId('codex-a'), changes as never));
     }
-    assert.equal((await f.store.getDefinition(asId('codex-0')))?.executable, '');
+    assert.equal((await f.store.getDefinition(asId('codex-a')))?.executable, '');
   } finally { await f.cleanup(); }
 });
 
@@ -99,23 +173,23 @@ test('atomic sequential configuration retains both concurrent distinct-profile u
   const f = await fixture();
   try {
     await Promise.all([
-      f.store.configure(asId('codex-0'), { executable: f.binary }),
-      f.store.configure(asId('agy-2'), { executable: f.binary, args: ['--safe-flag'] }),
+      f.store.configure(asId('codex-a'), { executable: f.binary }),
+      f.store.configure(asId('agy-c'), { executable: f.binary, args: ['--safe-flag'] }),
     ]);
-    assert.equal((await f.store.getDefinition(asId('codex-0')))?.executable, f.binary);
-    assert.deepEqual((await f.store.getDefinition(asId('agy-2')))?.args, ['--safe-flag']);
+    assert.equal((await f.store.getDefinition(asId('codex-a')))?.executable, f.binary);
+    assert.deepEqual((await f.store.getDefinition(asId('agy-c')))?.args, ['--safe-flag']);
   } finally { await f.cleanup(); }
 });
 
 test('corrupt primary recovers only from validated backup, preserving corrupt bytes', async () => {
   const f = await fixture();
   try {
-    await f.store.configure(asId('codex-0'), { executable: f.binary });
-    await f.store.configure(asId('codex-1'), { executable: f.binary, args: ['--profile', 'other'] });
+    await f.store.configure(asId('codex-a'), { executable: f.binary });
+    await f.store.configure(asId('codex-b'), { executable: f.binary, args: ['--profile', 'other'] });
     await writeFile(f.file, '{ invalid json');
     const recovered = await f.store.listDefinitions();
-    assert.equal(recovered.find((x) => x.id === 'codex-0')?.executable, f.binary);
-    assert.equal(recovered.find((x) => x.id === 'codex-1')?.executable, '');
+    assert.equal(recovered.find((x) => x.id === 'codex-a')?.executable, f.binary);
+    assert.equal(recovered.find((x) => x.id === 'codex-b')?.executable, '');
     const { readdir } = await import('node:fs/promises');
     const names = await readdir(f.root);
     assert.ok(names.some((name) => name.startsWith('profiles.json.corrupt-')));
@@ -125,8 +199,8 @@ test('corrupt primary recovers only from validated backup, preserving corrupt by
 test('missing or invalid executable is reported without any provider fallback', async () => {
   const f = await fixture();
   try {
-    await f.store.configure(asId('codex-0'), { executable: f.binary });
-    await f.store.configure(asId('codex-1'), { executable: path.join(f.root, 'missing') });
+    await f.store.configure(asId('codex-a'), { executable: f.binary });
+    await f.store.configure(asId('codex-b'), { executable: path.join(f.root, 'missing') });
     const definitions = await f.store.listDefinitions();
     const registry = nativeRegistry();
     const a = await inspectAgencyProfile(definitions[0]!, registry);
@@ -135,7 +209,7 @@ test('missing or invalid executable is reported without any provider fallback', 
     assert.equal(b.configurationStatus, 'not-installed');
     assert.equal(b.capabilities.canLaunch, false);
     await assert.rejects(buildAgencyProfileLaunch(f.store, registry, {
-      profileId: asId('codex-1'), cwd: f.root, proposedSessionId: UUID1, launchToken: UUID2,
+      profileId: asId('codex-b'), cwd: f.root, proposedSessionId: UUID1, launchToken: UUID2,
     }));
     assert.equal((await resolveConfiguredExecutable('../codex', process.env)).status, 'error');
     assert.equal((await resolveConfiguredExecutable('codex --help', process.env)).status, 'error');
@@ -159,18 +233,18 @@ test('explicit PATH resolution works only for specified command, no inferred bin
 test('native Workbench Codex resume and literal profile args are preserved', async () => {
   const f = await fixture();
   try {
-    await f.store.configure(asId('codex-3'), {
+    await f.store.configure(asId('codex-c'), {
       executable: f.binary, args: ['--config', 'key="space preserving"'],
     });
     const home = path.join(f.root, 'native-home');
     await mkdir(path.join(home, 'archived_sessions'), { recursive: true });
     await writeFile(path.join(home, 'archived_sessions', 'rollout-2026-10-28T00-00-00-' + UUID3 + '.jsonl'), 'synthetic native state\n');
     const manifest = path.join(f.root, 'identities.json');
-    await writeFile(manifest, JSON.stringify({ version: 1, identities: [{ profileId: 'codex-3', provider: 'codex',
+    await writeFile(manifest, JSON.stringify({ version: 1, identities: [{ profileId: 'codex-c', provider: 'codex',
       executable: f.binary, args: ['--config', 'key="space preserving"'], environmentOverrides: {}, home }] }));
     const identities = await NativeIdentities.load(manifest);
     const launch = await buildAgencyProfileLaunch(f.store, nativeRegistry(), {
-      profileId: asId('codex-3'), cwd: f.root, proposedSessionId: UUID1,
+      profileId: asId('codex-c'), cwd: f.root, proposedSessionId: UUID1,
       launchToken: UUID2, resumeNativeSessionId: UUID3,
       environment: { PATH: '/bin', TERM: 'xterm', TRACE_TAG: 'base' },
     }, { identities });
@@ -212,20 +286,20 @@ test('Claude native resume flags and isolated per-process environment', async ()
 test('unsupported model/effort stays unavailable with no catalog or silent application', async () => {
   const f = await fixture();
   try {
-    await f.store.configure(asId('agy-0'), { executable: f.binary });
+    await f.store.configure(asId('agy-a'), { executable: f.binary });
     const registry = nativeRegistry();
-    const definition = (await f.store.getDefinition(asId('agy-0')))!;
+    const definition = (await f.store.getDefinition(asId('agy-a')))!;
     const caps = (await inspectAgencyProfile(definition, registry)).capabilities;
     assert.equal(caps.discovery, 'unavailable');
     assert.equal(caps.canSelectModel, false);
     assert.equal(caps.canSelectEffort, false);
     assert.deepEqual(caps.models, []);
     await assert.rejects(buildAgencyProfileLaunch(f.store, registry, {
-      profileId: asId('agy-0'), cwd: f.root, proposedSessionId: UUID1,
+      profileId: asId('agy-a'), cwd: f.root, proposedSessionId: UUID1,
       launchToken: UUID2, model: 'not-a-real-model',
     }));
     await assert.rejects(buildAgencyProfileLaunch(f.store, registry, {
-      profileId: asId('agy-0'), cwd: f.root, proposedSessionId: UUID1,
+      profileId: asId('agy-a'), cwd: f.root, proposedSessionId: UUID1,
       launchToken: UUID2, effort: 'high',
     }));
   } finally { await f.cleanup(); }
@@ -234,20 +308,20 @@ test('unsupported model/effort stays unavailable with no catalog or silent appli
 test('disabled, invalid native ID and unavailable profiles cannot launch', async () => {
   const f = await fixture();
   try {
-    await f.store.configure(asId('codex-0'), { executable: f.binary, disabled: true });
+    await f.store.configure(asId('codex-a'), { executable: f.binary, disabled: true });
     const registry = nativeRegistry();
-    const disabled = (await f.store.getDefinition(asId('codex-0')))!;
+    const disabled = (await f.store.getDefinition(asId('codex-a')))!;
     assert.equal((await inspectAgencyProfile(disabled, registry)).configurationStatus, 'disabled');
     await assert.rejects(buildAgencyProfileLaunch(f.store, registry, {
-      profileId: asId('codex-0'), cwd: f.root, proposedSessionId: UUID1, launchToken: UUID2,
+      profileId: asId('codex-a'), cwd: f.root, proposedSessionId: UUID1, launchToken: UUID2,
     }));
-    await f.store.configure(asId('codex-0'), { disabled: false });
+    await f.store.configure(asId('codex-a'), { disabled: false });
     await assert.rejects(buildAgencyProfileLaunch(f.store, registry, {
-      profileId: asId('codex-0'), cwd: f.root, proposedSessionId: UUID1,
+      profileId: asId('codex-a'), cwd: f.root, proposedSessionId: UUID1,
       launchToken: UUID2, resumeNativeSessionId: '--unexpected',
     }));
     await assert.rejects(buildAgencyProfileLaunch(f.store, registry, {
-      profileId: asId('codex-0'), cwd: '/path/that/does/not/exist',
+      profileId: asId('codex-a'), cwd: '/path/that/does/not/exist',
       proposedSessionId: UUID1, launchToken: UUID2,
     }));
   } finally { await f.cleanup(); }
@@ -256,11 +330,11 @@ test('disabled, invalid native ID and unavailable profiles cannot launch', async
 test('Antigravity native resume retains --conversation and literal profile arguments', async () => {
   const f = await fixture();
   try {
-    await f.store.configure(asId('agy-5'), {
+    await f.store.configure(asId('agy-f'), {
       executable: f.binary, args: ['--flag', 'two literal words'],
     });
     const launch = await buildAgencyProfileLaunch(f.store, nativeRegistry(), {
-      profileId: asId('agy-5'), cwd: f.root, proposedSessionId: UUID1,
+      profileId: asId('agy-f'), cwd: f.root, proposedSessionId: UUID1,
       launchToken: UUID2,
     });
     assert.deepEqual(launch.args.slice(0, 2), ['--flag', 'two literal words']);
@@ -269,7 +343,7 @@ test('Antigravity native resume retains --conversation and literal profile argum
     assert.deepEqual(native.args.slice(-2), ['--conversation', UUID3]);
     assert.deepEqual(native.session, { kind: 'known', sessionId: UUID3 });
     await assert.rejects(buildAgencyProfileLaunch(f.store, nativeRegistry(), {
-      profileId: asId('agy-5'), cwd: f.root, proposedSessionId: UUID1, launchToken: UUID2,
+      profileId: asId('agy-f'), cwd: f.root, proposedSessionId: UUID1, launchToken: UUID2,
       resumeNativeSessionId: UUID3 }), /home is unverified/);
   } finally { await f.cleanup(); }
 });
@@ -277,10 +351,10 @@ test('Antigravity native resume retains --conversation and literal profile argum
 test('independent profile environments never cross-contaminate each other or global state', async () => {
   const f = await fixture();
   try {
-    await f.store.configure(asId('codex-0'), {
+    await f.store.configure(asId('codex-a'), {
       executable: f.binary, environmentOverrides: { LANG: 'pt_PT.UTF-8' },
     });
-    await f.store.configure(asId('codex-3'), {
+    await f.store.configure(asId('codex-c'), {
       executable: f.binary, environmentOverrides: { LANG: 'fr_FR.UTF-8' },
     });
     const globalBefore = process.env['LANG'];
@@ -288,8 +362,8 @@ test('independent profile environments never cross-contaminate each other or glo
     const inputs = { cwd: f.root, proposedSessionId: UUID1, launchToken: UUID2, environment: base };
     const registry = nativeRegistry();
     const [a, b] = await Promise.all([
-      buildAgencyProfileLaunch(f.store, registry, { ...inputs, profileId: asId('codex-0') }),
-      buildAgencyProfileLaunch(f.store, registry, { ...inputs, profileId: asId('codex-3') }),
+      buildAgencyProfileLaunch(f.store, registry, { ...inputs, profileId: asId('codex-a') }),
+      buildAgencyProfileLaunch(f.store, registry, { ...inputs, profileId: asId('codex-c') }),
     ]);
     assert.equal(a.env['LANG'], 'pt_PT.UTF-8');
     assert.equal(b.env['LANG'], 'fr_FR.UTF-8');
@@ -308,26 +382,26 @@ test('named symlinked entrypoints preserve distinct CLI wrapper invocation ident
     const shared = path.join(bin, 'native-dispatcher');
     await writeFile(shared, '#!/bin/sh\nprintf "%s\\n" "${0##*/}"\n', { mode: 0o700 });
     await chmod(shared, 0o700);
-    const first = path.join(bin, 'codex-0');
-    const second = path.join(bin, 'codex-1');
+    const first = path.join(bin, 'codex-a');
+    const second = path.join(bin, 'codex-b');
     await symlink(shared, first);
     await symlink(shared, second);
-    await f.store.configure(asId('codex-0'), { executable: 'codex-0' });
-    await f.store.configure(asId('codex-1'), { executable: 'codex-1' });
+    await f.store.configure(asId('codex-a'), { executable: 'codex-a' });
+    await f.store.configure(asId('codex-b'), { executable: 'codex-b' });
     const env = { PATH: bin };
     const a = await buildAgencyProfileLaunch(f.store, nativeRegistry(), {
-      profileId: asId('codex-0'), cwd: f.root, proposedSessionId: UUID1,
+      profileId: asId('codex-a'), cwd: f.root, proposedSessionId: UUID1,
       launchToken: UUID2, environment: env,
     });
     const b = await buildAgencyProfileLaunch(f.store, nativeRegistry(), {
-      profileId: asId('codex-1'), cwd: f.root, proposedSessionId: UUID1,
+      profileId: asId('codex-b'), cwd: f.root, proposedSessionId: UUID1,
       launchToken: UUID2, environment: env,
     });
     assert.equal(a.file, first);
     assert.equal(b.file, second);
     assert.notEqual(a.file, b.file);
-    assert.equal(execFileSync(a.file, [...a.args], { encoding: 'utf8' }).trim(), 'codex-0');
-    assert.equal(execFileSync(b.file, [...b.args], { encoding: 'utf8' }).trim(), 'codex-1');
+    assert.equal(execFileSync(a.file, [...a.args], { encoding: 'utf8' }).trim(), 'codex-a');
+    assert.equal(execFileSync(b.file, [...b.args], { encoding: 'utf8' }).trim(), 'codex-b');
     // Absolute symlink paths preserve identity without PATH lookup as well.
     assert.deepEqual(await resolveConfiguredExecutable(first, {}), { status: 'available', file: first });
   } finally { await f.cleanup(); }
@@ -336,13 +410,13 @@ test('named symlinked entrypoints preserve distinct CLI wrapper invocation ident
 test('missing primary recovers from valid backup instead of defaulting all profiles', async () => {
   const f = await fixture();
   try {
-    await f.store.configure(asId('codex-0'), { executable: f.binary });
-    await f.store.configure(asId('agy-2'), { executable: f.binary });
+    await f.store.configure(asId('codex-a'), { executable: f.binary });
+    await f.store.configure(asId('agy-c'), { executable: f.binary });
     const before = await readFile(f.file + '.bak', 'utf8');
     await rm(f.file);
     const restored = await f.store.listDefinitions();
-    assert.equal(restored.find((x) => x.id === 'codex-0')?.executable, f.binary);
-    assert.equal(restored.find((x) => x.id === 'agy-2')?.executable, '');
+    assert.equal(restored.find((x) => x.id === 'codex-a')?.executable, f.binary);
+    assert.equal(restored.find((x) => x.id === 'agy-c')?.executable, '');
     assert.deepEqual(await f.store.listDefinitions(), restored);
     assert.equal(await readFile(f.file + '.bak', 'utf8'), before);
     assert.equal(JSON.parse(await readFile(f.file, 'utf8')).schemaVersion, 1);
@@ -352,13 +426,13 @@ test('missing primary recovers from valid backup instead of defaulting all profi
 test('future schema fails closed even with older valid backup, without overwriting data', async () => {
   const f = await fixture();
   try {
-    await f.store.configure(asId('codex-0'), { executable: f.binary });
-    await f.store.configure(asId('codex-1'), { executable: f.binary, args: ['--profile', 'other'] });
+    await f.store.configure(asId('codex-a'), { executable: f.binary });
+    await f.store.configure(asId('codex-b'), { executable: f.binary, args: ['--profile', 'other'] });
     const backupBefore = await readFile(f.file + '.bak', 'utf8');
     const future = JSON.stringify({ schemaVersion: 2, profiles: [{ future: 'keep me' }] }) + '\n';
     await writeFile(f.file, future);
     await assert.rejects(f.store.listDefinitions(), /Unsupported Agency profile store schema version: 2/);
-    await assert.rejects(f.store.configure(asId('codex-0'), { label: 'MUST_NOT_CHANGE' }), /Unsupported Agency profile store schema version: 2/);
+    await assert.rejects(f.store.configure(asId('codex-a'), { label: 'MUST_NOT_CHANGE' }), /Unsupported Agency profile store schema version: 2/);
     assert.equal(await readFile(f.file, 'utf8'), future);
     assert.equal(await readFile(f.file + '.bak', 'utf8'), backupBefore);
     assert.equal((await readdir(f.root)).some((name) => name.startsWith('profiles.json.corrupt-')), false);
@@ -366,7 +440,7 @@ test('future schema fails closed even with older valid backup, without overwriti
 });
 
 test('missing primary with unsupported backup fails closed without resetting configuration', async () => {
-  const f = await fixture();
+  const f = await fixture({ seed: false });
   try {
     const future = JSON.stringify({ schemaVersion: 2, profiles: [] });
     await writeFile(f.file + '.bak', future);
@@ -391,31 +465,31 @@ test('C-1: two profiles with an identical launch plan (same account) are refused
   try {
     const alias = path.join(f.root, 'alias');
     await symlink(f.binary, alias);
-    await f.store.configure(asId('codex-0'), { executable: f.binary });
-    await assert.rejects(f.store.configure(asId('codex-1'), { executable: f.binary }), /Same executable and arguments as Codex 00/);
+    await f.store.configure(asId('codex-a'), { executable: f.binary });
+    await assert.rejects(f.store.configure(asId('codex-b'), { executable: f.binary }), /Same executable and arguments as Codex A/);
     // Different args may select another account: allowed. A different symlinked entry point is a distinct wrapper.
-    await f.store.configure(asId('codex-1'), { executable: f.binary, args: ['--profile', 'second'] });
-    await f.store.configure(asId('codex-3'), { executable: alias });
+    await f.store.configure(asId('codex-b'), { executable: f.binary, args: ['--profile', 'second'] });
+    await f.store.configure(asId('codex-c'), { executable: alias });
     // Other providers may share a binary path.
-    await f.store.configure(asId('agy-0'), { executable: f.binary });
+    await f.store.configure(asId('agy-a'), { executable: f.binary });
 
     // A pre-existing duplicate on disk (older build) is surfaced and cannot launch.
     const raw = JSON.parse(await readFile(f.file, 'utf8'));
     const rows = Array.isArray(raw) ? raw : raw.profiles;
-    rows.find((row: { id: string }) => row.id === 'codex-1').args = [];
+    rows.find((row: { id: string }) => row.id === 'codex-b').args = [];
     await writeFile(f.file, JSON.stringify(raw));
     const registry = nativeRegistry();
     const { listAgencyProfiles } = await import('../../../src/features/profiles/profile-capabilities.js');
     const listed = await listAgencyProfiles(f.store, registry);
-    for (const id of ['codex-0', 'codex-1']) {
+    for (const id of ['codex-a', 'codex-b']) {
       const profile = listed.find((p) => p.id === id)!;
       assert.equal(profile.configurationStatus, 'error');
       assert.equal(profile.capabilities.canLaunch, false);
       assert.match(profile.configurationMessage ?? '', /same native account/);
     }
-    assert.equal(listed.find((p) => p.id === 'codex-3')!.capabilities.canLaunch, true);
+    assert.equal(listed.find((p) => p.id === 'codex-c')!.capabilities.canLaunch, true);
     await assert.rejects(buildAgencyProfileLaunch(f.store, registry, {
-      profileId: asId('codex-1'), cwd: await (await import('node:fs/promises')).realpath(f.root), proposedSessionId: UUID1, launchToken: UUID2,
+      profileId: asId('codex-b'), cwd: await (await import('node:fs/promises')).realpath(f.root), proposedSessionId: UUID1, launchToken: UUID2,
     }), /same native account/);
   } finally { await f.cleanup(); }
 });
@@ -495,9 +569,9 @@ test('profile creation, editing, multiple accounts per provider, and deletion ac
     assert.equal(await reloaded.getDefinition(pOpenCode.id), null);
 
     // Built-in profile deletion does not resurrect
-    await f.store.deleteProfile(asId('codex-3'));
-    assert.equal(await f.store.getDefinition(asId('codex-3')), null);
+    await f.store.deleteProfile(asId('codex-c'));
+    assert.equal(await f.store.getDefinition(asId('codex-c')), null);
     const reloaded2 = new AgencyProfileStore(f.file);
-    assert.equal(await reloaded2.getDefinition(asId('codex-3')), null);
+    assert.equal(await reloaded2.getDefinition(asId('codex-c')), null);
   } finally { await f.cleanup(); }
 });

@@ -8,7 +8,6 @@ import { randomUUID } from 'node:crypto';
 import { NativeIdentities, artifactDigest } from '../../../src/features/sessions/native-identity.js';
 import { ownsNativeSession } from '../../../src/features/sessions/native-ownership.js';
 import { AgencyProfileStore } from '../../../src/features/profiles/profile-store.js';
-import { defaultDefinitions } from '../../../src/agents/profiles/definition.js';
 import { AgentRegistry } from '../../../src/agents/registry.js';
 import { createCodexAdapter } from '../../../src/agents/codex/index.js';
 import { createClaudeCodeAdapter } from '../../../src/agents/claude-code/index.js';
@@ -21,12 +20,19 @@ async function fixture() {
   const cwd = path.join(root, 'workspace'); const launchHome = path.join(root, 'launcher');
   await mkdir(cwd); await mkdir(launchHome);
   const env = { HOME: launchHome, USER: 'fixture', SHELL: '/bin/sh', PATH: '/usr/bin:/bin', TERM: 'xterm-256color', XDG_CONFIG_HOME: path.join(root,'xdg') };
+  // An existing installation with several accounts per provider.
+  const seeded = [
+    ...['codex-a', 'codex-b', 'codex-c'].map((id) => ({ id, provider: 'codex' })),
+    ...['agy-a', 'agy-b', 'agy-c', 'agy-d', 'agy-e', 'agy-f'].map((id) => ({ id, provider: 'antigravity' })),
+    { id: 'claude-code', provider: 'claude-code' },
+  ].map((row) => ({ ...row, label: row.id, executable: '', args: [], environmentOverrides: {}, disabled: false }));
+  await writeFile(path.join(root, 'profiles.json'), JSON.stringify({ schemaVersion: 1, profiles: seeded }), { mode: 0o600 });
   const store = new AgencyProfileStore(path.join(root, 'profiles.json'));
   const profiles = [];
   const rows = [];
   const native = path.join(root,'native-fixture');
   await writeFile(native, '#!' + process.execPath + '\nprocess.stdout.write("FIXTURE:"+JSON.stringify({wrapper:process.env.WRAPPER_ID,home:process.env.HOME,codexHome:process.env.CODEX_HOME,xdg:process.env.XDG_CONFIG_HOME,args:process.argv.slice(2)})+"\\n");setInterval(()=>{},1000);\n', { mode:0o700 });
-  for (const definition of defaultDefinitions()) {
+  for (const definition of await store.listDefinitions()) {
     const account = path.join(root, definition.id); await mkdir(account);
     const home = path.join(account, definition.provider === 'codex' ? '.codex' : definition.provider === 'antigravity' ? '.gemini/antigravity-cli' : '.claude');
     await mkdir(home,{recursive:true});
@@ -34,7 +40,7 @@ async function fixture() {
     const source='#!/bin/sh\nexport WRAPPER_ID="${0##*/}"\n' +
       (definition.provider === 'codex' ? `export CODEX_HOME='${home}'\n` : `export HOME='${account}'\nexport XDG_CONFIG_HOME='${account}/.config'\n`) +
       `exec '${native}' "$@"\n`;
-    const target=definition.id==='agy-0' ? path.join(root,'alias-dispatcher') : executable;
+    const target=definition.id==='agy-a' ? path.join(root,'alias-dispatcher') : executable;
     await writeFile(target,source,{mode:0o700});
     if(target!==executable) await symlink(target,executable);
     const profile=await store.configure(definition.id,{executable,args:['literal two words']});
@@ -137,7 +143,7 @@ test('AGY recovery capacity observes existing same-user processes and fails clos
   const { nativeRecoveryCapacity }=await import('../../../src/features/sessions/recovery-capacity.js');
   const root=await mkdtemp(path.join(tmpdir(),'maw-capacity-'));t.after(()=>rm(root,{recursive:true,force:true}));
   for(let index=0;index<4;index++) {
-    const folder=path.join(root,String(index+100));await mkdir(folder);await writeFile(path.join(folder,'comm'),index===0 ? 'agy-0\n' : 'agy\n');
+    const folder=path.join(root,String(index+100));await mkdir(folder);await writeFile(path.join(folder,'comm'),index===0 ? 'agy-a\n' : 'agy\n');
     assert.equal(await nativeRecoveryCapacity('antigravity',root),index<3);
   }
   assert.equal(await nativeRecoveryCapacity('antigravity',path.join(root,'absent')),false);
@@ -148,11 +154,11 @@ test('invalid recovery attestations disable identity while keeping exact interac
   const f=await fixture();t.after(()=>rm(f.root,{recursive:true,force:true}));
   const corrupt=path.join(f.root,'corrupt.json');await writeFile(corrupt,'{invalid');
   const identities=await NativeIdentities.loadForInteractive(corrupt);
-  const profile=f.profiles.find(row=>row.id==='agy-3')!;
+  const profile=f.profiles.find(row=>row.id==='agy-d')!;
   const plan=await buildAgencyProfileLaunch(f.store,f.registry,{profileId:profile.id,cwd:f.cwd,proposedSessionId:randomUUID(),launchToken:randomUUID(),environment:f.env},{identities});
   assert.equal(plan.file,profile.executable);assert.equal(plan.nativeIdentity,null);
   await assert.rejects(buildAgencyProfileLaunch(f.store,f.registry,{profileId:profile.id,cwd:f.cwd,proposedSessionId:randomUUID(),launchToken:randomUUID(),environment:f.env,resumeNativeSessionId:randomUUID()},{identities}),/unverified/);
   const protectedDirs=f.identities.protectedDirs();
-  const agy=f.rows.find(row=>row.profileId==='agy-3')!;
+  const agy=f.rows.find(row=>row.profileId==='agy-d')!;
   assert.ok(protectedDirs.includes(path.join(path.dirname(path.dirname(agy.home)),'.local/share/keyrings')));
 });

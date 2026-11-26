@@ -2,6 +2,8 @@ import {
   CLI_PROVIDERS, PROFILE_ENV_RULES,
   type CliProfileId, type CliProvider,
 } from '@agent-workbench/shared';
+import { accessSync, constants, statSync } from 'node:fs';
+import path from 'node:path';
 import { resolveConfiguredExecutable } from './executable.js';
 
 export interface ProfileDefinition {
@@ -20,23 +22,19 @@ export type ProfileChanges = Partial<Pick<ProfileDefinition,
 
 export const SUPPORTED_PROVIDERS: readonly CliProvider[] = CLI_PROVIDERS;
 
-const templates: readonly [string, CliProvider, string][] = [
-  ['codex-0', 'codex', 'Codex 00'],
-  ['codex-1', 'codex', 'Codex 01'],
-  ['codex-3', 'codex', 'Codex 03'],
-  ['agy-0', 'antigravity', 'AGY 00'],
-  ['agy-1', 'antigravity', 'AGY 01'],
-  ['agy-2', 'antigravity', 'AGY 02'],
-  ['agy-3', 'antigravity', 'AGY 03'],
-  ['agy-4', 'antigravity', 'AGY 04'],
-  ['agy-5', 'antigravity', 'AGY 05'],
-  ['claude-code', 'claude-code', 'Claude Code'],
+/**
+ * Generic defaults: one profile per supported CLI, using that CLI's standard
+ * home and command. Additional accounts are user-defined in the profile store.
+ * Each entry is [profile ID, provider, label, standard command name].
+ */
+const templates: readonly [string, CliProvider, string, string][] = [
+  ['codex', 'codex', 'Codex', 'codex'],
+  ['agy', 'antigravity', 'AGY', 'agy'],
+  ['claude-code', 'claude-code', 'Claude Code', 'claude'],
 ];
 
-export const PROFILE_IDS = templates.map(([id]) => id) as readonly string[];
-
-export function defaultDefinitions(): ProfileDefinition[] {
-  return templates.map(([id, provider, label]) => ({
+function template(id: string, provider: CliProvider, label: string): ProfileDefinition {
+  return {
     id: id as CliProfileId,
     provider,
     label,
@@ -44,7 +42,42 @@ export function defaultDefinitions(): ProfileDefinition[] {
     args: [],
     environmentOverrides: {},
     disabled: false,
-  }));
+  };
+}
+
+/** Every generic default, regardless of what is installed. Deterministic and I/O free. */
+export function defaultDefinitions(): ProfileDefinition[] {
+  return templates.map(([id, provider, label]) => template(id, provider, label));
+}
+
+/** True when `command` is an executable file in one of the absolute PATH directories. */
+export function commandOnPath(command: string, environment: NodeJS.ProcessEnv): boolean {
+  const directories = (environment['PATH'] ?? '').split(path.delimiter).filter((dir) => path.isAbsolute(dir));
+  for (const directory of directories) {
+    const candidate = path.join(directory, command);
+    try {
+      if (!statSync(candidate).isFile()) continue;
+      accessSync(candidate, constants.X_OK);
+      return true;
+    } catch {
+      // Not present or not executable in this directory.
+    }
+  }
+  return false;
+}
+
+/**
+ * Seed for a store that does not exist yet: the generic default of each CLI
+ * installed on the supplied PATH. Existing stores are authoritative and are
+ * never merged with these seeds. Executables stay unconfigured.
+ */
+export function installedDefaultDefinitions(
+  environment: NodeJS.ProcessEnv = process.env,
+  isInstalled: (command: string, environment: NodeJS.ProcessEnv) => boolean = commandOnPath,
+): ProfileDefinition[] {
+  return templates
+    .filter(([, , , command]) => isInstalled(command, environment))
+    .map(([id, provider, label]) => template(id, provider, label));
 }
 
 const ENV_RULES = PROFILE_ENV_RULES;
