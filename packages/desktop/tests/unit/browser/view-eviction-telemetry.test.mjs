@@ -156,6 +156,25 @@ test('eviction blockers record why a trim pass stopped over budget', () => {
   }
 });
 
+test('a pool of only protected views still yields an emergency candidate under CRITICAL', () => {
+  const { state, eviction, evicted, restoreEnv } = setup({ maxResident: 1, tier: 'critical' });
+  try {
+    state.views.set('ai-1', fakeView());
+    state.views.set('ai-2', fakeView());
+    state.providers.set('ai-1', 'chatgpt');
+    state.providers.set('ai-2', 'chatgpt');
+    state.interactionProtected.add('ai-1');
+    state.interactionProtected.add('ai-2');
+    state.lastAccessedAt.set('ai-1', 1);
+    state.lastAccessedAt.set('ai-2', 2);
+
+    eviction.trimCapacity();
+    assert.deepEqual(evicted, ['ai-1'], 'the least recently used protected view is the emergency candidate');
+  } finally {
+    restoreEnv();
+  }
+});
+
 test('the governor hysteresis state is never advanced by telemetry reads', () => {
   const { state, eviction, restoreEnv } = setup({ maxResident: 2 });
   try {

@@ -10,7 +10,7 @@
 
 import { DEFAULT_BROWSER_PROFILE_ID, isValidBrowserProfileId, authenticationUrl, selectBestFavicon, isWorkbenchBackendUrl } from '../../policy.mjs';
 import { navigationAllowed, durablePage } from './provider-policy.mjs';
-import { createBrowserViewState } from './view-state.mjs';
+import { createBrowserViewState, clearProtectionReasons } from './view-state.mjs';
 import { createViewLayout } from './view-layout.mjs';
 import { createNavigationGuard } from './navigation-guard.mjs';
 import { createBrowserSessions } from './browser-sessions.mjs';
@@ -76,6 +76,11 @@ export function createBrowserViewController({
       } catch {}
       view.webContents.close();
     }
+    // A restored view starts unprotected: the renderer, its focus and any unsent draft
+    // went with the closed WebContents, so keeping the flag would protect nothing while
+    // making the tab permanently ineligible for eviction.
+    interactionProtected.delete(id);
+    clearProtectionReasons(state, id);
     views.delete(id);
     urls.delete(id);
     requestedUrls.delete(id);
@@ -209,13 +214,21 @@ export function createBrowserViewController({
     };
     view.webContents.on('did-navigate', (event, url) => {
       interactionProtected.delete(id);
+      clearProtectionReasons(state, id);
       findRequests.delete(id);
       if (!authenticationUrl(url) && durablePage(provider, url)) {
         authEntryUrls.delete(view.webContents);
       }
       committed(event, url);
     });
-    view.webContents.on('did-navigate-in-page', committed);
+    view.webContents.on('did-navigate-in-page', (event, url, isMainFrame = true) => {
+      committed(event, url, isMainFrame);
+      if (!isMainFrame || views.get(id) !== view) return;
+      // Single-page providers navigate in page, so this is the only realistic chance to
+      // release interaction protection. It is released only when the page itself reports
+      // no focused editable holding content; never on elapsed time.
+      void navigation.clearInteractionProtectionIfIdle(id, view.webContents);
+    });
     view.webContents.on('page-favicon-updated', (_event, favicons) => {
       if (views.get(id) !== view || view.webContents.isDestroyed()) return;
       const best = selectBestFavicon(favicons);
@@ -272,6 +285,7 @@ export function createBrowserViewController({
   function closeView(id) {
     suspendedTabs.delete(id);
     interactionProtected.delete(id);
+    clearProtectionReasons(state, id);
     lastAccessedAt.delete(id);
     zoomLevels.delete(id);
     activeDownloads.delete(id);
@@ -388,6 +402,7 @@ export function createBrowserViewController({
     suspendedTabs.clear();
     lastAccessedAt.clear();
     interactionProtected.clear();
+    state.protectionSince.clear();
     zoomLevels.clear();
     activeDownloads.clear();
     state.reservedDownloadPaths.clear();

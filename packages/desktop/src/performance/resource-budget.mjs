@@ -343,12 +343,17 @@ export function selectEvictionCandidate({
   minDwellMs = 15000,
   now = Date.now(),
 }) {
+  // residentIds is usually a Map.keys() iterator. Materialize it once: otherwise the
+  // unprotected pass consumes it and the emergency pass has nothing left to scan, so a
+  // pool of only protected views would never yield a candidate.
+  const candidateIds = [...residentIds];
+
   // If isProtected function is provided, first search exclusively for unprotected candidates.
   // This guarantees ordinary tabs (documentation, web) are always evicted before any
   // protected generative AI tab, even under emergency pressure.
   if (typeof isProtected === 'function') {
     const unprotectedCandidate = findCandidate({
-      residentIds,
+      residentIds: candidateIds,
       lastAccessedAt,
       canEvict: (id) => canEvict(id) && !isProtected(id),
       excludeId,
@@ -362,7 +367,7 @@ export function selectEvictionCandidate({
 
   // Fallback: search among all eligible evictable candidates (including protected in emergency)
   return findCandidate({
-    residentIds,
+    residentIds: candidateIds,
     lastAccessedAt,
     canEvict,
     excludeId,
