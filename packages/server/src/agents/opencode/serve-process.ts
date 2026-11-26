@@ -288,8 +288,9 @@ export class OpenCodeServeProcess {
           el `cmd.exe` que lo lanzo—.
         */
         child.once('close', () => resolve());
-        // Un proceso que ni arranco (`ENOENT`) no emite `exit`.
-        child.once('error', () => {
+        // Un proceso que ni arranco (`ENOENT`) no emite `exit`. `on` y no `once`: un segundo 'error' (un kill
+        // que falla) sin oyente tiraria el servidor entero.
+        child.on('error', () => {
           if (child.pid === undefined) resolve();
         });
       }),
@@ -334,6 +335,13 @@ export class OpenCodeServeProcess {
       const read = (stream: NodeJS.ReadableStream | null): void => {
         if (stream === null) return;
         stream.setEncoding('utf8');
+        // A pipe can fail (EPIPE, ECONNRESET) when the child dies mid-write. Without a listener that error would
+        // be uncaught and take the whole server down; before the listening line it fails the start instead.
+        stream.on('error', (error: NodeJS.ErrnoException) => {
+          const code = error.code ?? error.message;
+          if (!settled) fail(`its output pipe failed (${code})`);
+          else debugLog('opencode-serve', `output pipe error after start (${code})`);
+        });
         let partial = '';
         // Se lee siempre, tambien despues de arrancar: un pipe que nadie vacia frena al proceso cuando se llena.
         stream.on('data', (chunk: string) => {
@@ -346,7 +354,10 @@ export class OpenCodeServeProcess {
       read(child.stdout);
       read(child.stderr);
 
-      child.once('error', (error) => fail(error.message));
+      child.on('error', (error) => {
+        if (!settled) fail(error.message);
+        else debugLog('opencode-serve', `process error after start (${(error as NodeJS.ErrnoException).code ?? 'unknown'})`);
+      });
       child.once('close', (code, signal) => {
         if (this.running === running) this.running = null;
         const how = signal ?? `code ${code ?? '?'}`;

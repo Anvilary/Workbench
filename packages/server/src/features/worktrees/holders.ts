@@ -269,6 +269,7 @@ function runPowerShell(script: string): Promise<string | null> {
     }, HOLDERS_TIMEOUT_MS);
     timer.unref();
     child.stdout.setEncoding('utf8');
+    child.stdout.on('error', () => finish(null));
     child.stdout.on('data', (chunk: string) => {
       output += chunk;
       if (output.length <= OUTPUT_MAX_CHARS) return;

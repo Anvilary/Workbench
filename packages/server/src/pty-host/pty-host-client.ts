@@ -226,6 +226,8 @@ export class PtyHostClient {
         MAW_PTYD_AUTH_FILE: this.authPath,
       },
     });
+    // A spawn failure is reported by the connect timeout; without a listener it would crash the server.
+    child.on('error', () => undefined);
 
     child.unref();
   }
