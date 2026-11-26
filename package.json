@@ -50,6 +50,7 @@
     "check:e2e": "pnpm --filter @agent-workbench/server exec tsx scripts/check-agency-e2e.mjs && pnpm --filter @agent-workbench/server exec tsx scripts/check-agency-remediation.mjs && pnpm --filter @agent-workbench/server exec tsx scripts/check-maw-integration.mjs",
     "check:systemd": "pnpm --filter @agent-workbench/server exec tsx scripts/check-maw-lifecycle.mjs && pnpm --filter @agent-workbench/server exec tsx scripts/check-native-systemd.mjs",
     "check:package": "pnpm --filter @agent-workbench/server exec tsx scripts/check-maw-package.mjs",
+    "check:docs": "node scripts/check-doc-links.mjs",
     "check:native-context": "pnpm --filter @agent-workbench/server exec tsx scripts/check-native-context.mjs",
     "test:unit": "pnpm --filter @agent-workbench/shared run test:unit && pnpm --filter @agent-workbench/desktop run test:unit && pnpm --filter @agent-workbench/server run test:unit && pnpm --filter @agent-workbench/web run test:unit",
     "test:integration": "pnpm --filter @agent-workbench/desktop run test:integration && pnpm --filter @agent-workbench/server run test:integration && pnpm --filter @agent-workbench/web run test:integration",

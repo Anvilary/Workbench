@@ -64,7 +64,7 @@ One dedicated directory is created per terminal under `~/.config/workbench/termi
 
 ### Data Flow Pipeline
 1. **PTY Output**: PTY supervisor or `node-pty` emits UTF-8 chunks.
-2. **Persistence Queue**: [`TerminalHistoryStore.push()`](../../../packages/server/src/terminal-history-store.ts) enqueues chunks in memory and schedules a write within 100 ms or upon reaching 32 KB.
+2. **Persistence Queue**: [`TerminalHistoryStore.push()`](../../packages/server/src/features/terminals/terminal-history-store.ts) enqueues chunks in memory and schedules a write within 100 ms or upon reaching 32 KB.
 3. **Segment Write**: Chunks are written to `seg-N.bin`. Segment rotation occurs when 10,000 lines are reached.
 4. **Index Commit**: `index.json` is atomically updated via temporary file rename.
 5. **Client Request**: When the user reaches the top of the live 5,000-line xterm.js scrollback (`viewportY === 0`), `TerminalView` displays a prompt to open persistent history.
@@ -96,7 +96,7 @@ In `TerminalView.tsx`:
 PTY output is stored as raw UTF-8 streams with ANSI control sequences preserved verbatim on disk.
 
 ### Tested Scenarios
-Verified in [`packages/server/src/terminal-ansi-fidelity.test.ts`](../../../packages/server/src/terminal-ansi-fidelity.test.ts):
+Verified in [`packages/server/src/terminal-ansi-fidelity.test.ts`](../../packages/server/tests/unit/terminals/terminal-ansi-fidelity.test.ts):
 
 1. **Cursor Movement (`\x1b[row;colH`, `\x1b[nA`)**:
    - Raw coordinates are preserved in disk storage.

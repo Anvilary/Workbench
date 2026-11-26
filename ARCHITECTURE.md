@@ -1,10 +1,10 @@
 # Architecture
 
-How Agent Workbench is put together, and the rules every change is reviewed
+How Anvilary Workbench is put together, and the rules every change is reviewed
 against. Read this before touching the server; read
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to work on the repository.
 
-Agent Workbench is a **local visual interface for coding-agent CLIs**. It does
+Anvilary Workbench is a **local visual interface for coding-agent CLIs**. It does
 not talk to any provider's API. It launches the binary you already have
 installed and logged in —`claude`, `codex`, `opencode`, `agy` or `pi`— inside a
 pseudo-terminal, and adds around it what a terminal alone doesn't give you:
@@ -50,7 +50,7 @@ one is discarded even if it's more convenient.
 
 ### 1.3 The brand
 
-- The product is called **Agent Workbench**. Neither the name, the logo nor any
+- The product is called **Anvilary Workbench**. Neither the name, the logo nor any
   feature carries the name of a CLI or its maker.
 - A CLI's name is *compatibility data* and lives in two places: its adapter id
   (`AGENT_IDS` in `packages/shared/src/agents/agents.ts`) and that adapter's folder.
@@ -132,7 +132,7 @@ A pnpm monorepo, TypeScript throughout.
 ```
 packages/
   server/     Node 20+, Express, ws, node-pty, chokidar; node:sqlite on Node 22.13+
-    src/index.ts, maw-host.ts   the composition root (paths the launcher and updater rely on)
+    src/index.ts, workbench-host.ts   the composition root (paths the launcher and updater rely on)
     src/transport/websocket/    the transport: upgrade authorization, one connection per socket
                                 (decode, validate, remote refusal, routing, error serialization,
                                 cleanup), the route table and one handler module per message family

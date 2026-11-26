@@ -46,4 +46,4 @@ Every test tree uses dedicated root helpers (`tests/helpers/paths.ts` for `@anvi
 
 ## CI tiers
 
-The [CI and release runbook](./ci-and-release-runbook.md) lists the automatic jobs, full-run authorization and required check semantics. Browser-backed web tests are integration or E2E. The web commands discover tests recursively within each tier, and cap concurrent browser test files to reduce runner contention. Desktop security E2E uses real sandboxed Electron, while its policy and orchestrator unit cases require only Node.
+The [CI and release runbook](../operations/ci-and-release.md) lists the automatic jobs, full-run authorization and required check semantics. Browser-backed web tests are integration or E2E. The web commands discover tests recursively within each tier, and cap concurrent browser test files to reduce runner contention. Desktop security E2E uses real sandboxed Electron, while its policy and orchestrator unit cases require only Node.

@@ -1,11 +1,10 @@
 # Anvilary Workbench Desktop
 
-For installation against the existing service, use [the production Ubuntu guide](PRODUCTION.md). The production command is `anvil-bench desktop` (`anvi-bench desktop` remains available as a compatibility alias); `pnpm desktop` below is development only.
+For installation against the existing service, use [the production Ubuntu guide](../../docs/operations/desktop-production.md). The production command is `anvi-bench desktop` (`anvi-bench` and `maw` are compatibility aliases); `pnpm desktop` below is development only.
 
 An Ubuntu desktop-first Anvilary Workbench shell using the existing local Node service and
-React frontend. Neko source and infrastructure are retired in this branch; no
-installed service, container, volume, profile or credentials have been removed. See [validation](VALIDATION.md)
-and the separate [Neko migration plan](NEKO-MIGRATION.md).
+React frontend. The earlier Neko remote-browser runtime is retired. See [desktop validation](../../docs/development/desktop-validation.md)
+and [browser profiles](../../docs/browser/profiles.md).
 
 ## Run without touching the installed service
 
@@ -21,8 +20,8 @@ with its own authenticated loopback URL, config, readiness file and Chromium
 profile under `.native-chatgpt-local/` (ignored by Git). It does not install or
 restart systemd units. Closing the desktop stops this disposable backend. Reuse
 the same directory on subsequent launches to retain authentication and workspace
-metadata. The directory contains credentials; retain it privately. No Brave or
-Neko profile is read or imported.
+metadata. The directory contains credentials; retain it privately. No other
+browser profile is read or imported.
 
 Create a project/workspace, then use Workbench's existing **+ → New ChatGPT tab** action.
 Create another tab to verify independent pages. **+ → Open URL** navigates the
@@ -92,7 +91,7 @@ Alternatives considered:
 
 | Alternative | Decision |
 | --- | --- |
-| Neko/WebRTC or VNC | Retired from this branch. The installed production stack and data remain untouched for rollback. |
+| Neko/WebRTC or VNC remote browser | Retired; removed from the repository. |
 | iframe | Does not satisfy the direct official-site requirement. |
 | Electron `webview` / deprecated `BrowserView` | Avoid additional renderer guest APIs and use the modern native view API. |
 | Website proxy, DOM injection, UA changes or browser automation | Excluded; use the real HTTPS site with normal Chromium behavior. |
@@ -147,6 +146,4 @@ policy and OS credential storage can require login again.
 * Fallback strings and removal of obsolete streaming strings in each existing `packages/web/src/i18n/locales/*.json` catalog.
 * `scripts/desktop-prototype.mjs`, root `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `.gitignore`: isolated launcher and pinned dependency.
 * `.github/workflows/ci.yml`: native policy and sandboxed Electron checks replace the retired controller test.
-* This document, validation report, migration plan and `evidence/`: review evidence.
 
-Neko source, controller/viewer adapters, Docker Compose configuration, fixture scripts and obsolete stream tests are removed from the repository in this PR. No running container, volume, profile or credentials are removed. No merge, deployment or production service modification is included.

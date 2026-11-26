@@ -1,10 +1,10 @@
 # Privacy
 
-This policy covers Agent Workbench: the app you run on your computer (the npm
+This policy covers Anvilary Workbench: the app you run on your computer (the npm
 package) and its Android app, published on Google Play by Axialab. Effective
 2026-09-25.
 
-**Agent Workbench collects nothing.** There are no accounts, no analytics, no
+**Anvilary Workbench collects nothing.** There are no accounts, no analytics, no
 ads, no crash reports and no third-party SDKs. Neither the app nor its
 maintainers receive any data from you.
 
@@ -52,7 +52,7 @@ only the file you pick is sent, to your computer.
 
 ## Children
 
-Agent Workbench is a developer tool and isn't directed at children.
+Anvilary Workbench is a developer tool and isn't directed at children.
 
 ## Changes
 

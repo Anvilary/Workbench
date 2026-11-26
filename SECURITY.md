@@ -21,7 +21,7 @@ Only the latest published version is supported.
 - A random per-start token is required by the WebSocket and every HTTP route,
   and requests with a foreign `Origin` are rejected.
 - **Remote access is off by default and never opens the app to the network.**
-  With it on, the port is a fixed one —still on `127.0.0.1`— and another
+  With it on, the port is a fixed one (still on `127.0.0.1`) and another
   computer reaches it through an SSH tunnel that you set up. That computer is
   paired once with a one-time code and then presents its own credential, of
   which the app stores only a hash. A paired device can't pair or revoke
@@ -64,23 +64,12 @@ Only the latest published version is supported.
 The full list of what is read and what is never opened, per CLI, is in
 [`ARCHITECTURE.md`](ARCHITECTURE.md#4-what-is-read-from-each-cli).
 
-## Optional Token-Free Local Mode (`MAW_UNSAFE_LOCAL_NO_AUTH=1`)
-
-MAW supports an explicit, opt-in token-free mode designed for local developer workflows:
+## Unsafe token-free mode (`WORKBENCH_UNSAFE_LOCAL_NO_AUTH=1`)
 
 > [!WARNING]
-> **Token-free mode grants local clients full access to a command-execution service.**
-> Running with `MAW_UNSAFE_LOCAL_NO_AUTH=1` permits any local process on the machine to send requests to MAW and execute arbitrary commands in your shell. Binding exclusively to `127.0.0.1` prevents external network exposure, but **loopback-only binding does not eliminate all risks**:
-> - Any local unprivileged user or process running on the same machine can connect to `127.0.0.1:<port>`.
-> - Local software or scripts running under your user account can invoke MAW endpoints without credentials.
-> - While strict `Host` and `Origin` validation prevents cross-origin browser attacks (DNS rebinding and malicious websites), any non-browser local tool (e.g. `curl`, local daemons) can issue requests freely.
+> **Unsafe and diagnostic-only.** With `WORKBENCH_UNSAFE_LOCAL_NO_AUTH=1` the session token is not required, so any local process or user that can reach the loopback port can execute commands in your shell. Use it only for short local diagnostics.
 
-### Requirements and Safeguards:
-- **Default is authenticated**: The existing authenticated mode is always the default. Token-free mode is only activated when `MAW_UNSAFE_LOCAL_NO_AUTH=1` is explicitly set in the environment.
-- **Strict loopback-only binding**: Server startup is immediately rejected if the server does not bind strictly and exclusively to `127.0.0.1`. It is never exposed to `0.0.0.0`.
-- **Remote access prohibited**: Startup is rejected if remote access is enabled, and remote access cannot be configured or paired while token-free mode is active.
-- **Strict Host and Origin verification**: Host and Origin checks remain strictly enforced. Foreign Origin headers and non-loopback Host headers are rejected with 403 Forbidden.
-- **Desktop renderer isolation**: ChatGPT pages use a separate sandboxed Chromium session with no MAW preload or privileged IPC access. Logical web-tab mutations retain workspace ownership checks.
+Safeguards that remain: startup fails unless the server binds exclusively to `127.0.0.1`, startup fails when remote access is enabled, and `Host` and `Origin` checks stay enforced. The legacy `MAW_UNSAFE_LOCAL_NO_AUTH` name is not honored. Details: [docs/security/local-auth.md](docs/security/local-auth.md). Threat model: [docs/security/threat-model.md](docs/security/threat-model.md).
 
 ## What counts
 

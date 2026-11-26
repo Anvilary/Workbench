@@ -1,4 +1,4 @@
-# Contributing to Agent Workbench
+# Contributing to Anvilary Workbench
 
 Thanks for taking a look at the project. It's a small, personal tool, so the
 rules are few too. The ones there are, though, aren't negotiable: almost all of
@@ -37,7 +37,7 @@ reason.
    random per-start token required by both the WebSocket and every HTTP route.
    No telemetry and no outgoing network calls at all.
 
-4. **The brand.** The product is called Agent Workbench. Neither the name, nor
+4. **The brand.** The product is called Anvilary Workbench. Neither the name, nor
    the logo, nor any feature carries the name of a CLI or its maker. In the
    code, neutral identifiers (`agentCli`, `cliBinary`, `sessionIndex`). The
    README may say in plain text that it works with the Claude Code, Codex,
