@@ -945,7 +945,7 @@ export const WorkspaceView = memo(function WorkspaceView({
         onChangeFilePathInput={setFilePathInput}
         onDismiss={dismissSessionDialogs}
         onConfirmClose={(tab) => void close(tab)}
-        onConfirmOpenFile={(filePath, paneId) => void openEditorFile(filePath, paneId)}
+        onConfirmOpenFile={(filePath, paneId) => openEditorFile(filePath, paneId)}
       />
 
       {configuringProfile && (

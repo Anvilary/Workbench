@@ -1,8 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import type { AgencyCliProfile, SplitDirection } from '@agent-workbench/shared';
 import type { WorkspaceTab } from './workspace-model.js';
 import { t } from '../../i18n/index.js';
-import { trapTabFocus } from '../../shared/hooks/useFocusTrap.js';
+import { useConfirmKeyboard } from '../../shared/hooks/useConfirmKeyboard.js';
 import { getWorkspaceTabDisplayName } from './workspace-tab-helpers.js';
 
 export interface WorkspaceSessionDialogsProps {
@@ -19,7 +19,8 @@ export interface WorkspaceSessionDialogsProps {
   onChangeFilePathInput: (value: string) => void;
   onDismiss: () => void;
   onConfirmClose: (tab: WorkspaceTab) => void;
-  onConfirmOpenFile: (filePath: string, paneId: string) => void;
+  /** May return a promise; a second submit is ignored until it settles. */
+  onConfirmOpenFile: (filePath: string, paneId: string) => void | Promise<unknown>;
 }
 
 export function WorkspaceSessionDialogs({
@@ -39,24 +40,29 @@ export function WorkspaceSessionDialogs({
   onConfirmOpenFile,
 }: WorkspaceSessionDialogsProps): JSX.Element | null {
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
+  const confirmRef = useRef<HTMLButtonElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const open = Boolean(closing || fileDialog);
 
-  useEffect(() => {
-    if ((!closing && !fileDialog) || configuringProfileOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !inFlight) {
-        onDismiss();
-      }
-      if (event.key === 'Tab') {
-        trapTabFocus(
-          event,
-          dialogRef.current,
-          'button:not(:disabled), select:not(:disabled), input:not(:disabled)',
-        );
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [closing, fileDialog, configuringProfileOpen, inFlight, onDismiss]);
+  const confirm = useConfirmKeyboard({
+    open,
+    resetKey: closing ? `close:${closing.id}` : fileDialog ? `file:${fileDialog.paneId}` : null,
+    active: !configuringProfileOpen,
+    canConfirm: !busy && !inFlight && online && (closing ? true : filePathInput.trim().length > 0),
+    canCancel: !inFlight,
+    // The file branch keeps native form submission from its input.
+    enterConfirms: Boolean(closing),
+    onConfirm: () => {
+      if (closing) return onConfirmClose(closing);
+      if (fileDialog) return onConfirmOpenFile(filePathInput, fileDialog.paneId);
+    },
+    onCancel: onDismiss,
+    containerRef: dialogRef,
+    confirmRef,
+    cancelRef,
+    initialFocusRef: closing ? confirmRef : fileInputRef,
+  });
 
   if (!closing && !fileDialog) return null;
 
@@ -99,13 +105,13 @@ export function WorkspaceSessionDialogs({
             id="maw-open-file-form"
             onSubmit={(event) => {
               event.preventDefault();
-              if (fileDialog) onConfirmOpenFile(filePathInput, fileDialog.paneId);
+              confirm();
             }}
           >
             <label className="agency-field">
               <span>{t('agency.tabs.filePath')}</span>
               <input
-                autoFocus
+                ref={fileInputRef}
                 value={filePathInput}
                 placeholder={t('agency.tabs.filePathPlaceholder')}
                 required
@@ -121,7 +127,7 @@ export function WorkspaceSessionDialogs({
           </p>
         )}
         <div className="agency-dialog-actions">
-          <button type="button" autoFocus={!!closing} disabled={busy} onClick={onDismiss}>
+          <button ref={cancelRef} type="button" disabled={busy} onClick={onDismiss}>
             {t('common.cancel')}
           </button>
           {fileDialog ? (
@@ -135,12 +141,11 @@ export function WorkspaceSessionDialogs({
             </button>
           ) : (
             <button
+              ref={confirmRef}
               type="button"
               className="agency-primary-button"
               disabled={busy || !online}
-              onClick={() => {
-                if (closing) onConfirmClose(closing);
-              }}
+              onClick={confirm}
             >
               {closing?.kind === 'web' ? t('agency.web.closeConfirmAction') : t('agency.tabs.closeSession')}
             </button>
