@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { once } from 'node:events';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -228,7 +229,20 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
 
   const installTestHttpsPages = async (desktop) => {
     await desktop.evaluate(({ session }) => {
-      const html = '<!doctype html><html><body style="margin:0;padding:0"><textarea id="ed" spellcheck="true" style="position:absolute;left:20px;top:20px;width:400px;height:120px;font-family:monospace;font-size:18px;padding:8px"></textarea></body></html>';
+      const html = `<!doctype html><html lang="en-US"><meta charset="utf-8"><style>
+        body { margin: 0; background: white; color: black; }
+        [contenteditable] { position: absolute; left: 20px; width: 400px; height: 100px;
+          padding: 8px; font: 24px/32px monospace; border: 1px solid black; white-space: pre-wrap; }
+        ::spelling-error { background-color: rgb(255, 0, 255); }
+        #ed { top: 20px; }
+        #custom { top: 160px; }
+      </style>
+      <div id="ed" contenteditable spellcheck="true"></div>
+      <div id="custom" contenteditable spellcheck="true"></div></html>`;
+      globalThis.r6DictionaryInitialized = false;
+      session.fromPartition('persist:workbench-browser').on('spellcheck-dictionary-initialized', (_event, language) => {
+        if (language === 'en-US') globalThis.r6DictionaryInitialized = true;
+      });
       for (const partition of [
         'persist:workbench-browser',
         'persist:workbench-profile-work-profile-browser',
@@ -292,74 +306,95 @@ test('R6: real Electron custom dictionary ownership, 4-partition consistency, re
       });
     }, 'main WebContentsView loaded');
 
-    // 12. Wait for real Chromium en-US dictionary readiness and test misspelling suggestion + replacement
-    await eventually(async () => {
-      const st = await command({ type: 'get-spellcheck-status' });
-      return st?.statuses?.['en-US']?.status === 'ready';
-    }, 'en-US dictionary ready', 20000);
-
-    // Focus textarea in native WebContentsView, insert misspelling "teh ", right-click -> real suggestions -> click suggestion -> verify "the "
-    await desktop.evaluate(async ({ BrowserWindow, session, webContents }) => {
-      const win = BrowserWindow.getAllWindows()[0];
-      const s = session.fromPartition('persist:workbench-browser');
-      const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
-      win.focus();
-      v.focus();
-      await v.executeJavaScript('document.getElementById("ed").focus();');
-      await new Promise((r) => setTimeout(r, 150));
-      await v.insertText('teh ');
+    const viewId = await desktop.evaluate(({ session, webContents }) => {
+      const partition = session.fromPartition('persist:workbench-browser');
+      return webContents.getAllWebContents().find(c => c.session === partition && c.getURL().endsWith('/page')).id;
     });
-    await eventually(async () => {
-      const val = await desktop.evaluate(async ({ session, webContents }) => {
-        const s = session.fromPartition('persist:workbench-browser');
-        const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
-        return await v.executeJavaScript('document.getElementById("ed").value');
-      });
-      return val === 'teh ';
-    }, 'teh inserted into native textarea');
+    const readEditor = (editorId) => desktop.evaluate(({ webContents }, { viewId, editorId }) => {
+      return webContents.fromId(viewId).executeJavaScript(`document.getElementById(${JSON.stringify(editorId)}).textContent`);
+    }, { viewId, editorId });
 
-    // Poll boundedly for Chromium's async spellchecker underline pass to populate suggestions
-    await eventually(async () => {
-      const hasMenu = await page.locator('.wb-context-menu-suggestion').count();
-      if (hasMenu > 0) return true;
-      await desktop.evaluate(({ session, webContents }) => {
-        const s = session.fromPartition('persist:workbench-browser');
-        const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
-        v.sendInputEvent({ type: 'mouseDown', x: 42, y: 38, button: 'right', clickCount: 1 });
-        v.sendInputEvent({ type: 'mouseUp', x: 42, y: 38, button: 'right', clickCount: 1 });
-      });
-      await new Promise((r) => setTimeout(r, 250));
-      return (await page.locator('.wb-context-menu-suggestion').count()) > 0;
-    }, 'Chromium spelling suggestions menu to open', 15000);
-    const suggestions = await page.locator('.wb-context-menu-suggestion').allTextContents();
-    assert.ok(suggestions.includes('the'), `Expected Chromium suggestion 'the', got: ${JSON.stringify(suggestions)}`);
-    await page.locator('.wb-context-menu-suggestion', { hasText: /^the$/ }).click();
+    const openSpellingMenu = async (editorId, word) => {
+      await desktop.evaluate(async ({ BrowserWindow, webContents }, { viewId, editorId }) => {
+        const view = webContents.fromId(viewId);
+        const { x, y } = await view.executeJavaScript(`(() => {
+          const bounds = document.getElementById(${JSON.stringify(editorId)}).getBoundingClientRect();
+          return { x: bounds.x + 12, y: bounds.y + 20 };
+        })()`);
+        BrowserWindow.getAllWindows()[0].focus();
+        view.focus();
+        // Blink requires user activation for idle spelling checks.
+        view.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
+        view.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
+      }, { viewId, editorId });
+
+      await eventually(() => desktop.evaluate(({ webContents }, { viewId, editorId }) => {
+        return webContents.fromId(viewId).executeJavaScript(`document.hasFocus() &&
+          document.activeElement.id === ${JSON.stringify(editorId)} && navigator.userActivation.isActive`);
+      }, { viewId, editorId }), `native editor focus and user activation for ${word}`);
+
+      // Put the caret beyond a complete sentence so the misspelling is never
+      // treated as the word still being typed.
+      await desktop.evaluate(({ webContents }, { viewId, word }) => {
+        return webContents.fromId(viewId).insertText(word + ' example.');
+      }, { viewId, word });
+      await eventually(async () => await readEditor(editorId) === word + ' example.', `native input for ${word}`);
+
+      const rect = await desktop.evaluate(({ webContents }, { viewId, editorId, length }) => {
+        return webContents.fromId(viewId).executeJavaScript(`(() => {
+          const range = document.createRange();
+          const text = document.getElementById(${JSON.stringify(editorId)}).firstChild;
+          range.setStart(text, 0);
+          range.setEnd(text, ${length});
+          const { x, y, width, height } = range.getBoundingClientRect();
+          return { x: Math.floor(x), y: Math.floor(y), width: Math.ceil(width), height: Math.ceil(height) };
+        })()`);
+      }, { viewId, editorId, length: word.length });
+      // Chromium paints this color only when the text has a native spelling
+      // marker. Wait without clicking or moving the selection while it checks.
+      await eventually(() => desktop.evaluate(async ({ webContents }, { viewId, rect }) => {
+        const view = webContents.fromId(viewId);
+        const pixels = (await view.capturePage(rect)).toBitmap();
+        for (let offset = 0; offset < pixels.length; offset += 4) {
+          if (pixels[offset] === 255 && pixels[offset + 1] === 0 && pixels[offset + 2] === 255) return true;
+        }
+        return false;
+      }, { viewId, rect }), `Chromium painted a spelling marker for ${word}`);
+
+      const menu = await desktop.evaluate(({ webContents }, { viewId, rect }) => {
+        const view = webContents.fromId(viewId);
+        const x = rect.x + Math.floor(rect.width / 2);
+        const y = rect.y + Math.floor(rect.height / 2);
+        return new Promise((resolve, reject) => {
+          const onMenu = (_event, params) => {
+            clearTimeout(timer);
+            resolve({ word: params.misspelledWord, editable: params.isEditable });
+          };
+          const timer = setTimeout(() => {
+            view.removeListener('context-menu', onMenu);
+            reject(new Error('Native context menu did not open'));
+          }, 5000);
+          view.once('context-menu', onMenu);
+          view.sendInputEvent({ type: 'mouseDown', x, y, button: 'right', clickCount: 1 });
+          view.sendInputEvent({ type: 'mouseUp', x, y, button: 'right', clickCount: 1 });
+        });
+      }, { viewId, rect });
+      assert.deepEqual(menu, { word, editable: true });
+      await page.locator('.wb-context-menu-spelling').waitFor({ state: 'visible' });
+    };
+
+    // The aggregate app status can report ready when another partition initializes.
+    await eventually(() => desktop.evaluate(() => globalThis.r6DictionaryInitialized),
+      'en-US dictionary initialized in the main browser partition', 20000);
+
+    await openSpellingMenu('ed', 'teh');
+    const suggestion = page.locator('.wb-context-menu-suggestion', { hasText: /^the$/ });
+    await suggestion.click();
     await page.waitForSelector('.wb-context-menu', { state: 'detached' });
+    await eventually(async () => await readEditor('ed') === 'the example.', 'misspelling replaced in native editor');
 
-    await eventually(async () => {
-      const val = await desktop.evaluate(async ({ session, webContents }) => {
-        const s = session.fromPartition('persist:workbench-browser');
-        const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
-        return await v.executeJavaScript('document.getElementById("ed").value');
-      });
-      return val === 'the ';
-    }, 'misspelling replaced in native textarea');
-
-    // 1. Add custom dictionary word via actual context-menu flow BEFORE Settings has ever been opened!
-    await desktop.evaluate(async ({ session, webContents }) => {
-      const s = session.fromPartition('persist:workbench-browser');
-      const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
-      await v.executeJavaScript('document.getElementById("ed").value = ""; document.getElementById("ed").focus();');
-      await v.insertText('anvilaryctxword ');
-    });
-    await new Promise((r) => setTimeout(r, 600));
-    await desktop.evaluate(({ session, webContents }) => {
-      const s = session.fromPartition('persist:workbench-browser');
-      const v = webContents.getAllWebContents().find((c) => c.session === s && c.getURL().includes('/page'));
-      v.sendInputEvent({ type: 'mouseDown', x: 55, y: 38, button: 'right', clickCount: 1 });
-      v.sendInputEvent({ type: 'mouseUp', x: 55, y: 38, button: 'right', clickCount: 1 });
-    });
-    await page.waitForSelector('.wb-context-menu-spelling');
+    // Add a word via the native context menu before Settings has been opened.
+    await openSpellingMenu('custom', 'anvilaryctxword');
     await page.locator('.wb-context-menu-action-item', { hasText: 'Add to Dictionary' }).click();
     await page.waitForSelector('.wb-context-menu', { state: 'detached' });
 
@@ -621,19 +656,43 @@ test('R7: native DevTools element inspection accuracy across layouts, zoom level
   // Verify shell remains uninspected
   assert.equal(await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.isDevToolsOpened()), false);
 
-  // Verify renderer crash closes DevTools cleanly
-  await desktop.evaluate(({ session, webContents }) => {
-    const sess = session.fromPartition('persist:workbench-browser');
-    const v = webContents.getAllWebContents().find((c) => c.session === sess && c.getURL().includes('/page'));
-    v.forcefullyCrashRenderer();
-  });
-  await eventually(async () => {
-    return await desktop.evaluate(({ session, webContents }) => {
-      const sess = session.fromPartition('persist:workbench-browser');
-      const v = webContents.getAllWebContents().find((c) => c.session === sess && c.getURL().includes('/page'));
-      return !v || v.isDestroyed() || !v.isDevToolsOpened();
+  await page.evaluate((id) => {
+    window.r7StopReported = false;
+    const unsubscribe = window.workbench.subscribe(event => {
+      if (event.type !== 'error' || event.id !== id || !event.message?.includes('renderer stopped')) return;
+      window.r7StopReported = true;
+      unsubscribe();
     });
-  }, 'DevTools closed on renderer crash');
+  }, tabId);
+
+  // Observe the native stop and verify cleanup on the same view and DevTools frontend.
+  const crashed = await desktop.evaluate(({ BrowserWindow, session, webContents }) => {
+    const sess = session.fromPartition('persist:workbench-browser');
+    const view = webContents.getAllWebContents().find(c => c.session === sess && c.getURL().includes('/page'));
+    const frontend = view.devToolsWebContents;
+    if (!view.isDevToolsOpened() || !frontend) throw new Error('DevTools did not open on the test view');
+    const rendererPid = view.getOSProcessId();
+    const shell = BrowserWindow.getAllWindows()[0].webContents;
+    if (rendererPid <= 1 || [process.pid, shell.getOSProcessId(), frontend.getOSProcessId()].includes(rendererPid)) {
+      throw new Error('Expected a dedicated fixture renderer process');
+    }
+    globalThis.r7CrashObserved = false;
+    view.once('render-process-gone', () => { globalThis.r7CrashObserved = true; });
+    // Kill only this sandboxed fixture renderer. Electron's crash helper can
+    // return before triggering a crash when the view has no active widget.
+    process.kill(rendererPid, 'SIGKILL');
+    return { viewId: view.id, frontendId: frontend.id };
+  });
+  await eventually(() => desktop.evaluate(() => globalThis.r7CrashObserved), 'test renderer stopped');
+  await eventually(() => desktop.evaluate(({ BrowserWindow, webContents }, { viewId, frontendId }) => {
+    const view = webContents.fromId(viewId);
+    const frontend = webContents.fromId(frontendId);
+    const children = BrowserWindow.getAllWindows()[0].contentView.children;
+    return (!view || !view.isDevToolsOpened()) &&
+      (!frontend || frontend.isDestroyed()) &&
+      !children.some(child => child.webContents?.id === viewId);
+  }, crashed), 'DevTools frontend closed and crashed view detached');
+  await page.waitForFunction(() => window.r7StopReported);
 });
 
 test('R7: native DevTools element inspection under non-default 1.5x display scaling', { timeout: 60000 }, async (t) => {
@@ -654,7 +713,10 @@ test('R7: native DevTools element inspection under non-default 1.5x display scal
     args: [DESKTOP_ROOT, '--ozone-platform=x11', '--force-device-scale-factor=1.5'],
     env: { ...process.env, HOME: dataDir, WORKBENCH_DESKTOP_DATA_DIR: dataDir, WORKBENCH_DESKTOP_URL: `http://127.0.0.1:${server.address().port}/` },
   });
-  t.after(() => closeElectronSafely(desktop));
+  const child = desktop.process();
+  t.after(() => {
+    if (child.exitCode === null && child.signalCode === null) return closeElectronSafely(desktop);
+  });
 
   const page = await desktop.firstWindow();
   await page.waitForLoadState('domcontentloaded');
@@ -696,12 +758,38 @@ test('R7: native DevTools element inspection under non-default 1.5x display scal
     return sel.some((t) => t.includes('scaled-target'));
   }, 'scaled-target selected under 1.5x display scaling');
 
+  const getViewAndFrontend = () => desktop.evaluate(({ session, webContents }) => {
+    const partition = session.fromPartition('persist:workbench-browser');
+    const view = webContents.getAllWebContents().find(c => c.session === partition && c.getURL().endsWith('/page'));
+    return { viewId: view.id, frontendId: view.devToolsWebContents.id };
+  });
+  const closed = await getViewAndFrontend();
   await command({ type: 'close', id: tabId });
+  await command({ type: 'close', id: tabId });
+  await eventually(() => desktop.evaluate(({ webContents }, { viewId, frontendId }) => {
+    return [viewId, frontendId].every(id => !webContents.fromId(id));
+  }, closed), 'view and DevTools destroyed after repeated tab close');
+
+  await command({ type: 'open', id: tabId, provider: 'other', url: 'https://scale.maw-test.org/page' });
+  await command({
+    type: 'layout',
+    views: [{ id: tabId, bounds: { x: 160, y: 40, width: Math.min(600, vp.width - 180), height: Math.min(500, vp.height - 60) } }],
+    focusedId: tabId,
+    viewport: vp,
+  });
+  await eventually(() => desktop.evaluate(({ session, webContents }) => {
+    const partition = session.fromPartition('persist:workbench-browser');
+    const view = webContents.getAllWebContents().find(c => c.session === partition && c.getURL().endsWith('/page'));
+    return view?.isFocused() && !view.isLoading();
+  }), 'reopened native view focused');
+
+  await command({ type: 'inspect-page', id: tabId, x: 260, y: 170 });
   await eventually(async () => {
-    return await desktop.evaluate(({ session, webContents }) => {
-      const sess = session.fromPartition('persist:workbench-browser');
-      const v = webContents.getAllWebContents().find((c) => c.session === sess && c.getURL().includes('/page'));
-      return !v || v.isDestroyed() || !v.isDevToolsOpened();
-    });
-  }, 'DevTools closed on tab close');
+    const sel = await readSelectedElementInDevTools(desktop, 'persist:workbench-browser', '/page');
+    return sel.some(text => text.includes('scaled-target'));
+  }, 'DevTools reopened on the new view');
+
+  const exited = once(child, 'exit', { signal: AbortSignal.timeout(10000) });
+  const [, exitResult] = await Promise.all([desktop.close(), exited]);
+  assert.deepEqual(exitResult, [0, null]);
 });
