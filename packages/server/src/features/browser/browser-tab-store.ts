@@ -20,6 +20,72 @@ import { isRecord } from '../../shared/validation/primitives.js';
 
 export const BROWSER_TAB_STORE_VERSION = 2;
 
+/**
+ * Closed tabs are tombstones: nothing reopens them, and the only consumer of a closed
+ * record is `createTab`'s launchId idempotence check. They accumulated without bound
+ * (hundreds of records rewritten on every change), so they are compacted on load and on
+ * every save, conservatively:
+ * - open tabs are never touched;
+ * - `cleanupRequired` records are never removed, they are inert migration data;
+ * - records closed inside the dedupe window are never removed, so a client retrying a
+ *   create with the same launchId still deduplicates;
+ * - older records are kept for the retention window and capped per workspace.
+ * A record with an unparsable `closedAt` is kept, because its age is unknown.
+ */
+export const CLOSED_TAB_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+export const CLOSED_TAB_MAX_PER_WORKSPACE = 50;
+export const CLOSED_TAB_DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+interface ClosedTabCompactionOptions {
+  now?: number;
+  retentionMs?: number;
+  maxPerWorkspace?: number;
+  dedupeWindowMs?: number;
+}
+
+/** Returns the tabs to keep, in their original order. */
+export function compactClosedWebTabs(
+  tabs: readonly WebTab[],
+  options: ClosedTabCompactionOptions = {},
+): WebTab[] {
+  const now = options.now ?? Date.now();
+  const retentionMs = options.retentionMs ?? CLOSED_TAB_RETENTION_MS;
+  const maxPerWorkspace = options.maxPerWorkspace ?? CLOSED_TAB_MAX_PER_WORKSPACE;
+  const dedupeWindowMs = options.dedupeWindowMs ?? CLOSED_TAB_DEDUPE_WINDOW_MS;
+
+  const closedAtMs = (tab: WebTab): number | null => {
+    if (!tab.closedAt) return null;
+    const parsed = Date.parse(tab.closedAt);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const prunableByWorkspace = new Map<string, WebTab[]>();
+  for (const tab of tabs) {
+    if (!tab.closedAt) continue;
+    if (tab.cleanupRequired === true) continue;
+    const ts = closedAtMs(tab);
+    if (ts === null) continue;
+    if (now - ts <= dedupeWindowMs) continue;
+    const list = prunableByWorkspace.get(tab.workspaceId) ?? [];
+    list.push(tab);
+    prunableByWorkspace.set(tab.workspaceId, list);
+  }
+
+  const removable = new Set<string>();
+  for (const list of prunableByWorkspace.values()) {
+    const ordered = [...list].sort((a, b) => {
+      const diff = (closedAtMs(b) ?? 0) - (closedAtMs(a) ?? 0);
+      return diff !== 0 ? diff : a.id.localeCompare(b.id);
+    });
+    ordered.forEach((tab, index) => {
+      const expired = now - (closedAtMs(tab) ?? now) > retentionMs;
+      if (expired || index >= maxPerWorkspace) removable.add(tab.id);
+    });
+  }
+
+  return tabs.filter((tab) => !removable.has(tab.id));
+}
+
 export class BrowserTabStoreError extends Error {
   constructor(
     public readonly code: AgencyErrorCode,
@@ -177,7 +243,7 @@ export class BrowserTabStore {
     });
 
     this.inMemoryTabs.clear();
-    for (const tab of loadedTabs) {
+    for (const tab of compactClosedWebTabs(loadedTabs)) {
       this.inMemoryTabs.set(tab.id, tab);
     }
     this.loaded = true;
@@ -205,7 +271,7 @@ export class BrowserTabStore {
     const inputTabs = tabs ? tabs.map((tab) => ({ ...tab })) : undefined;
 
     return this.saveQueue.run(async () => {
-      const allTabs = inputTabs ?? Array.from(this.inMemoryTabs.values());
+      const allTabs = compactClosedWebTabs(inputTabs ?? Array.from(this.inMemoryTabs.values()));
       const sanitized = normalizeWorkspaceSelections(allTabs.map(sanitizeForDurableStorage));
 
       const snapshot: BrowserTabSnapshot = {
@@ -224,7 +290,7 @@ export class BrowserTabStore {
 
       if (inputTabs) {
         this.inMemoryTabs.clear();
-        for (const tab of inputTabs) {
+        for (const tab of allTabs) {
           this.inMemoryTabs.set(tab.id, tab);
         }
       }
