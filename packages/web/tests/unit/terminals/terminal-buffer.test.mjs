@@ -20,7 +20,7 @@ test('isPromptLine accurately identifies shell prompts', () => {
 
 test('extractBufferText preserves wrapped lines as continuous logical lines', () => {
   const lines = [
-    { text: 'https://github.com/user/My-Amazing-Workspace/blob/main/', isWrapped: false },
+    { text: 'https://github.com/example/workbench/blob/main/', isWrapped: false },
     { text: 'packages/desktop/main.mjs#L123-L456', isWrapped: true },
     { text: 'Second logical line', isWrapped: false },
   ];
@@ -34,7 +34,7 @@ test('extractBufferText preserves wrapped lines as continuous logical lines', ()
   };
 
   const extracted = extractBufferText(mockBuffer);
-  const expected = 'https://github.com/user/My-Amazing-Workspace/blob/main/packages/desktop/main.mjs#L123-L456\nSecond logical line';
+  const expected = 'https://github.com/example/workbench/blob/main/packages/desktop/main.mjs#L123-L456\nSecond logical line';
   assert.equal(extracted, expected);
 });
 

@@ -136,7 +136,7 @@ class FakeTerminals extends EventEmitter {
   }
 }
 
-const agentProfile = 'codex-0' as CliProfileId;
+const agentProfile = 'codex-a' as CliProfileId;
 function workspace(cwd: string, status: 'active' | 'done' = 'active'): AgencyWorkspace {
   const now = new Date().toISOString();
   return {
@@ -456,7 +456,7 @@ test('mismatched named profile identity is never accepted as fallback', async ()
   const cwd = await mkdtemp(path.join(tmpdir(), 'agency-c-'));
   const f = fixture(cwd, {
     resolveLaunch: async ({ cwd, proposedSessionId, launchToken }) => ({
-      profileId: 'codex-1' as CliProfileId,
+      profileId: 'codex-b' as CliProfileId,
       nativeIdentity: Object.freeze({ provider: 'codex' as const, home: path.join(cwd, 'fixture-native-home') }),
       provider: 'codex', file: '/bin/echo', args: [], env: { PATH: '/usr/bin' },
       cwd, proposedSessionId, launchToken, session: { kind: 'discover' },
@@ -479,8 +479,8 @@ test('Codex and AGY native discovery before open settles is retained without inv
   const f = fixture(cwd, {
     resolveLaunch: async ({ profileId, cwd, proposedSessionId, launchToken }) => ({
       profileId, cwd, proposedSessionId, launchToken,
-      nativeIdentity: profileId === ('agy-0' as CliProfileId) ? null : Object.freeze({ provider: 'codex' as const, home: path.join(cwd, 'fixture-native-home') }),
-      provider: profileId === ('agy-0' as CliProfileId) ? 'antigravity' : 'codex',
+      nativeIdentity: profileId === ('agy-a' as CliProfileId) ? null : Object.freeze({ provider: 'codex' as const, home: path.join(cwd, 'fixture-native-home') }),
+      provider: profileId === ('agy-a' as CliProfileId) ? 'antigravity' : 'codex',
       file: '/bin/echo', args: ['native CLI', 'literal space'], env: { PATH: '/usr/bin' },
       session: { kind: 'discover' },
     }),
@@ -504,7 +504,7 @@ test('Codex and AGY native discovery before open settles is retained without inv
       (descriptor as { sessionId: string }).sessionId = secondId;
     };
     const agy = await f.runtime.create({
-      kind: 'agent', profileId: 'agy-0' as CliProfileId, workspaceId: f.two.id, cols: 80, rows: 24,
+      kind: 'agent', profileId: 'agy-a' as CliProfileId, workspaceId: f.two.id, cols: 80, rows: 24,
     });
     assert.equal(agy.nativeSessionId, secondId);
     assert.equal(f.terminals.get(agy.terminalId!)?.sessionId, secondId);
@@ -568,11 +568,11 @@ test('different profiles of the same provider cannot resume one native conversat
     await f.runtime.initialize();
     const id = randomUUID();
     await f.runtime.create({
-      workspaceId: f.one.id, kind: 'agent', profileId: 'codex-0' as CliProfileId,
+      workspaceId: f.one.id, kind: 'agent', profileId: 'codex-a' as CliProfileId,
       cols: 80, rows: 24, resumeNativeSessionId: id,
     });
     await assert.rejects(f.runtime.create({
-      workspaceId: f.two.id, kind: 'agent', profileId: 'codex-3' as CliProfileId,
+      workspaceId: f.two.id, kind: 'agent', profileId: 'codex-d' as CliProfileId,
       cols: 80, rows: 24, resumeNativeSessionId: id,
     }), (error: unknown) => error instanceof AgencyRuntimeError && error.code === 'conflict');
     assert.equal(f.terminals.opens.length, 1);
@@ -824,11 +824,11 @@ test('inactive resume ownership survives restart: same verified home transfers, 
     await restarted.runtime.initialize();
     home = path.join(cwd, 'account-b');
     await assert.rejects(restarted.runtime.create({ workspaceId: restarted.one.id, kind: 'agent',
-      profileId: 'codex-3' as CliProfileId, cols: 80, rows: 24, resumeNativeSessionId: id }), /another home/);
+      profileId: 'codex-d' as CliProfileId, cols: 80, rows: 24, resumeNativeSessionId: id }), /another home/);
     assert.equal(restarted.terminals.opens.length, 0);
     home = path.join(cwd, 'account-a');
     const transferred = await restarted.runtime.create({ workspaceId: restarted.one.id, kind: 'agent',
-      profileId: 'codex-3' as CliProfileId, cols: 80, rows: 24, resumeNativeSessionId: id });
+      profileId: 'codex-d' as CliProfileId, cols: 80, rows: 24, resumeNativeSessionId: id });
     assert.equal(transferred.nativeSessionId, id);
     restarted.terminals.exit(transferred.terminalId!, 0);
     await new Promise<void>((done) => setImmediate(done));
@@ -965,7 +965,7 @@ test('attested AGY and Claude startup recovery is single-flight and retains exac
   for (const provider of ['antigravity','claude-code'] as const) {
     const cwd=await mkdtemp(path.join(tmpdir(),'maw-provider-recover-'));
     const store=new MemoryStore();const id=randomUUID();const bindingId='a'.repeat(64);
-    const profileId=(provider==='antigravity' ? 'agy-3' : 'claude-code') as CliProfileId;
+    const profileId=(provider==='antigravity' ? 'agy-d' : 'claude-code') as CliProfileId;
     const seen: string[]=[];
     const f=fixture(cwd,{store,resolveLaunch:async input=>{
       seen.push(input.profileId);assert.equal(input.resumeNativeSessionId,id);
@@ -990,7 +990,7 @@ test('mixed CLI profiles, repeated profile conversations and shell tabs coexist;
   const f = fixture(cwd, { resolveLaunch: async input => ({ ...input, provider: input.profileId.startsWith('agy') ? 'antigravity' : input.profileId === 'claude-code' ? 'claude-code' : 'codex', file: '/bin/echo', args: [input.profileId], env: {}, nativeIdentity: {provider: input.profileId.startsWith('agy') ? 'antigravity' : input.profileId === 'claude-code' ? 'claude-code' : 'codex', home:path.join(cwd,input.profileId)}, session:{kind:'known',sessionId:input.resumeNativeSessionId ?? input.proposedSessionId} }) });
   try {
     await f.runtime.initialize();
-    const agents = await Promise.all(['codex-0','codex-1','agy-3','claude-code','codex-0'].map(profileId => f.runtime.create({kind:'agent',workspaceId:f.one.id,profileId:profileId as CliProfileId,cols:80,rows:24})));
+    const agents = await Promise.all(['codex-a','codex-b','agy-d','claude-code','codex-a'].map(profileId => f.runtime.create({kind:'agent',workspaceId:f.one.id,profileId:profileId as CliProfileId,cols:80,rows:24})));
     const shells = await Promise.all(Array.from({length:3},()=>f.runtime.create({kind:'terminal',workspaceId:f.one.id,cols:90,rows:25})));
     assert.equal(f.terminals.opens.length,8);assert.equal(new Set(agents.map(s=>s.nativeSessionId)).size,5);
     assert.equal(new Set([...agents,...shells].map(s=>s.tab!.id)).size,8);
@@ -1121,14 +1121,14 @@ test('multiple native conversations recover into their own tabs; one unavailable
   const first=fixture(cwd,{store,resolveLaunch:plan});let second: ReturnType<typeof fixture>|undefined;
   try {
     await first.runtime.initialize();
-    const originals=await Promise.all(['codex-0','codex-1','codex-3','codex-0'].map(profileId=>first.runtime.create({kind:'agent',workspaceId:first.one.id,profileId:profileId as CliProfileId,cols:80,rows:24})));
+    const originals=await Promise.all(['codex-a','codex-b','codex-d','codex-a'].map(profileId=>first.runtime.create({kind:'agent',workspaceId:first.one.id,profileId:profileId as CliProfileId,cols:80,rows:24})));
     first.runtime.dispose();const calls: string[]=[];
-    second=fixture(cwd,{store,resolveLaunch:async input=>{calls.push(input.profileId);if(input.profileId==='codex-1')throw new Error('Original profile unavailable');return plan(input);}});
+    second=fixture(cwd,{store,resolveLaunch:async input=>{calls.push(input.profileId);if(input.profileId==='codex-b')throw new Error('Original profile unavailable');return plan(input);}});
     second.workspaces.set(first.one.id,first.one);await second.runtime.initialize();await Promise.all([second.runtime.recoverActive(()=>true),second.runtime.recoverActive(()=>true)]);
     const current=second.runtime.list(first.one.id).filter(row=>row.tab?.current);
     assert.equal(current.length,4);assert.equal(second.terminals.opens.length,3);assert.equal(calls.length,4);
-    for(const old of originals){const row=current.find(item=>item.tab!.id===old.tab!.id)!;assert.equal(row.nativeSessionId,old.nativeSessionId);assert.notEqual(row.id,old.id);assert.equal(row.lifecycle,old.profileId==='codex-1'?'failed':'running');}
-    const failed=current.find(row=>row.profileId==='codex-1')!;assert.match(failed.recovery?.message??'',/Original profile unavailable/);
+    for(const old of originals){const row=current.find(item=>item.tab!.id===old.tab!.id)!;assert.equal(row.nativeSessionId,old.nativeSessionId);assert.notEqual(row.id,old.id);assert.equal(row.lifecycle,old.profileId==='codex-b'?'failed':'running');}
+    const failed=current.find(row=>row.profileId==='codex-b')!;assert.match(failed.recovery?.message??'',/Original profile unavailable/);
   } finally {first.runtime.dispose();second?.runtime.dispose();await rm(cwd,{recursive:true,force:true});}
 });
 

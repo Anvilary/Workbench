@@ -89,7 +89,7 @@ test('Offline mutation and explicit Stop never enter legacy replay outbox', () =
   const create = { type: 'agency.workspace.create', requestId: 'a', projectId: 'p', name: 'lane', pickerId: 'picker' };
   const done = { type: 'agency.workspace.done', requestId: 'b', workspaceId: 'lane' };
   const restore = { type: 'agency.workspace.restore', requestId: 'c', workspaceId: 'lane' };
-  const configure = { type: 'agency.profile.configure', requestId: 'd', profileId: 'profile', executable: 'codex-0' };
+  const configure = { type: 'agency.profile.configure', requestId: 'd', profileId: 'profile', executable: 'codex-a' };
   const launch = { type: 'agency.session.create', requestId: 'e', workspaceId: 'lane', kind: 'terminal', cols: 80, rows: 24 };
   const stop = { type: 'terminal.close', terminalId: 'terminal-id' };
   for (const message of [create, done, restore, configure, launch, stop]) {

@@ -57,7 +57,7 @@ const workspace = { id: ws, projectId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', n
 
 function session(id, tabId, name, terminalId, kind, order, selected) {
   return {
-    id, workspaceId: ws, kind, profileId: kind === 'agent' ? 'codex-0' : null,
+    id, workspaceId: ws, kind, profileId: kind === 'agent' ? 'codex-a' : null,
     terminalId, lifecycle: 'running', activity: 'idle', exitCode: null,
     nativeSessionId: null, selectedModel: null, selectedEffort: null,
     createdAt: now, updatedAt: now, startedAt: now, stoppedAt: null,

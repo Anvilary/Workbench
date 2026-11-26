@@ -39,7 +39,7 @@ const now = new Date().toISOString();
 const workspace = { id: ws, projectId: '22222222-2222-4222-8222-222222222222', name: 'Workspace', status: 'active', cwd: '/fixture', createdAt: now, updatedAt: now };
 function session(id, tabId, name, terminalId, kind, order, selected) {
   return {
-    id, workspaceId: ws, kind, profileId: kind === 'agent' ? 'codex-0' : null,
+    id, workspaceId: ws, kind, profileId: kind === 'agent' ? 'codex-a' : null,
     terminalId, lifecycle: 'running', activity: 'idle', exitCode: null,
     nativeSessionId: null, selectedModel: null, selectedEffort: null,
     createdAt: now, updatedAt: now, startedAt: now, stoppedAt: null,

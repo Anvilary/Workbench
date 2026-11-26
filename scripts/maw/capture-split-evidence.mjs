@@ -103,7 +103,7 @@ function MockWorkspace() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: '0.05em', color: '#60a5fa' }}>MAW</span>
           <span style={{ color: '#475569' }}>/</span>
-          <span style={{ fontSize: 12, color: '#94a3b8' }}>My-Amazing-Workspace</span>
+          <span style={{ fontSize: 12, color: '#94a3b8' }}>workbench</span>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <button id="btn-layout-1" onClick={() => { setLayout('1'); setMenuOpen(false); }} style={{ padding: '4px 8px', background: layout === '1' ? '#2563eb' : '#1e293b', border: 'none', borderRadius: 4, color: 'white', fontSize: 11, cursor: 'pointer' }}>1 Pane</button>

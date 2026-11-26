@@ -40,6 +40,10 @@ mkdirSync(testWorkspaces, { recursive: true });
 
 writeFileSync(path.join(testHome, '.zshrc'), '# shots\n');
 writeFileSync(path.join(testHome, '.bashrc'), '# shots\n');
+mkdirSync(path.join(testXdg, 'agent-workbench'), { recursive: true });
+// An existing installation's profile store: synthetic accounts per provider.
+writeFileSync(path.join(testXdg, 'agent-workbench', 'agency-profiles.json'), JSON.stringify({ schemaVersion: 1, profiles: [['codex-a', 'codex', 'Codex A'], ['codex-b', 'codex', 'Codex B'], ['codex-d', 'codex', 'Codex D'], ['agy-d', 'antigravity', 'AGY D'], ['claude-code', 'claude-code', 'Claude Code']]
+  .map(([id, provider, label]) => ({ id, provider, label, executable: '', args: [], environmentOverrides: {}, disabled: false })) }), { mode: 0o600 });
 const fixture = path.join(temp, 'agency-test-cli');
 writeFileSync(fixture, '#!/bin/sh\nprintf "AGENCY TEST FIXTURE (no provider or inference)\\n"\nwhile IFS= read -r line; do printf "fixture input received\\n"; done\n', { mode: 0o755 });
 
@@ -192,7 +196,7 @@ await request({ type: 'agency.workspace.create', requestId: 'ws-long', projectId
   name: 'A workspace with a deliberately long name for responsive navigation', pickerId: extraPicker.pickerId });
 
 // These disposable processes deliberately do not run or authenticate any real CLI.
-for (const profileId of ['codex-0', 'codex-1', 'agy-3', 'claude-code']) {
+for (const profileId of ['codex-a', 'codex-b', 'agy-d', 'claude-code']) {
   const configured = await request({ type: 'agency.profile.configure', requestId: `fixture-${profileId}`,
     profileId, executable: fixture, args: [] });
   assert.equal(configured.profile.configurationStatus, 'available');
@@ -215,7 +219,7 @@ const agentSession = await request({
   requestId: 's-agent',
   workspaceId: wsAgent.id,
   kind: 'agent',
-  profileId: 'codex-0',
+  profileId: 'codex-a',
   cols: 80,
   rows: 24,
 });
@@ -311,7 +315,7 @@ assert.equal(await page.getByRole('tab').count(),2);
 await add.click();await shot('02-add-open');await add.click();assert.equal(await page.getByRole('menu').count(),0);
 await add.click();await page.keyboard.press('Escape');assert.equal(await add.evaluate(el=>document.activeElement===el),true);
 await add.click();await page.locator('.agency-breadcrumbs').click();assert.equal(await page.getByRole('menu').count(),0);
-await addCLI('codex-0'); await addCLI('agy-3'); await addCLI('claude-code');
+await addCLI('codex-a'); await addCLI('agy-d'); await addCLI('claude-code');
 await addShell(); await addShell();
 let rows = openTabs(await snapshot());
 assert.equal(rows.length,7); assert.equal(rows.filter(s=>s.kind==='agent').length,4); assert.equal(rows.filter(s=>s.kind==='terminal').length,3);
@@ -358,14 +362,14 @@ for(const [mode,count] of [['empty',0],['agent',1],['terminal',1],['combined',2]
 }
 await page.locator('.agency-project-add[aria-label^="New workspace"]').first().click();
 await page.locator('[role=dialog] input').fill('Combined launch failure');
-await page.getByLabel('Initial sessions').selectOption('combined');await page.getByLabel('CLI profile').selectOption('codex-3');
+await page.getByLabel('Initial sessions').selectOption('combined');await page.getByLabel('CLI profile').selectOption('codex-d');
 await page.getByRole('button',{name:'Select existing folder',exact:true}).click();
 await page.locator('.picker-entry').filter({hasText:/^empty-project$/}).click();await page.locator('.picker-open').click();
 await page.getByRole('region',{name:'Workspace Combined launch failure',exact:true}).waitFor();
 await until(async()=>await page.getByRole('tab').count()===2);
 const failedWorkspace=(await api({type:'agency.workspaces.list'})).workspaces.find(row=>row.name==='Combined launch failure');
 const partial=(await snapshot()).filter(row=>row.workspaceId===failedWorkspace.id);
-assert.equal(partial.find(row=>row.kind==='agent').profileId,'codex-3');assert.equal(partial.find(row=>row.kind==='agent').lifecycle,'failed');
+assert.equal(partial.find(row=>row.kind==='agent').profileId,'codex-d');assert.equal(partial.find(row=>row.kind==='agent').lifecycle,'failed');
 assert.equal(partial.find(row=>row.kind==='terminal').lifecycle,'running');
 await until(async()=>await page.locator(`[data-tab-id="${partial.find(row=>row.kind==='agent').tab.id}"] .agency-status-dot`).getAttribute('aria-label')==='Failed');
 await shot('creation-combined-partial-failure');

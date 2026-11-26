@@ -70,6 +70,10 @@ await mkdir(workspacesDir, { recursive: true });
 await writeFile(path.join(testHome, '.zshrc'), '# e2e test\n');
 await writeFile(path.join(testHome, '.zshenv'), '# e2e test\n');
 await writeFile(path.join(testHome, '.bashrc'), '# e2e test\n');
+await mkdir(path.join(testXdg, 'agent-workbench'), { recursive: true });
+// An existing installation's profile store: synthetic accounts per provider.
+await writeFile(path.join(testXdg, 'agent-workbench', 'agency-profiles.json'), JSON.stringify({ schemaVersion: 1, profiles: [['codex-a', 'codex', 'Codex A'], ['claude-code', 'claude-code', 'Claude Code']]
+  .map(([id, provider, label]) => ({ id, provider, label, executable: '', args: [], environmentOverrides: {}, disabled: false })) }), { mode: 0o600 });
 
 const wsDirAlpha = path.join(workspacesDir, 'ws-alpha');
 const wsDirBeta = path.join(workspacesDir, 'ws-beta');
@@ -804,7 +808,7 @@ check(
 client3.send({
   type: 'agency.profile.configure',
   requestId: 'req-prof-cfg-22',
-  profileId: 'codex-0',
+  profileId: 'codex-a',
   executable: '/bin/echo',
   args: ['literal "argv" test', '$SHELL', "don't expand"],
   environmentOverrides: { COLORTERM: 'truecolor' },

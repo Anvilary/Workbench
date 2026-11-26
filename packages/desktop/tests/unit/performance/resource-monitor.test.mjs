@@ -264,7 +264,7 @@ test('Provider classification: recognizes all supported AI coding agents', async
   assert.equal(classifyProcessProvider(105, tmpDir), 'opencode');
 
   // 5. Antigravity CLI
-  await makeMockProc(106, 'agy-4', '/home/user/.gemini/antigravity-cli/bin/agy', ['agy', 'chat']);
+  await makeMockProc(106, 'agy-e', '/home/user/.gemini/antigravity-cli/bin/agy', ['agy', 'chat']);
   assert.equal(classifyProcessProvider(106, tmpDir), 'antigravity');
 
   // 6. Pi

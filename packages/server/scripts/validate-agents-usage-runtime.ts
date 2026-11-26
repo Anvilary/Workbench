@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import express from 'express';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
@@ -35,6 +35,7 @@ import { RemoteAccessService } from '../src/features/remote-access/remote-access
 import { RemoteDevicesStore } from '../src/features/remote-access/remote-devices-store.js';
 import { AgencyWorkspaceStore } from '../src/features/workspaces/workspace-store.js';
 import { AgencyProfileStore } from '../src/features/profiles/profile-store.js';
+import { defaultMonitoredProfiles } from '../src/agents/usage/discovery.js';
 import { AgencySessionRuntime } from '../src/features/sessions/session-runtime.js';
 import { SplitAgencySessionStore } from '../src/features/sessions/session-store.js';
 import { WorkspaceMutex } from '../src/features/workspaces/workspace-lock.js';
@@ -116,8 +117,23 @@ async function run() {
   });
   await agencyRuntime.initialize();
 
-  // Live real collectors across user's actual profile configurations!
-  const realCollector = new AgentsUsageCollector({ cacheTtlMs: 2000 });
+  // Real collectors over a synthetic HOME with multi-account directories
+  // (3 Codex, 8 AGY, Claude), discovered exactly as on a user machine.
+  const fixtureHome = path.join(tempDir, 'home');
+  for (const id of ['a', 'b', 'c']) {
+    await mkdir(path.join(fixtureHome, `.codex-${id}`), { recursive: true });
+    await writeFile(path.join(fixtureHome, `.codex-${id}`, 'config.toml'), '');
+  }
+  for (const id of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
+    const settingsDir = path.join(fixtureHome, '.local/share', `agy-${id}-profile`, 'home', '.gemini/antigravity-cli');
+    await mkdir(settingsDir, { recursive: true });
+    if (id === 'h') await writeFile(path.join(settingsDir, 'settings.json'), JSON.stringify({ model: 'Claude Sonnet 4.6' }));
+  }
+  await mkdir(path.join(fixtureHome, '.claude'), { recursive: true });
+  const realCollector = new AgentsUsageCollector({
+    cacheTtlMs: 2000,
+    configs: defaultMonitoredProfiles({ home: fixtureHome, env: {}, which: () => null }),
+  });
 
   const detachSocket = attachWorkbenchSocket({
     httpServer,
@@ -211,11 +227,11 @@ async function run() {
     // Verify individual profile identities
     const renderedIds = await profileCards.locator('.profile-id').allTextContents();
     console.log('Rendered profile IDs:', renderedIds);
-    assert.ok(renderedIds.includes('codex-0'));
-    assert.ok(renderedIds.includes('codex-1'));
-    assert.ok(renderedIds.includes('codex-2'));
-    assert.ok(renderedIds.includes('agy-0'));
-    assert.ok(renderedIds.includes('agy-7'));
+    assert.ok(renderedIds.includes('codex-a'));
+    assert.ok(renderedIds.includes('codex-b'));
+    assert.ok(renderedIds.includes('codex-c'));
+    assert.ok(renderedIds.includes('agy-a'));
+    assert.ok(renderedIds.includes('agy-h'));
     assert.ok(renderedIds.includes('claude-code'));
 
     // Test Provider Filter tab: click "OpenAI"
@@ -231,9 +247,9 @@ async function run() {
     const searchInput = page.locator('.filter-search-input');
     await searchInput.fill('Sonnet');
     const searchCount = await page.locator('.profile-usage-card').count();
-    assert.equal(searchCount, 1, 'Search for "Sonnet" must show 1 profile (agy-7)');
+    assert.equal(searchCount, 1, 'Search for "Sonnet" must show 1 profile (agy-h)');
     const sonnetCardId = await page.locator('.profile-usage-card .profile-id').textContent();
-    assert.equal(sonnetCardId, 'agy-7');
+    assert.equal(sonnetCardId, 'agy-h');
 
     // Clear search to show full list again
     await page.locator('.filter-search-clear').click();

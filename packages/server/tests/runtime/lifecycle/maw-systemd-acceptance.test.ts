@@ -284,7 +284,7 @@ test('real systemd: in-app lifecycle commands and restart delegation succeed und
   const runtimeDir = path.join(userDir, runtimeName);
   const ptr = async (name: string) => { try { return path.basename(await readlink(path.join(state, name))); } catch { return null; } };
 
-  // Start a private D-Bus daemon to simulate the private provider bus (e.g. agy-1-agy-5 / gnome-keyring)
+  // Start a private D-Bus daemon to simulate the private provider bus (e.g. agy-a, agy-b accounts / gnome-keyring)
   let privateBusPid = 0;
   let privateBusAddress = '';
   try {

@@ -61,7 +61,7 @@ test('rename validates stable IDs, title and forbids process identity fields', (
   const message = { type: 'agency.tab.rename', requestId: 'rename', workspaceId: randomUUID(), tabId: randomUUID(), name: 'Title' };
   assert.deepEqual(parseAgencyClientMessage(message), message);
   for (const name of ['', '  ', 'x'.repeat(121), 'bad\u0000title', 'bad\ntitle']) assert.equal(parseAgencyClientMessage({ ...message, name }), null);
-  for (const change of [{tabId:'../tab'}, {workspaceId:'wrong'}, {profileId:'codex-1'}, {cwd:'/tmp'}, {terminalId:randomUUID()}]) assert.equal(parseAgencyClientMessage({...message,...change}),null);
+  for (const change of [{tabId:'../tab'}, {workspaceId:'wrong'}, {profileId:'codex-b'}, {cwd:'/tmp'}, {terminalId:randomUUID()}]) assert.equal(parseAgencyClientMessage({...message,...change}),null);
 });
 
 test('F-1: sessions snapshot scope survives parsing; unscoped stays unscoped; malformed scope rejected', async () => {

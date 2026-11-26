@@ -73,7 +73,7 @@ test('exact HTTPS navigation and initial ChatGPT URL allowlist', () => {
   assert.equal(validCommand({ type: 'open', id, url: 'https://auth.openai.com/' }), false);
   assert.equal(validCommand({ type: 'open', id, url: 'https://chatgpt.com/', preload: 'anything' }), false);
   assert.equal(validCommand({ type: 'open', id, url: 'https://chatgpt.com/' }), true);
-  assert.equal(githubUrl('https://github.com/user/My-Amazing-Workspace'), true);
+  assert.equal(githubUrl('https://github.com/example/workbench'), true);
   assert.equal(githubUrl('https://gist.github.com/example'), true);
   assert.equal(githubUrl('https://github.com.evil.com/'), false);
   assert.equal(githubUrl('https://chatgpt.com/'), false);

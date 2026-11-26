@@ -11,7 +11,7 @@ import { DESKTOP_ROOT } from '../../helpers/paths.mjs';
 
 const require = createRequire(import.meta.url);
 const here = DESKTOP_ROOT;
-const evidenceDir = '/home/user/.local/share/agy-2-profile/home/.gemini/antigravity-cli/brain/35fb7758-1c2c-4dfd-8789-84b81ad07573/evidence';
+const evidenceDir = path.resolve(process.env.MAW_PANE_HEADER_EVIDENCE_DIR || path.join(tmpdir(), 'maw-pane-header-evidence'));
 const electronExecutable = fs.existsSync('/opt/maw-electron/45.2.0/electron')
   ? '/opt/maw-electron/45.2.0/electron'
   : require('electron');

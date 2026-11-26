@@ -56,8 +56,8 @@ function makeSnapshot(pct5h, pctWeekly) {
     providers: [],
     profiles: [
       {
-        profileId: 'codex-0',
-        label: 'Codex 00',
+        profileId: 'codex-a',
+        label: 'Codex A',
         provider: 'OpenAI',
         planType: 'Plus',
         model: 'gpt-5-codex',
@@ -73,13 +73,13 @@ function makeSnapshot(pct5h, pctWeekly) {
         cost: { status: 'available', amount: 12.3, currency: 'USD' },
       },
       {
-        profileId: 'agy-1',
-        label: 'AGY 01',
+        profileId: 'agy-b',
+        label: 'AGY B',
         provider: 'Google',
         planType: 'Pro',
         model: 'Gemini 3.8 Flash',
-        profileDir: '/home/developer/.gemini/agy-1',
-        canonicalDir: '/home/developer/.gemini/agy-1',
+        profileDir: '/home/developer/.gemini/agy-b',
+        canonicalDir: '/home/developer/.gemini/agy-b',
         isSharedStorage: false,
         availability: 'available',
         collectionStatus: 'healthy',
@@ -213,7 +213,7 @@ test('Electron real-runtime acceptance: Agents Usage renders visible quota bars,
         fillWidth: track.querySelector('.quota-bar-fill')?.getBoundingClientRect().width ?? 0,
       })),
     );
-    assert.equal(barGeometry.length, 3, 'Expected 3 available quota progress bars (codex-0 5h+weekly, agy-1 5h)');
+    assert.equal(barGeometry.length, 3, 'Expected 3 available quota progress bars (codex-a 5h+weekly, agy-b 5h)');
     for (const bar of barGeometry) {
       assert.ok(bar.trackWidth > 80, `Track ${bar.label} must have visible width`);
       assert.ok(bar.fillWidth > 10, `Fill ${bar.label} (${bar.value}%) must have visible nonzero width`);

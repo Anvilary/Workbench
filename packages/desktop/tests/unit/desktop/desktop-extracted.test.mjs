@@ -247,7 +247,7 @@ test('isDurableProviderPage distinguishes durable provider routes from sensitive
   assert.equal(isDurableProviderPage('chatgpt', 'https://chatgpt.com/?token=secret'), false);
   assert.equal(isDurableProviderPage('chatgpt', 'https://evil.com/'), false);
 
-  assert.equal(isDurableProviderPage('github', 'https://github.com/user/My-Amazing-Workspace'), true);
+  assert.equal(isDurableProviderPage('github', 'https://github.com/example/workbench'), true);
   assert.equal(isDurableProviderPage('github', 'https://github.com/login/oauth/authorize?code=1'), false);
 
   assert.equal(isDurableProviderPage('other', 'https://example.com/docs'), true);

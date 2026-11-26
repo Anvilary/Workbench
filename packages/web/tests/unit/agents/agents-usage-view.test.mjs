@@ -181,17 +181,17 @@ test('reset countdown prefers resetsAt, anchors resetsInSeconds, never goes nega
 });
 
 test('formatPath abbreviates user home directory cleanly', () => {
-  assert.equal(formatPath('/home/developer/.codex-0'), '~/.codex-0');
+  assert.equal(formatPath('/home/developer/.codex-a'), '~/.codex-a');
   assert.equal(formatPath('/home/user/some/path'), '~/some/path');
   assert.equal(formatPath('/var/log/syslog'), '/var/log/syslog');
 });
 
 test('filterProfiles filters correctly by provider and search term', () => {
   const sampleProfiles = [
-    { profileId: 'codex-0', label: 'Codex 00', provider: 'OpenAI', model: 'gpt-5', planType: 'Plus' },
-    { profileId: 'codex-1', label: 'Codex 01', provider: 'OpenAI', model: 'gpt-5', planType: 'Team' },
-    { profileId: 'agy-0', label: 'AGY 00', provider: 'Google', model: 'Gemini 3.8 Flash' },
-    { profileId: 'agy-7', label: 'AGY 07', provider: 'Anthropic', model: 'Claude Sonnet 4.6' },
+    { profileId: 'codex-a', label: 'Codex A', provider: 'OpenAI', model: 'gpt-5', planType: 'Plus' },
+    { profileId: 'codex-b', label: 'Codex B', provider: 'OpenAI', model: 'gpt-5', planType: 'Team' },
+    { profileId: 'agy-a', label: 'AGY A', provider: 'Google', model: 'Gemini 3.8 Flash' },
+    { profileId: 'agy-h', label: 'AGY H', provider: 'Anthropic', model: 'Claude Sonnet 4.6' },
     { profileId: 'claude-code', label: 'Claude Code', provider: 'Anthropic', model: 'claude-opus-5-5' },
   ];
 
@@ -203,25 +203,25 @@ test('filterProfiles filters correctly by provider and search term', () => {
 
   const anthropic = filterProfiles(sampleProfiles, 'anthropic', '');
   assert.equal(anthropic.length, 2);
-  assert.ok(anthropic.some((p) => p.profileId === 'agy-7'));
+  assert.ok(anthropic.some((p) => p.profileId === 'agy-h'));
   assert.ok(anthropic.some((p) => p.profileId === 'claude-code'));
 
   const google = filterProfiles(sampleProfiles, 'google', '');
   assert.equal(google.length, 1);
-  assert.equal(google[0].profileId, 'agy-0');
+  assert.equal(google[0].profileId, 'agy-a');
 
-  assert.equal(filterProfiles(sampleProfiles, 'all', 'Sonnet')[0].profileId, 'agy-7');
-  assert.equal(filterProfiles(sampleProfiles, 'all', 'codex-1')[0].profileId, 'codex-1');
-  assert.equal(filterProfiles(sampleProfiles, 'all', 'Team')[0].profileId, 'codex-1');
+  assert.equal(filterProfiles(sampleProfiles, 'all', 'Sonnet')[0].profileId, 'agy-h');
+  assert.equal(filterProfiles(sampleProfiles, 'all', 'codex-b')[0].profileId, 'codex-b');
+  assert.equal(filterProfiles(sampleProfiles, 'all', 'Team')[0].profileId, 'codex-b');
 });
 
 test('getProfileFamily correctly maps profiles to Codex, AGY, and Claude families', () => {
-  assert.equal(getProfileFamily({ profileId: 'codex-0', provider: 'OpenAI' }), 'Codex');
-  assert.equal(getProfileFamily({ profileId: 'codex-3', provider: 'OpenAI' }), 'Codex');
+  assert.equal(getProfileFamily({ profileId: 'codex-a', provider: 'OpenAI' }), 'Codex');
+  assert.equal(getProfileFamily({ profileId: 'codex-d', provider: 'OpenAI' }), 'Codex');
   assert.equal(getProfileFamily({ profileId: 'custom-openai', provider: 'OpenAI' }), 'Codex');
 
-  assert.equal(getProfileFamily({ profileId: 'agy-1', provider: 'Google' }), 'AGY');
-  assert.equal(getProfileFamily({ profileId: 'agy-7', provider: 'Anthropic' }), 'AGY');
+  assert.equal(getProfileFamily({ profileId: 'agy-b', provider: 'Google' }), 'AGY');
+  assert.equal(getProfileFamily({ profileId: 'agy-h', provider: 'Anthropic' }), 'AGY');
   assert.equal(getProfileFamily({ profileId: 'antigravity-dev', provider: 'Custom' }), 'AGY');
 
   assert.equal(getProfileFamily({ profileId: 'claude-code', provider: 'Anthropic' }), 'Claude');

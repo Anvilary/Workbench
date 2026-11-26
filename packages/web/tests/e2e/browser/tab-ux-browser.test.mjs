@@ -38,14 +38,14 @@ const now = new Date().toISOString();
 const project = { id: p, name: 'Project', status: 'active', createdAt: now, updatedAt: now };
 const workspace = { id: ws, projectId: p, name: 'Workspace', status: 'active', cwd: '/fixture', createdAt: now, updatedAt: now };
 const profile = {
-  id: 'codex-0', label: 'Codex 00', provider: 'codex', executable: '/fixture/codex-0', args: [],
+  id: 'codex-a', label: 'Codex A', provider: 'codex', executable: '/fixture/codex-a', args: [],
   environmentOverrides: {}, configurationStatus: 'available', configurationMessage: null,
   capabilities: { canLaunch: true, canResumeNativeSession: false, canInterrupt: true, canReportActivity: false, canSelectModel: false, canSelectEffort: false, canRequestPermissions: false, models: [], discovery: 'unavailable' }
 };
 
 let sessions = [
   { id: 'session-1', workspaceId: ws, kind: 'terminal', terminalId: 'term-1', lifecycle: 'running', activity: 'idle', exitCode: null, tab: { id: native1, order: 0, selected: true, current: true, closedAt: null, name: 'Terminal A', terminalNumber: 1 } },
-  { id: 'session-2', workspaceId: ws, kind: 'agent', profileId: 'codex-0', terminalId: 'term-2', lifecycle: 'running', activity: 'working', exitCode: null, tab: { id: native2, order: 1, selected: false, current: true, closedAt: null, name: 'Agent B' } },
+  { id: 'session-2', workspaceId: ws, kind: 'agent', profileId: 'codex-a', terminalId: 'term-2', lifecycle: 'running', activity: 'working', exitCode: null, tab: { id: native2, order: 1, selected: false, current: true, closedAt: null, name: 'Agent B' } },
 ];
 let webTabs = [
   { id: web, workspaceId: ws, kind: 'web', title: 'ChatGPT Web', url: 'https://chatgpt.com/', order: 2, selected: false, closedAt: null, createdAt: now, updatedAt: now, targetRef: 'target', runtimeState: 'ready' },

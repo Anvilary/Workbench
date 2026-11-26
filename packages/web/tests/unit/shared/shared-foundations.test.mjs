@@ -59,7 +59,7 @@ test('toggled and sameSet manipulate agent sets deterministically', () => {
 });
 
 test('resolveBrowserTabTarget validates URLs, identifies providers, and blocks unsafe schemes', () => {
-  const github = resolveBrowserTabTarget({ url: 'https://github.com/user/My-Amazing-Workspace' });
+  const github = resolveBrowserTabTarget({ url: 'https://github.com/example/workbench' });
   assert.equal(github.ok, true);
   if (github.ok) {
     assert.equal(github.provider, 'github');

@@ -207,7 +207,7 @@ test('URL validation: Perplexity accepts canonical URLs and rejects dangerous on
     assert.equal(res.valid, false, `Expected invalid for: ${url}`);
   }
 
-  assert.equal(validateGithubUrl('https://github.com/user/My-Amazing-Workspace').valid, true);
+  assert.equal(validateGithubUrl('https://github.com/example/workbench').valid, true);
   assert.equal(validateGithubUrl('https://evil.com/').valid, false);
   assert.equal(webTabProviderFor({ url: 'https://www.perplexity.ai/' }), 'perplexity');
   assert.equal(webTabProviderFor({ url: 'https://github.com/test' }), 'github');

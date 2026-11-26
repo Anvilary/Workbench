@@ -228,8 +228,8 @@ test('useAgentsUsage hook lifecycle: all 12 deterministic request, interval, tim
     );
 
   const sampleProfile = (usedPct) => ({
-    profileId: 'codex-0',
-    label: 'Codex 00',
+    profileId: 'codex-a',
+    label: 'Codex A',
     provider: 'OpenAI',
     planType: 'Plus',
     model: 'gpt-5-codex',
@@ -428,8 +428,8 @@ test('AgentsUsageView visual, layout, progressbar geometry, and 8 acceptance scr
   // Screenshot 1: Codex profiles with available quotas
   const codexProfiles = [
     {
-      profileId: 'codex-0',
-      label: 'Codex 00',
+      profileId: 'codex-a',
+      label: 'Codex A',
       provider: 'OpenAI',
       planType: 'Plus',
       model: 'gpt-5-codex',
@@ -445,8 +445,8 @@ test('AgentsUsageView visual, layout, progressbar geometry, and 8 acceptance scr
       cost: { status: 'available', amount: 12.3, currency: 'USD' },
     },
     {
-      profileId: 'codex-1',
-      label: 'Codex 01',
+      profileId: 'codex-b',
+      label: 'Codex B',
       provider: 'OpenAI',
       planType: 'Team',
       model: 'gpt-5-codex',
@@ -539,13 +539,13 @@ test('AgentsUsageView visual, layout, progressbar geometry, and 8 acceptance scr
   const multiProviderProfiles = [
     codexProfiles[0],
     {
-      profileId: 'agy-1',
-      label: 'AGY 01',
+      profileId: 'agy-b',
+      label: 'AGY B',
       provider: 'Google',
       planType: 'Pro',
       model: 'Gemini 3.8 Flash',
-      profileDir: '/home/developer/.local/share/agy-1-profile/home/.gemini/antigravity-cli',
-      canonicalDir: '/home/developer/.local/share/agy-1-profile/home/.gemini/antigravity-cli',
+      profileDir: '/home/developer/.local/share/agy-b-profile/home/.gemini/antigravity-cli',
+      canonicalDir: '/home/developer/.local/share/agy-b-profile/home/.gemini/antigravity-cli',
       isSharedStorage: false,
       availability: 'available',
       collectionStatus: 'healthy',

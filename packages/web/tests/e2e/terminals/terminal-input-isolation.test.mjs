@@ -29,7 +29,7 @@ const mkWorkspace = (id, name) => ({ id, projectId: '${PROJECT}', name, status: 
 const workspaces = { '${WS_A}': mkWorkspace('${WS_A}', 'Workspace A'), '${WS_B}': mkWorkspace('${WS_B}', 'Odysseus') };
 function session(ws, id, tabId, name, terminalId, kind, order, selected) {
   return {
-    id, workspaceId: ws, kind, profileId: kind === 'agent' ? 'codex-0' : null, terminalId, lifecycle: 'running',
+    id, workspaceId: ws, kind, profileId: kind === 'agent' ? 'codex-a' : null, terminalId, lifecycle: 'running',
     activity: 'idle', exitCode: null, nativeSessionId: null, selectedModel: null, selectedEffort: null,
     createdAt: now, updatedAt: now, startedAt: now, stoppedAt: null,
     tab: { id: tabId, order, selected, current: true, closedAt: null, name, terminalNumber: order + 1 },

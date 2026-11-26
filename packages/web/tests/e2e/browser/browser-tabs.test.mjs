@@ -16,10 +16,10 @@ const ws='11111111-1111-4111-8111-111111111111', p='22222222-2222-4222-8222-2222
 const native='33333333-3333-4333-8333-333333333333', web='44444444-4444-4444-8444-444444444444';
 const now=new Date().toISOString();
 const project={id:p,name:'Project',status:'active',createdAt:now,updatedAt:now};
-const profile={id:'codex-0',label:'Codex 00',provider:'codex',executable:'/fixture/codex-0',args:[],environmentOverrides:{},configurationStatus:'available',configurationMessage:null,capabilities:{canLaunch:true,canResumeNativeSession:false,canInterrupt:true,canReportActivity:false,canSelectModel:false,canSelectEffort:false,canRequestPermissions:false,models:[],discovery:'unavailable'}};
+const profile={id:'codex-a',label:'Codex A',provider:'codex',executable:'/fixture/codex-a',args:[],environmentOverrides:{},configurationStatus:'available',configurationMessage:null,capabilities:{canLaunch:true,canResumeNativeSession:false,canInterrupt:true,canReportActivity:false,canSelectModel:false,canSelectEffort:false,canRequestPermissions:false,models:[],discovery:'unavailable'}};
 const workspace={id:ws,projectId:p,name:'Workspace',status:'active',cwd:'/fixture',createdAt:now,updatedAt:now};
 let sessions=[{id:'session',workspaceId:ws,kind:'terminal',terminalId:'term',lifecycle:'running',activity:'idle',exitCode:null,tab:{id:native,order:0,selected:true,current:true,closedAt:null,name:'Native shell',terminalNumber:1}}];
-sessions.push({...sessions[0],id:'cli-session',kind:'agent',profileId:'codex-0',terminalId:null,lifecycle:'exited',tab:{...sessions[0].tab,id:'66666666-6666-4666-8666-666666666666',order:2,selected:false,name:'Native CLI'}});
+sessions.push({...sessions[0],id:'cli-session',kind:'agent',profileId:'codex-a',terminalId:null,lifecycle:'exited',tab:{...sessions[0].tab,id:'66666666-6666-4666-8666-666666666666',order:2,selected:false,name:'Native CLI'}});
 let tabs=[{id:web,workspaceId:ws,kind:'web',title:'Research',url:'https://chatgpt.com/',order:1,selected:false,closedAt:null,createdAt:now,updatedAt:now,targetRef:'target',runtimeState:'ready'}];
 let activities=[{workspaceId:ws,tabId:web,state:'finished',updatedAt:now,reliableSignal:true,source:'browser'}];
 let notifications=[{id:'55555555-5555-4555-8555-555555555555',workspaceId:ws,tabId:web,title:'Research',body:'Browser finished',state:'finished',read:false,createdAt:now,metadata:{kind:'browser',tabName:'Research'}}];
@@ -160,6 +160,6 @@ test('Browser compatibility preserves CLI input, mixed tabs and external ChatGPT
   await page.getByRole('button',{name:'Start again',exact:true}).click();
   await page.waitForFunction(()=>window.agencyTest.requests.some(m=>m.type==='agency.session.create'));
   const replaced=await page.evaluate(()=>window.agencyTest.requests.filter(m=>(m.type==='agency.tab.action'&&m.action==='close')||m.type==='agency.session.create').map(m=>m.type+':'+(m.tabId??m.profileId)));
-  assert.deepEqual(replaced,['agency.tab.action:66666666-6666-4666-8666-666666666666','agency.session.create:codex-0']);
+  assert.deepEqual(replaced,['agency.tab.action:66666666-6666-4666-8666-666666666666','agency.session.create:codex-a']);
   assert.deepEqual(errors,[]);
 });

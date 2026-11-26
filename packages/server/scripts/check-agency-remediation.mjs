@@ -20,13 +20,16 @@ const accountA = path.join(root, 'account-a'), accountB = path.join(root, 'accou
 const cwd = path.join(home, 'workspace');
 await Promise.all([home, config, accountA, accountB, cwd].map((p) => mkdir(p, { recursive: true })));
 await writeFile(path.join(home, '.zshrc'), '# disposable\n');
+// An existing installation's profile store: synthetic accounts per provider.
+await writeFile(path.join(config, 'agency-profiles.json'), JSON.stringify({ schemaVersion: 1, profiles: [['codex-a', 'codex', 'Codex A'], ['codex-b', 'codex', 'Codex B'], ['codex-d', 'codex', 'Codex D']]
+  .map(([id, provider, label]) => ({ id, provider, label, executable: '', args: [], environmentOverrides: {}, disabled: false })) }), { mode: 0o600 });
 const files = {};
-for (const [profileId, nativeHome] of [['codex-0', accountA], ['codex-1', accountB], ['codex-3', accountB]]) {
+for (const [profileId, nativeHome] of [['codex-a', accountA], ['codex-b', accountB], ['codex-d', accountB]]) {
   files[profileId] = path.join(root, profileId);
   await writeFile(files[profileId], `#!/bin/sh\nexport CODEX_HOME='${nativeHome}'\nprintf '%s' "$CODEX_HOME" > '${root}/${profileId}.home'\nprintf '%s\\n' 'NATIVE_FIXTURE_READY'\nwhile IFS= read -r line; do printf '%s\\n' 'NATIVE_FIXTURE_INPUT_RECEIVED'; done\n`, { mode: 0o700 });
 }
 await writeFile(path.join(config, 'agency-native-identities.json'), JSON.stringify({ version: 1,
-  identities: [['codex-0', accountA], ['codex-1', accountB]].map(([profileId, nativeHome]) => ({
+  identities: [['codex-a', accountA], ['codex-b', accountB]].map(([profileId, nativeHome]) => ({
     profileId, provider: 'codex', executable: files[profileId], args: ['literal words'], environmentOverrides: {}, home: nativeHome,
   })),
 }));
@@ -100,7 +103,7 @@ try {
   for (const profileId of Object.keys(files)) {
     const result = await host.request({ type: 'agency.profile.configure', profileId, executable: files[profileId], args: ['literal words'] });
     assert.equal(result.type, 'agency.profile.configured');
-    assert.equal(result.profile.capabilities.canResumeNativeSession, profileId !== 'codex-3');
+    assert.equal(result.profile.capabilities.canResumeNativeSession, profileId !== 'codex-d');
   }
   const project = (await host.request({ type: 'agency.project.create', name: 'Isolation fixture' })).project;
   async function picker(client, message) {
@@ -125,9 +128,9 @@ try {
     assert.equal(result.session.lifecycle, 'running');
     sessions[profileId] = result.session;
     await until(async () => (await readFile(path.join(root, profileId + '.home'), 'utf8').catch(() => '')) ===
-      (profileId === 'codex-0' ? accountA : accountB));
+      (profileId === 'codex-a' ? accountA : accountB));
   }
-  assert.equal(sessions.codex-3.historyAvailability, 'unavailable');
+  assert.equal(sessions.codex-d.historyAvailability, 'unavailable');
   evidence('three actual wrappers preserve their effective homes and native PTYs');
 
   browser = await chromium.launch({ channel: 'chrome', headless: true });
@@ -136,7 +139,7 @@ try {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(ready.url);
-  await page.locator('.agency-workspace-nav-button').filter({ hasText: 'codex-1' }).click();
+  await page.locator('.agency-workspace-nav-button').filter({ hasText: 'codex-b' }).click();
   const at = Date.now();
   const idA = randomUUID(), idB = randomUUID();
   async function rollout(nativeHome, id, marker) {
@@ -153,35 +156,35 @@ try {
   await Promise.all([rollout(accountA, idA, 'ACCOUNT_A_SYNTHETIC_ONLY'), rollout(accountB, idB, 'ACCOUNT_B_SYNTHETIC_ONLY')]);
   await until(async () => {
     const rows = (await host.request({ type: 'agency.sessions.list' })).sessions;
-    return rows.find((s) => s.id === sessions.codex-0.id)?.nativeSessionId === idA &&
-      rows.find((s) => s.id === sessions.codex-1.id)?.nativeSessionId === idB;
+    return rows.find((s) => s.id === sessions.codex-a.id)?.nativeSessionId === idA &&
+      rows.find((s) => s.id === sessions.codex-b.id)?.nativeSessionId === idB;
   });
   const discoveryMs = performance.now() - discoveryStarted;
-  await page.locator('.agency-workspace-nav-button').filter({ hasText: 'codex-1' }).click();
+  await page.locator('.agency-workspace-nav-button').filter({ hasText: 'codex-b' }).click();
   await page.locator('.agency-xterm-host').waitFor();
-  await page.locator('.agency-workspace-nav-button').filter({ hasText: 'codex-0' }).click();
+  await page.locator('.agency-workspace-nav-button').filter({ hasText: 'codex-a' }).click();
   await page.locator('.agency-xterm-host').waitFor();
-  await page.locator('.agency-workspace-nav-button').filter({ hasText: 'codex-3' }).click();
+  await page.locator('.agency-workspace-nav-button').filter({ hasText: 'codex-d' }).click();
   await page.locator('.agency-xterm-host').waitFor();
   const rows = (await host.request({ type: 'agency.sessions.list' })).sessions;
-  assert.equal(rows.find((s) => s.id === sessions.codex-3.id).nativeSessionId, null);
-  assert.equal(rows.find((s) => s.id === sessions.codex-0.id).nativeSessionId, idA);
-  assert.equal(rows.find((s) => s.id === sessions.codex-1.id).nativeSessionId, idB);
-  host.send({ type: 'terminal.attach', cols: 80, rows: 24, terminalId: sessions.codex-3.terminalId });
-  await host.wait((m) => m.type === 'terminal.replay' && m.terminalId === sessions.codex-3.terminalId);
-  host.send({ type: 'input', terminalId: sessions.codex-3.terminalId, data: 'safe synthetic input\n' });
-  await host.wait((m) => m.type === 'terminal.output' && m.terminalId === sessions.codex-3.terminalId &&
+  assert.equal(rows.find((s) => s.id === sessions.codex-d.id).nativeSessionId, null);
+  assert.equal(rows.find((s) => s.id === sessions.codex-a.id).nativeSessionId, idA);
+  assert.equal(rows.find((s) => s.id === sessions.codex-b.id).nativeSessionId, idB);
+  host.send({ type: 'terminal.attach', cols: 80, rows: 24, terminalId: sessions.codex-d.terminalId });
+  await host.wait((m) => m.type === 'terminal.replay' && m.terminalId === sessions.codex-d.terminalId);
+  host.send({ type: 'input', terminalId: sessions.codex-d.terminalId, data: 'safe synthetic input\n' });
+  await host.wait((m) => m.type === 'terminal.output' && m.terminalId === sessions.codex-d.terminalId &&
     m.data.includes('NATIVE_FIXTURE_INPUT_RECEIVED'));
   evidence('integrated dual-home discovery/browser isolation with identical cwd and timestamp', { discoveryMs: +discoveryMs.toFixed(2), a: true, b: true, opaque: true });
 
   // Correct-home native resume is positive; wrong-home/opaque IDs are refused before spawn.
-  host.send({ type: 'terminal.close', terminalId: sessions.codex-1.terminalId });
-  await until(async () => (await host.request({ type: 'agency.sessions.list' })).sessions.find((s) => s.id === sessions.codex-1.id).lifecycle === 'exited');
-  const resume = await host.request({ type: 'agency.session.create', workspaceId: workspaces.codex-1.id,
-    kind: 'agent', profileId: 'codex-1', cols: 80, rows: 24, resumeNativeSessionId: idB });
+  host.send({ type: 'terminal.close', terminalId: sessions.codex-b.terminalId });
+  await until(async () => (await host.request({ type: 'agency.sessions.list' })).sessions.find((s) => s.id === sessions.codex-b.id).lifecycle === 'exited');
+  const resume = await host.request({ type: 'agency.session.create', workspaceId: workspaces.codex-b.id,
+    kind: 'agent', profileId: 'codex-b', cols: 80, rows: 24, resumeNativeSessionId: idB });
   assert.equal(resume.type, 'agency.session.created'); assert.equal(resume.session.nativeSessionId, idB);
   const wrong = await workspace('Wrong home resume');
-  for (const [profileId, id] of [['codex-1', idA], ['codex-3', idB]]) {
+  for (const [profileId, id] of [['codex-b', idA], ['codex-d', idB]]) {
     const result = await host.request({ type: 'agency.session.create', workspaceId: wrong.id, kind: 'agent',
       profileId, cols: 80, rows: 24, resumeNativeSessionId: id });
     assert.equal(result.type, 'agency.error');
@@ -197,16 +200,16 @@ try {
   const cookie = paired.headers.get('set-cookie').split(';')[0];
   const device = await connect(cookie);
   assert.equal((await device.wait((m) => m.type === 'hello')).remoteClient, true);
-  const refused = await device.request({ type: 'agency.profile.configure', profileId: 'codex-1', executable: files.codex-3,
+  const refused = await device.request({ type: 'agency.profile.configure', profileId: 'codex-b', executable: files.codex-d,
     args: ['REMOTE_CHANGED'], disabled: true, environmentOverrides: { LANG: 'C' } });
   assert.equal(refused.type, 'error'); assert.equal(refused.code, 'remote-refused');
   assert.equal(await readFile(profileFile, 'utf8'), before);
   device.send({ type: 'settings.update', consoleShell: 'auto' });
   assert.equal((await device.wait((m) => m.type === 'error')).code, 'remote-refused');
   assert.equal((await device.request({ type: 'agency.projects.list' })).type, 'agency.projects.snapshot');
-  device.send({ type: 'terminal.attach', cols: 80, rows: 24, terminalId: sessions.codex-0.terminalId });
-  await device.wait((m) => m.type === 'terminal.replay' && m.terminalId === sessions.codex-0.terminalId);
-  const hostChange = await host.request({ type: 'agency.profile.configure', profileId: 'codex-3', args: ['HOST_ALLOWED'] });
+  device.send({ type: 'terminal.attach', cols: 80, rows: 24, terminalId: sessions.codex-a.terminalId });
+  await device.wait((m) => m.type === 'terminal.replay' && m.terminalId === sessions.codex-a.terminalId);
+  const hostChange = await host.request({ type: 'agency.profile.configure', profileId: 'codex-d', args: ['HOST_ALLOWED'] });
   assert.equal(hostChange.type, 'agency.profile.configured');
   assert.deepEqual(hostChange.profile.args, ['HOST_ALLOWED']);
   const remoteContext = await browser.newContext({ storageState: await context.storageState() });
