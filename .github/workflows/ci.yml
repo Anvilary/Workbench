@@ -212,6 +212,11 @@ jobs:
         run: |
           timeout -k 10s 2m xvfb-run -a pnpm test:integration
           timeout -k 10s 2m xvfb-run -a pnpm test:security
+      - name: Sandbox and legacy browser partition migration
+        env:
+          GSK_RENDERER: cairo
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: timeout -k 10s 3m xvfb-run -a dbus-run-session pnpm test:migration:electron
       - name: Sandboxed Electron E2E
         working-directory: packages/desktop
         env:

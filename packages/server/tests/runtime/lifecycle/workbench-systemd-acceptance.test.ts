@@ -1,5 +1,5 @@
 /**
- * REAL systemd acceptance for MAW activation and rollback (opt-in: WORKBENCH_REAL_SYSTEMD=1).
+ * REAL systemd acceptance for Workbench activation and rollback (opt-in: WORKBENCH_REAL_SYSTEMD=1).
  *
  * Uses the production unit template (scripts/workbench/workbench.service rendered by render-unit.sh) as a
  * disposable runtime unit `workbench-test-<random>.service` in $XDG_RUNTIME_DIR/systemd/user, with its own state
@@ -175,7 +175,9 @@ test('real systemd: a release built from this repository activates, is verified 
   const state = path.join(root, '.local/share/workbench');
   const sandbox = path.join(root, 'sandbox');
   const repoRoot = path.resolve(SCRIPT_DIR, '../..');
-  const env = { ...process.env, WORKBENCH_STATE_DIR: state, WORKBENCH_UNIT: unit, WORKBENCH_RUNTIME_DIR: path.join(process.env['XDG_RUNTIME_DIR']!, runtimeName),
+  await mkdir(path.join(sandbox, 'home'), { recursive: true });
+  const env = { ...process.env, HOME: path.join(sandbox, 'home'), XDG_DATA_HOME: path.join(sandbox, 'data'),
+    WORKBENCH_STATE_DIR: state, WORKBENCH_UNIT: unit, WORKBENCH_RUNTIME_DIR: path.join(process.env['XDG_RUNTIME_DIR']!, runtimeName),
     WORKBENCH_NODE_BIN: process.execPath, WORKBENCH_READY_TIMEOUT: '20', WORKBENCH_CGROUP_FILE: path.join(root, 'none'), WORKBENCH_ENV_FILE: path.join(root, 'no-environment'),
     WORKBENCH_PTYD_UNIT: ptydUnit, XDG_CONFIG_HOME: path.join(sandbox, 'config'),
     WORKBENCH_LIB_DIR: path.join(root, 'lib'), WORKBENCH_BIN_DIR: path.join(root, 'bin'), WORKBENCH_HEADLESS: '1' };
@@ -263,8 +265,8 @@ test('real systemd: a release built from this repository activates, is verified 
 
 /**
  * Real systemd user-bus isolation acceptance:
- * Verifies that all MAW lifecycle commands (start, stop, status, restart, rollback)
- * correctly interact with the systemd user manager both outside MAW and inside MAW,
+ * Verifies that all Workbench lifecycle commands (start, stop, status, restart, rollback)
+ * correctly interact with the systemd user manager both outside and inside Workbench,
  * specifically when executing under an isolated private D-Bus daemon (FINDING-01).
  */
 test('real systemd: in-app lifecycle commands and restart delegation succeed under simulated private D-Bus session', { skip: !enabled || !TSX }, async () => {
@@ -324,7 +326,7 @@ test('real systemd: in-app lifecycle commands and restart delegation succeed und
     assert.match(extStart.stdout + extStart.stderr, /healthy on release 20261029000001-aaaaaaa/);
     assert.equal(await ptr('healthy'), path.basename(H));
 
-    // Simulated private inside-MAW environment:
+    // Simulated private inside-Workbench environment:
     // Has WORKBENCH_CGROUP_FILE pointing to the unit cgroup, private DBUS_SESSION_BUS_ADDRESS, and unset XDG_RUNTIME_DIR.
     const inAppEnv: NodeJS.ProcessEnv = {
       ...baseEnv,
@@ -354,7 +356,7 @@ test('real systemd: in-app lifecycle commands and restart delegation succeed und
     await symlink(C, path.join(state, 'staged'));
 
     const restartRes = await exec(path.join(SCRIPT_DIR, 'maw'), ['restart'], { env: inAppEnv });
-    assert.match(restartRes.stderr, /Restarting MAW from inside MAW\. Delegating restart outside service control group/);
+    assert.match(restartRes.stderr, /Restarting Workbench from inside Workbench\. Delegating restart outside service control group/);
     assert.match(restartRes.stdout, /Safe restart scheduled/);
 
     // Wait for helper delegation to complete
@@ -395,7 +397,7 @@ test('real systemd: in-app lifecycle commands and restart delegation succeed und
       await new Promise(r => setTimeout(r, 200));
     }
     const rollbackRes = await exec(path.join(SCRIPT_DIR, 'maw'), ['rollback'], { env: inAppEnv });
-    assert.match(rollbackRes.stderr, /Restarting MAW from inside MAW/);
+    assert.match(rollbackRes.stderr, /Restarting Workbench from inside Workbench/);
     assert.match(rollbackRes.stdout, /Safe restart scheduled/);
     const rollbackDeadline = Date.now() + 30_000;
     while (Date.now() < rollbackDeadline) {
