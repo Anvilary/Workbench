@@ -936,8 +936,16 @@ function stepUserData(ctx, state) {
     for (const name of fs.readdirSync(partitionsDir)) {
       if (!name.startsWith('maw-')) continue;
       const target = `workbench-${name.slice('maw-'.length)}`;
-      if (exists(path.join(partitionsDir, target))) continue;
-      fs.renameSync(path.join(partitionsDir, name), path.join(partitionsDir, target));
+      const from = path.join(partitionsDir, name);
+      const to = path.join(partitionsDir, target);
+      if (exists(to)) {
+        // A redo after an interrupted run: the freshly copied legacy partition is authoritative, so it is
+        // merged into the already renamed one and then removed. Nothing named `maw-*` may survive here.
+        fs.cpSync(from, to, { recursive: true, preserveTimestamps: true, dereference: false, force: true });
+        fs.rmSync(from, { recursive: true, force: true });
+      } else {
+        fs.renameSync(from, to);
+      }
       renamedPartitions.push(`${name} -> ${target}`);
     }
   }
