@@ -5,7 +5,7 @@
 
 [![npm](https://img.shields.io/npm/v/agent-workbench)](https://www.npmjs.com/package/agent-workbench)
 [![CI](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml)
-[![license: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm_Noncommercial_1.0.0-blue.svg)](LICENSE)
+[![license: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Mentioned in Awesome Claude Code](https://awesome.re/mentioned-badge.svg)](https://github.com/hesreallyhim/awesome-claude-code)
 
 [English](README.md) · [Español](README.es.md) · **简体中文** · [日本語](README.ja.md) · [Português (Brasil)](README.pt-BR.md) · [Русский](README.ru.md) · [한국어](README.ko.md) · [Français](README.fr.md) · [Deutsch](README.de.md)
@@ -400,6 +400,6 @@ android/     the Android app, in Kotlin: the SSH tunnel, the interface, the noti
 
 ## 许可证
 
-Anvilary 自有修改采用 PolyForm Noncommercial 1.0.0；原始 Agent Workbench 代码仍保留 MIT 许可。参见 [`LICENSE`](LICENSE) 和 [`LICENSE.UPSTREAM`](LICENSE.UPSTREAM)。
+Anvilary 自有修改采用 AGPL-3.0-or-later；原始 Agent Workbench 代码仍保留 MIT 许可。参见 [`LICENSE`](LICENSE) 和 [`LICENSE.UPSTREAM`](LICENSE.UPSTREAM)。
 
 Anvilary Workbench 是一个独立项目。它可与 Claude Code、Codex、OpenCode、Antigravity 和 Pi CLI 配合使用，但与 Anthropic、OpenAI、OpenCode 的作者、Google 或 Earendil 均无关联，也未获得它们的认可。

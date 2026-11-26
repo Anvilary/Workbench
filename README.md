@@ -4,10 +4,10 @@
 
 **Local-first desktop workstation for AI coding agents, persistent terminals, native Chromium tabs, and multi-pane development workflows.** Organizes projects, supervised terminal sessions, installed coding CLIs, and isolated Chromium web views in a fluid Linux desktop interface.
 
-A source-available product from [Anvilary Tools](https://anvilary.tools).
+An open-source product from [Anvilary Tools](https://anvilary.tools).
 
 [![CI](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml)
-[![license: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm_Noncommercial_1.0.0-blue.svg)](LICENSE)
+[![license: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Electron](https://img.shields.io/badge/electron-45.2.0-blue.svg)](https://www.electronjs.org/)
 [![React](https://img.shields.io/badge/react-18.3-61dafb.svg)](https://react.dev/)
 
@@ -222,7 +222,7 @@ The full list of documents is in the [documentation index](docs/README.md).
 
 ## License and Attribution
 
-Anvilary Workbench is source-available under the **[PolyForm Noncommercial License 1.0.0](LICENSE)** for Anvilary-owned additions and modifications. These terms do not authorize commercial use of the covered Anvilary contributions.
+Anvilary Workbench is open-source software distributed under the **[GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)](LICENSE)** for Anvilary-owned additions and modifications. Commercial and noncommercial use are permitted under the applicable license terms.
 
 ### Provenance and Upstream Attribution
 
@@ -231,4 +231,4 @@ Workbench builds upon **Agent Workbench**, originally released under the MIT Lic
 - Upstream Agent Workbench: Copyright (c) 2026 Christian Velasquez, MIT licensed.
 - Anvilary-specific extensions, Linux desktop shell, PTY supervisor, and multi-pane Chromium integration: Copyright (c) 2026 Alexandre Teixeira and applicable contributors.
 
-The PolyForm terms do not limit rights already granted for upstream MIT code or revoke licenses for versions previously released under MIT. Third-party dependencies retain their respective licenses. See [LICENSING.md](LICENSING.md) for scope and [LICENSE](LICENSE) for current PolyForm terms.
+The AGPL terms do not limit rights already granted for upstream MIT code. Historical revisions retain the licenses under which they were received. Third-party dependencies retain their respective licenses. See [LICENSING.md](LICENSING.md) for scope, corresponding-source obligations, and distribution guidance.

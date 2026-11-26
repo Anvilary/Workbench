@@ -5,7 +5,7 @@
 
 [![npm](https://img.shields.io/npm/v/agent-workbench)](https://www.npmjs.com/package/agent-workbench)
 [![CI](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/Anvilary/Workbench/actions/workflows/ci.yml)
-[![license: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm_Noncommercial_1.0.0-blue.svg)](LICENSE)
+[![license: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Mentioned in Awesome Claude Code](https://awesome.re/mentioned-badge.svg)](https://github.com/hesreallyhim/awesome-claude-code)
 
 [English](README.md) · [Español](README.es.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · **Português (Brasil)** · [Русский](README.ru.md) · [한국어](README.ko.md) · [Français](README.fr.md) · [Deutsch](README.de.md)
@@ -695,7 +695,7 @@ próxima.
 
 ## Licença
 
-PolyForm Noncommercial 1.0.0 para as modificações próprias da Anvilary; o código original do Agent Workbench continua sob a licença MIT. Veja [`LICENSE`](LICENSE) e [`LICENSE.UPSTREAM`](LICENSE.UPSTREAM).
+AGPL-3.0-or-later para as modificações próprias da Anvilary; o código original do Agent Workbench continua sob a licença MIT. Veja [`LICENSE`](LICENSE) e [`LICENSE.UPSTREAM`](LICENSE.UPSTREAM).
 
 O Anvilary Workbench é um projeto independente. Ele funciona com as CLIs do
 Claude Code, Codex, OpenCode, Antigravity e Pi, mas não é afiliado à Anthropic,
