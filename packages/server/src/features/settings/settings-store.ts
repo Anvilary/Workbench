@@ -211,6 +211,7 @@ export function defaultAppSettings(): AppSettings {
       favorites: DEFAULT_BROWSER_SETTINGS.favorites.map((f) => ({ ...f })),
       ...(DEFAULT_BROWSER_SETTINGS.searchEngines ? { searchEngines: DEFAULT_BROWSER_SETTINGS.searchEngines.map((e) => ({ ...e })) } : {}),
       spellCheck: cloneSpellCheck(DEFAULT_SPELLCHECK_SETTINGS),
+      unloadInactiveAiTabsUnderPressure: false,
     },
   };
 }
@@ -427,6 +428,7 @@ export class SettingsStore {
           ...(this.current.browser.spellCheck
             ? { spellCheck: cloneSpellCheck(this.current.browser.spellCheck) }
             : {}),
+          unloadInactiveAiTabsUnderPressure: this.current.browser.unloadInactiveAiTabsUnderPressure === true,
         },
       };
       const vault = patch.vault ?? {};
@@ -454,6 +456,9 @@ export class SettingsStore {
       if (patch.browser?.spellCheck !== undefined) {
         const currentSc = next.browser.spellCheck ?? cloneSpellCheck(DEFAULT_SPELLCHECK_SETTINGS);
         next.browser.spellCheck = mergeSpellCheck(currentSc, patch.browser.spellCheck);
+      }
+      if (patch.browser?.unloadInactiveAiTabsUnderPressure !== undefined) {
+        next.browser.unloadInactiveAiTabsUnderPressure = patch.browser.unloadInactiveAiTabsUnderPressure;
       }
       if (patch.customDictionary !== undefined) {
         const currentSc = next.browser.spellCheck ?? cloneSpellCheck(DEFAULT_SPELLCHECK_SETTINGS);

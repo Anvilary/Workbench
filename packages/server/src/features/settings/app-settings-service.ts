@@ -79,6 +79,7 @@ export class AppSettingsService extends EventEmitter {
               },
             }
           : {}),
+        unloadInactiveAiTabsUnderPressure: settings.browser.unloadInactiveAiTabsUnderPressure === true,
       },
     };
   }

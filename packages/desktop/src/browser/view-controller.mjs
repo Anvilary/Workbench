@@ -90,8 +90,26 @@ export function createBrowserViewController({
     send({ type: 'suspended', id });
   }
 
-  const eviction = createViewEviction({ app, state, evictTab });
+  // Opt-in policy from Settings. Off keeps provider-protected AI tabs resident until
+  // memory pressure is critical, which is the historical behavior.
+  let unloadInactiveAiTabsUnderPressure = false;
+
+  const eviction = createViewEviction({
+    app,
+    state,
+    evictTab,
+    isAiUnloadUnderPressureEnabled: () => unloadInactiveAiTabsUnderPressure,
+  });
   const { trimCapacity } = eviction;
+
+  /** Applies the browser lifecycle policy pushed from Settings. */
+  function applyLifecycleSettings(command) {
+    const next = command?.unloadInactiveAiTabsUnderPressure === true;
+    const changed = next !== unloadInactiveAiTabsUnderPressure;
+    unloadInactiveAiTabsUnderPressure = next;
+    if (changed && next) trimCapacity();
+    return { ok: true, unloadInactiveAiTabsUnderPressure };
+  }
 
   function resolveTabProfileIdOrFail(id, requestedProfileId) {
     if (requestedProfileId !== undefined && !isValidBrowserProfileId(requestedProfileId)) {
@@ -430,6 +448,7 @@ export function createBrowserViewController({
     capture: pageCommands.capture,
     inspectPage: pageCommands.inspectPage,
     applySpellCheckSettings: sessions.applySpellCheckSettings,
+    applyLifecycleSettings,
     getAvailableSpellCheckerLanguages: sessions.getAvailableSpellCheckerLanguages,
     getSpellCheckStatus: sessions.getSpellCheckStatus,
     listCustomDictionaryWords: sessions.listCustomDictionaryWords,

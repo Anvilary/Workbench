@@ -462,6 +462,11 @@ test('validCommand: supports spellcheck commands', () => {
   assert.equal(validCommand({ type: 'update-spellcheck-settings', enabled: true, languages: ['en-US', 'pt-PT'] }), true);
   assert.equal(validCommand({ type: 'update-spellcheck-settings', enabled: false, languages: [] }), true);
   assert.equal(validCommand({ type: 'update-spellcheck-settings', enabled: 'yes', languages: [] }), false);
+  assert.equal(validCommand({ type: 'update-browser-lifecycle-settings', unloadInactiveAiTabsUnderPressure: true }), true);
+  assert.equal(validCommand({ type: 'update-browser-lifecycle-settings', unloadInactiveAiTabsUnderPressure: false }), true);
+  assert.equal(validCommand({ type: 'update-browser-lifecycle-settings', unloadInactiveAiTabsUnderPressure: 'yes' }), false);
+  assert.equal(validCommand({ type: 'update-browser-lifecycle-settings' }), false);
+  assert.equal(validCommand({ type: 'update-browser-lifecycle-settings', unloadInactiveAiTabsUnderPressure: true, extra: 1 }), false);
   assert.equal(validCommand({ type: 'update-spellcheck-settings', enabled: true, languages: ['invalid/tag'] }), false);
 
   assert.equal(validCommand({ type: 'reconcile-custom-dictionary', customWordsByProfile: { main: ['anvilary', 'ação'], work: ['k8s'] } }), true);

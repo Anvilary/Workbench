@@ -43,6 +43,8 @@ export interface UseBrowserSettingsResult {
   preferenceError: string | null;
   dismissPreferenceError: () => void;
   retryNativeDictionarySync: () => Promise<{ ok: boolean; failedPartitions?: string[]; error?: string }>;
+  unloadInactiveAiTabsUnderPressure: boolean;
+  setUnloadInactiveAiTabsUnderPressure: (enabled: boolean) => void;
   setSpellCheckEnabled: (enabled: boolean) => void;
   toggleSpellCheckLanguage: (code: string) => void;
   addSpellCheckLanguage: (code: string) => void;
@@ -325,6 +327,19 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
 
   const spellCheck = settings.spellCheck ?? createDefaultSpellCheck();
 
+  const setUnloadInactiveAiTabsUnderPressure = useCallback(
+    (enabled: boolean) => {
+      void commitBrowserPreferenceMutation((base) => {
+        if ((base.unloadInactiveAiTabsUnderPressure === true) === enabled) return null;
+        return {
+          nextSettings: { ...base, unloadInactiveAiTabsUnderPressure: enabled },
+          patch: { unloadInactiveAiTabsUnderPressure: enabled },
+        };
+      }, appSettings);
+    },
+    [appSettings],
+  );
+
   const setSpellCheckEnabled = useCallback(
     (enabled: boolean) => {
       void commitBrowserPreferenceMutation((base) => {
@@ -444,6 +459,8 @@ export function useBrowserSettings(appSettings?: AppSettingsApi): UseBrowserSett
     preferenceError: snapshot.preferenceError,
     dismissPreferenceError,
     retryNativeDictionarySync,
+    unloadInactiveAiTabsUnderPressure: settings.unloadInactiveAiTabsUnderPressure === true,
+    setUnloadInactiveAiTabsUnderPressure,
     setSpellCheckEnabled,
     toggleSpellCheckLanguage,
     addSpellCheckLanguage,

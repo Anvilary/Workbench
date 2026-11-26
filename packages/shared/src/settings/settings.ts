@@ -119,6 +119,7 @@ export interface BrowserSettingsPatch {
   defaultSearchEngine?: SearchEngineId;
   searchEngines?: SearchEngine[];
   spellCheck?: SpellCheckSettingsPatch;
+  unloadInactiveAiTabsUnderPressure?: boolean;
 }
 
 export type CustomDictionaryMutation =
@@ -234,6 +235,12 @@ function parseBrowserSettingsPatch(value: unknown): BrowserSettingsPatch | null 
     const parsedSpellCheck = parseChangeSpellCheck(rec['spellCheck']);
     if (parsedSpellCheck === null) return null;
     patch.spellCheck = parsedSpellCheck;
+    hasField = true;
+  }
+
+  if ('unloadInactiveAiTabsUnderPressure' in rec && rec['unloadInactiveAiTabsUnderPressure'] !== undefined) {
+    if (typeof rec['unloadInactiveAiTabsUnderPressure'] !== 'boolean') return null;
+    patch.unloadInactiveAiTabsUnderPressure = rec['unloadInactiveAiTabsUnderPressure'];
     hasField = true;
   }
 

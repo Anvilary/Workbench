@@ -17,16 +17,18 @@ function fakeView({ url = 'https://chatgpt.com/', loading = false, devTools = fa
   };
 }
 
-function setup({ maxResident, tier } = {}) {
+function setup({ maxResident, tier, aiUnload = false } = {}) {
   const state = createBrowserViewState();
   const evicted = [];
   const previousMax = process.env.MAW_MAX_RESIDENT_VIEWS;
   const previousTier = process.env.MAW_MEMORY_PRESSURE_TIER;
   if (maxResident !== undefined) process.env.MAW_MAX_RESIDENT_VIEWS = String(maxResident);
   if (tier !== undefined) process.env.MAW_MEMORY_PRESSURE_TIER = tier;
+  const aiUnloadRef = { enabled: aiUnload };
   const eviction = createViewEviction({
     app: { getAppMetrics: () => [] },
     state,
+    isAiUnloadUnderPressureEnabled: () => aiUnloadRef.enabled,
     evictTab: (id) => {
       evicted.push(id);
       state.views.delete(id);
@@ -40,7 +42,7 @@ function setup({ maxResident, tier } = {}) {
     if (previousTier === undefined) delete process.env.MAW_MEMORY_PRESSURE_TIER;
     else process.env.MAW_MEMORY_PRESSURE_TIER = previousTier;
   };
-  return { state, eviction, evicted, restoreEnv };
+  return { state, eviction, evicted, restoreEnv, aiUnloadRef };
 }
 
 test('telemetry reports residency, attachment and suspension counts', () => {
@@ -187,6 +189,71 @@ test('the governor hysteresis state is never advanced by telemetry reads', () =>
     eviction.collectTelemetry();
     eviction.collectTelemetry();
     assert.deepEqual(eviction.peekResourceBudgetInfo(), first);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test('the opt-in policy makes provider tabs evictable at HIGH, and only then', () => {
+  for (const [tier, expected] of [['normal', []], ['moderate', []], ['high', ['ai-1']], ['critical', ['ai-1']]]) {
+    const { state, eviction, evicted, restoreEnv } = setup({ maxResident: 1, tier, aiUnload: true });
+    try {
+      state.views.set('ai-1', fakeView());
+      state.views.set('ai-2', fakeView());
+      state.providers.set('ai-1', 'chatgpt');
+      state.providers.set('ai-2', 'chatgpt');
+      state.lastAccessedAt.set('ai-1', 1);
+      state.lastAccessedAt.set('ai-2', 2);
+
+      eviction.trimCapacity();
+      assert.deepEqual(evicted, expected, `tier ${tier}`);
+      assert.equal(eviction.collectTelemetry().aiUnloadUnderPressure, true);
+    } finally {
+      restoreEnv();
+    }
+  }
+});
+
+test('the opt-in policy never overrides the other retention rules at HIGH', () => {
+  const cases = [
+    ['attached', (state) => state.attachedViews.set('ai-1', state.views.get('ai-1'))],
+    ['focused', (state) => { state.layoutFocusedId = 'ai-1'; }],
+    ['downloading', (state) => state.activeDownloads.set('ai-1', 1)],
+    ['popup owner', (state) => state.popupOwners.set({}, 'ai-1')],
+    ['devtools', (state) => { state.views.set('ai-1', fakeView({ devTools: true })); }],
+    ['loading', (state) => { state.views.set('ai-1', fakeView({ loading: true })); }],
+    ['interaction', (state) => state.interactionProtected.add('ai-1')],
+  ];
+  for (const [label, apply] of cases) {
+    const { state, eviction, evicted, restoreEnv } = setup({ maxResident: 1, tier: 'high', aiUnload: true });
+    try {
+      state.views.set('ai-1', fakeView());
+      state.providers.set('ai-1', 'chatgpt');
+      state.lastAccessedAt.set('ai-1', 1);
+      apply(state);
+
+      eviction.trimCapacity();
+      assert.deepEqual(evicted, [], `a ${label} view must stay resident`);
+    } finally {
+      restoreEnv();
+    }
+  }
+});
+
+test('turning the policy off restores provider protection at HIGH', () => {
+  const { state, eviction, evicted, restoreEnv, aiUnloadRef } = setup({ maxResident: 1, tier: 'high', aiUnload: true });
+  try {
+    state.views.set('ai-1', fakeView());
+    state.views.set('ai-2', fakeView());
+    state.providers.set('ai-1', 'chatgpt');
+    state.providers.set('ai-2', 'chatgpt');
+    state.lastAccessedAt.set('ai-1', 1);
+    state.lastAccessedAt.set('ai-2', 2);
+
+    aiUnloadRef.enabled = false;
+    eviction.trimCapacity();
+    assert.deepEqual(evicted, []);
+    assert.equal(eviction.collectTelemetry().aiUnloadUnderPressure, false);
   } finally {
     restoreEnv();
   }

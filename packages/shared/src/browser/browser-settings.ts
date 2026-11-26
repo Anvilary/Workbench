@@ -357,6 +357,11 @@ export interface BrowserSettings {
   defaultSearchEngine: SearchEngineId;
   searchEngines?: SearchEngine[];
   spellCheck?: SpellCheckSettings;
+  /**
+   * Opt in: let the desktop unload inactive AI provider tabs when memory pressure is
+   * high. Default false, which keeps AI tabs resident until pressure is critical.
+   */
+  unloadInactiveAiTabsUnderPressure?: boolean;
 }
 
 export const DEFAULT_BROWSER_SETTINGS: BrowserSettings = {
@@ -369,6 +374,7 @@ export const DEFAULT_BROWSER_SETTINGS: BrowserSettings = {
     configuredLanguages: [...DEFAULT_SPELLCHECK_SETTINGS.configuredLanguages],
     customWordsByProfile: {},
   },
+  unloadInactiveAiTabsUnderPressure: false,
 };
 
 /**
@@ -669,5 +675,6 @@ export function parseBrowserSettings(value: unknown): BrowserSettings | null {
     favorites,
     searchEngines,
     spellCheck,
+    unloadInactiveAiTabsUnderPressure: record['unloadInactiveAiTabsUnderPressure'] === true,
   };
 }

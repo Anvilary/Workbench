@@ -2014,5 +2014,8 @@
   "worktree.tab.linkedTitle": "Branch {{branch}}, apart from {{main}}",
   "worktree.tab.mainTitle": "Branch {{branch}}, in the main folder",
   "worktree.tab.review": "review",
-  "worktree.tab.reviewTitle": "Review tab: its CLI started read-only, if it has a way to"
+  "worktree.tab.reviewTitle": "Review tab: its CLI started read-only, if it has a way to",
+  "settings.browser.lifecycleTitle": "Tab Memory",
+  "settings.browser.unloadInactiveAiTabs": "Unload inactive AI tabs under memory pressure",
+  "settings.browser.unloadInactiveAiTabsDescription": "Off by default. When on, hidden ChatGPT and Perplexity tabs may be unloaded once system memory pressure is high, and reload when you open them again. Tabs stay loaded while visible, focused, loading, downloading, showing a popup, with DevTools open, or holding text you typed. Unsent messages in an unloaded tab can be lost."
 }
