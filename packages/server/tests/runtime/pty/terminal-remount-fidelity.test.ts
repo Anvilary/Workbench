@@ -16,7 +16,7 @@ import path from 'node:path';
 import os from 'node:os';
 import headless from '@xterm/headless';
 // @ts-expect-error - standalone pure-ESM supervisor script
-import { PtySupervisor } from '../../../src/pty-host/maw-ptyd.mjs';
+import { PtySupervisor } from '../../../src/pty-host/ptyd.mjs';
 import { PtyHostClient } from '../../../src/pty-host/pty-host-client.js';
 import { OutputBuffer } from '../../../src/features/terminals/output-buffer.js';
 

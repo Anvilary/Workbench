@@ -18,7 +18,7 @@ test('the guard refuses to run without an explicit --home', (t) => {
 
 test('the guard refuses the real home without --i-am-the-owner', (t) => {
   const fixture = createFixture(t);
-  const result = spawnSync(process.execPath, [MODULE_PATH, 'plan', '--home', os.homedir()], { encoding: 'utf8', env: fixture.env });
+  const result = spawnSync(process.execPath, [MODULE_PATH, 'plan', '--home', os.userInfo().homedir], { encoding: 'utf8', env: fixture.env });
   assert.equal(result.status, 2);
   assert.match(result.stderr, /--i-am-the-owner/);
 });

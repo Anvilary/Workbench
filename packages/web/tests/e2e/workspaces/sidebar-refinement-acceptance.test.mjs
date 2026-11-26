@@ -2,21 +2,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { WEB_ROOT } from '../../helpers/paths.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = WEB_ROOT;
 
-const ARTIFACT_EVIDENCE_DIR = process.env.ARTIFACT_DIR || path.join(homedir(), '.gemini/antigravity-cli/brain/00000000-0000-4000-8000-000000000000');
+const ARTIFACT_EVIDENCE_DIR = process.env.ARTIFACT_DIR;
 const LOCAL_EVIDENCE_DIR = path.join(tmpdir(), 'workbench-evidence', 'sidebar-refinement');
 
 try { mkdirSync(LOCAL_EVIDENCE_DIR, { recursive: true }); } catch {}
-try { mkdirSync(ARTIFACT_EVIDENCE_DIR, { recursive: true }); } catch {}
+if (ARTIFACT_EVIDENCE_DIR) mkdirSync(ARTIFACT_EVIDENCE_DIR, { recursive: true });
 
 function browserExecutable() {
   if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE) return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
@@ -211,6 +209,7 @@ test('Sidebar, branding, header, and navigation pre-release UI refinement', asyn
       await page.screenshot(opts);
     } catch {}
     try {
+      if (!ARTIFACT_EVIDENCE_DIR) return;
       const opts = { path: path.join(ARTIFACT_EVIDENCE_DIR, name) };
       if (clip) opts.clip = clip;
       await page.screenshot(opts);

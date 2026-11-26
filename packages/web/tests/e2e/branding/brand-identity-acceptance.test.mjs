@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { existsSync, mkdirSync, readFileSync, copyFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
@@ -10,7 +11,7 @@ import { WEB_ROOT } from '../../helpers/paths.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = WEB_ROOT;
-const evidenceDir = path.join(webRoot, 'tests/evidence/brand');
+const evidenceDir = path.join(tmpdir(), 'workbench-evidence', 'brand');
 const artifactEvidenceDir = process.env.ARTIFACT_EVIDENCE_DIR || '';
 mkdirSync(evidenceDir, { recursive: true });
 if (artifactEvidenceDir) {
