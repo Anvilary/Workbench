@@ -1194,6 +1194,7 @@
   "server.submitStoppedToolNoLabel": "Die Nachricht wurde nicht vollständig gesendet: Die CLI hat während des Tippens ein Tool geöffnet und bittet möglicherweise um Genehmigung. Sehen Sie im CLI-Tab nach.",
   "server.submitStoppedWaiting": "Die Nachricht wurde nicht vollständig gesendet: {{label}} hat während des Tippens begonnen, auf eine Antwort zu warten. Antworten Sie, bevor Sie eine weitere Nachricht senden.",
   "server.submitStoppedWaitingNoLabel": "Die Nachricht wurde nicht vollständig gesendet: Die CLI hat während des Tippens begonnen, auf eine Antwort zu warten. Antworten Sie, bevor Sie eine weitere Nachricht senden.",
+  "server.supervisorTerminalLimit": "Der laufende Terminal-Supervisor erlaubt nur {{max}} aktive Terminals, bis er beim nächsten Neustart aktualisiert wird.",
   "server.tabClosedWhileOpening": "Der Tab wurde während des Öffnens geschlossen.",
   "server.tabDirGone": "Das Verzeichnis des Tabs existiert nicht mehr.",
   "server.tabOpenFailed": "Der Tab konnte nicht geöffnet werden.",

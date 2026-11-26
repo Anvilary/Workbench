@@ -78,6 +78,25 @@ export function isTestExecution(): boolean {
   );
 }
 
+/** A request the supervisor answered with an `error` op. */
+export class PtyHostRequestError extends Error {
+  constructor(
+    readonly code: string,
+    readonly supervisorMessage: string,
+  ) {
+    super(`[${code}] ${supervisorMessage}`);
+    this.name = 'PtyHostRequestError';
+  }
+}
+
+/** The cap an older supervisor reported in "Maximum session limit reached (N)", or null. */
+export function supervisorQuotaLimit(error: unknown): number | null {
+  if (!(error instanceof PtyHostRequestError) || error.code !== 'QUOTA_EXCEEDED') return null;
+  const match = /\((\d+)\)/.exec(error.supervisorMessage);
+  const limit = match ? Number(match[1]) : NaN;
+  return Number.isSafeInteger(limit) && limit > 0 ? limit : 0;
+}
+
 export class PtyHostClient {
   private socket: net.Socket | null = null;
   private lineBuffer = '';
@@ -355,7 +374,7 @@ export class PtyHostClient {
       this.replayChunks.delete(msg.reqId);
 
       if (msg.op === 'error') {
-        pending.reject(new Error(`[${msg.code}] ${msg.message}`));
+        pending.reject(new PtyHostRequestError(msg.code, msg.message));
       } else if (msg.op === 'replay_data' && chunks) {
         const dataParts = msg.dataB64
           ? [...chunks.dataParts, Buffer.from(msg.dataB64, 'base64')]

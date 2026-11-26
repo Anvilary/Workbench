@@ -1166,6 +1166,7 @@
   "server.submitStoppedToolNoLabel": "消息未能完整发送：输入过程中，CLI 发起了一个工具调用，可能正在请求批准。请查看 CLI 标签页。",
   "server.submitStoppedWaiting": "消息未能完整发送：输入过程中，{{label}} 开始等待回答。请先回答，再发送新消息。",
   "server.submitStoppedWaitingNoLabel": "消息未能完整发送：输入过程中，CLI 开始等待回答。请先回答，再发送新消息。",
+  "server.supervisorTerminalLimit": "正在运行的终端监管进程在下次重启升级之前最多只允许 {{max}} 个活动终端。",
   "server.tabClosedWhileOpening": "标签页在打开过程中被关闭。",
   "server.tabDirGone": "标签页的目录已不存在。",
   "server.tabOpenFailed": "无法打开标签页。",

@@ -1166,6 +1166,7 @@
   "server.submitStoppedToolNoLabel": "メッセージを最後まで送信できませんでした。入力中に CLI がツールを開いたため、承認を求めている可能性があります。CLI タブを確認してください。",
   "server.submitStoppedWaiting": "メッセージを最後まで送信できませんでした。入力中に {{label}} が応答待ちになりました。別のメッセージを送信する前に応答してください。",
   "server.submitStoppedWaitingNoLabel": "メッセージを最後まで送信できませんでした。入力中に CLI が応答待ちになりました。別のメッセージを送信する前に応答してください。",
+  "server.supervisorTerminalLimit": "実行中のターミナルスーパーバイザーは、次回の再起動で更新されるまで {{max}} 個のアクティブなターミナルしか許可しません。",
   "server.tabClosedWhileOpening": "タブを開いている途中で閉じられました。",
   "server.tabDirGone": "タブのディレクトリはもう存在しません。",
   "server.tabOpenFailed": "タブを開けませんでした。",

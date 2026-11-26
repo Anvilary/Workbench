@@ -15,6 +15,8 @@ import type {
 import { CLI_PROVIDERS, validateWebTabTitle } from '@agent-workbench/shared';
 import type { AgentId, TerminalActivity, TerminalId } from '@agent-workbench/shared';
 import type { OpenTerminalOptions, TerminalRegistry } from '../terminals/terminal-registry.js';
+import { TerminalOpenError } from '../terminals/terminal-open-error.js';
+import { MAX_SESSIONS } from '../../pty-host/pty-host-types.js';
 import { isInsideProtected } from '../files/directory-picker.js';
 import type { LaunchSession } from '../../agents/adapter.js';
 import type { NativeIdentity } from './native-identity.js';
@@ -23,7 +25,7 @@ import { CodexTurnWatcher } from '../../agents/codex/turn-watcher.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ACTIVE = new Set(['starting', 'running', 'stopping']);
-const MAX_ACTIVE_SESSIONS = 100;
+const MAX_ACTIVE_SESSIONS = MAX_SESSIONS;
 const NOW = (): string => new Date().toISOString();
 
 export type AgencySessionCreateInput =
@@ -1003,6 +1005,9 @@ export class AgencySessionRuntime extends EventEmitter {
     const failed = this.sessions.get(id);
     if (failed) { const next = { ...failed, recovery: { status: 'failed' as const, message: reason instanceof Error ? reason.message : String(reason) } }; this.sessions.set(id, next); await this.publish(next); }
     if (reason instanceof AgencyRuntimeError) throw reason;
+    if (reason instanceof TerminalOpenError && reason.code === 'too-many-terminals') {
+      throw new AgencyRuntimeError('conflict', reason.detail ?? `Active process limit reached (${MAX_ACTIVE_SESSIONS})`);
+    }
     throw new AgencyRuntimeError('internal-error', reason instanceof Error ? reason.message : String(reason));
   }
 

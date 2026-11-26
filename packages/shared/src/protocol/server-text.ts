@@ -182,6 +182,7 @@ export const SERVER_TEXTS = {
   submitStoppedToolNoLabel: [],
   submitStoppedWaiting: ['label'],
   submitStoppedWaitingNoLabel: [],
+  supervisorTerminalLimit: ['max'],
   tabClosedWhileOpening: [],
   tabDirGone: [],
   tabOpenFailed: [],

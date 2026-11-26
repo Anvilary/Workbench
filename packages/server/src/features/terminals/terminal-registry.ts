@@ -35,8 +35,8 @@ import type {
   LaunchSession,
 } from '../../agents/adapter.js';
 import { resolveAgentForOpen, type AgentRegistry, type RegisteredAgent } from '../../agents/registry.js';
-import { PtyHostClient, isTestExecution } from '../../pty-host/pty-host-client.js';
-import type { PtyHostSessionInfo, PtyHostTombstoneInfo } from '../../pty-host/pty-host-types.js';
+import { PtyHostClient, isTestExecution, supervisorQuotaLimit } from '../../pty-host/pty-host-client.js';
+import { MAX_SESSIONS, type PtyHostSessionInfo, type PtyHostTombstoneInfo } from '../../pty-host/pty-host-types.js';
 import { integrationsDir } from '../../shared/app-paths.js';
 import { debugLog } from '../../shared/debug.js';
 import { LaunchHookSlot } from './launch-hook-slot.js';
@@ -61,7 +61,7 @@ import { ActivityBook, wakeActionFor, type ActivityEntry } from './terminal-acti
 import { TerminalOpenError, resolveLaunchPlan } from './terminal-open-error.js';
 
 /** Tope defensivo: cada pestana es un proceso real. */
-const MAX_TERMINALS = 100;
+const MAX_TERMINALS = MAX_SESSIONS;
 
 /** Cuanto se espera a que termine la CLI de una pestana que se relanza. */
 const RESTART_EXIT_TIMEOUT_MS = 10_000;
@@ -1135,6 +1135,15 @@ export class TerminalRegistry extends EventEmitter {
         });
       }
     } catch (error) {
+      const supervisorLimit = supervisorQuotaLimit(error);
+      if (supervisorLimit !== null) {
+        // An older supervisor still runs with a lower cap than this backend.
+        throw new TerminalOpenError(
+          'too-many-terminals',
+          serverText('supervisorTerminalLimit', { max: supervisorLimit }),
+          `The running terminal supervisor allows only ${supervisorLimit} live terminals until it is upgraded at the next restart.`,
+        );
+      }
       throw new TerminalOpenError(
         'spawn-failed',
         serverText('terminalOpenFailed'),

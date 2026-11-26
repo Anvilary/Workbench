@@ -1194,6 +1194,7 @@
   "server.submitStoppedToolNoLabel": "El mensaje no se terminó de mandar: la CLI abrió una herramienta mientras se escribía y puede estar pidiendo una aprobación. Revisa la solapa CLI.",
   "server.submitStoppedWaiting": "El mensaje no se terminó de mandar: {{label}} empezó a esperar una respuesta mientras se escribía. Contéstala antes de mandar otro mensaje.",
   "server.submitStoppedWaitingNoLabel": "El mensaje no se terminó de mandar: la CLI empezó a esperar una respuesta mientras se escribía. Contéstala antes de mandar otro mensaje.",
+  "server.supervisorTerminalLimit": "El supervisor de terminales en ejecución solo permite {{max}} terminales activas hasta que se actualice en el próximo reinicio.",
   "server.tabClosedWhileOpening": "La pestaña se cerró mientras se abría.",
   "server.tabDirGone": "El directorio de la pestaña ya no existe.",
   "server.tabOpenFailed": "No se pudo abrir la pestaña.",

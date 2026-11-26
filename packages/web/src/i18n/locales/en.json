@@ -1194,6 +1194,7 @@
   "server.submitStoppedToolNoLabel": "The message wasn't fully sent: the CLI opened a tool while it was being typed and may be asking for approval. Check the CLI tab.",
   "server.submitStoppedWaiting": "The message wasn't fully sent: {{label}} started waiting for an answer while it was being typed. Answer it before sending another message.",
   "server.submitStoppedWaitingNoLabel": "The message wasn't fully sent: the CLI started waiting for an answer while it was being typed. Answer it before sending another message.",
+  "server.supervisorTerminalLimit": "The running terminal supervisor allows only {{max}} live terminals until it is upgraded at the next restart.",
   "server.tabClosedWhileOpening": "The tab closed while it was opening.",
   "server.tabDirGone": "The tab's directory no longer exists.",
   "server.tabOpenFailed": "The tab couldn't be opened.",

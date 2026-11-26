@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { AgencyWorkspace, ProjectId, WorkspaceId } from '@agent-workbench/shared';
 import { TerminalRegistry } from '../../../src/features/terminals/terminal-registry.js';
 import { AgencySessionRuntime, type AgencyWorkspaceSource } from '../../../src/features/sessions/session-runtime.js';
-import { PtyHostClient } from '../../../src/pty-host/pty-host-client.js';
+import { PtyHostClient, PtyHostRequestError } from '../../../src/pty-host/pty-host-client.js';
 
 function createMockStore() {
   return {
@@ -674,3 +674,80 @@ test('TerminalRegistry constructor defaults persistentPty to false in test runne
   }
 });
 
+
+test('older supervisor QUOTA_EXCEEDED maps to too-many-terminals with an actionable message and leaks no slot', async (t) => {
+  // Shell spawns prepare a history file under the config dir: keep it isolated.
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const isolatedConfig = mkdtempSync(tmpdir() + '/wb-quota-test-');
+  const previousXdg = process.env['XDG_CONFIG_HOME'];
+  process.env['XDG_CONFIG_HOME'] = isolatedConfig;
+  t.after(() => {
+    if (previousXdg === undefined) delete process.env['XDG_CONFIG_HOME'];
+    else process.env['XDG_CONFIG_HOME'] = previousXdg;
+    rmSync(isolatedConfig, { recursive: true, force: true });
+  });
+  const registry = createMockRegistry();
+  const internal = registry as any;
+  internal.agents.composedEnvironment = (env: NodeJS.ProcessEnv) => ({ ...env });
+
+  // Three live terminals already fill an older supervisor whose cap is 3.
+  for (let i = 0; i < 3; i++) {
+    const id = `live-${i}`;
+    internal.terminals.set(id, createMockEntry({
+      descriptor: { terminalId: id, alive: true, sleeping: false, exitCode: null, launchedAt: Date.now(), kind: 'shell' },
+      session: { pid: 50000 + i, dispose: () => {} },
+    }));
+  }
+  const spawnRequests: string[] = [];
+  internal.client = {
+    spawn: async (request: { id: string }) => {
+      spawnRequests.push(request.id);
+      throw new PtyHostRequestError('QUOTA_EXCEEDED', 'Maximum session limit reached (3)');
+    },
+    kill: async () => {},
+    detach: () => {},
+  };
+
+  const sizeBefore = internal.terminals.size;
+  const activeBefore = registry.activeCount();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await assert.rejects(
+      registry.open({ cwd: process.cwd(), kind: 'shell' }),
+      (err: any) => {
+        assert.equal(err.code, 'too-many-terminals', String(err?.stack));
+        assert.deepEqual(err.text, { key: 'supervisorTerminalLimit', params: { max: 3 } });
+        assert.match(err.detail, /allows only 3 live terminals until it is upgraded at the next restart/);
+        return true;
+      },
+    );
+    // The provisional entry and the in-flight reservation are rolled back.
+    assert.equal(internal.terminals.size, sizeBefore);
+    assert.equal(internal.inFlightOpens, 0);
+    assert.equal(registry.activeCount(), activeBefore);
+    assert.equal(registry.list().length, 0, 'no tab is exposed for the failed open');
+  }
+  assert.equal(spawnRequests.length, 2);
+  for (const id of spawnRequests) assert.equal(internal.terminals.has(id), false);
+
+  // A different spawn error keeps the generic spawn-failed mapping.
+  internal.client.spawn = async () => { throw new PtyHostRequestError('SPAWN_FAILED', 'exec failed'); };
+  await assert.rejects(registry.open({ cwd: process.cwd(), kind: 'shell' }), (err: any) => err.code === 'spawn-failed');
+  assert.equal(internal.terminals.size, sizeBefore);
+  assert.equal(internal.inFlightOpens, 0);
+
+  registry.disposeAll();
+});
+
+test('Agency create surfaces an older supervisor quota as a conflict with the actionable message', async () => {
+  const { TerminalOpenError } = await import('../../../src/features/terminals/terminal-open-error.js');
+  const { AgencyRuntimeError } = await import('../../../src/features/sessions/session-runtime.js');
+  const runtime = Object.create(AgencySessionRuntime.prototype) as any;
+  runtime.sessions = new Map();
+  runtime.finish = async () => {};
+  const detail = 'The running terminal supervisor allows only 42 live terminals until it is upgraded at the next restart.';
+  await assert.rejects(
+    runtime.fail('missing', new TerminalOpenError('too-many-terminals', { key: 'supervisorTerminalLimit', params: { max: 42 } }, detail)),
+    (err: any) => err instanceof AgencyRuntimeError && err.code === 'conflict' && err.message === detail,
+  );
+});

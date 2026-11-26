@@ -1194,6 +1194,7 @@
   "server.submitStoppedToolNoLabel": "A mensagem não foi enviada por completo: a CLI abriu uma ferramenta enquanto ela era digitada e pode estar pedindo aprovação. Verifique a aba CLI.",
   "server.submitStoppedWaiting": "A mensagem não foi enviada por completo: {{label}} começou a aguardar uma resposta enquanto ela era digitada. Responda antes de enviar outra mensagem.",
   "server.submitStoppedWaitingNoLabel": "A mensagem não foi enviada por completo: a CLI começou a aguardar uma resposta enquanto ela era digitada. Responda antes de enviar outra mensagem.",
+  "server.supervisorTerminalLimit": "O supervisor de terminais em execução permite apenas {{max}} terminais ativos até ser atualizado na próxima reinicialização.",
   "server.tabClosedWhileOpening": "A aba foi fechada enquanto abria.",
   "server.tabDirGone": "O diretório da aba não existe mais.",
   "server.tabOpenFailed": "Não foi possível abrir a aba.",
