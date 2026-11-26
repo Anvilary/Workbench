@@ -10,7 +10,7 @@
 
 import { DEFAULT_BROWSER_PROFILE_ID, isValidBrowserProfileId, authenticationUrl, selectBestFavicon, isWorkbenchBackendUrl } from '../../policy.mjs';
 import { navigationAllowed, durablePage } from './provider-policy.mjs';
-import { createBrowserViewState, clearProtectionReasons } from './view-state.mjs';
+import { createBrowserViewState, clearProtectionReason, clearProtectionReasons } from './view-state.mjs';
 import { createViewLayout } from './view-layout.mjs';
 import { createNavigationGuard } from './navigation-guard.mjs';
 import { createBrowserSessions } from './browser-sessions.mjs';
@@ -232,7 +232,10 @@ export function createBrowserViewController({
     };
     view.webContents.on('did-navigate', (event, url) => {
       interactionProtected.delete(id);
-      clearProtectionReasons(state, id);
+      // Only interaction protection ends with a document navigation. Other reasons
+      // (download, popup, loading, devtools) may still apply, and their stamps carry
+      // the protection age reported in telemetry.
+      clearProtectionReason(state, id, 'interaction');
       findRequests.delete(id);
       if (!authenticationUrl(url) && durablePage(provider, url)) {
         authEntryUrls.delete(view.webContents);

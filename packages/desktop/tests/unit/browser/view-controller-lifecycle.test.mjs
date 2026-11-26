@@ -120,6 +120,30 @@ test('subframe in-page navigation does not probe or release protection', async (
   }
 });
 
+test('a document navigation keeps the protection age of reasons that still apply', () => {
+  const { controller, createdViews, restore } = setup();
+  try {
+    controller.open({ id: 'tab-a', url: CHATGPT_URL, provider: 'chatgpt' });
+    const contents = createdViews[0].webContents;
+    type(contents);
+    contents.__state.devTools = true;
+    const first = controller.browserLifecycleTelemetry();
+    assert.equal(first.protectedCounts.devtools, 1);
+    assert.equal(first.protectionAgeMs.devtools, 0);
+
+    contents.emit('did-navigate', { preventDefault: () => {} }, 'https://chatgpt.com/other');
+    const after = controller.browserLifecycleTelemetry(0);
+    assert.equal(after.protectedCounts.interaction, 0);
+    assert.equal(after.protectedCounts.devtools, 1);
+    assert.ok(
+      (after.protectionAgeMs.devtools ?? 0) > 0,
+      'the DevTools protection age must survive a navigation that only ends interaction protection',
+    );
+  } finally {
+    restore();
+  }
+});
+
 test('a full document navigation still clears interaction protection outright', () => {
   const { controller, createdViews, restore } = setup();
   try {
