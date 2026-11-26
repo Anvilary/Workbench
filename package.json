@@ -58,6 +58,8 @@
     "test:runtime": "pnpm --filter @agent-workbench/server run test:runtime && pnpm --filter @agent-workbench/desktop run test:runtime",
     "test:security": "pnpm --filter @agent-workbench/server run test:security && pnpm --filter @agent-workbench/desktop run test:security",
     "test:staging:shell": "sh scripts/maw/release-staging.test.sh && sh scripts/maw/maw-activate-guard.test.sh",
+    "test:migration": "node --test scripts/maw/tests/migrate-identity-plan.test.mjs scripts/maw/tests/migrate-identity-apply.test.mjs scripts/maw/tests/migrate-identity-lifecycle.test.mjs",
+    "test:migration:electron": "node --test --test-concurrency=1 scripts/maw/tests/migrate-identity-electron-partitions.test.mjs",
     "test:staging": "pnpm test:staging:shell && pnpm --filter @agent-workbench/desktop run test:staging",
     "test": "pnpm --filter @agent-workbench/shared test && pnpm --filter @agent-workbench/desktop test && pnpm --filter @agent-workbench/server test && pnpm --filter @agent-workbench/web test",
     "perf": "node scripts/perf-check.mjs",
