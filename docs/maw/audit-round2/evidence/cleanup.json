@@ -1,9 +1,0 @@
-{
-  "name": "maw-neko-integration-audit-fm1n7jvb",
-  "containerId": "a78f2a4ade92824a0600fe3396dbd59920f6f3b752a61e0aa79f37b610e87e88",
-  "label": "maw.audit=true",
-  "namedVolumes": 0,
-  "loopbackOnly": true,
-  "removed": true,
-  "scope": "only fixture created by this audit; no volume, network or image prune"
-}
