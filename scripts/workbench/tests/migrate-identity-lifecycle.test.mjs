@@ -257,6 +257,38 @@ test('rollback fails closed when canonical shutdown fails', (t) => {
   assert.equal(fixture.state().status, 'applied');
 });
 
+test('rollback succeeds after an early apply failure before canonical units exist', (t) => {
+  const fixture = createFixture(t);
+  fs.mkdirSync(path.dirname(fixture.canonical.stateFile), { recursive: true });
+  fs.writeFileSync(fixture.canonical.stateFile, JSON.stringify({
+    version: 1,
+    status: 'in-progress',
+    steps: { backup: { status: 'failed', error: 'simulated early failure' } },
+  }));
+  const unitCheck = path.join(fixture.home, 'systemctl-no-missing-stop');
+  fs.writeFileSync(unitCheck, `#!/bin/sh
+if [ "$2" = "stop" ]; then
+  for arg in "$@"; do
+    case "$arg" in
+      workbench*.service)
+        if [ ! -e "${fixture.unitDir}/$arg" ]; then
+          printf 'Failed to stop %s: Unit %s not loaded.\\n' "$arg" "$arg" >&2
+          exit 5
+        fi
+        ;;
+    esac
+  done
+fi
+exec "${path.join(fixture.mockBin, 'systemctl')}" "$@"
+`, { mode: 0o700 });
+  const rolled = fixture.run(['rollback', '--systemctl-cmd', unitCheck]);
+  assert.equal(rolled.status, 0, rolled.stdout + rolled.stderr);
+  assert.equal(fixture.state().status, 'rolled-back');
+  for (const unit of LEGACY_UNITS) {
+    assert.equal(fixture.unitState(unit, 'enabled'), 'enabled');
+  }
+});
+
 test('clean needs a verified migration, an explicit --yes, and keeps the backup', (t) => {
   const fixture = createFixture(t);
   assert.equal(fixture.run(['apply']).status, 0);

@@ -258,3 +258,26 @@ test('14. migrateConfigDir copies for a non-systemd install and is idempotent', 
   assert.equal(fs.existsSync(path.join(fixture.home, 'nope-dest')), false);
   assert.throws(() => migrateConfigDir({ legacyDir: '', canonicalDir }), TypeError);
 });
+
+test('backup listing handles archives whose tar -t output exceeds 1 MiB', (t) => {
+  const fixture = createFixture(t);
+  const deepDir = path.join(
+    fixture.legacy.userData,
+    'Partitions/maw-browser/IndexedDB',
+    'nested-segment-0123456789abcdef',
+    'nested-segment-0123456789abcdef',
+    'nested-segment-0123456789abcdef',
+    'nested-segment-0123456789abcdef',
+  );
+  fs.mkdirSync(deepDir, { recursive: true });
+  // ~180 bytes per entry * 7,500 entries > 1 MiB default spawnSync maxBuffer.
+  for (let i = 0; i < 7500; i += 1) {
+    fs.writeFileSync(path.join(deepDir, `entry-padding-0123456789abcdef-${String(i).padStart(5, '0')}.bin`), '');
+  }
+  const result = fixture.run(['apply']);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const state = fixture.state();
+  assert.equal(state.status, 'applied');
+  assert.equal(state.steps.backup.status, 'done');
+  assert.ok(state.steps.backup.entries >= 7500);
+});

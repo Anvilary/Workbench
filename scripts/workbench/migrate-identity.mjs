@@ -851,14 +851,15 @@ function stepBackup(ctx, state) {
   args.push('--exclude=Singleton*');
   args.push('-C', ctx.home, ...relative);
   args.push('-C', stage, 'legacy-state-meta');
-  const created = spawnSync(tarBin, args, { encoding: 'utf8' });
+  const created = spawnSync(tarBin, args, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   if ((created.status ?? 1) !== 0) {
-    throw new Error(`backup archive failed: ${created.stderr || created.stdout}`);
+    throw new Error(`backup archive failed: ${created.error?.message || created.stderr || created.stdout}`);
   }
   fs.chmodSync(archive, 0o600);
-  const listed = spawnSync(tarBin, [...tarPrefix, '-t', '-f', archive], { encoding: 'utf8' });
+  const listed = spawnSync(tarBin, [...tarPrefix, '-t', '-f', archive], { encoding: 'utf8', maxBuffer: 128 * 1024 * 1024 });
   if ((listed.status ?? 1) !== 0 || listed.stdout.trim() === '') {
-    throw new Error('backup archive could not be listed: refusing to continue');
+    const detail = listed.error?.message || listed.stderr?.trim();
+    throw new Error(`backup archive could not be listed: refusing to continue${detail ? ` (${detail})` : ''}`);
   }
   const digest = sha256File(archive);
   writeFileMode(`${archive}.sha256`, `${digest}  ${path.basename(archive)}\n`, 0o600);
@@ -1677,12 +1678,16 @@ function commandRollback(ctx) {
       throw new Refusal(`rollback refused: missing write-ahead CLI backup for ${name}`);
     }
   }
-  const stopped = runSystemctl(ctx, ['stop', ...CANONICAL_UNITS]);
-  if (stopped.status !== 0) throw new Refusal(`rollback refused: failed to stop canonical units: ${stopped.stderr || stopped.stdout}`);
-  for (const [args, label] of [
-    [['disable', ...CANONICAL_UNITS], 'disable canonical units'],
+  const installedCanonicalUnits = CANONICAL_UNITS.filter((unit) => exists(path.join(ctx.unitDir, unit)));
+  if (installedCanonicalUnits.length > 0) {
+    const stopped = runSystemctl(ctx, ['stop', ...installedCanonicalUnits]);
+    if (stopped.status !== 0) throw new Refusal(`rollback refused: failed to stop canonical units: ${stopped.stderr || stopped.stdout}`);
+  }
+  const rollbackUnitOps = [
+    ...(installedCanonicalUnits.length > 0 ? [[['disable', ...installedCanonicalUnits], 'disable canonical units']] : []),
     [['unmask', ...LEGACY_UNITS], 'unmask legacy units'],
-  ]) {
+  ];
+  for (const [args, label] of rollbackUnitOps) {
     const result = runSystemctl(ctx, args);
     if (result.status !== 0) throw new Refusal(`rollback refused: failed to ${label}: ${result.stderr || result.stdout}`);
   }
