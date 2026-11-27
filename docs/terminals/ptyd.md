@@ -29,6 +29,8 @@ Integrated terminals must behave like ordinary login shells of the user:
 
 Isolation relies on the private runtime directory, the socket token and control-group process management (`KillMode=control-group`).
 
+Because `workbench.service` and `workbench-ptyd.service` can start at `default.target` before graphical login or survive desktop session changes, the backend resolves the current local graphical session allowlist (`DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY` pathname, `XDG_SESSION_TYPE`, `XDG_CURRENT_DESKTOP`, `XDG_SESSION_DESKTOP`) at `TerminalRegistry.spawn` time and passes the resulting environment in the existing `spawn` IPC message. Existing running terminals in `workbench-ptyd` keep their original environment untouched, and updating the resolver in the backend does not require restarting `workbench-ptyd.service`.
+
 ## Restarting the supervisor
 
 Restarting `workbench-ptyd.service` ends every live terminal. The updater detects when the supervisor bundle (`dist/ptyd.mjs`) changed and refuses to restart it while live sessions exist unless the owner forces it. Plan supervisor updates for a moment with no live work. Output replay after a backend restart is described in [PTY protocol](pty-protocol.md#5-output-replay--monotonic-offset-contract); long-term history in [terminal history](history.md).

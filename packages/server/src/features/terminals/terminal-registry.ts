@@ -41,6 +41,12 @@ import { MAX_SESSIONS, type PtyHostSessionInfo, type PtyHostTombstoneInfo } from
 import { integrationsDir } from '../../shared/app-paths.js';
 import { debugLog } from '../../shared/debug.js';
 import { LaunchHookSlot } from './launch-hook-slot.js';
+import {
+  GRAPHICAL_ENV_ALLOWLIST,
+  createGraphicalSessionEnvResolver,
+  isRemoteClientLaunchContext,
+  type GraphicalEnvResolver,
+} from './graphical-session-env.js';
 import { OutputBuffer } from './output-buffer.js';
 import { createPtyScreen, type PtyScreen } from './pty-screen.js';
 import { PtySession, type LaunchSpec } from './pty-session.js';
@@ -201,6 +207,8 @@ export interface OpenTerminalOptions {
   agencyLaunch?: AgencyPreparedTerminalLaunch;
   /** Identificador persistente del historial de comandos shell (por ejemplo tab.id). */
   historyId?: string;
+  /** True when initiated by a paired remote client rather than a host window. */
+  remoteClient?: boolean;
 }
 
 // Vive en su propio modulo para que se pueda reconocer sin cargar node-pty.
@@ -263,6 +271,7 @@ export class TerminalRegistry extends EventEmitter {
   private readonly supervisorScriptPath?: string;
   private readonly socketPath?: string;
   private readonly authPath?: string;
+  private readonly resolveGraphicalEnv: GraphicalEnvResolver;
   private inFlightOpens = 0;
 
   constructor(
@@ -279,7 +288,14 @@ export class TerminalRegistry extends EventEmitter {
     private readonly tabWorktreeOf: TabWorktreeLookup = () => Promise.resolve(null),
     /** Disposable integration directory for fixture PTYs. */
     private readonly shellIntegrationDir: () => string = () => integrationsDir() + '/shell',
-    options?: { autoSpawn?: boolean; persistentPty?: boolean; supervisorScriptPath?: string; socketPath?: string; authPath?: string },
+    options?: {
+      autoSpawn?: boolean;
+      persistentPty?: boolean;
+      supervisorScriptPath?: string;
+      socketPath?: string;
+      authPath?: string;
+      resolveGraphicalEnv?: GraphicalEnvResolver;
+    },
   ) {
     super();
     this.autoSpawn = options?.autoSpawn;
@@ -291,6 +307,11 @@ export class TerminalRegistry extends EventEmitter {
     this.supervisorScriptPath = options?.supervisorScriptPath ?? workbenchEnv('PTYD_SCRIPT');
     this.socketPath = options?.socketPath;
     this.authPath = options?.authPath;
+    this.resolveGraphicalEnv = options?.resolveGraphicalEnv ?? (
+      isTestExecution()
+        ? async (baseEnv) => ({ ...baseEnv })
+        : createGraphicalSessionEnvResolver()
+    );
   }
 
   isPersistent(): boolean {
@@ -834,6 +855,7 @@ export class TerminalRegistry extends EventEmitter {
       this.inFlightOpens--;
       inFlightReserved = false;
 
+      const remoteClient = options.remoteClient ?? isRemoteClientLaunchContext();
       try {
         /*
           `spawn` espera al adaptador. Con Claude Code `launch` devuelve un valor y
@@ -841,7 +863,7 @@ export class TerminalRegistry extends EventEmitter {
           entrada que se solto mientras tanto (el apagado) no lanza nada, y eso
           para quien abre es un fallo: no hay pestana.
         */
-        const spawned = await this.spawn(entry, { resume: resumed });
+        const spawned = await this.spawn(entry, { resume: resumed, remoteClient });
         if (!spawned || this.terminals.get(terminalId) !== entry) {
           throw new TerminalOpenError('spawn-failed', serverText('tabClosedWhileOpening'));
         }
@@ -878,11 +900,12 @@ export class TerminalRegistry extends EventEmitter {
    * quiere escribirle al agente. Reusa el mismo `terminalId` y el mismo
    * `sessionId` — no es una pestana nueva, es la misma.
    */
-  async wake(terminalId: TerminalId): Promise<TerminalDescriptor | null> {
+  async wake(terminalId: TerminalId, options?: { remoteClient?: boolean }): Promise<TerminalDescriptor | null> {
     const entry = this.terminals.get(terminalId);
     if (entry === undefined) return null;
     // An Agency session must never be independently relaunched by upstream terminal.wake.
     if (entry.agencyManaged || entry.supervisorUnconfirmed) return null;
+    const remoteClient = options?.remoteClient ?? isRemoteClientLaunchContext();
     /*
       Ya se esta lanzando (hito 29, D23): un segundo pedido no lanza otro
       proceso. Con la CLI corriendo no hay nada que despertar, salvo que su
@@ -928,7 +951,7 @@ export class TerminalRegistry extends EventEmitter {
 
       // Cerrada mientras se miraba el disco o se preparaba el lanzamiento: nada que despertar.
       if (this.terminals.get(terminalId) !== entry) return null;
-      if (!(await this.spawn(entry, { resume }))) return null;
+      if (!(await this.spawn(entry, { resume, remoteClient }))) return null;
     } finally {
       entry.launching = false;
     }
@@ -990,7 +1013,7 @@ export class TerminalRegistry extends EventEmitter {
    * Un `launch()` que falla, sincronico o no, es `spawn-failed` con su mensaje
    * como detalle (M1a); antes llegaba al cliente como un error interno.
    */
-  private async spawn(entry: TerminalEntry, options: { resume: boolean }): Promise<boolean> {
+  private async spawn(entry: TerminalEntry, options: { resume: boolean; remoteClient?: boolean }): Promise<boolean> {
     const { terminalId, kind, cwd, sessionId, agent, review } = entry.descriptor;
     const launcher = entry.agencyLaunch === null ? this.launcherFor(kind, agent) : null;
     const { buffer } = entry;
@@ -1047,6 +1070,19 @@ export class TerminalRegistry extends EventEmitter {
     let env = entry.agencyLaunch === null
       ? this.agents.composedEnvironment(process.env)
       : { ...entry.agencyLaunch.env };
+    const remoteClient = options.remoteClient ?? isRemoteClientLaunchContext();
+    try {
+      env = await this.resolveGraphicalEnv(env, { remoteClient });
+    } catch (error) {
+      debugLog(
+        'pty',
+        `graphical session lookup failed for ${terminalId.slice(0, 8)}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      for (const key of GRAPHICAL_ENV_ALLOWLIST) {
+        delete env[key];
+      }
+    }
+    if (this.terminals.get(terminalId) !== entry) return false;
     if (kind === 'shell') {
       const shellName = path.basename(launch.file);
       const histPath = await prepareTerminalCommandHistory(entry.historyId, shellName);

@@ -34,6 +34,18 @@ one is discarded even if it's more convenient.
   generated on every start, given **only** to the `opencode serve` process the
   app launches, because that command has no flag to receive it. It isn't an
   account credential, it's never logged and never sent to the browser.
+- One narrow infrastructure exception at the terminal spawn boundary
+  (`TerminalRegistry.spawn` via `graphical-session-env.ts`): because systemd user
+  services (`workbench.service`, `workbench-ptyd.service`) can start before
+  graphical login or outlive a desktop session change, newly spawned locally
+  initiated terminals on Linux refresh only a strict graphical session
+  allowlist (`DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY` pathname,
+  `XDG_SESSION_TYPE`, `XDG_CURRENT_DESKTOP`, `XDG_SESSION_DESKTOP`) from the
+  validated active local session. Adapters themselves still never add variables,
+  no credentials, tokens, `PATH`, `HOME`, `XDG_RUNTIME_DIR`, or
+  `DBUS_SESSION_BUS_ADDRESS` values are imported, `XAUTHORITY` contents are
+  never read, and host graphical session variables are withheld when a PTY is
+  initiated by a paired remote client.
 
 ### 1.2 The CLI binaries are used unmodified and unbundled
 

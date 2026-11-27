@@ -29,6 +29,7 @@ import { UnknownTerminalError } from '../../features/memory/memory-hub.js';
 import { NotesError } from '../../features/notes/notes-store.js';
 import { remoteRefusal } from '../../features/remote-access/remote-access.js';
 import { AgencyRuntimeError } from '../../features/sessions/session-runtime.js';
+import { runWithTerminalLaunchOrigin } from '../../features/terminals/graphical-session-env.js';
 import type { Credential } from '../../security/request-guards.js';
 import { debugLog } from '../../shared/debug.js';
 import { dispatchClientMessage } from './dispatch.js';
@@ -237,7 +238,7 @@ export function acceptConnection(socket: WebSocket, credential: Credential, deps
 
     try {
       if (message.type.startsWith('agency.')) await tabReady;
-      await dispatchClientMessage(message, ctx);
+      await runWithTerminalLaunchOrigin(deviceId !== null, () => dispatchClientMessage(message, ctx));
     } catch (error) {
       if (message.type.startsWith('agency.') && 'requestId' in message) {
         send(socket, { type: 'agency.error', requestId: message.requestId!,

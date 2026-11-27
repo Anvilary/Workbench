@@ -24,7 +24,7 @@ type TerminalMessage = Extract<ClientMessage, { type: (typeof terminalMessageTyp
 
 export async function handleTerminalMessage(
   message: TerminalMessage,
-  ctx: HandlerContext<'agencyRuntime' | 'attachedTerminals' | 'backpressure' | 'closingTerminals' | 'dropTab' | 'getHistoryStore' | 'gitSubscriptions' | 'historyAccessReason' | 'historyReads' | 'memorySubscriptions' | 'queuedSubmits' | 'registry' | 'replayTerminal' | 'retireHistoryStore' | 'revokeTerminalAttachment' | 'send' | 'sendError' | 'socket' | 'subscriptions'>,
+  ctx: HandlerContext<'agencyRuntime' | 'attachedTerminals' | 'backpressure' | 'closingTerminals' | 'deviceId' | 'dropTab' | 'getHistoryStore' | 'gitSubscriptions' | 'historyAccessReason' | 'historyReads' | 'memorySubscriptions' | 'queuedSubmits' | 'registry' | 'replayTerminal' | 'retireHistoryStore' | 'revokeTerminalAttachment' | 'send' | 'sendError' | 'socket' | 'subscriptions'>,
 ): Promise<void> {
   const { agencyRuntime, attachedTerminals, backpressure, closingTerminals, dropTab, getHistoryStore, gitSubscriptions, historyAccessReason, historyReads, memorySubscriptions, queuedSubmits, registry, replayTerminal, retireHistoryStore, revokeTerminalAttachment, send, sendError, socket, subscriptions } = ctx;
   switch (message.type) {
@@ -78,6 +78,7 @@ export async function handleTerminalMessage(
               : {}),
             ...(message.label !== undefined ? { label: message.label } : {}),
             ...(message.historyId !== undefined ? { historyId: message.historyId } : {}),
+            remoteClient: ctx.deviceId !== null,
           });
           // Early PTY output may already have created this store. Reuse it.
           getHistoryStore(descriptor.terminalId);
@@ -116,7 +117,9 @@ export async function handleTerminalMessage(
       const existed = registry.has(message.terminalId);
       void (async () => {
         try {
-          const descriptor = await registry.wake(message.terminalId);
+          const descriptor = await registry.wake(message.terminalId, {
+            remoteClient: ctx.deviceId !== null,
+          });
           if (descriptor === null && !existed) {
             sendError(socket, 'unknown-terminal', serverText('terminalGone'));
           }
