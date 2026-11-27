@@ -289,6 +289,29 @@ exec "${path.join(fixture.mockBin, 'systemctl')}" "$@"
   }
 });
 
+test('apply resolves canonical unit templates from helpers source when template flags are omitted', (t) => {
+  const fixture = createFixture(t);
+  const helpersDir = path.join(fixture.home, 'helpers-source');
+  fs.mkdirSync(path.join(helpersDir, 'pty-host'), { recursive: true });
+  fs.copyFileSync(path.join(fixture.home, 'templates/workbench.service'), path.join(helpersDir, 'workbench.service'));
+  fs.copyFileSync(path.join(fixture.home, 'templates/workbench-ptyd.service'), path.join(helpersDir, 'pty-host/workbench-ptyd.service'));
+  const filteredArgs = [];
+  const raw = fixture.baseArgs();
+  for (let i = 0; i < raw.length; i += 1) {
+    if (raw[i] === '--unit-template' || raw[i] === '--ptyd-unit-template') {
+      i += 1;
+      continue;
+    }
+    filteredArgs.push(raw[i]);
+  }
+  const result = fixture.run(['apply', ...filteredArgs], { bare: true });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(fixture.state().status, 'applied');
+  for (const unit of CANONICAL_UNITS) {
+    assert.equal(fs.existsSync(path.join(fixture.unitDir, unit)), true, `${unit} must be rendered`);
+  }
+});
+
 test('clean needs a verified migration, an explicit --yes, and keeps the backup', (t) => {
   const fixture = createFixture(t);
   assert.equal(fixture.run(['apply']).status, 0);

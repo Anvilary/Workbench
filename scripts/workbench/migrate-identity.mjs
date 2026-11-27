@@ -271,6 +271,16 @@ export function resolveContext(options, env = process.env) {
     if (override) throw new Refusal(`--${override} is available only for isolated test homes`);
   }
   const sourceDir = options.flags['source'] !== undefined ? path.resolve(options.flags['source']) : null;
+  const helpersSource = options.flags['helpers-source'] !== undefined
+    ? path.resolve(options.flags['helpers-source'])
+    : sourceDir ? path.join(sourceDir, 'scripts/workbench') : MODULE_DIR;
+  const defaultUnitTemplate = (rel) => {
+    for (const base of [helpersSource, MODULE_DIR]) {
+      const candidate = path.join(base, rel);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+    return null;
+  };
 
   const legacy = {
     configDir: path.join(configHome, 'agent-workbench'),
@@ -329,9 +339,9 @@ export function resolveContext(options, env = process.env) {
     procRoot: options.flags['proc-root'] !== undefined ? path.resolve(options.flags['proc-root']) : '/proc',
     freeSpaceBytes: options.flags['free-space-bytes'] !== undefined ? Number(options.flags['free-space-bytes']) : null,
     electronVersion: options.flags['electron-version'] ?? null,
-    unitTemplate: options.flags['unit-template'] ?? null,
-    ptydUnitTemplate: options.flags['ptyd-unit-template'] ?? null,
-    helpersSource: options.flags['helpers-source'] !== undefined ? path.resolve(options.flags['helpers-source']) : sourceDir ? path.join(sourceDir, 'scripts/workbench') : MODULE_DIR,
+    unitTemplate: options.flags['unit-template'] !== undefined ? path.resolve(options.flags['unit-template']) : defaultUnitTemplate('workbench.service'),
+    ptydUnitTemplate: options.flags['ptyd-unit-template'] !== undefined ? path.resolve(options.flags['ptyd-unit-template']) : defaultUnitTemplate('pty-host/workbench-ptyd.service'),
+    helpersSource,
     iconSource: options.flags['icon-source'] !== undefined ? path.resolve(options.flags['icon-source']) : sourceDir ? path.join(sourceDir, 'packages/desktop/assets/icons') : null,
     sourceDir,
     expectCommit: options.flags['expect-commit'] ?? null,
