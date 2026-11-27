@@ -45,7 +45,9 @@ one is discarded even if it's more convenient.
   no credentials, tokens, `PATH`, `HOME`, `XDG_RUNTIME_DIR`, or
   `DBUS_SESSION_BUS_ADDRESS` values are imported, `XAUTHORITY` contents are
   never read, and host graphical session variables are withheld when a PTY is
-  initiated by a paired remote client.
+  initiated by a paired remote client (a defense-in-depth guard against
+  unintended host-desktop propagation by Workbench, not an OS-level privilege
+  boundary around shell processes running as the same OS user).
 
 ### 1.2 The CLI binaries are used unmodified and unbundled
 

@@ -576,7 +576,7 @@ export class AgencySessionRuntime extends EventEmitter {
         (native?.session.kind === 'known' ? native.session.sessionId : null);
       const current = this.sessions.get(id);
       if (current === undefined) throw new Error('Reserved session disappeared');
-      const stopping = current.lifecycle === 'stopping';
+      const stopping = this.disposed || current.lifecycle === 'stopping';
       const alive = observed.alive && !stopping;
       const next: AgencyRuntimeSession = {
         ...current,

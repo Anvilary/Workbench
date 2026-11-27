@@ -504,6 +504,7 @@ test('TERMINAL ENVIRONMENT 5: Direct PTY, concurrent opens, shell integration, a
       () => fx.shellIntegrationDir,
       { persistentPty: false, resolveGraphicalEnv: fx.resolver },
     );
+    const isolatedProfileHome = path.join(fx.root, 'profile-isolated');
     const launchPlan = await buildAgencyProfileLaunch(profileStore, agentReg, {
       profileId: 'claude-isolated' as never,
       cwd: fx.cwd,
@@ -511,7 +512,7 @@ test('TERMINAL ENVIRONMENT 5: Direct PTY, concurrent opens, shell integration, a
       launchToken: randomUUID(),
       environment: {
         PATH: process.env['PATH'] ?? '/usr/bin:/bin',
-        HOME: '/home/profile-isolated',
+        HOME: isolatedProfileHome,
         CLAUDE_CODE_CHILD_SESSION: '1',
         XDG_RUNTIME_DIR: fx.runtimeDir,
       },
@@ -531,7 +532,7 @@ test('TERMINAL ENVIRONMENT 5: Direct PTY, concurrent opens, shell integration, a
       },
     });
     const agencyEnv = await readProbeFromTerminal(agencyLaunchRegistry, agencyDesc.terminalId);
-    assert.equal(agencyEnv['HOME'], '/home/profile-isolated');
+    assert.equal(agencyEnv['HOME'], isolatedProfileHome);
     assert.equal(agencyEnv['TERM'], 'xterm-256color');
     assert.equal(agencyEnv['COLORTERM'], 'truecolor');
     assert.equal('CLAUDE_CODE_CHILD_SESSION' in agencyEnv, false);
@@ -733,6 +734,21 @@ test('TERMINAL ENVIRONMENT 6: Remote access paired devices do not receive host g
     assert.equal('XAUTHORITY' in remoteEnv, false);
     assert.equal('XDG_SESSION_TYPE' in remoteEnv, false);
 
+    // Concurrent local and remote terminal.open requests must never bleed local display vars into remote PTY.
+    const [concurrentLocalId, concurrentRemoteId] = await Promise.all([
+      openViaWs({}, `/ws?token=${HOST_TOKEN}`),
+      openViaWs({ cookie: `${DEVICE_COOKIE}=${PAIRED_CREDENTIAL}` }, '/ws'),
+    ]);
+    const [concurrentLocalEnv, concurrentRemoteEnv] = await Promise.all([
+      readProbeFromTerminal(registry, concurrentLocalId),
+      readProbeFromTerminal(registry, concurrentRemoteId),
+    ]);
+    assert.equal(concurrentLocalEnv['DISPLAY'], ':0');
+    assert.equal(concurrentLocalEnv['WAYLAND_DISPLAY'], 'wayland-0');
+    assert.equal('DISPLAY' in concurrentRemoteEnv, false);
+    assert.equal('WAYLAND_DISPLAY' in concurrentRemoteEnv, false);
+    assert.equal('XAUTHORITY' in concurrentRemoteEnv, false);
+
     // Paired remote socket must still be refused host-desktop operations and reattaching must not alter local PTY env.
     const remoteWs = new WebSocket(`ws://127.0.0.1:${port}/ws`, {
       headers: {
@@ -767,6 +783,140 @@ test('TERMINAL ENVIRONMENT 6: Remote access paired devices do not receive host g
   } finally {
     detach();
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    await registry.disposeAll();
+    await fx.cleanup();
+  }
+});
+
+test('TERMINAL ENVIRONMENT 7: Asynchronous cancellation, close during resolution, backend shutdown, and failure cleanup prevent orphan PTYs', async () => {
+  const fx = await createIsolatedGraphicalHarness();
+  const spawnCounterFile = path.join(fx.root, 'spawn-count');
+  const slowMarkerShell = path.join(fx.root, 'slow-marker-shell.sh');
+  await fs.promises.writeFile(
+    slowMarkerShell,
+    `#!/bin/sh\necho "$$" >> "${spawnCounterFile}"\nexec "${process.execPath}" "${fx.envProbeScript}" "$@"\n`,
+    { mode: 0o755 },
+  );
+
+  let releaseLookup!: () => void;
+  let onLookupEntered: (() => void) | null = null;
+  let lookupMode: 'gate' | 'throw' | 'ok' = 'gate';
+  const gatedResolver = async (baseEnv: Record<string, string>) => {
+    if (lookupMode === 'gate') {
+      const waitGate = new Promise<void>((resolve) => { releaseLookup = resolve; });
+      onLookupEntered?.();
+      onLookupEntered = null;
+      await waitGate;
+    } else if (lookupMode === 'throw') {
+      throw new Error('simulated resolver rejection');
+    }
+    return { ...baseEnv, WAYLAND_DISPLAY: 'wayland-0' };
+  };
+
+  const registry = new TerminalRegistry(
+    createAgentRegistry([]),
+    { file: slowMarkerShell, args: [], name: 'marker-shell' },
+    inMemoryStore(),
+    () => null,
+    async () => null,
+    () => fx.shellIntegrationDir,
+    { persistentPty: false, resolveGraphicalEnv: gatedResolver },
+  );
+
+  try {
+    const internalTerminals = () =>
+      (registry as unknown as { terminals: Map<string, unknown> }).terminals;
+
+    // 1. Closing a terminal while graphical resolution is pending prevents PTY spawn and releases slot.
+    const entered1 = new Promise<void>((resolve) => { onLookupEntered = resolve; });
+    const openPending = registry.open({ kind: 'shell', cwd: fx.cwd });
+    await entered1;
+    const pendingId = internalTerminals().keys().next().value as string;
+    assert.ok(pendingId);
+    assert.equal(registry.activeCount(), 1);
+    assert.equal(registry.close(pendingId as never), true);
+    releaseLookup();
+    await assert.rejects(openPending, /closed while it was opening|tabClosedWhileOpening/i);
+    assert.equal(registry.activeCount(), 0);
+    assert.equal(fs.existsSync(spawnCounterFile), false, 'Closed-while-resolving terminal must never spawn a PTY');
+
+    // 2. Resolver rejection falls back cleanly and leaves terminal usable without leaking reservation.
+    lookupMode = 'throw';
+    const fallbackDesc = await registry.open({ kind: 'shell', cwd: fx.cwd });
+    assert.equal(fallbackDesc.alive, true);
+    assert.equal(registry.activeCount(), 1);
+    assert.equal(registry.close(fallbackDesc.terminalId), true);
+    assert.equal(registry.activeCount(), 0);
+
+    // 3. Cancelling an Agency session while graphical resolution is pending settles without an active orphan PTY.
+    const { AgencySessionRuntime } = await import('../../../src/features/sessions/session-runtime.js');
+    const { SplitAgencySessionStore } = await import('../../../src/features/sessions/session-store.js');
+    const { WorkspaceMutex } = await import('../../../src/features/workspaces/workspace-lock.js');
+    const canonicalCwd = await fs.promises.realpath(fx.cwd);
+    const nowIso = new Date().toISOString();
+    const ws = {
+      id: randomUUID() as import('@anvilary/workbench-shared').WorkspaceId,
+      projectId: randomUUID() as import('@anvilary/workbench-shared').ProjectId,
+      name: 'main',
+      cwd: canonicalCwd,
+      status: 'active' as const,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      doneAt: null,
+      archivedAt: null,
+    };
+    const lock = new WorkspaceMutex();
+    const agencyRt = new AgencySessionRuntime({
+      registry,
+      workspaces: {
+        protectedDirectories: () => [],
+        withSessionReservation: (id, action) => lock.runExclusive(id, () => action(id === ws.id ? ws : null)),
+      },
+      profiles: { resolveLaunch: async () => ({}) as never },
+      store: new SplitAgencySessionStore(path.join(fx.root, 'agency-sess-cancel.json')),
+    });
+    await agencyRt.initialize();
+    lookupMode = 'gate';
+    const countBeforeAgency = fs.existsSync(spawnCounterFile)
+      ? fs.readFileSync(spawnCounterFile, 'utf8').trim().split('\n').filter(Boolean).length
+      : 0;
+    const enteredAgency = new Promise<void>((resolve) => { onLookupEntered = resolve; });
+    const agencyCreatePromise = agencyRt.create({
+      workspaceId: ws.id,
+      kind: 'terminal',
+      cols: 80,
+      rows: 24,
+    });
+    await enteredAgency;
+    const pendingSessionId = agencyRt.list(ws.id)[0]!.id;
+    await agencyRt.stop(pendingSessionId);
+    releaseLookup();
+    const cancelledSession = await agencyCreatePromise;
+    assert.ok(cancelledSession.lifecycle === 'stopping' || cancelledSession.lifecycle === 'exited');
+    await new Promise((r) => setTimeout(r, 150));
+    assert.equal(registry.activeCount(), 0);
+    const countAfterAgency = fs.existsSync(spawnCounterFile)
+      ? fs.readFileSync(spawnCounterFile, 'utf8').trim().split('\n').filter(Boolean).length
+      : 0;
+    assert.ok(countAfterAgency >= countBeforeAgency);
+    agencyRt.dispose();
+
+    // 4. Backend shutdown (disposeAll) during pending resolution prevents orphan PTY spawn.
+    lookupMode = 'gate';
+    const enteredShutdown = new Promise<void>((resolve) => { onLookupEntered = resolve; });
+    const shutdownPending = registry.open({ kind: 'shell', cwd: fx.cwd });
+    await enteredShutdown;
+    const beforeShutdownCount = fs.existsSync(spawnCounterFile)
+      ? fs.readFileSync(spawnCounterFile, 'utf8').trim().split('\n').filter(Boolean).length
+      : 0;
+    registry.disposeAll();
+    releaseLookup();
+    await assert.rejects(shutdownPending);
+    const afterShutdownCount = fs.existsSync(spawnCounterFile)
+      ? fs.readFileSync(spawnCounterFile, 'utf8').trim().split('\n').filter(Boolean).length
+      : 0;
+    assert.equal(afterShutdownCount, beforeShutdownCount, 'disposeAll during pending resolution must prevent new PTY spawn');
+  } finally {
     await registry.disposeAll();
     await fx.cleanup();
   }

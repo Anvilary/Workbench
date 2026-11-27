@@ -158,12 +158,13 @@ test('resolver propagates validated allowlist and excludes auth, runtime, and GP
       },
     });
 
+    const isolatedHome = path.join(fx.root, 'home');
     const baseEnv: Record<string, string> = {
       PATH: '/usr/bin:/bin',
-      HOME: '/home/test-profile',
+      HOME: isolatedHome,
       XDG_RUNTIME_DIR: fx.runtimeDir,
       DBUS_SESSION_BUS_ADDRESS: `unix:path=${fx.runtimeDir}/bus`,
-      CODEX_HOME: '/home/test-profile/.codex',
+      CODEX_HOME: path.join(isolatedHome, '.codex'),
     };
 
     const resolved = await resolver(baseEnv);
@@ -176,8 +177,8 @@ test('resolver propagates validated allowlist and excludes auth, runtime, and GP
 
     // Trusted existing variables remain intact.
     assert.equal(resolved['PATH'], '/usr/bin:/bin');
-    assert.equal(resolved['HOME'], '/home/test-profile');
-    assert.equal(resolved['CODEX_HOME'], '/home/test-profile/.codex');
+    assert.equal(resolved['HOME'], isolatedHome);
+    assert.equal(resolved['CODEX_HOME'], path.join(isolatedHome, '.codex'));
     assert.equal(resolved['XDG_RUNTIME_DIR'], fx.runtimeDir);
     assert.equal(resolved['DBUS_SESSION_BUS_ADDRESS'], `unix:path=${fx.runtimeDir}/bus`);
 
@@ -477,5 +478,227 @@ test('Windows and macOS platforms return baseEnv unchanged without invoking Linu
     assert.equal(called, false);
     assert.deepEqual(out, input);
     assert.notEqual(out, input);
+  }
+});
+
+test('disagreement between loginctl session type and manager snapshot discards stale display values', async () => {
+  const fx = await createIsolatedFixture();
+  try {
+    await fx.createWaylandSocket('wayland-0');
+    await fx.createX11Socket(0);
+    const xauth = await fx.createXauthority();
+
+    const resolver = createGraphicalSessionEnvResolver({
+      platform: 'linux',
+      uid: fx.uid,
+      x11SocketDir: fx.x11Dir,
+      runCommand: async (file, args): Promise<CommandExecResult> => {
+        if (file === 'systemctl') {
+          return {
+            stdout: [
+              'DISPLAY=:0',
+              `XAUTHORITY=${xauth}`,
+              'XDG_SESSION_TYPE=x11',
+              'XDG_CURRENT_DESKTOP=ubuntu:GNOME',
+            ].join('\n'),
+            stderr: '',
+          };
+        }
+        if (args[0] === 'show-user') {
+          return { stdout: `Display=5\nSessions=5\nRuntimePath=${fx.runtimeDir}\n`, stderr: '' };
+        }
+        return {
+          stdout: `Id=5\nUser=${fx.uid}\nState=active\nActive=yes\nType=wayland\nClass=user\nRemote=no\nDisplay=\nDesktop=\n`,
+          stderr: '',
+        };
+      },
+    });
+
+    const resolved = await resolver({ XDG_RUNTIME_DIR: fx.runtimeDir });
+    assert.equal('DISPLAY' in resolved, false);
+    assert.equal('XAUTHORITY' in resolved, false);
+    assert.equal('XDG_SESSION_TYPE' in resolved, false);
+    assert.equal('XDG_CURRENT_DESKTOP' in resolved, false);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('Wayland session rejects orphaned XWayland DISPLAY when Wayland socket is absent', async () => {
+  const fx = await createIsolatedFixture();
+  try {
+    await fx.createX11Socket(0);
+    const xauth = await fx.createXauthority();
+
+    const resolver = createGraphicalSessionEnvResolver({
+      platform: 'linux',
+      uid: fx.uid,
+      x11SocketDir: fx.x11Dir,
+      runCommand: async (file, args): Promise<CommandExecResult> => {
+        if (file === 'systemctl') {
+          return {
+            stdout: [
+              'DISPLAY=:0',
+              'WAYLAND_DISPLAY=wayland-missing',
+              `XAUTHORITY=${xauth}`,
+              'XDG_SESSION_TYPE=wayland',
+            ].join('\n'),
+            stderr: '',
+          };
+        }
+        if (args[0] === 'show-user') {
+          return { stdout: `Display=5\nSessions=5\nRuntimePath=${fx.runtimeDir}\n`, stderr: '' };
+        }
+        return {
+          stdout: `Id=5\nUser=${fx.uid}\nState=active\nActive=yes\nType=wayland\nClass=user\nRemote=no\nDisplay=\nDesktop=\n`,
+          stderr: '',
+        };
+      },
+    });
+
+    const resolved = await resolver({ XDG_RUNTIME_DIR: fx.runtimeDir });
+    assert.equal('DISPLAY' in resolved, false);
+    assert.equal('WAYLAND_DISPLAY' in resolved, false);
+    assert.equal('XAUTHORITY' in resolved, false);
+    assert.equal('XDG_SESSION_TYPE' in resolved, false);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('multiple graphical user sessions (active + background online) are rejected as ambiguous', async () => {
+  const fx = await createIsolatedFixture();
+  try {
+    await fx.createWaylandSocket('wayland-0');
+    await fx.createX11Socket(0);
+
+    const resolver = createGraphicalSessionEnvResolver({
+      platform: 'linux',
+      uid: fx.uid,
+      x11SocketDir: fx.x11Dir,
+      runCommand: async (file, args): Promise<CommandExecResult> => {
+        if (file === 'systemctl') {
+          return {
+            stdout: 'DISPLAY=:0\nWAYLAND_DISPLAY=wayland-0\nXDG_SESSION_TYPE=wayland\n',
+            stderr: '',
+          };
+        }
+        if (args[0] === 'show-user') {
+          return { stdout: `Display=5\nSessions=5 6\nRuntimePath=${fx.runtimeDir}\n`, stderr: '' };
+        }
+        if (args[1] === '5') {
+          return {
+            stdout: `Id=5\nUser=${fx.uid}\nState=active\nActive=yes\nType=wayland\nClass=user\nRemote=no\nDisplay=\nDesktop=\n`,
+            stderr: '',
+          };
+        }
+        return {
+          stdout: `Id=6\nUser=${fx.uid}\nState=online\nActive=no\nType=x11\nClass=user\nRemote=no\nDisplay=:1\nDesktop=\n`,
+          stderr: '',
+        };
+      },
+    });
+
+    const resolved = await resolver({ XDG_RUNTIME_DIR: fx.runtimeDir });
+    assert.equal('DISPLAY' in resolved, false);
+    assert.equal('WAYLAND_DISPLAY' in resolved, false);
+    assert.equal('XDG_SESSION_TYPE' in resolved, false);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('accessible leftover display sockets after logout are ignored when loginctl has no active graphical session', async () => {
+  const fx = await createIsolatedFixture();
+  try {
+    await fx.createWaylandSocket('wayland-0');
+    await fx.createX11Socket(0);
+    const xauth = await fx.createXauthority();
+
+    const resolver = createGraphicalSessionEnvResolver({
+      platform: 'linux',
+      uid: fx.uid,
+      x11SocketDir: fx.x11Dir,
+      runCommand: async (file, args): Promise<CommandExecResult> => {
+        if (file === 'systemctl') {
+          return {
+            stdout: `DISPLAY=:0\nWAYLAND_DISPLAY=wayland-0\nXAUTHORITY=${xauth}\nXDG_SESSION_TYPE=wayland\n`,
+            stderr: '',
+          };
+        }
+        if (args[0] === 'show-user') {
+          return { stdout: `Display=\nSessions=3\nRuntimePath=${fx.runtimeDir}\n`, stderr: '' };
+        }
+        return {
+          stdout: `Id=3\nUser=${fx.uid}\nState=active\nActive=yes\nType=unspecified\nClass=manager\nRemote=no\nDisplay=\nDesktop=\n`,
+          stderr: '',
+        };
+      },
+    });
+
+    const resolved = await resolver({ XDG_RUNTIME_DIR: fx.runtimeDir, DISPLAY: ':0' });
+    assert.equal('DISPLAY' in resolved, false);
+    assert.equal('WAYLAND_DISPLAY' in resolved, false);
+    assert.equal('XAUTHORITY' in resolved, false);
+    assert.equal('XDG_SESSION_TYPE' in resolved, false);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('failed lookup is not cached and recovers immediately on subsequent call, and missing user bus falls back cleanly', async () => {
+  const fx = await createIsolatedFixture();
+  try {
+    await fx.createWaylandSocket('wayland-0');
+    let failFirst = true;
+
+    const resolver = createGraphicalSessionEnvResolver({
+      platform: 'linux',
+      uid: fx.uid,
+      x11SocketDir: fx.x11Dir,
+      runCommand: async (file, args): Promise<CommandExecResult> => {
+        if (file === 'systemctl' && failFirst) {
+          throw Object.assign(new Error('Command timed out'), { killed: true });
+        }
+        if (file === 'systemctl') {
+          return { stdout: 'WAYLAND_DISPLAY=wayland-0\nXDG_SESSION_TYPE=wayland\n', stderr: '' };
+        }
+        if (args[0] === 'show-user') {
+          return { stdout: `Display=5\nSessions=5\nRuntimePath=${fx.runtimeDir}\n`, stderr: '' };
+        }
+        return {
+          stdout: `Id=5\nUser=${fx.uid}\nState=active\nActive=yes\nType=wayland\nClass=user\nRemote=no\nDisplay=\nDesktop=\n`,
+          stderr: '',
+        };
+      },
+    });
+
+    const first = await resolver({ XDG_RUNTIME_DIR: fx.runtimeDir, WAYLAND_DISPLAY: 'wayland-stale' });
+    assert.equal('WAYLAND_DISPLAY' in first, false);
+
+    failFirst = false;
+    const second = await resolver({ XDG_RUNTIME_DIR: fx.runtimeDir });
+    assert.equal(second['WAYLAND_DISPLAY'], 'wayland-0');
+    assert.equal(second['XDG_SESSION_TYPE'], 'wayland');
+
+    const noBusResolver = createGraphicalSessionEnvResolver({
+      platform: 'linux',
+      uid: fx.uid,
+      x11SocketDir: fx.x11Dir,
+      runCommand: async (file) => {
+        if (file === 'systemctl') {
+          throw Object.assign(new Error('Failed to connect to user scope bus via local transport: No such file or directory'), { code: 1 });
+        }
+        throw Object.assign(new Error('spawn loginctl ENOENT'), { code: 'ENOENT' });
+      },
+    });
+    const nonSystemd = await noBusResolver({
+      XDG_RUNTIME_DIR: fx.runtimeDir,
+      WAYLAND_DISPLAY: 'wayland-0',
+      XDG_SESSION_TYPE: 'wayland',
+    });
+    assert.equal(nonSystemd['WAYLAND_DISPLAY'], 'wayland-0');
+  } finally {
+    await fx.cleanup();
   }
 });

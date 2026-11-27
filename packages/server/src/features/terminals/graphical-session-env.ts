@@ -103,6 +103,7 @@ interface LoginctlSessionInfo {
   readonly sessionClass: string;
   readonly remote: string;
   readonly display: string;
+  readonly desktop: string;
 }
 
 const launchOriginStorage = new AsyncLocalStorage<{ remoteClient: boolean }>();
@@ -402,17 +403,46 @@ function validateCandidates(
   const validated: GraphicalEnvMap = {};
   const { runtimeDir, x11SocketDir, uid, session } = context;
 
+  // If the systemd manager snapshot explicitly declares a session type or desktop
+  // that disagrees with the selected active loginctl session, the manager block is
+  // stale/from another session; discard it conservatively.
+  if (session !== null && session !== undefined) {
+    if (
+      candidates.XDG_SESSION_TYPE !== undefined &&
+      candidates.XDG_SESSION_TYPE !== session.type
+    ) {
+      return {};
+    }
+    if (
+      session.desktop.length > 0 &&
+      candidates.XDG_SESSION_DESKTOP !== undefined &&
+      candidates.XDG_SESSION_DESKTOP !== session.desktop
+    ) {
+      return {};
+    }
+  }
+
+  const effectiveType = session?.type ?? candidates.XDG_SESSION_TYPE;
+
   const waylandCandidate = candidates.WAYLAND_DISPLAY;
   if (
     waylandCandidate !== undefined &&
-    session?.type !== 'x11' &&
+    effectiveType !== 'x11' &&
     isValidWaylandSocket(waylandCandidate, runtimeDir, uid)
   ) {
     validated.WAYLAND_DISPLAY = waylandCandidate;
   }
 
   const displayCandidate = candidates.DISPLAY;
-  if (displayCandidate !== undefined && isValidLocalX11Display(displayCandidate, x11SocketDir, uid)) {
+  // In a Wayland session, an XWayland DISPLAY is only associated with the active
+  // session when the session's Wayland display socket itself is also validated.
+  const canAcceptDisplay =
+    effectiveType !== 'wayland' || validated.WAYLAND_DISPLAY !== undefined;
+  if (
+    canAcceptDisplay &&
+    displayCandidate !== undefined &&
+    isValidLocalX11Display(displayCandidate, x11SocketDir, uid)
+  ) {
     const sessionDisplayNum = session?.display ? parseLocalDisplayNumber(session.display) : null;
     const candidateDisplayNum = parseLocalDisplayNumber(displayCandidate);
     if (sessionDisplayNum === null || sessionDisplayNum === candidateDisplayNum) {
@@ -543,6 +573,7 @@ async function queryLoginctlSession(
             '-p', 'Class',
             '-p', 'Remote',
             '-p', 'Display',
+            '-p', 'Desktop',
           ],
           { timeoutMs, maxBufferBytes, env: cmdEnv },
         );
@@ -556,6 +587,7 @@ async function queryLoginctlSession(
           sessionClass: fields['Class'] ?? '',
           remote: fields['Remote'] ?? '',
           display: fields['Display'] ?? '',
+          desktop: fields['Desktop'] ?? '',
         };
       } catch {
         return null;
@@ -563,26 +595,34 @@ async function queryLoginctlSession(
     }),
   );
 
-  const activeLocalGraphical = sessionResults.filter(
+  // All non-closing local graphical user sessions share the same per-UID
+  // systemd --user environment block; reject if multiple exist concurrently.
+  const localGraphical = sessionResults.filter(
     (s): s is LoginctlSessionInfo =>
       s !== null &&
       s.user === String(uid) &&
       s.sessionClass === 'user' &&
       s.remote === 'no' &&
-      s.active === 'yes' &&
-      s.state === 'active' &&
+      (s.state === 'active' || s.state === 'online') &&
       GRAPHICAL_SESSION_TYPES.has(s.type),
   );
 
-  if (activeLocalGraphical.length === 0) {
+  if (localGraphical.length === 0) {
     return { status: 'none', runtimePath: userInfo.runtimePath || undefined };
   }
-  if (activeLocalGraphical.length > 1) {
+  if (localGraphical.length > 1) {
+    return { status: 'ambiguous', runtimePath: userInfo.runtimePath || undefined };
+  }
+  const single = localGraphical[0]!;
+  if (single.active !== 'yes' || single.state !== 'active') {
+    return { status: 'none', runtimePath: userInfo.runtimePath || undefined };
+  }
+  if (userInfo.display.length > 0 && userInfo.display !== single.id) {
     return { status: 'ambiguous', runtimePath: userInfo.runtimePath || undefined };
   }
   return {
     status: 'single',
-    session: activeLocalGraphical[0]!,
+    session: single,
     runtimePath: userInfo.runtimePath || undefined,
   };
 }
@@ -612,11 +652,13 @@ export function createGraphicalSessionEnvResolver(
     const job = (async (): Promise<GraphicalEnvMap> => {
       const cmdEnv = sanitizedCommandEnv(baseEnv);
 
-      const systemdPromise = runCommand(systemctlBin, ['--user', 'show-environment'], {
-        timeoutMs,
-        maxBufferBytes,
-        env: cmdEnv,
-      })
+      const systemdPromise = (async () =>
+        runCommand(systemctlBin, ['--user', 'show-environment'], {
+          timeoutMs,
+          maxBufferBytes,
+          env: cmdEnv,
+        })
+      )()
         .then((res) => ({ ok: true as const, env: parseSystemdEnvironment(res.stdout) }))
         .catch((error: unknown) => ({ ok: false as const, unavailable: isSystemdUnavailableError(error) }));
 
